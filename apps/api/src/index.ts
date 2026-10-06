@@ -2,7 +2,7 @@ import "dotenv/config";
 import express from "express";
 import { db } from "./db/client";
 import { sql } from "drizzle-orm";
-import type { HealthResponse } from "@swim-app/shared";
+import { buildHealthResponse } from "./health";
 
 const app = express();
 app.use(express.json());
@@ -16,12 +16,7 @@ app.get("/health", async (_req, res) => {
     console.error("DB health check failed:", err);
   }
 
-  const body: HealthResponse = {
-    status: dbOk ? "ok" : "error",
-    db: dbOk,
-    timestamp: new Date().toISOString(),
-  };
-
+  const body = buildHealthResponse(dbOk);
   res.status(dbOk ? 200 : 503).json(body);
 });
 
