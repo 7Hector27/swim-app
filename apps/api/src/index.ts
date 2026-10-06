@@ -12,8 +12,8 @@ app.get("/health", async (_req, res) => {
   try {
     await db.execute(sql`SELECT 1`);
     dbOk = true;
-  } catch {
-    // db unreachable — still return 200 with status details
+  } catch (err) {
+    console.error("DB health check failed:", err);
   }
 
   const body: HealthResponse = {
@@ -26,4 +26,6 @@ app.get("/health", async (_req, res) => {
 });
 
 const port = process.env.PORT ?? 3001;
-app.listen(port, () => console.log(`API listening on http://localhost:${port}`));
+app.listen(port, () =>
+  console.log(`API listening on http://localhost:${port}`),
+);

@@ -5,7 +5,8 @@
       "Bash(pnpm --version)",
       "Bash(pnpm config *)",
       "Bash(pnpm approve-builds *)",
-      "Bash(pnpm *)"
+      "Bash(pnpm *)",
+      "Bash(docker compose *)"
     ]
   }
 }
