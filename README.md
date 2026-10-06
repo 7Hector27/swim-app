@@ -1,58 +1,65 @@
-# swim-app
+# Swim App
 
-Monorepo for the swim lessons management app.
+Software for managing swim lessons — schedules, enrollments, and progress tracking — built for swim coaches, parents, and swimmers.
 
-## Structure
+- **Coaches** manage lesson schedules, track swimmer progress, and communicate with families
+- **Parents** enroll their children, view upcoming lessons, and receive updates
+- **Swimmers** see their own schedule and milestone history
 
-```
-apps/web    Next.js 15 App Router — UI only
-apps/api    Express + Drizzle ORM — REST API
-packages/shared  Shared TypeScript types
-```
+## Prerequisites
 
-## Getting started
+- [Node.js](https://nodejs.org) ≥ 20
+- [pnpm](https://pnpm.io) ≥ 9 (`npm i -g pnpm`)
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (for Postgres)
+
+## Setup
 
 ```bash
-# 1. Copy env files
+# 1. Clone and install
+git clone <repo-url>
+cd swim-app
+pnpm install
+
+# 2. Copy env files
 cp .env.example .env
 cp apps/api/.env.example apps/api/.env
 
-# 2. Start Postgres
+# 3. Start Postgres (port 5435)
 pnpm db:up
 
-# 3. Apply migrations (none yet on first run)
+# 4. Apply migrations
 pnpm db:migrate
 
-# 4. Start web + api together
+# 5. Start everything
 pnpm dev
 ```
 
-Web runs on http://localhost:3000  
-API runs on http://localhost:3001
+- Web: http://localhost:3000
+- API: http://localhost:3001
 
 ## Environment variables
 
 ### `apps/api/.env`
 
-| Variable | Required | Description |
+| Variable | Default | Description |
 |---|---|---|
-| `DATABASE_URL` | Yes | Postgres connection string |
-| `PORT` | No | API port (default `3001`) |
-| `NODE_ENV` | No | `development` for pretty logs, `production` for JSON logs (default: pretty) |
-| `CORS_ORIGINS` | Yes in prod | Comma-separated list of allowed CORS origins, e.g. `https://app.example.com,https://www.example.com` |
+| `DATABASE_URL` | — | Postgres connection string. Example: `postgres://swim:swim@localhost:5435/swim` |
+| `PORT` | `3001` | API listen port |
+| `NODE_ENV` | — | `production` enables JSON logs. Omit or set to `development` for pretty logs |
+| `CORS_ORIGINS` | — | Comma-separated allowed origins. Example: `http://localhost:3000` |
 
 ### `apps/web/.env.local`
 
-| Variable | Required | Description |
+| Variable | Default | Description |
 |---|---|---|
-| `NEXT_PUBLIC_API_URL` | No | API base URL for browser fetches (default `http://localhost:3001`) |
+| `NEXT_PUBLIC_API_URL` | `http://localhost:3001` | API base URL for browser fetches |
 
-## Root scripts
+## Scripts
 
-| Script | Description |
+| Command | Description |
 |---|---|
-| `pnpm dev` | Start web and API together |
-| `pnpm typecheck` | Type-check all packages |
+| `pnpm dev` | Start web (port 3000) and API (port 3001) concurrently |
+| `pnpm typecheck` | TypeScript check across all packages |
 | `pnpm lint` | ESLint across the monorepo |
 | `pnpm format` | Prettier write across the monorepo |
 | `pnpm test` | Vitest across all packages |
@@ -61,22 +68,17 @@ API runs on http://localhost:3001
 | `pnpm db:generate` | Generate Drizzle migration files from schema changes |
 | `pnpm db:migrate` | Apply pending migrations |
 
-## API
+## API endpoints
 
-### `GET /ping`
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/ping` | Liveness probe — returns `{ "pong": true }` |
+| `GET` | `/health` | DB connectivity check — returns `{ status, db, timestamp }` |
 
-Lightweight liveness probe. Returns `{ "pong": true }`.
+Every response includes an `x-request-id` header. Pass your own `x-request-id` request header to propagate a trace ID into server logs.
 
-### `GET /health`
+## Docs
 
-Returns DB connectivity status.
-
-```json
-{ "status": "ok", "db": true, "timestamp": "2025-01-01T00:00:00.000Z" }
-```
-
-Returns `503` if the database is unreachable.
-
-## Request tracing
-
-Every request gets an `x-request-id` response header. Pass an `x-request-id` request header to propagate your own trace ID through to server logs.
+- [Architecture](docs/architecture.md) — how web, API, and Postgres connect
+- [Data model](docs/data-model.md) — table reference (empty until first feature)
+- [Decisions](docs/decisions/) — lightweight ADRs for significant choices
