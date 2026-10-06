@@ -11,15 +11,23 @@
   },
   "dependencies": {
     "@swim-app/shared": "workspace:*",
+    "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "drizzle-orm": "^0.43.1",
     "express": "^4.21.2",
+    "helmet": "^8.0.0",
+    "pino": "^9.6.0",
+    "pino-http": "^10.4.0",
     "postgres": "^3.4.5"
   },
   "devDependencies": {
+    "@types/cors": "^2.8.17",
     "@types/express": "^5.0.1",
     "@types/node": "^22.13.10",
+    "@types/supertest": "^6.0.2",
     "drizzle-kit": "^0.31.1",
+    "pino-pretty": "^13.0.0",
+    "supertest": "^7.0.0",
     "tsx": "^4.19.3",
     "typescript": "^5.8.2",
     "vitest": "^3.1.1"
