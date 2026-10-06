@@ -10,13 +10,11 @@
     "db:up": "docker compose up -d postgres",
     "db:down": "docker compose down",
     "db:generate": "pnpm --filter api db:generate",
-    "db:migrate": "pnpm --filter api db:migrate",
-    "prepare": "lefthook install"
+    "db:migrate": "pnpm --filter api db:migrate"
   },
   "devDependencies": {
     "@eslint/js": "^9.24.0",
     "concurrently": "^9.1.0",
-    "lefthook": "^1.11.12",
     "eslint": "^9.24.0",
     "eslint-config-prettier": "^10.1.2",
     "prettier": "^3.5.3",
