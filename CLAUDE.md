@@ -51,7 +51,7 @@ Every request in `apps/api/src/app.ts` flows through this middleware stack in or
 
 **Logging**
 
-`apps/api/src/logger.ts` creates the pino singleton. Pretty-printed in dev (`NODE_ENV !== "production"`), JSON in production. `authorization` and `cookie` request headers are always redacted. Route handlers log via `req.log` (the per-request child logger set by pino-http), not the global logger.
+`apps/api/src/logger.ts` creates the pino singleton. Pretty-printed in dev (`NODE_ENV !== "production"`), JSON in production. `authorization` and `cookie` request headers are always redacted. Route handlers log via `req.log` (the per-request child logger set by pino-http), not the global logger. Never use `console` in apps/api.
 
 **Testing**
 
@@ -60,6 +60,10 @@ Tests import `createApp(logger)` from `src/app.ts` with `pino({ level: "silent" 
 **TypeScript strictness**
 
 All packages extend `tsconfig.base.json` which enables `noUncheckedIndexedAccess`, `noImplicitReturns`, and `exactOptionalPropertyTypes` on top of `strict`. The `exactOptionalPropertyTypes` flag means optional properties must be absent, not set to `undefined` — spread conditionally: `...(condition && { key: value })`.
+
+**Styling (apps/web)**
+
+Tailwind v4, configured in `apps/web/src/styles/globals.css` (no tailwind.config.js). Style mobile-first: base classes are mobile (≤768px). Use only the custom `tablet:` (769px) and `desktop:` (1248px) breakpoints, never `sm:`/`md:`/`lg:`.
 
 ## Adding a new API route
 
