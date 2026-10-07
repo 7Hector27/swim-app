@@ -2,6 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+Significant decisions get a record in `docs/decisions/`.
+
 ## Commands
 
 All commands run from the repo root unless noted.
