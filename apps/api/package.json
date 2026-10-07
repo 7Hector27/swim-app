@@ -10,6 +10,7 @@
     "db:migrate": "tsx src/db/migrate.ts"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.117.2",
     "@swim-app/shared": "workspace:*",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
