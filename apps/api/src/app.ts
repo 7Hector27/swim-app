@@ -10,6 +10,9 @@ import { HealthQuerySchema } from "@swim-app/shared";
 import { requestId } from "./middleware/requestId";
 import { validate } from "./middleware/validate";
 import { errorHandler } from "./middleware/errorHandler";
+import { requireUser } from "./middleware/requireUser";
+import { requireCoach } from "./middleware/requireCoach";
+import { type MeResponse } from "@swim-app/shared";
 
 export function createApp(logger: Logger) {
   const app = express();
@@ -53,6 +56,19 @@ export function createApp(logger: Logger) {
       res.status(dbOk ? 200 : 503).json(body);
     },
   );
+
+  app.get("/me", validate({}), requireUser, (req, res) => {
+    const body: MeResponse = {
+      fullName: req.profile.fullName,
+      phone: req.profile.phone,
+      role: req.profile.role,
+    };
+    res.json(body);
+  });
+
+  app.get("/coach/ping", validate({}), requireUser, requireCoach, (_req, res) => {
+    res.json({ pong: true });
+  });
 
   app.use(errorHandler);
 

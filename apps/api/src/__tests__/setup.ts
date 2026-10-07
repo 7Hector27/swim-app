@@ -1,3 +1,5 @@
-// Provide a placeholder DATABASE_URL so client.ts doesn't throw at import time.
-// Tests that actually need the DB will require a real connection string.
+// Provide placeholder env vars so modules don't throw at import time.
+// Tests that actually need the DB or Supabase will require real values.
 process.env["DATABASE_URL"] ??= "postgres://test:test@localhost:5432/test";
+process.env["SUPABASE_URL"] ??= "http://127.0.0.1:54321";
+process.env["SUPABASE_PUBLISHABLE_KEY"] ??= "placeholder-anon-key";
