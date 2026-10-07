@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1791403446653,
+      "tag": "0000_narrow_hercules",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1791404660610,
+      "tag": "0001_handle_new_user",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791405838563,
+      "tag": "0002_flippant_black_bolt",
+      "breakpoints": true
+    }
+  ]
+}

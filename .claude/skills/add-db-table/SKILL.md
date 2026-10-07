@@ -8,7 +8,7 @@ description: Adds a new Postgres table or changes an existing one using Drizzle,
 ## Steps
 
 1. Read `apps/api/drizzle.config.ts` for the schema file and migrations folder, and the Conventions section of `docs/data-model.md`. Match the style of existing tables.
-2. Define the table in the schema file with Drizzle: snake_case columns, a `uuid` primary key using `.defaultRandom()`, and `created_at` as `timestamp` with `{ withTimezone: true }`. Give foreign keys an explicit `onDelete`.
+2. Define the table in the schema file with Drizzle: snake_case columns, a `uuid` primary key using `.defaultRandom()`, `created_at` and `updated_at` as `timestamp` with `{ withTimezone: true }` (both `.notNull().defaultNow()`; `updated_at` also gets `.$onUpdateFn(() => new Date())`). Give foreign keys an explicit `onDelete`. Call `.enableRLS()` on every new table.
 3. Run `pnpm db:generate` to create the migration. Never write migration SQL by hand.
 4. Show the user the generated SQL and **wait for them to confirm** before applying it.
 5. Run `pnpm db:migrate`. Postgres must be running (`pnpm db:up`).
@@ -25,6 +25,7 @@ description: Adds a new Postgres table or changes an existing one using Drizzle,
 - History tables (swims, skill assessments) are append-only: add rows, never overwrite them.
 - Never seed real names or real data about kids.
 - Never use serial (auto-increment) IDs. They're guessable in URLs, which matters with kids' data.
+- Triggers and functions (e.g. Auth hooks on `auth.users`) cannot be expressed in a Drizzle schema. Put them in a custom migration (`drizzle-kit generate --custom --name=<name>`) with a comment explaining why it's hand-written SQL.
 
 ## Done when
 
