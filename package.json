@@ -7,8 +7,9 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "test": "pnpm -r test",
-    "db:up": "docker compose up -d postgres",
-    "db:down": "docker compose down",
+    "db:up": "supabase start",
+    "db:down": "supabase stop",
+    "db:status": "supabase status",
     "db:generate": "pnpm --filter api db:generate",
     "db:migrate": "pnpm --filter api db:migrate"
   },
@@ -18,6 +19,7 @@
     "eslint": "^9.24.0",
     "eslint-config-prettier": "^10.1.2",
     "prettier": "^3.5.3",
+    "supabase": "^2.120.0",
     "typescript-eslint": "^8.30.1"
   },
   "engines": {
