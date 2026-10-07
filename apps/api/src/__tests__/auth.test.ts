@@ -1,15 +1,16 @@
-import { vi, describe, it, expect, beforeEach } from "vitest";
+import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import request from "supertest";
 import pino from "pino";
 
-const { mockGetClaims, mockDbWhere, mockDbReturning } = vi.hoisted(() => ({
+const { mockGetClaims, mockSignUp, mockDbWhere, mockDbReturning } = vi.hoisted(() => ({
   mockGetClaims: vi.fn(),
+  mockSignUp: vi.fn(),
   mockDbWhere: vi.fn(),
   mockDbReturning: vi.fn(),
 }));
 
 vi.mock("../lib/supabase", () => ({
-  supabase: { auth: { getClaims: mockGetClaims } },
+  supabase: { auth: { getClaims: mockGetClaims, signUp: mockSignUp } },
 }));
 
 vi.mock("../db/client", () => ({
@@ -42,6 +43,103 @@ const validClaims = {
 
 beforeEach(() => {
   vi.resetAllMocks();
+});
+
+// Fake "today" in LA: 2025-06-15. Under-18 cutoff: born on or after 2007-06-16.
+const FAKE_NOW = new Date("2025-06-15T12:00:00Z");
+const ADULT_BIRTH_DATE = "1990-01-01";
+const UNDER_18_BIRTH_DATE = "2007-06-16"; // turns 18 tomorrow
+const TURNING_18_TODAY_BIRTH_DATE = "2007-06-15";
+
+const validSignUpBody = {
+  fullName: "Jane Parent",
+  email: "jane@example.com",
+  password: "securepass1",
+  birthDate: ADULT_BIRTH_DATE,
+  acceptedTerms: true as const,
+};
+
+describe("POST /auth/signup", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(FAKE_NOW);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("returns 422 when acceptedTerms is false", async () => {
+    const res = await request(app)
+      .post("/auth/signup")
+      .send({ ...validSignUpBody, acceptedTerms: false });
+    expect(res.status).toBe(422);
+  });
+
+  it("returns 422 when body contains unknown field role", async () => {
+    const res = await request(app)
+      .post("/auth/signup")
+      .send({ ...validSignUpBody, role: "coach" });
+    expect(res.status).toBe(422);
+  });
+
+  it("returns 422 for an impossible date like 2026-02-31", async () => {
+    const res = await request(app)
+      .post("/auth/signup")
+      .send({ ...validSignUpBody, birthDate: "2026-02-31" });
+    expect(res.status).toBe(422);
+  });
+
+  it("returns 403 for an under-18 user and never calls signUp", async () => {
+    const res = await request(app)
+      .post("/auth/signup")
+      .send({ ...validSignUpBody, birthDate: UNDER_18_BIRTH_DATE });
+    expect(res.status).toBe(403);
+    expect(res.body).toEqual({ error: "Ask a parent or guardian to create an account" });
+    expect(mockSignUp).not.toHaveBeenCalled();
+  });
+
+  it("returns 201 for a user turning 18 today", async () => {
+    mockSignUp.mockResolvedValue({
+      data: { user: { id: "00000000-0000-0000-0000-000000000002" }, session: null },
+      error: null,
+    });
+    mockDbReturning.mockResolvedValue([baseProfile]);
+    const res = await request(app)
+      .post("/auth/signup")
+      .send({ ...validSignUpBody, birthDate: TURNING_18_TODAY_BIRTH_DATE });
+    expect(res.status).toBe(201);
+  });
+
+  it("calls signUp with only full_name in metadata and sets age_attested_at", async () => {
+    const userId = "00000000-0000-0000-0000-000000000003";
+    mockSignUp.mockResolvedValue({
+      data: { user: { id: userId }, session: null },
+      error: null,
+    });
+    mockDbReturning.mockResolvedValue([baseProfile]);
+
+    const res = await request(app).post("/auth/signup").send(validSignUpBody);
+
+    expect(res.status).toBe(201);
+    expect(mockSignUp).toHaveBeenCalledWith({
+      email: validSignUpBody.email,
+      password: validSignUpBody.password,
+      options: { data: { full_name: validSignUpBody.fullName } },
+    });
+    expect(mockDbReturning).toHaveBeenCalled();
+  });
+
+  it("returns 500 if profile row is missing after signUp", async () => {
+    const userId = "00000000-0000-0000-0000-000000000004";
+    mockSignUp.mockResolvedValue({
+      data: { user: { id: userId }, session: null },
+      error: null,
+    });
+    mockDbReturning.mockResolvedValue([]);
+    const res = await request(app).post("/auth/signup").send(validSignUpBody);
+    expect(res.status).toBe(500);
+  });
 });
 
 describe("GET /me", () => {

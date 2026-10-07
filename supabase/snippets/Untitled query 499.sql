@@ -1,1 +1,0 @@
-update profiles set role = 'coach' where full_name = 'Test Parent';

@@ -10,7 +10,8 @@ Software for managing swim lessons — schedules, enrollments, and progress trac
 
 - [Node.js](https://nodejs.org) ≥ 20
 - [pnpm](https://pnpm.io) ≥ 9 (`npm i -g pnpm`)
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (for Postgres)
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/)
+- [Supabase CLI](https://supabase.com/docs/guides/cli) (bundled as a dev dependency — no global install needed)
 
 ## Setup
 
@@ -24,7 +25,7 @@ pnpm install
 cp .env.example .env
 cp apps/api/.env.example apps/api/.env
 
-# 3. Start Postgres (port 5435)
+# 3. Start the Supabase local stack (Postgres on port 54322, Studio on 54323)
 pnpm db:up
 
 # 4. Apply migrations
@@ -43,10 +44,12 @@ pnpm dev
 
 | Variable | Default | Description |
 |---|---|---|
-| `DATABASE_URL` | — | Postgres connection string. Example: `postgres://swim:swim@localhost:5435/swim` |
+| `DATABASE_URL` | — | Postgres connection string. Example: `postgresql://postgres:postgres@127.0.0.1:54322/postgres` |
 | `PORT` | `3001` | API listen port |
 | `NODE_ENV` | — | `production` enables JSON logs. Omit or set to `development` for pretty logs |
 | `CORS_ORIGINS` | — | Comma-separated allowed origins. Example: `http://localhost:3000` |
+| `SUPABASE_URL` | `http://127.0.0.1:54321` | Supabase local stack API URL |
+| `SUPABASE_PUBLISHABLE_KEY` | — | Anon/publishable key — copy from `pnpm db:status` |
 
 ### `apps/web/.env.local`
 
@@ -63,8 +66,9 @@ pnpm dev
 | `pnpm lint` | ESLint across the monorepo |
 | `pnpm format` | Prettier write across the monorepo |
 | `pnpm test` | Vitest across all packages |
-| `pnpm db:up` | Start Postgres in Docker |
-| `pnpm db:down` | Stop Postgres |
+| `pnpm db:up` | Start Supabase local stack |
+| `pnpm db:down` | Stop Supabase local stack |
+| `pnpm db:status` | Show running services and connection strings |
 | `pnpm db:generate` | Generate Drizzle migration files from schema changes |
 | `pnpm db:migrate` | Apply pending migrations |
 

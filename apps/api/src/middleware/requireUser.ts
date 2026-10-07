@@ -32,16 +32,19 @@ export async function requireUser(
   const profile = rows[0];
 
   if (!profile) {
+    req.log.warn({ userId: sub, reason: "no_profile" }, "access denied");
     res.status(403).json({ error: "Forbidden" });
     return;
   }
 
   if (profile.disabledAt) {
+    req.log.warn({ userId: profile.id, reason: "disabled" }, "access denied");
     res.status(403).json({ error: "Forbidden" });
     return;
   }
 
   if (!profile.ageAttestedAt) {
+    req.log.warn({ userId: profile.id, reason: "age_not_attested" }, "access denied");
     res.status(403).json({ error: "Forbidden" });
     return;
   }

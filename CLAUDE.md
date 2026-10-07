@@ -78,7 +78,7 @@ Tailwind v4, configured in `apps/web/src/styles/globals.css` (no tailwind.config
 File layout, top to bottom:
 
 1. Imports from libraries
-2. Imports from project files
+2. Imports from project files (`@swim-app/*` packages count as project imports)
 3. Interfaces and types
 4. Helper functions used by the file
 5. The component (or main export): variables and hooks first, then handler functions, then the returned JSX
@@ -91,3 +91,5 @@ File layout, top to bottom:
 4. Import the shared type in route handler via `@swim-app/shared`
 
 Routes with no input still call `validate({})` to make that explicit.
+
+On protected routes, `requireUser` (or other auth middleware) runs before `validate()`.
