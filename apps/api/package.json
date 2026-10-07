@@ -13,7 +13,7 @@
     "@swim-app/shared": "workspace:*",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
-    "drizzle-orm": "^0.43.1",
+    "drizzle-orm": "^0.45.2",
     "express": "^4.21.2",
     "helmet": "^8.0.0",
     "pino": "^9.6.0",
