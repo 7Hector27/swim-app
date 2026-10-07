@@ -65,6 +65,24 @@ All packages extend `tsconfig.base.json` which enables `noUncheckedIndexedAccess
 
 Tailwind v4, configured in `apps/web/src/styles/globals.css` (no tailwind.config.js). Style mobile-first: base classes are mobile (≤768px). Use only the custom `tablet:` (769px) and `desktop:` (1248px) breakpoints, never `sm:`/`md:`/`lg:`.
 
+**Naming and file structure**
+
+- React component files: PascalCase, matching the component (`SwimmerCard.tsx`). Other files: camelCase (`formatTime.ts`). Exception: Next.js special files and route folders stay lowercase (`page.tsx`, `layout.tsx`, `route.ts`, `app/coach/swimmers/[id]/`).
+- Tests sit next to the file they test (`SwimmerCard.test.tsx`).
+- Variables and functions: camelCase. Functions start with a verb (`getSwimmer`, `formatTime`). Booleans start with `is`, `has`, or `can`.
+- Components and types: PascalCase. Zod schemas end in `Schema`. True constants: UPPER_SNAKE_CASE. Database tables and columns: snake_case.
+- Never abbreviate or use single-letter names, including callback parameters: `swimmers.map((swimmer) => ...)`, never `swimmers.map((x) => ...)`. Use `index`, not `i`.
+- One job per function. Business logic (time formatting, buffers, rankings) lives in pure, tested functions, not inside routes or components.
+- Named exports, except where Next.js requires a default export.
+
+File layout, top to bottom:
+
+1. Imports from libraries
+2. Imports from project files
+3. Interfaces and types
+4. Helper functions used by the file
+5. The component (or main export): variables and hooks first, then handler functions, then the returned JSX
+
 ## Adding a new API route
 
 1. Define request/response schemas in `packages/shared/src/schemas/<feature>.ts` using Zod
