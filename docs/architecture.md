@@ -9,7 +9,7 @@ swim-app/
 │   └── api/   Express REST API — all data access
 ├── packages/
 │   └── shared/ Zod schemas + inferred TypeScript types
-└── docker-compose.yml  Postgres 17
+└── supabase/           Supabase local stack config
 ```
 
 `packages/shared` is the contract layer. Both `web` and `api` import from it, so request/response shapes and their runtime validators are defined once and can never drift.
@@ -24,7 +24,7 @@ Browser
                        apps/api  (Express, port 3001)
                           │  Drizzle ORM
                           ▼
-                       Postgres 17  (Docker, port 5435)
+                       Postgres 17  (Supabase local, port 54322)
 ```
 
 `web` is UI-only. It never connects to Postgres directly. All data goes through `api`.

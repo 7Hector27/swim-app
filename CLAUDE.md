@@ -20,9 +20,10 @@ pnpm --filter web test
 # Run a single test file
 pnpm --filter api exec vitest run src/__tests__/health.test.ts
 
-# Database (requires Docker)
-pnpm db:up            # start Postgres 17 on port 5435
-pnpm db:down          # stop Postgres
+# Database (requires Docker Desktop + Supabase CLI)
+pnpm db:up            # start Supabase local stack (DB 54322, Studio 54323, Mailpit 54324)
+pnpm db:down          # stop Supabase local stack
+pnpm db:status        # show running services and connection strings
 pnpm db:generate      # generate Drizzle migration files from schema changes
 pnpm db:migrate       # apply pending migrations
 ```
