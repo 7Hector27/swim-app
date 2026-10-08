@@ -1,4 +1,10 @@
+@import "./tokens.css";
 @import "tailwindcss";
+
+:root {
+  --font-heading: var(--font-saira);
+  --font-body: var(--font-figtree);
+}
 
 @theme {
   --breakpoint-sm: initial;
@@ -8,4 +14,25 @@
   --breakpoint-2xl: initial;
   --breakpoint-tablet: 769px;
   --breakpoint-desktop: 1248px;
+}
+
+@theme inline {
+  --color-background: var(--color-background);
+  --color-section: var(--color-section);
+  --color-surface-soft: var(--color-surface-soft);
+  --color-card: var(--color-card);
+  --color-border: var(--color-border);
+  --color-divider-section: var(--color-divider-section);
+  --color-placeholder-border: var(--color-placeholder-border);
+  --color-heading: var(--color-heading);
+  --color-text: var(--color-text);
+  --color-text-secondary: var(--color-text-secondary);
+  --color-text-on-section: var(--color-text-on-section);
+  --color-text-secondary-on-section: var(--color-text-secondary-on-section);
+  --color-accent: var(--color-accent);
+  --color-link: var(--color-link);
+  --color-link-hover: var(--color-link-hover);
+  --color-button-primary-background: var(--color-button-primary-background);
+  --color-button-primary-text: var(--color-button-primary-text);
+  --color-button-outline: var(--color-button-outline);
 }

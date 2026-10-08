@@ -1,0 +1,81 @@
+:root {
+  /* Surfaces */
+  --color-background: #FFFFFF;
+  --color-section: #082C4F;
+  --color-surface-soft: #E6F6FA;
+  --color-card: #0F3B66;
+  /* Lines */
+  --color-border: #E3EEF3;
+  --color-divider-section: #24527D;
+  --color-placeholder-border: #8FD3E5;
+  /* Text */
+  --color-heading: #082C4F;
+  --color-text: #082C4F;
+  --color-text-secondary: #2E4A66;
+  --color-text-on-section: #FFFFFF;
+  --color-text-secondary-on-section: #BCD3E4;
+  /* Brand */
+  --color-accent: #10BFDE;
+  --color-link: #017FAA;
+  --color-link-hover: #082C4F;
+  /* Buttons */
+  --color-button-primary-background: #082C4F;
+  --color-button-primary-text: #FFFFFF;
+  --color-button-outline: #082C4F;
+  /* Shape and layout */
+  --radius-pill: 999px;
+  --radius-card: 18px;
+  --radius-media: 24px;
+  --content-max-width: 1200px;
+  --page-padding: 20px;
+}
+
+:root[data-theme="dark"] {
+  --color-background: #04182C;
+  --color-section: #0A2540;
+  --color-surface-soft: #0A2540;
+  --color-card: #113256;
+  --color-border: #1E4670;
+  --color-divider-section: #1E4670;
+  --color-placeholder-border: #2E5F88;
+  --color-heading: #FFFFFF;
+  --color-text: #EAF4FA;
+  --color-text-secondary: #9DB7CC;
+  --color-text-on-section: #EAF4FA;
+  --color-text-secondary-on-section: #9DB7CC;
+  --color-accent: #10BFDE;
+  --color-link: #10BFDE;
+  --color-link-hover: #EAF4FA;
+  --color-button-primary-background: #10BFDE;
+  --color-button-primary-text: #04182C;
+  --color-button-outline: #EAF4FA;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-background: #04182C;
+    --color-section: #0A2540;
+    --color-surface-soft: #0A2540;
+    --color-card: #113256;
+    --color-border: #1E4670;
+    --color-divider-section: #1E4670;
+    --color-placeholder-border: #2E5F88;
+    --color-heading: #FFFFFF;
+    --color-text: #EAF4FA;
+    --color-text-secondary: #9DB7CC;
+    --color-text-on-section: #EAF4FA;
+    --color-text-secondary-on-section: #9DB7CC;
+    --color-accent: #10BFDE;
+    --color-link: #10BFDE;
+    --color-link-hover: #EAF4FA;
+    --color-button-primary-background: #10BFDE;
+    --color-button-primary-text: #04182C;
+    --color-button-outline: #EAF4FA;
+  }
+}
+
+@media (min-width: 769px) {
+  :root {
+    --page-padding: 24px;
+  }
+}
