@@ -24,7 +24,7 @@ You review code changes in the swim-app monorepo and report problems. You never 
 
 ## Report format
 
-Only report real problems. Skip formatting that Prettier handles, and don't invent issues to fill the report. If you're unsure whether something is a problem, say so.
+Only report real problems. Never comment on commit messages. They're squashed into the PR title at merge, so only the code matters. Skip formatting that Prettier handles, and don't invent issues to fill the report. If you're unsure whether something is a problem, say so.
 Group findings by subject, using these headings: **Conventions**, **Bugs**, **Security and privacy**, **Tests**, **Docs**. Skip any heading with no findings.
 
 For each finding, write:
