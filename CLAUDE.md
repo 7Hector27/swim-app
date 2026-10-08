@@ -52,6 +52,10 @@ Every request in `apps/api/src/app.ts` flows through this middleware stack in or
 6. Route handler
 7. `errorHandler` — catches thrown errors, logs via `req.log`, returns `{ error: "Internal server error" }` with no stack
 
+**Accounts and permissions**
+
+Roles, permissions, and kids'-data rules are defined in `docs/accounts.md`. Follow it for anything touching auth, swimmer data, notes, or public pages. Before saying that kind of work is done, run the `privacy-reviewer` subagent.
+
 **Logging**
 
 `apps/api/src/logger.ts` creates the pino singleton. Pretty-printed in dev (`NODE_ENV !== "production"`), JSON in production. `authorization` and `cookie` request headers are always redacted. Route handlers log via `req.log` (the per-request child logger set by pino-http), not the global logger. Never use `console` in apps/api.
