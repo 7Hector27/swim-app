@@ -16,7 +16,7 @@ No role: public visitors, and kids under 13 (no accounts ever).
 - Users can change only their own name and phone.
 - The API blocks accounts with no `age_attested_at` or with `disabled_at` set.
 - Birth dates from signup are checked, then discarded.
-- The API enforces every permission. Every table has RLS on with no policies.
+- The API enforces every permission. Every table has RLS on with no policies, which denies all access on purpose: the browser's public key can't read anything, and the API connects as the database owner.
 - The app role is read from the database on every request, never from the JWT.
 
 ## Who sees what
