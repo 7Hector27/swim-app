@@ -35,4 +35,25 @@
   --color-button-primary-background: var(--color-button-primary-background);
   --color-button-primary-text: var(--color-button-primary-text);
   --color-button-outline: var(--color-button-outline);
+  --font-heading: var(--font-heading);
+  --font-body: var(--font-body);
+  --radius-pill: var(--radius-pill);
+  --radius-card: var(--radius-card);
+  --radius-media: var(--radius-media);
+}
+
+@layer base {
+  body {
+    font-family: var(--font-body);
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-heading);
+    font-weight: 800;
+    font-style: italic;
+    font-stretch: 125%;
+    line-height: 1.05;
+  }
 }
