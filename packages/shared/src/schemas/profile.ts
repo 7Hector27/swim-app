@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 export const MeResponseSchema = z.object({
+  email: z.string(),
   fullName: z.string().nullable(),
   phone: z.string().nullable(),
   role: z.enum(["coach", "parent"]),

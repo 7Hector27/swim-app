@@ -1,25 +1,16 @@
-import { redirect } from "next/navigation";
-
 import Button from "@/components/Button";
 import SiteFooter from "@/components/SiteFooter";
 import SiteNav from "@/components/SiteNav";
-import { fetchMe } from "@/lib/api/me";
-import { createClient } from "@/lib/supabase/server";
+import { requireAuth } from "@/lib/requireAuth";
 
 import EditProfileForm from "./EditProfileForm";
 import { logout } from "./actions";
 
 export default async function AccountContent() {
-  const supabase = await createClient();
-  const { data } = await supabase.auth.getClaims();
-  if (!data) redirect("/login");
+  const auth = await requireAuth();
+  if (auth === null) return null;
 
-  const email = data.claims["email"] as string;
-
-  const result = await fetchMe();
-  if (!result.ok) redirect("/login");
-
-  const { profile } = result;
+  const { profile } = auth;
 
   return (
     <div className="flex flex-col min-h-screen">
@@ -31,7 +22,7 @@ export default async function AccountContent() {
           <div className="flex flex-col gap-3">
             <div>
               <p className="text-sm font-semibold text-text-secondary mb-0.5">Email</p>
-              <p className="text-text">{email}</p>
+              <p className="text-text">{profile.email}</p>
             </div>
             <div>
               <p className="text-sm font-semibold text-text-secondary mb-0.5">Role</p>

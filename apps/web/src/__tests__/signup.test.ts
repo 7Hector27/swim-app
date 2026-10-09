@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { mapApiResponse, mapZodErrors } from "../content/SignupContent/helpers";
+import { mapApiResponse } from "../content/SignupContent/helpers";
+import { mapZodErrors } from "../lib/mapZodErrors";
 
 describe("mapZodErrors", () => {
   it("maps a single issue to its field", () => {
@@ -56,10 +57,10 @@ describe("mapApiResponse", () => {
     });
   });
 
-  it("400 with error string → error with message", () => {
+  it("400 → generic error regardless of API message", () => {
     expect(mapApiResponse(400, { error: "Could not create account" })).toEqual({
       status: "error",
-      message: "Could not create account",
+      message: "Something went wrong. Please try again.",
     });
   });
 

@@ -2,7 +2,8 @@
 
 import { SignUpBodySchema } from "@swim-app/shared";
 
-import { mapApiResponse, mapZodErrors, type SignupState } from "./helpers";
+import { mapZodErrors } from "@/lib/mapZodErrors";
+import { mapApiResponse, type SignupState } from "./helpers";
 
 export async function signup(
   _prev: SignupState,

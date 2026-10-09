@@ -1,3 +1,4 @@
+import { MeResponseSchema } from "@swim-app/shared";
 import type { MeResponse } from "@swim-app/shared";
 
 import { createClient } from "@/lib/supabase/server";
@@ -6,7 +7,9 @@ export type MeResult = { ok: true; profile: MeResponse } | { ok: false; status: 
 
 export function mapMeStatus(status: number, body: unknown): MeResult {
   if (status === 200) {
-    return { ok: true, profile: body as MeResponse };
+    const parsed = MeResponseSchema.safeParse(body);
+    if (!parsed.success) return { ok: false, status: 502 };
+    return { ok: true, profile: parsed.data };
   }
   return { ok: false, status };
 }

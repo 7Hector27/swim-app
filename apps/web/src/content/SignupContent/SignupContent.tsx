@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 
 import Button from "@/components/Button";
 import SiteFooter from "@/components/SiteFooter";
@@ -48,12 +48,21 @@ function SuccessScreen() {
   );
 }
 
+function isUnder18(birthDateValue: string): boolean {
+  const birth = new Date(birthDateValue);
+  if (isNaN(birth.getTime())) return false;
+  const today = new Date();
+  const cutoff = new Date(birth.getFullYear() + 18, birth.getMonth(), birth.getDate());
+  return today < cutoff;
+}
+
 const initialState: SignupState = { status: "idle" };
 
 export default function SignupContent() {
   const [state, formAction, isPending] = useActionState(signup, initialState);
+  const [clientAgeBlocked, setClientAgeBlocked] = useState(false);
 
-  if (state.status === "age_blocked") return <AgeBlockedScreen />;
+  if (clientAgeBlocked || state.status === "age_blocked") return <AgeBlockedScreen />;
   if (state.status === "success") return <SuccessScreen />;
 
   const fieldErrors = state.status === "field_errors" ? state.errors : {};
@@ -143,6 +152,9 @@ export default function SignupContent() {
                 type="date"
                 autoComplete="bday"
                 required
+                onChange={(event) => {
+                  if (event.target.value) setClientAgeBlocked(isUnder18(event.target.value));
+                }}
                 className="h-12 px-4 rounded-lg border border-border bg-background text-text"
               />
               <FieldError message={fieldErrors["birthDate"]} />

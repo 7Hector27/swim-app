@@ -1,12 +1,19 @@
-import { describe, expect, it } from "vitest";
+import { vi, describe, expect, it } from "vitest";
+
+vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
+
 import { mapMeStatus } from "../lib/api/me";
 
-const validProfile = { fullName: "Jane Doe", phone: null, role: "parent" as const };
-const coachProfile = { fullName: "Jason G", phone: null, role: "coach" as const };
+const validProfile = { email: "jane@example.com", fullName: "Jane Doe", phone: null, role: "parent" as const };
+const coachProfile = { email: "jason@example.com", fullName: "Jason G", phone: null, role: "coach" as const };
 
 describe("mapMeStatus", () => {
   it("200 with body → ok with profile", () => {
     expect(mapMeStatus(200, validProfile)).toEqual({ ok: true, profile: validProfile });
+  });
+
+  it("200 with invalid body → not ok with status 502", () => {
+    expect(mapMeStatus(200, { fullName: "No Email" })).toEqual({ ok: false, status: 502 });
   });
 
   it("401 → not ok with status 401", () => {
@@ -39,7 +46,7 @@ describe("mapMeStatus — role field", () => {
   });
 
   it("null fullName survives the mapping", () => {
-    const profile = { fullName: null, phone: null, role: "parent" as const };
+    const profile = { email: "a@b.com", fullName: null, phone: null, role: "parent" as const };
     const result = mapMeStatus(200, profile);
     if (result.ok) expect(result.profile.fullName).toBeNull();
   });

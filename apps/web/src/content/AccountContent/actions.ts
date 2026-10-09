@@ -6,11 +6,8 @@ import { PatchMeBodySchema } from "@swim-app/shared";
 import { mapZodErrors } from "@/lib/mapZodErrors";
 import { createClient } from "@/lib/supabase/server";
 
-export type EditState =
-  | { status: "idle" }
-  | { status: "success" }
-  | { status: "error"; message: string }
-  | { status: "field_errors"; errors: Record<string, string> };
+import type { EditState } from "./helpers";
+export type { EditState } from "./helpers";
 
 export async function logout(_formData: FormData): Promise<void> {
   const supabase = await createClient();

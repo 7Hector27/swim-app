@@ -23,6 +23,7 @@ export async function requireUser(
   }
 
   const sub = data.claims.sub;
+  const email = typeof data.claims["email"] === "string" ? data.claims["email"] : "";
   if (!sub) {
     res.status(401).json({ error: "Unauthorized" });
     return;
@@ -50,5 +51,6 @@ export async function requireUser(
   }
 
   req.profile = profile;
+  req.userEmail = email;
   next();
 }

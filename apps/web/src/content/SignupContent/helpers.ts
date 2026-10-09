@@ -1,5 +1,4 @@
 import { mapZodErrors } from "@/lib/mapZodErrors";
-export { mapZodErrors };
 
 export type SignupState =
   | { status: "idle" }
@@ -29,13 +28,8 @@ export function mapApiResponse(
   if (status === 201) return { status: "success" };
   if (status === 403) return { status: "age_blocked" };
 
-  if (isApiBody(body)) {
-    if (status === 422 && Array.isArray(body.issues)) {
-      return { status: "field_errors", errors: mapZodErrors(body.issues) };
-    }
-    if (typeof body.error === "string") {
-      return { status: "error", message: body.error };
-    }
+  if (isApiBody(body) && status === 422 && Array.isArray(body.issues)) {
+    return { status: "field_errors", errors: mapZodErrors(body.issues) };
   }
 
   return { status: "error", message: "Something went wrong. Please try again." };

@@ -6,6 +6,7 @@ declare global {
     interface Request {
       requestId: string;
       profile: InferSelectModel<typeof profiles>;
+      userEmail: string;
     }
   }
 }
