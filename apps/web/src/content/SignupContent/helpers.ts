@@ -1,4 +1,4 @@
-import { mapZodErrors } from "@/lib/mapZodErrors";
+import { isApiBody, mapZodErrors } from "@/lib/mapZodErrors";
 
 export type SignupState =
   | { status: "idle" }
@@ -6,20 +6,6 @@ export type SignupState =
   | { status: "age_blocked" }
   | { status: "error"; message: string }
   | { status: "field_errors"; errors: Record<string, string> };
-
-interface ZodIssueLike {
-  path: (string | number)[];
-  message: string;
-}
-
-interface ApiBody {
-  error?: unknown;
-  issues?: ZodIssueLike[];
-}
-
-function isApiBody(body: unknown): body is ApiBody {
-  return typeof body === "object" && body !== null;
-}
 
 export function mapApiResponse(
   status: number,

@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { PatchMeBodySchema } from "@swim-app/shared";
 
-import { mapZodErrors } from "@/lib/mapZodErrors";
+import { isApiBody, mapZodErrors } from "@/lib/mapZodErrors";
 import { createClient } from "@/lib/supabase/server";
 
 import type { EditState } from "./helpers";
@@ -69,11 +69,3 @@ export async function updateProfile(
   return { status: "error", message: "Could not save changes." };
 }
 
-interface ApiBody {
-  error?: unknown;
-  issues?: { path: (string | number)[]; message: string }[];
-}
-
-function isApiBody(body: unknown): body is ApiBody {
-  return typeof body === "object" && body !== null;
-}

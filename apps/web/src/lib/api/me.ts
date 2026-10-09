@@ -3,9 +3,13 @@ import type { MeResponse } from "@swim-app/shared";
 
 import { createClient } from "@/lib/supabase/server";
 
-export type MeResult = { ok: true; profile: MeResponse } | { ok: false; status: number };
+type MeStatusResult = { ok: true; profile: MeResponse } | { ok: false; status: number };
 
-export function mapMeStatus(status: number, body: unknown): MeResult {
+export type MeResult =
+  | { ok: true; profile: MeResponse; accessToken: string }
+  | { ok: false; status: number };
+
+export function mapMeStatus(status: number, body: unknown): MeStatusResult {
   if (status === 200) {
     const parsed = MeResponseSchema.safeParse(body);
     if (!parsed.success) return { ok: false, status: 502 };
@@ -37,5 +41,7 @@ export async function fetchMe(): Promise<MeResult> {
     return { ok: false, status: 503 };
   }
 
-  return mapMeStatus(status, body);
+  const result = mapMeStatus(status, body);
+  if (result.ok) return { ...result, accessToken: token };
+  return result;
 }

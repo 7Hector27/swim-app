@@ -1,17 +1,17 @@
+import type { MeResponse } from "@swim-app/shared";
+
 import Button from "@/components/Button";
 import SiteFooter from "@/components/SiteFooter";
 import SiteNav from "@/components/SiteNav";
-import { requireAuth } from "@/lib/requireAuth";
 
 import EditProfileForm from "./EditProfileForm";
 import { logout } from "./actions";
 
-export default async function AccountContent() {
-  const auth = await requireAuth();
-  if (auth === null) return null;
+interface AccountContentProps {
+  profile: MeResponse;
+}
 
-  const { profile } = auth;
-
+export default function AccountContent({ profile }: AccountContentProps) {
   return (
     <div className="flex flex-col min-h-screen">
       <SiteNav />

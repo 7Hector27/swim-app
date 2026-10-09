@@ -7,4 +7,5 @@ export { MeResponseSchema, PatchMeBodySchema, CoachPingResponseSchema } from "./
 export type { SignUpBody, LoginBody } from "./schemas/auth";
 export { SignUpBodySchema, LoginBodySchema } from "./schemas/auth";
 
+export { calculateAge } from "./lib/calculateAge";
 export { todayLA } from "./lib/todayLA";

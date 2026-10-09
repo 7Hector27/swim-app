@@ -12,9 +12,9 @@ import { validate } from "./middleware/validate";
 import { errorHandler } from "./middleware/errorHandler";
 import { requireUser } from "./middleware/requireUser";
 import { requireCoach } from "./middleware/requireCoach";
-import { calculateAge } from "./lib/calculateAge";
 import { supabase } from "./lib/supabase";
 import {
+  calculateAge,
   HealthQuerySchema,
   type MeResponse,
   type PatchMeBody,

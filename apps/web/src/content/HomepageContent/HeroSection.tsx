@@ -13,8 +13,8 @@ export default function HeroSection() {
             Private swim lessons, one swimmer at a time
           </h1>
           <p className="text-text-secondary-on-section text-base tablet:text-lg max-w-lg">
-            Coach jason teaches every lesson himself, one on one. Swimmers
-            learning to floar and club swimmers chasing a best time get the same
+            Coach Jason teaches every lesson himself, one on one. Swimmers
+            learning to float and club swimmers chasing a best time get the same
             full attention.
           </p>
           <div className="flex flex-col gap-3 tablet:flex-row tablet:gap-4 mt-2">

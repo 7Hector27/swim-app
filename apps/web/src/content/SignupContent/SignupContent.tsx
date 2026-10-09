@@ -2,59 +2,17 @@
 
 import { useActionState, useState } from "react";
 
+import { calculateAge, todayLA } from "@swim-app/shared";
+
 import Button from "@/components/Button";
 import SiteFooter from "@/components/SiteFooter";
 import SiteNav from "@/components/SiteNav";
 
 import { signup } from "./actions";
+import AgeBlockedScreen from "./AgeBlockedScreen";
+import FieldError from "./FieldError";
 import type { SignupState } from "./helpers";
-
-function FieldError({ message }: { message: string | undefined }) {
-  if (!message) return null;
-  return <p className="text-danger text-xs mt-1">{message}</p>;
-}
-
-function AgeBlockedScreen() {
-  return (
-    <div className="flex flex-col min-h-screen">
-      <SiteNav />
-      <main className="flex-1 flex items-center justify-center px-page py-16">
-        <div className="w-full max-w-sm text-center">
-          <h1 className="text-heading mb-4">Not available</h1>
-          <p className="text-text-secondary">
-            Ask a parent or guardian to create an account.
-          </p>
-        </div>
-      </main>
-      <SiteFooter />
-    </div>
-  );
-}
-
-function SuccessScreen() {
-  return (
-    <div className="flex flex-col min-h-screen">
-      <SiteNav />
-      <main className="flex-1 flex items-center justify-center px-page py-16">
-        <div className="w-full max-w-sm text-center">
-          <h1 className="text-heading mb-4">Check your email</h1>
-          <p className="text-text-secondary">
-            We sent a confirmation link to your email address. Click it to activate your account.
-          </p>
-        </div>
-      </main>
-      <SiteFooter />
-    </div>
-  );
-}
-
-function isUnder18(birthDateValue: string): boolean {
-  const birth = new Date(birthDateValue);
-  if (isNaN(birth.getTime())) return false;
-  const today = new Date();
-  const cutoff = new Date(birth.getFullYear() + 18, birth.getMonth(), birth.getDate());
-  return today < cutoff;
-}
+import SuccessScreen from "./SuccessScreen";
 
 const initialState: SignupState = { status: "idle" };
 
@@ -153,7 +111,9 @@ export default function SignupContent() {
                 autoComplete="bday"
                 required
                 onChange={(event) => {
-                  if (event.target.value) setClientAgeBlocked(isUnder18(event.target.value));
+                  if (event.target.value) {
+                    setClientAgeBlocked(calculateAge(event.target.value, todayLA()) < 18);
+                  }
                 }}
                 className="h-12 px-4 rounded-lg border border-border bg-background text-text"
               />

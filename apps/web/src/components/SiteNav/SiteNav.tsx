@@ -132,15 +132,7 @@ export default function SiteNav() {
                   <a
                     href={link.href}
                     onClick={handleMenuClose}
-                    className="block px-3 py-3 text-text-on-section font-semibold text-base rounded transition-colors duration-150"
-                    onMouseEnter={(event) => {
-                      (event.currentTarget as HTMLAnchorElement).style.backgroundColor =
-                        "color-mix(in srgb, var(--color-accent) 8%, transparent)";
-                    }}
-                    onMouseLeave={(event) => {
-                      (event.currentTarget as HTMLAnchorElement).style.backgroundColor =
-                        "transparent";
-                    }}
+                    className="block px-3 py-3 text-text-on-section font-semibold text-base rounded transition-colors duration-150 hover:bg-accent/8"
                   >
                     {link.label}
                   </a>
@@ -152,15 +144,7 @@ export default function SiteNav() {
                   <a
                     href="/dashboard"
                     onClick={handleMenuClose}
-                    className="block px-3 py-3 text-text-on-section font-semibold text-base rounded transition-colors duration-150"
-                    onMouseEnter={(event) => {
-                      (event.currentTarget as HTMLAnchorElement).style.backgroundColor =
-                        "color-mix(in srgb, var(--color-accent) 8%, transparent)";
-                    }}
-                    onMouseLeave={(event) => {
-                      (event.currentTarget as HTMLAnchorElement).style.backgroundColor =
-                        "transparent";
-                    }}
+                    className="block px-3 py-3 text-text-on-section font-semibold text-base rounded transition-colors duration-150 hover:bg-accent/8"
                   >
                     Dashboard
                   </a>

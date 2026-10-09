@@ -3,20 +3,20 @@ import { redirect } from "next/navigation";
 
 import CoachDashboardContent from "@/content/CoachDashboardContent";
 import ParentDashboardContent from "@/content/ParentDashboardContent";
-import { fetchMe } from "@/lib/api/me";
+import { requireAuth } from "@/lib/requireAuth";
 
 export const metadata: Metadata = {
   title: "Dashboard · JG Swim",
 };
 
 export default async function DashboardPage() {
-  const result = await fetchMe();
-  if (!result.ok) redirect("/login");
+  const auth = await requireAuth();
+  if (!auth) redirect("/login");
 
-  const { profile } = result;
+  const { profile, accessToken } = auth;
 
   if (profile.role === "coach") {
-    return <CoachDashboardContent profile={profile} />;
+    return <CoachDashboardContent profile={profile} accessToken={accessToken} />;
   }
 
   return <ParentDashboardContent profile={profile} />;
