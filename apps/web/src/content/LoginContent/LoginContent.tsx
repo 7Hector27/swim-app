@@ -8,7 +8,11 @@ import SiteNav from "@/components/SiteNav";
 
 import { login } from "./actions";
 
-export default function LoginContent() {
+interface LoginContentProps {
+  notice?: string;
+}
+
+export default function LoginContent({ notice }: LoginContentProps) {
   const [state, formAction, isPending] = useActionState(login, { error: null });
 
   return (
@@ -18,6 +22,10 @@ export default function LoginContent() {
         <div className="w-full max-w-sm">
           <h1 className="text-heading mb-2">Sign in</h1>
           <p className="text-text-secondary mb-8">Welcome back to JG Swim.</p>
+
+          <p aria-live="polite" role="status" className="text-text-secondary text-sm min-h-5 mb-4">
+            {notice ?? ""}
+          </p>
 
           <form action={formAction} noValidate className="flex flex-col gap-5">
             <div className="flex flex-col gap-1.5">
