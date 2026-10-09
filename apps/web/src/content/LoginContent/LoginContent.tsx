@@ -64,6 +64,13 @@ export default function LoginContent({ notice }: LoginContentProps) {
               {isPending ? "Signing in\u2026" : "Sign in"}
             </Button>
           </form>
+
+          <p className="text-center text-sm text-text-secondary mt-6">
+            New here?{" "}
+            <a href="/signup" className="text-link underline hover:text-link-hover">
+              Create an account
+            </a>
+          </p>
         </div>
       </main>
       <SiteFooter />
