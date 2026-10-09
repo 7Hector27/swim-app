@@ -157,8 +157,12 @@ export default function SignupContent() {
                 />
                 <span className="text-sm text-text">
                   I agree to the{" "}
+                  <a href="/terms" className="text-link underline hover:text-link-hover">
+                    Terms of Service
+                  </a>{" "}
+                  and{" "}
                   <a href="/privacy" className="text-link underline hover:text-link-hover">
-                    Terms of Service and Privacy Policy
+                    Privacy Policy
                   </a>
                 </span>
               </label>
