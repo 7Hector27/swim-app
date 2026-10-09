@@ -1,0 +1,103 @@
+:root {
+  /* Surfaces */
+  --color-background: #FFFFFF;
+  --color-section: #082C4F;
+  --color-surface-soft: #E6F6FA;
+  --color-card: #0F3B66;
+  /* Lines */
+  --color-border: #E3EEF3;
+  --color-divider-section: #24527D;
+  --color-placeholder-border: #8FD3E5;
+  /* Text */
+  --color-heading: #082C4F;
+  --color-text: #082C4F;
+  --color-text-secondary: #2E4A66;
+  --color-text-on-section: #FFFFFF;
+  --color-text-secondary-on-section: #BCD3E4;
+  /* Brand */
+  --color-accent: #10BFDE;
+  --color-link: #017FAA;
+  --color-link-hover: #082C4F;
+  /* Semantic UI */
+  --color-on-accent: #04182C;
+  --color-focus-ring: #04182C;
+  --color-success: #15803d;
+  --color-danger: #b91c1c;
+  /* Buttons */
+  --color-button-primary-background: #082C4F;
+  --color-button-primary-text: #FFFFFF;
+  --color-button-outline: #082C4F;
+  /* Leaderboard */
+  --color-rank-gold: #FFD700;
+  --color-rank-silver: #C0C8D8;
+  --color-rank-bronze: #CD7F32;
+  /* Shadows — allowed only on scrolled nav and floating menus */
+  --shadow-elevated: 0 2px 16px color-mix(in srgb, #000000 20%, transparent);
+  /* Shape and layout */
+  --radius-pill: 999px;
+  --radius-card: 18px;
+  --radius-media: 24px;
+  --content-max-width: 1200px;
+  --page-padding: 20px;
+}
+
+:root[data-theme="dark"] {
+  --color-background: #04182C;
+  --color-section: #0A2540;
+  --color-surface-soft: #163252;
+  --color-card: #113256;
+  --color-border: #1E4670;
+  --color-divider-section: #1E4670;
+  --color-placeholder-border: #2E5F88;
+  --color-heading: #FFFFFF;
+  --color-text: #EAF4FA;
+  --color-text-secondary: #9DB7CC;
+  --color-text-on-section: #EAF4FA;
+  --color-text-secondary-on-section: #9DB7CC;
+  --color-accent: #10BFDE;
+  --color-link: #10BFDE;
+  --color-link-hover: #EAF4FA;
+  --color-focus-ring: #FFFFFF;
+  --color-success: #4ade80;
+  --color-danger: #f87171;
+  --color-button-primary-background: #10BFDE;
+  --color-button-primary-text: #04182C;
+  --color-button-outline: #EAF4FA;
+  --shadow-elevated: 0 2px 20px color-mix(in srgb, #000000 50%, transparent);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-background: #04182C;
+    --color-section: #0A2540;
+    --color-surface-soft: #163252;
+    --color-card: #113256;
+    --color-border: #1E4670;
+    --color-divider-section: #1E4670;
+    --color-placeholder-border: #2E5F88;
+    --color-heading: #FFFFFF;
+    --color-text: #EAF4FA;
+    --color-text-secondary: #9DB7CC;
+    --color-text-on-section: #EAF4FA;
+    --color-text-secondary-on-section: #9DB7CC;
+    --color-accent: #10BFDE;
+    --color-link: #10BFDE;
+    --color-link-hover: #EAF4FA;
+    --color-focus-ring: #FFFFFF;
+    --color-success: #4ade80;
+    --color-danger: #f87171;
+    --color-button-primary-background: #10BFDE;
+    --color-button-primary-text: #04182C;
+    --color-button-outline: #EAF4FA;
+    --shadow-elevated: 0 2px 20px color-mix(in srgb, #000000 50%, transparent);
+  }
+}
+
+@media (min-width: 769px) {
+  :root {
+    /* 24px for both tablet and desktop — intentional. At desktop widths,
+       --content-max-width centers the content and acts as the real gutter.
+       --page-padding is only the minimum edge clearance on narrower viewports. */
+    --page-padding: 24px;
+  }
+}

@@ -72,6 +72,14 @@ All packages extend `tsconfig.base.json` which enables `noUncheckedIndexedAccess
 
 Tailwind v4, configured in `apps/web/src/styles/globals.css` (no tailwind.config.js). Style mobile-first: base classes are mobile (≤768px). Use only the custom `tablet:` (769px) and `desktop:` (1248px) breakpoints, never `sm:`/`md:`/`lg:`.
 
+UI follows the jg-swim-design skill. Never hardcode hex colors in components.
+
+## Design skills
+
+- **jg-swim-design** owns the brand: colors, tokens, fonts, visual motifs, component shapes, section rhythm, and layout rules.
+- **emil-design-eng** owns motion, interaction states, and polish: easing curves, animation timing, hover/active/focus transitions, and press feedback.
+- On brand conflicts, jg-swim-design wins.
+
 **Naming and file structure**
 
 - React component files: PascalCase, matching the component (`SwimmerCard.tsx`). Other files: camelCase (`formatTime.ts`). Exception: Next.js special files and route folders stay lowercase (`page.tsx`, `layout.tsx`, `route.ts`, `app/coach/swimmers/[id]/`).
