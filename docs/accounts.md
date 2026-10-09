@@ -18,6 +18,7 @@ No role: public visitors, and kids under 13 (no accounts ever).
 - Birth dates from signup are checked, then discarded.
 - The API enforces every permission. Every table has RLS on with no policies, which denies all access on purpose: the browser's public key can't read anything, and the API connects as the database owner.
 - The app role is read from the database on every request, never from the JWT.
+- Tokens are verified against Supabase's auth server on every request via `getUser`, not decoded locally. Revoked sessions and banned users are rejected immediately rather than being allowed until the JWT's `exp` claim expires.
 
 ## Who sees what
 

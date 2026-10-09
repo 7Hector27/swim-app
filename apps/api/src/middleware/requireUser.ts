@@ -16,18 +16,17 @@ export async function requireUser(
   }
 
   const token = authHeader.slice(7);
-  const { data, error } = await supabase.auth.getClaims(token);
-  if (error || !data) {
+  // getUser verifies the token against Supabase's auth server on every request,
+  // so revoked sessions and banned users are rejected immediately rather than
+  // being allowed until the JWT's exp claim expires.
+  const { data, error } = await supabase.auth.getUser(token);
+  if (error || !data.user) {
     res.status(401).json({ error: "Unauthorized" });
     return;
   }
 
-  const sub = data.claims.sub;
-  const email = typeof data.claims["email"] === "string" ? data.claims["email"] : "";
-  if (!sub) {
-    res.status(401).json({ error: "Unauthorized" });
-    return;
-  }
+  const sub = data.user.id;
+  const email = data.user.email ?? "";
 
   const rows = await db.select().from(profiles).where(eq(profiles.id, sub));
   const profile = rows[0];
