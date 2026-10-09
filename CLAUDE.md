@@ -94,7 +94,7 @@ Don't use inline `style` for anything a class, token, or global rule covers. Inl
 **Three-layer structure (apps/web/src)**
 
 - `app/` — Next.js routes only. Each `page.tsx` renders one Content component. Page-specific metadata, when a page has any, goes in `page.tsx`, never in a Content component. Pages without their own metadata inherit the root layout's. Next.js special files (`page`, `layout`, `loading`, `error`, `not-found`, `route`) live here.
-- `content/<PageName>Content/` — Page body components (e.g. `HomepageContent`). Each folder holds `<Name>.tsx`, its CSS module if needed, and `index.ts` with `export { default } from "./<Name>"`. Import as `@/content/HomepageContent`. **Anything used by exactly one page lives here** — sections, local sub-components, helper files — not in `components/`.
+- `content/<PageName>Content/` — Page body components (e.g. `HomepageContent`). Each folder holds `<Name>.tsx`, its CSS module if needed, and `index.ts` with `export { default } from "./<Name>"`. Import as `@/content/HomepageContent`. **Anything used by exactly one page lives here** — sections, local sub-components, helper files — not in `components/`. Server actions for a page live here as `actions.ts`, which begins with `"use server"` and exports only the server actions for that page.
 - `components/<ComponentName>/` — Reusable components used by more than one page, including layout components and modals. Same folder shape: `<Name>.tsx`, CSS module, and `index.ts` with `export { default } from "./<Name>"`. Import as `@/components/ThemeLogo`. If a component is only ever used by one page, it belongs in that page's Content folder instead.
 
 File layout, top to bottom:
