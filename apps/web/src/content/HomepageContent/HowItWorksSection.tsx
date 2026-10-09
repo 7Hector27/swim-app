@@ -26,16 +26,10 @@ export default function HowItWorksSection() {
     <section className="bg-section">
       <div className="mx-auto max-w-content px-page py-16 tablet:py-24">
         <div className="flex flex-col gap-3 mb-10 tablet:mb-14">
-          <p
-            className="text-accent font-bold uppercase tracking-[0.08em]"
-            style={{ fontSize: "0.8125rem" }}
-          >
+          <p className="text-eyebrow text-accent font-bold uppercase tracking-[0.08em]">
             How It Works
           </p>
-          <h2
-            className="text-text-on-section"
-            style={{ fontSize: "clamp(2rem, 1.68rem + 1.37vw, 2.75rem)" }}
-          >
+          <h2 className="text-text-on-section">
             [How it works heading]
           </h2>
         </div>
@@ -43,10 +37,7 @@ export default function HowItWorksSection() {
         <div className="grid gap-8 tablet:grid-cols-2 desktop:grid-cols-4">
           {steps.map((step) => (
             <div key={step.number} className="flex flex-col gap-3">
-              <span
-                className="text-accent font-heading font-extrabold italic"
-                style={{ fontSize: "3rem", fontFamily: "var(--font-heading)", fontStretch: "125%", lineHeight: 1 }}
-              >
+              <span className="text-accent font-heading font-extrabold italic text-5xl leading-none font-stretch-expanded">
                 {step.number}
               </span>
               <h3 className="text-text-on-section text-lg font-bold">

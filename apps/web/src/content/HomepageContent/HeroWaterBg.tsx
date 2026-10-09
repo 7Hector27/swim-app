@@ -2,6 +2,8 @@
 
 import { useEffect, useRef } from "react";
 
+const LANE_COUNT = 7;
+
 export default function HeroWaterBg() {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -26,7 +28,6 @@ export default function HeroWaterBg() {
     return () => observer.disconnect();
   }, []);
 
-  const laneCount = 7;
   const bubbles = [
     { cx: 8, cy: 95, r: 5, delay: 0, duration: 13 },
     { cx: 18, cy: 110, r: 3, delay: 2.5, duration: 17 },
@@ -90,8 +91,8 @@ export default function HeroWaterBg() {
         className="absolute inset-0 w-full h-full"
         xmlns="http://www.w3.org/2000/svg"
       >
-        {Array.from({ length: laneCount }, (_, index) => {
-          const yPercent = ((index + 1) / (laneCount + 1)) * 100;
+        {Array.from({ length: LANE_COUNT }, (_, index) => {
+          const yPercent = ((index + 1) / (LANE_COUNT + 1)) * 100;
           return (
             <line
               key={`lane-${index}`}

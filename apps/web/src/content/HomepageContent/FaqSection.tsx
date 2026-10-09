@@ -27,16 +27,10 @@ export default function FaqSection() {
       <div className="mx-auto max-w-content px-page py-16 tablet:py-24">
         <div className="flex flex-col gap-0 tablet:flex-row tablet:gap-16">
           <div className="flex flex-col gap-3 mb-10 tablet:mb-0 tablet:w-72 tablet:sticky tablet:top-24 tablet:self-start">
-            <p
-              className="text-accent font-bold uppercase tracking-[0.08em]"
-              style={{ fontSize: "0.8125rem" }}
-            >
+            <p className="text-eyebrow text-accent font-bold uppercase tracking-[0.08em]">
               FAQ
             </p>
-            <h2
-              className="text-heading"
-              style={{ fontSize: "clamp(2rem, 1.68rem + 1.37vw, 2.75rem)" }}
-            >
+            <h2 className="text-heading">
               [Frequently asked questions]
             </h2>
           </div>

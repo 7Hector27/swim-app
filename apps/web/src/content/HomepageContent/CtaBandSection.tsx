@@ -3,10 +3,7 @@ export default function CtaBandSection() {
     <section className="bg-section">
       <div className="mx-auto max-w-content px-page py-16 tablet:py-24 text-center">
         <div className="flex flex-col items-center gap-6">
-          <h2
-            className="text-text-on-section max-w-xl"
-            style={{ fontSize: "clamp(2rem, 1.68rem + 1.37vw, 2.75rem)" }}
-          >
+          <h2 className="text-text-on-section max-w-xl">
             [Ready to swim?]
           </h2>
           <p className="text-text-secondary-on-section max-w-md">

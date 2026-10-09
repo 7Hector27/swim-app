@@ -6,6 +6,8 @@ interface LeaderboardRow {
   trend: "up" | "down";
 }
 
+// Real data must come from an API endpoint that filters by public_profile = true
+// and returns swimmer names as first name + last initial only (e.g. "Maya R.").
 const leaderboardRows: LeaderboardRow[] = [
   { rank: 1, swimmer: "Maya R.", event: "[Event]", time: "[0:00.00]", trend: "up" },
   { rank: 2, swimmer: "Ethan K.", event: "[Event]", time: "[0:00.00]", trend: "up" },
@@ -31,10 +33,7 @@ function RankBadge({ rank }: { rank: number }) {
     );
   }
   return (
-    <span
-      className="font-heading font-extrabold italic text-accent"
-      style={{ fontFamily: "var(--font-heading)", fontStretch: "125%" }}
-    >
+    <span className="font-heading font-extrabold italic text-accent font-stretch-expanded">
       {rank}
     </span>
   );
@@ -86,16 +85,10 @@ export default function LeaderboardSection() {
     <section className="bg-background">
       <div className="mx-auto max-w-content px-page py-16 tablet:py-24">
         <div className="flex flex-col gap-3 mb-10 tablet:mb-14">
-          <p
-            className="text-accent font-bold uppercase tracking-[0.08em]"
-            style={{ fontSize: "0.8125rem" }}
-          >
+          <p className="text-eyebrow text-accent font-bold uppercase tracking-[0.08em]">
             Leaderboard
           </p>
-          <h2
-            className="text-heading"
-            style={{ fontSize: "clamp(2rem, 1.68rem + 1.37vw, 2.75rem)" }}
-          >
+          <h2 className="text-heading">
             [Top times heading]
           </h2>
         </div>
@@ -139,10 +132,7 @@ export default function LeaderboardSection() {
                   <td className="py-4 pr-4 text-text-secondary text-sm hidden tablet:table-cell">
                     {row.event}
                   </td>
-                  <td
-                    className="py-4 pr-4 text-text font-semibold text-sm"
-                    style={{ fontVariantNumeric: "tabular-nums" }}
-                  >
+                  <td className="py-4 pr-4 text-text font-semibold text-sm tabular-nums">
                     {row.time}
                   </td>
                   <td className="py-4">

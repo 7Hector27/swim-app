@@ -74,6 +74,8 @@ Tailwind v4, configured in `apps/web/src/styles/globals.css` (no tailwind.config
 
 UI follows the jg-swim-design skill. Never hardcode hex values or Tailwind's default palette colors (e.g. `gray-500`, `red-500`) in components — use design token classes only (e.g. `text-text-secondary`, `bg-background`).
 
+Don't use inline `style` for anything a class, token, or global rule covers. Inline `style` is only for values computed at runtime.
+
 ## Design skills
 
 - **jg-swim-design** owns the brand: colors, tokens, fonts, visual motifs, component shapes, section rhythm, and layout rules.

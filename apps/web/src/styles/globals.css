@@ -4,6 +4,7 @@
 :root {
   --ease-out-strong: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --text-eyebrow: 0.8125rem;
 }
 
 @theme {
@@ -57,6 +58,14 @@
 
   .px-page {
     padding-inline: var(--page-padding);
+  }
+
+  .text-eyebrow {
+    font-size: var(--text-eyebrow);
+  }
+
+  .font-stretch-expanded {
+    font-stretch: 125%;
   }
 }
 

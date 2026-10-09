@@ -31,7 +31,7 @@ export default function HomepageContent() {
         <FaqSection />
         <WaveDivider from="surface-soft" to="section" />
         <CtaBandSection />
-        <WaveDivider from="section" to="section" />
+        <WaveDivider from="section" to="background" />
       </main>
       <SiteFooter />
     </>

@@ -5,24 +5,15 @@ export default function CoachBioSection() {
         <div className="flex flex-col gap-12 tablet:flex-row tablet:gap-16 tablet:items-start">
           <div className="flex flex-col gap-6 tablet:flex-1 tablet:sticky tablet:top-24">
             <div className="flex flex-col gap-3">
-              <p
-                className="text-accent font-bold uppercase tracking-[0.08em]"
-                style={{ fontSize: "0.8125rem" }}
-              >
+              <p className="text-eyebrow text-accent font-bold uppercase tracking-[0.08em]">
                 Meet the Coach
               </p>
-              <h2
-                className="text-heading"
-                style={{ fontSize: "clamp(2rem, 1.68rem + 1.37vw, 2.75rem)" }}
-              >
+              <h2 className="text-heading">
                 [Coach name]
               </h2>
             </div>
 
-            <div
-              className="rounded-media border-2 border-dashed border-placeholder-border bg-surface-soft flex items-center justify-center text-text-secondary text-sm w-full tablet:max-w-xs"
-              style={{ aspectRatio: "3/4" }}
-            >
+            <div className="aspect-[3/4] rounded-media border-2 border-dashed border-placeholder-border bg-surface-soft flex items-center justify-center text-text-secondary text-sm w-full tablet:max-w-xs">
               [Coach photo]
             </div>
           </div>
