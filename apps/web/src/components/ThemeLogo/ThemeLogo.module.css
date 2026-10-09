@@ -14,12 +14,12 @@
   display: block;
 }
 
-@media (prefers-color-scheme: dark) {
-  :global(:root:not([data-theme="light"])) .light {
-    display: none;
-  }
-
-  :global(:root:not([data-theme="light"])) .dark {
-    display: block;
-  }
+/* On section backgrounds the off-white logo is always correct, in both themes */
+.onSection .light {
+  display: none;
 }
+
+.onSection .dark {
+  display: block;
+}
+

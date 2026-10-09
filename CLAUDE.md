@@ -74,6 +74,8 @@ Tailwind v4, configured in `apps/web/src/styles/globals.css` (no tailwind.config
 
 UI follows the jg-swim-design skill. Never hardcode hex values or Tailwind's default palette colors (e.g. `gray-500`, `red-500`) in components — use design token classes only (e.g. `text-text-secondary`, `bg-background`).
 
+Don't use inline `style` for anything a class, token, or global rule covers. Inline `style` is only for values computed at runtime.
+
 ## Design skills
 
 - **jg-swim-design** owns the brand: colors, tokens, fonts, visual motifs, component shapes, section rhythm, and layout rules.
@@ -92,8 +94,8 @@ UI follows the jg-swim-design skill. Never hardcode hex values or Tailwind's def
 **Three-layer structure (apps/web/src)**
 
 - `app/` — Next.js routes only. Each `page.tsx` renders one Content component. Page-specific metadata, when a page has any, goes in `page.tsx`, never in a Content component. Pages without their own metadata inherit the root layout's. Next.js special files (`page`, `layout`, `loading`, `error`, `not-found`, `route`) live here.
-- `content/<PageName>Content/` — Page body components (e.g. `HomepageContent`). Each folder holds `<Name>.tsx`, its CSS module if needed, and `index.ts` with `export { default } from "./<Name>"`. Import as `@/content/HomepageContent`.
-- `components/<ComponentName>/` — Reusable components including layout components and modals. Same folder shape: `<Name>.tsx`, CSS module, and `index.ts` with `export { default } from "./<Name>"`. Import as `@/components/ThemeLogo`.
+- `content/<PageName>Content/` — Page body components (e.g. `HomepageContent`). Each folder holds `<Name>.tsx`, its CSS module if needed, and `index.ts` with `export { default } from "./<Name>"`. Import as `@/content/HomepageContent`. **Anything used by exactly one page lives here** — sections, local sub-components, helper files — not in `components/`.
+- `components/<ComponentName>/` — Reusable components used by more than one page, including layout components and modals. Same folder shape: `<Name>.tsx`, CSS module, and `index.ts` with `export { default } from "./<Name>"`. Import as `@/components/ThemeLogo`. If a component is only ever used by one page, it belongs in that page's Content folder instead.
 
 File layout, top to bottom:
 

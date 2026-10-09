@@ -7,6 +7,7 @@ interface ThemeLogoProps {
   className?: string;
   width?: number;
   height?: number;
+  onSection?: boolean;
 }
 
 export default function ThemeLogo({
@@ -14,9 +15,10 @@ export default function ThemeLogo({
   className,
   width = 120,
   height = 48,
+  onSection = false,
 }: ThemeLogoProps) {
   return (
-    <span className={className}>
+    <span className={`${onSection ? styles.onSection : ""} ${className ?? ""}`.trim()}>
       <Image
         src="/logos/jg-swim-emblem.webp"
         alt={alt}

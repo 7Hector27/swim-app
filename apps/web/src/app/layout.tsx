@@ -2,6 +2,8 @@ import "@/styles/globals.css";
 import type { Metadata, Viewport } from "next";
 import { Figtree, Saira } from "next/font/google";
 
+import Providers from "@/components/Providers";
+
 const saira = Saira({
   subsets: ["latin"],
   axes: ["wdth"],
@@ -52,9 +54,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={`${saira.variable} ${figtree.variable}`}>
+    <html lang="en" className={`${saira.variable} ${figtree.variable}`} suppressHydrationWarning>
       <body className="min-h-screen bg-background text-text antialiased">
-        {children}
+        <Providers>{children}</Providers>
       </body>
     </html>
   );
