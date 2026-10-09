@@ -35,6 +35,13 @@
   --color-button-primary-background: var(--color-button-primary-background);
   --color-button-primary-text: var(--color-button-primary-text);
   --color-button-outline: var(--color-button-outline);
+  --color-on-accent: var(--color-on-accent);
+  --color-focus-ring: var(--color-focus-ring);
+  --color-success: var(--color-success);
+  --color-danger: var(--color-danger);
+  --color-rank-gold: var(--color-rank-gold);
+  --color-rank-silver: var(--color-rank-silver);
+  --color-rank-bronze: var(--color-rank-bronze);
   --font-heading: var(--font-heading);
   --font-body: var(--font-body);
   --radius-pill: var(--radius-pill);

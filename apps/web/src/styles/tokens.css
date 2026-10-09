@@ -18,10 +18,21 @@
   --color-accent: #10BFDE;
   --color-link: #017FAA;
   --color-link-hover: #082C4F;
+  /* Semantic UI */
+  --color-on-accent: #04182C;
+  --color-focus-ring: #04182C;
+  --color-success: #15803d;
+  --color-danger: #b91c1c;
   /* Buttons */
   --color-button-primary-background: #082C4F;
   --color-button-primary-text: #FFFFFF;
   --color-button-outline: #082C4F;
+  /* Leaderboard */
+  --color-rank-gold: #FFD700;
+  --color-rank-silver: #C0C8D8;
+  --color-rank-bronze: #CD7F32;
+  /* Shadows — allowed only on scrolled nav and floating menus */
+  --shadow-elevated: 0 2px 16px color-mix(in srgb, #000000 20%, transparent);
   /* Shape and layout */
   --radius-pill: 999px;
   --radius-card: 18px;
@@ -46,9 +57,13 @@
   --color-accent: #10BFDE;
   --color-link: #10BFDE;
   --color-link-hover: #EAF4FA;
+  --color-focus-ring: #FFFFFF;
+  --color-success: #4ade80;
+  --color-danger: #f87171;
   --color-button-primary-background: #10BFDE;
   --color-button-primary-text: #04182C;
   --color-button-outline: #EAF4FA;
+  --shadow-elevated: 0 2px 20px color-mix(in srgb, #000000 50%, transparent);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -68,9 +83,13 @@
     --color-accent: #10BFDE;
     --color-link: #10BFDE;
     --color-link-hover: #EAF4FA;
+    --color-focus-ring: #FFFFFF;
+    --color-success: #4ade80;
+    --color-danger: #f87171;
     --color-button-primary-background: #10BFDE;
     --color-button-primary-text: #04182C;
     --color-button-outline: #EAF4FA;
+    --shadow-elevated: 0 2px 20px color-mix(in srgb, #000000 50%, transparent);
   }
 }
 
