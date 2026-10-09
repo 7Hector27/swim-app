@@ -1,6 +1,11 @@
 @import "./tokens.css";
 @import "tailwindcss";
 
+:root {
+  --ease-out-strong: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
 @theme {
   --breakpoint-sm: initial;
   --breakpoint-md: initial;
@@ -68,6 +73,14 @@
     font-style: italic;
     font-stretch: 125%;
     line-height: 1.05;
+  }
+
+  h1 {
+    font-size: clamp(2.5rem, 1.64rem + 3.67vw, 4.5rem);
+  }
+
+  section h2 {
+    font-size: clamp(2rem, 1.68rem + 1.37vw, 2.75rem);
   }
 
   :focus-visible {

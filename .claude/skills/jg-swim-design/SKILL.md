@@ -13,6 +13,16 @@ All colors, fonts, radii, and widths live as CSS variables in `tokens.css` (impo
 
 If a component needs a color that has no token, stop and ask before adding a new one. Don't pick a "close enough" color.
 
+## Theme switching
+
+Light mode is the default. Dark mode activates only when `data-theme="dark"` is set on `<html>`. There is no `prefers-color-scheme` fallback — the system setting is ignored.
+
+**How it works:** `next-themes` manages the toggle with `attribute="data-theme"`, `defaultTheme="light"`, `enableSystem={false}`, and `storageKey="jg-theme"`. It injects an inline script before first paint so the correct theme is applied without a flash. The user's choice persists in `localStorage` under the key `"jg-theme"`.
+
+**Token structure:** `tokens.css` has two states only — `:root` (light defaults) and `:root[data-theme="dark"]` (dark overrides). Every component that uses design token classes switches correctly without any extra code.
+
+**`ThemeToggle` component:** renders a sun icon when dark (click → light) and a moon icon when light (click → dark). It lives in `SiteNav` on both desktop and in the mobile menu. Do not add a second toggle anywhere else on the page.
+
 ## Color roles
 
 | Token                               | Light      | Dark       | Use for                                                       |
@@ -84,6 +94,8 @@ One shadow token: `--shadow-elevated`. It is **only allowed** on two elements:
 
 Everything else stays flat — no drop shadows on cards, sections, buttons, text, or decorative elements. The look is built with solid color blocks, not depth.
 
+**Approved exception:** `HeroWaterBg` (the animated swim-lane / bubble / wave layer in the homepage hero) is the one approved exception to the flat look. All other sections and components remain fully flat.
+
 ## Typography
 
 | Use                         | Font                     | Settings                                                                           |
@@ -144,6 +156,8 @@ Hero sections use three swim-themed background layers built from token colors on
 
 All ambient layers must stay clearly behind the headline and CTAs. Keep every ambient element under 20% opacity. Pause ambient animations when the hero is offscreen (IntersectionObserver).
 
+**`HeroWaterBg` is the approved exception to the flat look.** All other sections remain fully flat.
+
 ### Leaderboard tables
 
 Columns: rank, swimmer, event, time. On mobile, event moves under the name as secondary text.
@@ -198,6 +212,7 @@ Both layouts use a flat bordered list for question rows: `1px --color-border` to
 
 - Light mode: the original navy and cyan emblem.
 - Dark mode: the off-white version of the emblem. This is a temporary conversion, so replace it if Jason gets an official reversed logo.
+- **On section backgrounds (`bg-section`), always use the off-white logo, in both themes.** Pass `onSection` to `ThemeLogo` wherever the logo sits on a section background (nav, footer, any section-colored band).
 - Never recolor, stretch, or add effects to the logo.
 - Favicon: white "JG" on a navy rounded square with a cyan wave.
 
