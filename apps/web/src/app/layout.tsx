@@ -37,6 +37,9 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
+  // <meta name="theme-color"> requires static strings — CSS variables don't work here.
+  // These match --color-section (light) and --color-background (dark) in tokens.css.
+  // Update both if those token values change.
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#082C4F" },
     { media: "(prefers-color-scheme: dark)", color: "#04182C" },

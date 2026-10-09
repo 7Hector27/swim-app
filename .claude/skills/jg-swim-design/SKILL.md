@@ -19,7 +19,7 @@ If a component needs a color that has no token, stop and ask before adding a new
 | ----------------------------------- | ---------- | ---------- | ------------------------------------------------------------- |
 | `--color-background`                | `#FFFFFF`  | `#04182C`  | Page background                                               |
 | `--color-section`                   | `#082C4F`  | `#0A2540`  | Feature sections (lessons, leaderboards)                      |
-| `--color-surface-soft`              | `#E6F6FA`  | `#0A2540`  | Supporting sections: coach bio, FAQ; see Section rhythm below |
+| `--color-surface-soft`              | `#E6F6FA`  | `#163252`  | Supporting sections: coach bio, FAQ; see Section rhythm below |
 | `--color-card`                      | `#0F3B66`  | `#113256`  | Cards sitting on a section background                         |
 | `--color-border`                    | `#E3EEF3`  | `#1E4670`  | Borders and dividers on the page                              |
 | `--color-divider-section`           | `#24527D`  | `#1E4670`  | Table rows and dividers inside sections and cards             |
@@ -44,6 +44,18 @@ If a component needs a color that has no token, stop and ask before adding a new
 | `--color-rank-bronze`               | `#CD7F32`  | `#CD7F32`  | Leaderboard rank #3 badge fill                                |
 
 On a section background in light mode, a primary button uses the accent fill with `var(--color-on-accent)` text, exactly like it behaves in dark mode.
+
+## Layout utilities
+
+Three layout tokens generate Tailwind utility classes. Shadow is registered via `@theme inline`; max-width and padding use `@layer utilities` because Tailwind v4 treats `--width-*` and `--spacing-*` as internal scale namespaces and drops them from `@theme inline` without emitting a CSS variable.
+
+| Token in `tokens.css`   | How registered   | Tailwind utility  |
+| ------------------------ | ---------------- | ----------------- |
+| `--shadow-elevated`      | `@theme inline`  | `shadow-elevated` |
+| `--content-max-width`    | `@layer utilities` | `max-w-content` |
+| `--page-padding`         | `@layer utilities` | `px-page`       |
+
+Always use the Tailwind utilities or the original `var(--...)` tokens — never raw pixel values for these.
 
 ### Contrast rules
 
@@ -82,7 +94,7 @@ Everything else stays flat — no drop shadows on cards, sections, buttons, text
 
 The wide heavy italic headings echo the "JG SWIM" lettering in the logo. That's what makes pages look like this brand, so don't swap the heading style for something plain.
 
-Load the fonts with `next/font/google`: Saira with the `wdth` axis and both normal and italic styles, Figtree normally. Expose them as `--font-heading` and `--font-body`.
+Load the fonts with `next/font/google`: Saira with the `wdth` axis and both normal and italic styles, Figtree normally. Set `variable: "--font-saira"` and `variable: "--font-figtree"` on the Next.js font objects, then add both class names to `<html>`. In `globals.css`, map them to semantic names via `@theme inline`: `--font-heading: var(--font-saira)` and `--font-body: var(--font-figtree)`. All components use `var(--font-heading)` and `var(--font-body)` — never `var(--font-saira)` or `var(--font-figtree)` directly. The Next.js variable names are an implementation detail of the font loader.
 
 **Heading sizes** use fluid `clamp()` values that hit the exact target size at 375 px (mobile) and 1248 px (desktop), with no hard breakpoint jump in between:
 
@@ -194,6 +206,8 @@ Both layouts use a flat bordered list for question rows: `1px --color-border` to
 - Mobile: up to 768px. Stack everything, full-width buttons, nav links go behind a menu button with a small "Book" button kept visible, leaderboards become a horizontal swipe row of cards.
 - Tablet: 769px to 1247px.
 - Desktop: 1248px and up.
+
+`--page-padding` is 20px on mobile and 24px on tablet and desktop. The 24px desktop value is intentional — at desktop widths, `--content-max-width` centers the layout and provides the real gutter. `--page-padding` is only the minimum edge clearance on narrower viewports where the content fills the screen.
 
 Tap targets are at least 44px. Nothing should scroll sideways at any width except an intentional swipe row or a wide table inside its own scroll container.
 

@@ -1,11 +1,6 @@
 @import "./tokens.css";
 @import "tailwindcss";
 
-:root {
-  --font-heading: var(--font-saira);
-  --font-body: var(--font-figtree);
-}
-
 @theme {
   --breakpoint-sm: initial;
   --breakpoint-md: initial;
@@ -42,11 +37,22 @@
   --color-rank-gold: var(--color-rank-gold);
   --color-rank-silver: var(--color-rank-silver);
   --color-rank-bronze: var(--color-rank-bronze);
-  --font-heading: var(--font-heading);
-  --font-body: var(--font-body);
+  --shadow-elevated: var(--shadow-elevated);
+  --font-heading: var(--font-saira);
+  --font-body: var(--font-figtree);
   --radius-pill: var(--radius-pill);
   --radius-card: var(--radius-card);
   --radius-media: var(--radius-media);
+}
+
+@layer utilities {
+  .max-w-content {
+    max-width: var(--content-max-width);
+  }
+
+  .px-page {
+    padding-inline: var(--page-padding);
+  }
 }
 
 @layer base {
@@ -62,5 +68,10 @@
     font-style: italic;
     font-stretch: 125%;
     line-height: 1.05;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-focus-ring);
+    outline-offset: 2px;
   }
 }

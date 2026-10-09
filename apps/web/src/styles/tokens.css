@@ -44,7 +44,7 @@
 :root[data-theme="dark"] {
   --color-background: #04182C;
   --color-section: #0A2540;
-  --color-surface-soft: #0A2540;
+  --color-surface-soft: #163252;
   --color-card: #113256;
   --color-border: #1E4670;
   --color-divider-section: #1E4670;
@@ -70,7 +70,7 @@
   :root:not([data-theme="light"]) {
     --color-background: #04182C;
     --color-section: #0A2540;
-    --color-surface-soft: #0A2540;
+    --color-surface-soft: #163252;
     --color-card: #113256;
     --color-border: #1E4670;
     --color-divider-section: #1E4670;
@@ -95,6 +95,9 @@
 
 @media (min-width: 769px) {
   :root {
+    /* 24px for both tablet and desktop — intentional. At desktop widths,
+       --content-max-width centers the content and acts as the real gutter.
+       --page-padding is only the minimum edge clearance on narrower viewports. */
     --page-padding: 24px;
   }
 }

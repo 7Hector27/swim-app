@@ -56,6 +56,7 @@ pnpm dev
 | Variable | Default | Description |
 |---|---|---|
 | `NEXT_PUBLIC_API_URL` | `http://localhost:3001` | API base URL for browser fetches |
+| `NEXT_PUBLIC_SITE_URL` | `http://localhost:3000` | Canonical site URL. Set to the real domain in every deployed environment (e.g. `https://jgswim.com`). **Must be set before the production build** — Next.js bakes `NEXT_PUBLIC_` values in at build time, so a missing or wrong value cannot be patched after the fact. Used by `layout.tsx` as `metadataBase` for Open Graph and canonical URLs. |
 
 ## Scripts
 
