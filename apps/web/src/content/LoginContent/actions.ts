@@ -24,5 +24,5 @@ export async function login(
     return { error: "Email or password is incorrect." };
   }
 
-  redirect("/account");
+  redirect("/dashboard");
 }

@@ -19,7 +19,7 @@ export default async function LoginPage({
 }) {
   const supabase = await createClient();
   const { data } = await supabase.auth.getClaims();
-  if (data) redirect("/account");
+  if (data) redirect("/dashboard");
 
   const params = await searchParams;
   const noticeCode = params.notice ?? "";

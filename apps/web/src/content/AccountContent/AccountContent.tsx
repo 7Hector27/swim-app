@@ -49,11 +49,6 @@ export default async function AccountContent() {
               Log out
             </Button>
           </form>
-
-          <section>
-            <h2 className="text-lg font-bold text-text mb-2">Your swimmers</h2>
-            <p className="text-text-secondary">Your swimmers will appear here.</p>
-          </section>
         </div>
       </main>
       <SiteFooter />

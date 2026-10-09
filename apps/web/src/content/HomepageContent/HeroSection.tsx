@@ -10,10 +10,12 @@ export default function HeroSection() {
             Private Swim Coaching
           </p>
           <h1 className="text-text-on-section">
-            [Hero heading — one strong line]
+            Private swim lessons, one swimmer at a time
           </h1>
           <p className="text-text-secondary-on-section text-base tablet:text-lg max-w-lg">
-            [Hero subtext — a sentence or two about the coaching program]
+            Coach jason teaches every lesson himself, one on one. Swimmers
+            learning to floar and club swimmers chasing a best time get the same
+            full attention.
           </p>
           <div className="flex flex-col gap-3 tablet:flex-row tablet:gap-4 mt-2">
             <a

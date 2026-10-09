@@ -21,5 +21,5 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL("/login?notice=link-expired", request.url));
   }
 
-  return NextResponse.redirect(new URL("/account", request.url));
+  return NextResponse.redirect(new URL("/dashboard", request.url));
 }

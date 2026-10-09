@@ -1,21 +1,11 @@
 import { redirect } from "next/navigation";
 
 import AccountInactiveScreen from "@/components/AccountInactiveScreen";
-import { fetchMe } from "@/lib/api/me";
-import { createClient } from "@/lib/supabase/server";
+import { requireAuth } from "@/lib/requireAuth";
 
 export default async function CoachLayout({ children }: { children: React.ReactNode }) {
-  const supabase = await createClient();
-  const { data } = await supabase.auth.getClaims();
-  if (!data) redirect("/login");
-
-  const result = await fetchMe();
-  if (!result.ok) {
-    if (result.status === 403) return <AccountInactiveScreen />;
-    redirect("/login");
-  }
-
-  if (result.profile.role !== "coach") redirect("/account");
-
+  const auth = await requireAuth();
+  if (auth === null) return <AccountInactiveScreen />;
+  if (auth.profile.role !== "coach") redirect("/dashboard");
   return <>{children}</>;
 }

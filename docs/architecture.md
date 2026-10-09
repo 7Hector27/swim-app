@@ -44,3 +44,15 @@ Browser
 - No direct DB access from `web`
 - Every API route declares its input schema in `packages/shared`
 - Logs are JSON in production, pretty-printed in dev; auth/cookie headers are always redacted
+
+## Route map
+
+All signed-in routes are guarded by `requireAuth()` (`apps/web/src/lib/requireAuth.ts`) in their layout. It redirects to `/login` on no session or a non-403 API error, and returns `null` on 403 (inactive account), which the layout converts to `<AccountInactiveScreen />`.
+
+| Segment | Who can access | Purpose |
+|---|---|---|
+| `/` `/lessons` `/leaderboard` `/about` `/privacy` `/terms` | Public | Marketing and informational pages |
+| `/login` `/signup` | Unauthenticated only | Auth entry points (redirect to `/dashboard` if already signed in) |
+| `/dashboard` | Any authenticated, active user | Role-based hub: `CoachDashboardContent` for coaches, `ParentDashboardContent` for parents |
+| `/account` | Any authenticated, active user | Settings: email/role display, edit name/phone, log out |
+| `/coach/*` | Coach role only | Coach tooling; non-coaches redirect to `/dashboard` |

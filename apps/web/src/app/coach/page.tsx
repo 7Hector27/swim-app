@@ -1,11 +1,5 @@
-import type { Metadata } from "next";
-
-import CoachContent from "@/content/CoachContent";
-
-export const metadata: Metadata = {
-  title: "Coach · JG Swim",
-};
+import { redirect } from "next/navigation";
 
 export default function CoachPage() {
-  return <CoachContent />;
+  redirect("/dashboard");
 }

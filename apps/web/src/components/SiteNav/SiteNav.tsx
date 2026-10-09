@@ -71,7 +71,7 @@ export default function SiteNav() {
           <div className="hidden tablet:flex items-center gap-3">
             <ThemeToggle />
             {isSignedIn ? (
-              <a href="/account" className={navLinkClass}>
+              <a href="/dashboard" className={navLinkClass}>
                 Dashboard
               </a>
             ) : (
@@ -150,7 +150,7 @@ export default function SiteNav() {
               {isSignedIn ? (
                 <li>
                   <a
-                    href="/account"
+                    href="/dashboard"
                     onClick={handleMenuClose}
                     className="block px-3 py-3 text-text-on-section font-semibold text-base rounded transition-colors duration-150"
                     onMouseEnter={(event) => {

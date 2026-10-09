@@ -11,7 +11,7 @@ export const metadata: Metadata = {
 export default async function SignupPage() {
   const supabase = await createClient();
   const { data } = await supabase.auth.getClaims();
-  if (data) redirect("/account");
+  if (data) redirect("/dashboard");
 
   return <SignupContent />;
 }
