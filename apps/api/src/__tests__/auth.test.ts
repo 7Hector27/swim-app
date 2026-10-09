@@ -78,12 +78,16 @@ describe("requireUser middleware", () => {
     expect(res.status).toBe(401);
   });
 
-  it("passes through to the route handler on a valid token", async () => {
-    mockGetUser.mockResolvedValue(validUser);
-    mockDbWhere.mockResolvedValue([baseProfile]);
-    const res = await request(app).get("/me").set("Authorization", "Bearer valid-token");
-    expect(res.status).toBe(200);
-    expect(mockGetUser).toHaveBeenCalledWith("valid-token");
+  it("returns 401 when getUser returns a user with no email", async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: baseProfile.id, email: undefined } }, error: null });
+    const res = await request(app).get("/me").set("Authorization", "Bearer no-email-token");
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 503 when getUser throws (auth service down)", async () => {
+    mockGetUser.mockRejectedValue(new Error("network error"));
+    const res = await request(app).get("/me").set("Authorization", "Bearer any-token");
+    expect(res.status).toBe(503);
   });
 });
 

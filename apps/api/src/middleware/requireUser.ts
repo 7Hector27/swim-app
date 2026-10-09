@@ -19,14 +19,25 @@ export async function requireUser(
   // getUser verifies the token against Supabase's auth server on every request,
   // so revoked sessions and banned users are rejected immediately rather than
   // being allowed until the JWT's exp claim expires.
-  const { data, error } = await supabase.auth.getUser(token);
+  let getResult: Awaited<ReturnType<typeof supabase.auth.getUser>>;
+  try {
+    getResult = await supabase.auth.getUser(token);
+  } catch {
+    res.status(503).json({ error: "Auth service unavailable" });
+    return;
+  }
+  const { data, error } = getResult;
   if (error || !data.user) {
     res.status(401).json({ error: "Unauthorized" });
     return;
   }
 
   const sub = data.user.id;
-  const email = data.user.email ?? "";
+  const email = data.user.email;
+  if (!email) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
 
   const rows = await db.select().from(profiles).where(eq(profiles.id, sub));
   const profile = rows[0];

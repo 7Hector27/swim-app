@@ -82,7 +82,10 @@ export function createApp(logger: Logger) {
     });
 
     if (error || !data.user) {
-      req.log.warn({ err: error }, "signUp failed");
+      req.log.warn(
+        { code: (error as { code?: string } | null)?.code, status: (error as { status?: number } | null)?.status },
+        "signUp failed",
+      );
       res.status(400).json({ error: "Could not create account" });
       return;
     }
@@ -105,7 +108,7 @@ export function createApp(logger: Logger) {
     res.status(201).end();
   });
 
-  app.get("/me", validate({}), requireUser, (req, res) => {
+  app.get("/me", requireUser, validate({}), (req, res) => {
     const body: MeResponse = {
       email: req.userEmail,
       fullName: req.profile.fullName,
@@ -135,7 +138,7 @@ export function createApp(logger: Logger) {
     res.json(body);
   });
 
-  app.get("/coach/ping", validate({}), requireUser, requireCoach, (_req, res) => {
+  app.get("/coach/ping", requireUser, requireCoach, validate({}), (_req, res) => {
     res.json({ pong: true });
   });
 
