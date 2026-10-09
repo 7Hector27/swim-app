@@ -1,0 +1,38 @@
+import type { MeResponse } from "@swim-app/shared";
+
+import { createClient } from "@/lib/supabase/server";
+
+export type MeResult = { ok: true; profile: MeResponse } | { ok: false; status: number };
+
+export function mapMeStatus(status: number, body: unknown): MeResult {
+  if (status === 200) {
+    return { ok: true, profile: body as MeResponse };
+  }
+  return { ok: false, status };
+}
+
+export async function fetchMe(): Promise<MeResult> {
+  const supabase = await createClient();
+  // getSession is called only to extract the raw access token for forwarding to
+  // the API. The API's requireUser middleware verifies the token independently.
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) return { ok: false, status: 401 };
+
+  let status: number;
+  let body: unknown = null;
+
+  try {
+    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/me`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    status = response.status;
+    if (status === 200) {
+      body = await response.json();
+    }
+  } catch {
+    return { ok: false, status: 503 };
+  }
+
+  return mapMeStatus(status, body);
+}

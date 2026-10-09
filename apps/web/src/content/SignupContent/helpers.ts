@@ -1,3 +1,6 @@
+import { mapZodErrors } from "@/lib/mapZodErrors";
+export { mapZodErrors };
+
 export type SignupState =
   | { status: "idle" }
   | { status: "success" }
@@ -13,17 +16,6 @@ interface ZodIssueLike {
 interface ApiBody {
   error?: unknown;
   issues?: ZodIssueLike[];
-}
-
-export function mapZodErrors(issues: ZodIssueLike[]): Record<string, string> {
-  const errors: Record<string, string> = {};
-  for (const issue of issues) {
-    const key = issue.path[0]?.toString() ?? "_";
-    if (!errors[key]) {
-      errors[key] = issue.message;
-    }
-  }
-  return errors;
 }
 
 function isApiBody(body: unknown): body is ApiBody {

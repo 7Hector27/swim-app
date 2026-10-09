@@ -3,6 +3,7 @@ import type { Metadata, Viewport } from "next";
 import { Figtree, Saira } from "next/font/google";
 
 import Providers from "@/components/Providers";
+import { createClient } from "@/lib/supabase/server";
 
 const saira = Saira({
   subsets: ["latin"],
@@ -48,15 +49,18 @@ export const viewport: Viewport = {
   ],
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const supabase = await createClient();
+  const { data } = await supabase.auth.getClaims();
+
   return (
     <html lang="en" className={`${saira.variable} ${figtree.variable}`} suppressHydrationWarning>
       <body className="min-h-screen bg-background text-text antialiased">
-        <Providers>{children}</Providers>
+        <Providers isSignedIn={!!data}>{children}</Providers>
       </body>
     </html>
   );

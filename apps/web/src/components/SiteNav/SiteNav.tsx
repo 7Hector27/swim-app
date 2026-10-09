@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { useSession } from "@/components/Providers";
 import ThemeLogo from "@/components/ThemeLogo";
 import ThemeToggle from "@/components/ThemeToggle";
 
@@ -16,6 +17,7 @@ export default function SiteNav() {
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const sentinelRef = useRef<HTMLDivElement>(null);
+  const { isSignedIn } = useSession();
 
   useEffect(() => {
     const sentinel = sentinelRef.current;
@@ -40,6 +42,9 @@ export default function SiteNav() {
     setMenuOpen(false);
   }
 
+  const accountHref = isSignedIn ? "/account" : "/login";
+  const accountLabel = isSignedIn ? "Account" : "Log in";
+
   return (
     <>
       <div ref={sentinelRef} aria-hidden="true" className="h-px" />
@@ -62,6 +67,14 @@ export default function SiteNav() {
                 </a>
               </li>
             ))}
+            <li>
+              <a
+                href={accountHref}
+                className="relative text-text-on-section font-semibold text-sm transition-all duration-150 pb-1 border-b-2 border-transparent hover:border-accent"
+              >
+                {accountLabel}
+              </a>
+            </li>
           </ul>
 
           <div className="hidden tablet:flex items-center gap-2">
@@ -127,6 +140,23 @@ export default function SiteNav() {
                   </a>
                 </li>
               ))}
+              <li>
+                <a
+                  href={accountHref}
+                  onClick={handleMenuClose}
+                  className="block px-3 py-3 text-text-on-section font-semibold text-base rounded transition-colors duration-150"
+                  onMouseEnter={(event) => {
+                    (event.currentTarget as HTMLAnchorElement).style.backgroundColor =
+                      "color-mix(in srgb, var(--color-accent) 8%, transparent)";
+                  }}
+                  onMouseLeave={(event) => {
+                    (event.currentTarget as HTMLAnchorElement).style.backgroundColor =
+                      "transparent";
+                  }}
+                >
+                  {accountLabel}
+                </a>
+              </li>
               <li className="pt-2 border-t border-divider-section mt-2">
                 <div className="flex items-center gap-3 px-3 py-2">
                   <span className="text-text-secondary-on-section text-sm font-semibold">Theme</span>

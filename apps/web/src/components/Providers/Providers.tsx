@@ -1,8 +1,25 @@
 "use client";
 
+import { createContext, useContext } from "react";
 import { ThemeProvider } from "next-themes";
 
-export default function Providers({ children }: { children: React.ReactNode }) {
+interface SessionContextValue {
+  isSignedIn: boolean;
+}
+
+const SessionContext = createContext<SessionContextValue>({ isSignedIn: false });
+
+export function useSession(): SessionContextValue {
+  return useContext(SessionContext);
+}
+
+export default function Providers({
+  children,
+  isSignedIn,
+}: {
+  children: React.ReactNode;
+  isSignedIn: boolean;
+}) {
   return (
     <ThemeProvider
       attribute="data-theme"
@@ -10,7 +27,9 @@ export default function Providers({ children }: { children: React.ReactNode }) {
       enableSystem={false}
       storageKey="jg-theme"
     >
-      {children}
+      <SessionContext.Provider value={{ isSignedIn }}>
+        {children}
+      </SessionContext.Provider>
     </ThemeProvider>
   );
 }
