@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { calculateAge } from "../lib/calculateAge";
+import { calculateAge } from "@swim-app/shared";
 
 describe("calculateAge", () => {
   it("returns the correct age when today is the birthday", () => {

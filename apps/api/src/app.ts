@@ -12,9 +12,9 @@ import { validate } from "./middleware/validate";
 import { errorHandler } from "./middleware/errorHandler";
 import { requireUser } from "./middleware/requireUser";
 import { requireCoach } from "./middleware/requireCoach";
-import { calculateAge } from "./lib/calculateAge";
 import { supabase } from "./lib/supabase";
 import {
+  calculateAge,
   HealthQuerySchema,
   type MeResponse,
   type PatchMeBody,
@@ -107,6 +107,7 @@ export function createApp(logger: Logger) {
 
   app.get("/me", validate({}), requireUser, (req, res) => {
     const body: MeResponse = {
+      email: req.userEmail,
       fullName: req.profile.fullName,
       phone: req.profile.phone,
       role: req.profile.role,
@@ -126,6 +127,7 @@ export function createApp(logger: Logger) {
       .returning();
     const updated = rows[0]!;
     const body: MeResponse = {
+      email: req.userEmail,
       fullName: updated.fullName,
       phone: updated.phone,
       role: updated.role,

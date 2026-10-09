@@ -16,6 +16,7 @@ const footerLinks = [
       { label: "[Book a lesson]", href: "/book" },
       { label: "[Contact]", href: "/contact" },
       { label: "[Privacy]", href: "/privacy" },
+      { label: "[Terms]", href: "/terms" },
     ],
   },
 ];

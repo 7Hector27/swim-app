@@ -37,7 +37,11 @@ const baseProfile = {
 };
 
 const validClaims = {
-  data: { claims: { sub: baseProfile.id }, header: {}, signature: new Uint8Array() },
+  data: {
+    claims: { sub: baseProfile.id, email: "test@example.com" },
+    header: {},
+    signature: new Uint8Array(),
+  },
   error: null,
 };
 
@@ -175,12 +179,17 @@ describe("GET /me", () => {
     expect(res.status).toBe(403);
   });
 
-  it("returns 200 with only fullName, phone, and role for a valid parent", async () => {
+  it("returns 200 with email, fullName, phone, and role for a valid parent", async () => {
     mockGetClaims.mockResolvedValue(validClaims);
     mockDbWhere.mockResolvedValue([baseProfile]);
     const res = await request(app).get("/me").set("Authorization", "Bearer token");
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ fullName: "Test User", phone: null, role: "parent" });
+    expect(res.body).toEqual({
+      email: "test@example.com",
+      fullName: "Test User",
+      phone: null,
+      role: "parent",
+    });
   });
 });
 
@@ -244,6 +253,6 @@ describe("PATCH /me", () => {
       .set("Authorization", "Bearer token")
       .send({ fullName: "  New Name  " });
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ fullName: "New Name", phone: null, role: "parent" });
+    expect(res.body).toEqual({ email: "test@example.com", fullName: "New Name", phone: null, role: "parent" });
   });
 });

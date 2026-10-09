@@ -16,3 +16,12 @@ export const SignUpBodySchema = z
   .strict();
 
 export type SignUpBody = z.infer<typeof SignUpBodySchema>;
+
+export const LoginBodySchema = z
+  .object({
+    email: z.string().email(),
+    password: z.string().min(1),
+  })
+  .strict();
+
+export type LoginBody = z.infer<typeof LoginBodySchema>;

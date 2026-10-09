@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { useSession } from "@/components/Providers";
 import ThemeLogo from "@/components/ThemeLogo";
 import ThemeToggle from "@/components/ThemeToggle";
 
@@ -12,10 +13,14 @@ const navLinks = [
   { label: "About", href: "/about" },
 ];
 
+const navLinkClass =
+  "relative text-text-on-section font-semibold text-sm transition-all duration-150 pb-1 border-b-2 border-transparent hover:border-accent";
+
 export default function SiteNav() {
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const sentinelRef = useRef<HTMLDivElement>(null);
+  const { isSignedIn } = useSession();
 
   useEffect(() => {
     const sentinel = sentinelRef.current;
@@ -51,21 +56,37 @@ export default function SiteNav() {
             <ThemeLogo width={100} height={40} onSection />
           </a>
 
+          {/* Desktop nav links */}
           <ul className="hidden tablet:flex items-center gap-6">
             {navLinks.map((link) => (
               <li key={link.href}>
-                <a
-                  href={link.href}
-                  className="relative text-text-on-section font-semibold text-sm transition-all duration-150 pb-1 border-b-2 border-transparent hover:border-accent"
-                >
+                <a href={link.href} className={navLinkClass}>
                   {link.label}
                 </a>
               </li>
             ))}
           </ul>
 
-          <div className="hidden tablet:flex items-center gap-2">
+          {/* Desktop right-side actions */}
+          <div className="hidden tablet:flex items-center gap-3">
             <ThemeToggle />
+            {isSignedIn ? (
+              <a href="/dashboard" className={navLinkClass}>
+                Dashboard
+              </a>
+            ) : (
+              <>
+                <a href="/login" className={navLinkClass}>
+                  Log in
+                </a>
+                <a
+                  href="/signup"
+                  className="inline-flex items-center justify-center rounded-pill border-2 border-text-on-section text-text-on-section font-bold text-sm px-5 h-11 transition-colors duration-200 hover:bg-white/10 active:scale-97"
+                >
+                  Sign up
+                </a>
+              </>
+            )}
             <a
               href="/book"
               className="inline-flex items-center justify-center rounded-pill bg-accent text-on-accent font-bold text-sm px-5 h-11 transition-colors duration-200 active:scale-97"
@@ -74,6 +95,7 @@ export default function SiteNav() {
             </a>
           </div>
 
+          {/* Mobile: Book shortcut + hamburger */}
           <div className="flex items-center gap-3 tablet:hidden">
             <a
               href="/book"
@@ -101,6 +123,7 @@ export default function SiteNav() {
           </div>
         </div>
 
+        {/* Mobile menu */}
         {menuOpen && (
           <div className="tablet:hidden bg-section shadow-elevated">
             <ul className="px-page py-4 flex flex-col">
@@ -109,24 +132,62 @@ export default function SiteNav() {
                   <a
                     href={link.href}
                     onClick={handleMenuClose}
-                    className="block px-3 py-3 text-text-on-section font-semibold text-base rounded transition-colors duration-150"
-                    style={{
-                      ["--hover-bg" as string]:
-                        "color-mix(in srgb, var(--color-accent) 8%, transparent)",
-                    }}
-                    onMouseEnter={(event) => {
-                      (event.currentTarget as HTMLAnchorElement).style.backgroundColor =
-                        "color-mix(in srgb, var(--color-accent) 8%, transparent)";
-                    }}
-                    onMouseLeave={(event) => {
-                      (event.currentTarget as HTMLAnchorElement).style.backgroundColor =
-                        "transparent";
-                    }}
+                    className="block px-3 py-3 text-text-on-section font-semibold text-base rounded transition-colors duration-150 hover:bg-accent/8"
                   >
                     {link.label}
                   </a>
                 </li>
               ))}
+
+              {isSignedIn ? (
+                <li>
+                  <a
+                    href="/dashboard"
+                    onClick={handleMenuClose}
+                    className="block px-3 py-3 text-text-on-section font-semibold text-base rounded transition-colors duration-150 hover:bg-accent/8"
+                  >
+                    Dashboard
+                  </a>
+                </li>
+              ) : (
+                <>
+                  <li>
+                    <a
+                      href="/login"
+                      onClick={handleMenuClose}
+                      className="block px-3 py-3 text-text-on-section font-semibold text-base rounded transition-colors duration-150"
+                      onMouseEnter={(event) => {
+                        (event.currentTarget as HTMLAnchorElement).style.backgroundColor =
+                          "color-mix(in srgb, var(--color-accent) 8%, transparent)";
+                      }}
+                      onMouseLeave={(event) => {
+                        (event.currentTarget as HTMLAnchorElement).style.backgroundColor =
+                          "transparent";
+                      }}
+                    >
+                      Log in
+                    </a>
+                  </li>
+                  <li>
+                    <a
+                      href="/signup"
+                      onClick={handleMenuClose}
+                      className="block px-3 py-3 text-text-on-section font-semibold text-base rounded transition-colors duration-150"
+                      onMouseEnter={(event) => {
+                        (event.currentTarget as HTMLAnchorElement).style.backgroundColor =
+                          "color-mix(in srgb, var(--color-accent) 8%, transparent)";
+                      }}
+                      onMouseLeave={(event) => {
+                        (event.currentTarget as HTMLAnchorElement).style.backgroundColor =
+                          "transparent";
+                      }}
+                    >
+                      Sign up
+                    </a>
+                  </li>
+                </>
+              )}
+
               <li className="pt-2 border-t border-divider-section mt-2">
                 <div className="flex items-center gap-3 px-3 py-2">
                   <span className="text-text-secondary-on-section text-sm font-semibold">Theme</span>
