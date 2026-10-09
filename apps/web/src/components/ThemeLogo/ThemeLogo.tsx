@@ -9,7 +9,7 @@ interface ThemeLogoProps {
   height?: number;
 }
 
-export function ThemeLogo({
+export default function ThemeLogo({
   alt = "JG Swim",
   className,
   width = 120,

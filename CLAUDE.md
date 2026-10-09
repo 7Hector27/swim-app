@@ -72,7 +72,7 @@ All packages extend `tsconfig.base.json` which enables `noUncheckedIndexedAccess
 
 Tailwind v4, configured in `apps/web/src/styles/globals.css` (no tailwind.config.js). Style mobile-first: base classes are mobile (≤768px). Use only the custom `tablet:` (769px) and `desktop:` (1248px) breakpoints, never `sm:`/`md:`/`lg:`.
 
-UI follows the jg-swim-design skill. Never hardcode hex colors in components.
+UI follows the jg-swim-design skill. Never hardcode hex values or Tailwind's default palette colors (e.g. `gray-500`, `red-500`) in components — use design token classes only (e.g. `text-text-secondary`, `bg-background`).
 
 ## Design skills
 
@@ -87,7 +87,13 @@ UI follows the jg-swim-design skill. Never hardcode hex colors in components.
 - Components and types: PascalCase. Zod schemas end in `Schema`. True constants: UPPER_SNAKE_CASE. Database tables and columns: snake_case.
 - Never abbreviate or use single-letter names, including callback parameters: `swimmers.map((swimmer) => ...)`, never `swimmers.map((x) => ...)`. Use `index`, not `i`.
 - One job per function. Business logic (time formatting, buffers, rankings) lives in pure, tested functions, not inside routes or components.
-- Named exports, except where Next.js requires a default export.
+- Named exports, except where Next.js requires a default export and except for components in `src/components/` and `src/content/`, which use `export default`.
+
+**Three-layer structure (apps/web/src)**
+
+- `app/` — Next.js routes only. Each `page.tsx` renders one Content component. Page-specific metadata, when a page has any, goes in `page.tsx`, never in a Content component. Pages without their own metadata inherit the root layout's. Next.js special files (`page`, `layout`, `loading`, `error`, `not-found`, `route`) live here.
+- `content/<PageName>Content/` — Page body components (e.g. `HomepageContent`). Each folder holds `<Name>.tsx`, its CSS module if needed, and `index.ts` with `export { default } from "./<Name>"`. Import as `@/content/HomepageContent`.
+- `components/<ComponentName>/` — Reusable components including layout components and modals. Same folder shape: `<Name>.tsx`, CSS module, and `index.ts` with `export { default } from "./<Name>"`. Import as `@/components/ThemeLogo`.
 
 File layout, top to bottom:
 
