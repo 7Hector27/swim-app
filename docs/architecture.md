@@ -35,9 +35,10 @@ Browser
 2. **cors** — checks `CORS_ORIGINS` allowlist
 3. **requestId** — attaches/generates `x-request-id`
 4. **pino-http** — logs the request using the request ID
-5. **validate()** — parses input against the route's Zod schema (422 on failure)
-6. **Route handler** — business logic
-7. **errorHandler** — catches any thrown errors, logs them, returns safe JSON
+5. **requireUser** *(protected routes only)* — calls `supabase.auth.getUser(token)` to network-verify the token against Supabase's auth server; revoked sessions and banned users are rejected with 401 before any DB work. Loads the profile row from `profiles` and attaches it to `req.profile`.
+6. **validate()** — parses input against the route's Zod schema (422 on failure)
+7. **Route handler** — business logic
+8. **errorHandler** — catches any thrown errors, logs them, returns safe JSON
 
 ## Key constraints
 

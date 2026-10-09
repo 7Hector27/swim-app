@@ -2,15 +2,15 @@ import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import request from "supertest";
 import pino from "pino";
 
-const { mockGetClaims, mockSignUp, mockDbWhere, mockDbReturning } = vi.hoisted(() => ({
-  mockGetClaims: vi.fn(),
+const { mockGetUser, mockSignUp, mockDbWhere, mockDbReturning } = vi.hoisted(() => ({
+  mockGetUser: vi.fn(),
   mockSignUp: vi.fn(),
   mockDbWhere: vi.fn(),
   mockDbReturning: vi.fn(),
 }));
 
 vi.mock("../lib/supabase", () => ({
-  supabase: { auth: { getClaims: mockGetClaims, signUp: mockSignUp } },
+  supabase: { auth: { getUser: mockGetUser, signUp: mockSignUp } },
 }));
 
 vi.mock("../db/client", () => ({
@@ -36,12 +36,8 @@ const baseProfile = {
   updatedAt: new Date(),
 };
 
-const validClaims = {
-  data: {
-    claims: { sub: baseProfile.id, email: "test@example.com" },
-    header: {},
-    signature: new Uint8Array(),
-  },
+const validUser = {
+  data: { user: { id: baseProfile.id, email: "test@example.com" } },
   error: null,
 };
 
@@ -62,6 +58,38 @@ const validSignUpBody = {
   birthDate: ADULT_BIRTH_DATE,
   acceptedTerms: true as const,
 };
+
+describe("requireUser middleware", () => {
+  it("returns 401 with no Authorization header", async () => {
+    const res = await request(app).get("/me");
+    expect(res.status).toBe(401);
+    expect(mockGetUser).not.toHaveBeenCalled();
+  });
+
+  it("returns 401 when getUser returns an error (revoked / invalid token)", async () => {
+    mockGetUser.mockResolvedValue({ data: { user: null }, error: new Error("invalid token") });
+    const res = await request(app).get("/me").set("Authorization", "Bearer bad-token");
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 401 when getUser returns no user and no error", async () => {
+    mockGetUser.mockResolvedValue({ data: { user: null }, error: null });
+    const res = await request(app).get("/me").set("Authorization", "Bearer revoked-token");
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 401 when getUser returns a user with no email", async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: baseProfile.id, email: undefined } }, error: null });
+    const res = await request(app).get("/me").set("Authorization", "Bearer no-email-token");
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 503 when getUser throws (auth service down)", async () => {
+    mockGetUser.mockRejectedValue(new Error("network error"));
+    const res = await request(app).get("/me").set("Authorization", "Bearer any-token");
+    expect(res.status).toBe(503);
+  });
+});
 
 describe("POST /auth/signup", () => {
   beforeEach(() => {
@@ -153,34 +181,34 @@ describe("GET /me", () => {
   });
 
   it("returns 401 with an invalid token", async () => {
-    mockGetClaims.mockResolvedValue({ data: null, error: new Error("invalid") });
+    mockGetUser.mockResolvedValue({ data: { user: null }, error: new Error("invalid") });
     const res = await request(app).get("/me").set("Authorization", "Bearer bad-token");
     expect(res.status).toBe(401);
   });
 
   it("returns 403 when no profile row exists", async () => {
-    mockGetClaims.mockResolvedValue(validClaims);
+    mockGetUser.mockResolvedValue(validUser);
     mockDbWhere.mockResolvedValue([]);
     const res = await request(app).get("/me").set("Authorization", "Bearer token");
     expect(res.status).toBe(403);
   });
 
   it("returns 403 when profile is disabled", async () => {
-    mockGetClaims.mockResolvedValue(validClaims);
+    mockGetUser.mockResolvedValue(validUser);
     mockDbWhere.mockResolvedValue([{ ...baseProfile, disabledAt: new Date() }]);
     const res = await request(app).get("/me").set("Authorization", "Bearer token");
     expect(res.status).toBe(403);
   });
 
   it("returns 403 when age_attested_at is null", async () => {
-    mockGetClaims.mockResolvedValue(validClaims);
+    mockGetUser.mockResolvedValue(validUser);
     mockDbWhere.mockResolvedValue([{ ...baseProfile, ageAttestedAt: null }]);
     const res = await request(app).get("/me").set("Authorization", "Bearer token");
     expect(res.status).toBe(403);
   });
 
   it("returns 200 with email, fullName, phone, and role for a valid parent", async () => {
-    mockGetClaims.mockResolvedValue(validClaims);
+    mockGetUser.mockResolvedValue(validUser);
     mockDbWhere.mockResolvedValue([baseProfile]);
     const res = await request(app).get("/me").set("Authorization", "Bearer token");
     expect(res.status).toBe(200);
@@ -195,14 +223,14 @@ describe("GET /me", () => {
 
 describe("GET /coach/ping", () => {
   it("returns 403 for a parent", async () => {
-    mockGetClaims.mockResolvedValue(validClaims);
+    mockGetUser.mockResolvedValue(validUser);
     mockDbWhere.mockResolvedValue([{ ...baseProfile, role: "parent" }]);
     const res = await request(app).get("/coach/ping").set("Authorization", "Bearer token");
     expect(res.status).toBe(403);
   });
 
   it("returns 200 for a coach", async () => {
-    mockGetClaims.mockResolvedValue(validClaims);
+    mockGetUser.mockResolvedValue(validUser);
     mockDbWhere.mockResolvedValue([{ ...baseProfile, role: "coach" }]);
     const res = await request(app).get("/coach/ping").set("Authorization", "Bearer token");
     expect(res.status).toBe(200);
@@ -222,7 +250,7 @@ describe("PATCH /me", () => {
   });
 
   it("returns 422 and does not update when body contains unknown field role", async () => {
-    mockGetClaims.mockResolvedValue(validClaims);
+    mockGetUser.mockResolvedValue(validUser);
     mockDbWhere.mockResolvedValue([baseProfile]);
     const res = await request(app)
       .patch("/me")
@@ -233,7 +261,7 @@ describe("PATCH /me", () => {
   });
 
   it("returns 422 when body is empty", async () => {
-    mockGetClaims.mockResolvedValue(validClaims);
+    mockGetUser.mockResolvedValue(validUser);
     mockDbWhere.mockResolvedValue([baseProfile]);
     const res = await request(app)
       .patch("/me")
@@ -245,7 +273,7 @@ describe("PATCH /me", () => {
 
   it("returns 200 with updated name trimmed", async () => {
     const updated = { ...baseProfile, fullName: "New Name" };
-    mockGetClaims.mockResolvedValue(validClaims);
+    mockGetUser.mockResolvedValue(validUser);
     mockDbWhere.mockResolvedValue([baseProfile]);
     mockDbReturning.mockResolvedValue([updated]);
     const res = await request(app)
