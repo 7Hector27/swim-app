@@ -1,0 +1,71 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+.deck {
+  position: relative;
+  width: 280px;
+  height: 350px;
+}
+
+.card {
+  position: absolute;
+  top: 0;
+  left: 0;
+  border-radius: var(--radius-media);
+  overflow: hidden;
+  /* Only transition transform — skips layout/paint, stays on GPU */
+  transition: transform 400ms cubic-bezier(0.23, 1, 0.32, 1);
+  will-change: transform;
+  user-select: none;
+  cursor: default;
+}
+
+/* Applied for two frames while the exited card snaps back to the deck */
+.cardNoTransition {
+  transition: none !important;
+}
+
+.image {
+  display: block;
+  object-fit: cover;
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.controlButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: var(--radius-button);
+  background-color: var(--color-icon-button-background);
+  color: var(--color-text);
+  transition: opacity 150ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .controlButton:hover {
+    opacity: 0.75;
+  }
+}
+
+.controlButton:active {
+  transform: scale(0.97);
+  transition: transform 100ms ease-out, opacity 150ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card,
+  .controlButton {
+    transition: none;
+  }
+}

@@ -1,3 +1,13 @@
+import CoachPhotoDeck from "./CoachPhotoDeck";
+import type { CoachPhoto } from "./CoachPhotoDeck";
+
+const coachPhotos: CoachPhoto[] = [
+  { src: "/images/coach/Jason-1.jpg", alt: "[describe photo 1]" },
+  { src: "/images/coach/Jason-2.jpg", alt: "[describe photo 2]" },
+  { src: "/images/coach/Jason-3.jpg", alt: "[describe photo 3]" },
+  { src: "/images/coach/Jason-4.jpg", alt: "[describe photo 4]" },
+];
+
 export default function CoachBioSection() {
   return (
     <section id="coach" className="scroll-mt-16 bg-background">
@@ -5,11 +15,9 @@ export default function CoachBioSection() {
         <h2 className="text-heading mb-10 tablet:mb-14">Meet Coach Jason</h2>
 
         <div className="flex flex-col gap-10 tablet:flex-row tablet:gap-16 tablet:items-start">
-          {/* Photo placeholder */}
-          <div className="flex-shrink-0 tablet:w-72">
-            <div className="aspect-[3/4] rounded-media border-2 border-dashed border-placeholder-border bg-surface-soft flex items-center justify-center text-text-secondary text-sm">
-              [Coach photo]
-            </div>
+          {/* Photo deck */}
+          <div className="flex-shrink-0 flex justify-center tablet:block">
+            <CoachPhotoDeck photos={coachPhotos} />
           </div>
 
           {/* Bio */}
