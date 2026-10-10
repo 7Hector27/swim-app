@@ -54,7 +54,7 @@ export default function SiteNav() {
       >
         <div className="mx-auto max-w-content px-page flex items-center justify-between h-16">
           <a href="/" aria-label="Axiom Aquatics home" onClick={handleMenuClose}>
-            <ThemeLogo variant="auto" />
+            <ThemeLogo variant="auto" onDark />
           </a>
 
           {/* Desktop nav links */}

@@ -7,7 +7,7 @@ export default function CoachBioSection() {
         <div className="flex flex-col gap-10 tablet:flex-row tablet:gap-16 tablet:items-start">
           {/* Photo placeholder */}
           <div className="flex-shrink-0 tablet:w-72">
-            <div className="aspect-[3/4] rounded-card border-2 border-dashed border-placeholder-border bg-surface-soft flex items-center justify-center text-text-secondary text-sm">
+            <div className="aspect-[3/4] rounded-media border-2 border-dashed border-placeholder-border bg-surface-soft flex items-center justify-center text-text-secondary text-sm">
               [Coach photo]
             </div>
           </div>

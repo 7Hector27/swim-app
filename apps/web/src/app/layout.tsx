@@ -43,8 +43,8 @@ export const viewport: Viewport = {
   // These match --color-background (light) and --color-background (dark) in tokens.css.
   // Update both if those token values change.
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#FFFFFF" },
-    { media: "(prefers-color-scheme: dark)", color: "#07080B" },
+    { media: "(prefers-color-scheme: light)", color: "#F5F7FA" },
+    { media: "(prefers-color-scheme: dark)", color: "#10131C" },
   ],
 };
 

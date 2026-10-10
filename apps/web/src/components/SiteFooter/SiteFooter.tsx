@@ -21,17 +21,17 @@ const footerColumns = [
 
 export default function SiteFooter() {
   return (
-    <footer className="bg-background border-t border-border">
+    <footer className="bg-section border-t border-divider-section">
       <div className="mx-auto max-w-content px-page py-12 tablet:py-16">
         <div className="flex flex-col gap-10 tablet:flex-row tablet:gap-16">
           <div className="tablet:flex-1">
-            <ThemeLogo variant="lockup" width={140} height={40} />
+            <ThemeLogo variant="lockup" onDark width={140} height={40} />
           </div>
 
           <div className="flex flex-col gap-10 tablet:flex-row tablet:gap-16">
             {footerColumns.map((column) => (
               <div key={column.heading} className="flex flex-col gap-3">
-                <p className="text-text font-bold text-sm uppercase tracking-widest">
+                <p className="text-text-on-section font-bold text-sm uppercase tracking-widest">
                   {column.heading}
                 </p>
                 <ul className="flex flex-col gap-2">
@@ -39,7 +39,7 @@ export default function SiteFooter() {
                     <li key={item.href}>
                       <a
                         href={item.href}
-                        className="text-text-secondary text-sm hover:text-text transition-colors duration-150"
+                        className="text-text-secondary-on-section text-sm hover:text-text-on-section transition-colors duration-150"
                       >
                         {item.label}
                       </a>
@@ -51,8 +51,8 @@ export default function SiteFooter() {
           </div>
         </div>
 
-        <div className="mt-10 pt-6 border-t border-border">
-          <p className="text-text-secondary text-xs">
+        <div className="mt-10 pt-6 border-t border-divider-section">
+          <p className="text-text-secondary-on-section text-xs">
             &copy; {new Date().getFullYear()} Axiom Aquatics. All rights reserved.
           </p>
         </div>

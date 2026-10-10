@@ -6,6 +6,9 @@ interface ThemeLogoProps {
   /** "lockup" shows the full wordmark (default). "emblem" shows the square mark only.
    *  "auto" shows the lockup on tablet+ and the emblem on mobile. */
   variant?: "lockup" | "emblem" | "auto";
+  /** Force the high-contrast-on-dark version regardless of theme.
+   *  Use this whenever the logo sits on a dark background (nav, footer, dark sections). */
+  onDark?: boolean;
   alt?: string;
   className?: string;
   width?: number;
@@ -14,6 +17,7 @@ interface ThemeLogoProps {
 
 export default function ThemeLogo({
   variant = "lockup",
+  onDark = false,
   alt = "Axiom Aquatics",
   className,
   width,
@@ -34,7 +38,7 @@ export default function ThemeLogo({
   if (variant === "auto") {
     return (
       <span className={`inline-flex ${className ?? ""}`}>
-        {/* Emblem on mobile */}
+        {/* Emblem on mobile — works on both light and dark */}
         <Image
           src="/logos/axiom-aquatics-emblem.webp"
           alt={alt}
@@ -42,29 +46,53 @@ export default function ThemeLogo({
           height={40}
           className="tablet:hidden"
         />
-        {/* Lockup on tablet+ — light/dark variants */}
-        <span className={styles.lockupWrap}>
-          <Image
-            src="/logos/axiom-aquatics-lockup.webp"
-            alt={alt}
-            width={width ?? 140}
-            height={height ?? 40}
-            className={`hidden tablet:block ${styles.light}`}
-          />
+        {/* Lockup on tablet+ */}
+        {onDark ? (
           <Image
             src="/logos/axiom-aquatics-lockup-dark.webp"
             alt=""
             aria-hidden
             width={width ?? 140}
             height={height ?? 40}
-            className={`hidden tablet:block ${styles.dark}`}
+            className="hidden tablet:block"
           />
-        </span>
+        ) : (
+          <span className={styles.lockupWrap}>
+            <Image
+              src="/logos/axiom-aquatics-lockup.webp"
+              alt=""
+              aria-hidden
+              width={width ?? 140}
+              height={height ?? 40}
+              className={`hidden tablet:block ${styles.light}`}
+            />
+            <Image
+              src="/logos/axiom-aquatics-lockup-dark.webp"
+              alt=""
+              aria-hidden
+              width={width ?? 140}
+              height={height ?? 40}
+              className={`hidden tablet:block ${styles.dark}`}
+            />
+          </span>
+        )}
       </span>
     );
   }
 
-  // Default: lockup with theme-aware light/dark swap
+  // Default: lockup
+  if (onDark) {
+    return (
+      <Image
+        src="/logos/axiom-aquatics-lockup-dark.webp"
+        alt={alt}
+        width={width ?? 140}
+        height={height ?? 40}
+        className={className}
+      />
+    );
+  }
+
   return (
     <span className={`inline-flex ${className ?? ""}`}>
       <Image

@@ -1,7 +1,6 @@
 .heading,
 .body,
-.ctas,
-.photo {
+.ctas {
   opacity: 1;
   transform: translateY(0);
   transition:
@@ -12,8 +11,7 @@
 @starting-style {
   .heading,
   .body,
-  .ctas,
-  .photo {
+  .ctas {
     opacity: 0;
     transform: translateY(12px);
   }
@@ -21,13 +19,11 @@
 
 .body  { transition-delay: 60ms; }
 .ctas  { transition-delay: 120ms; }
-.photo { transition-delay: 80ms; }
 
 @media (prefers-reduced-motion: reduce) {
   .heading,
   .body,
-  .ctas,
-  .photo {
+  .ctas {
     transition: none;
   }
 }

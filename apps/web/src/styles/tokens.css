@@ -4,35 +4,35 @@
 
 :root {
   /* Surfaces */
-  --color-background: #FFFFFF;
-  --color-section: #0A0A0B;
-  --color-surface-soft: #F2F4F8;
-  --color-card: #17191E;
+  --color-background: #F5F7FA;
+  --color-section: #141A2E;
+  --color-surface-soft: #EBEFF5;
+  --color-card: #1D2440;
 
   /* Lines */
-  --color-border: #E4E7EE;
-  --color-divider-section: #2A2E37;
-  --color-placeholder-border: #B9C2D3;
+  --color-border: #DDE3EC;
+  --color-divider-section: #2C3553;
+  --color-placeholder-border: #B4BFD0;
 
   /* Text */
-  --color-heading: #0A0A0B;
-  --color-text: #1A1C21;
-  --color-text-secondary: #4A5060;
+  --color-heading: #141A2E;
+  --color-text: #1E2433;
+  --color-text-secondary: #4A5468;
   --color-text-on-section: #FFFFFF;
-  --color-text-secondary-on-section: #A9B0BE;
+  --color-text-secondary-on-section: #A9B3C7;
 
   /* Brand */
   --color-accent: #1440F0;
-  --color-accent-on-section: #5B7CFF;
-  --color-ink: #0A0A0B;
+  --color-accent-on-section: #7C96FF;
+  --color-ink: #141A2E;
   --color-link: #1440F0;
-  --color-link-hover: #0A0A0B;
+  --color-link-hover: #141A2E;
 
   /* Buttons */
   --color-button-primary-background: #1440F0;
   --color-button-primary-text: #FFFFFF;
-  --color-button-outline: #0A0A0B;
-  --color-icon-button-background: #F2F4F8;
+  --color-button-outline: #141A2E;
+  --color-icon-button-background: #EBEFF5;
 
   /* Semantic */
   --color-focus-ring: #1440F0;
@@ -45,21 +45,22 @@
   --font-body: 'Figtree', system-ui, sans-serif;
 
   /* Shape and layout */
-  --radius-button: 6px;
-  --radius-card: 10px;
+  --radius-button: 999px;
+  --radius-card: 18px;
+  --radius-media: 24px;
   --content-max-width: 1200px;
   --page-padding: 24px;
 }
 
 :root[data-theme="dark"] {
-  --color-background: #07080B;
-  --color-section: #0F1116;
-  --color-surface-soft: #12151B;
-  --color-card: #181B23;
+  --color-background: #10131C;
+  --color-section: #171C2A;
+  --color-surface-soft: #1A2030;
+  --color-card: #212839;
 
-  --color-border: #252A35;
-  --color-divider-section: #2A303C;
-  --color-placeholder-border: #3A4254;
+  --color-border: #2C3448;
+  --color-divider-section: #333C52;
+  --color-placeholder-border: #424C66;
 
   --color-heading: #FFFFFF;
   --color-text: #E8EBF1;
@@ -68,15 +69,15 @@
   --color-text-secondary-on-section: #A0A7B5;
 
   --color-accent: #5B7CFF;
-  --color-accent-on-section: #5B7CFF;
+  --color-accent-on-section: #7C96FF;
   --color-ink: #E8EBF1;
   --color-link: #7C96FF;
   --color-link-hover: #FFFFFF;
 
   --color-button-primary-background: #5B7CFF;
-  --color-button-primary-text: #07080B;
+  --color-button-primary-text: #10131C;
   --color-button-outline: #E8EBF1;
-  --color-icon-button-background: #181B23;
+  --color-icon-button-background: #212839;
 
   /* Semantic */
   --color-focus-ring: #5B7CFF;
