@@ -1,0 +1,34 @@
+/* Rotating chevron */
+.chevron {
+  flex-shrink: 0;
+  transition: transform 250ms var(--ease-out-strong, cubic-bezier(0.23, 1, 0.32, 1));
+}
+
+details[open] .chevron {
+  transform: rotate(180deg);
+}
+
+/* Animate content in on open via @starting-style */
+.content {
+  overflow: hidden;
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    opacity 250ms var(--ease-out-strong, cubic-bezier(0.23, 1, 0.32, 1)),
+    transform 250ms var(--ease-out-strong, cubic-bezier(0.23, 1, 0.32, 1));
+
+  @starting-style {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chevron {
+    transition: none;
+  }
+
+  .content {
+    transition: none;
+  }
+}

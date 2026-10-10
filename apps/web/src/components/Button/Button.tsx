@@ -11,7 +11,7 @@ export default function Button({
   ...rest
 }: ButtonProps) {
   const base =
-    "inline-flex items-center justify-center rounded-pill font-bold text-sm min-h-[52px] px-7 transition-colors duration-200 disabled:opacity-60 disabled:cursor-not-allowed";
+    "inline-flex items-center justify-center rounded-button font-bold text-sm min-h-[52px] px-7 transition-colors duration-200 disabled:opacity-60 disabled:cursor-not-allowed";
 
   const variants: Record<string, string> = {
     primary: "bg-button-primary-background text-button-primary-text active:scale-[0.97]",

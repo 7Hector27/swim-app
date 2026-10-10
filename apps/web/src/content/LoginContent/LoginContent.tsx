@@ -21,7 +21,7 @@ export default function LoginContent({ notice }: LoginContentProps) {
       <main className="flex-1 flex items-center justify-center px-page py-16">
         <div className="w-full max-w-sm">
           <h1 className="text-heading mb-2">Sign in</h1>
-          <p className="text-text-secondary mb-8">Welcome back to JG Swim.</p>
+          <p className="text-text-secondary mb-8">Welcome back to Axiom Aquatics.</p>
 
           <p aria-live="polite" role="status" className="text-text-secondary text-sm min-h-5 mb-4">
             {notice ?? ""}

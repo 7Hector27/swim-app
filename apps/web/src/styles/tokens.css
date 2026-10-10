@@ -1,76 +1,93 @@
+/* Axiom Aquatics design tokens. Import in globals.css.
+   Light is the default. The header toggle sets data-theme="dark" on <html>
+   and saves the choice in localStorage. The site does not follow the system setting. */
+
 :root {
   /* Surfaces */
-  --color-background: #FFFFFF;
-  --color-section: #082C4F;
-  --color-surface-soft: #E6F6FA;
-  --color-card: #0F3B66;
+  --color-background: #F5F7FA;
+  --color-section: #141A2E;
+  --color-surface-soft: #EBEFF5;
+  --color-card: #1D2440;
+
   /* Lines */
-  --color-border: #E3EEF3;
-  --color-divider-section: #24527D;
-  --color-placeholder-border: #8FD3E5;
+  --color-border: #DDE3EC;
+  --color-divider-section: #2C3553;
+  --color-placeholder-border: #B4BFD0;
+
   /* Text */
-  --color-heading: #082C4F;
-  --color-text: #082C4F;
-  --color-text-secondary: #2E4A66;
+  --color-heading: #141A2E;
+  --color-text: #1E2433;
+  --color-text-secondary: #4A5468;
   --color-text-on-section: #FFFFFF;
-  --color-text-secondary-on-section: #BCD3E4;
+  --color-text-secondary-on-section: #A9B3C7;
+
   /* Brand */
-  --color-accent: #10BFDE;
-  --color-link: #017FAA;
-  --color-link-hover: #082C4F;
-  /* Semantic UI */
-  --color-on-accent: #04182C;
-  --color-focus-ring: #04182C;
-  --color-success: #15803d;
-  --color-danger: #b91c1c;
+  --color-accent: #1440F0;
+  --color-accent-on-section: #7C96FF;
+  --color-ink: #141A2E;
+  --color-link: #1440F0;
+  --color-link-hover: #141A2E;
+
   /* Buttons */
-  --color-button-primary-background: #082C4F;
+  --color-button-primary-background: #1440F0;
   --color-button-primary-text: #FFFFFF;
-  --color-button-outline: #082C4F;
-  /* Leaderboard */
-  --color-rank-gold: #FFD700;
-  --color-rank-silver: #C0C8D8;
-  --color-rank-bronze: #CD7F32;
-  /* Shadows — allowed only on scrolled nav and floating menus */
-  --shadow-elevated: 0 2px 16px color-mix(in srgb, #000000 20%, transparent);
+  --color-button-outline: #141A2E;
+  --color-icon-button-background: #EBEFF5;
+
+  /* Semantic */
+  --color-focus-ring: #1440F0;
+  --color-on-accent: #FFFFFF;
+  --color-success: #0E7A3E;
+  --color-danger: #C8102E;
+
+  /* Type */
+  --font-heading: 'Fraunces', Georgia, serif;
+  --font-body: 'Figtree', system-ui, sans-serif;
+
   /* Shape and layout */
-  --radius-pill: 999px;
+  --radius-button: 999px;
   --radius-card: 18px;
   --radius-media: 24px;
   --content-max-width: 1200px;
-  --page-padding: 20px;
+  --page-padding: 24px;
 }
 
 :root[data-theme="dark"] {
-  --color-background: #04182C;
-  --color-section: #0A2540;
-  --color-surface-soft: #163252;
-  --color-card: #113256;
-  --color-border: #1E4670;
-  --color-divider-section: #1E4670;
-  --color-placeholder-border: #2E5F88;
+  --color-background: #10131C;
+  --color-section: #171C2A;
+  --color-surface-soft: #1A2030;
+  --color-card: #212839;
+
+  --color-border: #2C3448;
+  --color-divider-section: #333C52;
+  --color-placeholder-border: #424C66;
+
   --color-heading: #FFFFFF;
-  --color-text: #EAF4FA;
-  --color-text-secondary: #9DB7CC;
-  --color-text-on-section: #EAF4FA;
-  --color-text-secondary-on-section: #9DB7CC;
-  --color-accent: #10BFDE;
-  --color-link: #10BFDE;
-  --color-link-hover: #EAF4FA;
-  --color-focus-ring: #FFFFFF;
-  --color-success: #4ade80;
-  --color-danger: #f87171;
-  --color-button-primary-background: #10BFDE;
-  --color-button-primary-text: #04182C;
-  --color-button-outline: #EAF4FA;
-  --shadow-elevated: 0 2px 20px color-mix(in srgb, #000000 50%, transparent);
+  --color-text: #E8EBF1;
+  --color-text-secondary: #A0A7B5;
+  --color-text-on-section: #E8EBF1;
+  --color-text-secondary-on-section: #A0A7B5;
+
+  --color-accent: #5B7CFF;
+  --color-accent-on-section: #7C96FF;
+  --color-ink: #E8EBF1;
+  --color-link: #7C96FF;
+  --color-link-hover: #FFFFFF;
+
+  --color-button-primary-background: #5B7CFF;
+  --color-button-primary-text: #10131C;
+  --color-button-outline: #E8EBF1;
+  --color-icon-button-background: #212839;
+
+  /* Semantic */
+  --color-focus-ring: #5B7CFF;
+  --color-on-accent: #07080B;
+  --color-success: #4ADE80;
+  --color-danger: #FF6B6B;
 }
 
-@media (min-width: 769px) {
+@media (max-width: 768px) {
   :root {
-    /* 24px for both tablet and desktop — intentional. At desktop widths,
-       --content-max-width centers the content and acts as the real gutter.
-       --page-padding is only the minimum edge clearance on narrower viewports. */
-    --page-padding: 24px;
+    --page-padding: 20px;
   }
 }

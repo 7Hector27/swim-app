@@ -22,7 +22,7 @@ export default function PrivacyContent() {
               <section>
                 <h2 className="text-xl font-bold text-heading mb-3">Who we are</h2>
                 <p className="text-text-secondary leading-relaxed">
-                  [Business name] operates the JG Swim website at [domain]. Coach Jason provides private one-on-one swimming lessons to students. This policy describes how we handle information collected through this site.
+                  [Business name] operates the Axiom Aquatics website at [domain]. Coach Jason provides private one-on-one swimming lessons to students. This policy describes how we handle information collected through this site.
                 </p>
               </section>
 

@@ -1,0 +1,47 @@
+/* Mobile-first: deck above, content below */
+.layout {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.deckColumn {
+  display: flex;
+  justify-content: center;
+}
+
+.contentColumn {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+/* Desktop: side by side, deck fixed at 400px */
+@media (min-width: 1248px) {
+  .layout {
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 3rem;
+  }
+
+  .deckColumn {
+    /* Fixed width matches the photo container's max-width */
+    flex: 0 0 400px;
+    justify-content: flex-start;
+  }
+
+  .contentColumn {
+    flex: 1;
+    /* Prevent long pull quote text from overflowing the flex row */
+    min-width: 0;
+  }
+}
+
+/* Pull quote: globals already give h2 Fraunces + weight + variation-settings.
+   We add italic and loosen line-height for multiline readability. */
+.pullQuote {
+  font-style: italic;
+  line-height: 1.25;
+  color: var(--color-heading);
+  margin: 0;
+}

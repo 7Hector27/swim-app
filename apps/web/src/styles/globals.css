@@ -31,22 +31,21 @@
   --color-text-on-section: var(--color-text-on-section);
   --color-text-secondary-on-section: var(--color-text-secondary-on-section);
   --color-accent: var(--color-accent);
+  --color-accent-on-section: var(--color-accent-on-section);
+  --color-ink: var(--color-ink);
   --color-link: var(--color-link);
   --color-link-hover: var(--color-link-hover);
   --color-button-primary-background: var(--color-button-primary-background);
   --color-button-primary-text: var(--color-button-primary-text);
   --color-button-outline: var(--color-button-outline);
+  --color-icon-button-background: var(--color-icon-button-background);
   --color-on-accent: var(--color-on-accent);
   --color-focus-ring: var(--color-focus-ring);
   --color-success: var(--color-success);
   --color-danger: var(--color-danger);
-  --color-rank-gold: var(--color-rank-gold);
-  --color-rank-silver: var(--color-rank-silver);
-  --color-rank-bronze: var(--color-rank-bronze);
-  --shadow-elevated: var(--shadow-elevated);
-  --font-heading: var(--font-saira);
+  --font-heading: var(--font-fraunces);
   --font-body: var(--font-figtree);
-  --radius-pill: var(--radius-pill);
+  --radius-button: var(--radius-button);
   --radius-card: var(--radius-card);
   --radius-media: var(--radius-media);
 }
@@ -63,13 +62,41 @@
   .text-eyebrow {
     font-size: var(--text-eyebrow);
   }
+}
 
-  .font-stretch-expanded {
-    font-stretch: 125%;
+/* FAQ ::details-content — progressive enhancement for browsers that support it */
+details::details-content {
+  interpolate-size: allow-keywords;
+  overflow: hidden;
+  transition:
+    height 250ms var(--ease-out-strong, cubic-bezier(0.23, 1, 0.32, 1)),
+    opacity 250ms var(--ease-out-strong, cubic-bezier(0.23, 1, 0.32, 1));
+  opacity: 0;
+  height: 0;
+}
+
+details[open]::details-content {
+  opacity: 1;
+  height: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  details::details-content {
+    transition: none;
   }
 }
 
 @layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+  }
+
   body {
     font-family: var(--font-body);
   }
@@ -78,18 +105,18 @@
   h2,
   h3 {
     font-family: var(--font-heading);
-    font-weight: 800;
-    font-style: italic;
-    font-stretch: 125%;
-    line-height: 1.05;
+    font-weight: 600;
+    line-height: 1.1;
+    font-variation-settings: "SOFT" 100, "WONK" 0;
+    font-optical-sizing: auto;
   }
 
   h1 {
-    font-size: clamp(2.5rem, 1.64rem + 3.67vw, 4.5rem);
+    font-size: clamp(2.125rem, 1.6rem + 2.25vw, 3.75rem);
   }
 
   section h2 {
-    font-size: clamp(2rem, 1.68rem + 1.37vw, 2.75rem);
+    font-size: clamp(1.875rem, 1.6rem + 1.16vw, 2.5rem);
   }
 
   :focus-visible {

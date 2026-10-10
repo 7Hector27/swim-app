@@ -1,0 +1,343 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  width: 100%;
+}
+
+/* ── Photo area (contains photos + overlaid controls) ────── */
+
+.photoArea {
+  position: relative;
+  width: 100%;
+  max-width: 400px;
+}
+
+/* ── Main photo container ──────────────────────────────────── */
+
+.photoWrapper {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4/5;
+  border-radius: var(--radius-media);
+  overflow: hidden;
+  /* Warm neutral placeholder while images load */
+  background-color: var(--color-surface-soft);
+}
+
+/* All photos live absolutely inside the wrapper */
+.photo {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+
+/* Stable active photo — no animation, just visible */
+.photoActive {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* ── Direction-aware crossfade transitions ─────────────────── *
+ * Enter: strong ease-out so the new photo lands fast and settles.
+ * Exit: ease-in so the departing photo accelerates out of the way.
+ * Asymmetric durations (370ms enter / 300ms exit) keep the enter
+ * from feeling delayed — the exit clears first, then the new photo
+ * settles into place.                                            */
+
+.photoEnterNext {
+  animation: enterFromRight 370ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  pointer-events: auto;
+}
+
+.photoEnterPrev {
+  animation: enterFromLeft 370ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  pointer-events: auto;
+}
+
+.photoExitNext {
+  animation: exitToLeft 300ms cubic-bezier(0.4, 0, 1, 1) both;
+}
+
+.photoExitPrev {
+  animation: exitToRight 300ms cubic-bezier(0.4, 0, 1, 1) both;
+}
+
+@keyframes enterFromRight {
+  from {
+    opacity: 0;
+    transform: translateX(4%) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+@keyframes enterFromLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-4%) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+@keyframes exitToLeft {
+  from {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(-3%) scale(0.97);
+  }
+}
+
+@keyframes exitToRight {
+  from {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(3%) scale(0.97);
+  }
+}
+
+/* ── Image & Ken Burns ──────────────────────────────────────── */
+
+.image {
+  object-fit: cover;
+  object-position: center top;
+}
+
+/* Imperceptibly slow zoom-out drift — 15s means it barely moves
+   in one auto-advance cycle, but gives the photo life when paused */
+@keyframes kenBurns {
+  from {
+    transform: scale(1.04) translate(0.6%, -0.4%);
+  }
+  to {
+    transform: scale(1) translate(0, 0);
+  }
+}
+
+.imageKenBurns {
+  animation: kenBurns 15s ease-out both;
+}
+
+/* ── Caustic water light ────────────────────────────────────── *
+ * Two radial gradients at coprime periods (7s and 11s) trace an
+ * organic, non-repeating path — like ceiling reflections in a pool.
+ * mix-blend-mode: screen lightens the photo without washing it out. */
+
+.causticOverlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  mix-blend-mode: screen;
+}
+
+.causticOverlay::before,
+.causticOverlay::after {
+  content: "";
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: radial-gradient(
+    ellipse 55% 35% at 50% 50%,
+    rgba(255, 255, 255, 0.2) 0%,
+    rgba(255, 255, 255, 0.05) 45%,
+    transparent 70%
+  );
+}
+
+.causticOverlay::before {
+  animation: causticA 7s ease-in-out infinite;
+}
+
+.causticOverlay::after {
+  animation: causticB 11s ease-in-out infinite;
+}
+
+@keyframes causticA {
+  0%,
+  100% {
+    transform: translate(0%, 0%);
+  }
+  30% {
+    transform: translate(14%, -9%);
+  }
+  65% {
+    transform: translate(-7%, 11%);
+  }
+}
+
+@keyframes causticB {
+  0%,
+  100% {
+    transform: translate(0%, 0%);
+  }
+  25% {
+    transform: translate(-11%, 5%);
+  }
+  72% {
+    transform: translate(9%, -5%);
+  }
+}
+
+/* ── Photo toggle (invisible tap/click target over entire photo) */
+
+.photoToggle {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: transparent;
+  border-radius: var(--radius-media);
+  /* Allow vertical scroll on touch without blocking the swipe handler */
+  touch-action: pan-y;
+  cursor: pointer;
+}
+
+/* ── Flash icon ─────────────────────────────────────────────── */
+
+.flashIcon {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  pointer-events: none;
+  animation: flashIconPop 650ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.flashIconReduced {
+  animation: flashIconFade 650ms ease-out forwards;
+}
+
+@keyframes flashIconPop {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.7);
+  }
+  20% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  70% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(1.05);
+  }
+}
+
+@keyframes flashIconFade {
+  0% {
+    opacity: 1;
+  }
+  60% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* ── Arrows ──────────────────────────────────────────────────── */
+
+.arrow {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  opacity: 0;
+  pointer-events: none;
+  color: rgba(255, 255, 255, 0.9);
+  transition: opacity 200ms ease;
+  border-radius: 0;
+}
+
+.arrowPrev {
+  left: 0;
+  width: 80px;
+  padding-left: 14px;
+  justify-content: flex-start;
+  background: linear-gradient(to right, rgba(0, 0, 0, 0.3), transparent);
+  border-radius: var(--radius-media) 0 0 var(--radius-media);
+}
+
+.arrowNext {
+  right: 0;
+  width: 80px;
+  padding-right: 14px;
+  justify-content: flex-end;
+  background: linear-gradient(to left, rgba(0, 0, 0, 0.3), transparent);
+  border-radius: 0 var(--radius-media) var(--radius-media) 0;
+}
+
+/* Show arrows on hover (pointer devices only) */
+@media (hover: hover) and (pointer: fine) {
+  .photoArea:hover .arrow {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .arrow:hover {
+    opacity: 1;
+  }
+}
+
+/* Show arrows when anything in the deck has keyboard focus */
+.photoArea:focus-within .arrow {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* On touch devices: keep arrows subtly visible */
+@media (hover: none) and (pointer: coarse) {
+  .arrow {
+    opacity: 0.65;
+    pointer-events: auto;
+  }
+}
+
+.arrow:active {
+  opacity: 0.6;
+  transition: opacity 100ms ease-out;
+}
+
+/* ── Reduced motion ──────────────────────────────────────────── *
+ * The component already skips animations in JS when reduced motion
+ * is set; these rules are belt-and-suspenders in case the element
+ * is rendered between state updates.                             */
+
+@media (prefers-reduced-motion: reduce) {
+  .arrow {
+    transition: none;
+  }
+
+  .causticOverlay::before,
+  .causticOverlay::after {
+    animation: none;
+  }
+}

@@ -5,7 +5,7 @@ import SignupContent from "@/content/SignupContent";
 import { createClient } from "@/lib/supabase/server";
 
 export const metadata: Metadata = {
-  title: "Create account · JG Swim",
+  title: "Create account · Axiom Aquatics",
 };
 
 export default async function SignupPage() {

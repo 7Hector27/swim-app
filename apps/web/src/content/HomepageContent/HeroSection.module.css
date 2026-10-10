@@ -1,0 +1,29 @@
+.heading,
+.body,
+.ctas {
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    opacity 400ms var(--ease-out-strong),
+    transform 400ms var(--ease-out-strong);
+}
+
+@starting-style {
+  .heading,
+  .body,
+  .ctas {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+
+.body  { transition-delay: 60ms; }
+.ctas  { transition-delay: 120ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  .heading,
+  .body,
+  .ctas {
+    transition: none;
+  }
+}

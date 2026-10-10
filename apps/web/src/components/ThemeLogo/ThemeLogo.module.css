@@ -14,12 +14,14 @@
   display: block;
 }
 
-/* On section backgrounds the off-white logo is always correct, in both themes */
-.onSection .light {
+/* lockupWrap hides both lockup images on mobile regardless of child .light { display: block }.
+   At tablet+ it collapses to display: contents so children lay out normally. */
+.lockupWrap {
   display: none;
 }
 
-.onSection .dark {
-  display: block;
+@media (min-width: 769px) {
+  .lockupWrap {
+    display: contents;
+  }
 }
-

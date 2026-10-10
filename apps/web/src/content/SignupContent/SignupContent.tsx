@@ -32,7 +32,7 @@ export default function SignupContent() {
       <main className="flex-1 flex items-center justify-center px-page py-16">
         <div className="w-full max-w-md">
           <h1 className="text-heading mb-2">Create account</h1>
-          <p className="text-text-secondary mb-8">Join JG Swim today.</p>
+          <p className="text-text-secondary mb-8">Join Axiom Aquatics today.</p>
 
           <form action={formAction} noValidate className="flex flex-col gap-5">
             <p aria-live="polite" className="text-danger text-sm min-h-5">

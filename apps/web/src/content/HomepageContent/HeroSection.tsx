@@ -1,35 +1,35 @@
-import HeroWaterBg from "./HeroWaterBg";
+"use client";
+
+import Link from "next/link";
+
+import { useSession } from "@/components/Providers";
+
+import HeroBubbleBg from "./HeroBubbleBg";
+import styles from "./HeroSection.module.css";
 
 export default function HeroSection() {
+  const { isSignedIn } = useSession();
+
   return (
-    <section className="relative bg-section overflow-hidden">
-      <HeroWaterBg />
-      <div className="relative z-10 mx-auto max-w-content px-page py-20 tablet:py-28 desktop:py-36">
-        <div className="max-w-2xl flex flex-col gap-6">
-          <p className="text-eyebrow text-accent font-bold uppercase tracking-[0.08em]">
-            Private Swim Coaching
-          </p>
-          <h1 className="text-text-on-section">
-            Private swim lessons, one swimmer at a time
+    <section className="relative overflow-hidden bg-background">
+      <HeroBubbleBg />
+      <div className="relative mx-auto max-w-content px-page pt-20 pb-20 tablet:pt-28 tablet:pb-28 desktop:pt-36 desktop:pb-36">
+        <div className="mx-auto max-w-3xl flex flex-col items-center text-center gap-6">
+          <h1 className={`text-heading ${styles.heading}`}>
+            Private swim lessons, one swimmer at a time.
           </h1>
-          <p className="text-text-secondary-on-section text-base tablet:text-lg max-w-lg">
+          <p className={`text-text-secondary text-base tablet:text-lg max-w-lg ${styles.body}`}>
             Coach Jason teaches every lesson himself, one on one. Swimmers
-            learning to float and club swimmers chasing a best time get the same
-            full attention.
+            learning to float and club swimmers chasing a best time get the
+            same full attention.
           </p>
-          <div className="flex flex-col gap-3 tablet:flex-row tablet:gap-4 mt-2">
-            <a
-              href="/book"
-              className="inline-flex items-center justify-center rounded-pill bg-accent text-on-accent font-bold px-8 h-[52px] transition-colors duration-200 active:scale-97"
+          <div className={`mt-2 ${styles.ctas}`}>
+            <Link
+              href={isSignedIn ? "/dashboard" : "/signup"}
+              className="inline-flex items-center justify-center rounded-button bg-button-primary-background text-button-primary-text font-bold px-8 h-[52px] transition-opacity duration-200 hover:opacity-90 active:scale-[0.97]"
             >
               Book a lesson
-            </a>
-            <a
-              href="/lessons"
-              className="inline-flex items-center justify-center rounded-pill border-2 border-text-on-section text-text-on-section font-bold px-8 h-[52px] transition-colors duration-200 active:scale-97"
-            >
-              See lessons
-            </a>
+            </Link>
           </div>
         </div>
       </div>

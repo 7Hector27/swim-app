@@ -1,19 +1,14 @@
 "use server";
 
-import { redirect } from "next/navigation";
 import { PatchMeBodySchema } from "@swim-app/shared";
 
 import { isApiBody, mapZodErrors } from "@/lib/mapZodErrors";
+import { logout } from "@/lib/logout";
 import { createClient } from "@/lib/supabase/server";
 
 import type { EditState } from "./helpers";
 export type { EditState } from "./helpers";
-
-export async function logout(_formData: FormData): Promise<void> {
-  const supabase = await createClient();
-  await supabase.auth.signOut();
-  redirect("/");
-}
+export { logout };
 
 export async function updateProfile(
   _prev: EditState,
