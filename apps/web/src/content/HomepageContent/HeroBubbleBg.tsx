@@ -2,44 +2,47 @@
 
 import { useEffect, useRef } from "react";
 
-// Fixed array — no Math.random at render so SSR and client match exactly.
-// diameter in px, cx/cy as % of container, duration in seconds.
+import styles from "./HeroBubbleBg.module.css";
+
+// Fixed array — no Math.random at render so SSR and client produce identical HTML.
+// phase (0–1): determines negative rise delay = -(phase × duration).
+// Distributing phases evenly means bubbles are already at every height on first load.
+// Bigger bubbles rise slower (duration scales with size) so the scene feels calm.
 const bubbles = [
-  { cx:  8, cy: 90, d: 12, delay:  0.0, duration: 13, drift:  6 },
-  { cx: 18, cy: 78, d:  8, delay:  2.5, duration: 17, drift:  4 },
-  { cx: 32, cy: 85, d: 20, delay:  1.0, duration: 14, drift:  8 },
-  { cx: 45, cy: 92, d: 14, delay:  4.0, duration: 11, drift:  5 },
-  { cx: 55, cy: 80, d:  8, delay:  6.0, duration: 16, drift:  6 },
-  { cx: 68, cy: 88, d: 24, delay:  3.0, duration: 12, drift:  9 },
-  { cx: 78, cy: 75, d: 16, delay:  5.5, duration: 15, drift:  7 },
-  { cx: 88, cy: 93, d: 10, delay:  1.5, duration: 17, drift:  4 },
-  { cx: 92, cy: 82, d: 32, delay:  7.0, duration: 13, drift: 10 },
-  { cx: 22, cy: 70, d: 18, delay:  8.0, duration: 14, drift:  8 },
-  { cx: 38, cy: 87, d:  8, delay:  2.0, duration: 16, drift:  5 },
-  { cx: 62, cy: 73, d: 48, delay:  9.0, duration: 18, drift: 12 },
-  { cx: 75, cy: 95, d: 14, delay:  4.5, duration: 15, drift:  6 },
-  { cx: 85, cy: 68, d: 10, delay:  6.5, duration: 17, drift:  4 },
-  { cx: 12, cy: 96, d: 22, delay:  3.5, duration: 12, drift:  9 },
+  { cx:  4, cy: 88, d: 10, duration: 10.0, phase: 0.00, opacity: 0.60, swayPx:  4, swayDuration: 3.2 },
+  { cx: 12, cy: 72, d: 16, duration: 11.5, phase: 0.06, opacity: 0.70, swayPx:  6, swayDuration: 4.5 },
+  { cx: 21, cy: 55, d:  8, duration:  9.5, phase: 0.13, opacity: 0.55, swayPx:  3, swayDuration: 2.8 },
+  { cx: 28, cy: 80, d: 22, duration: 12.5, phase: 0.19, opacity: 0.65, swayPx:  8, swayDuration: 3.8 },
+  { cx: 37, cy: 42, d: 12, duration: 10.5, phase: 0.25, opacity: 0.60, swayPx:  5, swayDuration: 2.5 },
+  { cx: 45, cy: 65, d: 48, duration: 18.0, phase: 0.31, opacity: 0.45, swayPx: 16, swayDuration: 5.0 },
+  { cx: 52, cy: 90, d: 10, duration: 10.0, phase: 0.38, opacity: 0.65, swayPx:  4, swayDuration: 3.5 },
+  { cx: 60, cy: 35, d: 18, duration: 11.5, phase: 0.44, opacity: 0.70, swayPx:  7, swayDuration: 4.0 },
+  { cx: 67, cy: 75, d: 24, duration: 13.0, phase: 0.50, opacity: 0.60, swayPx:  9, swayDuration: 4.6 },
+  { cx: 74, cy: 50, d: 14, duration: 11.0, phase: 0.56, opacity: 0.65, swayPx:  5, swayDuration: 3.0 },
+  { cx: 81, cy: 25, d: 32, duration: 15.0, phase: 0.63, opacity: 0.50, swayPx: 11, swayDuration: 5.0 },
+  { cx: 88, cy: 62, d:  8, duration:  9.5, phase: 0.69, opacity: 0.60, swayPx:  3, swayDuration: 2.5 },
+  { cx: 93, cy: 83, d: 20, duration: 12.0, phase: 0.75, opacity: 0.65, swayPx:  7, swayDuration: 3.8 },
+  { cx: 97, cy: 45, d: 12, duration: 10.5, phase: 0.81, opacity: 0.70, swayPx:  4, swayDuration: 3.2 },
+  { cx: 15, cy: 68, d: 28, duration: 14.0, phase: 0.88, opacity: 0.55, swayPx: 10, swayDuration: 4.8 },
+  { cx: 50, cy: 30, d: 14, duration: 11.0, phase: 0.94, opacity: 0.65, swayPx:  5, swayDuration: 3.6 },
 ];
 
 export default function HeroBubbleBg() {
   const containerRef = useRef<HTMLDivElement>(null);
   const layerRef = useRef<HTMLDivElement>(null);
 
-  // Pause animations when hero is offscreen (same pattern as old HeroWaterBg).
+  // Pause CSS animations when hero is offscreen — saves GPU work.
+  // Sets --anim-state CSS variable which both .bubbleOuter and .bubbleInner inherit.
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
     const observer = new IntersectionObserver(
       ([entry]) => {
-        const state =
-          entry !== undefined && entry.isIntersecting ? "running" : "paused";
-        container
-          .querySelectorAll<HTMLElement>(".bubble")
-          .forEach((el) => {
-            el.style.animationPlayState = state;
-          });
+        container.style.setProperty(
+          "--anim-state",
+          entry !== undefined && entry.isIntersecting ? "running" : "paused",
+        );
       },
       { threshold: 0 },
     );
@@ -48,15 +51,13 @@ export default function HeroBubbleBg() {
     return () => observer.disconnect();
   }, []);
 
-  // Desktop parallax: rAF-throttled, pointer:fine only, disabled under prefers-reduced-motion.
+  // rAF-throttled parallax on the whole layer — pointer:fine only, reduced-motion off.
   useEffect(() => {
     const layer = layerRef.current;
     const hero = containerRef.current?.parentElement;
     if (!layer || !hero) return;
 
-    const prefersReduced = window.matchMedia(
-      "(prefers-reduced-motion: reduce)",
-    ).matches;
+    const prefersReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const isFinePointer = window.matchMedia("(pointer: fine)").matches;
     if (prefersReduced || !isFinePointer) return;
 
@@ -68,13 +69,10 @@ export default function HeroBubbleBg() {
       const rect = hero!.getBoundingClientRect();
       const cx = rect.left + rect.width / 2;
       const cy = rect.top + rect.height / 2;
-      // Map ±half-width/height → ±6px shift (opposite direction = depth illusion).
       pendingX = -((event.clientX - cx) / (rect.width / 2)) * 6;
       pendingY = -((event.clientY - cy) / (rect.height / 2)) * 4;
-
       if (rafId) return;
       rafId = requestAnimationFrame(() => {
-        // layer was narrowed to non-null above; re-check for TypeScript in closures.
         if (layerRef.current) {
           layerRef.current.style.transform = `translate(${pendingX}px, ${pendingY}px)`;
         }
@@ -93,43 +91,36 @@ export default function HeroBubbleBg() {
     <div
       ref={containerRef}
       aria-hidden="true"
-      className="absolute inset-0 pointer-events-none overflow-hidden"
+      className={`absolute inset-0 pointer-events-none overflow-hidden ${styles.container}`}
     >
-      <style>{`
-        @media (prefers-reduced-motion: no-preference) {
-          @keyframes bubble-rise {
-            0%   { transform: translateY(0)     translateX(0px); opacity: 0; }
-            8%   { opacity: 0.9; }
-            92%  { opacity: 0.9; }
-            100% { transform: translateY(-110%) translateX(var(--drift)); opacity: 0; }
-          }
-        }
-      `}</style>
-
       <div ref={layerRef} className="absolute inset-0 will-change-transform">
-        {bubbles.map((b, i) => (
+        {bubbles.map((bubble, index) => (
           <div
-            key={i}
-            className="bubble absolute rounded-full"
+            key={index}
+            className={styles.bubbleOuter}
             style={{
-              width:  b.d,
-              height: b.d,
-              left:   `${b.cx}%`,
-              top:    `${b.cy}%`,
-              // accent-tinted fill + slightly lighter ring
-              background: "color-mix(in srgb, var(--color-accent) 10%, transparent)",
-              outline: "1px solid color-mix(in srgb, var(--color-accent) 22%, transparent)",
-              opacity: 0.7 - i * 0.02,
-              // CSS custom prop for the drift direction so keyframe can read it.
-              "--drift": `${i % 2 === 0 ? b.drift : -b.drift}px`,
-              animationName: "bubble-rise",
-              animationDuration: `${b.duration}s`,
-              animationDelay: `${b.delay}s`,
-              animationTimingFunction: "ease-in-out",
-              animationIterationCount: "infinite",
-              animationPlayState: "running",
+              left:   `${bubble.cx}%`,
+              width:  bubble.d,
+              height: bubble.d,
+              // Positioning: starts just below the container bottom edge
+              "--b-bottom": `-${bubble.d}px`,
+              // Reduced-motion static position
+              "--cy": `${bubble.cy}%`,
+              // Rise animation timing
+              "--rise-duration": `${bubble.duration}s`,
+              "--rise-delay":    `-${(bubble.phase * bubble.duration).toFixed(2)}s`,
+              "--opacity":       String(bubble.opacity),
+              // Sway — inherited by the inner child
+              "--sway-px":       `${bubble.swayPx}px`,
+              "--sway-duration": `${bubble.swayDuration}s`,
+              // Alternate starting phase per bubble so neighbours don't sway in sync
+              "--sway-delay": index % 2 === 0
+                ? "0s"
+                : `${(-bubble.swayDuration / 2).toFixed(2)}s`,
             } as React.CSSProperties}
-          />
+          >
+            <div className={styles.bubbleInner} />
+          </div>
         ))}
       </div>
     </div>

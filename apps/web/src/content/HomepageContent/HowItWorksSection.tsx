@@ -21,7 +21,7 @@ const steps = [
 
 export default function HowItWorksSection() {
   return (
-    <section className="bg-section">
+    <section id="lessons" className="scroll-mt-16 bg-section">
       <div className="mx-auto max-w-content px-page py-16 tablet:py-24">
         <h2 className="text-text-on-section mb-10 tablet:mb-14">
           How lessons work

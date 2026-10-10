@@ -1,6 +1,6 @@
 export default function CoachBioSection() {
   return (
-    <section className="bg-background">
+    <section id="coach" className="scroll-mt-16 bg-background">
       <div className="mx-auto max-w-content px-page py-16 tablet:py-24">
         <h2 className="text-heading mb-10 tablet:mb-14">Meet Coach Jason</h2>
 

@@ -108,7 +108,7 @@ function LeaderboardTable({ rows }: { rows: LeaderboardRow[] }) {
 
 export default function LeaderboardSection() {
   return (
-    <section className="bg-section">
+    <section id="leaderboards" className="scroll-mt-16 bg-section">
       <div className="mx-auto max-w-content px-page py-16 tablet:py-24">
         <div className="flex flex-col gap-3 mb-10 tablet:mb-14">
           <h2 className="text-text-on-section">Leaderboards</h2>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 
 import { logout } from "@/lib/logout";
 import { useSession } from "@/components/Providers";
@@ -9,13 +10,17 @@ import ThemeLogo from "@/components/ThemeLogo";
 import ThemeToggle from "@/components/ThemeToggle";
 
 const navLinks = [
-  { label: "Lessons", href: "/lessons" },
-  { label: "Leaderboards", href: "/leaderboard" },
+  { label: "Lessons", href: "/#lessons" },
+  { label: "Leaderboards", href: "/#leaderboards" },
   { label: "Coach Jason", href: "/#coach" },
+  { label: "FAQ", href: "/#faq" },
 ];
 
 const navLinkClass =
   "relative text-text-on-section font-semibold text-sm transition-all duration-150 pb-1 border-b-2 border-transparent hover:border-accent-on-section";
+
+const primaryButtonClass =
+  "inline-flex items-center justify-center rounded-button bg-accent-on-section text-on-accent font-bold text-sm px-5 h-11 transition-opacity duration-200 hover:opacity-90 active:scale-[0.97]";
 
 export default function SiteNav() {
   const [scrolled, setScrolled] = useState(false);
@@ -53,17 +58,17 @@ export default function SiteNav() {
         className={`sticky top-0 z-50 bg-section transition-colors duration-200 ${scrolled ? "border-b border-divider-section" : ""}`}
       >
         <div className="mx-auto max-w-content px-page flex items-center justify-between h-16">
-          <a href="/" aria-label="Axiom Aquatics home" onClick={handleMenuClose}>
+          <Link href="/" aria-label="Axiom Aquatics home" onClick={handleMenuClose}>
             <ThemeLogo variant="auto" onDark />
-          </a>
+          </Link>
 
           {/* Desktop nav links */}
           <ul className="hidden tablet:flex items-center gap-6">
             {navLinks.map((link) => (
               <li key={link.href}>
-                <a href={link.href} className={navLinkClass}>
+                <Link href={link.href} className={navLinkClass}>
                   {link.label}
-                </a>
+                </Link>
               </li>
             ))}
           </ul>
@@ -74,17 +79,9 @@ export default function SiteNav() {
             {isSignedIn ? (
               <ProfileMenu />
             ) : (
-              <>
-                <a href="/login" className={navLinkClass}>
-                  Log in
-                </a>
-                <a
-                  href="/signup"
-                  className="inline-flex items-center justify-center rounded-button bg-accent-on-section text-on-accent font-bold text-sm px-5 h-11 transition-opacity duration-200 hover:opacity-90 active:scale-[0.97]"
-                >
-                  Sign up
-                </a>
-              </>
+              <Link href="/login" className={primaryButtonClass}>
+                Log in
+              </Link>
             )}
           </div>
 
@@ -117,13 +114,13 @@ export default function SiteNav() {
             <ul className="px-page py-4 flex flex-col">
               {navLinks.map((link) => (
                 <li key={link.href}>
-                  <a
+                  <Link
                     href={link.href}
                     onClick={handleMenuClose}
                     className="block px-3 py-3 text-text-on-section font-semibold text-base rounded-button transition-colors duration-150 hover:bg-accent/8"
                   >
                     {link.label}
-                  </a>
+                  </Link>
                 </li>
               ))}
 
@@ -132,22 +129,22 @@ export default function SiteNav() {
               {isSignedIn ? (
                 <>
                   <li>
-                    <a
+                    <Link
                       href="/dashboard"
                       onClick={handleMenuClose}
                       className="block px-3 py-3 text-text-on-section font-semibold text-base rounded-button transition-colors duration-150 hover:bg-accent/8"
                     >
                       Dashboard
-                    </a>
+                    </Link>
                   </li>
                   <li>
-                    <a
+                    <Link
                       href="/account"
                       onClick={handleMenuClose}
                       className="block px-3 py-3 text-text-on-section font-semibold text-base rounded-button transition-colors duration-150 hover:bg-accent/8"
                     >
                       Account settings
-                    </a>
+                    </Link>
                   </li>
                   <li>
                     <form action={logout}>
@@ -161,26 +158,15 @@ export default function SiteNav() {
                   </li>
                 </>
               ) : (
-                <>
-                  <li>
-                    <a
-                      href="/login"
-                      onClick={handleMenuClose}
-                      className="block px-3 py-3 text-text-on-section font-semibold text-base rounded-button transition-colors duration-150 hover:bg-accent/8"
-                    >
-                      Log in
-                    </a>
-                  </li>
-                  <li>
-                    <a
-                      href="/signup"
-                      onClick={handleMenuClose}
-                      className="block px-3 py-3 text-text-on-section font-semibold text-base rounded-button transition-colors duration-150 hover:bg-accent/8"
-                    >
-                      Sign up
-                    </a>
-                  </li>
-                </>
+                <li className="pt-2">
+                  <Link
+                    href="/login"
+                    onClick={handleMenuClose}
+                    className={`${primaryButtonClass} w-full justify-center`}
+                  >
+                    Log in
+                  </Link>
+                </li>
               )}
             </ul>
           </div>

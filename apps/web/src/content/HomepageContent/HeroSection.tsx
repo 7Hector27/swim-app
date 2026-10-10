@@ -1,7 +1,15 @@
+"use client";
+
+import Link from "next/link";
+
+import { useSession } from "@/components/Providers";
+
 import HeroBubbleBg from "./HeroBubbleBg";
 import styles from "./HeroSection.module.css";
 
 export default function HeroSection() {
+  const { isSignedIn } = useSession();
+
   return (
     <section className="relative overflow-hidden bg-background">
       <HeroBubbleBg />
@@ -15,19 +23,13 @@ export default function HeroSection() {
             learning to float and club swimmers chasing a best time get the
             same full attention.
           </p>
-          <div className={`flex flex-col gap-3 tablet:flex-row tablet:gap-4 mt-2 ${styles.ctas}`}>
-            <a
-              href="/signup"
+          <div className={`mt-2 ${styles.ctas}`}>
+            <Link
+              href={isSignedIn ? "/dashboard" : "/signup"}
               className="inline-flex items-center justify-center rounded-button bg-button-primary-background text-button-primary-text font-bold px-8 h-[52px] transition-opacity duration-200 hover:opacity-90 active:scale-[0.97]"
             >
-              Create an account
-            </a>
-            <a
-              href="/leaderboard"
-              className="inline-flex items-center justify-center rounded-button border-2 border-button-outline text-button-outline font-bold px-8 h-[52px] transition-opacity duration-200 hover:opacity-70 active:scale-[0.97]"
-            >
-              See the leaderboards
-            </a>
+              Book a lesson
+            </Link>
           </div>
         </div>
       </div>

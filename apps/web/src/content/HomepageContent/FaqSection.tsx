@@ -46,7 +46,7 @@ function ChevronIcon() {
 
 export default function FaqSection() {
   return (
-    <section className="bg-background">
+    <section id="faq" className="scroll-mt-16 bg-background">
       <div className="mx-auto max-w-content px-page py-16 tablet:py-24">
         <div className="flex flex-col gap-0 tablet:flex-row tablet:gap-16">
           {/* Sticky heading column */}
