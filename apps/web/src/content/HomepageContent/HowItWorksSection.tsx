@@ -1,23 +1,21 @@
 const steps = [
   {
-    number: "01",
-    title: "[Step title]",
-    description: "[Brief description of this step in the process]",
+    numeral: "1",
+    title: "Create a parent account",
+    description:
+      "Parents sign up and manage everything in one place. Swimmers 18 and over can sign up on their own.",
   },
   {
-    number: "02",
-    title: "[Step title]",
-    description: "[Brief description of this step in the process]",
+    numeral: "2",
+    title: "Add your swimmers",
+    description:
+      "Add as many kids as you need. Teens can get their own login through your invite.",
   },
   {
-    number: "03",
-    title: "[Step title]",
-    description: "[Brief description of this step in the process]",
-  },
-  {
-    number: "04",
-    title: "[Step title]",
-    description: "[Brief description of this step in the process]",
+    numeral: "3",
+    title: "Book a private lesson",
+    description:
+      "Pick an open time on Jason's schedule. Every lesson is one on one.",
   },
 ];
 
@@ -25,25 +23,23 @@ export default function HowItWorksSection() {
   return (
     <section className="bg-section">
       <div className="mx-auto max-w-content px-page py-16 tablet:py-24">
-        <div className="flex flex-col gap-3 mb-10 tablet:mb-14">
-          <p className="text-eyebrow text-accent font-bold uppercase tracking-[0.08em]">
-            How It Works
-          </p>
-          <h2 className="text-text-on-section">
-            [How it works heading]
-          </h2>
-        </div>
+        <h2 className="text-text-on-section mb-10 tablet:mb-14">
+          How lessons work
+        </h2>
 
-        <div className="grid gap-8 tablet:grid-cols-2 desktop:grid-cols-4">
+        <div className="grid gap-10 tablet:grid-cols-3 tablet:gap-8">
           {steps.map((step) => (
-            <div key={step.number} className="flex flex-col gap-3">
-              <span className="text-accent font-heading font-extrabold italic text-5xl leading-none font-stretch-expanded">
-                {step.number}
+            <div key={step.numeral} className="flex flex-col gap-4">
+              <span
+                className="font-heading font-bold text-5xl leading-none tracking-[0.01em] text-accent-on-section"
+                aria-hidden="true"
+              >
+                {step.numeral}
               </span>
-              <h3 className="text-text-on-section text-lg font-bold">
+              <h3 className="text-text-on-section text-lg font-bold font-body">
                 {step.title}
               </h3>
-              <p className="text-text-secondary-on-section text-sm">
+              <p className="text-text-secondary-on-section text-sm leading-relaxed">
                 {step.description}
               </p>
             </div>

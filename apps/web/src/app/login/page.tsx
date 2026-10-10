@@ -5,7 +5,7 @@ import LoginContent from "@/content/LoginContent";
 import { createClient } from "@/lib/supabase/server";
 
 export const metadata: Metadata = {
-  title: "Sign in · JG Swim",
+  title: "Sign in · Axiom Aquatics",
 };
 
 const NOTICE_MESSAGES: Record<string, string> = {

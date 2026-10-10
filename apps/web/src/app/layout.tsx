@@ -1,15 +1,14 @@
 import "@/styles/globals.css";
 import type { Metadata, Viewport } from "next";
-import { Figtree, Saira } from "next/font/google";
+import { Fraunces, Figtree } from "next/font/google";
 
 import Providers from "@/components/Providers";
 import { createClient } from "@/lib/supabase/server";
 
-const saira = Saira({
+const fraunces = Fraunces({
   subsets: ["latin"],
-  axes: ["wdth"],
-  style: ["normal", "italic"],
-  variable: "--font-saira",
+  axes: ["SOFT", "WONK", "opsz"],
+  variable: "--font-fraunces",
 });
 
 const figtree = Figtree({
@@ -19,8 +18,8 @@ const figtree = Figtree({
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"),
-  title: "JG Swim",
-  description: "Private swim coaching",
+  title: "Axiom Aquatics",
+  description: "Private swim lessons with Coach Jason",
   icons: {
     icon: [
       { url: "/icons/favicon.ico" },
@@ -41,11 +40,11 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   // <meta name="theme-color"> requires static strings — CSS variables don't work here.
-  // These match --color-section (light) and --color-background (dark) in tokens.css.
+  // These match --color-background (light) and --color-background (dark) in tokens.css.
   // Update both if those token values change.
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#082C4F" },
-    { media: "(prefers-color-scheme: dark)", color: "#04182C" },
+    { media: "(prefers-color-scheme: light)", color: "#FFFFFF" },
+    { media: "(prefers-color-scheme: dark)", color: "#07080B" },
   ],
 };
 
@@ -56,11 +55,16 @@ export default async function RootLayout({
 }) {
   const supabase = await createClient();
   const { data } = await supabase.auth.getClaims();
+  const claims = data?.claims;
+  const userName =
+    (claims?.user_metadata?.["full_name"] as string | undefined) ??
+    claims?.email ??
+    null;
 
   return (
-    <html lang="en" className={`${saira.variable} ${figtree.variable}`} suppressHydrationWarning>
+    <html lang="en" className={`${fraunces.variable} ${figtree.variable}`} suppressHydrationWarning>
       <body className="min-h-screen bg-background text-text antialiased">
-        <Providers isSignedIn={!!data}>{children}</Providers>
+        <Providers isSignedIn={!!data} userName={userName}>{children}</Providers>
       </body>
     </html>
   );

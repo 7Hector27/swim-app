@@ -2,19 +2,20 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { logout } from "@/lib/logout";
 import { useSession } from "@/components/Providers";
+import ProfileMenu from "@/components/ProfileMenu";
 import ThemeLogo from "@/components/ThemeLogo";
 import ThemeToggle from "@/components/ThemeToggle";
 
 const navLinks = [
-  { label: "Home", href: "/" },
   { label: "Lessons", href: "/lessons" },
-  { label: "Leaderboard", href: "/leaderboard" },
-  { label: "About", href: "/about" },
+  { label: "Leaderboards", href: "/leaderboard" },
+  { label: "Coach Jason", href: "/#coach" },
 ];
 
 const navLinkClass =
-  "relative text-text-on-section font-semibold text-sm transition-all duration-150 pb-1 border-b-2 border-transparent hover:border-accent";
+  "relative text-text-on-section font-semibold text-sm transition-all duration-150 pb-1 border-b-2 border-transparent hover:border-accent-on-section";
 
 export default function SiteNav() {
   const [scrolled, setScrolled] = useState(false);
@@ -49,11 +50,11 @@ export default function SiteNav() {
     <>
       <div ref={sentinelRef} aria-hidden="true" className="h-px" />
       <nav
-        className={`sticky top-0 z-50 bg-section transition-shadow duration-200 ${scrolled ? "shadow-elevated" : ""}`}
+        className={`sticky top-0 z-50 bg-section transition-colors duration-200 ${scrolled ? "border-b border-divider-section" : ""}`}
       >
         <div className="mx-auto max-w-content px-page flex items-center justify-between h-16">
-          <a href="/" aria-label="JG Swim home" onClick={handleMenuClose}>
-            <ThemeLogo width={100} height={40} onSection />
+          <a href="/" aria-label="Axiom Aquatics home" onClick={handleMenuClose}>
+            <ThemeLogo variant="auto" />
           </a>
 
           {/* Desktop nav links */}
@@ -71,9 +72,7 @@ export default function SiteNav() {
           <div className="hidden tablet:flex items-center gap-3">
             <ThemeToggle />
             {isSignedIn ? (
-              <a href="/dashboard" className={navLinkClass}>
-                Dashboard
-              </a>
+              <ProfileMenu />
             ) : (
               <>
                 <a href="/login" className={navLinkClass}>
@@ -81,28 +80,17 @@ export default function SiteNav() {
                 </a>
                 <a
                   href="/signup"
-                  className="inline-flex items-center justify-center rounded-pill border-2 border-text-on-section text-text-on-section font-bold text-sm px-5 h-11 transition-colors duration-200 hover:bg-white/10 active:scale-97"
+                  className="inline-flex items-center justify-center rounded-button bg-accent-on-section text-on-accent font-bold text-sm px-5 h-11 transition-opacity duration-200 hover:opacity-90 active:scale-[0.97]"
                 >
                   Sign up
                 </a>
               </>
             )}
-            <a
-              href="/book"
-              className="inline-flex items-center justify-center rounded-pill bg-accent text-on-accent font-bold text-sm px-5 h-11 transition-colors duration-200 active:scale-97"
-            >
-              Book a lesson
-            </a>
           </div>
 
-          {/* Mobile: Book shortcut + hamburger */}
-          <div className="flex items-center gap-3 tablet:hidden">
-            <a
-              href="/book"
-              className="inline-flex items-center justify-center rounded-pill bg-accent text-on-accent font-bold text-xs px-4 h-9 transition-colors duration-200 active:scale-97"
-            >
-              Book
-            </a>
+          {/* Mobile: theme toggle + hamburger */}
+          <div className="flex items-center gap-2 tablet:hidden">
+            <ThemeToggle />
             <button
               type="button"
               aria-label={menuOpen ? "Close menu" : "Open menu"}
@@ -125,45 +113,60 @@ export default function SiteNav() {
 
         {/* Mobile menu */}
         {menuOpen && (
-          <div className="tablet:hidden bg-section shadow-elevated">
+          <div className="tablet:hidden bg-section border-t border-divider-section">
             <ul className="px-page py-4 flex flex-col">
               {navLinks.map((link) => (
                 <li key={link.href}>
                   <a
                     href={link.href}
                     onClick={handleMenuClose}
-                    className="block px-3 py-3 text-text-on-section font-semibold text-base rounded transition-colors duration-150 hover:bg-accent/8"
+                    className="block px-3 py-3 text-text-on-section font-semibold text-base rounded-button transition-colors duration-150 hover:bg-accent/8"
                   >
                     {link.label}
                   </a>
                 </li>
               ))}
 
+              <li className="mt-2 pt-2 border-t border-divider-section" />
+
               {isSignedIn ? (
-                <li>
-                  <a
-                    href="/dashboard"
-                    onClick={handleMenuClose}
-                    className="block px-3 py-3 text-text-on-section font-semibold text-base rounded transition-colors duration-150 hover:bg-accent/8"
-                  >
-                    Dashboard
-                  </a>
-                </li>
+                <>
+                  <li>
+                    <a
+                      href="/dashboard"
+                      onClick={handleMenuClose}
+                      className="block px-3 py-3 text-text-on-section font-semibold text-base rounded-button transition-colors duration-150 hover:bg-accent/8"
+                    >
+                      Dashboard
+                    </a>
+                  </li>
+                  <li>
+                    <a
+                      href="/account"
+                      onClick={handleMenuClose}
+                      className="block px-3 py-3 text-text-on-section font-semibold text-base rounded-button transition-colors duration-150 hover:bg-accent/8"
+                    >
+                      Account settings
+                    </a>
+                  </li>
+                  <li>
+                    <form action={logout}>
+                      <button
+                        type="submit"
+                        className="w-full text-left block px-3 py-3 text-text-on-section font-semibold text-base rounded-button transition-colors duration-150 hover:bg-accent/8"
+                      >
+                        Log out
+                      </button>
+                    </form>
+                  </li>
+                </>
               ) : (
                 <>
                   <li>
                     <a
                       href="/login"
                       onClick={handleMenuClose}
-                      className="block px-3 py-3 text-text-on-section font-semibold text-base rounded transition-colors duration-150"
-                      onMouseEnter={(event) => {
-                        (event.currentTarget as HTMLAnchorElement).style.backgroundColor =
-                          "color-mix(in srgb, var(--color-accent) 8%, transparent)";
-                      }}
-                      onMouseLeave={(event) => {
-                        (event.currentTarget as HTMLAnchorElement).style.backgroundColor =
-                          "transparent";
-                      }}
+                      className="block px-3 py-3 text-text-on-section font-semibold text-base rounded-button transition-colors duration-150 hover:bg-accent/8"
                     >
                       Log in
                     </a>
@@ -172,28 +175,13 @@ export default function SiteNav() {
                     <a
                       href="/signup"
                       onClick={handleMenuClose}
-                      className="block px-3 py-3 text-text-on-section font-semibold text-base rounded transition-colors duration-150"
-                      onMouseEnter={(event) => {
-                        (event.currentTarget as HTMLAnchorElement).style.backgroundColor =
-                          "color-mix(in srgb, var(--color-accent) 8%, transparent)";
-                      }}
-                      onMouseLeave={(event) => {
-                        (event.currentTarget as HTMLAnchorElement).style.backgroundColor =
-                          "transparent";
-                      }}
+                      className="block px-3 py-3 text-text-on-section font-semibold text-base rounded-button transition-colors duration-150 hover:bg-accent/8"
                     >
                       Sign up
                     </a>
                   </li>
                 </>
               )}
-
-              <li className="pt-2 border-t border-divider-section mt-2">
-                <div className="flex items-center gap-3 px-3 py-2">
-                  <span className="text-text-secondary-on-section text-sm font-semibold">Theme</span>
-                  <ThemeToggle />
-                </div>
-              </li>
             </ul>
           </div>
         )}

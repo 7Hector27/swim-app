@@ -4,7 +4,7 @@ import AccountContent from "@/content/AccountContent";
 import { requireAuth } from "@/lib/requireAuth";
 
 export const metadata: Metadata = {
-  title: "Account · JG Swim",
+  title: "Account · Axiom Aquatics",
 };
 
 export default async function AccountPage() {

@@ -3,154 +3,125 @@ interface LeaderboardRow {
   swimmer: string;
   event: string;
   time: string;
-  trend: "up" | "down";
 }
 
-// Real data must come from an API endpoint that filters by public_profile = true
-// and returns swimmer names as first name + last initial only (e.g. "Maya R.").
-const leaderboardRows: LeaderboardRow[] = [
-  { rank: 1, swimmer: "Maya R.", event: "[Event]", time: "[0:00.00]", trend: "up" },
-  { rank: 2, swimmer: "Ethan K.", event: "[Event]", time: "[0:00.00]", trend: "up" },
-  { rank: 3, swimmer: "Sofia M.", event: "[Event]", time: "[0:00.00]", trend: "down" },
-  { rank: 4, swimmer: "Liam T.", event: "[Event]", time: "[0:00.00]", trend: "up" },
-  { rank: 5, swimmer: "Aria N.", event: "[Event]", time: "[0:00.00]", trend: "down" },
+interface LeaderboardCard {
+  title: string;
+  subtitle?: string;
+  href: string;
+  // TODO: replace with real data from the API (filter by public_profile = true)
+  rows: LeaderboardRow[];
+}
+
+const cards: LeaderboardCard[] = [
+  {
+    title: "Club Swim",
+    href: "/leaderboard/club",
+    rows: [
+      { rank: 1, swimmer: "Maya R.",  event: "[50 Free]",  time: "[0:00.00]" },
+      { rank: 2, swimmer: "Ethan K.", event: "[100 Back]", time: "[0:00.00]" },
+      { rank: 3, swimmer: "Sofia M.", event: "[50 Fly]",   time: "[0:00.00]" },
+    ],
+  },
+  {
+    title: "Irvine Summer Swim League",
+    subtitle: "Seahawks",
+    href: "/leaderboard/issl",
+    rows: [
+      { rank: 1, swimmer: "Liam T.",  event: "[50 Breast]", time: "[0:00.00]" },
+      { rank: 2, swimmer: "Aria N.",  event: "[100 Free]",  time: "[0:00.00]" },
+      { rank: 3, swimmer: "Noah P.",  event: "[50 Back]",   time: "[0:00.00]" },
+    ],
+  },
+  {
+    title: "All swimmers",
+    subtitle: "Master leaderboard",
+    href: "/leaderboard",
+    rows: [
+      { rank: 1, swimmer: "Maya R.",  event: "[50 Free]",  time: "[0:00.00]" },
+      { rank: 2, swimmer: "Liam T.",  event: "[50 Breast]", time: "[0:00.00]" },
+      { rank: 3, swimmer: "Ethan K.", event: "[100 Back]", time: "[0:00.00]" },
+    ],
+  },
 ];
 
-const rankBgClass: Record<number, string> = {
-  1: "bg-rank-gold",
-  2: "bg-rank-silver",
-  3: "bg-rank-bronze",
-};
-
-function RankBadge({ rank }: { rank: number }) {
-  if (rank <= 3) {
-    return (
-      <span
-        className={`inline-flex items-center justify-center w-7 h-7 rounded-full ${rankBgClass[rank]} text-on-accent font-bold text-xs`}
-      >
-        {rank}
-      </span>
-    );
-  }
+function LeaderboardTable({ rows }: { rows: LeaderboardRow[] }) {
   return (
-    <span className="font-heading font-extrabold italic text-accent font-stretch-expanded">
-      {rank}
-    </span>
-  );
-}
-
-function TrendIcon({ trend }: { trend: "up" | "down" }) {
-  if (trend === "up") {
-    return (
-      <svg
-        width="14"
-        height="14"
-        viewBox="0 0 14 14"
-        fill="none"
-        aria-label="Improved"
-        className="text-success"
-      >
-        <path
-          d="M7 11V3M3.5 6.5L7 3l3.5 3.5"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
-    );
-  }
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 14 14"
-      fill="none"
-      aria-label="Slower"
-      className="text-danger"
-    >
-      <path
-        d="M7 3v8M3.5 7.5L7 11l3.5-3.5"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
+    <table className="w-full">
+      <thead>
+        <tr>
+          <th className="text-left pb-3 text-text-secondary-on-section font-semibold text-xs w-8">
+            Rank
+          </th>
+          <th className="text-left pb-3 text-text-secondary-on-section font-semibold text-xs">
+            Swimmer
+          </th>
+          <th className="text-left pb-3 text-text-secondary-on-section font-semibold text-xs">
+            Time
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row) => (
+          <tr key={row.rank} className="border-t border-divider-section">
+            <td className="py-3 text-accent-on-section font-heading font-bold text-sm tabular-nums">
+              {row.rank}
+            </td>
+            <td className="py-3 pr-3">
+              <span className="text-text-on-section font-semibold text-sm">
+                {row.swimmer}
+              </span>
+              <span className="block text-text-secondary-on-section text-xs mt-0.5">
+                {row.event}
+              </span>
+            </td>
+            <td className="py-3 text-text-on-section text-sm tabular-nums">
+              {row.time}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 
 export default function LeaderboardSection() {
   return (
-    <section className="bg-background">
+    <section className="bg-section">
       <div className="mx-auto max-w-content px-page py-16 tablet:py-24">
         <div className="flex flex-col gap-3 mb-10 tablet:mb-14">
-          <p className="text-eyebrow text-accent font-bold uppercase tracking-[0.08em]">
-            Leaderboard
+          <h2 className="text-text-on-section">Leaderboards</h2>
+          <p className="text-text-secondary-on-section text-base max-w-xl">
+            See where swimmers stand in each league, or across everyone Jason coaches.
           </p>
-          <h2 className="text-heading">
-            [Top times heading]
-          </h2>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[400px]">
-            <thead>
-              <tr className="border-b border-border">
-                <th className="text-left py-3 pr-4 text-text-secondary font-semibold text-sm w-12">
-                  Rank
-                </th>
-                <th className="text-left py-3 pr-4 text-text-secondary font-semibold text-sm">
-                  Swimmer
-                </th>
-                <th className="text-left py-3 pr-4 text-text-secondary font-semibold text-sm hidden tablet:table-cell">
-                  Event
-                </th>
-                <th className="text-left py-3 pr-4 text-text-secondary font-semibold text-sm">
-                  Time
-                </th>
-                <th className="text-left py-3 text-text-secondary font-semibold text-sm w-8">
-                  <span className="sr-only">Trend</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {leaderboardRows.map((row) => (
-                <tr
-                  key={row.rank}
-                  className="border-b border-border"
-                >
-                  <td className="py-4 pr-4">
-                    <RankBadge rank={row.rank} />
-                  </td>
-                  <td className="py-4 pr-4">
-                    <span className="text-text font-semibold">{row.swimmer}</span>
-                    <span className="tablet:hidden block text-text-secondary text-xs mt-0.5">
-                      {row.event}
-                    </span>
-                  </td>
-                  <td className="py-4 pr-4 text-text-secondary text-sm hidden tablet:table-cell">
-                    {row.event}
-                  </td>
-                  <td className="py-4 pr-4 text-text font-semibold text-sm tabular-nums">
-                    {row.time}
-                  </td>
-                  <td className="py-4">
-                    <TrendIcon trend={row.trend} />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        <div className="mt-8">
-          <a
-            href="/leaderboard"
-            className="inline-flex items-center justify-center rounded-pill border-2 border-button-outline text-button-outline font-bold text-sm px-6 h-[44px] transition-colors duration-200 active:scale-97"
-          >
-            View full leaderboard
-          </a>
+        {/* Desktop: 3-column grid. Mobile: horizontal swipe row */}
+        <div className="flex gap-4 overflow-x-auto pb-2 tablet:grid tablet:grid-cols-3 tablet:gap-6 tablet:overflow-visible tablet:pb-0">
+          {cards.map((card) => (
+            <article
+              key={card.title}
+              className="flex-shrink-0 w-72 tablet:w-auto rounded-card bg-card border border-divider-section p-6 flex flex-col gap-6"
+            >
+              <div>
+                <h3 className="text-text-on-section font-bold text-base font-body">
+                  {card.title}
+                </h3>
+                {card.subtitle && (
+                  <p className="text-text-secondary-on-section text-sm mt-0.5">
+                    {card.subtitle}
+                  </p>
+                )}
+              </div>
+              <LeaderboardTable rows={card.rows} />
+              <a
+                href={card.href}
+                className="text-accent-on-section text-sm font-semibold hover:underline"
+              >
+                View full leaderboard
+              </a>
+            </article>
+          ))}
         </div>
       </div>
     </section>

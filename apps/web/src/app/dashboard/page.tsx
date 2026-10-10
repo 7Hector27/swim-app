@@ -6,7 +6,7 @@ import ParentDashboardContent from "@/content/ParentDashboardContent";
 import { requireAuth } from "@/lib/requireAuth";
 
 export const metadata: Metadata = {
-  title: "Dashboard · JG Swim",
+  title: "Dashboard · Axiom Aquatics",
 };
 
 export default async function DashboardPage() {
