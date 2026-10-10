@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 
 import styles from "./CoachPhotoDeck.module.css";
@@ -14,11 +14,10 @@ interface Props {
   photos: CoachPhoto[];
 }
 
-const TILTS = [1, -3, 4, -2]; // degrees per stack position, top to back
-const DEPTH_PX = 5; // translateY per depth level
-const CARD_W = 280;
-const CARD_H = 350;
-const ADVANCE_MS = 6000;
+const ADVANCE_MS = 5000;
+const TRANSITION_MS = 420;
+const FLASH_MS = 650;
+const SWIPE_THRESHOLD_PX = 50;
 
 function usePrefersReducedMotion(): boolean {
   const [reduced, setReduced] = useState(false);
@@ -34,11 +33,11 @@ function usePrefersReducedMotion(): boolean {
 
 function PrevIcon() {
   return (
-    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
       <path
-        d="M11 13.5L6.5 9 11 4.5"
+        d="M12.5 15L7.5 10 12.5 5"
         stroke="currentColor"
-        strokeWidth="1.5"
+        strokeWidth="2"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
@@ -48,11 +47,11 @@ function PrevIcon() {
 
 function NextIcon() {
   return (
-    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
       <path
-        d="M7 4.5L11.5 9 7 13.5"
+        d="M7.5 5L12.5 10 7.5 15"
         stroke="currentColor"
-        strokeWidth="1.5"
+        strokeWidth="2"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
@@ -60,19 +59,19 @@ function NextIcon() {
   );
 }
 
-function PauseIcon() {
+function FlashPauseIcon() {
   return (
-    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-      <rect x="4.5" y="3.5" width="3" height="11" rx="1" fill="currentColor" />
-      <rect x="10.5" y="3.5" width="3" height="11" rx="1" fill="currentColor" />
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect x="6" y="4" width="4" height="16" rx="1.5" fill="white" />
+      <rect x="14" y="4" width="4" height="16" rx="1.5" fill="white" />
     </svg>
   );
 }
 
-function PlayIcon() {
+function FlashPlayIcon() {
   return (
-    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-      <path d="M6 3.5l9 5.5-9 5.5V3.5z" fill="currentColor" />
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M7 4l14 8-14 8V4z" fill="white" />
     </svg>
   );
 }
@@ -82,50 +81,135 @@ export default function CoachPhotoDeck({ photos }: Props) {
   const prefersReduced = usePrefersReducedMotion();
 
   const [topIndex, setTopIndex] = useState(0);
-  const [isExiting, setIsExiting] = useState(false);
+  const [exitingIndex, setExitingIndex] = useState<number | null>(null);
   const [direction, setDirection] = useState<"next" | "prev">("next");
+  const [isTransitioning, setIsTransitioning] = useState(false);
   const [isPausedByUser, setIsPausedByUser] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
-  const [returningIndex, setReturningIndex] = useState<number | null>(null);
+  const [flashState, setFlashState] = useState<"pause" | "play" | null>(null);
 
-  const isPaused = isPausedByUser || isHovered || isFocused || isExiting;
+  const transitionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const touchStartXRef = useRef<number | null>(null);
+  const touchDeltaRef = useRef<number>(0);
 
-  function advance(dir: "next" | "prev") {
-    if (isExiting) return;
-    if (prefersReduced) {
-      setTopIndex((prev) =>
-        dir === "next" ? (prev + 1) % count : (prev - 1 + count) % count,
-      );
-      return;
-    }
+  const isPaused = isPausedByUser || isHovered || isFocused || isTransitioning;
+
+  useEffect(() => {
+    return () => {
+      if (transitionTimerRef.current !== null)
+        clearTimeout(transitionTimerRef.current);
+      if (flashTimerRef.current !== null)
+        clearTimeout(flashTimerRef.current);
+    };
+  }, []);
+
+  // Auto-advance — inlines the next-step logic to avoid stale closures
+  useEffect(() => {
+    if (prefersReduced || isPaused) return;
+    const advanceId = setTimeout(() => {
+      const newIndex = (topIndex + 1) % count;
+      if (transitionTimerRef.current !== null)
+        clearTimeout(transitionTimerRef.current);
+      setExitingIndex(topIndex);
+      setDirection("next");
+      setIsTransitioning(true);
+      setTopIndex(newIndex);
+      transitionTimerRef.current = setTimeout(() => {
+        setExitingIndex(null);
+        setIsTransitioning(false);
+      }, TRANSITION_MS);
+    }, ADVANCE_MS);
+    return () => clearTimeout(advanceId);
+  }, [topIndex, isPaused, prefersReduced, count]);
+
+  function beginTransition(newIndex: number, dir: "next" | "prev") {
+    if (transitionTimerRef.current !== null)
+      clearTimeout(transitionTimerRef.current);
+    setExitingIndex(topIndex);
     setDirection(dir);
-    setIsExiting(true);
+    setIsTransitioning(true);
+    setTopIndex(newIndex);
+    transitionTimerRef.current = setTimeout(() => {
+      setExitingIndex(null);
+      setIsTransitioning(false);
+    }, TRANSITION_MS);
   }
 
-  function handleTransitionEnd(exitedIndex: number, propertyName: string) {
-    if (propertyName !== "transform" || !isExiting) return;
-    const newTop =
-      direction === "next"
-        ? (exitedIndex + 1) % count
-        : (exitedIndex - 1 + count) % count;
-    setReturningIndex(exitedIndex);
-    setTopIndex(newTop);
-    setIsExiting(false);
-    // Double rAF: let React commit the snap position before re-enabling transition
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => setReturningIndex(null));
+  function advance(dir: "next" | "prev") {
+    if (isTransitioning) return;
+    const newIndex =
+      dir === "next"
+        ? (topIndex + 1) % count
+        : (topIndex - 1 + count) % count;
+    if (prefersReduced) {
+      setTopIndex(newIndex);
+      return;
+    }
+    beginTransition(newIndex, dir);
+  }
+
+  function triggerFlash(state: "pause" | "play") {
+    if (flashTimerRef.current !== null) clearTimeout(flashTimerRef.current);
+    setFlashState(state);
+    flashTimerRef.current = setTimeout(() => {
+      setFlashState(null);
+    }, FLASH_MS);
+  }
+
+  function handlePhotoClick() {
+    setIsPausedByUser((previous) => {
+      const next = !previous;
+      triggerFlash(next ? "pause" : "play");
+      return next;
     });
   }
 
-  useEffect(() => {
-    if (prefersReduced || isPaused) return;
-    const id = setTimeout(() => {
-      setDirection("next");
-      setIsExiting(true);
-    }, ADVANCE_MS);
-    return () => clearTimeout(id);
-  }, [topIndex, isPaused, prefersReduced]);
+  function handlePrevClick(e: React.MouseEvent) {
+    e.stopPropagation();
+    advance("prev");
+  }
+
+  function handleNextClick(e: React.MouseEvent) {
+    e.stopPropagation();
+    advance("next");
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (e.key === "ArrowLeft") {
+      e.preventDefault();
+      advance("prev");
+    } else if (e.key === "ArrowRight") {
+      e.preventDefault();
+      advance("next");
+    }
+  }
+
+  function handleTouchStart(e: React.TouchEvent) {
+    const touch = e.touches[0];
+    if (touch !== undefined) {
+      touchStartXRef.current = touch.clientX;
+      touchDeltaRef.current = 0;
+    }
+  }
+
+  function handleTouchEnd(e: React.TouchEvent) {
+    if (touchStartXRef.current === null) return;
+    const touch = e.changedTouches[0];
+    if (touch !== undefined) {
+      touchDeltaRef.current = touch.clientX - touchStartXRef.current;
+    }
+    const delta = touchDeltaRef.current;
+    touchStartXRef.current = null;
+
+    if (Math.abs(delta) >= SWIPE_THRESHOLD_PX) {
+      advance(delta < 0 ? "next" : "prev");
+    } else {
+      // Short tap — toggle pause
+      handlePhotoClick();
+    }
+  }
 
   return (
     <div
@@ -139,75 +223,90 @@ export default function CoachPhotoDeck({ photos }: Props) {
           setIsFocused(false);
         }
       }}
+      onKeyDown={handleKeyDown}
     >
-      <div className={styles.deck} aria-live="polite" aria-atomic="true">
-        {photos.map((photo, index) => {
-          const position = (index - topIndex + count) % count;
-          const tilt = TILTS[position % TILTS.length] ?? 0;
-          const depthY = position * DEPTH_PX;
-          const isTop = position === 0;
-          const isExitingCard = isTop && isExiting;
-          const isReturning = index === returningIndex;
+      {/* ── Photo area ─────────────────────────────────── */}
+      <div className={styles.photoArea}>
+        {/* Photos */}
+        <div
+          className={styles.photoWrapper}
+          aria-live="polite"
+          aria-atomic="true"
+        >
+          {photos.map((photo, index) => {
+            const isActive = index === topIndex;
+            const isExiting = index === exitingIndex;
 
-          let transform: string;
-          if (isExitingCard) {
-            transform =
-              direction === "next"
-                ? `translateX(110%) rotate(15deg)`
-                : `translateX(-110%) rotate(-15deg)`;
-          } else {
-            transform = `rotate(${tilt}deg) translateY(${depthY}px)`;
-          }
+            let photoClass = styles.photo;
+            if (isExiting) {
+              photoClass +=
+                direction === "next"
+                  ? ` ${styles.photoExitNext}`
+                  : ` ${styles.photoExitPrev}`;
+            } else if (isActive && isTransitioning) {
+              photoClass +=
+                direction === "next"
+                  ? ` ${styles.photoEnterNext}`
+                  : ` ${styles.photoEnterPrev}`;
+            } else if (isActive) {
+              photoClass += ` ${styles.photoActive}`;
+            }
 
-          return (
-            <div
-              key={photo.src}
-              className={`${styles.card}${isReturning ? ` ${styles.cardNoTransition}` : ""}`}
-              style={{ zIndex: count - position, transform }}
-              onTransitionEnd={
-                isTop && isExiting
-                  ? (e) => handleTransitionEnd(index, e.propertyName)
-                  : undefined
-              }
-            >
-              <Image
-                src={photo.src}
-                alt={isTop ? photo.alt : ""}
-                width={CARD_W}
-                height={CARD_H}
-                className={styles.image}
-                priority={false}
-              />
-            </div>
-          );
-        })}
-      </div>
+            return (
+              <div key={photo.src} className={photoClass}>
+                <Image
+                  src={photo.src}
+                  alt={isActive ? photo.alt : ""}
+                  fill
+                  sizes="(min-width: 1248px) 400px, 100vw"
+                  className={`${styles.image}${isActive && !prefersReduced ? ` ${styles.imageKenBurns}` : ""}`}
+                  priority={index === 0}
+                />
+                {isActive && !prefersReduced && (
+                  <div className={styles.causticOverlay} aria-hidden="true" />
+                )}
+              </div>
+            );
+          })}
+        </div>
 
-      <div className={styles.controls}>
+        {/* Pause/play toggle — covers the full photo, z-index 1 */}
+        <button
+          type="button"
+          className={styles.photoToggle}
+          aria-label={isPausedByUser ? "Play slideshow" : "Pause slideshow"}
+          aria-pressed={isPausedByUser}
+          onClick={handlePhotoClick}
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
+        />
+
+        {/* Flash icon — shown briefly after toggle */}
+        {flashState !== null && (
+          <div
+            className={`${styles.flashIcon}${prefersReduced ? ` ${styles.flashIconReduced}` : ""}`}
+            aria-hidden="true"
+          >
+            {flashState === "pause" ? <FlashPauseIcon /> : <FlashPlayIcon />}
+          </div>
+        )}
+
+        {/* Prev arrow — z-index 2, sits above the toggle */}
         <button
           type="button"
           aria-label="Previous photo"
-          onClick={() => advance("prev")}
-          className={styles.controlButton}
+          className={`${styles.arrow} ${styles.arrowPrev}`}
+          onClick={handlePrevClick}
         >
           <PrevIcon />
         </button>
 
-        <button
-          type="button"
-          aria-label={isPausedByUser ? "Play slideshow" : "Pause slideshow"}
-          aria-pressed={isPausedByUser}
-          onClick={() => setIsPausedByUser((previous) => !previous)}
-          className={styles.controlButton}
-        >
-          {isPausedByUser ? <PlayIcon /> : <PauseIcon />}
-        </button>
-
+        {/* Next arrow — z-index 2 */}
         <button
           type="button"
           aria-label="Next photo"
-          onClick={() => advance("next")}
-          className={styles.controlButton}
+          className={`${styles.arrow} ${styles.arrowNext}`}
+          onClick={handleNextClick}
         >
           <NextIcon />
         </button>

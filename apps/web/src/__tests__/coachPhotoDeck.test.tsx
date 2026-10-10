@@ -6,11 +6,13 @@ vi.mock("next/image", () => ({
     src,
     alt,
     className,
+    fill,
   }: {
     src: string;
     alt: string;
     className?: string;
-  }) => <img src={src} alt={alt} className={className} />,
+    fill?: boolean;
+  }) => <img src={src} alt={alt} className={className} data-fill={fill} />,
 }));
 
 function mockMatchMedia(matches: boolean) {
@@ -35,12 +37,13 @@ const photos = [
 ];
 
 beforeEach(() => {
-  // Default: reduced motion so button clicks swap instantly (no transitionend needed)
+  // Default: reduced motion so button clicks swap instantly (no timeouts needed)
   mockMatchMedia(true);
   vi.useFakeTimers();
 });
 
 afterEach(() => {
+  vi.clearAllTimers();
   vi.useRealTimers();
   vi.clearAllMocks();
 });
@@ -72,6 +75,45 @@ describe("CoachPhotoDeck", () => {
     fireEvent.click(nextBtn); // → B
     fireEvent.click(screen.getByRole("button", { name: "Previous photo" })); // → A
     expect(screen.getByAltText("Photo A")).toBeInTheDocument();
+  });
+
+  it("wraps from the first photo to the last on prev", () => {
+    render(<CoachPhotoDeck photos={photos} />);
+    fireEvent.click(screen.getByRole("button", { name: "Previous photo" }));
+    expect(screen.getByAltText("Photo C")).toBeInTheDocument();
+  });
+
+  it("clicking the photo toggles pause and reflects aria-pressed", () => {
+    render(<CoachPhotoDeck photos={photos} />);
+    const toggleBtn = screen.getByRole("button", { name: "Pause slideshow" });
+    expect(toggleBtn).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(toggleBtn);
+    expect(
+      screen.getByRole("button", { name: "Play slideshow" }),
+    ).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("clicking a navigation arrow does not toggle pause", () => {
+    render(<CoachPhotoDeck photos={photos} />);
+    fireEvent.click(screen.getByRole("button", { name: "Previous photo" }));
+    expect(
+      screen.getByRole("button", { name: "Pause slideshow" }),
+    ).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("left arrow key navigates to previous photo", () => {
+    render(<CoachPhotoDeck photos={photos} />);
+    const root = screen.getByTestId("coach-photo-deck");
+    fireEvent.click(screen.getByRole("button", { name: "Next photo" })); // → B
+    fireEvent.keyDown(root, { key: "ArrowLeft" }); // → A
+    expect(screen.getByAltText("Photo A")).toBeInTheDocument();
+  });
+
+  it("right arrow key navigates to next photo", () => {
+    render(<CoachPhotoDeck photos={photos} />);
+    const root = screen.getByTestId("coach-photo-deck");
+    fireEvent.keyDown(root, { key: "ArrowRight" }); // → B
+    expect(screen.getByAltText("Photo B")).toBeInTheDocument();
   });
 
   it("pauses auto-advance on hover", () => {
