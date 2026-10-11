@@ -216,6 +216,28 @@ describe("coach role restrictions", () => {
       .set("Authorization", "Bearer token");
     expect(res.status).toBe(403);
   });
+
+  it("GET /swimmers/:id → 403 for coach", async () => {
+    const res = await request(app)
+      .get(`/swimmers/${SWIMMER_A_ID}`)
+      .set("Authorization", "Bearer token");
+    expect(res.status).toBe(403);
+  });
+
+  it("PATCH /swimmers/:id → 403 for coach", async () => {
+    const res = await request(app)
+      .patch(`/swimmers/${SWIMMER_A_ID}`)
+      .set("Authorization", "Bearer token")
+      .send({ firstName: "Hacked" });
+    expect(res.status).toBe(403);
+  });
+
+  it("DELETE /swimmers/:id → 403 for coach", async () => {
+    const res = await request(app)
+      .delete(`/swimmers/${SWIMMER_A_ID}`)
+      .set("Authorization", "Bearer token");
+    expect(res.status).toBe(403);
+  });
 });
 
 // ── Non-UUID id → 422, not 500 ────────────────────────────────────────────────
@@ -465,6 +487,11 @@ describe("PATCH clubs-only", () => {
     const updateSpy = vi.fn();
     mockDbTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
       const tx = {
+        select: () => {
+          const limit = vi.fn().mockResolvedValue([{ isPublic: false }]);
+          const where = vi.fn().mockReturnValue({ limit });
+          return { from: vi.fn().mockReturnValue({ where }) };
+        },
         update: vi.fn().mockImplementation(() => {
           updateSpy();
           return { set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) }) };

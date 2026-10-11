@@ -19,5 +19,5 @@ export default async function DashboardPage() {
     return <CoachDashboardContent profile={profile} accessToken={accessToken} />;
   }
 
-  return <ParentDashboardContent profile={profile} />;
+  return <ParentDashboardContent profile={profile} accessToken={accessToken} />;
 }

@@ -210,6 +210,44 @@ describe("consent fields are server-controlled", () => {
   });
 });
 
+describe("PATCH archived swimmer", () => {
+  it("clubs-only PATCH on an archived swimmer returns 404 and leaves swimmer_clubs untouched", async () => {
+    const parent = await createTestUser("patch-archived");
+
+    try {
+      const createRes = await request(app)
+        .post("/swimmers")
+        .set("Authorization", `Bearer ${parent.accessToken}`)
+        .send(validSwimmerBody({ clubs: [{ otherClubName: "Sentinel Club" }] }));
+      expect(createRes.status).toBe(201);
+      const swimmerId = createRes.body.id as string;
+      createdSwimmerIds.add(swimmerId);
+
+      const deleteRes = await request(app)
+        .delete(`/swimmers/${swimmerId}`)
+        .set("Authorization", `Bearer ${parent.accessToken}`);
+      expect(deleteRes.status).toBe(204);
+
+      // Clubs-only PATCH on the now-archived swimmer.
+      const patchRes = await request(app)
+        .patch(`/swimmers/${swimmerId}`)
+        .set("Authorization", `Bearer ${parent.accessToken}`)
+        .send({ clubs: [] });
+      expect(patchRes.status).toBe(404);
+
+      // The original swimmer_clubs row must be untouched.
+      const clubRows = await adminDb()
+        .select({ otherClubName: swimmerClubs.otherClubName })
+        .from(swimmerClubs)
+        .where(eq(swimmerClubs.swimmerId, swimmerId));
+      expect(clubRows).toHaveLength(1);
+      expect(clubRows[0]?.otherClubName).toBe("Sentinel Club");
+    } finally {
+      await parent.cleanup();
+    }
+  });
+});
+
 describe("archived swimmer visibility", () => {
   it("DELETE archives, then GET /me returns [] and GET /:id returns 404", async () => {
     const parent = await createTestUser("archive");

@@ -251,6 +251,7 @@ swimmersRouter.get(
 swimmersRouter.get(
   "/:id",
   requireUser,
+  requireParent,
   validate({ params: IdParamsSchema }),
   requireGuardian,
   asyncHandler(async (req, res) => {
@@ -267,6 +268,7 @@ swimmersRouter.get(
 swimmersRouter.patch(
   "/:id",
   requireUser,
+  requireParent,
   validate({ params: IdParamsSchema, body: UpdateSwimmerBodySchema }),
   requireGuardian,
   asyncHandler(async (req, res) => {
@@ -274,29 +276,29 @@ swimmersRouter.patch(
     const { id: swimmerId } = req.params as unknown as IdParams;
     const callerId = req.profile.id;
 
+    const hasSwimmerFields =
+      body.firstName !== undefined ||
+      body.lastName !== undefined ||
+      body.birthDate !== undefined ||
+      body.sex !== undefined ||
+      body.isPublic !== undefined;
+
     let notFound = false;
 
     try {
       await db.transaction(async (tx) => {
-        const hasSwimmerFields =
-          body.firstName !== undefined ||
-          body.lastName !== undefined ||
-          body.birthDate !== undefined ||
-          body.sex !== undefined ||
-          body.isPublic !== undefined;
+        const currentRows = await tx
+          .select({ isPublic: swimmers.isPublic })
+          .from(swimmers)
+          .where(and(isActiveSwimmer, eq(swimmers.id, swimmerId)))
+          .limit(1);
+        const current = currentRows[0];
+        if (!current) {
+          notFound = true;
+          return;
+        }
 
         if (hasSwimmerFields) {
-          const currentRows = await tx
-            .select({ isPublic: swimmers.isPublic })
-            .from(swimmers)
-            .where(and(isActiveSwimmer, eq(swimmers.id, swimmerId)))
-            .limit(1);
-          const current = currentRows[0];
-          if (!current) {
-            notFound = true;
-            return;
-          }
-
           await tx.update(swimmers).set({
             ...(body.firstName !== undefined && { firstName: body.firstName }),
             ...(body.lastName !== undefined && { lastName: body.lastName }),
@@ -307,7 +309,7 @@ swimmersRouter.patch(
               publicConsentAt: new Date(),
               publicConsentBy: callerId,
             }),
-          }).where(eq(swimmers.id, swimmerId));
+          }).where(and(isActiveSwimmer, eq(swimmers.id, swimmerId)));
         }
 
         if (body.clubs !== undefined) {
@@ -345,6 +347,7 @@ swimmersRouter.patch(
 swimmersRouter.delete(
   "/:id",
   requireUser,
+  requireParent,
   validate({ params: IdParamsSchema }),
   requireGuardian,
   asyncHandler(async (req, res) => {
