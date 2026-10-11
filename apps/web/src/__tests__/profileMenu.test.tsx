@@ -79,10 +79,14 @@ describe("ProfileMenu", () => {
     expect(screen.getByRole("menu")).toBeInTheDocument();
   });
 
-  it("contains a logout form with submit button", () => {
+  it("log out button references the persistent logout form", () => {
     render(<ProfileMenu />);
+    // The form is always mounted (outside the dropdown) so the submit is never
+    // canceled by the dropdown unmounting before the action fires.
+    expect(document.getElementById("logout-form")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /my account/i }));
     const logoutButton = screen.getByRole("menuitem", { name: "Log out" });
-    expect(logoutButton.closest("form")).toBeTruthy();
+    expect(logoutButton).toHaveAttribute("form", "logout-form");
+    expect(logoutButton).toHaveAttribute("type", "submit");
   });
 });

@@ -108,6 +108,9 @@ export default function ProfileMenu() {
 
   return (
     <div className="relative">
+      {/* Mounted outside the dropdown so the form stays connected when the menu closes */}
+      <form id="logout-form" action={logout} className="hidden" />
+
       <button
         ref={triggerRef}
         type="button"
@@ -146,19 +149,17 @@ export default function ProfileMenu() {
 
           <div className="my-1 border-t border-divider-section" role="separator" />
 
-          <form action={logout}>
-            <button
-              type="submit"
-              role="menuitem"
-              ref={(el) => {
-                itemRefs.current[menuItems.length] = el;
-              }}
-              onClick={handleItemClick}
-              className={itemClass}
-            >
-              Log out
-            </button>
-          </form>
+          <button
+            type="submit"
+            form="logout-form"
+            role="menuitem"
+            ref={(el) => {
+              itemRefs.current[menuItems.length] = el;
+            }}
+            className={itemClass}
+          >
+            Log out
+          </button>
         </div>
       )}
     </div>
