@@ -1,6 +1,11 @@
 export type { IdParams } from "./schemas/params";
 export { IdParamsSchema } from "./schemas/params";
 
+export type { League, LeagueRegistrationParams } from "./schemas/registration";
+export { LeagueSchema, LeagueRegistrationParamsSchema } from "./schemas/registration";
+
+export { currentSeasonStartYear, CLUB_SEASON_START_MONTH } from "./lib/currentSeasonStartYear";
+
 export type { HealthResponse } from "./schemas/health";
 export { HealthQuerySchema, HealthResponseSchema } from "./schemas/health";
 

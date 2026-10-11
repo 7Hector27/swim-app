@@ -106,6 +106,37 @@ RLS is enabled. Policies TBD.
 
 ---
 
+### `league_registrations`
+
+Records a swimmer's registration in a league for a given season. Withdrawn registrations are **never hard-deleted** — `withdrawn_at` is set to soft-delete while preserving the original `registered_on` date.
+
+| Column | Type | Nullable | Default | Notes |
+|---|---|---|---|---|
+| `id` | `uuid` | no | `gen_random_uuid()` | Primary key |
+| `swimmer_id` | `uuid` | no | — | FK → `swimmers.id` (cascade on delete) |
+| `league` | `league` | no | — | Enum: `club`, `summer_league` |
+| `season_start_year` | `integer` | no | — | Calendar year the season started. See season rules below. |
+| `registered_on` | `date` | no | — | Date of first registration. Preserved across withdrawals and re-registrations. |
+| `withdrawn_at` | `timestamptz` | yes | — | Null = active. Set to soft-withdraw a registration. |
+| `created_at` | `timestamptz` | no | `now()` | |
+| `updated_at` | `timestamptz` | no | `now()` | Updated automatically on any change |
+
+RLS is enabled. Policies TBD.
+
+Constraints:
+- `UNIQUE (swimmer_id, league, season_start_year)` — one row per swimmer per league per season
+
+**Season year rules** (computed by `currentSeasonStartYear()` in `packages/shared`):
+- `summer_league`: `season_start_year` is always the calendar year.
+- `club`: `season_start_year` is the calendar year the club season started. The season starts in `CLUB_SEASON_START_MONTH` (currently September — Jason needs to confirm). Registrations before that month in a given calendar year use the previous year.
+
+**API behaviour:**
+- `PUT /swimmers/:id/registrations/:league` — register for the current season. If a withdrawn row exists for that season, clears `withdrawn_at` and keeps the original `registered_on`. Idempotent if already active.
+- `DELETE /swimmers/:id/registrations/:league` — withdraw from the current season (sets `withdrawn_at`). Returns 404 if not registered.
+- `GET /swimmers/me` and `GET /swimmers/:id` include `currentLeagues`: an array of leagues with active registrations in the current season.
+
+---
+
 ## Conventions
 
 - All tables use `id` as a UUID primary key (`gen_random_uuid()`), except `guardians` which has a composite PK
