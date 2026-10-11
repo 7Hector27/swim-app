@@ -1,27 +1,5 @@
+import { FAQ_ITEMS } from "./faqItems";
 import styles from "./FaqSection.module.css";
-
-const faqs = [
-  {
-    question: "How long are lessons, and what is the rate?",
-    answer: "[Lesson length and rate]",
-  },
-  {
-    question: "What ages and skill levels do you teach?",
-    answer: "[Ages and skill levels Jason teaches]",
-  },
-  {
-    question: "How do I book or cancel a lesson?",
-    answer: "[How booking and cancellation work]",
-  },
-  {
-    question: "Where do lessons take place?",
-    answer: "[Pool location]",
-  },
-  {
-    question: "What should swimmers bring?",
-    answer: "[What to bring]",
-  },
-];
 
 function ChevronIcon() {
   return (
@@ -61,16 +39,14 @@ export default function FaqSection() {
 
           {/* Accordion column */}
           <div className="flex-1 border-t border-border">
-            {faqs.map((faq, index) => (
+            {FAQ_ITEMS.map((faq, index) => (
               <details key={index} className="group border-b border-border">
                 <summary className="flex items-center justify-between gap-4 py-5 cursor-pointer list-none text-heading font-semibold text-base select-none hover:text-accent transition-colors duration-150 [&::-webkit-details-marker]:hidden">
                   {faq.question}
                   <ChevronIcon />
                 </summary>
                 <div className={`pb-5 ${styles.content}`}>
-                  <p className="text-text-secondary leading-relaxed text-sm">
-                    {faq.answer}
-                  </p>
+                  {faq.answer}
                 </div>
               </details>
             ))}
