@@ -102,6 +102,8 @@ Constraints:
 
 RLS is enabled. Policies TBD.
 
+**API behaviour:** When a swimmer's clubs are updated via `PATCH /swimmers/:id`, the full set is replaced atomically — all existing `swimmer_clubs` rows for that swimmer are deleted and the new set is inserted in the same transaction. There is no partial update.
+
 ---
 
 ## Conventions
