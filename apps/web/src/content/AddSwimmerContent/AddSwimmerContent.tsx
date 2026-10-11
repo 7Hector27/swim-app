@@ -239,7 +239,7 @@ export default function AddSwimmerContent({ clubs }: AddSwimmerContentProps) {
                     <button
                       type="button"
                       onClick={addOtherEntry}
-                      className="text-sm text-link hover:text-link-hover self-start"
+                      className="text-sm text-link hover:text-link-hover self-start min-h-[44px]"
                     >
                       + Add another club
                     </button>

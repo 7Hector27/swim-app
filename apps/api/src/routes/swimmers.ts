@@ -309,7 +309,7 @@ swimmersRouter.patch(
               publicConsentAt: new Date(),
               publicConsentBy: callerId,
             }),
-          }).where(eq(swimmers.id, swimmerId));
+          }).where(and(isActiveSwimmer, eq(swimmers.id, swimmerId)));
         }
 
         if (body.clubs !== undefined) {

@@ -11,7 +11,7 @@ content/AddSwimmerContent/
   actions.ts                              ← "use server"; parse → validate → call API → return state
   helpers.ts                              ← AddSwimmerState type + mapApiResponse (pure, testable)
   index.ts                                ← export { default } from "./AddSwimmerContent"
-__tests__/addSwimmerHelpers.test.ts       ← unit tests for helpers.ts only
+src/__tests__/addSwimmerHelpers.test.ts   ← unit tests for helpers.ts only
 ```
 
 ## State type shape
