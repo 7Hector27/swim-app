@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useRef, useState } from "react";
 
 import type { Club } from "@swim-app/shared";
 
@@ -18,11 +18,14 @@ interface AddSwimmerContentProps {
   clubs: Club[];
 }
 
+type OtherClub = { id: number; value: string };
+
 export default function AddSwimmerContent({ clubs }: AddSwimmerContentProps) {
   const [state, formAction, isPending] = useActionState(addSwimmer, initialState);
   const [selectedClubIds, setSelectedClubIds] = useState<Set<string>>(new Set());
-  const [otherClubNames, setOtherClubNames] = useState<string[]>([]);
+  const [otherClubs, setOtherClubs] = useState<OtherClub[]>([]);
   const [isPublicValue, setIsPublicValue] = useState<"yes" | "no" | null>(null);
+  const otherIdRef = useRef(0);
 
   const fieldErrors = state.status === "field_errors" ? state.errors : {};
   const topError = state.status === "error" ? state.message : null;
@@ -40,22 +43,34 @@ export default function AddSwimmerContent({ clubs }: AddSwimmerContentProps) {
   }
 
   function toggleOther(checked: boolean) {
-    setOtherClubNames(checked ? [""] : []);
+    if (checked) {
+      otherIdRef.current += 1;
+      setOtherClubs([{ id: otherIdRef.current, value: "" }]);
+    } else {
+      setOtherClubs([]);
+    }
   }
 
-  function updateOtherName(index: number, value: string) {
-    setOtherClubNames((prev) => prev.map((name, i) => (i === index ? value : name)));
+  function updateOtherValue(entryId: number, value: string) {
+    setOtherClubs((prev) =>
+      prev.map((entry) => (entry.id === entryId ? { ...entry, value } : entry)),
+    );
   }
 
-  function removeOtherName(index: number) {
-    setOtherClubNames((prev) => prev.filter((_, i) => i !== index));
+  function removeOtherEntry(entryId: number) {
+    setOtherClubs((prev) => prev.filter((entry) => entry.id !== entryId));
+  }
+
+  function addOtherEntry() {
+    otherIdRef.current += 1;
+    setOtherClubs((prev) => [...prev, { id: otherIdRef.current, value: "" }]);
   }
 
   const clubsJson = JSON.stringify([
     ...[...selectedClubIds].map((id) => ({ clubId: id })),
-    ...otherClubNames
-      .filter((name) => name.trim().length > 0)
-      .map((name) => ({ otherClubName: name.trim() })),
+    ...otherClubs
+      .filter((entry) => entry.value.trim().length > 0)
+      .map((entry) => ({ otherClubName: entry.value.trim() })),
   ]);
 
   const inputClass =
@@ -191,29 +206,29 @@ export default function AddSwimmerContent({ clubs }: AddSwimmerContentProps) {
                 <label className="flex items-center gap-2.5 cursor-pointer text-sm text-text min-h-[44px]">
                   <input
                     type="checkbox"
-                    checked={otherClubNames.length > 0}
+                    checked={otherClubs.length > 0}
                     onChange={(event) => toggleOther(event.target.checked)}
                     className="w-4 h-4 shrink-0 accent-button-primary-background"
                   />
                   Other
                 </label>
 
-                {otherClubNames.length > 0 && (
+                {otherClubs.length > 0 && (
                   <div className="ml-[26px] flex flex-col gap-2">
-                    {otherClubNames.map((name, index) => (
-                      <div key={index} className="flex gap-2 items-center">
+                    {otherClubs.map((entry) => (
+                      <div key={entry.id} className="flex gap-2 items-center">
                         <input
                           type="text"
-                          value={name}
-                          onChange={(event) => updateOtherName(index, event.target.value)}
+                          value={entry.value}
+                          onChange={(event) => updateOtherValue(entry.id, event.target.value)}
                           placeholder="Club name"
                           className="flex-1 h-10 px-3 rounded-lg border border-border bg-background text-text placeholder:text-text-secondary text-sm focus:outline-none focus:border-accent"
                         />
-                        {otherClubNames.length > 1 && (
+                        {otherClubs.length > 1 && (
                           <button
                             type="button"
-                            onClick={() => removeOtherName(index)}
-                            aria-label={`Remove club ${index + 1}`}
+                            onClick={() => removeOtherEntry(entry.id)}
+                            aria-label="Remove this club"
                             className="text-sm text-text-secondary hover:text-danger px-2 min-h-[44px]"
                           >
                             Remove
@@ -223,7 +238,7 @@ export default function AddSwimmerContent({ clubs }: AddSwimmerContentProps) {
                     ))}
                     <button
                       type="button"
-                      onClick={() => setOtherClubNames((prev) => [...prev, ""])}
+                      onClick={addOtherEntry}
                       className="text-sm text-link hover:text-link-hover self-start"
                     >
                       + Add another club

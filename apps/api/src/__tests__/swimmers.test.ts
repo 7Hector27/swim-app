@@ -216,6 +216,28 @@ describe("coach role restrictions", () => {
       .set("Authorization", "Bearer token");
     expect(res.status).toBe(403);
   });
+
+  it("GET /swimmers/:id → 403 for coach", async () => {
+    const res = await request(app)
+      .get(`/swimmers/${SWIMMER_A_ID}`)
+      .set("Authorization", "Bearer token");
+    expect(res.status).toBe(403);
+  });
+
+  it("PATCH /swimmers/:id → 403 for coach", async () => {
+    const res = await request(app)
+      .patch(`/swimmers/${SWIMMER_A_ID}`)
+      .set("Authorization", "Bearer token")
+      .send({ firstName: "Hacked" });
+    expect(res.status).toBe(403);
+  });
+
+  it("DELETE /swimmers/:id → 403 for coach", async () => {
+    const res = await request(app)
+      .delete(`/swimmers/${SWIMMER_A_ID}`)
+      .set("Authorization", "Bearer token");
+    expect(res.status).toBe(403);
+  });
 });
 
 // ── Non-UUID id → 422, not 500 ────────────────────────────────────────────────

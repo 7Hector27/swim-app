@@ -40,6 +40,8 @@ export async function addSwimmer(
   }
 
   const supabase = await createClient();
+  // getSession is called only to extract the raw access token for forwarding to
+  // the API. The API's requireUser middleware verifies the token independently.
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
   if (!token) return { status: "error", message: "Session expired. Please sign in again." };

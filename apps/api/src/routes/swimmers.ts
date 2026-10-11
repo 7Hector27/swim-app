@@ -251,6 +251,7 @@ swimmersRouter.get(
 swimmersRouter.get(
   "/:id",
   requireUser,
+  requireParent,
   validate({ params: IdParamsSchema }),
   requireGuardian,
   asyncHandler(async (req, res) => {
@@ -267,6 +268,7 @@ swimmersRouter.get(
 swimmersRouter.patch(
   "/:id",
   requireUser,
+  requireParent,
   validate({ params: IdParamsSchema, body: UpdateSwimmerBodySchema }),
   requireGuardian,
   asyncHandler(async (req, res) => {
@@ -345,6 +347,7 @@ swimmersRouter.patch(
 swimmersRouter.delete(
   "/:id",
   requireUser,
+  requireParent,
   validate({ params: IdParamsSchema }),
   requireGuardian,
   asyncHandler(async (req, res) => {
