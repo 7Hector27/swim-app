@@ -487,6 +487,11 @@ describe("PATCH clubs-only", () => {
     const updateSpy = vi.fn();
     mockDbTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
       const tx = {
+        select: () => {
+          const limit = vi.fn().mockResolvedValue([{ isPublic: false }]);
+          const where = vi.fn().mockReturnValue({ limit });
+          return { from: vi.fn().mockReturnValue({ where }) };
+        },
         update: vi.fn().mockImplementation(() => {
           updateSpy();
           return { set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) }) };
