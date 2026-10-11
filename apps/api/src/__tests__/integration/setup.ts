@@ -1,12 +1,30 @@
 // Integration test setup — runs against a real local Supabase stack.
 //
-// Safety guard: refuses to run if the database URL doesn't resolve to a
-// loopback address. Hitting a shared or production DB with these tests would
-// create real auth users and delete rows.
+// All connection details must be set in the environment — no hardcoded
+// defaults. Locally, Vitest loads apps/api/.env which should contain these
+// vars (copy from `pnpm db:status`). In CI they are written to $GITHUB_ENV
+// from `supabase status -o env` immediately after the stack starts.
+//
+// Safety guard: refuses to run if INTEGRATION_DATABASE_URL doesn't resolve to
+// a loopback address. Hitting a shared or production DB would create real auth
+// users and delete rows.
 
-const INTEGRATION_DATABASE_URL =
-  process.env["INTEGRATION_DATABASE_URL"] ??
-  "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
+function requireEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(
+      `Integration tests require ${name} to be set. ` +
+        `Run \`pnpm db:status\` (or \`supabase status\`) to get the values ` +
+        `and add them to apps/api/.env.`,
+    );
+  }
+  return value;
+}
+
+const INTEGRATION_DATABASE_URL = requireEnv("INTEGRATION_DATABASE_URL");
+requireEnv("SUPABASE_URL");
+requireEnv("SUPABASE_PUBLISHABLE_KEY");
+requireEnv("SUPABASE_SERVICE_ROLE_KEY");
 
 function assertLocalhost(rawUrl: string): void {
   let parsed: URL;
@@ -38,8 +56,3 @@ assertLocalhost(INTEGRATION_DATABASE_URL);
 // db/client.ts reads DATABASE_URL at import time, so we must set it before any
 // test file imports the app.
 process.env["DATABASE_URL"] = INTEGRATION_DATABASE_URL;
-process.env["SUPABASE_URL"] ??= "http://127.0.0.1:54321";
-// Local Supabase's standard anon key — safe to hardcode; it only works against
-// a local stack.
-process.env["SUPABASE_PUBLISHABLE_KEY"] ??=
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0";

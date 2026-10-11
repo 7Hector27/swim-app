@@ -8,9 +8,6 @@ jobs:
   integration:
     name: API integration tests
     runs-on: ubuntu-latest
-    env:
-      INTEGRATION_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
-      SUPABASE_URL: http://127.0.0.1:54321
     steps:
       - uses: actions/checkout@v4
 
@@ -33,6 +30,20 @@ jobs:
 
       - name: Start Supabase local stack
         run: supabase start
+
+      - name: Export Supabase credentials to environment
+        # `supabase status -o env` prints KEY="value" lines for the running
+        # instance. Map them to the names the tests expect and strip quotes so
+        # each runner step sees the real keys, not the demo defaults.
+        run: |
+          supabase status -o env \
+            | grep -E '^(API_URL|ANON_KEY|SERVICE_ROLE_KEY|DB_URL)=' \
+            | sed -e 's/^API_URL=/SUPABASE_URL=/' \
+                  -e 's/^ANON_KEY=/SUPABASE_PUBLISHABLE_KEY=/' \
+                  -e 's/^SERVICE_ROLE_KEY=/SUPABASE_SERVICE_ROLE_KEY=/' \
+                  -e 's/^DB_URL=/INTEGRATION_DATABASE_URL=/' \
+                  -e 's/"//g' \
+            >> "$GITHUB_ENV"
 
       - name: Apply migrations
         run: pnpm db:migrate

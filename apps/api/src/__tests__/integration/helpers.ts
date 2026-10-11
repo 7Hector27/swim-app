@@ -8,37 +8,25 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { profiles } from "../../db/schema";
 
-const DEFAULT_LOCAL_SERVICE_ROLE_KEY =
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hj04zWl196z8MR2SM";
-
-const DEFAULT_LOCAL_ANON_KEY =
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0";
-
-const DEFAULT_LOCAL_DATABASE_URL =
-  "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
-
-const DEFAULT_LOCAL_SUPABASE_URL = "http://127.0.0.1:54321";
+// All env vars are validated in setup.ts before any test code runs.
+// These getters use non-null assertions since setup.ts guarantees presence.
 
 const DEFAULT_TEST_PASSWORD = "integration-test-password-1";
 
 function getSupabaseUrl(): string {
-  return process.env["SUPABASE_URL"] ?? DEFAULT_LOCAL_SUPABASE_URL;
+  return process.env["SUPABASE_URL"]!;
 }
 
 function getServiceRoleKey(): string {
-  return (
-    process.env["SUPABASE_SERVICE_ROLE_KEY"] ?? DEFAULT_LOCAL_SERVICE_ROLE_KEY
-  );
+  return process.env["SUPABASE_SERVICE_ROLE_KEY"]!;
 }
 
 function getAnonKey(): string {
-  return process.env["SUPABASE_PUBLISHABLE_KEY"] ?? DEFAULT_LOCAL_ANON_KEY;
+  return process.env["SUPABASE_PUBLISHABLE_KEY"]!;
 }
 
 function getIntegrationDatabaseUrl(): string {
-  return (
-    process.env["INTEGRATION_DATABASE_URL"] ?? DEFAULT_LOCAL_DATABASE_URL
-  );
+  return process.env["INTEGRATION_DATABASE_URL"]!;
 }
 
 // Direct DB connection using service-role equivalent (the local postgres super

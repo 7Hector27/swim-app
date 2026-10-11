@@ -93,15 +93,20 @@ pnpm test:integration
 
 Each test creates unique users (`<prefix>-<timestamp>-<random>@test.local`) and cleans them up afterwards; auth-user deletion cascades through profiles, guardians, and swimmer_clubs.
 
-**Safety guard**: `src/__tests__/integration/setup.ts` refuses to start if `INTEGRATION_DATABASE_URL` doesn't contain `localhost` or `127.0.0.1`. This prevents the test suite from ever touching a staging or production database.
+**Safety guard**: `src/__tests__/integration/setup.ts` refuses to start if `INTEGRATION_DATABASE_URL` doesn't resolve to a loopback address. This prevents the test suite from ever touching a staging or production database.
 
-**Overrides**
+**Required environment variables**
 
-| Variable | Default |
+The tests read all connection details from `apps/api/.env` — no hardcoded defaults. After starting the stack, run `pnpm db:status` (or `npx supabase status`) and copy the values into `apps/api/.env`:
+
+| Variable | Where to get it |
 |---|---|
-| `INTEGRATION_DATABASE_URL` | `postgresql://postgres:postgres@127.0.0.1:54322/postgres` |
-| `SUPABASE_URL` | `http://127.0.0.1:54321` |
-| `SUPABASE_SERVICE_ROLE_KEY` | the local-stack default service-role JWT |
+| `INTEGRATION_DATABASE_URL` | `DB URL` from `pnpm db:status` |
+| `SUPABASE_URL` | `API URL` from `pnpm db:status` |
+| `SUPABASE_PUBLISHABLE_KEY` | `anon key` from `pnpm db:status` |
+| `SUPABASE_SERVICE_ROLE_KEY` | `service_role key` from `pnpm db:status` |
+
+If any variable is missing, the test runner will fail immediately with a message naming the missing variable.
 
 ## API endpoints
 
