@@ -32,16 +32,6 @@
 
   .contentColumn {
     flex: 1;
-    /* Prevent long pull quote text from overflowing the flex row */
     min-width: 0;
   }
-}
-
-/* Pull quote: globals already give h2 Fraunces + weight + variation-settings.
-   We add italic and loosen line-height for multiline readability. */
-.pullQuote {
-  font-style: italic;
-  line-height: 1.25;
-  color: var(--color-heading);
-  margin: 0;
 }

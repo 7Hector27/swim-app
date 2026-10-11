@@ -1,3 +1,4 @@
+import { COACH_BIO } from "./coachBioCopy";
 import CoachPhotoDeck from "./CoachPhotoDeck";
 import type { CoachPhoto } from "./CoachPhotoDeck";
 import styles from "./CoachBioSection.module.css";
@@ -19,19 +20,12 @@ export default function CoachBioSection() {
           </div>
 
           <div className={styles.contentColumn}>
-            <h2 className={styles.pullQuote}>
-              &ldquo;[Pull quote placeholder — a line from Jason about what
-              makes swimming special or his coaching philosophy]&rdquo;
-            </h2>
-
             <p className="text-text leading-relaxed">
-              [Bio paragraph — background, certifications, coaching philosophy,
-              and what makes this coaching program special]
+              {COACH_BIO.paragraphs[0]}
             </p>
 
             <p className="text-text-secondary leading-relaxed">
-              [Second bio paragraph — additional context about experience,
-              achievements, or approach]
+              {COACH_BIO.paragraphs[1]}
             </p>
 
             <div>
