@@ -1,4 +1,4 @@
-import { vi, describe, it, expect, beforeEach } from "vitest";
+import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 
 import { fetchSwimmers } from "../lib/api/swimmers";
 
@@ -16,6 +16,7 @@ const validSwimmer = {
   createdAt: "2025-01-01T00:00:00.000Z",
   updatedAt: "2025-01-01T00:00:00.000Z",
   clubs: [],
+  currentLeagues: [],
 };
 
 function mockResponse(ok: boolean, status: number, body: unknown): Response {
@@ -26,8 +27,15 @@ function mockResponse(ok: boolean, status: number, body: unknown): Response {
   } as unknown as Response;
 }
 
+const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
 beforeEach(() => {
   mockFetch.mockReset();
+  warnSpy.mockClear();
+});
+
+afterEach(() => {
+  warnSpy.mockClear();
 });
 
 describe("fetchSwimmers", () => {
@@ -43,6 +51,16 @@ describe("fetchSwimmers", () => {
     mockFetch.mockResolvedValue(mockResponse(true, 200, [{ not: "a swimmer" }]));
     const result = await fetchSwimmers("test-token");
     expect(result).toEqual([]);
+  });
+
+  it("logs a warning (no swimmer data) on 200 with invalid response shape", async () => {
+    mockFetch.mockResolvedValue(mockResponse(true, 200, [{ not: "a swimmer" }]));
+    await fetchSwimmers("test-token");
+    expect(warnSpy).toHaveBeenCalledOnce();
+    const message: unknown = warnSpy.mock.calls[0]?.[0];
+    expect(typeof message).toBe("string");
+    // Must not contain swimmer data (names, dates, IDs — anything from the response body).
+    expect(message as string).not.toMatch(/Alice|Smith|\d{4}-\d{2}-\d{2}|aaaa/);
   });
 
   it("returns empty array on non-ok status", async () => {

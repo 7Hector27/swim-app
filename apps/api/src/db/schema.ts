@@ -4,6 +4,7 @@ import {
   boolean,
   check,
   date,
+  integer,
   pgEnum,
   pgTable,
   primaryKey,
@@ -14,6 +15,7 @@ import {
 } from "drizzle-orm/pg-core";
 
 export const userRoleEnum = pgEnum("user_role", ["coach", "parent"]);
+export const leagueEnum = pgEnum("league", ["club", "summer_league"]);
 
 export const profiles = pgTable(
   "profiles",
@@ -145,5 +147,37 @@ export const swimmerClubs = pgTable(
     uniqueIndex("swimmer_clubs_swimmer_club_uniq")
       .on(table.swimmerId, table.clubId)
       .where(sql`${table.clubId} IS NOT NULL`),
+  ],
+).enableRLS();
+
+// ── League registrations ───────────────────────────────────────────────────────
+
+export const leagueRegistrations = pgTable(
+  "league_registrations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    swimmerId: uuid("swimmer_id")
+      .notNull()
+      .references(() => swimmers.id, { onDelete: "cascade" }),
+    league: leagueEnum("league").notNull(),
+    seasonStartYear: integer("season_start_year").notNull(),
+    registeredOn: date("registered_on").notNull(),
+    // Null means active. Set to soft-delete (withdraw) a registration while
+    // preserving the original registered_on date.
+    withdrawnAt: timestamp("withdrawn_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdateFn(() => new Date()),
+  },
+  (table) => [
+    uniqueIndex("league_registrations_swimmer_league_season_uniq").on(
+      table.swimmerId,
+      table.league,
+      table.seasonStartYear,
+    ),
   ],
 ).enableRLS();

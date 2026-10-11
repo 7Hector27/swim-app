@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { todayLA } from "../lib/todayLA";
+import { LeagueSchema } from "./registration";
 
 // ── Enums ─────────────────────────────────────────────────────────────────────
 
@@ -143,6 +144,7 @@ export const ParentSwimmerSchema = z.object({
   createdAt: z.string().datetime({ offset: true }),
   updatedAt: z.string().datetime({ offset: true }),
   clubs: z.array(SwimmerClubSchema),
+  currentLeagues: z.array(LeagueSchema),
 });
 
 export type ParentSwimmer = z.infer<typeof ParentSwimmerSchema>;

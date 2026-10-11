@@ -8,7 +8,11 @@ export async function fetchSwimmers(accessToken: string): Promise<ParentSwimmer[
     if (!response.ok) return [];
     const body: unknown = await response.json();
     const parsed = ParentSwimmerSchema.array().safeParse(body);
-    return parsed.success ? parsed.data : [];
+    if (!parsed.success) {
+      console.warn("fetchSwimmers: 200 response did not match ParentSwimmerSchema");
+      return [];
+    }
+    return parsed.data;
   } catch {
     return [];
   }

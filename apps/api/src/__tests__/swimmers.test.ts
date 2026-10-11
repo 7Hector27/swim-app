@@ -149,6 +149,25 @@ function clubsSelect(rows: typeof baseClubRow[] = []) {
   return { from: vi.fn().mockReturnValue({ where }) };
 }
 
+/**
+ * Returns a mock chain for registration queries → rows.
+ * Include swimmerId when mocking the GET /me batch query; omit it for the
+ * single-swimmer fetchSwimmerWithClubs path which only selects { league }.
+ */
+function regsSelect(
+  rows: Array<{ swimmerId?: string; league: "club" | "summer_league" }> = [],
+) {
+  const where = vi.fn().mockResolvedValue(rows);
+  return { from: vi.fn().mockReturnValue({ where }) };
+}
+
+/** Returns a mock chain for the registration existence check → row or null. */
+function regCheckSelect(row: { id: string; withdrawnAt: Date | null } | null) {
+  const limit = vi.fn().mockResolvedValue(row ? [row] : []);
+  const where = vi.fn().mockReturnValue({ limit });
+  return { from: vi.fn().mockReturnValue({ where }) };
+}
+
 beforeEach(() => {
   vi.resetAllMocks();
 });
@@ -183,6 +202,16 @@ describe("unauthenticated", () => {
 
   it("DELETE /swimmers/:id → 401", async () => {
     const res = await request(app).delete(`/swimmers/${SWIMMER_A_ID}`);
+    expect(res.status).toBe(401);
+  });
+
+  it("PUT /swimmers/:id/registrations/:league → 401", async () => {
+    const res = await request(app).put(`/swimmers/${SWIMMER_A_ID}/registrations/club`);
+    expect(res.status).toBe(401);
+  });
+
+  it("DELETE /swimmers/:id/registrations/:league → 401", async () => {
+    const res = await request(app).delete(`/swimmers/${SWIMMER_A_ID}/registrations/club`);
     expect(res.status).toBe(401);
   });
 });
@@ -353,14 +382,8 @@ describe("archived swimmer", () => {
 });
 
 // ── Create atomicity ──────────────────────────────────────────────────────────
-
-describe("POST /swimmers atomicity", () => {
-  // Cannot be proven with a mocked db.transaction — the mock doesn't implement
-  // real rollback semantics. Needs an integration test against local Supabase.
-  it.todo(
-    "rolls back swimmer + guardian rows when club insert fails (FK violation) — integration test needed",
-  );
-});
+// Covered by the integration test suite (registrations.integration.test.ts and
+// swimmers.integration.test.ts) which runs against local Supabase.
 
 // ── Consent fields ────────────────────────────────────────────────────────────
 
@@ -399,7 +422,8 @@ describe("consent fields", () => {
       if (call === 1) return requireUserSelect(profileA);
       if (call === 2) return requireGuardianSelect(true);
       if (call === 3) return swimmerSelect(updatedSwimmer);
-      return clubsSelect();
+      if (call === 4) return clubsSelect();
+      return regsSelect();
     });
 
     mockDbTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
@@ -435,7 +459,8 @@ describe("consent fields", () => {
       if (call === 1) return requireUserSelect(profileA);
       if (call === 2) return requireGuardianSelect(true);
       if (call === 3) return swimmerSelect(baseSwimmerRow);
-      return clubsSelect();
+      if (call === 4) return clubsSelect();
+      return regsSelect();
     });
 
     const setCaptured: Record<string, unknown>[] = [];
@@ -481,7 +506,8 @@ describe("PATCH clubs-only", () => {
       if (call === 1) return requireUserSelect(profileA);
       if (call === 2) return requireGuardianSelect(true);
       if (call === 3) return swimmerSelect(baseSwimmerRow);
-      return clubsSelect();
+      if (call === 4) return clubsSelect();
+      return regsSelect();
     });
 
     const updateSpy = vi.fn();
@@ -513,13 +539,7 @@ describe("PATCH clubs-only", () => {
 });
 
 // ── ParentSwimmerSchema parse ─────────────────────────────────────────────────
-
-describe("ParentSwimmerSchema", () => {
-  // Verifying the schema against a real DB row requires an integration test —
-  // mocked data may not exactly match what Postgres + Drizzle actually return
-  // (e.g. date vs. string types, nullable field shapes). Needs local Supabase.
-  it.todo("real DB row parses with ParentSwimmerSchema — integration test needed");
-});
+// Covered by the integration test suite (swimmers.integration.test.ts).
 
 // ── Async error handling ──────────────────────────────────────────────────────
 
@@ -566,7 +586,7 @@ describe("GET /clubs", () => {
 // ── GET /swimmers/me ──────────────────────────────────────────────────────────
 
 describe("GET /swimmers/me", () => {
-  it("returns active swimmers with clubs for the caller", async () => {
+  it("returns active swimmers with clubs and empty currentLeagues", async () => {
     authAs(profileA);
     let call = 0;
     mockDbSelect.mockImplementation(() => {
@@ -582,9 +602,8 @@ describe("GET /swimmers/me", () => {
         const where = vi.fn().mockResolvedValue([baseSwimmerRow]);
         return { from: vi.fn().mockReturnValue({ where }) };
       }
-      // swimmer_clubs
-      const where = vi.fn().mockResolvedValue([baseClubRow]);
-      return { from: vi.fn().mockReturnValue({ where }) };
+      if (call === 4) return clubsSelect([baseClubRow]); // Promise.all first
+      return regsSelect();                               // Promise.all second
     });
 
     const res = await request(app).get("/swimmers/me").set("Authorization", "Bearer token");
@@ -592,6 +611,32 @@ describe("GET /swimmers/me", () => {
     expect(res.body).toHaveLength(1);
     expect(res.body[0].id).toBe(SWIMMER_A_ID);
     expect(res.body[0].clubs).toHaveLength(1);
+    expect(res.body[0].currentLeagues).toEqual([]);
+  });
+
+  it("includes active league registrations in currentLeagues", async () => {
+    authAs(profileA);
+    let call = 0;
+    mockDbSelect.mockImplementation(() => {
+      call++;
+      if (call === 1) return requireUserSelect(profileA);
+      if (call === 2) {
+        const where = vi.fn().mockResolvedValue([{ swimmerId: SWIMMER_A_ID }]);
+        return { from: vi.fn().mockReturnValue({ where }) };
+      }
+      if (call === 3) {
+        const where = vi.fn().mockResolvedValue([baseSwimmerRow]);
+        return { from: vi.fn().mockReturnValue({ where }) };
+      }
+      if (call === 4) return clubsSelect();
+      // GET /me batch query selects { swimmerId, league } — must include swimmerId
+      // so leaguesBySwimmer.get(SWIMMER_A_ID) resolves correctly.
+      return regsSelect([{ swimmerId: SWIMMER_A_ID, league: "club" }]);
+    });
+
+    const res = await request(app).get("/swimmers/me").set("Authorization", "Bearer token");
+    expect(res.status).toBe(200);
+    expect(res.body[0].currentLeagues).toEqual(["club"]);
   });
 
   it("returns empty array when caller has no swimmers", async () => {
@@ -648,7 +693,8 @@ describe("POST /swimmers", () => {
       postCall++;
       if (postCall === 1) return origImpl();
       if (postCall === 2) return swimmerSelect(createdSwimmer);
-      return clubsSelect();
+      if (postCall === 3) return clubsSelect(); // Promise.all first
+      return regsSelect();                      // Promise.all second
     });
 
     const res = await request(app)
@@ -664,5 +710,126 @@ describe("POST /swimmers", () => {
       });
 
     expect(res.status).toBe(201);
+  });
+});
+
+// ── PUT /swimmers/:id/registrations/:league ───────────────────────────────────
+
+describe("PUT /swimmers/:id/registrations/:league", () => {
+  it("returns 200 and inserts a new registration when none exists", async () => {
+    authAs(profileA);
+    let call = 0;
+    mockDbSelect.mockImplementation(() => {
+      call++;
+      if (call === 1) return requireUserSelect(profileA);
+      if (call === 2) return requireGuardianSelect(true);
+      return regCheckSelect(null);
+    });
+    mockDbInsert.mockReturnValue({ values: vi.fn().mockResolvedValue([]) });
+
+    const res = await request(app)
+      .put(`/swimmers/${SWIMMER_A_ID}/registrations/club`)
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(200);
+    expect(mockDbInsert).toHaveBeenCalledOnce();
+  });
+
+  it("returns 200 and updates (no insert) when re-activating a withdrawn row", async () => {
+    authAs(profileA);
+    const REG_ID = "reg00000-0000-4000-8000-000000000001";
+    let call = 0;
+    mockDbSelect.mockImplementation(() => {
+      call++;
+      if (call === 1) return requireUserSelect(profileA);
+      if (call === 2) return requireGuardianSelect(true);
+      return regCheckSelect({ id: REG_ID, withdrawnAt: new Date("2026-08-01T00:00:00Z") });
+    });
+    mockDbUpdate.mockReturnValue({
+      set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) }),
+    });
+
+    const res = await request(app)
+      .put(`/swimmers/${SWIMMER_A_ID}/registrations/club`)
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(200);
+    expect(mockDbInsert).not.toHaveBeenCalled();
+    expect(mockDbUpdate).toHaveBeenCalledOnce();
+  });
+
+  it("returns 200 without any write when already active (idempotent)", async () => {
+    authAs(profileA);
+    let call = 0;
+    mockDbSelect.mockImplementation(() => {
+      call++;
+      if (call === 1) return requireUserSelect(profileA);
+      if (call === 2) return requireGuardianSelect(true);
+      return regCheckSelect({ id: "existing-reg-id", withdrawnAt: null });
+    });
+
+    const res = await request(app)
+      .put(`/swimmers/${SWIMMER_A_ID}/registrations/club`)
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(200);
+    expect(mockDbInsert).not.toHaveBeenCalled();
+    expect(mockDbUpdate).not.toHaveBeenCalled();
+  });
+
+  it("returns 422 for an unrecognised league value", async () => {
+    authAs(profileA);
+    mockDbSelect.mockReturnValue(requireUserSelect(profileA));
+
+    const res = await request(app)
+      .put(`/swimmers/${SWIMMER_A_ID}/registrations/not_a_league`)
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(422);
+  });
+});
+
+// ── DELETE /swimmers/:id/registrations/:league ────────────────────────────────
+
+describe("DELETE /swimmers/:id/registrations/:league", () => {
+  it("returns 204 and sets withdrawnAt when registered", async () => {
+    authAs(profileA);
+    const REG_ID = "reg00000-0000-4000-8000-000000000001";
+    let call = 0;
+    mockDbSelect.mockImplementation(() => {
+      call++;
+      if (call === 1) return requireUserSelect(profileA);
+      if (call === 2) return requireGuardianSelect(true);
+      return regCheckSelect({ id: REG_ID, withdrawnAt: null });
+    });
+    mockDbUpdate.mockReturnValue({
+      set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) }),
+    });
+
+    const res = await request(app)
+      .delete(`/swimmers/${SWIMMER_A_ID}/registrations/club`)
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(204);
+    expect(mockDbUpdate).toHaveBeenCalledOnce();
+  });
+
+  it("returns 404 when not registered for the current season", async () => {
+    authAs(profileA);
+    let call = 0;
+    mockDbSelect.mockImplementation(() => {
+      call++;
+      if (call === 1) return requireUserSelect(profileA);
+      if (call === 2) return requireGuardianSelect(true);
+      return regCheckSelect(null);
+    });
+
+    const res = await request(app)
+      .delete(`/swimmers/${SWIMMER_A_ID}/registrations/club`)
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(404);
+    expect(res.body).toMatchObject({ error: "Not registered" });
+    expect(mockDbUpdate).not.toHaveBeenCalled();
   });
 });
