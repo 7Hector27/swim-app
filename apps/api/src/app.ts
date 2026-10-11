@@ -13,6 +13,8 @@ import { errorHandler } from "./middleware/errorHandler";
 import { requireUser } from "./middleware/requireUser";
 import { requireCoach } from "./middleware/requireCoach";
 import { supabase } from "./lib/supabase";
+import { clubsRouter } from "./routes/clubs";
+import { swimmersRouter } from "./routes/swimmers";
 import {
   calculateAge,
   HealthQuerySchema,
@@ -141,6 +143,9 @@ export function createApp(logger: Logger) {
   app.get("/coach/ping", requireUser, requireCoach, validate({}), (_req, res) => {
     res.json({ pong: true });
   });
+
+  app.use("/clubs", clubsRouter);
+  app.use("/swimmers", swimmersRouter);
 
   app.use(errorHandler);
 
