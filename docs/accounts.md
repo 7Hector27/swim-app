@@ -24,11 +24,22 @@ No role: public visitors, and kids under 13 (no accounts ever).
 
 | Data                             | Coach        | Parent                  | Public                            |
 | -------------------------------- | ------------ | ----------------------- | --------------------------------- |
+| Swimmer list (roster)            | All active swimmers | Only their own swimmers | No |
+| Swimmer detail + guardian contact | All swimmers | Only their own swimmers | No |
 | Swimmer ratings, times, progress | All swimmers | Only their own swimmers | Opted-in swimmers, limited fields |
 | Coach notes                      | Yes          | No                      | No                                |
 | Edit ratings, times, notes       | Yes          | No                      | No                                |
 | Set is_public to true            | No           | Their own swimmers (guardian only) | No                          |
 | Set is_public to false           | Yes          | Their own swimmers      | No                                |
+
+## Coach permissions
+
+Coaches access swimmer data through dedicated `/coach/swimmers` routes protected by `requireCoach` middleware. These routes:
+
+- Return all active (non-archived) swimmers, not filtered by guardian relationship
+- Include guardian contact info (fullName + phone only) on the detail route — never birth dates, emails, or notes
+- Allow setting `isPublic` to `false` on any swimmer; setting it to `true` is always a guardian-only action
+- Never expose `publicConsentBy` or `publicConsentAt` fields to the response
 
 ## Kids' data
 

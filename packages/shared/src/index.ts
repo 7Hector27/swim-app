@@ -26,6 +26,9 @@ export type {
   UpdateSwimmerBody,
   ParentSwimmer,
   PublicSwimmer,
+  CoachSwimmer,
+  CoachSwimmerDetail,
+  CoachVisibilityBody,
 } from "./schemas/swimmer";
 export {
   SexSchema,
@@ -40,6 +43,9 @@ export {
   UpdateSwimmerBodySchema,
   ParentSwimmerSchema,
   PublicSwimmerSchema,
+  CoachSwimmerSchema,
+  CoachSwimmerDetailSchema,
+  CoachVisibilityBodySchema,
 } from "./schemas/swimmer";
 
 export { calculateAge } from "./lib/calculateAge";

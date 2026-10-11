@@ -158,3 +158,38 @@ export const PublicSwimmerSchema = z.object({
 });
 
 export type PublicSwimmer = z.infer<typeof PublicSwimmerSchema>;
+
+// ── Coach response schemas ─────────────────────────────────────────────────────
+
+export const CoachSwimmerSchema = z.object({
+  id: z.string().uuid(),
+  firstName: z.string().trim().min(1),
+  lastName: z.string().trim().min(1),
+  age: z.number().int(),
+  sex: SexSchema,
+  isPublic: z.boolean(),
+  createdAt: z.string().datetime({ offset: true }),
+  updatedAt: z.string().datetime({ offset: true }),
+  clubs: z.array(SwimmerClubSchema),
+  currentLeagues: z.array(LeagueSchema),
+});
+
+export type CoachSwimmer = z.infer<typeof CoachSwimmerSchema>;
+
+export const CoachSwimmerDetailSchema = CoachSwimmerSchema.extend({
+  birthDate: z.string().date(),
+  guardians: z.array(
+    z.object({
+      fullName: z.string().nullable(),
+      phone: z.string().nullable(),
+    }),
+  ),
+});
+
+export type CoachSwimmerDetail = z.infer<typeof CoachSwimmerDetailSchema>;
+
+export const CoachVisibilityBodySchema = z.object({
+  isPublic: z.literal(false),
+});
+
+export type CoachVisibilityBody = z.infer<typeof CoachVisibilityBodySchema>;

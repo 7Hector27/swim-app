@@ -57,3 +57,13 @@ All signed-in routes are guarded by `requireAuth()` (`apps/web/src/lib/requireAu
 | `/dashboard` | Any authenticated, active user | Role-based hub: `CoachDashboardContent` for coaches, `ParentDashboardContent` for parents |
 | `/account` | Any authenticated, active user | Settings: email/role display, edit name/phone, log out |
 | `/coach/*` | Coach role only | Coach tooling; non-coaches redirect to `/dashboard` |
+| `/coach/swimmers` | Coach role only | Roster: all active swimmers, client-side search + league filter |
+| `/coach/swimmers/[id]` | Coach role only | Swimmer detail: info, clubs, leagues, guardian tap-to-call, hide-from-public action |
+
+## API route map
+
+| Method | Path | Auth | Purpose |
+|---|---|---|---|
+| `GET` | `/coach/swimmers` | requireCoach | All active swimmers sorted by last name |
+| `GET` | `/coach/swimmers/:id` | requireCoach | Swimmer detail with guardians (fullName + phone) |
+| `PATCH` | `/coach/swimmers/:id/visibility` | requireCoach | Set `isPublic` to `false`; idempotent |
