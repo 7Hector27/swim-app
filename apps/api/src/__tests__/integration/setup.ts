@@ -1,21 +1,39 @@
 // Integration test setup — runs against a real local Supabase stack.
 //
-// Safety guard: refuses to run if the database URL doesn't point at a
-// localhost address. Hitting a shared or production DB with these tests would
+// Safety guard: refuses to run if the database URL doesn't resolve to a
+// loopback address. Hitting a shared or production DB with these tests would
 // create real auth users and delete rows.
 
 const INTEGRATION_DATABASE_URL =
   process.env["INTEGRATION_DATABASE_URL"] ??
   "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
 
-if (
-  !INTEGRATION_DATABASE_URL.includes("localhost") &&
-  !INTEGRATION_DATABASE_URL.includes("127.0.0.1")
-) {
-  throw new Error(
-    `Refusing to run integration tests against a non-local database. INTEGRATION_DATABASE_URL must contain "localhost" or "127.0.0.1". Got: ${INTEGRATION_DATABASE_URL}`,
-  );
+function assertLocalhost(rawUrl: string): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    throw new Error(
+      `INTEGRATION_DATABASE_URL is not a valid URL: ${rawUrl}`,
+    );
+  }
+
+  const hostname = parsed.hostname;
+  const isLocal =
+    hostname === "localhost" ||
+    hostname === "127.0.0.1" ||
+    hostname === "::1";
+
+  if (!isLocal) {
+    throw new Error(
+      `Refusing to run integration tests against a non-local database. ` +
+        `INTEGRATION_DATABASE_URL must resolve to localhost, 127.0.0.1, or ::1. ` +
+        `Got hostname: ${hostname}`,
+    );
+  }
 }
+
+assertLocalhost(INTEGRATION_DATABASE_URL);
 
 // db/client.ts reads DATABASE_URL at import time, so we must set it before any
 // test file imports the app.

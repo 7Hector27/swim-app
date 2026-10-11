@@ -59,36 +59,40 @@ function validSwimmerBody(overrides: Record<string, unknown> = {}) {
 describe("POST /swimmers — atomicity", () => {
   it("rolls back swimmer and guardian rows when clubId does not exist", async () => {
     const parent = await createTestUser("atomic");
+    // Unique per run so the swimmer-name assertion is unambiguous.
+    const uniqueFirstName = `Atomic-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
     try {
       const fakeClubId = "00000000-0000-4000-8000-000000000000";
       const res = await request(app)
         .post("/swimmers")
         .set("Authorization", `Bearer ${parent.accessToken}`)
-        .send(validSwimmerBody({ clubs: [{ clubId: fakeClubId }] }));
+        .send(validSwimmerBody({ firstName: uniqueFirstName, clubs: [{ clubId: fakeClubId }] }));
 
       // FK violation surfaces as either 500 (unhandled DB error) or 422 — both
       // acceptable; the point is nothing is left in the DB.
       expect([422, 500]).toContain(res.status);
 
+      // No swimmer row with the unique name should exist.
+      const swimmerRows = await adminDb()
+        .select({ id: swimmers.id })
+        .from(swimmers)
+        .where(eq(swimmers.firstName, uniqueFirstName));
+      expect(swimmerRows).toHaveLength(0);
+
+      // No guardian row linking this parent to any swimmer.
       const guardianRows = await adminDb()
         .select()
         .from(guardians)
         .where(eq(guardians.profileId, parent.userId));
       expect(guardianRows).toHaveLength(0);
 
-      // Zero swimmer rows should reference this guardian — and there should be
-      // zero swimmer_clubs rows pointing at the fake club.
+      // No swimmer_clubs row pointing at the fake club.
       const clubRows = await adminDb()
         .select()
         .from(swimmerClubs)
         .where(eq(swimmerClubs.clubId, fakeClubId));
       expect(clubRows).toHaveLength(0);
-
-      // Belt-and-suspenders: no swimmer should exist with the test's first name
-      // created by this parent. (We can't filter by owner directly without a
-      // guardian row, but if the transaction rolled back there are no
-      // guardians, so this is just a sanity check.)
     } finally {
       await parent.cleanup();
     }
