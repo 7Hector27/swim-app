@@ -35,4 +35,6 @@ For each finding, write:
 
 - **[Must fix]** or **[Should fix]**, then `file:line`, what's wrong, and how to fix it
 
+Only flag must-fix or should-fix for problems in the code this diff actually changes. Requirements that only matter for future work (routes not written yet, features in later PRs) go under a separate "Notes for later" heading and never block the merge.
+
 End with one line: **Ready for PR** or **Needs changes**.

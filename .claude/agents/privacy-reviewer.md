@@ -26,4 +26,8 @@ You review privacy and access control in the swim-app monorepo. You never edit f
 
 ## Report format
 
-Group findings under **Access control**, **Data exposure**, **Logging**, and **Consent**, skipping empty groups. For each: **[Must fix]** or **[Should fix]**, `file:line`, what's wrong, and how to fix it. End with **Ready for PR** or **Needs changes**.
+Group findings under **Access control**, **Data exposure**, **Logging**, and **Consent**, skipping empty groups. For each: **[Must fix]** or **[Should fix]**, `file:line`, what's wrong, and how to fix it.
+
+Only flag must-fix or should-fix for problems in the code this diff actually changes. Requirements that only matter for future work (routes not written yet, features in later PRs) go under a separate "Notes for later" heading and never block the merge.
+
+End with **Ready for PR** or **Needs changes**.
