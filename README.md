@@ -75,6 +75,34 @@ pnpm dev
 | `pnpm db:generate` | Generate Drizzle migration files from schema changes |
 | `pnpm db:migrate` | Apply pending migrations |
 
+## Running integration tests locally
+
+Integration tests in `apps/api/src/__tests__/integration/` run against a real local Supabase stack. They create actual auth users via the admin API, exchange real JWTs, and hit the database — no mocks.
+
+**Prerequisites**
+
+- Docker Desktop running
+- `pnpm db:up` to start the local Supabase stack (Postgres on `127.0.0.1:54322`, Auth API on `127.0.0.1:54321`)
+- Migrations applied: `pnpm db:migrate`
+
+**Run**
+
+```bash
+pnpm test:integration
+```
+
+Each test creates unique users (`<prefix>-<timestamp>-<random>@test.local`) and cleans them up afterwards; auth-user deletion cascades through profiles, guardians, and swimmer_clubs.
+
+**Safety guard**: `src/__tests__/integration/setup.ts` refuses to start if `INTEGRATION_DATABASE_URL` doesn't contain `localhost` or `127.0.0.1`. This prevents the test suite from ever touching a staging or production database.
+
+**Overrides**
+
+| Variable | Default |
+|---|---|
+| `INTEGRATION_DATABASE_URL` | `postgresql://postgres:postgres@127.0.0.1:54322/postgres` |
+| `SUPABASE_URL` | `http://127.0.0.1:54321` |
+| `SUPABASE_SERVICE_ROLE_KEY` | the local-stack default service-role JWT |
+
 ## API endpoints
 
 | Method | Path | Description |
