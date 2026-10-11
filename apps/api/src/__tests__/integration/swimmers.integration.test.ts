@@ -69,9 +69,8 @@ describe("POST /swimmers — atomicity", () => {
         .set("Authorization", `Bearer ${parent.accessToken}`)
         .send(validSwimmerBody({ firstName: uniqueFirstName, clubs: [{ clubId: fakeClubId }] }));
 
-      // FK violation surfaces as either 500 (unhandled DB error) or 422 — both
-      // acceptable; the point is nothing is left in the DB.
-      expect([422, 500]).toContain(res.status);
+      expect(res.status).toBe(400);
+      expect(res.body).toMatchObject({ error: "Unknown club" });
 
       // No swimmer row with the unique name should exist.
       const swimmerRows = await adminDb()

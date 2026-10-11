@@ -9,6 +9,7 @@ import { profiles } from "./db/schema";
 import { buildHealthResponse } from "./health";
 import { requestId } from "./middleware/requestId";
 import { validate } from "./middleware/validate";
+import { asyncHandler } from "./middleware/asyncHandler";
 import { errorHandler } from "./middleware/errorHandler";
 import { requireUser } from "./middleware/requireUser";
 import { requireCoach } from "./middleware/requireCoach";
@@ -55,7 +56,7 @@ export function createApp(logger: Logger) {
   app.get(
     "/health",
     validate({ query: HealthQuerySchema }),
-    async (req, res) => {
+    asyncHandler(async (req, res) => {
       let dbOk = false;
       try {
         await db.execute(sql`SELECT 1`);
@@ -66,10 +67,10 @@ export function createApp(logger: Logger) {
 
       const body = buildHealthResponse(dbOk);
       res.status(dbOk ? 200 : 503).json(body);
-    },
+    }),
   );
 
-  app.post("/auth/signup", validate({ body: SignUpBodySchema }), async (req, res) => {
+  app.post("/auth/signup", validate({ body: SignUpBodySchema }), asyncHandler(async (req, res) => {
     const body = req.body as SignUpBody;
 
     if (calculateAge(body.birthDate, todayLA()) < 18) {
@@ -108,7 +109,7 @@ export function createApp(logger: Logger) {
     }
 
     res.status(201).end();
-  });
+  }));
 
   app.get("/me", requireUser, validate({}), (req, res) => {
     const body: MeResponse = {
@@ -120,7 +121,7 @@ export function createApp(logger: Logger) {
     res.json(body);
   });
 
-  app.patch("/me", requireUser, validate({ body: PatchMeBodySchema }), async (req, res) => {
+  app.patch("/me", requireUser, validate({ body: PatchMeBodySchema }), asyncHandler(async (req, res) => {
     const patch = req.body as PatchMeBody;
     const rows = await db
       .update(profiles)
@@ -138,7 +139,7 @@ export function createApp(logger: Logger) {
       role: updated.role,
     };
     res.json(body);
-  });
+  }));
 
   app.get("/coach/ping", requireUser, requireCoach, validate({}), (_req, res) => {
     res.json({ pong: true });

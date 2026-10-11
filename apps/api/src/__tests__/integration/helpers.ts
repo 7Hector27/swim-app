@@ -6,7 +6,7 @@ import { createClient } from "@supabase/supabase-js";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import { profiles } from "../../db/schema";
+import { guardians, profiles, swimmers } from "../../db/schema";
 
 // All env vars are validated in setup.ts before any test code runs.
 // These getters use non-null assertions since setup.ts guarantees presence.
@@ -155,6 +155,18 @@ export async function createTestUser(emailPrefix: string): Promise<TestUser> {
       email,
       accessToken,
       cleanup: async () => {
+        // Delete this user's swimmers before deleting the auth user.
+        // swimmers.publicConsentBy references profiles with ON DELETE RESTRICT,
+        // so the auth cascade would fail if any swimmer rows still reference this profile.
+        const guardianRows = await adminDb()
+          .select({ swimmerId: guardians.swimmerId })
+          .from(guardians)
+          .where(eq(guardians.profileId, userId));
+        for (const row of guardianRows) {
+          await adminDb()
+            .delete(swimmers)
+            .where(eq(swimmers.id, row.swimmerId));
+        }
         await deleteSupabaseUser(userId);
       },
     };

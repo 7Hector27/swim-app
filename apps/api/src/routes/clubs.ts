@@ -4,11 +4,12 @@ import { db } from "../db/client";
 import { clubs } from "../db/schema";
 import { requireUser } from "../middleware/requireUser";
 import { validate } from "../middleware/validate";
+import { asyncHandler } from "../middleware/asyncHandler";
 import type { Club } from "@swim-app/shared";
 
 export const clubsRouter = Router();
 
-clubsRouter.get("/", requireUser, validate({}), async (_req, res) => {
+clubsRouter.get("/", requireUser, validate({}), asyncHandler(async (_req, res) => {
   const rows = await db
     .select()
     .from(clubs)
@@ -23,4 +24,4 @@ clubsRouter.get("/", requireUser, validate({}), async (_req, res) => {
   }));
 
   res.json(body);
-});
+}));
