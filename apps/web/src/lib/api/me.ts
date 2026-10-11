@@ -1,3 +1,5 @@
+import { cache } from "react";
+
 import { MeResponseSchema } from "@swim-app/shared";
 import type { MeResponse } from "@swim-app/shared";
 
@@ -18,7 +20,7 @@ export function mapMeStatus(status: number, body: unknown): MeStatusResult {
   return { ok: false, status };
 }
 
-export async function fetchMe(): Promise<MeResult> {
+export const fetchMe = cache(async function fetchMe(): Promise<MeResult> {
   const supabase = await createClient();
   // getSession is called only to extract the raw access token for forwarding to
   // the API. The API's requireUser middleware verifies the token independently.
@@ -44,4 +46,4 @@ export async function fetchMe(): Promise<MeResult> {
   const result = mapMeStatus(status, body);
   if (result.ok) return { ...result, accessToken: token };
   return result;
-}
+});

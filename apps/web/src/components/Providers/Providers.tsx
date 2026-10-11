@@ -6,11 +6,13 @@ import { ThemeProvider } from "next-themes";
 interface SessionContextValue {
   isSignedIn: boolean;
   userName: string | null;
+  role: "coach" | "parent" | null;
 }
 
 const SessionContext = createContext<SessionContextValue>({
   isSignedIn: false,
   userName: null,
+  role: null,
 });
 
 export function useSession(): SessionContextValue {
@@ -21,10 +23,12 @@ export default function Providers({
   children,
   isSignedIn,
   userName,
+  role,
 }: {
   children: React.ReactNode;
   isSignedIn: boolean;
   userName: string | null;
+  role: "coach" | "parent" | null;
 }) {
   return (
     <ThemeProvider
@@ -33,7 +37,7 @@ export default function Providers({
       enableSystem={false}
       storageKey="axiom-theme"
     >
-      <SessionContext.Provider value={{ isSignedIn, userName }}>
+      <SessionContext.Provider value={{ isSignedIn, userName, role }}>
         {children}
       </SessionContext.Provider>
     </ThemeProvider>

@@ -3,7 +3,7 @@ import type { Metadata, Viewport } from "next";
 import { Fraunces, Figtree } from "next/font/google";
 
 import Providers from "@/components/Providers";
-import { createClient } from "@/lib/supabase/server";
+import { fetchMe } from "@/lib/api/me";
 
 const fraunces = Fraunces({
   subsets: ["latin"],
@@ -53,18 +53,15 @@ export default async function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const supabase = await createClient();
-  const { data } = await supabase.auth.getClaims();
-  const claims = data?.claims;
-  const userName =
-    (claims?.user_metadata?.["full_name"] as string | undefined) ??
-    claims?.email ??
-    null;
+  const meResult = await fetchMe();
+  const isSignedIn = meResult.ok;
+  const userName = meResult.ok ? (meResult.profile.fullName ?? meResult.profile.email) : null;
+  const role = meResult.ok ? meResult.profile.role : null;
 
   return (
     <html lang="en" className={`${fraunces.variable} ${figtree.variable}`} suppressHydrationWarning>
       <body className="min-h-screen bg-background text-text antialiased">
-        <Providers isSignedIn={!!data} userName={userName}>{children}</Providers>
+        <Providers isSignedIn={isSignedIn} userName={userName} role={role}>{children}</Providers>
       </body>
     </html>
   );

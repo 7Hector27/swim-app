@@ -5,9 +5,10 @@ const footerColumns = [
     heading: "Explore",
     items: [
       { label: "Home", href: "/" },
-      { label: "Lessons", href: "/lessons" },
-      { label: "Leaderboards", href: "/leaderboard" },
+      { label: "Lessons", href: "/#lessons" },
+      { label: "Leaderboards", href: "/#leaderboards" },
       { label: "Coach Jason", href: "/#coach" },
+      { label: "FAQ", href: "/#faq" },
     ],
   },
   {
