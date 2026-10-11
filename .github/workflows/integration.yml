@@ -1,0 +1,58 @@
+name: Integration Tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  integration:
+    name: API integration tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Start Supabase local stack
+        run: supabase start
+
+      - name: Export Supabase credentials to environment
+        # `supabase status -o env` prints KEY="value" lines for the running
+        # instance. Map them to the names the tests expect and strip quotes so
+        # each runner step sees the real keys, not the demo defaults.
+        run: |
+          supabase status -o env \
+            | grep -E '^(API_URL|ANON_KEY|SERVICE_ROLE_KEY|DB_URL)=' \
+            | sed -e 's/^API_URL=/SUPABASE_URL=/' \
+                  -e 's/^ANON_KEY=/SUPABASE_PUBLISHABLE_KEY=/' \
+                  -e 's/^SERVICE_ROLE_KEY=/SUPABASE_SERVICE_ROLE_KEY=/' \
+                  -e 's/^DB_URL=/INTEGRATION_DATABASE_URL=/' \
+                  -e 's/"//g' \
+            >> "$GITHUB_ENV"
+
+      - name: Apply migrations
+        run: pnpm db:migrate
+        env:
+          DATABASE_URL: ${{ env.INTEGRATION_DATABASE_URL }}
+
+      - name: Run integration tests
+        run: pnpm test:integration
+
+      - name: Stop Supabase local stack
+        if: always()
+        run: supabase stop

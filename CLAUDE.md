@@ -14,6 +14,7 @@ pnpm typecheck        # tsc --noEmit across all packages
 pnpm lint             # eslint across the monorepo
 pnpm format           # prettier --write across the monorepo
 pnpm test             # vitest run across all packages
+pnpm test:integration # integration tests — requires local Supabase stack (pnpm db:up)
 
 # Run tests for one package only
 pnpm --filter api test

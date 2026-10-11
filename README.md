@@ -75,6 +75,39 @@ pnpm dev
 | `pnpm db:generate` | Generate Drizzle migration files from schema changes |
 | `pnpm db:migrate` | Apply pending migrations |
 
+## Running integration tests locally
+
+Integration tests in `apps/api/src/__tests__/integration/` run against a real local Supabase stack. They create actual auth users via the admin API, exchange real JWTs, and hit the database — no mocks.
+
+**Prerequisites**
+
+- Docker Desktop running
+- `pnpm db:up` to start the local Supabase stack (Postgres on `127.0.0.1:54322`, Auth API on `127.0.0.1:54321`)
+- Migrations applied: `pnpm db:migrate`
+
+**Run**
+
+```bash
+pnpm test:integration
+```
+
+Each test creates unique users (`<prefix>-<timestamp>-<random>@test.local`) and cleans them up afterwards; auth-user deletion cascades through profiles, guardians, and swimmer_clubs.
+
+**Safety guard**: `src/__tests__/integration/setup.ts` refuses to start if `INTEGRATION_DATABASE_URL` doesn't resolve to a loopback address. This prevents the test suite from ever touching a staging or production database.
+
+**Required environment variables**
+
+The tests read all connection details from `apps/api/.env` — no hardcoded defaults. After starting the stack, run `pnpm db:status` (or `npx supabase status`) and copy the values into `apps/api/.env`:
+
+| Variable | Where to get it |
+|---|---|
+| `INTEGRATION_DATABASE_URL` | `DB URL` from `pnpm db:status` |
+| `SUPABASE_URL` | `API URL` from `pnpm db:status` |
+| `SUPABASE_PUBLISHABLE_KEY` | `anon key` from `pnpm db:status` |
+| `SUPABASE_SERVICE_ROLE_KEY` | `service_role key` from `pnpm db:status` |
+
+If any variable is missing, the test runner will fail immediately with a message naming the missing variable.
+
 ## API endpoints
 
 | Method | Path | Description |

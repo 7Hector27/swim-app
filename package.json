@@ -7,6 +7,7 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "test": "pnpm -r test",
+    "test:integration": "pnpm --filter api test:integration",
     "db:up": "supabase start",
     "db:down": "supabase stop",
     "db:status": "supabase status",
