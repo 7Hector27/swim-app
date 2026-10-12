@@ -575,6 +575,23 @@ describe("async error handling", () => {
     expect(res.status).toBe(500);
     expect(res.body).toMatchObject({ error: "Internal server error" });
   });
+
+  it("requireHouseholdMember DB error → 500", async () => {
+    authAs(profileA);
+    let call = 0;
+    mockDbSelect.mockImplementation(() => {
+      call++;
+      if (call === 1) return requireUserSelect(profileA);
+      throw new Error("DB connection failed");
+    });
+
+    const res = await request(app)
+      .get("/swimmers/me")
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(500);
+    expect(res.body).toMatchObject({ error: "Internal server error" });
+  });
 });
 
 // ── GET /clubs ────────────────────────────────────────────────────────────────
@@ -868,7 +885,8 @@ describe("household role restrictions", () => {
     mockDbSelect.mockImplementation(() => {
       call++;
       if (call === 1) return requireUserSelect(profileA);
-      return requireHouseholdMemberSelect(true, "manager");
+      if (call === 2) return requireHouseholdMemberSelect(true, "manager");
+      return requireHouseholdSwimmerSelect(true);
     });
 
     const res = await request(app)

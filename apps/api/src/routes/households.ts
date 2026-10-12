@@ -50,7 +50,8 @@ householdsRouter.get(
       name: household.name,
       myRole: householdRole,
       members: memberRows.map((row) => ({
-        profileId: row.profileId,
+        // profileId is personal data — only the owner needs it for member management
+        ...(householdRole === "owner" && { profileId: row.profileId }),
         role: row.role,
         fullName: row.fullName,
         joinedAt: row.joinedAt.toISOString(),

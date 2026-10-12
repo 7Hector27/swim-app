@@ -46,7 +46,7 @@ export default function HeroSection() {
               ].join(" ")}
             >
               <a
-                href={siteLinks.booking}
+                href={siteLinks.booking ?? "/signup"}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center justify-center rounded-button bg-button-primary-background text-button-primary-text font-bold px-8 h-[52px] w-full tablet:w-auto transition-[transform,opacity] duration-150 hover:opacity-90 active:scale-[0.97]"

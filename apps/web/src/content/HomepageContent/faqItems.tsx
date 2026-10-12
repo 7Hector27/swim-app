@@ -93,7 +93,7 @@ export const FAQ_ITEMS: FaqItem[] = [
         3:00 to 7:00&nbsp;pm, so lesson times move outside that window. No lessons on Thursdays or
         weekends. Open times are always live on the{" "}
         <a
-          href={siteLinks.booking}
+          href={siteLinks.booking ?? "/signup"}
           target="_blank"
           rel="noopener noreferrer"
           className="text-link hover:text-link-hover transition-colors duration-150"

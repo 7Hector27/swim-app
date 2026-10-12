@@ -240,6 +240,7 @@ docs/decisions/018-invite-tokens-stored-as-hashes.md        ADR
   - Caller must not already be a member of this household.
   - Caller's own household must have zero swimmers (i.e., `SELECT COUNT(*) FROM swimmers WHERE household_id = caller's household_id` = 0).
 - New members always join as `viewer`.
+- Accept runs in a single transaction: delete the invitee's auto-created empty household (which must have zero swimmers — enforced by the check above), then insert the invitee as a `viewer` member of the target household. The one-household-per-person constraint stays.
 - Audit log: `member_added` entry on accept, with `target_profile_id = accepted_by`.
 
 ### Tests

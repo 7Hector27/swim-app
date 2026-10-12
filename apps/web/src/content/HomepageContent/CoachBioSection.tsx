@@ -32,7 +32,7 @@ export default function CoachBioSection() {
 
             <div>
               <a
-                href={siteLinks.booking}
+                href={siteLinks.booking ?? "/signup"}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center justify-center rounded-button bg-button-primary-background text-button-primary-text font-bold text-sm px-6 h-[52px] transition-opacity duration-200 hover:opacity-90 active:scale-[0.97]"

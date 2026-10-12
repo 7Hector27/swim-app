@@ -1,4 +1,4 @@
-import type { MeResponse, CoachSwimmer } from "@swim-app/shared";
+import type { CoachSwimmer } from "@swim-app/shared";
 
 import Placeholder from "@/components/Placeholder";
 import SiteFooter from "@/components/SiteFooter";
@@ -7,7 +7,6 @@ import { fetchCoachSwimmers } from "@/lib/api/coachSwimmers";
 import SwimmersTable from "./SwimmersTable";
 
 interface Props {
-  profile: MeResponse;
   accessToken: string;
 }
 

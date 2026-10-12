@@ -1,9 +1,9 @@
-import type { RequestHandler } from "express";
 import { eq } from "drizzle-orm";
 import { db } from "../db/client";
 import { householdMembers } from "../db/schema";
+import { asyncHandler } from "./asyncHandler";
 
-export const requireHouseholdMember: RequestHandler = async (req, res, next) => {
+export const requireHouseholdMember = asyncHandler(async (req, res, next) => {
   const rows = await db
     .select({ householdId: householdMembers.householdId, role: householdMembers.role })
     .from(householdMembers)
@@ -19,4 +19,4 @@ export const requireHouseholdMember: RequestHandler = async (req, res, next) => 
   req.householdId = member.householdId;
   req.householdRole = member.role;
   next();
-};
+});

@@ -75,7 +75,7 @@ export default function ConfirmDialog({
             type="submit"
             form={formId}
             disabled={isPending}
-            className={`${confirmBase} ${confirmDanger ? "bg-danger text-white" : "bg-button-primary-background text-button-primary-text"}`}
+            className={`${confirmBase} ${confirmDanger ? "bg-danger text-text-on-section" : "bg-button-primary-background text-button-primary-text"}`}
           >
             {isPending ? `${confirmLabel}…` : confirmLabel}
           </button>

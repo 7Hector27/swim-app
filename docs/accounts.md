@@ -60,6 +60,7 @@ Coaches access swimmer data through dedicated `/coach/swimmers` routes protected
 - Include household member contact info (fullName + phone only) on the detail route — never birth dates, emails, or notes
 - Allow setting `isPublic` to `false` on any swimmer; setting it to `true` is always a household-owner-only action
 - Never expose `publicConsentBy` or `publicConsentAt` fields to the response
+- The roster list (`GET /coach/swimmers`) includes `memberNames` (full names of household members) per swimmer — no contact details. This is intentional: the coach needs to know which family a swimmer belongs to.
 
 ## Kids' data
 
