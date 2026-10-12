@@ -1,8 +1,5 @@
-"use client";
-
-import { useEffect, useRef } from "react";
-
 import { siteLinks } from "@/lib/siteLinks";
+import ScrollReveal from "@/components/ScrollReveal";
 
 import { COACH_BIO } from "./coachBioCopy";
 import CoachPhotoDeck from "./CoachPhotoDeck";
@@ -17,35 +14,15 @@ const coachPhotos: CoachPhoto[] = [
 ];
 
 export default function CoachBioSection() {
-  const sectionRef = useRef<HTMLElement>(null);
-
-  useEffect(() => {
-    const section = sectionRef.current;
-    if (!section) return;
-
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry?.isIntersecting) {
-          section.dataset.visible = "true";
-          observer.disconnect();
-        }
-      },
-      { rootMargin: "-100px" },
-    );
-
-    observer.observe(section);
-    return () => observer.disconnect();
-  }, []);
-
   return (
-    <section id="coach" ref={sectionRef} className="scroll-mt-16 bg-background">
+    <section id="coach" className="scroll-mt-16 bg-background">
       <div className="mx-auto max-w-content px-page py-16 tablet:py-24">
         <div className={styles.layout}>
-          <div className={styles.deckColumn}>
+          <ScrollReveal delay={0} className={styles.deckColumn}>
             <CoachPhotoDeck photos={coachPhotos} />
-          </div>
+          </ScrollReveal>
 
-          <div className={styles.contentColumn}>
+          <ScrollReveal delay={60} className={styles.contentColumn}>
             <p className="text-text leading-relaxed">
               {COACH_BIO.paragraphs[0]}
             </p>
@@ -65,7 +42,7 @@ export default function CoachBioSection() {
                 <span className="sr-only"> (opens in a new tab)</span>
               </a>
             </div>
-          </div>
+          </ScrollReveal>
         </div>
       </div>
     </section>
