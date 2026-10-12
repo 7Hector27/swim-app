@@ -71,6 +71,25 @@ export {
 export type { InviteStatus, InviteStatusResponse, GenerateInviteResponse, AcceptInviteResponse } from "./schemas/invites";
 export { InviteStatusSchema, InviteStatusResponseSchema, GenerateInviteResponseSchema, AcceptInviteResponseSchema } from "./schemas/invites";
 
+export type {
+  SkillType,
+  Stroke,
+  SkillCategory,
+  Skill,
+  SkillLevelDescriptor,
+  SkillDependency,
+  RatingScaleLevel,
+} from "./schemas/skills";
+export {
+  SkillTypeSchema,
+  StrokeSchema,
+  SkillCategorySchema,
+  SkillSchema,
+  SkillLevelDescriptorSchema,
+  SkillDependencySchema,
+  RatingScaleLevelSchema,
+} from "./schemas/skills";
+
 export { calculateAge } from "./lib/calculateAge";
 export { todayLA } from "./lib/todayLA";
 export { isSafeReturnTo } from "./lib/isSafeReturnTo";

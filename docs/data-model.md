@@ -186,9 +186,106 @@ Constraints:
 
 ---
 
+---
+
+## Skills catalog
+
+Reference data for the swimmer skills rubric. Loaded via `pnpm db:sync-catalog` (idempotent upsert, never auto-runs). See `docs/reference/skill-rubric.md` for the source rubric and `apps/api/src/db/reference/skillsCatalog.ts` for the typed catalog.
+
+### `skill_categories`
+
+One row per rubric section (e.g. "Freestyle", "Backstroke"). Eight categories in the initial catalog.
+
+| Column | Type | Nullable | Notes |
+|---|---|---|---|
+| `id` | `uuid` | no | Primary key |
+| `slug` | `text` | no | Unique; permanent identifier |
+| `name` | `text` | no | Display name |
+| `sort_order` | `integer` | no | Category display order |
+| `created_at` | `timestamptz` | no | `now()` |
+| `updated_at` | `timestamptz` | no | Auto-updated |
+
+RLS enabled. Policies TBD.
+
+---
+
+### `skills`
+
+One row per skill. Slugs are permanent — never change a slug once it ships to production. Removed skills are soft-deleted via `archived_at`.
+
+| Column | Type | Nullable | Notes |
+|---|---|---|---|
+| `id` | `uuid` | no | Primary key |
+| `slug` | `text` | no | Unique; permanent identifier |
+| `category_id` | `uuid` | no | FK → `skill_categories.id` (restrict on delete) |
+| `name` | `text` | no | Display name |
+| `type` | `skill_type` | no | Enum: `rubric`, `measured`, `score`, `composite`, `rollup` |
+| `unit` | `text` | yes | e.g. `kicks/min`, `strokes/25`, `s`, `ft` |
+| `stroke` | `stroke` | yes | Enum: `free`, `back`, `breast`, `fly`. Set on per-stroke skills |
+| `applies_to` | `text[]` | yes | List of strokes when a skill covers a fixed set (e.g. body rotation = `{free,back}`) |
+| `parent_skill_id` | `uuid` | yes | FK → `skills.id` (restrict). Set on start components whose parent is a `composite` skill |
+| `sort_order` | `integer` | no | Display order within category |
+| `archived_at` | `timestamptz` | yes | Null = active. Set when a skill is removed from the catalog |
+| `created_at` | `timestamptz` | no | `now()` |
+| `updated_at` | `timestamptz` | no | Auto-updated |
+
+**`stroke` vs `applies_to`:** use `stroke` for a skill that exists once per stroke (e.g. freestyle catch). Use `applies_to` for a skill that applies to a fixed named list of strokes as a single entry (e.g. body rotation, push-off).
+
+RLS enabled. Policies TBD.
+
+---
+
+### `skill_level_descriptors`
+
+Up to five rows per skill, one per rating level (1–5). Missing rows mean the descriptor hasn't been written yet; the generic `rating_scale_levels` fallback applies.
+
+| Column | Type | Nullable | Notes |
+|---|---|---|---|
+| `skill_id` | `uuid` | no | PK component; FK → `skills.id` (cascade on delete) |
+| `level` | `integer` | no | PK component; 1–5 (enforced by CHECK constraint) |
+| `text` | `text` | no | Descriptor text for that level |
+| `created_at` | `timestamptz` | no | `now()` |
+| `updated_at` | `timestamptz` | no | Auto-updated |
+
+RLS enabled. Policies TBD.
+
+---
+
+### `skill_dependencies`
+
+Directed edges from a skill to the skills it builds on (the "Builds on" columns in the rubric). The dependency graph must be acyclic; `pnpm db:sync-catalog` validates this before writing.
+
+| Column | Type | Nullable | Notes |
+|---|---|---|---|
+| `skill_id` | `uuid` | no | PK component; FK → `skills.id` (cascade on delete) |
+| `depends_on_skill_id` | `uuid` | no | PK component; FK → `skills.id` (cascade on delete) |
+| `created_at` | `timestamptz` | no | `now()` |
+
+Constraints: composite PK `(skill_id, depends_on_skill_id)`, CHECK `skill_id <> depends_on_skill_id`.
+
+RLS enabled. Policies TBD.
+
+---
+
+### `rating_scale_levels`
+
+The generic 1–5 rating scale that applies to any skill without its own level descriptors.
+
+| Column | Type | Nullable | Notes |
+|---|---|---|---|
+| `level` | `integer` | no | Primary key; 1–5 |
+| `label` | `text` | no | e.g. `Emerging`, `Mastery` |
+| `meaning` | `text` | no | Generic description for that level |
+| `created_at` | `timestamptz` | no | `now()` |
+| `updated_at` | `timestamptz` | no | Auto-updated |
+
+RLS enabled. Policies TBD.
+
+---
+
 ## Conventions
 
-- All tables use `id` as a UUID primary key (`gen_random_uuid()`), except `household_members` which has a composite PK `(household_id, profile_id)`
+- All tables use `id` as a UUID primary key (`gen_random_uuid()`), except `household_members` (composite PK `(household_id, profile_id)`), `skill_level_descriptors` (composite PK `(skill_id, level)`), `skill_dependencies` (composite PK `(skill_id, depends_on_skill_id)`), and `rating_scale_levels` (integer PK `level`)
 - `created_at` and `updated_at` on every table, auto-managed by Drizzle
-- Soft deletes via a nullable timestamp (`archived_at` on swimmers, `disabled_at` on profiles); no hard deletes on domain entities
+- Soft deletes via a nullable timestamp (`archived_at` on swimmers and skills, `disabled_at` on profiles); no hard deletes on domain entities
 - Schema is defined in `apps/api/src/db/schema.ts`; types flow through `packages/shared`

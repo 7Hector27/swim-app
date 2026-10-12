@@ -29,6 +29,7 @@ pnpm db:down          # stop Supabase local stack
 pnpm db:status        # show running services and connection strings
 pnpm db:generate      # generate Drizzle migration files from schema changes
 pnpm db:migrate       # apply pending migrations
+pnpm db:sync-catalog  # upsert skills catalog reference data (idempotent; run after catalog edits)
 ```
 
 ## Architecture
@@ -113,6 +114,10 @@ File layout, top to bottom:
 3. Interfaces and types
 4. Helper functions used by the file
 5. The component (or main export): variables and hooks first, then handler functions, then the returned JSX
+
+## Migrations
+
+Never write a migration file by hand. Always use `pnpm db:generate` (drizzle-kit generate) so a snapshot is created alongside the SQL. For custom SQL that drizzle-kit can't express (triggers, functions, manual backfills), use `drizzle-kit generate --custom --name=<name>` — this creates an empty migration file and a correct snapshot. Edit only the SQL file, never the snapshot. Without a snapshot, subsequent `db:generate` runs see stale state and prompt for spurious renames.
 
 ## Adding a new API route
 

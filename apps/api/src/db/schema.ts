@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { authUsers } from "drizzle-orm/supabase";
 import {
+  AnyPgColumn,
   boolean,
   check,
   date,
@@ -13,6 +14,85 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+
+// ── Skills catalog ────────────────────────────────────────────────────────────
+
+export const skillTypeEnum = pgEnum("skill_type", [
+  "rubric",
+  "measured",
+  "score",
+  "composite",
+  "rollup",
+]);
+
+export const strokeEnum = pgEnum("stroke", ["free", "back", "breast", "fly"]);
+
+export const skillCategories = pgTable("skill_categories", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  slug: text("slug").notNull().unique(),
+  name: text("name").notNull(),
+  sortOrder: integer("sort_order").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdateFn(() => new Date()),
+}).enableRLS();
+
+export const skills = pgTable("skills", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  slug: text("slug").notNull().unique(),
+  categoryId: uuid("category_id").notNull().references(() => skillCategories.id, { onDelete: "restrict" }),
+  name: text("name").notNull(),
+  type: skillTypeEnum("type").notNull(),
+  unit: text("unit"),
+  stroke: strokeEnum("stroke"),
+  appliesTo: text("applies_to").array(),
+  parentSkillId: uuid("parent_skill_id").references((): AnyPgColumn => skills.id, { onDelete: "restrict" }),
+  sortOrder: integer("sort_order").notNull(),
+  archivedAt: timestamp("archived_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdateFn(() => new Date()),
+}).enableRLS();
+
+export const skillLevelDescriptors = pgTable(
+  "skill_level_descriptors",
+  {
+    skillId: uuid("skill_id").notNull().references(() => skills.id, { onDelete: "cascade" }),
+    level: integer("level").notNull(),
+    text: text("text").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdateFn(() => new Date()),
+  },
+  (table) => [
+    primaryKey({ columns: [table.skillId, table.level] }),
+    check("skill_level_1_to_5", sql`${table.level} >= 1 AND ${table.level} <= 5`),
+  ],
+).enableRLS();
+
+export const skillDependencies = pgTable(
+  "skill_dependencies",
+  {
+    skillId: uuid("skill_id").notNull().references(() => skills.id, { onDelete: "cascade" }),
+    dependsOnSkillId: uuid("depends_on_skill_id").notNull().references(() => skills.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.skillId, table.dependsOnSkillId] }),
+    check("no_self_reference", sql`${table.skillId} <> ${table.dependsOnSkillId}`),
+  ],
+).enableRLS();
+
+export const ratingScaleLevels = pgTable(
+  "rating_scale_levels",
+  {
+    level: integer("level").primaryKey(),
+    label: text("label").notNull(),
+    meaning: text("meaning").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdateFn(() => new Date()),
+  },
+  (table) => [
+    check("rating_level_1_to_5", sql`${table.level} >= 1 AND ${table.level} <= 5`),
+  ],
+).enableRLS();
 
 export const userRoleEnum = pgEnum("user_role", ["coach", "parent"]);
 export const leagueEnum = pgEnum("league", ["club", "summer_league"]);

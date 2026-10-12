@@ -14,7 +14,8 @@
     "db:status": "supabase status",
     "db:generate": "pnpm --filter api db:generate",
     "db:migrate": "pnpm --filter api db:migrate",
-    "db:seed": "pnpm --filter api db:seed"
+    "db:seed": "pnpm --filter api db:seed",
+    "db:sync-catalog": "pnpm --filter api db:sync-catalog"
   },
   "devDependencies": {
     "@eslint/js": "^9.24.0",
