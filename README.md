@@ -74,6 +74,7 @@ pnpm dev
 | `pnpm db:status` | Show running services and connection strings |
 | `pnpm db:generate` | Generate Drizzle migration files from schema changes |
 | `pnpm db:migrate` | Apply pending migrations |
+| `pnpm db:seed` | Seed the local database with development data |
 
 ## Running integration tests locally
 

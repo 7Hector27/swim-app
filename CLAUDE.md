@@ -57,6 +57,10 @@ Every request in `apps/api/src/app.ts` flows through this middleware stack in or
 
 Roles, permissions, and kids'-data rules are defined in `docs/accounts.md`. Follow it for anything touching auth, swimmer data, notes, or public pages. Before saying that kind of work is done, run the `privacy-reviewer` subagent.
 
+**Migrations**
+
+After adding a migration, always state whether it was applied locally. Production migrations are never automatic.
+
 **Audit log**
 
 Audit log writes (`householdAuditLog` inserts) always go inside the same `db.transaction()` as the change they record. Never write the audit log as a separate call after the update — if the insert fails, the whole transaction rolls back and the data change is not committed.

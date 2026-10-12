@@ -11,7 +11,7 @@ description: Adds a new Postgres table or changes an existing one using Drizzle,
 2. Define the table in the schema file with Drizzle: snake_case columns, a `uuid` primary key using `.defaultRandom()`, `created_at` and `updated_at` as `timestamp` with `{ withTimezone: true }` (both `.notNull().defaultNow()`; `updated_at` also gets `.$onUpdateFn(() => new Date())`). Give foreign keys an explicit `onDelete`. Call `.enableRLS()` on every new table.
 3. Run `pnpm db:generate` to create the migration. Never write migration SQL by hand.
 4. Show the user the generated SQL and **wait for them to confirm** before applying it.
-5. Run `pnpm db:migrate`. Postgres must be running (`pnpm db:up`).
+5. Run `pnpm db:migrate` if the local DB is running (`pnpm db:up`). If it isn't, skip this step and say so clearly in the final summary (the user must apply the migration before the API will work).
 6. If the API will send or receive this data, add Zod schemas in `packages/shared/src/schemas/<feature>.ts` and export them from `packages/shared/src/index.ts`.
 7. If a seed script exists, add a few rows of obviously fake data.
 8. Update `docs/data-model.md` with the table, its columns, and how it relates to other tables.
@@ -30,7 +30,7 @@ description: Adds a new Postgres table or changes an existing one using Drizzle,
 
 ## Done when
 
-- The migration applied without errors
+- The migration was applied locally (or the summary states it wasn't and why)
 - Typecheck and tests pass
 - `docs/data-model.md` describes the change
 - The user has seen a summary of the SQL that ran
