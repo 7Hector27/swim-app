@@ -1,3 +1,8 @@
+// There are no unit tests for the leave/remove transactions because the mocked
+// db.transaction() does not enforce Postgres constraints. The unique index on
+// household_members.profile_id (one household per person) is only enforced by
+// a real database, so these integration tests are the authoritative guard for
+// correct transaction ordering (delete old membership before inserting new one).
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 import request from "supertest";
 import pino from "pino";

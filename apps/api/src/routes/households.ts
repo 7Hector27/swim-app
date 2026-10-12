@@ -326,25 +326,28 @@ householdsRouter.delete(
         .limit(1);
       const newName = deriveHouseholdName(profileRows[0]?.fullName ?? null);
 
-      const newHousehold = (await tx.insert(households).values({ name: newName }).returning())[0]!;
-
-      await tx.insert(householdMembers).values({ householdId: newHousehold.id, profileId: callerId, role: "owner" });
-
-      await tx.insert(householdAuditLog).values({
-        householdId: newHousehold.id,
-        actorId: callerId,
-        action: "household_created",
-      });
-
+      // Delete old membership first — the unique index on profileId allows only
+      // one household per person, so the new insert must not happen while the
+      // old row still exists.
       await tx
         .delete(householdMembers)
         .where(and(eq(householdMembers.householdId, oldHouseholdId), eq(householdMembers.profileId, callerId)));
+
+      const newHousehold = (await tx.insert(households).values({ name: newName }).returning())[0]!;
+
+      await tx.insert(householdMembers).values({ householdId: newHousehold.id, profileId: callerId, role: "owner" });
 
       await tx.insert(householdAuditLog).values({
         householdId: oldHouseholdId,
         actorId: callerId,
         action: "member_removed",
         targetProfileId: callerId,
+      });
+
+      await tx.insert(householdAuditLog).values({
+        householdId: newHousehold.id,
+        actorId: callerId,
+        action: "household_created",
       });
     });
 
@@ -387,25 +390,28 @@ householdsRouter.delete(
     const newName = deriveHouseholdName(profileRows[0]?.fullName ?? null);
 
     await db.transaction(async (tx) => {
-      const newHousehold = (await tx.insert(households).values({ name: newName }).returning())[0]!;
-
-      await tx.insert(householdMembers).values({ householdId: newHousehold.id, profileId, role: "owner" });
-
-      await tx.insert(householdAuditLog).values({
-        householdId: newHousehold.id,
-        actorId: profileId,
-        action: "household_created",
-      });
-
+      // Delete old membership first — the unique index on profileId allows only
+      // one household per person, so the new insert must not happen while the
+      // old row still exists.
       await tx
         .delete(householdMembers)
         .where(and(eq(householdMembers.householdId, req.householdId), eq(householdMembers.profileId, profileId)));
+
+      const newHousehold = (await tx.insert(households).values({ name: newName }).returning())[0]!;
+
+      await tx.insert(householdMembers).values({ householdId: newHousehold.id, profileId, role: "owner" });
 
       await tx.insert(householdAuditLog).values({
         householdId: req.householdId,
         actorId: req.profile.id,
         action: "member_removed",
         targetProfileId: profileId,
+      });
+
+      await tx.insert(householdAuditLog).values({
+        householdId: newHousehold.id,
+        actorId: profileId,
+        action: "household_created",
       });
     });
 
