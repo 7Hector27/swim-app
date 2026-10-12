@@ -1,11 +1,13 @@
 import { Router } from "express";
-import { and, eq } from "drizzle-orm";
-import type { HouseholdResponse } from "@swim-app/shared";
+import { createHash, randomBytes } from "crypto";
+import { and, eq, gt, isNull } from "drizzle-orm";
+import type { GenerateInviteResponse, HouseholdResponse } from "@swim-app/shared";
 import { db } from "../db/client";
-import { householdMembers, households, profiles, swimmers } from "../db/schema";
+import { householdInvites, householdMembers, households, profiles, swimmers } from "../db/schema";
 import { requireUser } from "../middleware/requireUser";
 import { requireParent } from "../middleware/requireParent";
 import { requireHouseholdMember } from "../middleware/requireHouseholdMember";
+import { requireHouseholdRole } from "../middleware/requireHouseholdRole";
 import { validate } from "../middleware/validate";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { isActiveSwimmer } from "../db/queries";
@@ -60,5 +62,57 @@ householdsRouter.get(
     };
 
     res.json(result);
+  }),
+);
+
+// ── POST /households/mine/invites ─────────────────────────────────────────────
+// Owner only. Revokes any existing pending invite, then generates a new one.
+// Returns the raw token once in the response URL — it is never stored.
+
+householdsRouter.post(
+  "/mine/invites",
+  requireUser,
+  requireParent,
+  requireHouseholdMember,
+  requireHouseholdRole("owner"),
+  validate({}),
+  asyncHandler(async (req, res) => {
+    const { householdId } = req;
+    const now = new Date();
+
+    const raw = randomBytes(32).toString("base64url");
+    const tokenHash = createHash("sha256").update(raw).digest("hex");
+
+    const inserted = await db.transaction(async (tx) => {
+      // Revoke any existing pending invite for this household (one-active rule)
+      await tx
+        .update(householdInvites)
+        .set({ revokedAt: now })
+        .where(
+          and(
+            eq(householdInvites.householdId, householdId),
+            isNull(householdInvites.revokedAt),
+            isNull(householdInvites.acceptedAt),
+            gt(householdInvites.expiresAt, now),
+          ),
+        );
+
+      const rows = await tx
+        .insert(householdInvites)
+        .values({ householdId, tokenHash, createdBy: req.profile.id })
+        .returning();
+
+      return rows[0]!;
+    });
+
+    const siteUrl = process.env["SITE_URL"] ?? "http://localhost:3000";
+    const url = `${siteUrl}/invite/${raw}`;
+
+    const body: GenerateInviteResponse = {
+      id: inserted.id,
+      url,
+      expiresAt: inserted.expiresAt.toISOString(),
+    };
+    res.status(201).json(body);
   }),
 );

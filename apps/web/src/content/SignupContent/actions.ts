@@ -1,14 +1,22 @@
 "use server";
 
-import { SignUpBodySchema } from "@swim-app/shared";
+import { isSafeReturnTo, SignUpBodySchema } from "@swim-app/shared";
 
 import { mapZodErrors } from "@/lib/mapZodErrors";
 import { mapApiResponse, type SignupState } from "./helpers";
+
+const SITE_ORIGIN = process.env["NEXT_PUBLIC_SITE_URL"] ?? "http://localhost:3000";
 
 export async function signup(
   _prev: SignupState,
   formData: FormData,
 ): Promise<SignupState> {
+  const returnToRaw = formData.get("returnTo");
+  const returnTo =
+    typeof returnToRaw === "string" && isSafeReturnTo(returnToRaw, SITE_ORIGIN)
+      ? returnToRaw
+      : undefined;
+
   const raw = {
     fullName: formData.get("fullName"),
     email: formData.get("email"),
@@ -16,6 +24,7 @@ export async function signup(
     password: formData.get("password"),
     birthDate: formData.get("birthDate"),
     acceptedTerms: formData.get("acceptedTerms") === "on",
+    ...(returnTo !== undefined && { returnTo }),
   };
 
   const parsed = SignUpBodySchema.safeParse(raw);

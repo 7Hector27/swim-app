@@ -11,10 +11,14 @@ export const logger = pino({
   },
   serializers: {
     req(req) {
+      // Redact invite tokens from the URL so raw tokens never appear in logs.
+      // Tokens are 43-char base64url strings; match /invites/<token>[/...].
+      const rawUrl = (req.url as string | undefined) ?? "";
+      const url = rawUrl.replace(/^(\/invites\/)([A-Za-z0-9_-]{20,})(\/|$)/, "$1[redacted]$3");
       return {
         id: req.id as unknown,
         method: req.method as unknown,
-        url: req.url as unknown,
+        url,
         headers: req.headers as unknown,
       };
     },

@@ -10,9 +10,10 @@ import { login } from "./actions";
 
 interface LoginContentProps {
   notice?: string;
+  returnTo?: string;
 }
 
-export default function LoginContent({ notice }: LoginContentProps) {
+export default function LoginContent({ notice, returnTo }: LoginContentProps) {
   const [state, formAction, isPending] = useActionState(login, { error: null });
 
   return (
@@ -28,6 +29,9 @@ export default function LoginContent({ notice }: LoginContentProps) {
           </p>
 
           <form action={formAction} noValidate className="flex flex-col gap-5">
+            {returnTo !== undefined && (
+              <input type="hidden" name="returnTo" value={returnTo} />
+            )}
             <div className="flex flex-col gap-1.5">
               <label htmlFor="email" className="text-sm font-semibold text-text">
                 Email
@@ -67,7 +71,10 @@ export default function LoginContent({ notice }: LoginContentProps) {
 
           <p className="text-center text-sm text-text-secondary mt-6">
             New here?{" "}
-            <a href="/signup" className="text-link underline hover:text-link-hover">
+            <a
+              href={returnTo !== undefined ? `/signup?returnTo=${encodeURIComponent(returnTo)}` : "/signup"}
+              className="text-link underline hover:text-link-hover"
+            >
               Create an account
             </a>
           </p>

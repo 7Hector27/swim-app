@@ -18,9 +18,11 @@ import { clubsRouter } from "./routes/clubs";
 import { swimmersRouter } from "./routes/swimmers";
 import { coachSwimmersRouter } from "./routes/coachSwimmers";
 import { householdsRouter } from "./routes/households";
+import { invitesRouter } from "./routes/invites";
 import {
   calculateAge,
   HealthQuerySchema,
+  isSafeReturnTo,
   type MeResponse,
   type PatchMeBody,
   PatchMeBodySchema,
@@ -80,10 +82,19 @@ export function createApp(logger: Logger) {
       return;
     }
 
+    const siteUrl = process.env["SITE_URL"] ?? "http://localhost:3000";
+    const emailRedirectTo =
+      body.returnTo && isSafeReturnTo(body.returnTo, siteUrl)
+        ? `${siteUrl}/auth/confirm?returnTo=${encodeURIComponent(body.returnTo)}`
+        : undefined;
+
     const { data, error } = await supabase.auth.signUp({
       email: body.email,
       password: body.password,
-      options: { data: { full_name: body.fullName } },
+      options: {
+        data: { full_name: body.fullName },
+        ...(emailRedirectTo !== undefined && { emailRedirectTo }),
+      },
     });
 
     if (error || !data.user) {
@@ -151,6 +162,7 @@ export function createApp(logger: Logger) {
   app.use("/swimmers", swimmersRouter);
   app.use("/coach/swimmers", coachSwimmersRouter);
   app.use("/households", householdsRouter);
+  app.use("/invites", invitesRouter);
 
   app.use(errorHandler);
 

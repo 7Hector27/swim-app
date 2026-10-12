@@ -117,6 +117,36 @@ If any variable is missing, the test runner will fail immediately with a message
 
 Every response includes an `x-request-id` header. Pass your own `x-request-id` request header to propagate a trace ID into server logs.
 
+## Deploying
+
+### Supabase project configuration
+
+Two settings must be updated in every production (and staging) Supabase project before invite links and email confirmation work correctly:
+
+**1. Redirect URL allowlist**
+
+In the Supabase dashboard → Authentication → URL Configuration, add the following to **Redirect URLs**:
+
+```
+https://yourdomain.com/auth/confirm?**
+```
+
+The `?**` glob is required so Supabase accepts `emailRedirectTo` values that include a `returnTo` query parameter (e.g. `/auth/confirm?returnTo=%2Finvite%2F<token>`). Without it, Supabase rejects those redirect URLs and the post-signup flow breaks.
+
+**2. Email template**
+
+In Authentication → Email Templates → Confirm signup, replace the default confirmation URL with:
+
+```html
+{{ if .RedirectTo }}
+<a href="{{ .RedirectTo }}&token_hash={{ .TokenHash }}&type=email">Confirm your email</a>
+{{ else }}
+<a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email">Confirm your email</a>
+{{ end }}
+```
+
+This lets the invite `returnTo` flow carry through the email confirmation link back to `/invite/<token>` after the new user verifies their address.
+
 ## Docs
 
 - [Architecture](docs/architecture.md) — how web, API, and Postgres connect
