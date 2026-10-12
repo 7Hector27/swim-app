@@ -3,13 +3,9 @@ import request from "supertest";
 import pino from "pino";
 import { and, eq, inArray } from "drizzle-orm";
 import { createApp } from "../../app";
-import {
-  householdAuditLog,
-  swimmerClubs,
-  swimmers,
-} from "../../db/schema";
+import { householdAuditLog, swimmerClubs, swimmers } from "../../db/schema";
 import { ParentSwimmerSchema } from "@swim-app/shared";
-import { adminDb, closeAdminDb, createTestUser, createTestUserInHousehold } from "./helpers";
+import { adminDb, closeAdminDb, createTestUser, createTestUserInHousehold, hardDeleteSwimmer } from "./helpers";
 
 const logger = pino({ level: "silent" });
 const app = createApp(logger);
@@ -20,12 +16,6 @@ const app = createApp(logger);
 // publicConsentBy ON DELETE RESTRICT, so stray swimmers can block profile
 // deletes. We hard-delete them in afterEach.
 const createdSwimmerIds = new Set<string>();
-
-async function hardDeleteSwimmer(swimmerId: string): Promise<void> {
-  await adminDb().delete(householdAuditLog).where(eq(householdAuditLog.targetSwimmerId, swimmerId));
-  await adminDb().delete(swimmerClubs).where(eq(swimmerClubs.swimmerId, swimmerId));
-  await adminDb().delete(swimmers).where(eq(swimmers.id, swimmerId));
-}
 
 afterEach(async () => {
   for (const swimmerId of createdSwimmerIds) {

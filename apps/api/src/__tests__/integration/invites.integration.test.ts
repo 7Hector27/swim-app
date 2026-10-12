@@ -3,12 +3,13 @@ import request from "supertest";
 import pino from "pino";
 import { eq } from "drizzle-orm";
 import { createApp } from "../../app";
-import { householdInvites, householdMembers, swimmers } from "../../db/schema";
+import { householdInvites, householdMembers } from "../../db/schema";
 import {
   adminDb,
   closeAdminDb,
   createTestUser,
   createTestUserInHousehold,
+  hardDeleteSwimmer,
   type TestUser,
 } from "./helpers";
 
@@ -374,9 +375,7 @@ describe("POST /invites/:token/accept", () => {
     expect(res.body.code).toBe("has_swimmers");
 
     // Clean up the swimmer before joiner.cleanup() runs
-    await adminDb()
-      .delete(swimmers)
-      .where(eq(swimmers.householdId, joiner.householdId));
+    await hardDeleteSwimmer(swimRes.body.id as string);
   });
 
   it("returns 409 when caller's household has other members", async () => {
