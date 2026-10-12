@@ -82,11 +82,11 @@ export default function CoachSwimmerDetailContent({ swimmer }: CoachSwimmerDetai
             </section>
           )}
 
-          {swimmer.guardians.length > 0 && (
+          {swimmer.members.length > 0 && (
             <section className="flex flex-col gap-3">
               <h2 className="font-bold text-text">Guardians</h2>
               <ul className="flex flex-col gap-3">
-                {swimmer.guardians.map((guardian, index) => (
+                {swimmer.members.map((guardian, index) => (
                   <li key={index} className="flex flex-col gap-1 text-sm">
                     <p className="text-text font-semibold">{guardian.fullName ?? "—"}</p>
                     {guardian.phone !== null && (

@@ -17,7 +17,7 @@ vi.mock("../db/client", () => ({
   db: {
     select: () => ({ from: () => ({ where: mockDbWhere }) }),
     update: () => ({ set: () => ({ where: () => ({ returning: mockDbReturning }) }) }),
-  },
+},
 }));
 
 import { createApp } from "../app";

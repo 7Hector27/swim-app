@@ -16,7 +16,7 @@ export default async function DashboardPage() {
   const { profile, accessToken } = auth;
 
   if (profile.role === "coach") {
-    return <CoachDashboardContent profile={profile} accessToken={accessToken} />;
+    return <CoachDashboardContent accessToken={accessToken} />;
   }
 
   return <ParentDashboardContent profile={profile} accessToken={accessToken} />;

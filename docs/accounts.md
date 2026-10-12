@@ -20,34 +20,55 @@ No role: public visitors, and kids under 13 (no accounts ever).
 - The app role is read from the database on every request, never from the JWT.
 - Tokens are verified against Supabase's auth server on every request via `getUser`, not decoded locally. Revoked sessions and banned users are rejected immediately rather than being allowed until the JWT's `exp` claim expires.
 
+## Households
+
+Every parent profile belongs to exactly one household. Signup automatically creates a household named `"[last word of fullName] household"` and adds the new profile as its `owner`.
+
+### Household roles
+
+| Role    | Who                                 | Permissions                                                       |
+| ------- | ----------------------------------- | ----------------------------------------------------------------- |
+| owner   | The profile that created the account | Full control: manage swimmers, set `is_public` to `true` or `false`, manage household membership (future) |
+| manager | Additional trusted adults (future)  | Manage swimmers, set `is_public` to `false`; cannot set `is_public` to `true` |
+| viewer  | Read-only household members (future) | View swimmers; no write access                                   |
+
+Household membership management (invites, role changes, removal) is out of scope for the current PR.
+
+### Middleware
+
+- `requireHouseholdMember` — looks up the caller's `household_members` row; attaches `req.householdId` and `req.householdRole`; returns 403 if no row exists.
+- `requireHouseholdRole(min)` — synchronous check that `req.householdRole` is at least `min` in the `owner > manager > viewer` hierarchy; returns 403 on failure.
+- `requireHouseholdSwimmer` — verifies the swimmer in `/:id` belongs to `req.householdId` and is not archived; returns 404 on failure.
+
 ## Who sees what
 
-| Data                             | Coach        | Parent                  | Public                            |
-| -------------------------------- | ------------ | ----------------------- | --------------------------------- |
-| Swimmer list (roster)            | All active swimmers | Only their own swimmers | No |
-| Swimmer detail + guardian contact | All swimmers | Only their own swimmers | No |
-| Swimmer ratings, times, progress | All swimmers | Only their own swimmers | Opted-in swimmers, limited fields |
-| Coach notes                      | Yes          | No                      | No                                |
-| Edit ratings, times, notes       | Yes          | No                      | No                                |
-| Set is_public to true            | No           | Their own swimmers (guardian only) | No                          |
-| Set is_public to false           | Yes          | Their own swimmers      | No                                |
+| Data                              | Coach        | Parent (household member)       | Public                            |
+| --------------------------------- | ------------ | ------------------------------- | --------------------------------- |
+| Swimmer list (roster)             | All active swimmers | Only their own household's swimmers | No |
+| Swimmer detail + member contact   | All swimmers | Only their own household's swimmers | No |
+| Swimmer ratings, times, progress  | All swimmers | Only their own household's swimmers | Opted-in swimmers, limited fields |
+| Coach notes                       | Yes          | No                              | No                                |
+| Edit ratings, times, notes        | Yes          | No                              | No                                |
+| Set is_public to true             | No           | Household owner only            | No                                |
+| Set is_public to false            | Yes          | Any household member            | No                                |
 
 ## Coach permissions
 
 Coaches access swimmer data through dedicated `/coach/swimmers` routes protected by `requireCoach` middleware. These routes:
 
-- Return all active (non-archived) swimmers, not filtered by guardian relationship
-- Include guardian contact info (fullName + phone only) on the detail route — never birth dates, emails, or notes
-- Allow setting `isPublic` to `false` on any swimmer; setting it to `true` is always a guardian-only action
+- Return all active (non-archived) swimmers, not filtered by household membership
+- Include household member contact info (fullName + phone only) on the detail route — never birth dates, emails, or notes
+- Allow setting `isPublic` to `false` on any swimmer; setting it to `true` is always a household-owner-only action
 - Never expose `publicConsentBy` or `publicConsentAt` fields to the response
+- The roster list (`GET /coach/swimmers`) includes `memberNames` (full names of household members) per swimmer — no contact details. This is intentional: the coach needs to know which family a swimmer belongs to.
 
 ## Kids' data
 
 - **Birth dates are stored** for swimmers. This differs from the age check at parent signup (where the birth date is verified and then discarded). Swimmer birth dates are required permanently to calculate age groups for competition. See ADR 016.
 - **Tracking is always on.** Every swimmer in the system is tracked (times, assessments, progress). There is no opt-out from tracking itself.
-- **`is_public` controls public display only.** A swimmer with `is_public = false` is tracked normally but never appears on public leaderboards or pages. Setting `is_public = true` requires explicit parent consent recorded in `public_consent_at` and `public_consent_by`.
-- **Only a guardian of the swimmer can set `is_public` to `true`.** The server verifies the authenticated caller is in the `guardians` table for that swimmer, then records their profile ID as `public_consent_by` and the current timestamp as `public_consent_at`. The client never supplies these fields. Coaches cannot set `is_public` to `true`.
-- **Any guardian or the coach can set `is_public` to `false`.** No consent re-check is needed to opt out.
+- **`is_public` controls public display only.** A swimmer with `is_public = false` is tracked normally but never appears on public leaderboards or pages. Setting `is_public = true` requires explicit consent from the household owner recorded in `public_consent_at` and `public_consent_by`.
+- **Only the household owner can set `is_public` to `true`.** The server verifies the authenticated caller is the `owner` of the household that owns the swimmer, then records their profile ID as `public_consent_by` and the current timestamp as `public_consent_at`. The client never supplies these fields. Coaches cannot set `is_public` to `true`.
+- **Any household member or the coach can set `is_public` to `false`.** No consent re-check is needed to opt out.
 - **Turning `is_public` off keeps the last consent fields as an audit trail.** `public_consent_at` and `public_consent_by` are not cleared when `is_public` is set back to `false`. Turning it back on records new consent by overwriting both fields with the current timestamp and caller. Re-sending `is_public: true` when the swimmer is already public does **not** refresh the consent fields — the existing `public_consent_at` and `public_consent_by` are preserved.
 - **Swimmers are soft-deleted via `archived_at`.** Setting `archived_at` to a non-null timestamp hides the swimmer from active views. The row and all associated data are retained.
 - **Every swimmer query must exclude archived rows.** All queries against the `swimmers` table must include `WHERE archived_at IS NULL` (Drizzle: `.where(isNull(swimmers.archivedAt))`). There is no DB-level filter enforcing this automatically — it is a required convention for every route.

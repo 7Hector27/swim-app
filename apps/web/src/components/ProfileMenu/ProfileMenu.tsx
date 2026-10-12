@@ -4,45 +4,45 @@ import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 
 import { logout } from "@/lib/logout";
-import { useSession } from "@/components/Providers";
-
-function getInitials(name: string | null, email: string | null): string {
-  if (name) {
-    const parts = name.trim().split(/\s+/);
-    if (parts.length >= 2) {
-      const first = parts[0]?.[0] ?? "";
-      const last = parts[parts.length - 1]?.[0] ?? "";
-      return `${first}${last}`.toUpperCase();
-    }
-    return (parts[0]?.[0] ?? "?").toUpperCase();
-  }
-  if (email) {
-    return (email[0] ?? "?").toUpperCase();
-  }
-  return "?";
-}
+import styles from "./ProfileMenu.module.css";
 
 const menuItems = [
   { label: "Dashboard", href: "/dashboard" },
   { label: "Account settings", href: "/account" },
 ] as const;
 
+function ChevronDown() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 14 14"
+      fill="none"
+      aria-hidden="true"
+      className="transition-transform duration-150"
+    >
+      <path
+        d="M3 5l4 4 4-4"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 export default function ProfileMenu() {
-  const { userName } = useSession();
   const [isOpen, setIsOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<(HTMLElement | null)[]>([]);
   const pathname = usePathname();
 
-  const initials = getInitials(userName, null);
-
-  // Close on route change
   useEffect(() => {
     setIsOpen(false);
   }, [pathname]);
 
-  // Close on click outside
   useEffect(() => {
     if (!isOpen) return;
 
@@ -65,7 +65,6 @@ export default function ProfileMenu() {
     if (event.key === "ArrowDown" || event.key === "Enter" || event.key === " ") {
       event.preventDefault();
       setIsOpen(true);
-      // Focus first item after state update
       setTimeout(() => itemRefs.current[0]?.focus(), 0);
     }
     if (event.key === "ArrowUp") {
@@ -109,17 +108,20 @@ export default function ProfileMenu() {
 
   return (
     <div className="relative">
+      {/* Mounted outside the dropdown so the form stays connected when the menu closes */}
+      <form id="logout-form" action={logout} className="hidden" />
+
       <button
         ref={triggerRef}
         type="button"
         aria-haspopup="menu"
         aria-expanded={isOpen}
-        aria-label="Account menu"
         onClick={() => setIsOpen((open) => !open)}
         onKeyDown={handleTriggerKeyDown}
-        className="flex items-center justify-center w-10 h-10 rounded-full bg-accent-on-section text-on-accent font-bold text-sm select-none transition-opacity duration-150 hover:opacity-90 active:scale-[0.97]"
+        className="inline-flex items-center gap-1.5 rounded-button bg-card text-text-on-section font-semibold text-sm px-4 h-11 select-none transition-opacity duration-150 hover:opacity-80 active:scale-[0.97]"
       >
-        {initials}
+        My account
+        <ChevronDown />
       </button>
 
       {isOpen && (
@@ -128,10 +130,7 @@ export default function ProfileMenu() {
           role="menu"
           aria-label="Account menu"
           onKeyDown={handleMenuKeyDown}
-          className="absolute right-0 top-full mt-2 w-52 rounded-card bg-section border border-divider-section shadow-lg z-50 overflow-hidden py-1"
-          style={{
-            transformOrigin: "top right",
-          }}
+          className={`absolute right-0 top-full mt-2 w-52 rounded-card bg-section border border-divider-section shadow-lg z-50 overflow-hidden py-1 ${styles.dropdown}`}
         >
           {menuItems.map((item, index) => (
             <a
@@ -150,19 +149,17 @@ export default function ProfileMenu() {
 
           <div className="my-1 border-t border-divider-section" role="separator" />
 
-          <form action={logout}>
-            <button
-              type="submit"
-              role="menuitem"
-              ref={(el) => {
-                itemRefs.current[menuItems.length] = el;
-              }}
-              onClick={handleItemClick}
-              className={itemClass}
-            >
-              Log out
-            </button>
-          </form>
+          <button
+            type="submit"
+            form="logout-form"
+            role="menuitem"
+            ref={(el) => {
+              itemRefs.current[menuItems.length] = el;
+            }}
+            className={itemClass}
+          >
+            Log out
+          </button>
         </div>
       )}
     </div>

@@ -21,6 +21,69 @@ RLS is enabled. Policies TBD.
 
 ---
 
+### `households`
+
+One row per household. Created atomically with the owner's profile by the `on_auth_user_created` trigger.
+
+| Column | Type | Nullable | Default | Notes |
+|---|---|---|---|---|
+| `id` | `uuid` | no | `gen_random_uuid()` | Primary key |
+| `name` | `text` | no | — | Derived from the last word of the owner's full name at signup (e.g. "Smith household"). Falls back to "My household". |
+| `created_at` | `timestamptz` | no | `now()` | |
+| `updated_at` | `timestamptz` | no | `now()` | Updated automatically on any change |
+
+RLS is enabled. Policies TBD.
+
+---
+
+### `household_members`
+
+Links a profile to a household with a role.
+
+| Column | Type | Nullable | Default | Notes |
+|---|---|---|---|---|
+| `household_id` | `uuid` | no | — | PK component; FK → `households.id` (cascade on delete) |
+| `profile_id` | `uuid` | no | — | PK component; FK → `profiles.id` (restrict on delete) |
+| `role` | `household_role` | no | — | Enum: `owner`, `manager`, `viewer` |
+| `joined_at` | `timestamptz` | no | `now()` | |
+
+Constraints:
+- Composite primary key `(household_id, profile_id)` — a profile can only belong to one household (also enforced by `UNIQUE (profile_id)`).
+- `UNIQUE (household_id) WHERE role = 'owner'` — exactly one owner per household.
+
+RLS is enabled. Policies TBD.
+
+**Role permissions:**
+
+| Action | viewer | manager | owner |
+|---|---|---|---|
+| View swimmers | ✓ | ✓ | ✓ |
+| Set `is_public: false` on a swimmer | ✓ | ✓ | ✓ |
+| Create / edit swimmer fields | — | ✓ | ✓ |
+| Set `is_public: true` on a swimmer | — | — | ✓ |
+| Archive (delete) a swimmer | — | — | ✓ |
+
+---
+
+### `household_audit_log`
+
+Append-only log of significant household events.
+
+| Column | Type | Nullable | Default | Notes |
+|---|---|---|---|---|
+| `id` | `uuid` | no | `gen_random_uuid()` | Primary key |
+| `household_id` | `uuid` | no | — | FK → `households.id` (cascade on delete) |
+| `actor_id` | `uuid` | no | — | FK → `profiles.id` (restrict on delete). Profile that performed the action. |
+| `action` | `text` | no | — | e.g. `household_created`, `swimmer_added` |
+| `target_profile_id` | `uuid` | yes | — | FK → `profiles.id` (restrict on delete). Set for member-management events. |
+| `target_swimmer_id` | `uuid` | yes | — | FK → `swimmers.id` (restrict on delete). Set for swimmer events. |
+| `new_role` | `household_role` | yes | — | Set when a member's role changes. |
+| `created_at` | `timestamptz` | no | `now()` | |
+
+RLS is enabled. Policies TBD.
+
+---
+
 ### `swimmers`
 
 One row per swimmer. Swimmers are **never hard-deleted** — use `archived_at` to soft-delete.
@@ -34,34 +97,20 @@ One row per swimmer. Swimmers are **never hard-deleted** — use `archived_at` t
 | `sex` | `sex` | no | — | Enum: `female`, `male`. Competition category, not identity. |
 | `is_public` | `boolean` | no | — | No server default; the UI must collect explicit parent consent. |
 | `public_consent_at` | `timestamptz` | yes | — | Timestamp of public opt-in. Required when `is_public` is true. |
-| `public_consent_by` | `uuid` | yes | — | FK → `profiles.id` (restrict on delete). Profile that gave consent. Must be a guardian of this swimmer. |
+| `public_consent_by` | `uuid` | yes | — | FK → `profiles.id` (restrict on delete). Profile that gave consent. Must be the household owner. |
 | `archived_at` | `timestamptz` | yes | — | Null = active. Set to soft-delete a swimmer. |
+| `household_id` | `uuid` | no | — | FK → `households.id` (restrict on delete). The household this swimmer belongs to. |
 | `created_at` | `timestamptz` | no | `now()` | |
 | `updated_at` | `timestamptz` | no | `now()` | Updated automatically on any change |
 
 RLS is enabled. Policies TBD.
+
+Constraints:
+- `CHECK (public_consent_required)` — when `is_public` is true, both `public_consent_at` and `public_consent_by` must be non-null.
 
 **Notes:**
 - `is_public` controls whether a swimmer appears on public leaderboards. When set to `true`, `public_consent_at` and `public_consent_by` must also be set.
 - Birth dates are stored (unlike profile birth dates, which are discarded after the age check). They are needed to determine age groups for competition. See ADR 016.
-
----
-
-### `guardians`
-
-Links a parent profile to a swimmer. Composite primary key — no surrogate `id`.
-
-| Column | Type | Nullable | Default | Notes |
-|---|---|---|---|---|
-| `profile_id` | `uuid` | no | — | PK component; FK → `profiles.id` (restrict on delete) |
-| `swimmer_id` | `uuid` | no | — | PK component; FK → `swimmers.id` (cascade on delete) |
-| `created_at` | `timestamptz` | no | `now()` | |
-| `updated_at` | `timestamptz` | no | `now()` | Updated automatically on any change |
-
-RLS is enabled. Policies TBD.
-
-**Notes:**
-- The cascade on `swimmer_id` is safe because swimmers are soft-deleted via `archived_at`; the swimmer row stays, so the guardian link only disappears if the swimmer row is physically removed (which should never happen in normal operation).
 
 ---
 
@@ -139,7 +188,7 @@ Constraints:
 
 ## Conventions
 
-- All tables use `id` as a UUID primary key (`gen_random_uuid()`), except `guardians` which has a composite PK
+- All tables use `id` as a UUID primary key (`gen_random_uuid()`), except `household_members` which has a composite PK `(household_id, profile_id)`
 - `created_at` and `updated_at` on every table, auto-managed by Drizzle
 - Soft deletes via a nullable timestamp (`archived_at` on swimmers, `disabled_at` on profiles); no hard deletes on domain entities
 - Schema is defined in `apps/api/src/db/schema.ts`; types flow through `packages/shared`

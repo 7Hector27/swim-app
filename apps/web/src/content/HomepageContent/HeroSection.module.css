@@ -1,6 +1,9 @@
+.eyebrow,
 .heading,
 .body,
-.ctas {
+.ctas,
+.trustLine,
+.photoSlot {
   opacity: 1;
   transform: translateY(0);
   transition:
@@ -9,21 +12,30 @@
 }
 
 @starting-style {
+  .eyebrow,
   .heading,
   .body,
-  .ctas {
+  .ctas,
+  .trustLine,
+  .photoSlot {
     opacity: 0;
     transform: translateY(12px);
   }
 }
 
-.body  { transition-delay: 60ms; }
-.ctas  { transition-delay: 120ms; }
+.heading   { transition-delay: 60ms; }
+.body      { transition-delay: 120ms; }
+.ctas      { transition-delay: 180ms; }
+.trustLine { transition-delay: 240ms; }
+.photoSlot { transition-delay: 60ms; }
 
 @media (prefers-reduced-motion: reduce) {
+  .eyebrow,
   .heading,
   .body,
-  .ctas {
+  .ctas,
+  .trustLine,
+  .photoSlot {
     transition: none;
   }
 }

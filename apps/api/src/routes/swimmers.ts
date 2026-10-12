@@ -2,10 +2,12 @@ import { Router } from "express";
 import { and, eq, inArray, isNull, or } from "drizzle-orm";
 import type { IdParams } from "@swim-app/shared";
 import { db } from "../db/client";
-import { clubs, guardians, leagueRegistrations, swimmers, swimmerClubs } from "../db/schema";
+import { clubs, householdAuditLog, leagueRegistrations, swimmers, swimmerClubs } from "../db/schema";
 import { requireUser } from "../middleware/requireUser";
 import { requireParent } from "../middleware/requireParent";
-import { requireGuardian } from "../middleware/requireGuardian";
+import { requireHouseholdMember } from "../middleware/requireHouseholdMember";
+import { requireHouseholdSwimmer } from "../middleware/requireHouseholdSwimmer";
+import { requireHouseholdRole } from "../middleware/requireHouseholdRole";
 import { validate } from "../middleware/validate";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { isActiveSwimmer } from "../db/queries";
@@ -14,6 +16,7 @@ import {
   CreateSwimmerBodySchema,
   UpdateSwimmerBodySchema,
   LeagueRegistrationParamsSchema,
+  HOUSEHOLD_ROLE_RANK,
   currentSeasonStartYear,
   todayLA,
   type CreateSwimmerBody,
@@ -34,8 +37,6 @@ class UnknownClubError extends Error {
 function toISO(date: Date): string {
   return date.toISOString();
 }
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
 
 type SwimmerClubRow = {
   id: string;
@@ -91,14 +92,8 @@ function activeRegWhereClause(swimmerId: string) {
     eq(leagueRegistrations.swimmerId, swimmerId),
     isNull(leagueRegistrations.withdrawnAt),
     or(
-      and(
-        eq(leagueRegistrations.league, "club"),
-        eq(leagueRegistrations.seasonStartYear, clubYear),
-      ),
-      and(
-        eq(leagueRegistrations.league, "summer_league"),
-        eq(leagueRegistrations.seasonStartYear, summerYear),
-      ),
+      and(eq(leagueRegistrations.league, "club"), eq(leagueRegistrations.seasonStartYear, clubYear)),
+      and(eq(leagueRegistrations.league, "summer_league"), eq(leagueRegistrations.seasonStartYear, summerYear)),
     ),
   );
 }
@@ -113,10 +108,7 @@ async function fetchSwimmerWithClubs(swimmerId: string): Promise<ParentSwimmer |
   if (!swimmer) return null;
 
   const [clubRows, regRows] = await Promise.all([
-    db
-      .select(swimmerClubColumns)
-      .from(swimmerClubs)
-      .where(eq(swimmerClubs.swimmerId, swimmerId)),
+    db.select(swimmerClubColumns).from(swimmerClubs).where(eq(swimmerClubs.swimmerId, swimmerId)),
     db
       .select({ league: leagueRegistrations.league })
       .from(leagueRegistrations)
@@ -172,10 +164,18 @@ swimmersRouter.post(
   "/",
   requireUser,
   requireParent,
+  requireHouseholdMember,
+  requireHouseholdRole("manager"),
   validate({ body: CreateSwimmerBodySchema }),
   asyncHandler(async (req, res) => {
     const body = req.body as CreateSwimmerBody;
     const callerId = req.profile.id;
+    const { householdId, householdRole } = req;
+
+    if (body.isPublic && householdRole !== "owner") {
+      res.status(403).json({ error: "Only the household owner can make a swimmer public" });
+      return;
+    }
 
     let swimmer: { id: string } | undefined;
     try {
@@ -188,6 +188,7 @@ swimmersRouter.post(
             birthDate: body.birthDate,
             sex: body.sex,
             isPublic: body.isPublic,
+            householdId,
             ...(body.isPublic && {
               publicConsentAt: new Date(),
               publicConsentBy: callerId,
@@ -195,10 +196,21 @@ swimmersRouter.post(
           })
           .returning();
 
-        await tx.insert(guardians).values({
-          profileId: callerId,
-          swimmerId: newSwimmer!.id,
+        await tx.insert(householdAuditLog).values({
+          householdId,
+          actorId: callerId,
+          action: "swimmer_added",
+          targetSwimmerId: newSwimmer!.id,
         });
+
+        if (body.isPublic) {
+          await tx.insert(householdAuditLog).values({
+            householdId,
+            actorId: callerId,
+            action: "consent_granted",
+            targetSwimmerId: newSwimmer!.id,
+          });
+        }
 
         if (body.clubs.length > 0) {
           await validateClubIds(tx, body.clubs);
@@ -225,26 +237,15 @@ swimmersRouter.get(
   "/me",
   requireUser,
   requireParent,
+  requireHouseholdMember,
   validate({}),
   asyncHandler(async (req, res) => {
-    const callerId = req.profile.id;
-
-    const guardianRows = await db
-      .select({ swimmerId: guardians.swimmerId })
-      .from(guardians)
-      .where(eq(guardians.profileId, callerId));
-
-    if (guardianRows.length === 0) {
-      res.json([]);
-      return;
-    }
-
-    const swimmerIds = guardianRows.map((row) => row.swimmerId);
+    const { householdId } = req;
 
     const activeRows = await db
       .select(swimmerColumns)
       .from(swimmers)
-      .where(and(isActiveSwimmer, inArray(swimmers.id, swimmerIds)));
+      .where(and(isActiveSwimmer, eq(swimmers.householdId, householdId)));
 
     if (activeRows.length === 0) {
       res.json([]);
@@ -252,33 +253,20 @@ swimmersRouter.get(
     }
 
     const activeIds = activeRows.map((row) => row.id);
-
     const { clubYear, summerYear } = currentSeasonFilter();
 
     const [clubRows, regRows] = await Promise.all([
+      db.select(swimmerClubColumns).from(swimmerClubs).where(inArray(swimmerClubs.swimmerId, activeIds)),
       db
-        .select(swimmerClubColumns)
-        .from(swimmerClubs)
-        .where(inArray(swimmerClubs.swimmerId, activeIds)),
-      db
-        .select({
-          swimmerId: leagueRegistrations.swimmerId,
-          league: leagueRegistrations.league,
-        })
+        .select({ swimmerId: leagueRegistrations.swimmerId, league: leagueRegistrations.league })
         .from(leagueRegistrations)
         .where(
           and(
             inArray(leagueRegistrations.swimmerId, activeIds),
             isNull(leagueRegistrations.withdrawnAt),
             or(
-              and(
-                eq(leagueRegistrations.league, "club"),
-                eq(leagueRegistrations.seasonStartYear, clubYear),
-              ),
-              and(
-                eq(leagueRegistrations.league, "summer_league"),
-                eq(leagueRegistrations.seasonStartYear, summerYear),
-              ),
+              and(eq(leagueRegistrations.league, "club"), eq(leagueRegistrations.seasonStartYear, clubYear)),
+              and(eq(leagueRegistrations.league, "summer_league"), eq(leagueRegistrations.seasonStartYear, summerYear)),
             ),
           ),
         ),
@@ -316,15 +304,13 @@ swimmersRouter.get(
   }),
 );
 
-// Parent guardians only. Coach access (including setting isPublic to false and
-// archiving) comes in a separate coach route in a later PR.
-
 swimmersRouter.get(
   "/:id",
   requireUser,
   requireParent,
   validate({ params: IdParamsSchema }),
-  requireGuardian,
+  requireHouseholdMember,
+  requireHouseholdSwimmer,
   asyncHandler(async (req, res) => {
     const { id: swimmerId } = req.params as unknown as IdParams;
     const result = await fetchSwimmerWithClubs(swimmerId);
@@ -341,11 +327,31 @@ swimmersRouter.patch(
   requireUser,
   requireParent,
   validate({ params: IdParamsSchema, body: UpdateSwimmerBodySchema }),
-  requireGuardian,
+  requireHouseholdMember,
+  requireHouseholdSwimmer,
   asyncHandler(async (req, res) => {
     const body = req.body as UpdateSwimmerBody;
     const { id: swimmerId } = req.params as unknown as IdParams;
     const callerId = req.profile.id;
+    const { householdId, householdRole } = req;
+
+    if (body.isPublic === true) {
+      if (householdRole !== "owner") {
+        res.status(403).json({ error: "Only the household owner can make a swimmer public" });
+        return;
+      }
+    } else {
+      const hasSwimmerFieldChange =
+        body.firstName !== undefined ||
+        body.lastName !== undefined ||
+        body.birthDate !== undefined ||
+        body.sex !== undefined ||
+        body.clubs !== undefined;
+      if (hasSwimmerFieldChange && HOUSEHOLD_ROLE_RANK[householdRole] < HOUSEHOLD_ROLE_RANK.manager) {
+        res.status(403).json({ error: "Insufficient household role" });
+        return;
+      }
+    }
 
     const hasSwimmerFields =
       body.firstName !== undefined ||
@@ -370,17 +376,36 @@ swimmersRouter.patch(
         }
 
         if (hasSwimmerFields) {
-          await tx.update(swimmers).set({
-            ...(body.firstName !== undefined && { firstName: body.firstName }),
-            ...(body.lastName !== undefined && { lastName: body.lastName }),
-            ...(body.birthDate !== undefined && { birthDate: body.birthDate }),
-            ...(body.sex !== undefined && { sex: body.sex }),
-            ...(body.isPublic !== undefined && { isPublic: body.isPublic }),
-            ...(body.isPublic === true && !current.isPublic && {
-              publicConsentAt: new Date(),
-              publicConsentBy: callerId,
-            }),
-          }).where(and(isActiveSwimmer, eq(swimmers.id, swimmerId)));
+          await tx
+            .update(swimmers)
+            .set({
+              ...(body.firstName !== undefined && { firstName: body.firstName }),
+              ...(body.lastName !== undefined && { lastName: body.lastName }),
+              ...(body.birthDate !== undefined && { birthDate: body.birthDate }),
+              ...(body.sex !== undefined && { sex: body.sex }),
+              ...(body.isPublic !== undefined && { isPublic: body.isPublic }),
+              ...(body.isPublic === true && !current.isPublic && {
+                publicConsentAt: new Date(),
+                publicConsentBy: callerId,
+              }),
+            })
+            .where(and(isActiveSwimmer, eq(swimmers.id, swimmerId)));
+        }
+
+        if (body.isPublic === true && !current.isPublic) {
+          await tx.insert(householdAuditLog).values({
+            householdId,
+            actorId: callerId,
+            action: "consent_granted",
+            targetSwimmerId: swimmerId,
+          });
+        } else if (body.isPublic === false && current.isPublic) {
+          await tx.insert(householdAuditLog).values({
+            householdId,
+            actorId: callerId,
+            action: "consent_revoked",
+            targetSwimmerId: swimmerId,
+          });
         }
 
         if (body.clubs !== undefined) {
@@ -420,7 +445,9 @@ swimmersRouter.delete(
   requireUser,
   requireParent,
   validate({ params: IdParamsSchema }),
-  requireGuardian,
+  requireHouseholdMember,
+  requireHouseholdSwimmer,
+  requireHouseholdRole("owner"),
   asyncHandler(async (req, res) => {
     const { id: swimmerId } = req.params as unknown as IdParams;
     await db
@@ -438,17 +465,16 @@ swimmersRouter.put(
   requireUser,
   requireParent,
   validate({ params: LeagueRegistrationParamsSchema }),
-  requireGuardian,
+  requireHouseholdMember,
+  requireHouseholdSwimmer,
+  requireHouseholdRole("manager"),
   asyncHandler(async (req, res) => {
     const { id: swimmerId, league } = req.params as unknown as LeagueRegistrationParams;
     const today = todayLA();
     const seasonStartYear = currentSeasonStartYear(league, today);
 
     const existing = await db
-      .select({
-        id: leagueRegistrations.id,
-        withdrawnAt: leagueRegistrations.withdrawnAt,
-      })
+      .select({ id: leagueRegistrations.id, withdrawnAt: leagueRegistrations.withdrawnAt })
       .from(leagueRegistrations)
       .where(
         and(
@@ -485,7 +511,9 @@ swimmersRouter.delete(
   requireUser,
   requireParent,
   validate({ params: LeagueRegistrationParamsSchema }),
-  requireGuardian,
+  requireHouseholdMember,
+  requireHouseholdSwimmer,
+  requireHouseholdRole("manager"),
   asyncHandler(async (req, res) => {
     const { id: swimmerId, league } = req.params as unknown as LeagueRegistrationParams;
     const today = todayLA();

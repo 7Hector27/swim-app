@@ -36,6 +36,27 @@
       "when": 1791739515998,
       "tag": "0004_living_sunspot",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1760121600000,
+      "tag": "0005_add_households",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1760121660000,
+      "tag": "0006_backfill_households",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1760121720000,
+      "tag": "0007_update_handle_new_user_trigger",
+      "breakpoints": true
     }
   ]
 }

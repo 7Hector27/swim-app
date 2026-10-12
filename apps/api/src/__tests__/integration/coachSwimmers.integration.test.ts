@@ -3,7 +3,7 @@ import request from "supertest";
 import pino from "pino";
 import { eq } from "drizzle-orm";
 import { createApp } from "../../app";
-import { guardians, leagueRegistrations, profiles, swimmerClubs, swimmers } from "../../db/schema";
+import { householdAuditLog, leagueRegistrations, profiles, swimmers } from "../../db/schema";
 import { adminDb, closeAdminDb, createTestUser } from "./helpers";
 
 const logger = pino({ level: "silent" });
@@ -13,8 +13,7 @@ const createdSwimmerIds = new Set<string>();
 
 async function hardDeleteSwimmer(swimmerId: string): Promise<void> {
   await adminDb().delete(leagueRegistrations).where(eq(leagueRegistrations.swimmerId, swimmerId));
-  await adminDb().delete(swimmerClubs).where(eq(swimmerClubs.swimmerId, swimmerId));
-  await adminDb().delete(guardians).where(eq(guardians.swimmerId, swimmerId));
+  await adminDb().delete(householdAuditLog).where(eq(householdAuditLog.targetSwimmerId, swimmerId));
   await adminDb().delete(swimmers).where(eq(swimmers.id, swimmerId));
 }
 
