@@ -64,6 +64,20 @@
       "when": 1760207000000,
       "tag": "0008_add_household_invites",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1791842007460,
+      "tag": "0009_squash_households_invites",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1791842156664,
+      "tag": "0010_abandoned_paladin",
+      "breakpoints": true
     }
   ]
 }
