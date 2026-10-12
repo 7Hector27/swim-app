@@ -17,6 +17,7 @@ import { supabase } from "./lib/supabase";
 import { clubsRouter } from "./routes/clubs";
 import { swimmersRouter } from "./routes/swimmers";
 import { coachSwimmersRouter } from "./routes/coachSwimmers";
+import { householdsRouter } from "./routes/households";
 import {
   calculateAge,
   HealthQuerySchema,
@@ -149,6 +150,7 @@ export function createApp(logger: Logger) {
   app.use("/clubs", clubsRouter);
   app.use("/swimmers", swimmersRouter);
   app.use("/coach/swimmers", coachSwimmersRouter);
+  app.use("/households", householdsRouter);
 
   app.use(errorHandler);
 

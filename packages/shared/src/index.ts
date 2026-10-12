@@ -18,7 +18,6 @@ export { SignUpBodySchema, LoginBodySchema } from "./schemas/auth";
 export type {
   Sex,
   Swimmer,
-  Guardian,
   Club,
   SwimmerClub,
   SwimmerClubInput,
@@ -34,7 +33,6 @@ export {
   SexSchema,
   SwimmerBaseSchema,
   SwimmerSchema,
-  GuardianSchema,
   ClubSchema,
   SwimmerClubBaseSchema,
   SwimmerClubSchema,
@@ -47,6 +45,9 @@ export {
   CoachSwimmerDetailSchema,
   CoachVisibilityBodySchema,
 } from "./schemas/swimmer";
+
+export type { HouseholdRole, HouseholdMember, HouseholdResponse } from "./schemas/households";
+export { HouseholdRoleSchema, HouseholdMemberSchema, HouseholdResponseSchema } from "./schemas/households";
 
 export { calculateAge } from "./lib/calculateAge";
 export { todayLA } from "./lib/todayLA";

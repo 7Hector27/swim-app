@@ -4,12 +4,12 @@ import pino from "pino";
 import { eq } from "drizzle-orm";
 import { createApp } from "../../app";
 import {
-  guardians,
+  householdAuditLog,
   swimmerClubs,
   swimmers,
 } from "../../db/schema";
 import { ParentSwimmerSchema } from "@swim-app/shared";
-import { adminDb, closeAdminDb, createTestUser } from "./helpers";
+import { adminDb, closeAdminDb, createTestUser, createTestUserInHousehold } from "./helpers";
 
 const logger = pino({ level: "silent" });
 const app = createApp(logger);
@@ -22,12 +22,8 @@ const app = createApp(logger);
 const createdSwimmerIds = new Set<string>();
 
 async function hardDeleteSwimmer(swimmerId: string): Promise<void> {
-  await adminDb()
-    .delete(swimmerClubs)
-    .where(eq(swimmerClubs.swimmerId, swimmerId));
-  await adminDb()
-    .delete(guardians)
-    .where(eq(guardians.swimmerId, swimmerId));
+  await adminDb().delete(householdAuditLog).where(eq(householdAuditLog.targetSwimmerId, swimmerId));
+  await adminDb().delete(swimmerClubs).where(eq(swimmerClubs.swimmerId, swimmerId));
   await adminDb().delete(swimmers).where(eq(swimmers.id, swimmerId));
 }
 
@@ -79,12 +75,12 @@ describe("POST /swimmers — atomicity", () => {
         .where(eq(swimmers.firstName, uniqueFirstName));
       expect(swimmerRows).toHaveLength(0);
 
-      // No guardian row linking this parent to any swimmer.
-      const guardianRows = await adminDb()
+      // No audit log entry for a swimmer creation should exist (transaction rolled back).
+      const auditRows = await adminDb()
         .select()
-        .from(guardians)
-        .where(eq(guardians.profileId, parent.userId));
-      expect(guardianRows).toHaveLength(0);
+        .from(householdAuditLog)
+        .where(eq(householdAuditLog.householdId, parent.householdId));
+      expect(auditRows).toHaveLength(0);
 
       // No swimmer_clubs row pointing at the fake club.
       const clubRows = await adminDb()
@@ -244,6 +240,144 @@ describe("PATCH archived swimmer", () => {
       expect(clubRows[0]?.otherClubName).toBe("Sentinel Club");
     } finally {
       await parent.cleanup();
+    }
+  });
+});
+
+describe("household role restrictions", () => {
+  it("viewer → 403 POST /swimmers", async () => {
+    const owner = await createTestUser("role-viewer-post-owner");
+    const viewer = await createTestUserInHousehold("role-viewer-post-viewer", owner.householdId, "viewer");
+    try {
+      const res = await request(app)
+        .post("/swimmers")
+        .set("Authorization", `Bearer ${viewer.accessToken}`)
+        .send(validSwimmerBody());
+      expect(res.status).toBe(403);
+    } finally {
+      await viewer.cleanup();
+      await owner.cleanup();
+    }
+  });
+
+  it("viewer → 403 PATCH /:id with a swimmer field change", async () => {
+    const owner = await createTestUser("role-viewer-patch-owner");
+    const viewer = await createTestUserInHousehold("role-viewer-patch-viewer", owner.householdId, "viewer");
+    try {
+      const createRes = await request(app)
+        .post("/swimmers")
+        .set("Authorization", `Bearer ${owner.accessToken}`)
+        .send(validSwimmerBody());
+      expect(createRes.status).toBe(201);
+      const swimmerId = createRes.body.id as string;
+      createdSwimmerIds.add(swimmerId);
+
+      const res = await request(app)
+        .patch(`/swimmers/${swimmerId}`)
+        .set("Authorization", `Bearer ${viewer.accessToken}`)
+        .send({ firstName: "Hacked" });
+      expect(res.status).toBe(403);
+    } finally {
+      await viewer.cleanup();
+      await owner.cleanup();
+    }
+  });
+
+  it("viewer → 200 PATCH /:id { isPublic: false }", async () => {
+    const owner = await createTestUser("role-viewer-ispublic-owner");
+    const viewer = await createTestUserInHousehold("role-viewer-ispublic-viewer", owner.householdId, "viewer");
+    try {
+      const createRes = await request(app)
+        .post("/swimmers")
+        .set("Authorization", `Bearer ${owner.accessToken}`)
+        .send(validSwimmerBody());
+      expect(createRes.status).toBe(201);
+      const swimmerId = createRes.body.id as string;
+      createdSwimmerIds.add(swimmerId);
+
+      const res = await request(app)
+        .patch(`/swimmers/${swimmerId}`)
+        .set("Authorization", `Bearer ${viewer.accessToken}`)
+        .send({ isPublic: false });
+      expect(res.status).toBe(200);
+    } finally {
+      await viewer.cleanup();
+      await owner.cleanup();
+    }
+  });
+
+  it("manager → 201 POST /swimmers with isPublic: false", async () => {
+    const owner = await createTestUser("role-manager-post-owner");
+    const manager = await createTestUserInHousehold("role-manager-post-mgr", owner.householdId, "manager");
+    try {
+      const res = await request(app)
+        .post("/swimmers")
+        .set("Authorization", `Bearer ${manager.accessToken}`)
+        .send(validSwimmerBody());
+      expect(res.status).toBe(201);
+      createdSwimmerIds.add(res.body.id as string);
+    } finally {
+      await manager.cleanup();
+      await owner.cleanup();
+    }
+  });
+
+  it("manager → 403 POST /swimmers with isPublic: true", async () => {
+    const owner = await createTestUser("role-manager-ispublic-owner");
+    const manager = await createTestUserInHousehold("role-manager-ispublic-mgr", owner.householdId, "manager");
+    try {
+      const res = await request(app)
+        .post("/swimmers")
+        .set("Authorization", `Bearer ${manager.accessToken}`)
+        .send(validSwimmerBody({ isPublic: true }));
+      expect(res.status).toBe(403);
+    } finally {
+      await manager.cleanup();
+      await owner.cleanup();
+    }
+  });
+
+  it("manager → 403 DELETE /:id", async () => {
+    const owner = await createTestUser("role-manager-delete-owner");
+    const manager = await createTestUserInHousehold("role-manager-delete-mgr", owner.householdId, "manager");
+    try {
+      const createRes = await request(app)
+        .post("/swimmers")
+        .set("Authorization", `Bearer ${owner.accessToken}`)
+        .send(validSwimmerBody());
+      expect(createRes.status).toBe(201);
+      const swimmerId = createRes.body.id as string;
+      createdSwimmerIds.add(swimmerId);
+
+      const res = await request(app)
+        .delete(`/swimmers/${swimmerId}`)
+        .set("Authorization", `Bearer ${manager.accessToken}`);
+      expect(res.status).toBe(403);
+    } finally {
+      await manager.cleanup();
+      await owner.cleanup();
+    }
+  });
+
+  it("owner → 200 PATCH /:id { isPublic: true }", async () => {
+    const owner = await createTestUser("role-owner-ispublic-owner");
+    try {
+      const createRes = await request(app)
+        .post("/swimmers")
+        .set("Authorization", `Bearer ${owner.accessToken}`)
+        .send(validSwimmerBody());
+      expect(createRes.status).toBe(201);
+      const swimmerId = createRes.body.id as string;
+      createdSwimmerIds.add(swimmerId);
+
+      const res = await request(app)
+        .patch(`/swimmers/${swimmerId}`)
+        .set("Authorization", `Bearer ${owner.accessToken}`)
+        .send({ isPublic: true });
+      expect(res.status).toBe(200);
+      expect(res.body.isPublic).toBe(true);
+    } finally {
+      await owner.cleanup();
     }
   });
 });

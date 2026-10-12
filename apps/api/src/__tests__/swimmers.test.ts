@@ -11,6 +11,7 @@ const PROFILE_B_ID = "bbbbbbbb-0000-0000-0000-000000000002";
 const SWIMMER_A_ID = "cccccccc-0000-0000-0000-000000000003";
 const SWIMMER_B_ID = "dddddddd-0000-0000-0000-000000000004";
 const CLUB_ID = "eeeeeeee-0000-0000-0000-000000000005";
+const HOUSEHOLD_A_ID = "ffffffff-0000-0000-0000-000000000010";
 
 const now = new Date("2025-01-01T00:00:00.000Z");
 
@@ -125,15 +126,25 @@ function requireUserSelect(profile: AnyProfile) {
 }
 
 /**
- * Returns a mock chain for requireGuardian:
- * db.select().from().innerJoin().where().limit() → [{ swimmerId }] or [].
+ * Returns a mock chain for requireHouseholdMember:
+ * db.select().from().where().limit() → [{ householdId, role }] or [].
  */
-function requireGuardianSelect(found: boolean) {
-  const rows = found ? [{ swimmerId: SWIMMER_A_ID }] : [];
+function requireHouseholdMemberSelect(found: boolean, role: "owner" | "manager" | "viewer" = "owner") {
+  const rows = found ? [{ householdId: HOUSEHOLD_A_ID, role }] : [];
   const limit = vi.fn().mockResolvedValue(rows);
   const where = vi.fn().mockReturnValue({ limit });
-  const innerJoin = vi.fn().mockReturnValue({ where });
-  return { from: vi.fn().mockReturnValue({ where, innerJoin }) };
+  return { from: vi.fn().mockReturnValue({ where }) };
+}
+
+/**
+ * Returns a mock chain for requireHouseholdSwimmer:
+ * db.select().from().where().limit() → [{ id }] or [].
+ */
+function requireHouseholdSwimmerSelect(found: boolean) {
+  const rows = found ? [{ id: SWIMMER_A_ID }] : [];
+  const limit = vi.fn().mockResolvedValue(rows);
+  const where = vi.fn().mockReturnValue({ limit });
+  return { from: vi.fn().mockReturnValue({ where }) };
 }
 
 /** Returns a mock chain for fetchSwimmerWithClubs swimmer query → [row] or []. */
@@ -274,7 +285,7 @@ describe("coach role restrictions", () => {
 describe("invalid id format", () => {
   beforeEach(() => {
     authAs(profileA);
-    // requireUser is the only DB call — validate() rejects the non-UUID before requireGuardian
+    // requireUser is the only DB call — validate() rejects the non-UUID before requireHouseholdMember
     mockDbSelect.mockReturnValue(requireUserSelect(profileA));
   });
 
@@ -305,13 +316,14 @@ describe("invalid id format", () => {
 
 describe("parent isolation", () => {
   beforeEach(() => {
-    // Profile B is authenticated but is not a guardian of swimmer A
+    // Profile B is authenticated but swimmer A is not in B's household
     authAs(profileB);
     let call = 0;
     mockDbSelect.mockImplementation(() => {
       call++;
       if (call === 1) return requireUserSelect(profileB);
-      return requireGuardianSelect(false);
+      if (call === 2) return requireHouseholdMemberSelect(true); // B has their own household
+      return requireHouseholdSwimmerSelect(false); // swimmer A not in B's household
     });
   });
 
@@ -342,13 +354,14 @@ describe("parent isolation", () => {
 
 describe("archived swimmer", () => {
   it("GET /swimmers/:id → 404 when swimmer is archived", async () => {
-    // requireGuardian filters archived_at IS NULL — returns empty → 404
+    // requireHouseholdSwimmer filters archived_at IS NULL — returns empty → 404
     authAs(profileA);
     let call = 0;
     mockDbSelect.mockImplementation(() => {
       call++;
       if (call === 1) return requireUserSelect(profileA);
-      return requireGuardianSelect(false);
+      if (call === 2) return requireHouseholdMemberSelect(true);
+      return requireHouseholdSwimmerSelect(false); // archived → isNull(archivedAt) fails
     });
 
     const res = await request(app)
@@ -363,11 +376,7 @@ describe("archived swimmer", () => {
     mockDbSelect.mockImplementation(() => {
       call++;
       if (call === 1) return requireUserSelect(profileA);
-      if (call === 2) {
-        // guardians query returns the swimmer id
-        const where = vi.fn().mockResolvedValue([{ swimmerId: SWIMMER_A_ID }]);
-        return { from: vi.fn().mockReturnValue({ where }) };
-      }
+      if (call === 2) return requireHouseholdMemberSelect(true);
       // active swimmers query — returns empty (archived_at IS NULL filters it out)
       const where = vi.fn().mockResolvedValue([]);
       return { from: vi.fn().mockReturnValue({ where }) };
@@ -390,7 +399,9 @@ describe("archived swimmer", () => {
 describe("consent fields", () => {
   it("rejects publicConsentAt in POST body (strict schema → 422)", async () => {
     authAs(profileA);
-    mockDbSelect.mockReturnValue(requireUserSelect(profileA));
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(profileA))
+      .mockReturnValue(requireHouseholdMemberSelect(true));
 
     const res = await request(app)
       .post("/swimmers")
@@ -420,9 +431,10 @@ describe("consent fields", () => {
     mockDbSelect.mockImplementation(() => {
       call++;
       if (call === 1) return requireUserSelect(profileA);
-      if (call === 2) return requireGuardianSelect(true);
-      if (call === 3) return swimmerSelect(updatedSwimmer);
-      if (call === 4) return clubsSelect();
+      if (call === 2) return requireHouseholdMemberSelect(true);
+      if (call === 3) return requireHouseholdSwimmerSelect(true);
+      if (call === 4) return swimmerSelect(updatedSwimmer);
+      if (call === 5) return clubsSelect();
       return regsSelect();
     });
 
@@ -457,9 +469,10 @@ describe("consent fields", () => {
     mockDbSelect.mockImplementation(() => {
       call++;
       if (call === 1) return requireUserSelect(profileA);
-      if (call === 2) return requireGuardianSelect(true);
-      if (call === 3) return swimmerSelect(baseSwimmerRow);
-      if (call === 4) return clubsSelect();
+      if (call === 2) return requireHouseholdMemberSelect(true);
+      if (call === 3) return requireHouseholdSwimmerSelect(true);
+      if (call === 4) return swimmerSelect(baseSwimmerRow);
+      if (call === 5) return clubsSelect();
       return regsSelect();
     });
 
@@ -504,9 +517,10 @@ describe("PATCH clubs-only", () => {
     mockDbSelect.mockImplementation(() => {
       call++;
       if (call === 1) return requireUserSelect(profileA);
-      if (call === 2) return requireGuardianSelect(true);
-      if (call === 3) return swimmerSelect(baseSwimmerRow);
-      if (call === 4) return clubsSelect();
+      if (call === 2) return requireHouseholdMemberSelect(true);
+      if (call === 3) return requireHouseholdSwimmerSelect(true);
+      if (call === 4) return swimmerSelect(baseSwimmerRow);
+      if (call === 5) return clubsSelect();
       return regsSelect();
     });
 
@@ -550,6 +564,7 @@ describe("async error handling", () => {
     mockDbSelect.mockImplementation(() => {
       call++;
       if (call === 1) return requireUserSelect(profileA);
+      if (call === 2) return requireHouseholdMemberSelect(true);
       throw new Error("DB connection failed");
     });
 
@@ -592,11 +607,7 @@ describe("GET /swimmers/me", () => {
     mockDbSelect.mockImplementation(() => {
       call++;
       if (call === 1) return requireUserSelect(profileA);
-      if (call === 2) {
-        // guardians
-        const where = vi.fn().mockResolvedValue([{ swimmerId: SWIMMER_A_ID }]);
-        return { from: vi.fn().mockReturnValue({ where }) };
-      }
+      if (call === 2) return requireHouseholdMemberSelect(true);
       if (call === 3) {
         // active swimmers
         const where = vi.fn().mockResolvedValue([baseSwimmerRow]);
@@ -620,10 +631,7 @@ describe("GET /swimmers/me", () => {
     mockDbSelect.mockImplementation(() => {
       call++;
       if (call === 1) return requireUserSelect(profileA);
-      if (call === 2) {
-        const where = vi.fn().mockResolvedValue([{ swimmerId: SWIMMER_A_ID }]);
-        return { from: vi.fn().mockReturnValue({ where }) };
-      }
+      if (call === 2) return requireHouseholdMemberSelect(true);
       if (call === 3) {
         const where = vi.fn().mockResolvedValue([baseSwimmerRow]);
         return { from: vi.fn().mockReturnValue({ where }) };
@@ -645,7 +653,8 @@ describe("GET /swimmers/me", () => {
     mockDbSelect.mockImplementation(() => {
       call++;
       if (call === 1) return requireUserSelect(profileA);
-      // guardians returns empty
+      if (call === 2) return requireHouseholdMemberSelect(true);
+      // active swimmers returns empty
       const where = vi.fn().mockResolvedValue([]);
       return { from: vi.fn().mockReturnValue({ where }) };
     });
@@ -656,45 +665,40 @@ describe("GET /swimmers/me", () => {
   });
 });
 
-// ── POST /swimmers — guardian row uses caller's profile id ───────────────────
+// ── POST /swimmers — audit log records the caller ────────────────────────────
 
 describe("POST /swimmers", () => {
-  it("inserts guardian row for the authenticated caller, not another profile", async () => {
-    authAs(profileB);
-    mockDbSelect.mockReturnValue(requireUserSelect(profileB));
-
+  it("inserts audit log row for the authenticated caller, not another profile", async () => {
     const createdSwimmer = { ...baseSwimmerRow, id: SWIMMER_B_ID };
 
+    let postCall = 0;
+    mockDbSelect.mockImplementation(() => {
+      postCall++;
+      if (postCall === 1) return requireUserSelect(profileB);
+      if (postCall === 2) return requireHouseholdMemberSelect(true);
+      // remaining calls (3=swimmerSelect, 4=clubsSelect, 5=regsSelect) come from fetchSwimmerWithClubs after transaction
+      if (postCall === 3) return swimmerSelect(createdSwimmer);
+      if (postCall === 4) return clubsSelect();
+      return regsSelect();
+    });
+
+    authAs(profileB);
+
     mockDbTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
-      const insertedGuardians: unknown[] = [];
+      const insertedAuditRows: unknown[] = [];
       const tx = {
         insert: vi.fn().mockImplementation(() => ({
           values: vi.fn().mockImplementation((vals: unknown) => {
-            // Capture all inserts; guardians have profileId + swimmerId shape
-            if (
-              vals !== null &&
-              typeof vals === "object" &&
-              "profileId" in (vals as object)
-            ) {
-              insertedGuardians.push(vals);
+            if (vals !== null && typeof vals === "object" && "actorId" in (vals as object)) {
+              insertedAuditRows.push(vals);
             }
             return { returning: vi.fn().mockResolvedValue([createdSwimmer]) };
           }),
         })),
       };
       await fn(tx);
-      expect(insertedGuardians[0]).toMatchObject({ profileId: PROFILE_B_ID });
+      expect(insertedAuditRows[0]).toMatchObject({ actorId: PROFILE_B_ID });
       return createdSwimmer;
-    });
-
-    let postCall = 0;
-    const origImpl = mockDbSelect.getMockImplementation()!;
-    mockDbSelect.mockImplementation(() => {
-      postCall++;
-      if (postCall === 1) return origImpl();
-      if (postCall === 2) return swimmerSelect(createdSwimmer);
-      if (postCall === 3) return clubsSelect(); // Promise.all first
-      return regsSelect();                      // Promise.all second
     });
 
     const res = await request(app)
@@ -713,6 +717,228 @@ describe("POST /swimmers", () => {
   });
 });
 
+// ── Household role restrictions ───────────────────────────────────────────────
+
+describe("household role restrictions", () => {
+  it("viewer → 403 POST /swimmers", async () => {
+    authAs(profileA);
+    let call = 0;
+    mockDbSelect.mockImplementation(() => {
+      call++;
+      if (call === 1) return requireUserSelect(profileA);
+      return requireHouseholdMemberSelect(true, "viewer");
+    });
+
+    const res = await request(app)
+      .post("/swimmers")
+      .set("Authorization", "Bearer token")
+      .send({
+        firstName: "Bob",
+        lastName: "Jones",
+        birthDate: "2012-01-01",
+        sex: "male",
+        isPublic: false,
+        clubs: [],
+      });
+
+    expect(res.status).toBe(403);
+  });
+
+  it("viewer → 403 PATCH /:id with a swimmer field change", async () => {
+    authAs(profileA);
+    let call = 0;
+    mockDbSelect.mockImplementation(() => {
+      call++;
+      if (call === 1) return requireUserSelect(profileA);
+      if (call === 2) return requireHouseholdMemberSelect(true, "viewer");
+      return requireHouseholdSwimmerSelect(true);
+    });
+
+    const res = await request(app)
+      .patch(`/swimmers/${SWIMMER_A_ID}`)
+      .set("Authorization", "Bearer token")
+      .send({ firstName: "Hacked" });
+
+    expect(res.status).toBe(403);
+  });
+
+  it("viewer → 200 PATCH /:id { isPublic: false } (visibility allowed for any member)", async () => {
+    authAs(profileA);
+    let call = 0;
+    mockDbSelect.mockImplementation(() => {
+      call++;
+      if (call === 1) return requireUserSelect(profileA);
+      if (call === 2) return requireHouseholdMemberSelect(true, "viewer");
+      if (call === 3) return requireHouseholdSwimmerSelect(true);
+      if (call === 4) return swimmerSelect(baseSwimmerRow);
+      if (call === 5) return clubsSelect();
+      return regsSelect();
+    });
+
+    mockDbTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
+      const tx = {
+        select: () => {
+          const limit = vi.fn().mockResolvedValue([{ isPublic: false }]);
+          const where = vi.fn().mockReturnValue({ limit });
+          return { from: vi.fn().mockReturnValue({ where }) };
+        },
+        update: vi.fn().mockReturnValue({
+          set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) }),
+        }),
+        delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) }),
+        insert: vi.fn().mockReturnValue({ values: vi.fn().mockResolvedValue([]) }),
+      };
+      return fn(tx);
+    });
+
+    const res = await request(app)
+      .patch(`/swimmers/${SWIMMER_A_ID}`)
+      .set("Authorization", "Bearer token")
+      .send({ isPublic: false });
+
+    expect(res.status).toBe(200);
+  });
+
+  it("manager → 201 POST /swimmers with isPublic: false", async () => {
+    authAs(profileA);
+    const createdSwimmer = { ...baseSwimmerRow, id: SWIMMER_B_ID };
+    let call = 0;
+    mockDbSelect.mockImplementation(() => {
+      call++;
+      if (call === 1) return requireUserSelect(profileA);
+      if (call === 2) return requireHouseholdMemberSelect(true, "manager");
+      if (call === 3) return swimmerSelect(createdSwimmer);
+      if (call === 4) return clubsSelect();
+      return regsSelect();
+    });
+
+    mockDbTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
+      const tx = {
+        insert: vi.fn().mockReturnValue({
+          values: vi.fn().mockReturnValue({
+            returning: vi.fn().mockResolvedValue([createdSwimmer]),
+          }),
+        }),
+      };
+      return fn(tx);
+    });
+
+    const res = await request(app)
+      .post("/swimmers")
+      .set("Authorization", "Bearer token")
+      .send({
+        firstName: "Bob",
+        lastName: "Jones",
+        birthDate: "2012-01-01",
+        sex: "male",
+        isPublic: false,
+        clubs: [],
+      });
+
+    expect(res.status).toBe(201);
+  });
+
+  it("manager → 403 POST /swimmers with isPublic: true", async () => {
+    authAs(profileA);
+    let call = 0;
+    mockDbSelect.mockImplementation(() => {
+      call++;
+      if (call === 1) return requireUserSelect(profileA);
+      return requireHouseholdMemberSelect(true, "manager");
+    });
+
+    const res = await request(app)
+      .post("/swimmers")
+      .set("Authorization", "Bearer token")
+      .send({
+        firstName: "Bob",
+        lastName: "Jones",
+        birthDate: "2012-01-01",
+        sex: "male",
+        isPublic: true,
+        clubs: [],
+      });
+
+    expect(res.status).toBe(403);
+  });
+
+  it("manager → 403 DELETE /:id", async () => {
+    authAs(profileA);
+    let call = 0;
+    mockDbSelect.mockImplementation(() => {
+      call++;
+      if (call === 1) return requireUserSelect(profileA);
+      return requireHouseholdMemberSelect(true, "manager");
+    });
+
+    const res = await request(app)
+      .delete(`/swimmers/${SWIMMER_A_ID}`)
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(403);
+  });
+
+  it("owner → 200 PATCH /:id { isPublic: true }", async () => {
+    authAs(profileA);
+    const updatedSwimmer = { ...baseSwimmerRow, isPublic: true, publicConsentAt: now, publicConsentBy: PROFILE_A_ID };
+    let call = 0;
+    mockDbSelect.mockImplementation(() => {
+      call++;
+      if (call === 1) return requireUserSelect(profileA);
+      if (call === 2) return requireHouseholdMemberSelect(true, "owner");
+      if (call === 3) return requireHouseholdSwimmerSelect(true);
+      if (call === 4) return swimmerSelect(updatedSwimmer);
+      if (call === 5) return clubsSelect();
+      return regsSelect();
+    });
+
+    mockDbTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
+      const tx = {
+        select: () => {
+          const limit = vi.fn().mockResolvedValue([{ isPublic: false }]);
+          const where = vi.fn().mockReturnValue({ limit });
+          return { from: vi.fn().mockReturnValue({ where }) };
+        },
+        update: vi.fn().mockReturnValue({
+          set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) }),
+        }),
+        delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) }),
+        insert: vi.fn().mockReturnValue({ values: vi.fn().mockResolvedValue([]) }),
+      };
+      return fn(tx);
+    });
+
+    const res = await request(app)
+      .patch(`/swimmers/${SWIMMER_A_ID}`)
+      .set("Authorization", "Bearer token")
+      .send({ isPublic: true });
+
+    expect(res.status).toBe(200);
+    expect(res.body.isPublic).toBe(true);
+  });
+
+  it("owner → 204 DELETE /:id", async () => {
+    authAs(profileA);
+    let call = 0;
+    mockDbSelect.mockImplementation(() => {
+      call++;
+      if (call === 1) return requireUserSelect(profileA);
+      if (call === 2) return requireHouseholdMemberSelect(true, "owner");
+      return requireHouseholdSwimmerSelect(true);
+    });
+
+    mockDbUpdate.mockReturnValue({
+      set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) }),
+    });
+
+    const res = await request(app)
+      .delete(`/swimmers/${SWIMMER_A_ID}`)
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(204);
+  });
+});
+
 // ── PUT /swimmers/:id/registrations/:league ───────────────────────────────────
 
 describe("PUT /swimmers/:id/registrations/:league", () => {
@@ -722,7 +948,8 @@ describe("PUT /swimmers/:id/registrations/:league", () => {
     mockDbSelect.mockImplementation(() => {
       call++;
       if (call === 1) return requireUserSelect(profileA);
-      if (call === 2) return requireGuardianSelect(true);
+      if (call === 2) return requireHouseholdMemberSelect(true);
+      if (call === 3) return requireHouseholdSwimmerSelect(true);
       return regCheckSelect(null);
     });
     mockDbInsert.mockReturnValue({ values: vi.fn().mockResolvedValue([]) });
@@ -742,7 +969,8 @@ describe("PUT /swimmers/:id/registrations/:league", () => {
     mockDbSelect.mockImplementation(() => {
       call++;
       if (call === 1) return requireUserSelect(profileA);
-      if (call === 2) return requireGuardianSelect(true);
+      if (call === 2) return requireHouseholdMemberSelect(true);
+      if (call === 3) return requireHouseholdSwimmerSelect(true);
       return regCheckSelect({ id: REG_ID, withdrawnAt: new Date("2026-08-01T00:00:00Z") });
     });
     mockDbUpdate.mockReturnValue({
@@ -764,7 +992,8 @@ describe("PUT /swimmers/:id/registrations/:league", () => {
     mockDbSelect.mockImplementation(() => {
       call++;
       if (call === 1) return requireUserSelect(profileA);
-      if (call === 2) return requireGuardianSelect(true);
+      if (call === 2) return requireHouseholdMemberSelect(true);
+      if (call === 3) return requireHouseholdSwimmerSelect(true);
       return regCheckSelect({ id: "existing-reg-id", withdrawnAt: null });
     });
 
@@ -799,7 +1028,8 @@ describe("DELETE /swimmers/:id/registrations/:league", () => {
     mockDbSelect.mockImplementation(() => {
       call++;
       if (call === 1) return requireUserSelect(profileA);
-      if (call === 2) return requireGuardianSelect(true);
+      if (call === 2) return requireHouseholdMemberSelect(true);
+      if (call === 3) return requireHouseholdSwimmerSelect(true);
       return regCheckSelect({ id: REG_ID, withdrawnAt: null });
     });
     mockDbUpdate.mockReturnValue({
@@ -820,7 +1050,8 @@ describe("DELETE /swimmers/:id/registrations/:league", () => {
     mockDbSelect.mockImplementation(() => {
       call++;
       if (call === 1) return requireUserSelect(profileA);
-      if (call === 2) return requireGuardianSelect(true);
+      if (call === 2) return requireHouseholdMemberSelect(true);
+      if (call === 3) return requireHouseholdSwimmerSelect(true);
       return regCheckSelect(null);
     });
 

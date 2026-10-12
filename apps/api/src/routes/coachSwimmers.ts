@@ -2,7 +2,7 @@ import { Router } from "express";
 import { and, asc, eq, inArray, isNull, or } from "drizzle-orm";
 import type { IdParams } from "@swim-app/shared";
 import { db } from "../db/client";
-import { guardians, leagueRegistrations, profiles, swimmers, swimmerClubs } from "../db/schema";
+import { householdMembers, leagueRegistrations, profiles, swimmers, swimmerClubs } from "../db/schema";
 import { requireUser } from "../middleware/requireUser";
 import { requireCoach } from "../middleware/requireCoach";
 import { validate } from "../middleware/validate";
@@ -32,6 +32,7 @@ const swimmerColumns = {
   birthDate: swimmers.birthDate,
   sex: swimmers.sex,
   isPublic: swimmers.isPublic,
+  householdId: swimmers.householdId,
   createdAt: swimmers.createdAt,
   updatedAt: swimmers.updatedAt,
 } as const;
@@ -105,18 +106,19 @@ coachSwimmersRouter.get(
     }
 
     const swimmerIds = swimmerRows.map((row) => row.id);
+    const householdIds = [...new Set(swimmerRows.map((row) => row.householdId))];
 
-    const [clubRows, regRows, guardianRows] = await Promise.all([
+    const [clubRows, regRows, memberRows] = await Promise.all([
       db.select(swimmerClubColumns).from(swimmerClubs).where(inArray(swimmerClubs.swimmerId, swimmerIds)),
       db
         .select({ swimmerId: leagueRegistrations.swimmerId, league: leagueRegistrations.league })
         .from(leagueRegistrations)
         .where(activeRegsWhere(swimmerIds)),
       db
-        .select({ swimmerId: guardians.swimmerId, fullName: profiles.fullName })
-        .from(guardians)
-        .innerJoin(profiles, eq(profiles.id, guardians.profileId))
-        .where(inArray(guardians.swimmerId, swimmerIds)),
+        .select({ householdId: householdMembers.householdId, fullName: profiles.fullName })
+        .from(householdMembers)
+        .innerJoin(profiles, eq(profiles.id, householdMembers.profileId))
+        .where(inArray(householdMembers.householdId, householdIds)),
     ]);
 
     const clubsBySwimmer = new Map<string, SwimmerClubRow[]>();
@@ -133,11 +135,11 @@ coachSwimmersRouter.get(
       leaguesBySwimmer.set(reg.swimmerId, existing);
     }
 
-    const guardianNamesBySwimmer = new Map<string, string[]>();
-    for (const row of guardianRows) {
-      const names = guardianNamesBySwimmer.get(row.swimmerId) ?? [];
+    const memberNamesByHousehold = new Map<string, string[]>();
+    for (const row of memberRows) {
+      const names = memberNamesByHousehold.get(row.householdId) ?? [];
       if (row.fullName !== null) names.push(row.fullName);
-      guardianNamesBySwimmer.set(row.swimmerId, names);
+      memberNamesByHousehold.set(row.householdId, names);
     }
 
     const today = todayLA();
@@ -152,7 +154,7 @@ coachSwimmersRouter.get(
       updatedAt: toISO(swimmer.updatedAt),
       clubs: (clubsBySwimmer.get(swimmer.id) ?? []).map(mapClub),
       currentLeagues: leaguesBySwimmer.get(swimmer.id) ?? [],
-      guardianNames: guardianNamesBySwimmer.get(swimmer.id) ?? [],
+      memberNames: memberNamesByHousehold.get(swimmer.householdId) ?? [],
     }));
 
     res.json(result);
@@ -179,7 +181,7 @@ coachSwimmersRouter.get(
       return;
     }
 
-    const [clubRows, regRows, guardianRows] = await Promise.all([
+    const [clubRows, regRows, memberRows] = await Promise.all([
       db.select(swimmerClubColumns).from(swimmerClubs).where(eq(swimmerClubs.swimmerId, swimmerId)),
       db
         .select({ swimmerId: leagueRegistrations.swimmerId, league: leagueRegistrations.league })
@@ -187,9 +189,9 @@ coachSwimmersRouter.get(
         .where(activeRegsWhere([swimmerId])),
       db
         .select({ fullName: profiles.fullName, phone: profiles.phone })
-        .from(guardians)
-        .innerJoin(profiles, eq(profiles.id, guardians.profileId))
-        .where(eq(guardians.swimmerId, swimmerId)),
+        .from(householdMembers)
+        .innerJoin(profiles, eq(profiles.id, householdMembers.profileId))
+        .where(eq(householdMembers.householdId, swimmer.householdId)),
     ]);
 
     const result: CoachSwimmerDetail = {
@@ -204,9 +206,9 @@ coachSwimmersRouter.get(
       updatedAt: toISO(swimmer.updatedAt),
       clubs: clubRows.map(mapClub),
       currentLeagues: regRows.map((row) => row.league),
-      guardians: guardianRows,
-      guardianNames: guardianRows
-        .map((g) => g.fullName)
+      members: memberRows,
+      memberNames: memberRows
+        .map((m) => m.fullName)
         .filter((name): name is string => name !== null),
     };
 

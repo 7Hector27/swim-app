@@ -16,6 +16,7 @@ import {
 
 export const userRoleEnum = pgEnum("user_role", ["coach", "parent"]);
 export const leagueEnum = pgEnum("league", ["club", "summer_league"]);
+export const householdRoleEnum = pgEnum("household_role", ["owner", "manager", "viewer"]);
 
 export const profiles = pgTable(
   "profiles",
@@ -39,6 +40,15 @@ export const profiles = pgTable(
   },
 ).enableRLS();
 
+// ── Households ────────────────────────────────────────────────────────────────
+
+export const households = pgTable("households", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdateFn(() => new Date()),
+}).enableRLS();
+
 // ── Swimmers ──────────────────────────────────────────────────────────────────
 
 export const sexEnum = pgEnum("sex", ["female", "male"]);
@@ -58,6 +68,7 @@ export const swimmers = pgTable(
       onDelete: "restrict",
     }),
     archivedAt: timestamp("archived_at", { withTimezone: true }),
+    householdId: uuid("household_id").notNull().references(() => households.id, { onDelete: "restrict" }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -75,31 +86,6 @@ export const swimmers = pgTable(
   ],
 ).enableRLS();
 
-// ── Guardians ─────────────────────────────────────────────────────────────────
-
-export const guardians = pgTable(
-  "guardians",
-  {
-    profileId: uuid("profile_id")
-      .notNull()
-      .references(() => profiles.id, { onDelete: "restrict" }),
-    swimmerId: uuid("swimmer_id")
-      .notNull()
-      .references(() => swimmers.id, {
-        // Safe because swimmers are only soft-deleted (archived_at); a cascade
-        // here would remove the link but the swimmer row itself stays.
-        onDelete: "cascade",
-      }),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-    updatedAt: timestamp("updated_at", { withTimezone: true })
-      .notNull()
-      .defaultNow()
-      .$onUpdateFn(() => new Date()),
-  },
-  (table) => [primaryKey({ columns: [table.profileId, table.swimmerId] })],
-).enableRLS();
 
 // ── Clubs ─────────────────────────────────────────────────────────────────────
 
@@ -149,6 +135,34 @@ export const swimmerClubs = pgTable(
       .where(sql`${table.clubId} IS NOT NULL`),
   ],
 ).enableRLS();
+
+// ── Household members and audit log ──────────────────────────────────────────
+
+export const householdMembers = pgTable(
+  "household_members",
+  {
+    householdId: uuid("household_id").notNull().references(() => households.id, { onDelete: "cascade" }),
+    profileId: uuid("profile_id").notNull().references(() => profiles.id, { onDelete: "restrict" }),
+    role: householdRoleEnum("role").notNull(),
+    joinedAt: timestamp("joined_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.householdId, table.profileId] }),
+    uniqueIndex("household_members_profile_uniq").on(table.profileId),
+    uniqueIndex("household_members_one_owner_uniq").on(table.householdId).where(sql`${table.role} = 'owner'`),
+  ],
+).enableRLS();
+
+export const householdAuditLog = pgTable("household_audit_log", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  householdId: uuid("household_id").notNull().references(() => households.id, { onDelete: "cascade" }),
+  actorId: uuid("actor_id").notNull().references(() => profiles.id, { onDelete: "restrict" }),
+  action: text("action").notNull(),
+  targetProfileId: uuid("target_profile_id").references(() => profiles.id, { onDelete: "restrict" }),
+  targetSwimmerId: uuid("target_swimmer_id").references(() => swimmers.id, { onDelete: "restrict" }),
+  newRole: householdRoleEnum("new_role"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}).enableRLS();
 
 // ── League registrations ───────────────────────────────────────────────────────
 

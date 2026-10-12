@@ -7,6 +7,8 @@ declare global {
       requestId: string;
       profile: InferSelectModel<typeof profiles>;
       userEmail: string;
+      householdId: string;
+      householdRole: "owner" | "manager" | "viewer";
     }
   }
 }

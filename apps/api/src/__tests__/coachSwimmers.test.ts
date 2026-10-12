@@ -5,6 +5,7 @@ import pino from "pino";
 const PROFILE_COACH_ID = "aaaaaaaa-0000-0000-0000-000000000001";
 const PROFILE_PARENT_ID = "bbbbbbbb-0000-0000-0000-000000000002";
 const SWIMMER_A_ID = "cccccccc-0000-0000-0000-000000000003";
+const HOUSEHOLD_A_ID = "ffffffff-0000-0000-0000-000000000010";
 
 const now = new Date("2025-01-01T00:00:00.000Z");
 
@@ -67,6 +68,7 @@ const baseSwimmerRow = {
   birthDate: "2010-05-01",
   sex: "female" as const,
   isPublic: true,
+  householdId: HOUSEHOLD_A_ID,
   createdAt: now,
   updatedAt: now,
 };
@@ -107,13 +109,13 @@ function regsSelect() {
   return { from: vi.fn().mockReturnValue({ where }) };
 }
 
-function guardianNamesSelect() {
+function memberNamesSelect() {
   const where = vi.fn().mockResolvedValue([]);
   const innerJoin = vi.fn().mockReturnValue({ where });
   return { from: vi.fn().mockReturnValue({ innerJoin }) };
 }
 
-function guardiansSelect() {
+function membersSelect() {
   const where = vi.fn().mockResolvedValue([]);
   const innerJoin = vi.fn().mockReturnValue({ where });
   return { from: vi.fn().mockReturnValue({ innerJoin }) };
@@ -210,14 +212,14 @@ describe("input validation", () => {
 // ── GET /coach/swimmers ───────────────────────────────────────────────────────
 
 describe("GET /coach/swimmers", () => {
-  it("returns swimmers list with currentLeagues, clubs, and guardianNames", async () => {
+  it("returns swimmers list with currentLeagues, clubs, and memberNames", async () => {
     authAs(profileCoach);
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(profileCoach))
       .mockReturnValueOnce(swimmersSelect([baseSwimmerRow]))
       .mockReturnValueOnce(clubsSelect())
       .mockReturnValueOnce(regsSelect())
-      .mockReturnValueOnce(guardianNamesSelect());
+      .mockReturnValueOnce(memberNamesSelect());
 
     const res = await request(app)
       .get("/coach/swimmers")
@@ -230,7 +232,7 @@ describe("GET /coach/swimmers", () => {
       lastName: "Smith",
       currentLeagues: [],
       clubs: [],
-      guardianNames: [],
+      memberNames: [],
     });
   });
 
@@ -252,14 +254,14 @@ describe("GET /coach/swimmers", () => {
 // ── GET /coach/swimmers/:id ───────────────────────────────────────────────────
 
 describe("GET /coach/swimmers/:id", () => {
-  it("returns swimmer detail with guardians", async () => {
+  it("returns swimmer detail with members", async () => {
     authAs(profileCoach);
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(profileCoach))
       .mockReturnValueOnce(swimmerSingleSelect(baseSwimmerRow))
       .mockReturnValueOnce(clubsSelect())
       .mockReturnValueOnce(regsSelect())
-      .mockReturnValueOnce(guardiansSelect());
+      .mockReturnValueOnce(membersSelect());
 
     const res = await request(app)
       .get(`/coach/swimmers/${SWIMMER_A_ID}`)
@@ -268,8 +270,8 @@ describe("GET /coach/swimmers/:id", () => {
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({
       id: SWIMMER_A_ID,
-      guardians: [],
-      guardianNames: [],
+      members: [],
+      memberNames: [],
       currentLeagues: [],
     });
   });

@@ -38,18 +38,6 @@ export const SwimmerSchema = SwimmerBaseSchema.refine(
 
 export type Swimmer = z.infer<typeof SwimmerSchema>;
 
-// ── Guardian ──────────────────────────────────────────────────────────────────
-
-/** Internal/coach-only — never returned to parents or the public. */
-export const GuardianSchema = z.object({
-  profileId: z.string().uuid(),
-  swimmerId: z.string().uuid(),
-  createdAt: z.string().datetime({ offset: true }),
-  updatedAt: z.string().datetime({ offset: true }),
-});
-
-export type Guardian = z.infer<typeof GuardianSchema>;
-
 // ── Club ──────────────────────────────────────────────────────────────────────
 
 export const ClubSchema = z.object({
@@ -172,14 +160,14 @@ export const CoachSwimmerSchema = z.object({
   updatedAt: z.string().datetime({ offset: true }),
   clubs: z.array(SwimmerClubSchema),
   currentLeagues: z.array(LeagueSchema),
-  guardianNames: z.array(z.string()),
+  memberNames: z.array(z.string()),
 });
 
 export type CoachSwimmer = z.infer<typeof CoachSwimmerSchema>;
 
 export const CoachSwimmerDetailSchema = CoachSwimmerSchema.extend({
   birthDate: z.string().date(),
-  guardians: z.array(
+  members: z.array(
     z.object({
       fullName: z.string().nullable(),
       phone: z.string().nullable(),

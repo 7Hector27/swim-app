@@ -18,7 +18,7 @@ export default function SwimmersTable({ swimmers }: SwimmersTableProps) {
     ? swimmers.filter(
         (swimmer) =>
           `${swimmer.firstName} ${swimmer.lastName}`.toLowerCase().includes(q) ||
-          swimmer.guardianNames.some((name) => name.toLowerCase().includes(q)),
+          swimmer.memberNames.some((name) => name.toLowerCase().includes(q)),
       )
     : swimmers.slice(0, 8);
 
@@ -100,8 +100,8 @@ export default function SwimmersTable({ swimmers }: SwimmersTableProps) {
                     {swimmer.age}
                   </td>
                   <td className="px-5 py-3 text-text-secondary">
-                    {swimmer.guardianNames.length > 0
-                      ? swimmer.guardianNames.join(", ")
+                    {swimmer.memberNames.length > 0
+                      ? swimmer.memberNames.join(", ")
                       : "—"}
                   </td>
                   <td className="px-5 py-3 text-text-secondary whitespace-nowrap">

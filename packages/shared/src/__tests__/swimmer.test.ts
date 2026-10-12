@@ -1,7 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
   ClubSchema,
-  GuardianSchema,
   SwimmerBaseSchema,
   SwimmerClubBaseSchema,
   SwimmerClubSchema,
@@ -146,20 +145,6 @@ describe("SwimmerSchema", () => {
         expect(result.error.issues[0]?.path).toContain("publicConsentAt");
       }
     });
-  });
-});
-
-// ── GuardianSchema ────────────────────────────────────────────────────────────
-
-describe("GuardianSchema", () => {
-  it("accepts a valid guardian", () => {
-    const result = GuardianSchema.safeParse({
-      profileId: "00000000-0000-0000-0000-000000000002",
-      swimmerId: "00000000-0000-0000-0000-000000000001",
-      createdAt: "2026-01-01T00:00:00Z",
-      updatedAt: "2026-01-01T00:00:00Z",
-    });
-    expect(result.success).toBe(true);
   });
 });
 
