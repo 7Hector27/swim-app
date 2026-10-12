@@ -13,7 +13,7 @@ export interface AuthResult {
 export const requireAuth = cache(async function requireAuth(): Promise<AuthResult | null> {
   const result = await fetchMe();
   if (!result.ok) {
-    if (result.status === 401) redirect("/login");
+    if (result.status === 401) redirect("/api/signout");
     if (result.status === 403) return null;
     throw new Error(`Failed to load session (status ${result.status})`);
   }
