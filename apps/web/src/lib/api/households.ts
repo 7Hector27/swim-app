@@ -1,4 +1,4 @@
-import { HouseholdResponseSchema, type HouseholdResponse } from "@swim-app/shared";
+import { HouseholdResponseSchema, ListInviteResponseSchema, type HouseholdResponse, type PendingInvite } from "@swim-app/shared";
 
 export async function fetchHousehold(accessToken: string): Promise<HouseholdResponse | null> {
   try {
@@ -9,6 +9,21 @@ export async function fetchHousehold(accessToken: string): Promise<HouseholdResp
     const body: unknown = await response.json();
     const parsed = HouseholdResponseSchema.safeParse(body);
     return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchPendingInvite(accessToken: string): Promise<PendingInvite | null> {
+  try {
+    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/households/mine/invites`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      cache: "no-store",
+    });
+    if (!response.ok) return null;
+    const body: unknown = await response.json();
+    const parsed = ListInviteResponseSchema.safeParse(body);
+    return parsed.success ? parsed.data.invite : null;
   } catch {
     return null;
   }

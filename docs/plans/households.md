@@ -1,6 +1,6 @@
 # Households: three-PR plan
 
-**Status:** Draft — 2026-10-11
+**Status:** PR 1 ✓ merged · PR 2 ✓ merged · PR 3 ✓ complete (2026-10-12)
 
 ## Context
 

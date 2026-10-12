@@ -450,10 +450,18 @@ swimmersRouter.delete(
   requireHouseholdRole("owner"),
   asyncHandler(async (req, res) => {
     const { id: swimmerId } = req.params as unknown as IdParams;
-    await db
-      .update(swimmers)
-      .set({ archivedAt: new Date() })
-      .where(and(isActiveSwimmer, eq(swimmers.id, swimmerId)));
+    await db.transaction(async (tx) => {
+      await tx
+        .update(swimmers)
+        .set({ archivedAt: new Date() })
+        .where(and(isActiveSwimmer, eq(swimmers.id, swimmerId)));
+      await tx.insert(householdAuditLog).values({
+        householdId: req.householdId,
+        actorId: req.profile.id,
+        action: "swimmer_archived",
+        targetSwimmerId: swimmerId,
+      });
+    });
     res.status(204).end();
   }),
 );

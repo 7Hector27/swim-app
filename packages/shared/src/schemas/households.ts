@@ -29,3 +29,25 @@ export const HouseholdResponseSchema = z.object({
 });
 
 export type HouseholdResponse = z.infer<typeof HouseholdResponseSchema>;
+
+export const RenameHouseholdBodySchema = z.object({ name: z.string().min(1).max(50) });
+export type RenameHouseholdBody = z.infer<typeof RenameHouseholdBodySchema>;
+
+// Only manager/viewer settable via role-change; owner is only reachable via transfer-ownership.
+export const ChangeRoleBodySchema = z.object({ role: z.enum(["manager", "viewer"]) });
+export type ChangeRoleBody = z.infer<typeof ChangeRoleBodySchema>;
+
+export const TransferOwnershipBodySchema = z.object({ newOwnerProfileId: z.string().uuid() });
+export type TransferOwnershipBody = z.infer<typeof TransferOwnershipBodySchema>;
+
+export const PendingInviteSchema = z
+  .object({
+    id: z.string().uuid(),
+    expiresAt: z.string().datetime({ offset: true }),
+    createdAt: z.string().datetime({ offset: true }),
+  })
+  .nullable();
+export type PendingInvite = z.infer<typeof PendingInviteSchema>;
+
+export const ListInviteResponseSchema = z.object({ invite: PendingInviteSchema });
+export type ListInviteResponse = z.infer<typeof ListInviteResponseSchema>;
