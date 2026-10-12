@@ -1082,3 +1082,62 @@ describe("DELETE /swimmers/:id/registrations/:league", () => {
     expect(mockDbUpdate).not.toHaveBeenCalled();
   });
 });
+
+// ── DELETE /swimmers/:id — archive atomicity ──────────────────────────────────
+
+describe("DELETE /swimmers/:id archive", () => {
+  function archiveMocks() {
+    authAs(profileA);
+    let call = 0;
+    mockDbSelect.mockImplementation(() => {
+      call++;
+      if (call === 1) return requireUserSelect(profileA);
+      if (call === 2) return requireHouseholdMemberSelect(true); // role = "owner"
+      return requireHouseholdSwimmerSelect(true);
+    });
+  }
+
+  it("archives swimmer inside a transaction → 204", async () => {
+    archiveMocks();
+    mockDbTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
+      const tx = {
+        update: vi.fn().mockReturnValue({ set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) }) }),
+        insert: vi.fn().mockReturnValue({ values: vi.fn().mockResolvedValue([]) }),
+      };
+      return fn(tx);
+    });
+
+    const res = await request(app)
+      .delete(`/swimmers/${SWIMMER_A_ID}`)
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(204);
+    expect(mockDbTransaction).toHaveBeenCalledOnce();
+    // Direct db.update must not be called — the route must go through db.transaction.
+    expect(mockDbUpdate).not.toHaveBeenCalled();
+  });
+
+  it("if audit log insert fails inside the transaction → 500; preceding update rolls back", async () => {
+    // In production, db.transaction() issues a single Postgres transaction.
+    // If the audit insert throws, Postgres rolls back the preceding update atomically.
+    // This test verifies the error propagates through the transaction boundary.
+    archiveMocks();
+    const txUpdate = vi.fn().mockReturnValue({ set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) }) });
+    mockDbTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
+      const tx = {
+        update: txUpdate,
+        insert: vi.fn().mockReturnValue({ values: vi.fn().mockRejectedValue(new Error("constraint violation")) }),
+      };
+      return fn(tx);
+    });
+
+    const res = await request(app)
+      .delete(`/swimmers/${SWIMMER_A_ID}`)
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(500);
+    // The update was reached but the transaction as a whole failed.
+    expect(txUpdate).toHaveBeenCalledOnce();
+    expect(mockDbUpdate).not.toHaveBeenCalled();
+  });
+});

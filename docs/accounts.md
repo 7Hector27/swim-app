@@ -28,11 +28,22 @@ Every parent profile belongs to exactly one household. Signup automatically crea
 
 | Role    | Who                                 | Permissions                                                       |
 | ------- | ----------------------------------- | ----------------------------------------------------------------- |
-| owner   | The profile that created the account | Full control: manage swimmers, set `is_public` to `true` or `false`, manage household membership (future) |
-| manager | Additional trusted adults (future)  | Manage swimmers, set `is_public` to `false`; cannot set `is_public` to `true` |
-| viewer  | Read-only household members (future) | View swimmers; no write access                                   |
+| owner   | The profile that created the account | Full control: manage swimmers, set `is_public` to `true` or `false`, manage household membership |
+| manager | Additional trusted adults            | Manage swimmers, set `is_public` to `false`; cannot set `is_public` to `true` |
+| viewer  | Read-only household members          | View swimmers; no write access                                   |
 
-Household membership management (invites, role changes, removal) is out of scope for the current PR.
+### Member management rules
+
+- **Rename** (`PATCH /households/mine`): owner only. Name 1–50 characters.
+- **Change role** (`PATCH /households/mine/members/:profileId`): owner only. Target role must be `manager` or `viewer`; `owner` is set only via transfer. Owner cannot change their own role this way.
+- **Remove member** (`DELETE /households/mine/members/:profileId`): owner only. Cannot remove themselves. The removed member is atomically placed in a new solo household (named from their last name) as its owner.
+- **Leave** (`DELETE /households/mine/members/me`): any non-owner member. Owner must transfer ownership first (409 `must_transfer_first`). The leaver is atomically placed in a new solo household as its owner.
+- **Transfer ownership** (`POST /households/mine/transfer-ownership`): owner only. Target must be an existing member. The transaction demotes the current owner to manager before promoting the target, so the `UNIQUE (householdId) WHERE role='owner'` constraint is never violated. Cannot transfer to self.
+- **Generate invite** (`POST /households/mine/invites`): owner only.
+- **List pending invite** (`GET /households/mine/invites`): owner only. Returns metadata only (id, expiresAt, createdAt) — the raw token is a one-time value returned only at generation time and never stored.
+- **Revoke invite** (`DELETE /households/mine/invites/:id`): owner only.
+
+All write actions produce an audit log entry.
 
 ### Middleware
 

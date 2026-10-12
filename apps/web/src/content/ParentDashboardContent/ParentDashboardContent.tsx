@@ -280,6 +280,12 @@ function AccountCard() {
           Profile and contact info
         </Link>
         <Link
+          href="/household"
+          className="text-sm font-semibold text-link hover:text-link-hover transition-colors duration-150"
+        >
+          Household settings
+        </Link>
+        <Link
           href="/privacy"
           className="text-sm font-semibold text-link hover:text-link-hover transition-colors duration-150"
         >

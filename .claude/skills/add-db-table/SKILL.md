@@ -19,6 +19,7 @@ description: Adds a new Postgres table or changes an existing one using Drizzle,
 
 ## Gotchas
 
+- **Audit log writes always go in the same `db.transaction()` as the change they record.** If the audit insert fails, the whole change rolls back. Never write the audit log as a separate DB call after the update.
 - Never edit or delete a migration that has already been applied. Create a new one instead.
 - Store swim times as integer hundredths (62.00s = 6200), never floats.
 - Don't store values that can be calculated (age, age group, rank, best time). Store the source data instead (birth date, every swim).

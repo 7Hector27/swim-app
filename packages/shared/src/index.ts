@@ -46,8 +46,27 @@ export {
   CoachVisibilityBodySchema,
 } from "./schemas/swimmer";
 
-export type { HouseholdRole, HouseholdMember, HouseholdResponse } from "./schemas/households";
-export { HouseholdRoleSchema, HouseholdMemberSchema, HouseholdResponseSchema, HOUSEHOLD_ROLE_RANK } from "./schemas/households";
+export type {
+  HouseholdRole,
+  HouseholdMember,
+  HouseholdResponse,
+  RenameHouseholdBody,
+  ChangeRoleBody,
+  TransferOwnershipBody,
+  PendingInvite,
+  ListInviteResponse,
+} from "./schemas/households";
+export {
+  HouseholdRoleSchema,
+  HouseholdMemberSchema,
+  HouseholdResponseSchema,
+  HOUSEHOLD_ROLE_RANK,
+  RenameHouseholdBodySchema,
+  ChangeRoleBodySchema,
+  TransferOwnershipBodySchema,
+  PendingInviteSchema,
+  ListInviteResponseSchema,
+} from "./schemas/households";
 
 export type { InviteStatus, InviteStatusResponse, GenerateInviteResponse, AcceptInviteResponse } from "./schemas/invites";
 export { InviteStatusSchema, InviteStatusResponseSchema, GenerateInviteResponseSchema, AcceptInviteResponseSchema } from "./schemas/invites";
