@@ -1,3 +1,5 @@
+import ScrollReveal from "@/components/ScrollReveal";
+
 const steps = [
   {
     numeral: "1",
@@ -28,21 +30,23 @@ export default function HowItWorksSection() {
         </h2>
 
         <div className="grid gap-10 tablet:grid-cols-3 tablet:gap-8">
-          {steps.map((step) => (
-            <div key={step.numeral} className="flex flex-col gap-4">
-              <span
-                className="font-heading font-bold text-5xl leading-none tracking-[0.01em] text-accent-on-section"
-                aria-hidden="true"
-              >
-                {step.numeral}
-              </span>
-              <h3 className="text-text-on-section text-lg font-bold font-body">
-                {step.title}
-              </h3>
-              <p className="text-text-secondary-on-section text-sm leading-relaxed">
-                {step.description}
-              </p>
-            </div>
+          {steps.map((step, index) => (
+            <ScrollReveal key={step.numeral} delay={index * 60}>
+              <div className="flex flex-col gap-4">
+                <span
+                  className="font-heading font-bold text-5xl leading-none tracking-[0.01em] text-accent-on-section"
+                  aria-hidden="true"
+                >
+                  {step.numeral}
+                </span>
+                <h3 className="text-text-on-section text-lg font-bold font-body">
+                  {step.title}
+                </h3>
+                <p className="text-text-secondary-on-section text-sm leading-relaxed">
+                  {step.description}
+                </p>
+              </div>
+            </ScrollReveal>
           ))}
         </div>
       </div>

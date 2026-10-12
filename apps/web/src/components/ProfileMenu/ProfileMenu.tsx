@@ -20,7 +20,7 @@ const COACH_MENU_ITEMS = [
   { label: "Account settings", href: "/account" },
 ] as const;
 
-function ChevronDown() {
+function ChevronDown({ open }: { open: boolean }) {
   return (
     <svg
       width="14"
@@ -28,7 +28,7 @@ function ChevronDown() {
       viewBox="0 0 14 14"
       fill="none"
       aria-hidden="true"
-      className="transition-transform duration-150"
+      className={`${styles.chevron} ${open ? styles.chevronOpen : ""}`}
     >
       <path
         d="M3 5l4 4 4-4"
@@ -135,7 +135,7 @@ export default function ProfileMenu() {
         className="inline-flex items-center gap-1.5 rounded-button bg-card text-text-on-section font-semibold text-sm px-4 h-11 select-none transition-opacity duration-150 hover:opacity-80 active:scale-[0.97]"
       >
         My account
-        <ChevronDown />
+        <ChevronDown open={isOpen} />
       </button>
 
       {isOpen && (

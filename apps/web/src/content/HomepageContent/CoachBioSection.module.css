@@ -1,33 +1,3 @@
-/* Scroll reveal — hidden until IntersectionObserver fires */
-.deckColumn,
-.contentColumn {
-  opacity: 0;
-  transform: translateY(24px);
-  transition:
-    opacity 500ms var(--ease-out-strong),
-    transform 500ms var(--ease-out-strong);
-}
-
-/* Content column enters 60ms after the deck */
-.contentColumn {
-  transition-delay: 60ms;
-}
-
-[data-visible="true"] .deckColumn,
-[data-visible="true"] .contentColumn {
-  opacity: 1;
-  transform: translateY(0);
-}
-
-/* Keep opacity fade (aids comprehension), drop movement */
-@media (prefers-reduced-motion: reduce) {
-  .deckColumn,
-  .contentColumn {
-    transform: none;
-    transition: opacity 300ms var(--ease-out-strong);
-  }
-}
-
 /* Mobile-first: deck above, content below */
 .layout {
   display: flex;

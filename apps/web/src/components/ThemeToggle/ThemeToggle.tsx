@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { useTheme } from "next-themes";
 
+import styles from "./ThemeToggle.module.css";
+
 function SunIcon() {
   return (
     <svg
@@ -67,7 +69,13 @@ export default function ThemeToggle() {
       aria-label={isDark ? "Switch to light theme" : "Switch to dark theme"}
       className="flex items-center justify-center w-10 h-10 rounded-button bg-icon-button-background text-heading hover:opacity-80 transition-opacity duration-150"
     >
-      {mounted ? (isDark ? <SunIcon /> : <MoonIcon />) : <MoonIcon />}
+      {mounted ? (
+        <span key={isDark ? "sun" : "moon"} className={styles.icon}>
+          {isDark ? <SunIcon /> : <MoonIcon />}
+        </span>
+      ) : (
+        <MoonIcon />
+      )}
     </button>
   );
 }
