@@ -65,6 +65,68 @@ describe("catalog sync", () => {
     expect(await db.select().from(ratingScaleLevels)).toHaveLength(ratingCount);
   });
 
+  it("clears parent_skill_id when parentSlug is removed from the catalog", async () => {
+    // Confirm track-start-reaction has a parent set after initial sync
+    const before = await db
+      .select({ id: skills.id, parentSkillId: skills.parentSkillId })
+      .from(skills)
+      .where(eq(skills.slug, "track-start-reaction"))
+      .limit(1);
+
+    expect(before[0]).toBeDefined();
+    expect(before[0]!.parentSkillId).not.toBeNull();
+
+    // Manually clear the parent link — simulates what the catalog would look
+    // like if parentSlug were removed for this skill
+    await db
+      .update(skills)
+      .set({ parentSkillId: null })
+      .where(eq(skills.slug, "track-start-reaction"));
+
+    // Now directly set it back to a non-null value to confirm sync clears it
+    const parentRow = await db
+      .select({ id: skills.id })
+      .from(skills)
+      .where(eq(skills.slug, "track-start"))
+      .limit(1);
+    expect(parentRow[0]).toBeDefined();
+    await db
+      .update(skills)
+      .set({ parentSkillId: parentRow[0]!.id })
+      .where(eq(skills.slug, "track-start-reaction"));
+
+    // Confirm the stale FK is present before sync
+    const stale = await db
+      .select({ parentSkillId: skills.parentSkillId })
+      .from(skills)
+      .where(eq(skills.slug, "track-start-reaction"))
+      .limit(1);
+    expect(stale[0]!.parentSkillId).not.toBeNull();
+
+    // Temporarily remove parentSlug from the catalog entry in memory
+    const category = SKILLS_CATALOG.find((c) => c.slug === "starts-turns-underwaters")!;
+    const skillEntry = category.skills.find((s) => s.slug === "track-start-reaction")!;
+    const originalParentSlug = skillEntry.parentSlug;
+    // @ts-expect-error — intentional mutation for test purposes
+    skillEntry.parentSlug = undefined;
+
+    await syncCatalogFn(db);
+
+    // Restore catalog state
+    // @ts-expect-error — restoring mutation
+    skillEntry.parentSlug = originalParentSlug;
+
+    const after = await db
+      .select({ parentSkillId: skills.parentSkillId })
+      .from(skills)
+      .where(eq(skills.slug, "track-start-reaction"))
+      .limit(1);
+    expect(after[0]!.parentSkillId).toBeNull();
+
+    // Re-sync with original catalog to restore state for subsequent tests
+    await syncCatalogFn(db);
+  });
+
   it("updates a changed descriptor in place on re-sync", async () => {
     const targetSkill = await db
       .select({ id: skills.id })

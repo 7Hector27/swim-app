@@ -1,7 +1,6 @@
 // Core sync logic extracted so it can be called from tests with an injected db.
 
-import { and, inArray, isNull, not } from "drizzle-orm";
-import { eq } from "drizzle-orm";
+import { and, eq, inArray, isNull, not } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import {
   ratingScaleLevels,
@@ -165,6 +164,7 @@ export default async function syncCatalogFn(db: Db): Promise<void> {
             unit: skill.unit ?? null,
             stroke: skill.stroke ?? null,
             appliesTo: skill.appliesTo ?? null,
+            parentSkillId: null,
             sortOrder: skill.sortOrder,
             archivedAt: null,
           },

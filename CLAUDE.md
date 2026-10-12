@@ -29,6 +29,7 @@ pnpm db:down          # stop Supabase local stack
 pnpm db:status        # show running services and connection strings
 pnpm db:generate      # generate Drizzle migration files from schema changes
 pnpm db:migrate       # apply pending migrations
+pnpm db:sync-catalog  # upsert skills catalog reference data (idempotent; run after catalog edits)
 ```
 
 ## Architecture
