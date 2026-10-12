@@ -1,3 +1,5 @@
+import { siteLinks } from "@/lib/siteLinks";
+
 import { COACH_BIO } from "./coachBioCopy";
 import CoachPhotoDeck from "./CoachPhotoDeck";
 import type { CoachPhoto } from "./CoachPhotoDeck";
@@ -30,10 +32,13 @@ export default function CoachBioSection() {
 
             <div>
               <a
-                href="/book"
+                href={siteLinks.booking}
+                target="_blank"
+                rel="noopener noreferrer"
                 className="inline-flex items-center justify-center rounded-button bg-button-primary-background text-button-primary-text font-bold text-sm px-6 h-[52px] transition-opacity duration-200 hover:opacity-90 active:scale-[0.97]"
               >
                 Book a lesson
+                <span className="sr-only"> (opens in a new tab)</span>
               </a>
             </div>
           </div>

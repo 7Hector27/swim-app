@@ -4,6 +4,7 @@ import Link from "next/link";
 import Placeholder from "@/components/Placeholder";
 import SiteFooter from "@/components/SiteFooter";
 import SiteNav from "@/components/SiteNav";
+import { siteLinks } from "@/lib/siteLinks";
 import { fetchSwimmers } from "@/lib/api/swimmers";
 import { removeSwimmer } from "./actions";
 import SwimmerCard from "./SwimmerCard";
@@ -44,14 +45,15 @@ export default async function ParentDashboardContent({ profile, accessToken }: P
               >
                 Add a swimmer
               </Link>
-              <Placeholder>
-                <button
-                  type="button"
-                  className="inline-flex items-center justify-center rounded-button bg-button-primary-background text-button-primary-text font-bold text-sm px-5 h-11"
-                >
-                  Book a lesson
-                </button>
-              </Placeholder>
+              <a
+                href={siteLinks.booking}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center justify-center rounded-button bg-button-primary-background text-button-primary-text font-bold text-sm px-5 h-11 transition-opacity hover:opacity-90"
+              >
+                Book a lesson
+                <span className="sr-only"> (opens in a new tab)</span>
+              </a>
             </div>
           </div>
 

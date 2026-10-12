@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 
+import { siteLinks } from "@/lib/siteLinks";
+
 import {
   PRIVATE_HOURLY_RATE,
   LESSON_30_MIN,
@@ -90,8 +92,16 @@ export const FAQ_ITEMS: FaqItem[] = [
         In summer (June&nbsp;1 through ISL Championships in August) I coach the Stonegate Seahawks from
         3:00 to 7:00&nbsp;pm, so lesson times move outside that window. No lessons on Thursdays or
         weekends. Open times are always live on the{" "}
-        {/* TODO: replace with <a href="/book"> once the booking page exists */}
-        booking page.
+        <a
+          href={siteLinks.booking}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-link hover:text-link-hover transition-colors duration-150"
+        >
+          booking page
+          <span className="sr-only"> (opens in a new tab)</span>
+        </a>
+        .
       </p>
     ),
   },
@@ -166,6 +176,20 @@ export const FAQ_ITEMS: FaqItem[] = [
   },
   {
     question: "How do I pay?",
-    answer: <p className={txt}>Cash, Zelle, check or Venmo.</p>,
+    answer: (
+      <p className={txt}>
+        Cash, Zelle, check or{" "}
+        <a
+          href={siteLinks.venmo.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-link hover:text-link-hover transition-colors duration-150"
+        >
+          Venmo ({siteLinks.venmo.handle})
+          <span className="sr-only"> (opens in a new tab)</span>
+        </a>
+        .
+      </p>
+    ),
   },
 ];

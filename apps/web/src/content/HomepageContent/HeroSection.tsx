@@ -1,15 +1,9 @@
-"use client";
-
-import Link from "next/link";
-
-import { useSession } from "@/components/Providers";
+import { siteLinks } from "@/lib/siteLinks";
 
 import HeroBubbleBg from "./HeroBubbleBg";
 import styles from "./HeroSection.module.css";
 
 export default function HeroSection() {
-  const { isSignedIn } = useSession();
-
   return (
     <section className="relative overflow-hidden bg-background">
       <HeroBubbleBg />
@@ -24,12 +18,15 @@ export default function HeroSection() {
             same full attention.
           </p>
           <div className={`mt-2 ${styles.ctas}`}>
-            <Link
-              href={isSignedIn ? "/dashboard" : "/signup"}
+            <a
+              href={siteLinks.booking}
+              target="_blank"
+              rel="noopener noreferrer"
               className="inline-flex items-center justify-center rounded-button bg-button-primary-background text-button-primary-text font-bold px-8 h-[52px] transition-opacity duration-200 hover:opacity-90 active:scale-[0.97]"
             >
               Book a lesson
-            </Link>
+              <span className="sr-only"> (opens in a new tab)</span>
+            </a>
           </div>
         </div>
       </div>
