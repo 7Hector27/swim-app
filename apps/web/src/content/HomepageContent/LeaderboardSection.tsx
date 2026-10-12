@@ -1,3 +1,5 @@
+import ScrollReveal from "@/components/ScrollReveal";
+
 import ScrollFadeArea from "./ScrollFadeArea";
 
 interface LeaderboardRow {
@@ -119,33 +121,37 @@ export default function LeaderboardSection() {
 
         {/* Desktop: 3-column grid, all cards stretch to the same height. Mobile: horizontal swipe row. */}
         <div className="flex gap-4 overflow-x-auto pb-2 tablet:grid tablet:grid-cols-3 tablet:gap-6 tablet:overflow-visible tablet:pb-0">
-          {cards.map((card) => (
-            <article
+          {cards.map((card, index) => (
+            <ScrollReveal
               key={card.title}
-              className="flex-shrink-0 w-72 tablet:w-auto rounded-card bg-card border border-divider-section p-6 flex flex-col gap-4"
+              delay={index * 60}
+              mobileStagger={false}
+              className="flex-shrink-0 w-72 tablet:w-auto"
             >
-              <div>
-                <h3 className="text-text-on-section font-bold text-base font-body">
-                  {card.title}
-                </h3>
-                {card.subtitle && (
-                  <p className="text-text-secondary-on-section text-sm mt-0.5">
-                    {card.subtitle}
-                  </p>
-                )}
-              </div>
+              <article className="rounded-card bg-card border border-divider-section p-6 flex flex-col gap-4 h-full">
+                <div>
+                  <h3 className="text-text-on-section font-bold text-base font-body">
+                    {card.title}
+                  </h3>
+                  {card.subtitle && (
+                    <p className="text-text-secondary-on-section text-sm mt-0.5">
+                      {card.subtitle}
+                    </p>
+                  )}
+                </div>
 
-              <ScrollFadeArea label={`${card.title} leaderboard`}>
-                <LeaderboardTable rows={card.rows} />
-              </ScrollFadeArea>
+                <ScrollFadeArea label={`${card.title} leaderboard`}>
+                  <LeaderboardTable rows={card.rows} />
+                </ScrollFadeArea>
 
-              <a
-                href={card.href}
-                className="text-accent-on-section text-sm font-semibold hover:underline mt-auto"
-              >
-                View full leaderboard
-              </a>
-            </article>
+                <a
+                  href={card.href}
+                  className="text-accent-on-section text-sm font-semibold hover:underline mt-auto"
+                >
+                  View full leaderboard
+                </a>
+              </article>
+            </ScrollReveal>
           ))}
         </div>
       </div>
