@@ -1,0 +1,26 @@
+.overflowMenu {
+  transform-origin: top right;
+  transition:
+    transform 180ms var(--ease-out-strong, cubic-bezier(0.23, 1, 0.32, 1)),
+    opacity 180ms var(--ease-out-strong, cubic-bezier(0.23, 1, 0.32, 1));
+}
+
+@starting-style {
+  .overflowMenu {
+    transform: scale(0.95);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .overflowMenu {
+    transition: opacity 100ms;
+  }
+
+  @starting-style {
+    .overflowMenu {
+      transform: none;
+      opacity: 0;
+    }
+  }
+}
