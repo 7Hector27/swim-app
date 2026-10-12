@@ -164,6 +164,31 @@ export const householdAuditLog = pgTable("household_audit_log", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }).enableRLS();
 
+// ── Household invites ─────────────────────────────────────────────────────────
+
+export const householdInvites = pgTable(
+  "household_invites",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    householdId: uuid("household_id").notNull().references(() => households.id, { onDelete: "cascade" }),
+    tokenHash: text("token_hash").notNull().unique(),
+    createdBy: uuid("created_by").notNull().references(() => profiles.id, { onDelete: "restrict" }),
+    // Default is set by the DB: now() + interval '72 hours'. Cannot reference
+    // created_at here because column defaults cannot reference sibling columns.
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull().default(sql`now() + interval '72 hours'`),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+    acceptedBy: uuid("accepted_by").references(() => profiles.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    check(
+      "invites_not_both_revoked_and_accepted",
+      sql`NOT (${table.revokedAt} IS NOT NULL AND ${table.acceptedAt} IS NOT NULL)`,
+    ),
+  ],
+).enableRLS();
+
 // ── League registrations ───────────────────────────────────────────────────────
 
 export const leagueRegistrations = pgTable(

@@ -12,6 +12,7 @@ export const SignUpBodySchema = z
       .date()
       .refine((val) => val < todayLA(), "Birth date must be in the past"),
     acceptedTerms: z.literal(true),
+    returnTo: z.string().optional(),
   })
   .strict();
 

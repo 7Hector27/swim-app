@@ -6,7 +6,7 @@ import { createClient } from "@supabase/supabase-js";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import { householdAuditLog, householdMembers, households, profiles, swimmers } from "../../db/schema";
+import { householdAuditLog, householdMembers, households, profiles, swimmerClubs, swimmers } from "../../db/schema";
 
 // All env vars are validated in setup.ts before any test code runs.
 // These getters use non-null assertions since setup.ts guarantees presence.
@@ -49,6 +49,18 @@ export async function closeAdminDb(): Promise<void> {
     adminPool = null;
     adminDbSingleton = null;
   }
+}
+
+/**
+ * Fully removes a swimmer row and all rows that reference it with ON DELETE
+ * RESTRICT foreign keys: household_audit_log.target_swimmer_id and
+ * swimmer_clubs.swimmer_id.  Always use this instead of a bare swimmer delete
+ * in test cleanup so the FK chain is respected.
+ */
+export async function hardDeleteSwimmer(swimmerId: string): Promise<void> {
+  await adminDb().delete(householdAuditLog).where(eq(householdAuditLog.targetSwimmerId, swimmerId));
+  await adminDb().delete(swimmerClubs).where(eq(swimmerClubs.swimmerId, swimmerId));
+  await adminDb().delete(swimmers).where(eq(swimmers.id, swimmerId));
 }
 
 export type TestUser = {
@@ -169,12 +181,17 @@ export async function createTestUser(emailPrefix: string): Promise<TestUser> {
       householdId,
       accessToken,
       cleanup: async () => {
-        // Delete audit log first (ON DELETE RESTRICT on actorId, targetSwimmerId, targetProfileId).
+        // Hard-delete each swimmer individually so the RESTRICT FK chain is
+        // respected: audit_log.target_swimmer_id → swimmer → profile.
+        const swimmerRows = await adminDb()
+          .select({ id: swimmers.id })
+          .from(swimmers)
+          .where(eq(swimmers.householdId, householdId));
+        for (const row of swimmerRows) {
+          await hardDeleteSwimmer(row.id);
+        }
+        // Delete remaining audit log rows (member_added etc. with no swimmer ref).
         await adminDb().delete(householdAuditLog).where(eq(householdAuditLog.householdId, householdId));
-        // Delete swimmers (CASCADE removes swimmerClubs and leagueRegistrations).
-        // swimmers.publicConsentBy references profiles with ON DELETE RESTRICT,
-        // so we must delete swimmers before the auth user delete cascades to profiles.
-        await adminDb().delete(swimmers).where(eq(swimmers.householdId, householdId));
         // Delete members before household (profileId has ON DELETE RESTRICT on profiles).
         await adminDb().delete(householdMembers).where(eq(householdMembers.householdId, householdId));
         await adminDb().delete(households).where(eq(households.id, householdId));

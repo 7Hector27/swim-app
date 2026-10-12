@@ -14,9 +14,13 @@ import FieldError from "./FieldError";
 import type { SignupState } from "./helpers";
 import SuccessScreen from "./SuccessScreen";
 
+interface SignupContentProps {
+  returnTo?: string;
+}
+
 const initialState: SignupState = { status: "idle" };
 
-export default function SignupContent() {
+export default function SignupContent({ returnTo }: SignupContentProps) {
   const [state, formAction, isPending] = useActionState(signup, initialState);
   const [clientAgeBlocked, setClientAgeBlocked] = useState(false);
 
@@ -35,6 +39,9 @@ export default function SignupContent() {
           <p className="text-text-secondary mb-8">Join Axiom Aquatics today.</p>
 
           <form action={formAction} noValidate className="flex flex-col gap-5">
+            {returnTo !== undefined && (
+              <input type="hidden" name="returnTo" value={returnTo} />
+            )}
             <p aria-live="polite" className="text-danger text-sm min-h-5">
               {topError}
             </p>
@@ -148,7 +155,10 @@ export default function SignupContent() {
 
           <p className="text-center text-sm text-text-secondary mt-6">
             Already have an account?{" "}
-            <a href="/login" className="text-link underline hover:text-link-hover">
+            <a
+              href={returnTo !== undefined ? `/login?returnTo=${encodeURIComponent(returnTo)}` : "/login"}
+              className="text-link underline hover:text-link-hover"
+            >
               Log in
             </a>
           </p>

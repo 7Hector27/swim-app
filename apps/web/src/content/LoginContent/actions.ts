@@ -1,8 +1,10 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { LoginBodySchema } from "@swim-app/shared";
+import { isSafeReturnTo, LoginBodySchema } from "@swim-app/shared";
 import { createClient } from "@/lib/supabase/server";
+
+const SITE_ORIGIN = process.env["NEXT_PUBLIC_SITE_URL"] ?? "http://localhost:3000";
 
 export async function login(
   _prev: { error: string | null },
@@ -24,5 +26,9 @@ export async function login(
     return { error: "Email or password is incorrect." };
   }
 
+  const returnToRaw = formData.get("returnTo");
+  if (typeof returnToRaw === "string" && isSafeReturnTo(returnToRaw, SITE_ORIGIN)) {
+    redirect(returnToRaw);
+  }
   redirect("/dashboard");
 }

@@ -8,10 +8,15 @@ export const metadata: Metadata = {
   title: "Create account · Axiom Aquatics",
 };
 
-export default async function SignupPage() {
+export default async function SignupPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ returnTo?: string }>;
+}) {
   const supabase = await createClient();
   const { data } = await supabase.auth.getClaims();
   if (data) redirect("/dashboard");
 
-  return <SignupContent />;
+  const params = await searchParams;
+  return <SignupContent {...(params.returnTo !== undefined && { returnTo: params.returnTo })} />;
 }

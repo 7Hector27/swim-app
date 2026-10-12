@@ -15,7 +15,7 @@ const NOTICE_MESSAGES: Record<string, string> = {
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ notice?: string }>;
+  searchParams: Promise<{ notice?: string; returnTo?: string }>;
 }) {
   const supabase = await createClient();
   const { data } = await supabase.auth.getClaims();
@@ -24,6 +24,12 @@ export default async function LoginPage({
   const params = await searchParams;
   const noticeCode = params.notice ?? "";
   const notice = NOTICE_MESSAGES[noticeCode];
+  const returnTo = params.returnTo;
 
-  return <LoginContent {...(notice !== undefined && { notice })} />;
+  return (
+    <LoginContent
+      {...(notice !== undefined && { notice })}
+      {...(returnTo !== undefined && { returnTo })}
+    />
+  );
 }
