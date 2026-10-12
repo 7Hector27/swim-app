@@ -1,7 +1,7 @@
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 import request from "supertest";
 import pino from "pino";
-import { eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { createApp } from "../../app";
 import {
   householdAuditLog,
@@ -75,11 +75,17 @@ describe("POST /swimmers — atomicity", () => {
         .where(eq(swimmers.firstName, uniqueFirstName));
       expect(swimmerRows).toHaveLength(0);
 
-      // No audit log entry for a swimmer creation should exist (transaction rolled back).
+      // No swimmer-related audit rows should exist for this household (transaction rolled back).
+      // The signup trigger writes a household_created row, so we check only swimmer actions.
       const auditRows = await adminDb()
         .select()
         .from(householdAuditLog)
-        .where(eq(householdAuditLog.householdId, parent.householdId));
+        .where(
+          and(
+            eq(householdAuditLog.householdId, parent.householdId),
+            inArray(householdAuditLog.action, ["swimmer_added", "consent_granted"]),
+          ),
+        );
       expect(auditRows).toHaveLength(0);
 
       // No swimmer_clubs row pointing at the fake club.
