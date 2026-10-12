@@ -106,12 +106,17 @@ coachSwimmersRouter.get(
 
     const swimmerIds = swimmerRows.map((row) => row.id);
 
-    const [clubRows, regRows] = await Promise.all([
+    const [clubRows, regRows, guardianRows] = await Promise.all([
       db.select(swimmerClubColumns).from(swimmerClubs).where(inArray(swimmerClubs.swimmerId, swimmerIds)),
       db
         .select({ swimmerId: leagueRegistrations.swimmerId, league: leagueRegistrations.league })
         .from(leagueRegistrations)
         .where(activeRegsWhere(swimmerIds)),
+      db
+        .select({ swimmerId: guardians.swimmerId, fullName: profiles.fullName })
+        .from(guardians)
+        .innerJoin(profiles, eq(profiles.id, guardians.profileId))
+        .where(inArray(guardians.swimmerId, swimmerIds)),
     ]);
 
     const clubsBySwimmer = new Map<string, SwimmerClubRow[]>();
@@ -128,6 +133,13 @@ coachSwimmersRouter.get(
       leaguesBySwimmer.set(reg.swimmerId, existing);
     }
 
+    const guardianNamesBySwimmer = new Map<string, string[]>();
+    for (const row of guardianRows) {
+      const names = guardianNamesBySwimmer.get(row.swimmerId) ?? [];
+      if (row.fullName !== null) names.push(row.fullName);
+      guardianNamesBySwimmer.set(row.swimmerId, names);
+    }
+
     const today = todayLA();
     const result: CoachSwimmer[] = swimmerRows.map((swimmer) => ({
       id: swimmer.id,
@@ -140,6 +152,7 @@ coachSwimmersRouter.get(
       updatedAt: toISO(swimmer.updatedAt),
       clubs: (clubsBySwimmer.get(swimmer.id) ?? []).map(mapClub),
       currentLeagues: leaguesBySwimmer.get(swimmer.id) ?? [],
+      guardianNames: guardianNamesBySwimmer.get(swimmer.id) ?? [],
     }));
 
     res.json(result);
@@ -192,6 +205,9 @@ coachSwimmersRouter.get(
       clubs: clubRows.map(mapClub),
       currentLeagues: regRows.map((row) => row.league),
       guardians: guardianRows,
+      guardianNames: guardianRows
+        .map((g) => g.fullName)
+        .filter((name): name is string => name !== null),
     };
 
     res.json(result);

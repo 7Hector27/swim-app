@@ -107,6 +107,12 @@ function regsSelect() {
   return { from: vi.fn().mockReturnValue({ where }) };
 }
 
+function guardianNamesSelect() {
+  const where = vi.fn().mockResolvedValue([]);
+  const innerJoin = vi.fn().mockReturnValue({ where });
+  return { from: vi.fn().mockReturnValue({ innerJoin }) };
+}
+
 function guardiansSelect() {
   const where = vi.fn().mockResolvedValue([]);
   const innerJoin = vi.fn().mockReturnValue({ where });
@@ -204,13 +210,14 @@ describe("input validation", () => {
 // ── GET /coach/swimmers ───────────────────────────────────────────────────────
 
 describe("GET /coach/swimmers", () => {
-  it("returns swimmers list with currentLeagues and clubs", async () => {
+  it("returns swimmers list with currentLeagues, clubs, and guardianNames", async () => {
     authAs(profileCoach);
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(profileCoach))
       .mockReturnValueOnce(swimmersSelect([baseSwimmerRow]))
       .mockReturnValueOnce(clubsSelect())
-      .mockReturnValueOnce(regsSelect());
+      .mockReturnValueOnce(regsSelect())
+      .mockReturnValueOnce(guardianNamesSelect());
 
     const res = await request(app)
       .get("/coach/swimmers")
@@ -223,6 +230,7 @@ describe("GET /coach/swimmers", () => {
       lastName: "Smith",
       currentLeagues: [],
       clubs: [],
+      guardianNames: [],
     });
   });
 
@@ -261,6 +269,7 @@ describe("GET /coach/swimmers/:id", () => {
     expect(res.body).toMatchObject({
       id: SWIMMER_A_ID,
       guardians: [],
+      guardianNames: [],
       currentLeagues: [],
     });
   });

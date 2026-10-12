@@ -172,6 +172,7 @@ export const CoachSwimmerSchema = z.object({
   updatedAt: z.string().datetime({ offset: true }),
   clubs: z.array(SwimmerClubSchema),
   currentLeagues: z.array(LeagueSchema),
+  guardianNames: z.array(z.string()),
 });
 
 export type CoachSwimmer = z.infer<typeof CoachSwimmerSchema>;
