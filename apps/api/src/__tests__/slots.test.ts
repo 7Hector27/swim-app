@@ -49,8 +49,8 @@ const FIFTEEN_MS = 15 * 60 * 1000;
 // e.g. pdt("16:30") === new Date("2025-09-16T23:30:00.000Z").getTime()
 //      pdt("17:30") === new Date("2025-09-17T00:30:00.000Z").getTime()
 const pdt = (time: string): number => {
-  const [h, m] = time.split(":").map(Number);
-  return Date.UTC(2025, 8, 16, h! + 7, m!); // September = month index 8
+  const [hour, minute] = time.split(":").map(Number);
+  return Date.UTC(2025, 8, 16, hour! + 7, minute!); // September = month index 8
 };
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -259,9 +259,9 @@ describe("computeAvailableSlots", () => {
   it("returns empty when maxDailyLessonMinutes is fully committed", () => {
     // 4 × 60 min = 240 min = maxDailyLessonMinutes; no room for a 30-min slot.
     const base = pdt("16:30");
-    const h = 60 * 60 * 1000;
+    const hourMs = 60 * 60 * 1000;
     const existingLessons = [0, 1, 2, 3].map((index) => ({
-      startsAt: new Date(base + index * h),
+      startsAt: new Date(base + index * hourMs),
       durationMinutes: 60,
       locationId: "pool-A",
     }));
@@ -283,8 +283,7 @@ describe("computeAvailableSlots", () => {
     const firstSlotMs = pdt("16:30");
     const nowUtc = new Date(firstSlotMs - 16 * 60 * 60 * 1000 + 1_000);
     const slots = computeAvailableSlots(makeBaseParams({ nowUtc }));
-    expect(slots[0]?.startsAt.getTime()).not.toBe(firstSlotMs);
-    expect(slots[0]?.startsAt.getTime()).toBeGreaterThan(firstSlotMs);
+    expect(slots[0]?.startsAt.getTime()).toBe(firstSlotMs + FIFTEEN_MS);
   });
 
   it("slots more than 10 weeks out are excluded", () => {
@@ -447,6 +446,34 @@ describe("computeAvailableSlots", () => {
       makeBaseParams({ date: "2025-11-03", nowUtc: new Date("2025-11-02T00:00:00.000Z") }),
     );
     expect(slots[0]?.startsAt.toISOString()).toBe("2025-11-04T00:30:00.000Z");
+  });
+
+  // ── Summer end boundary ─────────────────────────────────────────────────────
+  // summerEndDate = "2025-08-25" (Monday, ISO 1 — in lessonDays).
+  // Aug 25 itself must use summer hours; Aug 26 (Tuesday) must use school-year hours.
+
+  it("summer end boundary: date === summerEndDate uses summer hours", () => {
+    const slots = computeAvailableSlots(
+      makeBaseParams({
+        date: "2025-08-25",
+        summerEndDate: "2025-08-25",
+        nowUtc: new Date("2025-08-24T00:00:00.000Z"),
+      }),
+    );
+    // First summer slot: 07:00 PDT = 14:00 UTC Aug 25
+    expect(slots[0]?.startsAt.toISOString()).toBe("2025-08-25T14:00:00.000Z");
+  });
+
+  it("summer end boundary: day after summerEndDate uses school-year hours", () => {
+    const slots = computeAvailableSlots(
+      makeBaseParams({
+        date: "2025-08-26",
+        summerEndDate: "2025-08-25",
+        nowUtc: new Date("2025-08-25T00:00:00.000Z"),
+      }),
+    );
+    // First school-year slot: 16:30 PDT = 23:30 UTC Aug 26
+    expect(slots[0]?.startsAt.toISOString()).toBe("2025-08-26T23:30:00.000Z");
   });
 
   it("advance window spanning PDT→PST: slot at UTC+16 h is included even when naive LA diff = 15 h", () => {

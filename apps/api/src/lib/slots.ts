@@ -12,7 +12,7 @@ export interface SlotParams {
   blockedTimes: { startsAt: Date; endsAt: Date }[];
   travelBufferOverrides: { fromLocationId: string; toLocationId: string; bufferMinutes: number }[];
   config: AvailabilityConfig;
-  summerEndDate: Date | null; // resolved from season_summer_end_dates; null → Aug 31
+  summerEndDate: string | null; // YYYY-MM-DD from season_summer_end_dates; null → Aug 31
   gcalBusyTimes: { startsAt: Date; endsAt: Date }[]; // empty until PR 6
   nowUtc: Date;
 }
@@ -23,7 +23,6 @@ export interface Slot {
 }
 
 type Interval = [number, number]; // [startMs, endMs]
-
 const LA_TZ = "America/Los_Angeles";
 const MIN_MS = 60_000;
 const FIFTEEN_MS = 15 * MIN_MS;
@@ -160,9 +159,7 @@ export function computeAvailableSlots(params: SlotParams): Slot[] {
   // Step 2: Determine season.
   const year = date.slice(0, 4);
   const summerStart = `${year}-06-01`;
-  const summerEnd = summerEndDate
-    ? summerEndDate.toISOString().slice(0, 10)
-    : `${year}-08-31`;
+  const summerEnd = summerEndDate ?? `${year}-08-31`;
   const isSummer = date >= summerStart && date <= summerEnd;
 
   // Step 3: Build teaching windows (in UTC, converted from LA wall-clock times).
@@ -221,7 +218,8 @@ export function computeAvailableSlots(params: SlotParams): Slot[] {
 
   if (config.maxDailyLessonMinutes - committedMinutes < durationMinutes) return [];
 
-  // Step 8: Enumerate 15-minute-aligned candidate slots within each gap.
+  // Steps 6 + 8: Subtract forbidden intervals per window (step 6) and enumerate
+  // 15-minute-aligned candidate slots within each gap (step 8).
   const durationMs = durationMinutes * MIN_MS;
   const slots: Slot[] = [];
 
