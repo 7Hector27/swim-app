@@ -203,6 +203,7 @@ describe("PUT /households/mine/home-pool", () => {
       return callback(tx);
     });
 
+
     const res = await request(app)
       .put("/households/mine/home-pool")
       .set("Authorization", "Bearer token")
@@ -230,7 +231,7 @@ describe("PUT /households/mine/home-pool", () => {
       .mockReturnValueOnce(requireHouseholdMemberSelect(true));
 
     mockDbTransaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => {
-      const updateReturning = vi.fn().mockResolvedValue([homeLocationRowA]);
+      const updateReturning = vi.fn().mockResolvedValue([{ id: homeLocationRowA.id }]);
       const updateWhere = vi.fn().mockReturnValue({ returning: updateReturning });
       const updateSet = vi.fn().mockReturnValue({ where: updateWhere });
 
@@ -250,7 +251,7 @@ describe("PUT /households/mine/home-pool", () => {
       .set("Authorization", "Bearer token")
       .send({ address: "456 New St", city: "Irvine", state: "CA", zip: "92620" });
 
-    expect(res.status).toBe(201);
+    expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ address: "456 New St", isHomePool: true });
   });
 

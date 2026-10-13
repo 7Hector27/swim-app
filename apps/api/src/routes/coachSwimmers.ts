@@ -2,7 +2,7 @@ import { Router } from "express";
 import { and, asc, eq, inArray, isNull, or } from "drizzle-orm";
 import type { IdParams } from "@swim-app/shared";
 import { db } from "../db/client";
-import { householdMembers, households, leagueRegistrations, lessonLocations, profiles, swimmers, swimmerClubs } from "../db/schema";
+import { householdMembers, leagueRegistrations, lessonLocations, profiles, swimmers, swimmerClubs } from "../db/schema";
 import { requireUser } from "../middleware/requireUser";
 import { requireCoach } from "../middleware/requireCoach";
 import { validate } from "../middleware/validate";
@@ -198,10 +198,8 @@ coachSwimmersRouter.get(
           city: lessonLocations.city,
           state: lessonLocations.state,
           zip: lessonLocations.zip,
-          householdName: households.name,
         })
         .from(lessonLocations)
-        .innerJoin(households, eq(households.id, lessonLocations.householdId))
         .where(
           and(
             eq(lessonLocations.householdId, swimmer.householdId),

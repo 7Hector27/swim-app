@@ -188,6 +188,7 @@ coachAvailabilityRouter.patch(
   asyncHandler(async (req, res) => {
     const body = req.body as PatchAvailabilityConfigBody;
 
+    // 1. absolute bounds — validate before DB read
     if (body.lessonDays !== undefined) {
       const hasWeekend = body.lessonDays.some((day) => day > 5);
       if (hasWeekend) {
@@ -206,39 +207,37 @@ coachAvailabilityRouter.patch(
       return;
     }
 
-    if (
-      body.schoolYearStartTime !== undefined &&
-      body.schoolYearEndTime !== undefined &&
-      body.schoolYearStartTime >= body.schoolYearEndTime
-    ) {
-      res.status(422).json({ error: "schoolYearStartTime must be before schoolYearEndTime" });
-      return;
-    }
-
-    if (
-      body.summerMorningStartTime !== undefined &&
-      body.summerMorningEndTime !== undefined &&
-      body.summerMorningStartTime >= body.summerMorningEndTime
-    ) {
-      res.status(422).json({ error: "summerMorningStartTime must be before summerMorningEndTime" });
-      return;
-    }
-
-    if (
-      body.summerEveningStartTime !== undefined &&
-      body.summerEveningEndTime !== undefined &&
-      body.summerEveningStartTime >= body.summerEveningEndTime
-    ) {
-      res.status(422).json({ error: "summerEveningStartTime must be before summerEveningEndTime" });
-      return;
-    }
-
+    // 2. fetch existing (needed for merged cross-field validation)
     const existing = await db.select().from(availabilityConfig).limit(1);
     if (!existing[0]) {
       res.status(404).json({ error: "Availability config not found" });
       return;
     }
 
+    // 3. merge patch with existing, then validate every start < end
+    const merged = {
+      schoolYearStartTime: body.schoolYearStartTime ?? existing[0].schoolYearStartTime,
+      schoolYearEndTime: body.schoolYearEndTime ?? existing[0].schoolYearEndTime,
+      summerMorningStartTime: body.summerMorningStartTime ?? existing[0].summerMorningStartTime,
+      summerMorningEndTime: body.summerMorningEndTime ?? existing[0].summerMorningEndTime,
+      summerEveningStartTime: body.summerEveningStartTime ?? existing[0].summerEveningStartTime,
+      summerEveningEndTime: body.summerEveningEndTime ?? existing[0].summerEveningEndTime,
+    };
+
+    if (merged.schoolYearStartTime >= merged.schoolYearEndTime) {
+      res.status(422).json({ error: "schoolYearStartTime must be before schoolYearEndTime" });
+      return;
+    }
+    if (merged.summerMorningStartTime >= merged.summerMorningEndTime) {
+      res.status(422).json({ error: "summerMorningStartTime must be before summerMorningEndTime" });
+      return;
+    }
+    if (merged.summerEveningStartTime >= merged.summerEveningEndTime) {
+      res.status(422).json({ error: "summerEveningStartTime must be before summerEveningEndTime" });
+      return;
+    }
+
+    // 4. apply update
     const rows = await db
       .update(availabilityConfig)
       .set({
@@ -438,14 +437,20 @@ coachAvailabilityRouter.delete(
       return;
     }
 
-    await db
+    const deleted = await db
       .delete(travelBufferOverrides)
       .where(
         and(
           eq(travelBufferOverrides.fromLocationId, fromId),
           eq(travelBufferOverrides.toLocationId, toId),
         ),
-      );
+      )
+      .returning({ fromLocationId: travelBufferOverrides.fromLocationId });
+
+    if (deleted.length === 0) {
+      res.status(404).json({ error: "Travel buffer not found" });
+      return;
+    }
 
     res.status(204).end();
   }),

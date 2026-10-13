@@ -13,12 +13,11 @@ import { asyncHandler } from "../middleware/asyncHandler";
 
 export const locationsRouter = Router();
 
+locationsRouter.use(requireUser, requireParent, requireHouseholdMember);
+
 // GET /locations — named pools + caller's home pool
 locationsRouter.get(
   "/",
-  requireUser,
-  requireParent,
-  requireHouseholdMember,
   validate({}),
   asyncHandler(async (req, res) => {
     const rows = await db
@@ -64,8 +63,8 @@ export function registerHomePoolRoutes(router: Router): void {
       const body = req.body as SetHomePoolBody;
       const { householdId } = req;
 
-      const newLocation = await db.transaction(async (tx) => {
-        await tx
+      const { newLocation, replaced } = await db.transaction(async (tx) => {
+        const deactivated = await tx
           .update(lessonLocations)
           .set({ isActive: false })
           .where(
@@ -73,7 +72,8 @@ export function registerHomePoolRoutes(router: Router): void {
               eq(lessonLocations.householdId, householdId),
               eq(lessonLocations.isActive, true),
             ),
-          );
+          )
+          .returning({ id: lessonLocations.id });
 
         const rows = await tx
           .insert(lessonLocations)
@@ -89,7 +89,7 @@ export function registerHomePoolRoutes(router: Router): void {
           })
           .returning();
 
-        return rows[0]!;
+        return { newLocation: rows[0]!, replaced: deactivated.length > 0 };
       });
 
       const responseBody: LessonLocation = {
@@ -104,7 +104,7 @@ export function registerHomePoolRoutes(router: Router): void {
         sortOrder: newLocation.sortOrder,
       };
 
-      res.status(201).json(responseBody);
+      res.status(replaced ? 200 : 201).json(responseBody);
     }),
   );
 

@@ -438,7 +438,8 @@ describe("DELETE /coach/travel-buffers/:fromId/:toId", () => {
       .mockReturnValueOnce(requireUserSelect(coachProfile))
       .mockReturnValueOnce(whereResolveSelect([{ id: LOCATION_A_ID }, { id: LOCATION_B_ID }]));
 
-    const deleteWhere = vi.fn().mockResolvedValue([]);
+    const deleteReturning = vi.fn().mockResolvedValue([{ fromLocationId: LOCATION_A_ID }]);
+    const deleteWhere = vi.fn().mockReturnValue({ returning: deleteReturning });
     mockDbDelete.mockReturnValue({ where: deleteWhere });
 
     const res = await request(app)
@@ -446,5 +447,57 @@ describe("DELETE /coach/travel-buffers/:fromId/:toId", () => {
       .set("Authorization", "Bearer token");
 
     expect(res.status).toBe(204);
+  });
+
+  it("returns 404 when the travel buffer does not exist", async () => {
+    authAs(coachProfile);
+
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(coachProfile))
+      .mockReturnValueOnce(whereResolveSelect([{ id: LOCATION_A_ID }, { id: LOCATION_B_ID }]));
+
+    const deleteReturning = vi.fn().mockResolvedValue([]);
+    const deleteWhere = vi.fn().mockReturnValue({ returning: deleteReturning });
+    mockDbDelete.mockReturnValue({ where: deleteWhere });
+
+    const res = await request(app)
+      .delete(`/coach/travel-buffers/${LOCATION_A_ID}/${LOCATION_B_ID}`)
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(404);
+  });
+});
+
+// ── PATCH /coach/availability-config cross-field validation with existing config ──
+
+describe("PATCH /coach/availability-config cross-field validation with existing config", () => {
+  beforeEach(() => {
+    authAs(coachProfile);
+  });
+
+  it("returns 422 when schoolYearEndTime patch creates start >= end with existing start", async () => {
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(coachProfile))
+      .mockReturnValueOnce(simpleSelect([availabilityConfigRow]));
+
+    const res = await request(app)
+      .patch("/coach/availability-config")
+      .set("Authorization", "Bearer token")
+      .send({ schoolYearEndTime: "16:00" }); // existing start is "16:30", 16:30 >= 16:00
+
+    expect(res.status).toBe(422);
+  });
+
+  it("returns 422 when summerMorningStartTime patch creates start >= end with existing end", async () => {
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(coachProfile))
+      .mockReturnValueOnce(simpleSelect([availabilityConfigRow]));
+
+    const res = await request(app)
+      .patch("/coach/availability-config")
+      .set("Authorization", "Bearer token")
+      .send({ summerMorningStartTime: "14:30" }); // existing end is "14:00", 14:30 >= 14:00
+
+    expect(res.status).toBe(422);
   });
 });

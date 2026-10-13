@@ -121,12 +121,11 @@ function membersSelect() {
   return { from: vi.fn().mockReturnValue({ innerJoin }) };
 }
 
-function homePoolSelect(row: { address: string; city: string; state: string; zip: string; householdName: string } | null) {
+function homePoolSelect(row: { address: string; city: string; state: string; zip: string } | null) {
   const rows = row ? [row] : [];
   const limit = vi.fn().mockResolvedValue(rows);
   const where = vi.fn().mockReturnValue({ limit });
-  const innerJoin = vi.fn().mockReturnValue({ where });
-  return { from: vi.fn().mockReturnValue({ innerJoin }) };
+  return { from: vi.fn().mockReturnValue({ where }) };
 }
 
 beforeEach(() => {
@@ -264,7 +263,7 @@ describe("GET /coach/swimmers", () => {
 describe("GET /coach/swimmers/:id", () => {
   it("returns swimmer detail with home pool when one is set", async () => {
     authAs(profileCoach);
-    const pool = { address: "123 Main St", city: "Irvine", state: "CA", zip: "92620", householdName: "Smith household" };
+    const pool = { address: "123 Main St", city: "Irvine", state: "CA", zip: "92620" };
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(profileCoach))
       .mockReturnValueOnce(swimmerSingleSelect(baseSwimmerRow))
@@ -281,7 +280,7 @@ describe("GET /coach/swimmers/:id", () => {
     expect(res.body).toMatchObject({
       id: SWIMMER_A_ID,
       members: [],
-      homePool: { address: "123 Main St", householdName: "Smith household" },
+      homePool: { address: "123 Main St" },
     });
   });
 

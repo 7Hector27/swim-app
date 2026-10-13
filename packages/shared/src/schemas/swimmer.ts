@@ -179,7 +179,6 @@ export const CoachSwimmerDetailSchema = CoachSwimmerSchema.extend({
       city: z.string(),
       state: z.string(),
       zip: z.string(),
-      householdName: z.string(),
     })
     .nullable(),
 });
