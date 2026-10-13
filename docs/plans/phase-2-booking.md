@@ -212,7 +212,7 @@ interface SlotParams {
   blockedTimes: { startsAt: Date; endsAt: Date }[];
   travelBufferOverrides: { fromLocationId: string; toLocationId: string; bufferMinutes: number }[];
   config: AvailabilityConfig;   // includes lesson_days
-  summerEndDate: Date | null;   // resolved from season_summer_end_dates for the relevant year
+  summerEndDate: string | null; // YYYY-MM-DD from season_summer_end_dates; null → Aug 31
   gcalBusyTimes: { startsAt: Date; endsAt: Date }[]; // empty until PR 6; app-created events excluded by caller
   nowUtc: Date;                 // injected for testability
 }
@@ -338,6 +338,12 @@ docs/decisions/021-lesson-approval-rules.md
 | POST | /internal/cron/tick | internal (CRON_SECRET header) | Expire past-deadline pending lessons; auto-complete finished approved lessons. Returns counts. |
 
 `requireHouseholdRole("manager")` passes for `manager` and `owner`; rejects `viewer` with 403.
+
+### Calling `computeAvailableSlots`
+
+Every caller must pass only lessons with status `pending` or `approved` in `existingLessons`. Lessons in any other status (`declined`, `expired`, `canceled`, `no_show`, `completed`) must be excluded before the call — `computeAvailableSlots` does not filter by status itself.
+
+`summerEndDate` must be passed as a `YYYY-MM-DD` string. When reading `season_summer_end_dates.end_date` from Drizzle, use string mode (the default for `date` columns) rather than `{ mode: "date" }` — a midnight-UTC `Date` would shift to the previous LA day and misidentify the season boundary.
 
 ### Double-booking prevention
 
