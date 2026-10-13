@@ -224,7 +224,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         type: "rubric",
         stroke: "fly",
         sortOrder: 8,
-        // Fly rubric row (section 6) lists "Head position, Breath control" — not Stroke timing
+        // Fly rubric row (section 6) lists "Head position, Breath control" — not Stroke timing. See ADR 019, question 3.
         builtOnSlugs: ["fly-head-position", "breath-control"],
       },
       // Per-stroke instances of Stroke-breath coordination
@@ -250,6 +250,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         type: "rubric",
         stroke: "breast",
         sortOrder: 11,
+        // Breaststroke doesn't rotate; body-rotation dep may be wrong. See ADR 019, question 10.
         builtOnSlugs: ["breathing-timing-breast", "body-rotation"],
       },
       {
@@ -277,7 +278,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         sortOrder: 1,
         // Rubric says "builds on head-position-overall", but overall is a rollup
         // of these four per-stroke skills — depending on it would be circular.
-        // Using buoyancy-balance (the foundation) instead. Check with Jason.
+        // Using buoyancy-balance (the foundation) instead. See ADR 019, question 1.
         builtOnSlugs: ["buoyancy-balance"],
         descriptors: HEAD_POSITION_DESCRIPTORS,
       },
@@ -386,7 +387,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         type: "rubric",
         stroke: "back",
         sortOrder: 2,
-        // Same rollup-cycle fix as free-head-position. Check with Jason.
+        // Same rollup-cycle fix as free-head-position. See ADR 019, question 1.
         builtOnSlugs: ["buoyancy-balance"],
         descriptors: HEAD_POSITION_DESCRIPTORS,
       },
@@ -509,7 +510,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         type: "rubric",
         stroke: "breast",
         sortOrder: 3,
-        // Same rollup-cycle fix as free-head-position. Check with Jason.
+        // Same rollup-cycle fix as free-head-position. See ADR 019, question 1.
         builtOnSlugs: ["buoyancy-balance"],
         descriptors: HEAD_POSITION_DESCRIPTORS,
       },
@@ -611,7 +612,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         type: "rubric",
         stroke: "fly",
         sortOrder: 4,
-        // Same rollup-cycle fix as free-head-position. Check with Jason.
+        // Same rollup-cycle fix as free-head-position. See ADR 019, question 1.
         builtOnSlugs: ["buoyancy-balance"],
         descriptors: HEAD_POSITION_DESCRIPTORS,
       },
@@ -721,7 +722,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         type: "rubric",
         stroke: "breast",
         sortOrder: 7,
-        // "Stroke timing" → breast-timing (closest equivalent; check with Jason)
+        // "Stroke timing" → breast-timing (closest equivalent). See ADR 019, question 4.
         builtOnSlugs: ["pullout", "breast-timing"],
       },
       {
@@ -730,7 +731,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         type: "rubric",
         stroke: "fly",
         sortOrder: 8,
-        // "Stroke timing" → fly-two-kick-rhythm (closest analog for fly; check with Jason)
+        // "Stroke timing" → fly-two-kick-rhythm (closest analog for fly). See ADR 019, question 5.
         builtOnSlugs: ["udk-free-fly", "fly-two-kick-rhythm"],
       },
 
@@ -850,7 +851,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         slug: "freestyle-flip-turn",
         name: "Freestyle flip turn",
         type: "rubric",
-        // Rubric says "Free, IM breast to free"; IM is not a stroke value (check with Jason)
+        // Rubric says "Free, IM breast to free"; IM is not a stroke value. See ADR 019, question 8.
         appliesTo: ["free"],
         sortOrder: 24,
       },
@@ -879,7 +880,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         slug: "im-fly-to-back",
         name: "Fly to back",
         type: "rubric",
-        // IM turn — check with Jason whether IM needs its own applies_to value
+        // IM turn — stroke enum may not be sufficient here. See ADR 019, question 9.
         appliesTo: ["fly", "back"],
         sortOrder: 28,
       },
@@ -912,7 +913,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         type: "measured",
         unit: "strokes/min",
         sortOrder: 1,
-        // "Stroke timing" is ambiguous here (no stroke-agnostic stroke timing); check with Jason
+        // "Stroke timing" is ambiguous here (no stroke-agnostic equivalent). See ADR 019, question 6.
       },
       {
         slug: "stroke-count",
@@ -920,7 +921,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         type: "measured",
         unit: "strokes/length",
         sortOrder: 2,
-        // "Distance per stroke" → free-distance-per-stroke (only DPS skill); check with Jason
+        // "Distance per stroke" → free-distance-per-stroke (only DPS skill). See ADR 019, question 7.
         builtOnSlugs: ["free-distance-per-stroke"],
       },
       {

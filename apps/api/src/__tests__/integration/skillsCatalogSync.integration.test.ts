@@ -6,11 +6,11 @@ import { eq } from "drizzle-orm";
 import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
 import {
-  ratingScaleLevels,
   skillCategories,
   skillDependencies,
   skillLevelDescriptors,
   skills,
+  ratingScaleLevels,
 } from "../../db/schema";
 import { SKILLS_CATALOG, RATING_SCALE } from "../../db/reference/skillsCatalog";
 import syncCatalogFn from "../../db/scripts/syncCatalogFn";
@@ -25,12 +25,7 @@ beforeAll(() => {
 });
 
 afterAll(async () => {
-  // Clean up catalog rows inserted by these tests
-  await db.delete(skillDependencies);
-  await db.delete(skillLevelDescriptors);
-  await db.delete(skills);
-  await db.delete(skillCategories);
-  await db.delete(ratingScaleLevels);
+  // Catalog tables are reference data shared across test files — do not wipe them.
   await pool.end();
 });
 
@@ -63,6 +58,60 @@ describe("catalog sync", () => {
     expect(await db.select().from(skillLevelDescriptors)).toHaveLength(descriptorCount);
     expect(await db.select().from(skillDependencies)).toHaveLength(dependencyCount);
     expect(await db.select().from(ratingScaleLevels)).toHaveLength(ratingCount);
+  });
+
+  it("removes a stale dependency row when a builtOnSlugs entry is removed", async () => {
+    // free-catch builds on free-reach-before-entry; we'll temporarily remove it
+    const category = SKILLS_CATALOG.find((c) => c.slug === "freestyle")!;
+    const skillEntry = category.skills.find((s) => s.slug === "free-catch")!;
+    const originalBuiltOn = skillEntry.builtOnSlugs!;
+
+    // Confirm the dep exists after an initial sync
+    await syncCatalogFn(db);
+
+    const freeCatchRow = await db
+      .select({ id: skills.id })
+      .from(skills)
+      .where(eq(skills.slug, "free-catch"))
+      .limit(1);
+    expect(freeCatchRow[0]).toBeDefined();
+    const freeCatchId = freeCatchRow[0]!.id;
+
+    const reachRow = await db
+      .select({ id: skills.id })
+      .from(skills)
+      .where(eq(skills.slug, "free-reach-before-entry"))
+      .limit(1);
+    expect(reachRow[0]).toBeDefined();
+    const reachId = reachRow[0]!.id;
+
+    const depBefore = await db
+      .select()
+      .from(skillDependencies)
+      .where(eq(skillDependencies.skillId, freeCatchId));
+    expect(depBefore.some((row) => row.dependsOnSkillId === reachId)).toBe(true);
+
+    // Remove free-reach-before-entry from free-catch's builtOnSlugs
+    skillEntry.builtOnSlugs = originalBuiltOn.filter((s) => s !== "free-reach-before-entry");
+
+    await syncCatalogFn(db);
+
+    skillEntry.builtOnSlugs = originalBuiltOn;
+
+    const depAfter = await db
+      .select()
+      .from(skillDependencies)
+      .where(eq(skillDependencies.skillId, freeCatchId));
+    expect(depAfter.some((row) => row.dependsOnSkillId === reachId)).toBe(false);
+
+    // Re-sync with the original catalog to restore the dep for subsequent tests
+    await syncCatalogFn(db);
+
+    const depRestored = await db
+      .select()
+      .from(skillDependencies)
+      .where(eq(skillDependencies.skillId, freeCatchId));
+    expect(depRestored.some((row) => row.dependsOnSkillId === reachId)).toBe(true);
   });
 
   it("clears parent_skill_id when parentSlug is removed from the catalog", async () => {

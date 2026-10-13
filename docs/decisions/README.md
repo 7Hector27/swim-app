@@ -18,3 +18,5 @@
 | [014](014-supabase-ssr-web-auth.md) | Supabase SSR web auth |
 | [015](015-getuser-over-getclaims.md) | getUser over getClaims |
 | [016](016-swimmer-birth-date-and-public-consent.md) | Swimmer birth dates stored; public display requires explicit consent |
+| [017](017-households-replace-guardians.md) | Replace guardians table with household model |
+| [019](019-skill-catalog-slugs-and-sync.md) | Permanent slugs and catalog sync for the skills rubric |
