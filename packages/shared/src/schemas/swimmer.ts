@@ -173,6 +173,14 @@ export const CoachSwimmerDetailSchema = CoachSwimmerSchema.extend({
       phone: z.string().nullable(),
     }),
   ),
+  homePool: z
+    .object({
+      address: z.string(),
+      city: z.string(),
+      state: z.string(),
+      zip: z.string(),
+    })
+    .nullable(),
 });
 
 export type CoachSwimmerDetail = z.infer<typeof CoachSwimmerDetailSchema>;

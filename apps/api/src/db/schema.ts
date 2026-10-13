@@ -10,6 +10,7 @@ import {
   pgTable,
   primaryKey,
   text,
+  time,
   timestamp,
   uniqueIndex,
   uuid,
@@ -298,5 +299,85 @@ export const leagueRegistrations = pgTable(
       table.league,
       table.seasonStartYear,
     ),
+  ],
+).enableRLS();
+
+// ── Lesson locations ──────────────────────────────────────────────────────────
+
+export const lessonLocations = pgTable("lesson_locations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  address: text("address").notNull(),
+  city: text("city").notNull(),
+  state: text("state").notNull().default("CA"),
+  zip: text("zip").notNull(),
+  // null = named pool (visible to all authenticated users)
+  // non-null = home pool (visible only to coach and that household)
+  householdId: uuid("household_id").references(() => households.id, { onDelete: "cascade" }),
+  isActive: boolean("is_active").notNull().default(true),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdateFn(() => new Date()),
+}).enableRLS();
+
+// ── Availability config (single row) ─────────────────────────────────────────
+
+export const availabilityConfig = pgTable("availability_config", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  // ISO day numbers: 1=Mon … 7=Sun. Default {1,2,3,5} = Mon/Tue/Wed/Fri.
+  lessonDays: integer("lesson_days").array().notNull().default(sql`'{1,2,3,5}'`),
+  schoolYearStartTime: time("school_year_start_time").notNull(),
+  schoolYearEndTime: time("school_year_end_time").notNull(),
+  summerMorningStartTime: time("summer_morning_start_time").notNull(),
+  // Must be <= 15:00 — validated at the API layer, not via DB constraint.
+  summerMorningEndTime: time("summer_morning_end_time").notNull(),
+  // Must be >= 19:00 — validated at the API layer.
+  summerEveningStartTime: time("summer_evening_start_time").notNull(),
+  summerEveningEndTime: time("summer_evening_end_time").notNull(),
+  maxDailyLessonMinutes: integer("max_daily_lesson_minutes").notNull().default(240),
+  bookingMinAdvanceHours: integer("booking_min_advance_hours").notNull().default(16),
+  bookingMaxAdvanceWeeks: integer("booking_max_advance_weeks").notNull().default(10),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdateFn(() => new Date()),
+}).enableRLS();
+
+// ── Per-year summer end dates (ISL Championships vary annually) ───────────────
+
+export const seasonSummerEndDates = pgTable("season_summer_end_dates", {
+  year: integer("year").primaryKey(),
+  endDate: date("end_date").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}).enableRLS();
+
+// ── Blocked times ─────────────────────────────────────────────────────────────
+
+export const blockedTimes = pgTable(
+  "blocked_times",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
+    endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
+    note: text("note"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdateFn(() => new Date()),
+  },
+  (table) => [
+    check("blocked_times_ends_after_starts", sql`${table.endsAt} > ${table.startsAt}`),
+  ],
+).enableRLS();
+
+// ── Travel buffer overrides ───────────────────────────────────────────────────
+
+export const travelBufferOverrides = pgTable(
+  "travel_buffer_overrides",
+  {
+    fromLocationId: uuid("from_location_id").notNull().references(() => lessonLocations.id, { onDelete: "cascade" }),
+    toLocationId: uuid("to_location_id").notNull().references(() => lessonLocations.id, { onDelete: "cascade" }),
+    bufferMinutes: integer("buffer_minutes").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.fromLocationId, table.toLocationId] }),
+    check("travel_buffer_no_self_loop", sql`${table.fromLocationId} <> ${table.toLocationId}`),
   ],
 ).enableRLS();

@@ -186,6 +186,104 @@ Constraints:
 
 ---
 
+## Booking configuration
+
+### `lesson_locations`
+
+Named pools (coach-managed) and household home pools. Named pools have `household_id = NULL`. Home pools belong to a specific household and are visible only to the coach (in per-household context) and that household's members.
+
+| Column | Type | Nullable | Default | Notes |
+|---|---|---|---|---|
+| `id` | `uuid` | no | `gen_random_uuid()` | Primary key |
+| `name` | `text` | no | — | e.g. "Egret Park" or "Home pool" |
+| `address` | `text` | no | — | Street address |
+| `city` | `text` | no | — | |
+| `state` | `text` | no | `'CA'` | |
+| `zip` | `text` | no | — | |
+| `household_id` | `uuid` | yes | `NULL` | FK → `households.id` (cascade on delete). `NULL` = named pool; non-null = home pool. |
+| `is_active` | `boolean` | no | `true` | Soft-delete. Inactive rows are kept for past-lesson address preservation. |
+| `sort_order` | `integer` | no | `0` | Display order for named pools. |
+| `created_at` | `timestamptz` | no | `now()` | |
+| `updated_at` | `timestamptz` | no | `now()` | Auto-updated. |
+
+RLS is enabled. Policies TBD.
+
+**Home pool lifecycle:** `PUT /households/mine/home-pool` inserts a new row and sets `is_active = false` on the prior row (never updates in place). This preserves past lesson addresses when a household changes their pool.
+
+**Seed rows:** Egret Park (45 Ovation, Irvine CA 92620), Swallows Park (60 Lawnwood, Irvine CA 92620), The Commons Park (46 Passage, Irvine CA 92603).
+
+---
+
+### `availability_config`
+
+Single-row table. Jason's lesson schedule parameters.
+
+| Column | Type | Nullable | Default | Notes |
+|---|---|---|---|---|
+| `id` | `uuid` | no | `gen_random_uuid()` | Primary key |
+| `lesson_days` | `integer[]` | no | `{1,2,3,5}` | ISO weekday numbers (1=Mon … 5=Fri) on which lessons are scheduled. |
+| `school_year_start_time` | `time` | no | — | Lesson window start during the school year. |
+| `school_year_end_time` | `time` | no | — | Lesson window end during the school year. |
+| `summer_morning_start_time` | `time` | no | — | Summer morning window start. |
+| `summer_morning_end_time` | `time` | no | — | Summer morning window end. Must be ≤ 15:00. |
+| `summer_evening_start_time` | `time` | no | — | Summer evening window start. Must be ≥ 19:00. |
+| `summer_evening_end_time` | `time` | no | — | Summer evening window end. |
+| `max_daily_lesson_minutes` | `integer` | no | `240` | Total lesson minutes Jason will teach per day. |
+| `booking_min_advance_hours` | `integer` | no | `16` | Minimum hours in advance a lesson can be booked. |
+| `booking_max_advance_weeks` | `integer` | no | `10` | Maximum weeks in advance a lesson can be booked. |
+| `created_at` | `timestamptz` | no | `now()` | |
+| `updated_at` | `timestamptz` | no | `now()` | Auto-updated. |
+
+RLS is enabled. Policies TBD.
+
+---
+
+### `season_summer_end_dates`
+
+Per-year summer end dates (ISL Championships vary each year).
+
+| Column | Type | Nullable | Notes |
+|---|---|---|---|
+| `year` | `integer` | no | Primary key. Calendar year (e.g. 2025). |
+| `end_date` | `date` | no | Last day of summer for that year. Slot calculator falls back to August 31 if no row exists for a given year. |
+| `created_at` | `timestamptz` | no | `now()` |
+
+RLS is enabled. Policies TBD.
+
+---
+
+### `blocked_times`
+
+Time ranges during which Jason is unavailable (holidays, Calendly bookings, etc.).
+
+| Column | Type | Nullable | Default | Notes |
+|---|---|---|---|---|
+| `id` | `uuid` | no | `gen_random_uuid()` | Primary key |
+| `starts_at` | `timestamptz` | no | — | |
+| `ends_at` | `timestamptz` | no | — | Must be > `starts_at` (CHECK constraint). |
+| `note` | `text` | yes | — | Optional label (e.g. "holiday", "Calendly booking"). |
+| `created_at` | `timestamptz` | no | `now()` | |
+| `updated_at` | `timestamptz` | no | `now()` | Auto-updated. |
+
+RLS is enabled. Policies TBD.
+
+---
+
+### `travel_buffer_overrides`
+
+Per-pair overrides for the default 30-minute travel buffer between pools. Same-pool buffer is always 0 (computed, not stored).
+
+| Column | Type | Nullable | Notes |
+|---|---|---|---|
+| `from_location_id` | `uuid` | no | PK component; FK → `lesson_locations.id` (cascade on delete). Named pools only — home pool IDs are rejected at the API layer. |
+| `to_location_id` | `uuid` | no | PK component; FK → `lesson_locations.id` (cascade on delete). Named pools only. |
+| `buffer_minutes` | `integer` | no | Override value in minutes. |
+| `created_at` | `timestamptz` | no | `now()` |
+
+Constraints: composite PK `(from_location_id, to_location_id)`, CHECK `from_location_id <> to_location_id`.
+
+RLS is enabled. Policies TBD.
+
 ---
 
 ## Skills catalog

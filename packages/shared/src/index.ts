@@ -93,3 +93,32 @@ export {
 export { calculateAge } from "./lib/calculateAge";
 export { todayLA } from "./lib/todayLA";
 export { isSafeReturnTo } from "./lib/isSafeReturnTo";
+
+export type {
+  LessonLocation,
+  SetHomePoolBody,
+  CreateLocationBody,
+  PatchLocationBody,
+  AvailabilityConfig,
+  PatchAvailabilityConfigBody,
+  BlockedTime,
+  CreateBlockedTimeBody,
+  TravelBufferOverride,
+  UpsertTravelBufferBody,
+  SeasonSummerEndDate,
+  SetSeasonEndDateBody,
+} from "./schemas/booking";
+export {
+  LessonLocationSchema,
+  SetHomePoolBodySchema,
+  CreateLocationBodySchema,
+  PatchLocationBodySchema,
+  AvailabilityConfigSchema,
+  PatchAvailabilityConfigBodySchema,
+  BlockedTimeSchema,
+  CreateBlockedTimeBodySchema,
+  TravelBufferOverrideSchema,
+  UpsertTravelBufferBodySchema,
+  SeasonSummerEndDateSchema,
+  SetSeasonEndDateBodySchema,
+} from "./schemas/booking";

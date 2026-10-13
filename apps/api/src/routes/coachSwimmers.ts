@@ -2,7 +2,7 @@ import { Router } from "express";
 import { and, asc, eq, inArray, isNull, or } from "drizzle-orm";
 import type { IdParams } from "@swim-app/shared";
 import { db } from "../db/client";
-import { householdMembers, leagueRegistrations, profiles, swimmers, swimmerClubs } from "../db/schema";
+import { householdMembers, leagueRegistrations, lessonLocations, profiles, swimmers, swimmerClubs } from "../db/schema";
 import { requireUser } from "../middleware/requireUser";
 import { requireCoach } from "../middleware/requireCoach";
 import { validate } from "../middleware/validate";
@@ -181,7 +181,7 @@ coachSwimmersRouter.get(
       return;
     }
 
-    const [clubRows, regRows, memberRows] = await Promise.all([
+    const [clubRows, regRows, memberRows, homePoolRows] = await Promise.all([
       db.select(swimmerClubColumns).from(swimmerClubs).where(eq(swimmerClubs.swimmerId, swimmerId)),
       db
         .select({ swimmerId: leagueRegistrations.swimmerId, league: leagueRegistrations.league })
@@ -192,7 +192,24 @@ coachSwimmersRouter.get(
         .from(householdMembers)
         .innerJoin(profiles, eq(profiles.id, householdMembers.profileId))
         .where(eq(householdMembers.householdId, swimmer.householdId)),
+      db
+        .select({
+          address: lessonLocations.address,
+          city: lessonLocations.city,
+          state: lessonLocations.state,
+          zip: lessonLocations.zip,
+        })
+        .from(lessonLocations)
+        .where(
+          and(
+            eq(lessonLocations.householdId, swimmer.householdId),
+            eq(lessonLocations.isActive, true),
+          ),
+        )
+        .limit(1),
     ]);
+
+    const homePool = homePoolRows[0] ?? null;
 
     const result: CoachSwimmerDetail = {
       id: swimmer.id,
@@ -210,6 +227,7 @@ coachSwimmersRouter.get(
       memberNames: memberRows
         .map((m) => m.fullName)
         .filter((name): name is string => name !== null),
+      homePool,
     };
 
     res.json(result);

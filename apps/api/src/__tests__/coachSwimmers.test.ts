@@ -121,6 +121,13 @@ function membersSelect() {
   return { from: vi.fn().mockReturnValue({ innerJoin }) };
 }
 
+function homePoolSelect(row: { address: string; city: string; state: string; zip: string } | null) {
+  const rows = row ? [row] : [];
+  const limit = vi.fn().mockResolvedValue(rows);
+  const where = vi.fn().mockReturnValue({ limit });
+  return { from: vi.fn().mockReturnValue({ where }) };
+}
+
 beforeEach(() => {
   vi.resetAllMocks();
 });
@@ -254,14 +261,16 @@ describe("GET /coach/swimmers", () => {
 // ── GET /coach/swimmers/:id ───────────────────────────────────────────────────
 
 describe("GET /coach/swimmers/:id", () => {
-  it("returns swimmer detail with members", async () => {
+  it("returns swimmer detail with home pool when one is set", async () => {
     authAs(profileCoach);
+    const pool = { address: "123 Main St", city: "Irvine", state: "CA", zip: "92620" };
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(profileCoach))
       .mockReturnValueOnce(swimmerSingleSelect(baseSwimmerRow))
       .mockReturnValueOnce(clubsSelect())
       .mockReturnValueOnce(regsSelect())
-      .mockReturnValueOnce(membersSelect());
+      .mockReturnValueOnce(membersSelect())
+      .mockReturnValueOnce(homePoolSelect(pool));
 
     const res = await request(app)
       .get(`/coach/swimmers/${SWIMMER_A_ID}`)
@@ -271,9 +280,26 @@ describe("GET /coach/swimmers/:id", () => {
     expect(res.body).toMatchObject({
       id: SWIMMER_A_ID,
       members: [],
-      memberNames: [],
-      currentLeagues: [],
+      homePool: { address: "123 Main St" },
     });
+  });
+
+  it("returns null homePool when no home pool is set", async () => {
+    authAs(profileCoach);
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(profileCoach))
+      .mockReturnValueOnce(swimmerSingleSelect(baseSwimmerRow))
+      .mockReturnValueOnce(clubsSelect())
+      .mockReturnValueOnce(regsSelect())
+      .mockReturnValueOnce(membersSelect())
+      .mockReturnValueOnce(homePoolSelect(null));
+
+    const res = await request(app)
+      .get(`/coach/swimmers/${SWIMMER_A_ID}`)
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(200);
+    expect(res.body.homePool).toBeNull();
   });
 
   it("returns 404 for archived or missing swimmer", async () => {

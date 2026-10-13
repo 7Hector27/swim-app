@@ -72,6 +72,7 @@ Coaches access swimmer data through dedicated `/coach/swimmers` routes protected
 - Allow setting `isPublic` to `false` on any swimmer; setting it to `true` is always a household-owner-only action
 - Never expose `publicConsentBy` or `publicConsentAt` fields to the response
 - The roster list (`GET /coach/swimmers`) includes `memberNames` (full names of household members) per swimmer — no contact details. This is intentional: the coach needs to know which family a swimmer belongs to.
+- The swimmer detail (`GET /coach/swimmers/:id`) includes the household's active home pool address. The coach needs the address because lessons take place there. This address is returned only in the per-household context of a single swimmer lookup — never in a flat list of all locations. The coach cannot edit a household's home pool address; that is managed exclusively by the household owner.
 
 ## Kids' data
 
