@@ -339,6 +339,10 @@ docs/decisions/021-lesson-approval-rules.md
 
 `requireHouseholdRole("manager")` passes for `manager` and `owner`; rejects `viewer` with 403.
 
+### Calling `computeAvailableSlots`
+
+Every caller must pass only lessons with status `pending` or `approved` in `existingLessons`. Lessons in any other status (`declined`, `expired`, `canceled`, `no_show`, `completed`) must be excluded before the call — `computeAvailableSlots` does not filter by status itself.
+
 ### Double-booking prevention
 
 Inside the `POST /lessons` transaction:

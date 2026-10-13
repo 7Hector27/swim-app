@@ -42,6 +42,8 @@ const makeBaseParams = (overrides: Partial<SlotParams> = {}): SlotParams => ({
   ...overrides,
 });
 
+const FIFTEEN_MS = 15 * 60 * 1000;
+
 // UTC ms for a wall-clock PDT time on BASE_DATE (Sept 16, 2025 PDT = UTC-7).
 // Uses Date.UTC so hour+7 overflow rolls into the next day correctly.
 // e.g. pdt("16:30") === new Date("2025-09-16T23:30:00.000Z").getTime()
@@ -368,47 +370,99 @@ describe("computeAvailableSlots", () => {
   });
 
   // ── DST — spring forward (2025-03-09) ──────────────────────────────────────
+  // March 9, 2025 is a Sunday (ISO 7); config must include 7 to generate slots.
+  // Clocks spring 2 AM PST → 3 AM PDT (UTC transition: 10:00 UTC).
+  // School-year window 16:30–19:30 PDT = 23:30 UTC Mar 9 → 02:30 UTC Mar 10.
+  // The 3-hour window yields 11 × 30-min slots.
 
-  it("DST spring forward: correct wall-clock slots, no phantom times", () => {
-    // March 9, 2025 is a Sunday (ISO 7). Clocks spring 2 AM → 3 AM.
-    // After the transition, LA is PDT (UTC-7).
-    // School-year window 16:30–19:30 PDT = 23:30 UTC Mar 9 → 02:30 UTC Mar 10.
+  it("spring-forward day (2025-03-09, Sunday with lessonDays=[…,7]): 11 correct slots, no phantoms", () => {
     const config = makeConfig({ lessonDays: [1, 2, 3, 5, 7] });
-    const nowUtc = new Date("2025-03-08T00:00:00.000Z"); // 47 h before window
-
     const slots = computeAvailableSlots(
-      makeBaseParams({ date: "2025-03-09", config, nowUtc }),
+      makeBaseParams({ date: "2025-03-09", config, nowUtc: new Date("2025-03-08T00:00:00.000Z") }),
     );
-
-    expect(slots.length).toBeGreaterThan(0);
-    // First 30-min slot: 16:30 PDT = 23:30 UTC March 9
-    expect(slots[0]?.startsAt.toISOString()).toBe("2025-03-09T23:30:00.000Z");
-    // No duplicate start times (no phantom slots from the missing 2–3 AM hour)
+    expect(slots).toHaveLength(11);
+    expect(slots[0]?.startsAt.toISOString()).toBe("2025-03-09T23:30:00.000Z"); // 16:30 PDT
+    expect(slots[10]?.startsAt.toISOString()).toBe("2025-03-10T02:00:00.000Z"); // 19:00 PDT
     const startMs = slots.map((s) => s.startsAt.getTime());
-    expect(new Set(startMs).size).toBe(startMs.length);
+    expect(new Set(startMs).size).toBe(startMs.length); // no phantom duplicates
+  });
+
+  it("Friday before spring forward (2025-03-07, PST): 4:30 PM LA = 00:30 UTC next day", () => {
+    // ISO 5 (Friday), PST = UTC-8. 16:30 + 8 = 00:30 UTC March 8.
+    const slots = computeAvailableSlots(
+      makeBaseParams({ date: "2025-03-07", nowUtc: new Date("2025-03-06T00:00:00.000Z") }),
+    );
+    expect(slots[0]?.startsAt.toISOString()).toBe("2025-03-08T00:30:00.000Z");
+  });
+
+  it("Monday after spring forward (2025-03-10, PDT): 4:30 PM LA = 23:30 UTC same day", () => {
+    // ISO 1 (Monday), PDT = UTC-7. 16:30 + 7 = 23:30 UTC March 10.
+    const slots = computeAvailableSlots(
+      makeBaseParams({ date: "2025-03-10", nowUtc: new Date("2025-03-09T00:00:00.000Z") }),
+    );
+    expect(slots[0]?.startsAt.toISOString()).toBe("2025-03-10T23:30:00.000Z");
+  });
+
+  it("advance window spanning PST→PDT: slot at UTC-15 h is excluded even when naive LA diff = 16 h", () => {
+    // nowUtc = 08:30 UTC March 9 → in PST (before 10:00 UTC transition), LA = 00:30 PST.
+    // Slot 16:30 PDT = 23:30 UTC March 9.  UTC gap = 15 h → EXCLUDED.
+    // Naive "slotLA − nowLA" = 16:30 − 00:30 = 16 h; buggy code would include it.
+    const config = makeConfig({ lessonDays: [1, 2, 3, 5, 7] });
+    const nowUtc = new Date("2025-03-09T08:30:00.000Z");
+    const slots = computeAvailableSlots(makeBaseParams({ date: "2025-03-09", config, nowUtc }));
+    expect(slots.some((s) => s.startsAt.toISOString() === "2025-03-09T23:30:00.000Z")).toBe(false);
+    // Slot 17:30 PDT = 00:30 UTC March 10: UTC gap = 16 h → INCLUDED.
+    expect(slots.some((s) => s.startsAt.toISOString() === "2025-03-10T00:30:00.000Z")).toBe(true);
   });
 
   // ── DST — fall back (2025-11-02) ───────────────────────────────────────────
+  // November 2, 2025 is a Sunday (ISO 7); config must include 7 to generate slots.
+  // Clocks fall 2 AM PDT → 1 AM PST (UTC transition: 09:00 UTC).
+  // School-year window 16:30–19:30 PST = 00:30 UTC Nov 3 → 03:30 UTC Nov 3.
+  // The 3-hour window yields 11 × 30-min slots.
 
-  it("DST fall back: correct wall-clock slots, no duplicate times", () => {
-    // November 2, 2025 is a Sunday (ISO 7). Clocks fall 2 AM → 1 AM.
-    // After the transition, LA is PST (UTC-8).
-    // School-year window 16:30–19:30 PST = 00:30 UTC Nov 3 → 03:30 UTC Nov 3.
+  it("fall-back day (2025-11-02, Sunday with lessonDays=[…,7]): 11 correct slots, no duplicates", () => {
     const config = makeConfig({ lessonDays: [1, 2, 3, 5, 7] });
-    const nowUtc = new Date("2025-11-01T00:00:00.000Z");
-
     const slots = computeAvailableSlots(
-      makeBaseParams({ date: "2025-11-02", config, nowUtc }),
+      makeBaseParams({ date: "2025-11-02", config, nowUtc: new Date("2025-11-01T00:00:00.000Z") }),
     );
-
-    expect(slots.length).toBeGreaterThan(0);
-    // First 30-min slot: 16:30 PST = 00:30 UTC November 3
-    expect(slots[0]?.startsAt.toISOString()).toBe("2025-11-03T00:30:00.000Z");
-    // No duplicate start times (the repeated 1–2 AM hour doesn't affect the window)
+    expect(slots).toHaveLength(11);
+    expect(slots[0]?.startsAt.toISOString()).toBe("2025-11-03T00:30:00.000Z"); // 16:30 PST
+    expect(slots[10]?.startsAt.toISOString()).toBe("2025-11-03T03:00:00.000Z"); // 19:00 PST
     const startMs = slots.map((s) => s.startsAt.getTime());
-    expect(new Set(startMs).size).toBe(startMs.length);
+    expect(new Set(startMs).size).toBe(startMs.length); // no duplicates from repeated 1–2 AM hour
+  });
+
+  it("Friday before fall back (2025-10-31, PDT): 4:30 PM LA = 23:30 UTC same day", () => {
+    // ISO 5 (Friday), PDT = UTC-7. 16:30 + 7 = 23:30 UTC Oct 31.
+    const slots = computeAvailableSlots(
+      makeBaseParams({ date: "2025-10-31", nowUtc: new Date("2025-10-30T00:00:00.000Z") }),
+    );
+    expect(slots[0]?.startsAt.toISOString()).toBe("2025-10-31T23:30:00.000Z");
+  });
+
+  it("Monday after fall back (2025-11-03, PST): 4:30 PM LA = 00:30 UTC next day", () => {
+    // ISO 1 (Monday), PST = UTC-8. 16:30 + 8 = 00:30 UTC Nov 4.
+    const slots = computeAvailableSlots(
+      makeBaseParams({ date: "2025-11-03", nowUtc: new Date("2025-11-02T00:00:00.000Z") }),
+    );
+    expect(slots[0]?.startsAt.toISOString()).toBe("2025-11-04T00:30:00.000Z");
+  });
+
+  it("advance window spanning PDT→PST: slot at UTC+16 h is included even when naive LA diff = 15 h", () => {
+    // nowUtc = 08:30 UTC Nov 2 → still PDT (before 09:00 UTC transition), LA = 01:30 PDT.
+    // Slot 16:30 PST Nov 2 = 00:30 UTC Nov 3.  UTC gap = 16 h → INCLUDED.
+    // Naive "slotLA − nowLA" = 16:30 − 01:30 = 15 h; buggy code would exclude it.
+    const config = makeConfig({ lessonDays: [1, 2, 3, 5, 7] });
+    const nowUtc = new Date("2025-11-02T08:30:00.000Z");
+    const slots = computeAvailableSlots(makeBaseParams({ date: "2025-11-02", config, nowUtc }));
+    expect(slots[0]?.startsAt.toISOString()).toBe("2025-11-03T00:30:00.000Z"); // exactly 16 UTC h out
+    // 1 second later: 16 h − 1 s → first slot excluded; 16:45 PST (00:45 UTC Nov 3) included.
+    const nowUtc1s = new Date("2025-11-02T08:30:01.000Z");
+    const slots1s = computeAvailableSlots(
+      makeBaseParams({ date: "2025-11-02", config, nowUtc: nowUtc1s }),
+    );
+    expect(slots1s[0]?.startsAt.toISOString()).toBe("2025-11-03T00:45:00.000Z");
   });
 });
 
-// ── Module-level constant used in granularity test ─────────────────────────
-const FIFTEEN_MS = 15 * 60 * 1000;
