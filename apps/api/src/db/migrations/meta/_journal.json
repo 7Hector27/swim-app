@@ -78,6 +78,27 @@
       "when": 1791842156664,
       "tag": "0010_abandoned_paladin",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1791930972683,
+      "tag": "0011_perpetual_skaar",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1791930976144,
+      "tag": "0012_seed_lesson_locations",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1791930976969,
+      "tag": "0013_seed_availability_config",
+      "breakpoints": true
     }
   ]
 }

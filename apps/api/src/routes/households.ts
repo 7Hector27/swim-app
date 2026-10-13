@@ -31,6 +31,7 @@ import { requireHouseholdRole } from "../middleware/requireHouseholdRole";
 import { validate } from "../middleware/validate";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { isActiveSwimmer } from "../db/queries";
+import { registerHomePoolRoutes } from "./locations";
 
 const ProfileIdParamsSchema = z.object({ profileId: z.string().uuid() });
 type ProfileIdParams = z.infer<typeof ProfileIdParamsSchema>;
@@ -45,6 +46,8 @@ function deriveHouseholdName(fullName: string | null): string {
 }
 
 export const householdsRouter = Router();
+
+registerHomePoolRoutes(householdsRouter);
 
 householdsRouter.get(
   "/mine",
