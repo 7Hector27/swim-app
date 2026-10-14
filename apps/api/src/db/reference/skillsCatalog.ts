@@ -1,5 +1,6 @@
 // Typed catalog of every skill category and skill, transcribed from
 // docs/reference/skill-rubric.md (sections 1–9). Build decisions from section 10.
+// Updated per Jason's Phase 1 answers (docs/reference/skills-rubric-answers-2026-10.md).
 
 export type SkillType = "rubric" | "measured" | "score" | "composite" | "rollup";
 export type Stroke = "free" | "back" | "breast" | "fly";
@@ -20,6 +21,8 @@ export type CatalogSkill = {
   sortOrder: number;
   builtOnSlugs?: string[];
   descriptors?: CatalogDescriptor[];
+  faultTags?: string[];
+  ratedPerSide?: boolean;
 };
 
 export type CatalogCategory = {
@@ -97,13 +100,15 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         name: "Buoyancy & balance",
         type: "rubric",
         sortOrder: 1,
+        // Per Jason A1: buoyancy-balance depends on head-position-overall and core-stability.
+        builtOnSlugs: ["head-position-overall", "core-stability"],
       },
       {
         slug: "head-position-overall",
         name: "Head position (overall)",
         type: "rollup",
         sortOrder: 2,
-        builtOnSlugs: ["buoyancy-balance"],
+        // Per Jason A1: head-position-overall is a pure rollup — no explicit deps.
       },
       {
         slug: "horizontal-alignment",
@@ -125,24 +130,23 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         type: "rubric",
         sortOrder: 5,
       },
-      {
-        slug: "body-rotation",
-        name: "Body rotation",
-        type: "rubric",
-        appliesTo: ["free", "back"],
-        sortOrder: 6,
-        builtOnSlugs: ["core-stability", "horizontal-alignment"],
-      },
+      // body-rotation archived (replaced by per-stroke free-rotation; back-rotation already existed).
       {
         slug: "static-streamline",
         name: "Static streamline",
         type: "rubric",
-        sortOrder: 7,
+        sortOrder: 6,
         builtOnSlugs: ["core-stability"],
       },
       {
         slug: "finger-spacing",
         name: "Finger spacing",
+        type: "rubric",
+        sortOrder: 7,
+      },
+      {
+        slug: "sculling",
+        name: "Sculling / feel for the water",
         type: "rubric",
         sortOrder: 8,
       },
@@ -175,47 +179,25 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
           { level: 5, text: "Hits the target breaths at race tempo, repeatable on normal rest." },
         ],
       },
-      {
-        slug: "rhythmic-breathing",
-        name: "Rhythmic breathing",
-        type: "rubric",
-        appliesTo: ["free", "fly"],
-        sortOrder: 3,
-        builtOnSlugs: ["exhalation", "head-position-overall"],
-      },
-      {
-        slug: "bilateral-breathing",
-        name: "Bilateral breathing",
-        type: "rubric",
-        appliesTo: ["free"],
-        sortOrder: 4,
-        builtOnSlugs: ["rhythmic-breathing", "body-rotation"],
-      },
-      // Per-stroke instances of Breathing timing (section 10: "Each stroke" → one per stroke)
+      // rhythmic-breathing (free+fly, shared) archived — replaced by per-stroke below.
+      // bilateral-breathing (shared) archived — replaced by free-bilateral-breathing below.
+      // Per-stroke instances of Breathing timing
       {
         slug: "breathing-timing-free",
         name: "Breathing timing",
         type: "rubric",
         stroke: "free",
-        sortOrder: 5,
+        sortOrder: 3,
+        ratedPerSide: true,
         builtOnSlugs: ["free-head-position", "free-stroke-timing"],
       },
-      {
-        slug: "breathing-timing-back",
-        name: "Breathing timing",
-        type: "rubric",
-        stroke: "back",
-        sortOrder: 6,
-        // "Head stability" → back-head-position-stability (section 10 resolution)
-        builtOnSlugs: ["back-head-position-stability", "back-stroke-timing"],
-      },
+      // breathing-timing-back archived per Jason A5.
       {
         slug: "breathing-timing-breast",
         name: "Breathing timing",
         type: "rubric",
         stroke: "breast",
-        sortOrder: 7,
-        // Breaststroke has "Timing" not "Stroke timing" (section 10 resolution)
+        sortOrder: 4,
         builtOnSlugs: ["breast-head-position", "breast-timing"],
       },
       {
@@ -223,9 +205,9 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         name: "Breathing timing",
         type: "rubric",
         stroke: "fly",
-        sortOrder: 8,
-        // Fly rubric row (section 6) lists "Head position, Breath control" — not Stroke timing. See ADR 019, question 3.
-        builtOnSlugs: ["fly-head-position", "breath-control"],
+        sortOrder: 5,
+        // Per Jason A7: fly breathing timing builds on fly-head-position and fly-two-kick-rhythm.
+        builtOnSlugs: ["fly-head-position", "fly-two-kick-rhythm"],
       },
       // Per-stroke instances of Stroke-breath coordination
       {
@@ -233,33 +215,63 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         name: "Stroke-breath coordination",
         type: "rubric",
         stroke: "free",
-        sortOrder: 9,
-        builtOnSlugs: ["breathing-timing-free", "body-rotation"],
+        sortOrder: 6,
+        ratedPerSide: true,
+        // Per Jason A15: links to free-rotation, not shared body-rotation.
+        builtOnSlugs: ["breathing-timing-free", "free-rotation"],
       },
-      {
-        slug: "stroke-breath-coordination-back",
-        name: "Stroke-breath coordination",
-        type: "rubric",
-        stroke: "back",
-        sortOrder: 10,
-        builtOnSlugs: ["breathing-timing-back", "body-rotation"],
-      },
+      // stroke-breath-coordination-back archived per Jason A5.
       {
         slug: "stroke-breath-coordination-breast",
         name: "Stroke-breath coordination",
         type: "rubric",
         stroke: "breast",
-        sortOrder: 11,
-        // Breaststroke doesn't rotate; body-rotation dep may be wrong. See ADR 019, question 10.
-        builtOnSlugs: ["breathing-timing-breast", "body-rotation"],
+        sortOrder: 7,
+        // Per Jason A10: body-rotation removed from breaststroke. Depends only on breathing-timing-breast.
+        builtOnSlugs: ["breathing-timing-breast"],
       },
       {
         slug: "stroke-breath-coordination-fly",
         name: "Stroke-breath coordination",
         type: "rubric",
         stroke: "fly",
+        sortOrder: 8,
+        // Per Jason A10: body-rotation removed from fly coordination.
+        builtOnSlugs: ["breathing-timing-fly"],
+      },
+      // New per-stroke rhythmic breathing skills (replacing archived shared rhythmic-breathing).
+      {
+        slug: "free-rhythmic-breathing",
+        name: "Rhythmic breathing",
+        type: "rubric",
+        stroke: "free",
+        sortOrder: 9,
+        builtOnSlugs: ["exhalation", "free-head-position"],
+      },
+      {
+        slug: "fly-rhythmic-breathing",
+        name: "Rhythmic breathing",
+        type: "rubric",
+        stroke: "fly",
+        sortOrder: 10,
+        builtOnSlugs: ["exhalation", "fly-head-position"],
+      },
+      {
+        slug: "back-rhythmic-breathing",
+        name: "Rhythmic breathing",
+        type: "rubric",
+        stroke: "back",
+        sortOrder: 11,
+        builtOnSlugs: ["exhalation", "back-head-position-stability"],
+      },
+      {
+        slug: "free-bilateral-breathing",
+        name: "Bilateral breathing",
+        type: "rubric",
+        stroke: "free",
         sortOrder: 12,
-        builtOnSlugs: ["breathing-timing-fly", "body-rotation"],
+        ratedPerSide: true,
+        builtOnSlugs: ["free-rhythmic-breathing", "free-rotation"],
       },
     ],
   },
@@ -276,10 +288,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         type: "rubric",
         stroke: "free",
         sortOrder: 1,
-        // Rubric says "builds on head-position-overall", but overall is a rollup
-        // of these four per-stroke skills — depending on it would be circular.
-        // Using buoyancy-balance (the foundation) instead. See ADR 019, question 1.
-        builtOnSlugs: ["buoyancy-balance"],
+        // Per Jason: per-stroke head positions have no explicit builds-on; they are the inputs to the rollup.
         descriptors: HEAD_POSITION_DESCRIPTORS,
       },
       {
@@ -288,7 +297,8 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         type: "rubric",
         stroke: "free",
         sortOrder: 2,
-        builtOnSlugs: ["body-rotation"],
+        // Per Jason: body-rotation archived; use free-rotation instead.
+        builtOnSlugs: ["free-rotation"],
       },
       {
         slug: "free-catch",
@@ -319,7 +329,8 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         type: "rubric",
         stroke: "free",
         sortOrder: 5,
-        builtOnSlugs: ["body-rotation"],
+        // Per Jason: body-rotation archived; use free-rotation instead.
+        builtOnSlugs: ["free-rotation"],
       },
       {
         slug: "free-kick",
@@ -330,12 +341,20 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         builtOnSlugs: ["horizontal-alignment"],
       },
       {
+        slug: "free-rotation",
+        name: "Rotation",
+        type: "rubric",
+        stroke: "free",
+        sortOrder: 7,
+        builtOnSlugs: ["core-stability", "horizontal-alignment"],
+      },
+      {
         slug: "free-kick-rate",
         name: "Kick rate",
         type: "measured",
         unit: "kicks/min",
         stroke: "free",
-        sortOrder: 7,
+        sortOrder: 8,
         builtOnSlugs: ["free-kick"],
       },
       {
@@ -343,26 +362,44 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         name: "Breathing mechanics",
         type: "rubric",
         stroke: "free",
-        sortOrder: 8,
-        builtOnSlugs: ["free-head-position", "body-rotation", "breath-control"],
+        sortOrder: 9,
+        // Per Jason: body-rotation archived; use free-rotation instead.
+        builtOnSlugs: ["free-head-position", "free-rotation", "breath-control"],
       },
       {
         slug: "free-stroke-timing",
         name: "Stroke timing",
         type: "rubric",
         stroke: "free",
-        sortOrder: 9,
+        sortOrder: 10,
         builtOnSlugs: ["free-catch", "free-kick"],
       },
+      // free-distance-per-stroke archived — merged into free-stroke-count.
       {
-        slug: "free-distance-per-stroke",
-        name: "Distance per stroke",
+        slug: "free-stroke-count",
+        name: "Stroke count",
         type: "measured",
-        unit: "strokes/25",
+        unit: "strokes/length",
         stroke: "free",
-        sortOrder: 10,
-        // "Alignment" → horizontal-alignment (section 10)
+        sortOrder: 11,
         builtOnSlugs: ["free-catch", "free-pull", "horizontal-alignment"],
+      },
+      {
+        slug: "free-finishing",
+        name: "Finishing",
+        type: "rubric",
+        stroke: "free",
+        sortOrder: 12,
+        builtOnSlugs: ["wall-approach", "breath-control"],
+      },
+      {
+        slug: "free-tempo",
+        name: "Tempo",
+        type: "measured",
+        unit: "cycles/min",
+        stroke: "free",
+        sortOrder: 13,
+        builtOnSlugs: ["free-stroke-timing"],
       },
     ],
   },
@@ -387,8 +424,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         type: "rubric",
         stroke: "back",
         sortOrder: 2,
-        // Same rollup-cycle fix as free-head-position. See ADR 019, question 1.
-        builtOnSlugs: ["buoyancy-balance"],
+        // Per Jason: per-stroke head positions have no explicit builds-on.
         descriptors: HEAD_POSITION_DESCRIPTORS,
       },
       {
@@ -397,7 +433,8 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         type: "rubric",
         stroke: "back",
         sortOrder: 3,
-        builtOnSlugs: ["core-stability", "body-rotation"],
+        // Per Jason: body-rotation archived; use horizontal-alignment (what body-rotation depended on).
+        builtOnSlugs: ["core-stability", "horizontal-alignment"],
       },
       {
         slug: "back-reach-before-entry",
@@ -454,7 +491,6 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         type: "rubric",
         stroke: "back",
         sortOrder: 10,
-        // "Head stability" → back-head-position-stability (section 10)
         builtOnSlugs: ["back-head-position-stability", "back-stroke-timing"],
         descriptors: [
           { level: 1, text: "Zig-zags or hits the lane line within a few strokes." },
@@ -471,6 +507,32 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         stroke: "back",
         sortOrder: 11,
         builtOnSlugs: ["back-rotation", "back-catch"],
+      },
+      {
+        slug: "back-stroke-count",
+        name: "Stroke count",
+        type: "measured",
+        unit: "strokes/length",
+        stroke: "back",
+        sortOrder: 12,
+        builtOnSlugs: ["back-catch", "back-pull", "horizontal-alignment"],
+      },
+      {
+        slug: "back-finishing",
+        name: "Finishing",
+        type: "rubric",
+        stroke: "back",
+        sortOrder: 13,
+        builtOnSlugs: ["wall-approach", "breath-control"],
+      },
+      {
+        slug: "back-tempo",
+        name: "Tempo",
+        type: "measured",
+        unit: "cycles/min",
+        stroke: "back",
+        sortOrder: 14,
+        builtOnSlugs: ["back-stroke-timing"],
       },
     ],
   },
@@ -510,8 +572,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         type: "rubric",
         stroke: "breast",
         sortOrder: 3,
-        // Same rollup-cycle fix as free-head-position. See ADR 019, question 1.
-        builtOnSlugs: ["buoyancy-balance"],
+        // Per Jason: per-stroke head positions have no explicit builds-on.
         descriptors: HEAD_POSITION_DESCRIPTORS,
       },
       {
@@ -546,29 +607,47 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         sortOrder: 7,
         builtOnSlugs: ["static-streamline"],
       },
-      {
-        slug: "breast-stroke-rate",
-        name: "Stroke rate",
-        type: "measured",
-        unit: "strokes/min",
-        stroke: "breast",
-        sortOrder: 8,
-        builtOnSlugs: ["breast-timing"],
-      },
+      // breast-stroke-rate archived (duplicate of breast-tempo below).
       {
         slug: "breast-propulsion-efficiency",
         name: "Propulsion efficiency (golf score)",
         type: "score",
         unit: "time_s + stroke_count",
         stroke: "breast",
-        sortOrder: 9,
+        sortOrder: 8,
         builtOnSlugs: ["breast-kick-mechanics", "breast-glide", "breast-timing"],
+      },
+      {
+        slug: "breast-stroke-count",
+        name: "Stroke count",
+        type: "measured",
+        unit: "strokes/length",
+        stroke: "breast",
+        sortOrder: 9,
+        builtOnSlugs: ["breast-kick-mechanics", "breast-arm-pull"],
+      },
+      {
+        slug: "breast-finishing",
+        name: "Finishing",
+        type: "rubric",
+        stroke: "breast",
+        sortOrder: 10,
+        builtOnSlugs: ["wall-approach", "breast-timing"],
+      },
+      {
+        slug: "breast-tempo",
+        name: "Tempo",
+        type: "measured",
+        unit: "cycles/min",
+        stroke: "breast",
+        sortOrder: 11,
+        builtOnSlugs: ["breast-timing"],
       },
     ],
   },
 
   // ── 6. Butterfly ────────────────────────────────────────────────────────────
-  // Note: breathing-timing-fly is placed in Breathing & Coordination (section 10).
+  // Note: breathing-timing-fly is placed in Breathing & Coordination.
   {
     slug: "butterfly",
     name: "Butterfly",
@@ -612,8 +691,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         type: "rubric",
         stroke: "fly",
         sortOrder: 4,
-        // Same rollup-cycle fix as free-head-position. See ADR 019, question 1.
-        builtOnSlugs: ["buoyancy-balance"],
+        // Per Jason: per-stroke head positions have no explicit builds-on.
         descriptors: HEAD_POSITION_DESCRIPTORS,
       },
       {
@@ -656,6 +734,32 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         sortOrder: 9,
         builtOnSlugs: ["fly-dolphin-kick", "fly-pull"],
       },
+      {
+        slug: "fly-stroke-count",
+        name: "Stroke count",
+        type: "measured",
+        unit: "strokes/length",
+        stroke: "fly",
+        sortOrder: 10,
+        builtOnSlugs: ["fly-catch", "fly-pull"],
+      },
+      {
+        slug: "fly-finishing",
+        name: "Finishing",
+        type: "rubric",
+        stroke: "fly",
+        sortOrder: 11,
+        builtOnSlugs: ["wall-approach", "breath-control"],
+      },
+      {
+        slug: "fly-tempo",
+        name: "Tempo",
+        type: "measured",
+        unit: "cycles/min",
+        stroke: "fly",
+        sortOrder: 12,
+        builtOnSlugs: ["fly-two-kick-rhythm"],
+      },
     ],
   },
 
@@ -665,13 +769,23 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
     name: "Starts, Turns & Underwaters",
     sortOrder: 7,
     skills: [
-      // Underwaters
+      // Underwaters — three separate grades per Jason A4.
+      // udk-free-fly (old shared skill) is archived; udk-free and udk-fly are new slugs.
       {
-        slug: "udk-free-fly",
+        slug: "udk-free",
         name: "Underwater dolphin kick",
         type: "rubric",
-        appliesTo: ["free", "fly"],
+        stroke: "free",
         sortOrder: 1,
+        builtOnSlugs: ["static-streamline", "fly-dolphin-kick"],
+        descriptors: UDK_DESCRIPTORS,
+      },
+      {
+        slug: "udk-fly",
+        name: "Underwater dolphin kick",
+        type: "rubric",
+        stroke: "fly",
+        sortOrder: 2,
         builtOnSlugs: ["static-streamline", "fly-dolphin-kick"],
         descriptors: UDK_DESCRIPTORS,
       },
@@ -680,7 +794,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         name: "Underwater dolphin kick",
         type: "rubric",
         stroke: "back",
-        sortOrder: 2,
+        sortOrder: 3,
         builtOnSlugs: ["static-streamline", "fly-dolphin-kick"],
         descriptors: UDK_DESCRIPTORS,
       },
@@ -706,7 +820,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         type: "rubric",
         stroke: "free",
         sortOrder: 5,
-        builtOnSlugs: ["udk-free-fly", "free-stroke-timing"],
+        builtOnSlugs: ["udk-free", "free-stroke-timing"],
       },
       {
         slug: "breakout-back",
@@ -731,8 +845,8 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         type: "rubric",
         stroke: "fly",
         sortOrder: 8,
-        // "Stroke timing" → fly-two-kick-rhythm (closest analog for fly). See ADR 019, question 5.
-        builtOnSlugs: ["udk-free-fly", "fly-two-kick-rhythm"],
+        // Per Jason A9: fly breakout builds on fly UDK and two-kick rhythm.
+        builtOnSlugs: ["udk-fly", "fly-two-kick-rhythm"],
       },
 
       // Track start (composite) + 6 components
@@ -839,7 +953,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         sortOrder: 22,
       },
 
-      // Turns (rubric, no builds-on per rubric section 7)
+      // Turns (rubric)
       {
         slug: "wall-approach",
         name: "Wall approach",
@@ -851,7 +965,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         slug: "freestyle-flip-turn",
         name: "Freestyle flip turn",
         type: "rubric",
-        // Rubric says "Free, IM breast to free"; IM is not a stroke value. See ADR 019, question 8.
+        // Per Jason A8: applies only to freestyle; IM breast-to-free is its own skill.
         appliesTo: ["free"],
         sortOrder: 24,
       },
@@ -878,58 +992,116 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
       },
       {
         slug: "im-fly-to-back",
-        name: "Fly to back",
+        name: "Fly to back (open turn)",
         type: "rubric",
-        // IM turn — stroke enum may not be sufficient here. See ADR 019, question 9.
         appliesTo: ["fly", "back"],
         sortOrder: 28,
       },
+      // im-back-to-breast archived — split into three skills below per Jason A9.
       {
-        slug: "im-back-to-breast",
-        name: "Back to breast",
+        slug: "im-back-to-breast-open",
+        name: "Back to breast (open turn)",
         type: "rubric",
         appliesTo: ["back", "breast"],
         sortOrder: 29,
       },
       {
+        slug: "im-back-to-breast-bucket",
+        name: "Back to breast (bucket turn)",
+        type: "rubric",
+        appliesTo: ["back", "breast"],
+        sortOrder: 30,
+      },
+      {
+        slug: "im-back-to-breast-crossover",
+        name: "Back to breast (crossover turn)",
+        type: "rubric",
+        appliesTo: ["back", "breast"],
+        sortOrder: 31,
+      },
+      {
         slug: "im-breast-to-free",
-        name: "Breast to free",
+        name: "Breast to free (open turn)",
         type: "rubric",
         appliesTo: ["breast", "free"],
-        sortOrder: 30,
+        sortOrder: 32,
+      },
+
+      // Backstroke start (composite) + 6 components
+      {
+        slug: "back-start",
+        name: "Backstroke start",
+        type: "composite",
+        stroke: "back",
+        sortOrder: 33,
+      },
+      {
+        slug: "back-start-reaction",
+        name: "Reaction",
+        type: "measured",
+        unit: "s",
+        stroke: "back",
+        parentSlug: "back-start",
+        sortOrder: 34,
+      },
+      {
+        slug: "back-start-push",
+        name: "Push and drive",
+        type: "rubric",
+        stroke: "back",
+        parentSlug: "back-start",
+        sortOrder: 35,
+      },
+      {
+        slug: "back-start-arch",
+        name: "Arch and entry angle",
+        type: "rubric",
+        stroke: "back",
+        parentSlug: "back-start",
+        sortOrder: 36,
+      },
+      {
+        slug: "back-start-distance",
+        name: "Distance",
+        type: "measured",
+        unit: "ft",
+        stroke: "back",
+        parentSlug: "back-start",
+        sortOrder: 37,
+      },
+      {
+        slug: "back-start-entry-alignment",
+        name: "Head-arm-hand alignment on entry",
+        type: "rubric",
+        stroke: "back",
+        parentSlug: "back-start",
+        sortOrder: 38,
+      },
+      {
+        slug: "back-start-streamline",
+        name: "Streamline off the wall",
+        type: "rubric",
+        stroke: "back",
+        parentSlug: "back-start",
+        sortOrder: 39,
       },
     ],
   },
 
   // ── 8. Racing & Performance ─────────────────────────────────────────────────
+  // tempo, stroke-count, and finishing archived — replaced by per-stroke in their stroke categories.
   {
     slug: "racing-performance",
     name: "Racing & Performance",
     sortOrder: 8,
     skills: [
       {
-        slug: "tempo",
-        name: "Tempo",
-        type: "measured",
-        unit: "strokes/min",
-        sortOrder: 1,
-        // "Stroke timing" is ambiguous here (no stroke-agnostic equivalent). See ADR 019, question 6.
-      },
-      {
-        slug: "stroke-count",
-        name: "Stroke count",
-        type: "measured",
-        unit: "strokes/length",
-        sortOrder: 2,
-        // "Distance per stroke" → free-distance-per-stroke (only DPS skill). See ADR 019, question 7.
-        builtOnSlugs: ["free-distance-per-stroke"],
-      },
-      {
         slug: "pacing",
         name: "Pacing",
         type: "rubric",
-        sortOrder: 3,
-        builtOnSlugs: ["tempo", "breath-control"],
+        sortOrder: 1,
+        // Per Jason: tempo archived; keep breath-control dependency.
+        builtOnSlugs: ["breath-control"],
         descriptors: [
           { level: 1, text: "Sprints the start and dies; second half far slower than the first." },
           { level: 2, text: "Aware of going out too fast; splits still widely uneven." },
@@ -942,35 +1114,67 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         slug: "speed-endurance",
         name: "Speed endurance",
         type: "rubric",
-        sortOrder: 4,
+        sortOrder: 2,
         builtOnSlugs: ["pacing"],
-      },
-      {
-        slug: "finishing",
-        name: "Finishing",
-        type: "rubric",
-        sortOrder: 5,
-        builtOnSlugs: ["wall-approach", "breath-control"],
       },
       {
         slug: "race-strategy",
         name: "Race strategy",
         type: "rubric",
-        sortOrder: 6,
+        sortOrder: 3,
         builtOnSlugs: ["pacing"],
       },
       {
         slug: "race-awareness",
         name: "Race awareness",
         type: "rubric",
-        sortOrder: 7,
+        sortOrder: 4,
       },
       {
         slug: "adaptability",
         name: "Adaptability",
         type: "rubric",
-        sortOrder: 8,
+        sortOrder: 5,
         builtOnSlugs: ["race-awareness"],
+      },
+    ],
+  },
+
+  // ── 9. Water Confidence ─────────────────────────────────────────────────────
+  {
+    slug: "water-confidence",
+    name: "Water Confidence",
+    sortOrder: 9,
+    skills: [
+      {
+        slug: "water-submerging",
+        name: "Submerging",
+        type: "rubric",
+        sortOrder: 1,
+      },
+      {
+        slug: "water-front-float",
+        name: "Front float",
+        type: "rubric",
+        sortOrder: 2,
+      },
+      {
+        slug: "water-back-float",
+        name: "Back float",
+        type: "rubric",
+        sortOrder: 3,
+      },
+      {
+        slug: "water-treading",
+        name: "Treading water",
+        type: "rubric",
+        sortOrder: 4,
+      },
+      {
+        slug: "water-wall",
+        name: "Getting to the wall",
+        type: "rubric",
+        sortOrder: 5,
       },
     ],
   },

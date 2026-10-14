@@ -28,6 +28,8 @@ export const SkillSchema = z.object({
   parentSkillId: z.string().uuid().nullable(),
   sortOrder: z.number().int(),
   archivedAt: z.string().datetime({ offset: true }).nullable(),
+  faultTags: z.array(z.string()).nullable(),
+  ratedPerSide: z.boolean(),
   createdAt: z.string().datetime({ offset: true }),
   updatedAt: z.string().datetime({ offset: true }),
 });

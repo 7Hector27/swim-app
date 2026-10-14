@@ -284,7 +284,7 @@ One evaluation screen per category lists its skills, with a required coaching-pr
 
 ### Open decisions (Jason)
 
-- [ ] Head-position rollup: average of the four strokes, or the lowest?
+- [x] Head-position rollup: **average of the rated strokes, rounded down** (answered Oct 2026 Phase 1).
 - [ ] Leniency standards: league time standards or USA Swimming motivational standards?
 - [ ] Extend the golf score (SWOLF) to free, back and fly?
 - [ ] Five-level descriptors still to write for the remaining skills (one per category is drafted).
@@ -323,3 +323,48 @@ These are build decisions, not part of Jason's rubric. Anything marked "check wi
 **Out of scope for the catalog**
 
 - Expectations / leniency data (age groups, time standards), the breath-control age table, golf-score bands, and kick/stroke-rate target bands. These belong to later milestones once Jason answers the open decisions.
+
+---
+
+## 11. Changes from Jason's Phase 1 answers (October 2026)
+
+These catalog changes were made based on Jason's Phase 1 answers (`docs/reference/skills-rubric-answers-2026-10.md`).
+
+**Skills archived (removed from catalog; sync sets archivedAt automatically):**
+
+- `body-rotation` — replaced by per-stroke: freestyle gets `free-rotation`; backstroke already had `back-rotation`
+- `rhythmic-breathing` (shared free+fly) — replaced by per-stroke: `free-rhythmic-breathing`, `fly-rhythmic-breathing`, `back-rhythmic-breathing`
+- `bilateral-breathing` (shared) — replaced by `free-bilateral-breathing` (freestyle-specific)
+- `breast-stroke-rate` — duplicate of the new `breast-tempo`
+- `breathing-timing-back` — dropped per Jason A5 (backstroke breathing not rated separately)
+- `stroke-breath-coordination-back` — dropped per Jason A5
+- `im-back-to-breast` — split into three: `im-back-to-breast-open`, `im-back-to-breast-bucket`, `im-back-to-breast-crossover`
+- `stroke-count` (racing-performance) — replaced by per-stroke stroke count in each stroke category
+- `free-distance-per-stroke` — merged into `free-stroke-count`
+- `tempo` (racing-performance) — replaced by per-stroke tempo (`free-tempo`, `back-tempo`, `breast-tempo`, `fly-tempo`) in each stroke category
+- `finishing` (racing-performance) — replaced by per-stroke finishing (`free-finishing`, `back-finishing`, `breast-finishing`, `fly-finishing`) in each stroke category
+
+**New skills added:**
+
+- Per-stroke rhythmic breathing: `free-rhythmic-breathing`, `fly-rhythmic-breathing`, `back-rhythmic-breathing`
+- Bilateral breathing: `free-bilateral-breathing` (freestyle-specific)
+- Freestyle: `free-rotation`, `free-stroke-count`, `free-finishing`, `free-tempo`
+- Backstroke: `back-stroke-count`, `back-finishing`, `back-tempo`
+- Breaststroke: `breast-stroke-count`, `breast-finishing`, `breast-tempo`
+- Butterfly: `fly-stroke-count`, `fly-finishing`, `fly-tempo`
+- IM turns: `im-back-to-breast-open`, `im-back-to-breast-bucket`, `im-back-to-breast-crossover`
+- Backstroke start composite: `back-start` + 6 components (`back-start-reaction`, `back-start-push`, `back-start-arch`, `back-start-distance`, `back-start-entry-alignment`, `back-start-streamline`)
+- Sculling: `sculling` (body-position-balance)
+- New category **Water Confidence** (sortOrder 9): `water-submerging`, `water-front-float`, `water-back-float`, `water-treading`, `water-wall`
+
+**Dependency map changes:**
+
+- Head position (overall) is now a pure rollup with no explicit `builtOnSlugs`. `buoyancy-balance` now depends on `head-position-overall` and `core-stability`.
+- Per-stroke head positions (`free-head-position`, `back-head-position-stability`, `breast-head-position`, `fly-head-position`) now depend on `core-stability` only (they are inputs to the rollup, not outputs).
+- `back-rotation` now depends on `core-stability` + `horizontal-alignment` (replacing the archived `body-rotation`).
+- `free-reach-before-entry`, `free-recovery`, `free-breathing-mechanics`, `stroke-breath-coordination-free` now depend on `free-rotation` instead of the archived `body-rotation`.
+- `stroke-breath-coordination-breast` and `stroke-breath-coordination-fly` no longer depend on body rotation.
+- `breathing-timing-fly` now depends on `fly-head-position` + `fly-two-kick-rhythm` (not `breath-control`).
+- `pacing` no longer depends on `tempo` (archived); depends on `breath-control` only.
+- `im-fly-to-back` renamed to "Fly to back (open turn)"; `im-breast-to-free` renamed to "Breast to free (open turn)".
+- Head-position rollup method: **average of the rated strokes, rounded down**.

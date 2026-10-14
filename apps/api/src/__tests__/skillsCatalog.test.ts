@@ -90,7 +90,7 @@ describe("SKILLS_CATALOG", () => {
     expect(cycles).toEqual([]);
   });
 
-  it("has 8 categories in the correct order", () => {
+  it("has 9 categories in the correct order", () => {
     const slugs = SKILLS_CATALOG.map((category) => category.slug);
     expect(slugs).toEqual([
       "body-position-balance",
@@ -101,6 +101,7 @@ describe("SKILLS_CATALOG", () => {
       "butterfly",
       "starts-turns-underwaters",
       "racing-performance",
+      "water-confidence",
     ]);
   });
 
@@ -111,13 +112,55 @@ describe("SKILLS_CATALOG", () => {
     expect(counts).toEqual({
       "body-position-balance": 8,
       "breathing-coordination": 12,
-      freestyle: 10,
-      backstroke: 11,
-      breaststroke: 9,
-      butterfly: 9,
-      "starts-turns-underwaters": 30,
-      "racing-performance": 8,
+      freestyle: 13,
+      backstroke: 14,
+      breaststroke: 11,
+      butterfly: 12,
+      "starts-turns-underwaters": 40,
+      "racing-performance": 5,
+      "water-confidence": 5,
     });
+  });
+
+  it("all skills with faultTags have string[] values", () => {
+    const invalid: string[] = [];
+    for (const skill of allSkills) {
+      if (skill.faultTags !== undefined) {
+        if (!skill.faultTags.every((tag) => typeof tag === "string")) {
+          invalid.push(skill.slug);
+        }
+      }
+    }
+    expect(invalid).toEqual([]);
+  });
+
+  it("ratedPerSide is a boolean when present", () => {
+    const invalid: string[] = [];
+    for (const skill of allSkills) {
+      if (skill.ratedPerSide !== undefined && typeof skill.ratedPerSide !== "boolean") {
+        invalid.push(skill.slug);
+      }
+    }
+    expect(invalid).toEqual([]);
+  });
+
+  it("archived skills are not present in the catalog", () => {
+    const archivedSlugs = [
+      "body-rotation",
+      "rhythmic-breathing",
+      "bilateral-breathing",
+      "breast-stroke-rate",
+      "breathing-timing-back",
+      "stroke-breath-coordination-back",
+      "im-back-to-breast",
+      "stroke-count",
+      "free-distance-per-stroke",
+      "tempo",
+      "finishing",
+      "udk-free-fly",
+    ];
+    const present = archivedSlugs.filter((slug) => slugSet.has(slug));
+    expect(present).toEqual([]);
   });
 });
 

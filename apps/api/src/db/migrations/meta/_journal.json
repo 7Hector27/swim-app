@@ -113,6 +113,20 @@
       "when": 1791938358451,
       "tag": "0015_whole_vampiro",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1791992607835,
+      "tag": "0016_sloppy_puma",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1791993574151,
+      "tag": "0017_replace_skill_side_with_rated_per_side",
+      "breakpoints": true
     }
   ]
 }

@@ -389,6 +389,8 @@ One row per skill. Slugs are permanent — never change a slug once it ships to 
 | `parent_skill_id` | `uuid` | yes | FK → `skills.id` (restrict). Set on start components whose parent is a `composite` skill |
 | `sort_order` | `integer` | no | Display order within category |
 | `archived_at` | `timestamptz` | yes | Null = active. Set when a skill is removed from the catalog |
+| `fault_tags` | `text[]` | yes | Common coaching faults for this skill; empty at initial migration, filled in a follow-up |
+| `rated_per_side` | `boolean` | no | `true` when ratings for this skill record left/right side (e.g. freestyle bilateral breathing). Default `false`. |
 | `created_at` | `timestamptz` | no | `now()` |
 | `updated_at` | `timestamptz` | no | Auto-updated |
 

@@ -49,6 +49,8 @@ export const skills = pgTable("skills", {
   parentSkillId: uuid("parent_skill_id").references((): AnyPgColumn => skills.id, { onDelete: "restrict" }),
   sortOrder: integer("sort_order").notNull(),
   archivedAt: timestamp("archived_at", { withTimezone: true }),
+  faultTags: text("fault_tags").array(),
+  ratedPerSide: boolean("rated_per_side").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdateFn(() => new Date()),
 }).enableRLS();
