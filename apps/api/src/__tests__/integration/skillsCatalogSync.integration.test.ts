@@ -33,12 +33,16 @@ describe("catalog sync", () => {
   it("populates all categories and skills on first run", async () => {
     await syncCatalogFn(db);
 
-    const categoryRows = await db.select().from(skillCategories);
-    expect(categoryRows).toHaveLength(SKILLS_CATALOG.length);
+    // Filter by known catalog slugs so rows created by other tests don't break
+    // the count assertion.
+    const catalogCatSlugs = new Set(SKILLS_CATALOG.map((c) => c.slug));
+    const categoryRows = await db.select({ slug: skillCategories.slug }).from(skillCategories);
+    expect(categoryRows.filter((r) => catalogCatSlugs.has(r.slug))).toHaveLength(SKILLS_CATALOG.length);
 
-    const skillRows = await db.select().from(skills);
-    const expectedCount = SKILLS_CATALOG.flatMap((category) => category.skills).length;
-    expect(skillRows).toHaveLength(expectedCount);
+    const catalogSkillSlugs = new Set(SKILLS_CATALOG.flatMap((c) => c.skills).map((s) => s.slug));
+    const expectedCount = catalogSkillSlugs.size;
+    const skillRows = await db.select({ slug: skills.slug }).from(skills);
+    expect(skillRows.filter((r) => catalogSkillSlugs.has(r.slug))).toHaveLength(expectedCount);
 
     const ratingRows = await db.select().from(ratingScaleLevels);
     expect(ratingRows).toHaveLength(RATING_SCALE.length);

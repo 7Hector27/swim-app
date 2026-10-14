@@ -16,12 +16,13 @@ import {
 import type { TestUser } from "./helpers";
 import {
   evaluationSessions,
+  profiles,
   ratingFaultTags,
-  skillCategories,
   skillRatings,
   skills,
   swimmers,
 } from "../../db/schema";
+import syncCatalogFn from "../../db/scripts/syncCatalogFn";
 
 let coachId: string;
 let swimmerId: string;
@@ -32,28 +33,28 @@ let cleanupCoach: () => Promise<void>;
 let coach: TestUser;
 
 beforeAll(async () => {
+  // Ensure the catalog is populated so we can look up real skills by slug.
+  await syncCatalogFn(adminDb());
+
   coach = await createTestUser("eval-constraints");
   coachId = coach.userId;
   cleanupCoach = coach.cleanup;
 
-  // Insert a minimal skill category and skill for FK satisfaction.
-  const catRows = await adminDb()
-    .insert(skillCategories)
-    .values({ slug: "eval-test-cat", name: "Eval Test", sortOrder: 9999 })
-    .returning({ id: skillCategories.id });
-  categoryId = catRows[0]!.id;
+  // Promote the test user to coach so requireCoach middleware passes.
+  await adminDb()
+    .update(profiles)
+    .set({ role: "coach" })
+    .where(eq(profiles.id, coachId));
 
-  const skillRows = await adminDb()
-    .insert(skills)
-    .values({
-      slug: "eval-test-skill",
-      categoryId,
-      name: "Eval Test Skill",
-      type: "rubric",
-      sortOrder: 9999,
-    })
-    .returning({ id: skills.id });
-  skillId = skillRows[0]!.id;
+  // Use a real catalog skill so the skillsCatalogSync count tests stay clean.
+  const freeKickRows = await adminDb()
+    .select({ id: skills.id, categoryId: skills.categoryId })
+    .from(skills)
+    .where(eq(skills.slug, "free-kick"))
+    .limit(1);
+  if (!freeKickRows[0]) throw new Error("Catalog skill free-kick not found — run pnpm db:sync-catalog");
+  skillId = freeKickRows[0].id;
+  categoryId = freeKickRows[0].categoryId;
 
   const swimmerRows = await adminDb()
     .insert(swimmers)
@@ -84,13 +85,12 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  // fault_tags cascade-delete from skill_ratings, so just delete ratings first.
-  await adminDb().delete(skillRatings).where(eq(skillRatings.sessionId, sessionId));
-  await adminDb().delete(evaluationSessions).where(eq(evaluationSessions.id, sessionId));
+  // Delete ratings and sessions by swimmerId (catches any rows from API tests
+  // that created additional sessions or from tests that failed mid-cleanup).
+  // Fault tags cascade-delete when their rating is deleted.
+  await adminDb().delete(skillRatings).where(eq(skillRatings.swimmerId, swimmerId));
+  await adminDb().delete(evaluationSessions).where(eq(evaluationSessions.swimmerId, swimmerId));
   await hardDeleteSwimmer(swimmerId);
-  // skill → skill_dependencies cascade; category → skills cascade.
-  await adminDb().delete(skills).where(eq(skills.id, skillId));
-  await adminDb().delete(skillCategories).where(eq(skillCategories.id, categoryId));
   await cleanupCoach();
   await closeAdminDb();
 });
@@ -108,7 +108,7 @@ function validRatingValues() {
   } as const;
 }
 
-// ── evaluation_sessions ───────────────────────────────────────────────────────
+// ── evaluation_sessions CHECK constraints ───────────────────────────────────
 
 describe("evaluation_sessions CHECK constraints", () => {
   it("accepts a valid session", async () => {
@@ -141,7 +141,7 @@ describe("evaluation_sessions CHECK constraints", () => {
   });
 });
 
-// ── skill_ratings CHECK constraints ──────────────────────────────────────────
+// ── skill_ratings CHECK constraints ─────────────────────────────────────────
 
 describe("skill_ratings CHECK constraints", () => {
   it("accepts a valid grade=3 rating", async () => {
@@ -380,72 +380,73 @@ describe("API integration tests — evaluations routes", () => {
     server = app.listen(0);
     coachToken = coach.accessToken;
 
+    // Use a real catalog sided skill instead of inserting a test fixture.
     const sidedSkillRows = await adminDb()
-      .insert(skills)
-      .values({
-        slug: "eval-test-sided-skill",
-        categoryId,
-        name: "Eval Test Sided Skill",
-        type: "rubric",
-        sortOrder: 10000,
-        ratedPerSide: true,
-      })
-      .returning({ id: skills.id });
-    ratedPerSideSkillId = sidedSkillRows[0]!.id;
+      .select({ id: skills.id })
+      .from(skills)
+      .where(eq(skills.slug, "breathing-timing-free"))
+      .limit(1);
+    if (!sidedSkillRows[0]) throw new Error("Catalog skill breathing-timing-free not found — run pnpm db:sync-catalog");
+    ratedPerSideSkillId = sidedSkillRows[0].id;
   });
 
   afterAll(async () => {
     server.close();
-    await adminDb().delete(skills).where(eq(skills.id, ratedPerSideSkillId));
+    // ratedPerSideSkillId is a real catalog skill — do not delete it.
   });
 
   // ── POST /coach/swimmers/:id/sessions: invalid rating → no session or ratings ──
 
   it("a session with one archived skill rating saves nothing (transaction rollback)", async () => {
+    // Archive the real catalog skill temporarily.
     await adminDb().update(skills).set({ archivedAt: new Date() }).where(eq(skills.id, skillId));
 
-    const response = await request(app)
-      .post(`/coach/swimmers/${swimmerId}/sessions`)
-      .set("Authorization", `Bearer ${coachToken}`)
-      .send({
-        categoryId,
-        sessionDate: "2026-10-15",
-        context: "practice",
-        coachingPriority: "Test rollback",
-        ratings: [
-          {
-            skillId,
-            grade: 3,
-            notLegal: false,
-            noConcept: false,
-            side: null,
-            capacityValue: null,
-            capacityUnit: null,
-            measurementValue: null,
-            measurementUnit: null,
-            note: null,
-            faultTags: [],
-            ratedAt: "2026-10-15T10:00:00.000Z",
-          },
-        ],
-      });
+    try {
+      const response = await request(app)
+        .post(`/coach/swimmers/${swimmerId}/sessions`)
+        .set("Authorization", `Bearer ${coachToken}`)
+        .send({
+          categoryId,
+          sessionDate: "2026-10-15",
+          context: "practice",
+          coachingPriority: "Test rollback",
+          ratings: [
+            {
+              skillId,
+              grade: 3,
+              notLegal: false,
+              noConcept: false,
+              side: null,
+              capacityValue: null,
+              capacityUnit: null,
+              measurementValue: null,
+              measurementUnit: null,
+              note: null,
+              faultTags: [],
+              ratedAt: "2026-10-15T10:00:00.000Z",
+            },
+          ],
+        });
 
-    expect(response.status).toBe(422);
+      expect(response.status).toBe(422);
 
-    const sessions = await adminDb()
-      .select({ id: evaluationSessions.id })
-      .from(evaluationSessions)
-      .where(eq(evaluationSessions.swimmerId, swimmerId));
-    // Only the one session created in beforeAll should exist.
-    expect(sessions.length).toBe(1);
-
-    // Un-archive the skill for subsequent tests.
-    await adminDb().update(skills).set({ archivedAt: null }).where(eq(skills.id, skillId));
+      const sessions = await adminDb()
+        .select({ id: evaluationSessions.id })
+        .from(evaluationSessions)
+        .where(eq(evaluationSessions.swimmerId, swimmerId));
+      // Only the one session created in beforeAll should exist.
+      expect(sessions.length).toBe(1);
+    } finally {
+      // Always restore the skill so subsequent tests are not affected.
+      await adminDb().update(skills).set({ archivedAt: null }).where(eq(skills.id, skillId));
+    }
   });
 
   // ── DELETE /coach/ratings/:id: undo window ──────────────────────────────────
 
   it("DELETE within 9-minute window → 204 and rating is gone", async () => {
+    // Insert with a backdated created_at directly — the append-only trigger
+    // blocks UPDATE on created_at, so we cannot insert then update.
     const rows = await adminDb()
       .insert(skillRatings)
       .values({
@@ -457,14 +458,10 @@ describe("API integration tests — evaluations routes", () => {
         notLegal: false,
         noConcept: false,
         ratedAt: new Date(),
+        createdAt: new Date(Date.now() - 9 * 60 * 1000),
       })
       .returning({ id: skillRatings.id });
     const ratingId = rows[0]!.id;
-
-    await adminDb()
-      .update(skillRatings)
-      .set({ createdAt: new Date(Date.now() - 9 * 60 * 1000) })
-      .where(eq(skillRatings.id, ratingId));
 
     const response = await request(app)
       .delete(`/coach/ratings/${ratingId}`)
@@ -479,6 +476,7 @@ describe("API integration tests — evaluations routes", () => {
   });
 
   it("DELETE after 11-minute window → 409", async () => {
+    // Insert with a backdated created_at directly.
     const rows = await adminDb()
       .insert(skillRatings)
       .values({
@@ -490,14 +488,10 @@ describe("API integration tests — evaluations routes", () => {
         notLegal: false,
         noConcept: false,
         ratedAt: new Date(),
+        createdAt: new Date(Date.now() - 11 * 60 * 1000),
       })
       .returning({ id: skillRatings.id });
     const ratingId = rows[0]!.id;
-
-    await adminDb()
-      .update(skillRatings)
-      .set({ createdAt: new Date(Date.now() - 11 * 60 * 1000) })
-      .where(eq(skillRatings.id, ratingId));
 
     const response = await request(app)
       .delete(`/coach/ratings/${ratingId}`)
@@ -676,12 +670,12 @@ describe("API integration tests — evaluations routes", () => {
 
     const { grades } = response.body as { grades: Record<string, unknown> };
 
-    // skillId: latest non-voided is grade 3 (grade 5 was voided).
-    expect(grades["eval-test-skill"]).toBe(3);
+    // skillId (free-kick): latest non-voided is grade 3 (grade 5 was voided).
+    expect(grades["free-kick"]).toBe(3);
 
-    // ratedPerSide skill: both sides present.
-    expect(grades["eval-test-sided-skill:left"]).toBe(4);
-    expect(grades["eval-test-sided-skill:right"]).toBe(2);
+    // ratedPerSide skill (breathing-timing-free): both sides present.
+    expect(grades["breathing-timing-free:left"]).toBe(4);
+    expect(grades["breathing-timing-free:right"]).toBe(2);
 
     for (const row of [r1[0]!, r2[0]!, r3[0]!, r4[0]!]) {
       await adminDb().delete(skillRatings).where(eq(skillRatings.id, row.id));
