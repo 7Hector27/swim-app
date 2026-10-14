@@ -17,13 +17,15 @@ export default async function BookPage() {
   const { profile, accessToken } = auth;
   if (profile.role !== "parent") redirect("/dashboard");
 
-  const [household, locations, swimmers] = await Promise.all([
+  const [household, rawLocations, swimmers] = await Promise.all([
     fetchHousehold(accessToken),
     fetchLocations(accessToken),
     fetchSwimmers(accessToken),
   ]);
 
-  const isViewer = household?.myRole === "viewer";
+  const householdFailed = household === null;
+  const isViewer = !householdFailed && household.myRole === "viewer";
+  const locations = rawLocations.map(({ id, name, isHomePool }) => ({ id, name, isHomePool }));
 
   return (
     <div className="flex flex-col min-h-screen bg-background">
@@ -34,6 +36,7 @@ export default async function BookPage() {
             locations={locations}
             swimmers={swimmers}
             isViewer={isViewer}
+            householdFailed={householdFailed}
           />
         </div>
       </main>

@@ -31,11 +31,27 @@ let swimmerId: string;
 // A future Tuesday in school-year. Must be in config.lessonDays.
 // Using a date far enough in the future to be within 10 weeks but > 16 h away.
 function futureSlot(): string {
-  // Pick a date 2 days from now at 23:30 UTC (= 16:30 PDT).
-  const d = new Date();
-  d.setUTCDate(d.getUTCDate() + 2);
-  d.setUTCHours(23, 30, 0, 0);
-  return d.toISOString();
+  // 4:30 PM (16:30) America/Los_Angeles, 2 days from now.
+  // Mirrors laToUtc() in slots.ts so this is correct in both PST and PDT.
+  const twoDaysOut = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
+  const laParts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Los_Angeles",
+    year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(twoDaysOut);
+  const get = (t: string) => Number(laParts.find((p) => p.type === t)?.value ?? 0);
+  const [year, month0, day] = [get("year"), get("month") - 1, get("day")];
+  // PDT initial approximation (UTC-7); corrected below for PST.
+  const approxMs = Date.UTC(year, month0, day, 23, 30); // 16:30 + 7
+  const toWallMs = (tz: string) => {
+    const pp = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz, year: "numeric", month: "numeric", day: "numeric",
+      hour: "numeric", minute: "numeric", second: "numeric", hour12: false,
+    }).formatToParts(new Date(approxMs));
+    const g = (t: string) => Number(pp.find((p) => p.type === t)?.value ?? 0);
+    return Date.UTC(g("year"), g("month") - 1, g("day"), g("hour") % 24, g("minute"), g("second"));
+  };
+  const offsetMs = toWallMs("UTC") - toWallMs("America/Los_Angeles");
+  return new Date(Date.UTC(year, month0, day, 16, 30) + offsetMs).toISOString();
 }
 
 beforeAll(async () => {

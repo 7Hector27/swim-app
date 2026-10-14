@@ -3,10 +3,11 @@
 import { useState, useTransition, useActionState } from "react";
 import Link from "next/link";
 
-import type { AvailableSlot, LessonLocation } from "@swim-app/shared";
+import type { AvailableSlot } from "@swim-app/shared";
 import type { ParentSwimmer } from "@swim-app/shared";
 
 import { fetchSlotsDirectAction, createLessonAction } from "./actions";
+import { formatSlotTime } from "./helpers";
 import type { BookLessonState } from "./helpers";
 
 type Step = "location" | "datetime" | "slot" | "swimmers" | "confirm";
@@ -19,13 +20,16 @@ const STEP_ORDER: Step[] = [
   "confirm",
 ];
 
+type BookLocation = { id: string; name: string; isHomePool: boolean };
+
 interface Props {
-  locations: LessonLocation[];
+  locations: BookLocation[];
   swimmers: ParentSwimmer[];
   isViewer: boolean;
+  householdFailed?: boolean;
 }
 
-export default function BookLessonContent({ locations, swimmers, isViewer }: Props) {
+export default function BookLessonContent({ locations, swimmers, isViewer, householdFailed = false }: Props) {
   const [step, setStep] = useState<Step>("location");
   const [locationId, setLocationId] = useState<string | null>(null);
   const [date, setDate] = useState("");
@@ -94,13 +98,19 @@ export default function BookLessonContent({ locations, swimmers, isViewer }: Pro
 
   const selectedLocation = locations.find((loc) => loc.id === locationId);
 
-  const laTimeFormatter = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/Los_Angeles",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-
   const hasHomePool = locations.some((loc) => loc.isHomePool);
+
+  if (householdFailed) {
+    return (
+      <div>
+        <h1 className="text-3xl tablet:text-4xl text-heading mb-6">Book a lesson</h1>
+        <div className="rounded-card border border-border p-5 text-center max-w-lg mx-auto">
+          <p className="font-semibold text-text">Unable to load your account data.</p>
+          <p className="text-text-secondary text-sm mt-1">Please refresh the page.</p>
+        </div>
+      </div>
+    );
+  }
 
   if (isViewer) {
     return (
@@ -139,7 +149,7 @@ export default function BookLessonContent({ locations, swimmers, isViewer }: Pro
 
       {showStepIndicator && (
         <p className="text-sm text-text-secondary mb-4">
-          Step {currentStepIndex + 1} of {STEP_ORDER.length - 1}
+          Step {currentStepIndex} of {STEP_ORDER.length - 1}
         </p>
       )}
 
@@ -295,7 +305,7 @@ export default function BookLessonContent({ locations, swimmers, isViewer }: Pro
                     }}
                     className="rounded-button border border-border text-left px-4 h-11 font-semibold text-sm text-text hover:bg-surface-soft transition-colors duration-150 min-h-[44px]"
                   >
-                    {laTimeFormatter.format(new Date(slot.startsAt))}
+                    {formatSlotTime(new Date(slot.startsAt))}
                   </button>
                 ))}
               </div>
@@ -378,11 +388,7 @@ export default function BookLessonContent({ locations, swimmers, isViewer }: Pro
               <div className="flex justify-between">
                 <span className="text-text-secondary">Time</span>
                 <span className="font-semibold">
-                  {new Intl.DateTimeFormat("en-US", {
-                    timeZone: "America/Los_Angeles",
-                    hour: "numeric",
-                    minute: "2-digit",
-                  }).format(new Date(slotStartsAt))}
+                  {formatSlotTime(new Date(slotStartsAt))}
                 </span>
               </div>
               <div className="flex justify-between">

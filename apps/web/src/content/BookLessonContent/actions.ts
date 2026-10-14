@@ -2,7 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { fetchAvailableSlots } from "@/lib/api/lessons";
-import { LessonResponseSchema, type AvailableSlot } from "@swim-app/shared";
+import { CreateLessonBodySchema, LessonResponseSchema, type AvailableSlot } from "@swim-app/shared";
 import { mapBookingApiResponse, type BookLessonState } from "./helpers";
 
 export async function fetchSlotsDirectAction(
@@ -11,12 +11,17 @@ export async function fetchSlotsDirectAction(
   locationId: string,
 ): Promise<{ slots: AvailableSlot[] } | { error: string }> {
   const supabase = await createClient();
+  // getSession is called only to extract the raw access token for forwarding to
+  // the API. The API's requireUser middleware verifies the token independently.
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
   if (!token) {
     return { error: "Session expired. Please sign in again." };
   }
   const slots = await fetchAvailableSlots(token, { date, durationMinutes, locationId });
+  if (slots === null) {
+    return { error: "Couldn't load times. Please try again." };
+  }
   return { slots };
 }
 
@@ -24,26 +29,20 @@ export async function createLessonAction(
   _prev: BookLessonState,
   formData: FormData,
 ): Promise<BookLessonState> {
-  const startsAt = (formData.get("startsAt") as string | null) ?? "";
-  const durationMinutesRaw = Number(formData.get("durationMinutes"));
-  const locationId = (formData.get("locationId") as string | null) ?? "";
-  const swimmerIds = formData.getAll("swimmerIds") as string[];
+  const parsed = CreateLessonBodySchema.safeParse({
+    startsAt: formData.get("startsAt"),
+    durationMinutes: Number(formData.get("durationMinutes")),
+    locationId: formData.get("locationId"),
+    swimmerIds: formData.getAll("swimmerIds"),
+  });
 
-  if (!startsAt || !locationId || swimmerIds.length === 0) {
+  if (!parsed.success) {
     return { status: "error", message: "Missing required booking details. Please start over." };
   }
 
-  if (
-    durationMinutesRaw !== 30 &&
-    durationMinutesRaw !== 45 &&
-    durationMinutesRaw !== 60
-  ) {
-    return { status: "error", message: "Invalid lesson duration. Please start over." };
-  }
-
-  const durationMinutes: 30 | 45 | 60 = durationMinutesRaw;
-
   const supabase = await createClient();
+  // getSession is called only to extract the raw access token for forwarding to
+  // the API. The API's requireUser middleware verifies the token independently.
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
   if (!token) {
@@ -60,7 +59,7 @@ export async function createLessonAction(
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({ startsAt, durationMinutes, locationId, swimmerIds }),
+      body: JSON.stringify(parsed.data),
     });
     responseStatus = response.status;
     try {
@@ -73,8 +72,8 @@ export async function createLessonAction(
   }
 
   if (responseStatus === 201) {
-    const parsed = LessonResponseSchema.safeParse(responseBody);
-    const autoApproved = parsed.success ? parsed.data.status === "approved" : false;
+    const result = LessonResponseSchema.safeParse(responseBody);
+    const autoApproved = result.success ? result.data.status === "approved" : false;
     return { status: "success", autoApproved };
   }
 

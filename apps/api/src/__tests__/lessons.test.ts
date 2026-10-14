@@ -708,4 +708,43 @@ describe("POST /lessons", () => {
     // LA year (2026) must be used for the season lookup, not UTC year (2027).
     expect(capturedSeasonYear).toBe(2026);
   });
+
+  it("can book any slot returned by available-slots (PST slot whose UTC date is the day after its LA date)", async () => {
+    // 4:30 PM PST on Mon 2030-01-14 = 2030-01-15T00:30:00.000Z.
+    // slice(0,10) on the ISO string gives "2030-01-15" (UTC, Tuesday) — not the
+    // LA calendar date "2030-01-14" (Monday).  Before the fix, computeAvailableSlots
+    // would be called with the wrong date and return no matching slot → slot_unavailable.
+    const pstSlot = new Date("2030-01-15T00:30:00.000Z");
+    const laDate = "2030-01-14";
+    const farFutureConfig = { ...configRow, bookingMaxAdvanceWeeks: 200 };
+    const pstLessonRow = { ...baseLessonRow, startsAt: pstSlot, expiresAt: null as Date | null };
+
+    authAs(parentProfile);
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(parentProfile))
+      .mockReturnValueOnce(requireHouseholdMemberSelect())
+      .mockReturnValueOnce(limitSelect([namedLocationRow]))
+      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([swimmerRow]) }) })
+      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([farFutureConfig]) }) })
+      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([]) }) }) });
+
+    // Return the slot only when called with the LA date; empty for any other date.
+    // This causes 422 slot_unavailable before the fix and 201 after.
+    mockComputeSlots.mockImplementation(({ date }: { date: string }) =>
+      date === laDate
+        ? [{ startsAt: pstSlot, endsAt: new Date(pstSlot.getTime() + 30 * 60_000) }]
+        : [],
+    );
+
+    transactionThatInserts(pstLessonRow, false);
+    mockDbSelect.mockReturnValueOnce(swimmerResponseSelect());
+
+    const res = await request(app)
+      .post("/lessons")
+      .set("Authorization", "Bearer token")
+      .send({ startsAt: pstSlot.toISOString(), durationMinutes: 30, locationId: LOCATION_NAMED_ID, swimmerIds: [SWIMMER_ID] });
+
+    expect(res.status).toBe(201);
+    expect(mockComputeSlots).toHaveBeenCalledWith(expect.objectContaining({ date: laDate }));
+  });
 });

@@ -13,6 +13,8 @@ export async function approveLessonAction(
   _formData: FormData,
 ): Promise<CoachActionState> {
   const supabase = await createClient();
+  // getSession is called only to extract the raw access token for forwarding to
+  // the API. The API's requireUser middleware verifies the token independently.
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
   if (!token) {
@@ -46,6 +48,8 @@ export async function declineLessonAction(
   formData: FormData,
 ): Promise<CoachActionState> {
   const supabase = await createClient();
+  // getSession is called only to extract the raw access token for forwarding to
+  // the API. The API's requireUser middleware verifies the token independently.
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
   if (!token) {

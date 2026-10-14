@@ -28,7 +28,7 @@ export async function fetchLocations(accessToken: string): Promise<LessonLocatio
 export async function fetchAvailableSlots(
   accessToken: string,
   params: { date: string; durationMinutes: 30 | 45 | 60; locationId: string },
-): Promise<AvailableSlot[]> {
+): Promise<AvailableSlot[] | null> {
   try {
     const searchParams = new URLSearchParams({
       date: params.date,
@@ -41,16 +41,16 @@ export async function fetchAvailableSlots(
         headers: { Authorization: `Bearer ${accessToken}` },
       },
     );
-    if (!response.ok) return [];
+    if (!response.ok) return null;
     const body: unknown = await response.json();
     const parsed = AvailableSlotSchema.array().safeParse(body);
     if (!parsed.success) {
       console.warn("fetchAvailableSlots: 200 response did not match AvailableSlotSchema.array()");
-      return [];
+      return null;
     }
     return parsed.data;
   } catch {
-    return [];
+    return null;
   }
 }
 

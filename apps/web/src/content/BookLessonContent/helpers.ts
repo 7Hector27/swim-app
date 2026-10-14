@@ -12,6 +12,15 @@ const ERROR_CODE_MESSAGES: Record<string, string> = {
   slot_unavailable: "That slot was just taken. Please pick another time.",
 };
 
+export function formatSlotTime(date: Date): string {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Los_Angeles",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).format(date);
+}
+
 export function mapBookingApiResponse(
   status: number,
   body: unknown,
