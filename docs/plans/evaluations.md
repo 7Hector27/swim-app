@@ -13,7 +13,7 @@ All changes to `skillsCatalog.ts` derived from Jason's answers.
 - Every skill that still exists keeps its current slug unchanged.
 - Removed skills are archived (e.g. `archived: true` flag), never deleted from the catalog file.
 - New skills receive new permanent slugs at the time they are added; slugs are never reused.
-- The catalog validation tests are updated to cover all new fields (`faultTags`, `side`) and the archived flag.
+- The catalog validation tests are updated to cover all new fields (`faultTags`, `ratedPerSide`) and the archived flag.
 - `db:sync-catalog` must run twice in a row with no changes on the second run to confirm idempotency.
 
 ### Removals (archived, not deleted)
@@ -100,7 +100,7 @@ Each skill record gains two new optional fields (empty/null at migration time):
 | Field | Type | Purpose |
 |-------|------|---------|
 | `faultTags` | `string[]` | Common faults the coach can tap when rating (empty at migration; filled in a follow-up PR) |
-| `side` | `"left" \| "right" \| null` | Freestyle breathing skills record which side is being rated |
+| `ratedPerSide` | `boolean` | `true` when the skill is graded separately per side (e.g. freestyle bilateral breathing, breathing timing, stroke-breath coordination). The left/right value belongs on ratings, not the skill definition; see PR E-1. |
 
 ---
 
@@ -133,6 +133,8 @@ A standalone, pure function with no database dependency that takes a map of `{ s
 - `null` (not assessed / voided) → treated as not rated; not counted as low and not descended into.
 
 **Traversal:** walk the `buildsOn` chain from the target skill; keep descending while each ancestor is also low; stop at the first ancestor that isn't. Return the deepest low skill found.
+
+**Note — `head-position-overall` in the chain:** `buoyancy-balance` builds on `head-position-overall`, which is a rollup calculated from whichever per-stroke head positions have already been rated (answer 16: average of rated strokes, rounded down; unrated strokes excluded). The function receives the computed rollup value, not a per-stroke breakdown. This means reaching `head-position-overall` in the chain does not require all four strokes to be assessed — it uses whatever is available, and the chain can proceed or stop based on that value.
 
 **Test file covers:**
 
