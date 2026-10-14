@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { timingSafeEqual } from "crypto";
+import { createHash, timingSafeEqual } from "crypto";
 import { and, eq, lt, sql } from "drizzle-orm";
 import { db } from "../db/client";
 import { lessons } from "../db/schema";
@@ -10,16 +10,20 @@ import type { RequestHandler } from "express";
 
 export const internalRouter = Router();
 
-// Middleware: validate CRON_SECRET header using constant-time comparison to
-// prevent timing-based secret enumeration attacks.
+// SHA-256 both values before comparing so timingSafeEqual always operates on
+// fixed-length digests — eliminating the timing oracle that a direct
+// variable-length string comparison would leak on length mismatch.
+function sha256(value: string): Buffer {
+  return createHash("sha256").update(value).digest();
+}
+
 const requireCronSecret: RequestHandler = (req, res, next) => {
   const secret = process.env["CRON_SECRET"];
   const provided = req.headers["cron-secret"];
   if (
     !secret ||
     typeof provided !== "string" ||
-    provided.length !== secret.length ||
-    !timingSafeEqual(Buffer.from(provided), Buffer.from(secret))
+    !timingSafeEqual(sha256(provided), sha256(secret))
   ) {
     res.status(401).json({ error: "Unauthorized" });
     return;

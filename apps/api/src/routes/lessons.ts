@@ -1,6 +1,5 @@
 import { Router } from "express";
-import { and, eq, inArray } from "drizzle-orm";
-import { sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import type {
   AvailableSlot,
   AvailableSlotsQuery,
@@ -13,6 +12,7 @@ import { db } from "../db/client";
 import {
   availabilityConfig,
   blockedTimes,
+  householdMembers,
   lessonLocations,
   lessonSwimmers,
   lessons,
@@ -32,7 +32,7 @@ import { isActiveSwimmer } from "../db/queries";
 
 export const lessonsRouter = Router();
 
-lessonsRouter.use(requireUser, requireParent, requireHouseholdMember);
+lessonsRouter.use(requireUser);
 
 // ── GET /lessons/available-slots ──────────────────────────────────────────────
 
@@ -41,6 +41,32 @@ lessonsRouter.get(
   validate({ query: AvailableSlotsQuerySchema }),
   asyncHandler(async (req, res) => {
     const query = req.query as unknown as AvailableSlotsQuery;
+
+    // Verify the location exists. If it is a home pool (householdId non-null),
+    // coaches may query any; parents may only query their own household's pool.
+    const locationCheckRows = await db
+      .select({ id: lessonLocations.id, householdId: lessonLocations.householdId })
+      .from(lessonLocations)
+      .where(and(eq(lessonLocations.id, query.locationId), eq(lessonLocations.isActive, true)))
+      .limit(1);
+
+    const checkedLocation = locationCheckRows[0];
+    if (!checkedLocation) {
+      res.status(404).json({ error: "Location not found" });
+      return;
+    }
+
+    if (checkedLocation.householdId !== null && req.profile.role !== "coach") {
+      const memberRows = await db
+        .select({ householdId: householdMembers.householdId })
+        .from(householdMembers)
+        .where(eq(householdMembers.profileId, req.profile.id))
+        .limit(1);
+      if (memberRows[0]?.householdId !== checkedLocation.householdId) {
+        res.status(404).json({ error: "Location not found" });
+        return;
+      }
+    }
 
     const [configRows, blockedRows, bufferRows, existingLessonRows, endDateRow] =
       await Promise.all([
@@ -116,6 +142,8 @@ lessonsRouter.get(
 
 lessonsRouter.post(
   "/",
+  requireParent,
+  requireHouseholdMember,
   requireHouseholdRole("manager"),
   validate({ body: CreateLessonBodySchema }),
   asyncHandler(async (req, res) => {
@@ -160,26 +188,9 @@ lessonsRouter.post(
       return;
     }
 
-    // ── Fetch availability config ─────────────────────────────────────────────
-    const [configRows, endDateRow] = await Promise.all([
-      db.select().from(availabilityConfig).limit(1),
-      db
-        .select({ endDate: seasonSummerEndDates.endDate })
-        .from(seasonSummerEndDates)
-        .where(eq(seasonSummerEndDates.year, startsAt.getUTCFullYear()))
-        .limit(1),
-    ]);
-
-    const config = configRows[0];
-    if (!config) {
-      res.status(503).json({ error: "Availability config not found" });
-      return;
-    }
-
-    // ── Booking window validation (pre-lock) ──────────────────────────────────
-
-    // Derive the calendar date in America/Los_Angeles from startsAt, then
-    // compute ISO day-of-week (1=Mon … 7=Sun) to check lesson_days.
+    // ── Derive the Los Angeles calendar date of the slot ─────────────────────
+    // Computed before the config fetch so laYear can be used for the
+    // season_summer_end_dates lookup (Jan 1 UTC can still be Dec 31 LA).
     const laDateParts = new Intl.DateTimeFormat("en-US", {
       timeZone: "America/Los_Angeles",
       year: "numeric",
@@ -194,6 +205,24 @@ lessonsRouter.post(
     const laDay = Number(laDateStr.slice(8, 10));
     const jsDay = new Date(Date.UTC(laYear, laMonth - 1, laDay, 12)).getUTCDay();
     const isoDayOfWeek = jsDay === 0 ? 7 : jsDay;
+
+    // ── Fetch availability config ─────────────────────────────────────────────
+    const [configRows, endDateRow] = await Promise.all([
+      db.select().from(availabilityConfig).limit(1),
+      db
+        .select({ endDate: seasonSummerEndDates.endDate })
+        .from(seasonSummerEndDates)
+        .where(eq(seasonSummerEndDates.year, laYear))
+        .limit(1),
+    ]);
+
+    const config = configRows[0];
+    if (!config) {
+      res.status(503).json({ error: "Availability config not found" });
+      return;
+    }
+
+    // ── Booking window validation (pre-lock) ──────────────────────────────────
 
     if (!config.lessonDays.includes(isoDayOfWeek)) {
       res.status(422).json({ error: "not_a_lesson_day" });
@@ -351,11 +380,21 @@ lessonsRouter.post(
 
 // ── Helper: load lesson with swimmers ─────────────────────────────────────────
 
-export async function loadLessonWithSwimmers(lessonId: string): Promise<LessonResponse | null> {
+// When called from a parent-facing route, always pass householdId to scope
+// the query to the caller's household and prevent cross-household data access.
+// Coach routes may omit it to load any lesson by ID.
+export async function loadLessonWithSwimmers(
+  lessonId: string,
+  householdId?: string,
+): Promise<LessonResponse | null> {
   const lessonRows = await db
     .select()
     .from(lessons)
-    .where(eq(lessons.id, lessonId))
+    .where(
+      householdId !== undefined
+        ? and(eq(lessons.id, lessonId), eq(lessons.householdId, householdId))
+        : eq(lessons.id, lessonId),
+    )
     .limit(1);
 
   const lesson = lessonRows[0];

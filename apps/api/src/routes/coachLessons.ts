@@ -1,6 +1,5 @@
 import { Router } from "express";
-import { and, asc, eq, inArray, lt } from "drizzle-orm";
-import { sql } from "drizzle-orm";
+import { and, asc, eq, inArray, lt, sql } from "drizzle-orm";
 import type {
   CoachListLessonsQuery,
   DeclineLessonBody,

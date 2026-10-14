@@ -388,7 +388,7 @@ export const lessons = pgTable("lessons", {
   durationMinutes: integer("duration_minutes").notNull(),
   type: lessonTypeEnum("type").notNull(),
   status: lessonStatusEnum("status").notNull().default("pending"),
-  requestedBy: uuid("requested_by").references(() => profiles.id),
+  requestedBy: uuid("requested_by").notNull().references(() => profiles.id),
   approvedAt: timestamp("approved_at", { withTimezone: true }),
   approvedBy: uuid("approved_by").references(() => profiles.id),
   declinedAt: timestamp("declined_at", { withTimezone: true }),

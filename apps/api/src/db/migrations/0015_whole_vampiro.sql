@@ -1,0 +1,1 @@
+ALTER TABLE "lessons" ALTER COLUMN "requested_by" SET NOT NULL;

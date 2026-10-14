@@ -261,21 +261,10 @@ beforeEach(() => {
 describe("GET /lessons/available-slots", () => {
   it("returns available slots from computeAvailableSlots", async () => {
     authAs(parentProfile);
+    // requireUser + location check (named pool, householdId: null → no household lookup)
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(parentProfile))
-      .mockReturnValueOnce(requireHouseholdMemberSelect());
-
-    mockComputeSlots.mockReturnValueOnce([{ startsAt: futureStart, endsAt: new Date(futureStart.getTime() + 30 * 60 * 1000) }]);
-
-    setupAvailableSlotsSelects([configRow], [], [], [], []);
-
-    // Re-wire mocks: requireUser + requireHouseholdMember already consumed two,
-    // now the 5 Promise.all selects. Reset and redo.
-    vi.resetAllMocks();
-    authAs(parentProfile);
-    mockDbSelect
-      .mockReturnValueOnce(requireUserSelect(parentProfile))
-      .mockReturnValueOnce(requireHouseholdMemberSelect());
+      .mockReturnValueOnce(limitSelect([namedLocationRow]));
     setupAvailableSlotsSelects([configRow], [], [], [], []);
     mockComputeSlots.mockReturnValueOnce([{ startsAt: futureStart, endsAt: new Date(futureStart.getTime() + 1800000) }]);
 
@@ -287,6 +276,36 @@ describe("GET /lessons/available-slots", () => {
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
     expect(res.body[0]).toMatchObject({ startsAt: futureStart.toISOString() });
+  });
+
+  it("returns 404 when location does not exist", async () => {
+    authAs(parentProfile);
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(parentProfile))
+      .mockReturnValueOnce(limitSelect([])); // location not found
+
+    const res = await request(app)
+      .get("/lessons/available-slots")
+      .set("Authorization", "Bearer token")
+      .query({ date: "2025-09-17", durationMinutes: "30", locationId: LOCATION_NAMED_ID });
+
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 404 when querying another household's home pool", async () => {
+    authAs(parentProfile);
+    // homeLocationBRow has householdId: HOUSEHOLD_B_ID; caller is in HOUSEHOLD_ID
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(parentProfile))
+      .mockReturnValueOnce(limitSelect([homeLocationBRow]))
+      .mockReturnValueOnce(requireHouseholdMemberSelect(HOUSEHOLD_ID, "owner"));
+
+    const res = await request(app)
+      .get("/lessons/available-slots")
+      .set("Authorization", "Bearer token")
+      .query({ date: "2025-09-17", durationMinutes: "30", locationId: LOCATION_HOME_B_ID });
+
+    expect(res.status).toBe(404);
   });
 
   it("returns 401 when unauthenticated", async () => {
@@ -624,5 +643,39 @@ describe("POST /lessons", () => {
       .send(validBody);
 
     expect(res.status).toBe(403);
+  });
+
+  it("uses the LA year (not UTC) when looking up season end date", async () => {
+    authAs(parentProfile);
+    // 2027-01-01T01:00:00Z = 2026-12-31 17:00 PST — LA year is 2026, UTC year is 2027.
+    // Dec 31, 2026 is a Thursday (ISO day 4), in lessonDays [1,2,3,4,5].
+    // bookingMaxAdvanceWeeks: 12 (84 days) covers the ~79 days to Dec 31.
+    const decStart = new Date("2027-01-01T01:00:00.000Z");
+    const bigWindowConfig = { ...configRow, bookingMaxAdvanceWeeks: 12 };
+    const decLesson = {
+      ...baseLessonRow,
+      startsAt: decStart,
+      expiresAt: new Date(decStart.getTime() - 16 * 60 * 60 * 1000) as Date | null,
+    };
+
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(parentProfile))
+      .mockReturnValueOnce(requireHouseholdMemberSelect())
+      .mockReturnValueOnce(limitSelect([namedLocationRow]))
+      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([swimmerRow]) }) })
+      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([bigWindowConfig]) }) })
+      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([]) }) }) });
+
+    mockComputeSlots.mockReturnValueOnce([{ startsAt: decStart, endsAt: new Date(decStart.getTime() + 1800000) }]);
+    transactionThatInserts(decLesson, true);
+    mockDbSelect.mockReturnValueOnce(swimmerResponseSelect());
+
+    const res = await request(app)
+      .post("/lessons")
+      .set("Authorization", "Bearer token")
+      .send({ ...validBody, startsAt: decStart.toISOString() });
+
+    expect(res.status).toBe(201);
+    expect(res.body.status).toBe("pending");
   });
 });
