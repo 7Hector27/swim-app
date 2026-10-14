@@ -93,3 +93,84 @@ export const RatingFaultTagSchema = z.object({
   createdAt: z.string().datetime({ offset: true }),
 });
 export type RatingFaultTag = z.infer<typeof RatingFaultTagSchema>;
+
+// ── Request / response schemas for E-3 routes ────────────────────────────────
+
+const RatingInputSchema = z
+  .object({
+    skillId: z.string().uuid(),
+    grade: z.number().int().min(1).max(5).nullable(),
+    notLegal: z.boolean(),
+    noConcept: z.boolean(),
+    side: RatingSideSchema.nullable(),
+    capacityValue: z.string().nullable(),
+    capacityUnit: CapacityUnitSchema.nullable(),
+    measurementValue: z.string().nullable(),
+    measurementUnit: MeasurementUnitSchema.nullable(),
+    note: z.string().nullable(),
+    faultTags: z.array(z.string()),
+    ratedAt: z.string().datetime({ offset: true }),
+  })
+  .superRefine((val, ctx) => {
+    const gradeValid =
+      (!val.noConcept && val.grade !== null) ||
+      (val.noConcept && val.grade === null);
+    if (!gradeValid) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "grade must be 1–5 when noConcept is false; grade must be null when noConcept is true",
+        path: ["grade"],
+      });
+    }
+    if (val.notLegal && val.grade === null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "notLegal requires a non-null grade",
+        path: ["notLegal"],
+      });
+    }
+    if (
+      (val.capacityValue === null) !== (val.capacityUnit === null)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "capacityValue and capacityUnit must both be present or both be absent",
+        path: ["capacityValue"],
+      });
+    }
+    if (
+      (val.measurementValue === null) !== (val.measurementUnit === null)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "measurementValue and measurementUnit must both be present or both be absent",
+        path: ["measurementValue"],
+      });
+    }
+  });
+export type RatingInput = z.infer<typeof RatingInputSchema>;
+
+export const CreateSessionBodySchema = z.object({
+  categoryId: z.string().uuid(),
+  sessionDate: z.string().date(),
+  context: EvaluationContextSchema,
+  coachingPriority: z.string().min(1),
+  ratings: z.array(RatingInputSchema).min(1),
+});
+export type CreateSessionBody = z.infer<typeof CreateSessionBodySchema>;
+
+export const CreateSessionResponseSchema = z.object({
+  sessionId: z.string().uuid(),
+  ratingsCount: z.number().int(),
+});
+export type CreateSessionResponse = z.infer<typeof CreateSessionResponseSchema>;
+
+export const VoidRatingBodySchema = z.object({
+  reason: z.string().min(1),
+});
+export type VoidRatingBody = z.infer<typeof VoidRatingBodySchema>;
+
+export const DependencyMapQuerySchema = z.object({
+  categoryId: z.string().uuid(),
+});
+export type DependencyMapQuery = z.infer<typeof DependencyMapQuerySchema>;

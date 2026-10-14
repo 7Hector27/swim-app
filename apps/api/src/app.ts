@@ -24,6 +24,7 @@ import { coachAvailabilityRouter } from "./routes/coachAvailability";
 import { lessonsRouter } from "./routes/lessons";
 import { coachLessonsRouter } from "./routes/coachLessons";
 import { internalRouter } from "./routes/internal";
+import { evaluationsRouter, ratingsRouter } from "./routes/evaluations";
 import {
   calculateAge,
   HealthQuerySchema,
@@ -177,6 +178,8 @@ export function createApp(logger: Logger) {
   app.use("/lessons", lessonsRouter);
   app.use("/coach", coachLessonsRouter);
   app.use("/internal", internalRouter);
+  app.use("/swimmers", evaluationsRouter);
+  app.use("/ratings", ratingsRouter);
 
   app.use(errorHandler);
 

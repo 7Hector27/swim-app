@@ -185,6 +185,11 @@ export type {
   EvaluationSession,
   SkillRating,
   RatingFaultTag,
+  RatingInput,
+  CreateSessionBody,
+  CreateSessionResponse,
+  VoidRatingBody,
+  DependencyMapQuery,
 } from "./schemas/evaluations";
 export {
   EvaluationContextSchema,
@@ -194,4 +199,8 @@ export {
   EvaluationSessionSchema,
   SkillRatingSchema,
   RatingFaultTagSchema,
+  CreateSessionBodySchema,
+  CreateSessionResponseSchema,
+  VoidRatingBodySchema,
+  DependencyMapQuerySchema,
 } from "./schemas/evaluations";
