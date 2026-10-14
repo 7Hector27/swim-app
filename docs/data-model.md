@@ -448,6 +448,95 @@ RLS enabled. Policies TBD.
 
 ---
 
+## Evaluations
+
+### `evaluation_sessions`
+
+One row per observation sitting. A session groups all ratings a coach makes for one swimmer in one category on one day.
+
+| Column | Type | Nullable | Notes |
+|---|---|---|---|
+| `id` | `uuid` | no | Primary key |
+| `swimmer_id` | `uuid` | no | FK → `swimmers.id` (restrict on delete) |
+| `coach_id` | `uuid` | no | FK → `profiles.id` (restrict on delete) |
+| `category_id` | `uuid` | no | FK → `skill_categories.id` (restrict on delete) |
+| `session_date` | `date` | no | Date of observation |
+| `context` | `evaluation_context` | no | Enum: `drill`, `practice`, `race` |
+| `coaching_priority` | `text` | no | Freeform text — what the coach typed. The dependency-map suggestion is shown as hint text in the UI but the stored value is always what the coach typed. |
+| `created_at` | `timestamptz` | no | `now()` |
+| `updated_at` | `timestamptz` | no | Auto-updated |
+
+Constraints:
+- `CHECK (coaching_priority_not_blank)` — `coaching_priority <> ''`
+
+Session metadata is immutable after creation. See ADR 022.
+
+RLS enabled. Policies TBD.
+
+---
+
+### `skill_ratings`
+
+One row per skill observation. Append-only: after insert, only the three void fields (`voided_at`, `void_reason`, `void_by`) may change. See ADR 022.
+
+| Column | Type | Nullable | Default | Notes |
+|---|---|---|---|---|
+| `id` | `uuid` | no | `gen_random_uuid()` | Primary key |
+| `session_id` | `uuid` | no | — | FK → `evaluation_sessions.id` (restrict on delete) |
+| `swimmer_id` | `uuid` | no | — | FK → `swimmers.id` (restrict on delete) |
+| `skill_id` | `uuid` | no | — | FK → `skills.id` (restrict on delete) |
+| `coach_id` | `uuid` | no | — | FK → `profiles.id` (restrict on delete) |
+| `grade` | `integer` | yes | — | 1–5; null when `no_concept = true`. Not legal ratings still carry a phantom grade. |
+| `not_legal` | `boolean` | no | `false` | When true, rating counts as 0 in averages and is always treated as low by the dependency map. |
+| `no_concept` | `boolean` | no | `false` | When true, `grade` is null; excluded from averages and denominator. Always treated as low by the dependency map. |
+| `side` | `rating_side` | yes | — | Enum: `left`, `right`. Set only when `skills.rated_per_side = true` (enforced in E-3). |
+| `capacity_value` | `numeric` | yes | — | e.g. distance in yards or number of reps |
+| `capacity_unit` | `capacity_unit` | yes | — | Enum: `yards`, `reps`. Present iff `capacity_value` is present. |
+| `measurement_value` | `numeric` | yes | — | e.g. tempo in cycles/min, stroke count, time in seconds |
+| `measurement_unit` | `measurement_unit` | yes | — | Enum: `stroke_cycles_per_minute`, `stroke_count`, `seconds`, `feet`. Present iff `measurement_value` is present. |
+| `note` | `text` | yes | — | Optional coach note |
+| `voided_at` | `timestamptz` | yes | — | Set when voided. All three void fields must be set together. |
+| `void_reason` | `text` | yes | — | Required when voiding. |
+| `void_by` | `uuid` | yes | — | FK → `profiles.id` (restrict on delete). Coach who applied the void. |
+| `rated_at` | `timestamptz` | no | — | When the coach observed the skill (may precede row insert time). |
+| `created_at` | `timestamptz` | no | `now()` | |
+| `updated_at` | `timestamptz` | no | `now()` | Reflects the timestamp of a void if applied; no other update path exists at the API layer. |
+
+Constraints:
+- `CHECK (grade_xor_no_concept)` — `(no_concept=false AND grade IS NOT NULL AND grade BETWEEN 1 AND 5) OR (no_concept=true AND grade IS NULL)`
+- `CHECK (capacity_value_and_unit_consistent)` — both set or both null
+- `CHECK (measurement_value_and_unit_consistent)` — both set or both null
+- `CHECK (void_fields_consistent)` — all three void fields set together or all null
+
+**Exclusion rules (applied in all calculations):**
+
+| State | Averages & rollups | Dependency map |
+|---|---|---|
+| Voided | Ignored entirely | Treated as null (not assessed) |
+| Not legal | Counts as 0 | Always low |
+| No concept | Excluded from denominator | Always low |
+| Not assessed (no row) | Excluded | Chain stops there |
+
+RLS enabled. Policies TBD.
+
+---
+
+### `rating_fault_tags`
+
+Fault tags observed during a rating. Each tag must be in `skills.fault_tags` for the rated skill (validated in E-3).
+
+| Column | Type | Nullable | Notes |
+|---|---|---|---|
+| `rating_id` | `uuid` | no | PK component; FK → `skill_ratings.id` (cascade on delete) |
+| `fault_tag` | `text` | no | PK component |
+| `created_at` | `timestamptz` | no | `now()` |
+
+Constraints: composite PK `(rating_id, fault_tag)`.
+
+RLS enabled. Policies TBD.
+
+---
+
 ## Conventions
 
 - All tables use `id` as a UUID primary key (`gen_random_uuid()`), except `household_members` (composite PK `(household_id, profile_id)`), `skill_level_descriptors` (composite PK `(skill_id, level)`), `skill_dependencies` (composite PK `(skill_id, depends_on_skill_id)`), and `rating_scale_levels` (integer PK `level`)

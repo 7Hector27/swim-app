@@ -173,3 +173,22 @@ export {
   CoachStatsSchema,
   UpdateLessonBodySchema,
 } from "./schemas/booking";
+
+export type {
+  EvaluationContext,
+  RatingSide,
+  CapacityUnit,
+  MeasurementUnit,
+  EvaluationSession,
+  SkillRating,
+  RatingFaultTag,
+} from "./schemas/evaluations";
+export {
+  EvaluationContextSchema,
+  RatingSideSchema,
+  CapacityUnitSchema,
+  MeasurementUnitSchema,
+  EvaluationSessionSchema,
+  SkillRatingSchema,
+  RatingFaultTagSchema,
+} from "./schemas/evaluations";

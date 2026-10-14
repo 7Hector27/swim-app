@@ -127,6 +127,13 @@
       "when": 1791993574151,
       "tag": "0017_replace_skill_side_with_rated_per_side",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1791997255414,
+      "tag": "0018_evaluation_sessions_and_skill_ratings",
+      "breakpoints": true
     }
   ]
 }

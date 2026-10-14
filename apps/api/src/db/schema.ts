@@ -6,6 +6,7 @@ import {
   check,
   date,
   integer,
+  numeric,
   pgEnum,
   pgTable,
   primaryKey,
@@ -443,5 +444,118 @@ export const travelBufferOverrides = pgTable(
   (table) => [
     primaryKey({ columns: [table.fromLocationId, table.toLocationId] }),
     check("travel_buffer_no_self_loop", sql`${table.fromLocationId} <> ${table.toLocationId}`),
+  ],
+).enableRLS();
+
+// ── Evaluations ───────────────────────────────────────────────────────────────
+
+export const evaluationContextEnum = pgEnum("evaluation_context", [
+  "drill",
+  "practice",
+  "race",
+]);
+
+export const ratingSideEnum = pgEnum("rating_side", ["left", "right"]);
+
+export const capacityUnitEnum = pgEnum("capacity_unit", ["yards", "reps"]);
+
+export const measurementUnitEnum = pgEnum("measurement_unit", [
+  "stroke_cycles_per_minute",
+  "stroke_count",
+  "seconds",
+  "feet",
+]);
+
+// One session = one coach observing one swimmer in one sitting.
+// coaching_priority is what Jason typed — the dependency-map suggestion
+// is shown as a hint in the UI but the stored value is always freeform text.
+export const evaluationSessions = pgTable(
+  "evaluation_sessions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    swimmerId: uuid("swimmer_id").notNull().references(() => swimmers.id, { onDelete: "restrict" }),
+    coachId: uuid("coach_id").notNull().references(() => profiles.id, { onDelete: "restrict" }),
+    categoryId: uuid("category_id").notNull().references(() => skillCategories.id, { onDelete: "restrict" }),
+    sessionDate: date("session_date").notNull(),
+    context: evaluationContextEnum("context").notNull(),
+    coachingPriority: text("coaching_priority").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdateFn(() => new Date()),
+  },
+  (table) => [
+    check("coaching_priority_not_blank", sql`${table.coachingPriority} <> ''`),
+  ],
+).enableRLS();
+
+// Ratings are append-only: after insert the only columns that change are the
+// three void fields (voided_at, void_reason, void_by), set atomically by the
+// void endpoint. All other mutations are forbidden at the API layer (E-3).
+export const skillRatings = pgTable(
+  "skill_ratings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    sessionId: uuid("session_id").notNull().references(() => evaluationSessions.id, { onDelete: "restrict" }),
+    swimmerId: uuid("swimmer_id").notNull().references(() => swimmers.id, { onDelete: "restrict" }),
+    skillId: uuid("skill_id").notNull().references(() => skills.id, { onDelete: "restrict" }),
+    coachId: uuid("coach_id").notNull().references(() => profiles.id, { onDelete: "restrict" }),
+    // Nullable because no_concept ratings have no grade. Not legal ratings keep
+    // a phantom 1-5 grade alongside not_legal=true (see grade_xor_no_concept).
+    grade: integer("grade"),
+    notLegal: boolean("not_legal").notNull().default(false),
+    noConcept: boolean("no_concept").notNull().default(false),
+    // Set only when the skill is rated_per_side (enforced in E-3).
+    side: ratingSideEnum("side"),
+    capacityValue: numeric("capacity_value"),
+    capacityUnit: capacityUnitEnum("capacity_unit"),
+    measurementValue: numeric("measurement_value"),
+    measurementUnit: measurementUnitEnum("measurement_unit"),
+    note: text("note"),
+    // Void fields: all three are set atomically or all are null.
+    voidedAt: timestamp("voided_at", { withTimezone: true }),
+    voidReason: text("void_reason"),
+    voidBy: uuid("void_by").references(() => profiles.id, { onDelete: "restrict" }),
+    // When the coach observed the skill (may differ from row insert time).
+    ratedAt: timestamp("rated_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdateFn(() => new Date()),
+  },
+  (table) => [
+    // A rating has a 1-5 grade (no_concept=false) OR no_concept=true with no grade.
+    // not_legal is orthogonal: it accompanies a 1-5 phantom grade.
+    check(
+      "grade_xor_no_concept",
+      sql`(${table.noConcept} = false AND ${table.grade} IS NOT NULL AND ${table.grade} >= 1 AND ${table.grade} <= 5)
+          OR (${table.noConcept} = true AND ${table.grade} IS NULL)`,
+    ),
+    // Capacity value and unit are both present or both absent.
+    check(
+      "capacity_value_and_unit_consistent",
+      sql`(${table.capacityValue} IS NULL) = (${table.capacityUnit} IS NULL)`,
+    ),
+    // Measurement value and unit are both present or both absent.
+    check(
+      "measurement_value_and_unit_consistent",
+      sql`(${table.measurementValue} IS NULL) = (${table.measurementUnit} IS NULL)`,
+    ),
+    // All three void fields are set together or all are null.
+    check(
+      "void_fields_consistent",
+      sql`(${table.voidedAt} IS NULL AND ${table.voidReason} IS NULL AND ${table.voidBy} IS NULL)
+          OR (${table.voidedAt} IS NOT NULL AND ${table.voidReason} IS NOT NULL AND ${table.voidBy} IS NOT NULL)`,
+    ),
+  ],
+).enableRLS();
+
+// Fault tags observed during a rating. Each tag must be in the skill's
+// fault_tags list — validated at the API layer in E-3.
+export const ratingFaultTags = pgTable(
+  "rating_fault_tags",
+  {
+    ratingId: uuid("rating_id").notNull().references(() => skillRatings.id, { onDelete: "cascade" }),
+    faultTag: text("fault_tag").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.ratingId, table.faultTag] }),
   ],
 ).enableRLS();

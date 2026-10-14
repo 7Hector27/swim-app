@@ -180,6 +180,11 @@ Every set of ratings lives inside a session. A session is one coach observing on
 | No concept | Not counted (excluded from denominator) | Always counts as low |
 | Not assessed (no row) | Excluded | Not rated; chain stops there |
 
+**Cross-table rules enforced in E-3 (not the DB):**
+- `side` is only allowed when `skills.rated_per_side = true`.
+- Each `fault_tag` must be in `skills.fault_tags` for the rated skill.
+- The session's `category_id` must match the skill's `category_id`.
+
 **Migration note**: migration must be applied locally and called out in the PR description.
 
 ---
