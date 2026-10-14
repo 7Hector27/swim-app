@@ -189,16 +189,20 @@ Every set of ratings lives inside a session. A session is one coach observing on
 
 ---
 
-### PR E-2: Database schema — start ratings
+### PR E-2: Start grade calculation — pure function (`packages/shared`)
 
-`start_ratings` columns: `id`, `session_id` (FK → `evaluation_sessions`), `swimmer_id`, `coach_id`, `stroke` (for backstroke start), `rated_at`, `voided_at`, `void_reason`, `void_by`.
+Start components (reaction time, block position, entry angle, entry point, streamline, breakout) are rated as regular skills in `skill_ratings`, with `parent_skill_id` pointing to the relevant start skill (track start, relay start, or backstroke start). This gives them measurements (reaction seconds, entry distance), fault tags, notes, undo, void, and the append-only trigger at no extra cost.
 
-`start_component_ratings` columns: `start_rating_id`, `component` (enum: `reaction_time`, `block_position`, `entry_angle`, `entry_point`, `streamline`, `breakout`), `grade` (1–5), `not_legal` (boolean).
+No migration. No new tables.
 
 **Calculated at read time (never stored):**
 
-- Start grade: `floor(avg(component grades))`, treating `not_legal` as 0 (voided start ratings excluded entirely). "In progress" when fewer than 6 components are rated.
-- If any component is `not_legal`, the whole start is flagged Not legal.
+The caller passes the 6 component skill slugs for the relevant start type (from the catalog) and the swimmer's `skill_ratings` history. `calculateStartGrade(componentSlugs, ratings)` in `packages/shared` applies `latestEffectiveRatings` and returns one of four outcomes:
+
+- **Not legal** — if any component's latest effective rating is `not_legal`.
+- **In progress** — if any of the 6 components have no current non-voided rating; includes the list of missing slugs.
+- **No concept** — if every rated component is `no_concept`.
+- **Graded** — `floor(avg)` of rated components, excluding `no_concept` from the denominator.
 
 ---
 

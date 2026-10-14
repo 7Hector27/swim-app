@@ -174,17 +174,8 @@ export {
   UpdateLessonBodySchema,
 } from "./schemas/booking";
 
-export {
-  calculateStartGrade,
-  StartComponentSchema,
-  StartComponentRatingRecordSchema,
-  StartGradeResultSchema,
-} from "./lib/startGrade";
-export type {
-  StartComponent,
-  StartComponentRatingRecord,
-  StartGradeResult,
-} from "./lib/startGrade";
+export { calculateStartGrade, StartGradeResultSchema } from "./lib/startGrade";
+export type { StartGradeResult } from "./lib/startGrade";
 
 export type {
   EvaluationContext,
