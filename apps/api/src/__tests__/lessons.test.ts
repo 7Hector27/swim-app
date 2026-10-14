@@ -647,24 +647,53 @@ describe("POST /lessons", () => {
 
   it("uses the LA year (not UTC) when looking up season end date", async () => {
     authAs(parentProfile);
-    // 2027-01-01T01:00:00Z = 2026-12-31 17:00 PST — LA year is 2026, UTC year is 2027.
-    // Dec 31, 2026 is a Thursday (ISO day 4), in lessonDays [1,2,3,4,5].
-    // bookingMaxAdvanceWeeks: 12 (84 days) covers the ~79 days to Dec 31.
+    // 2027-01-01T01:00:00Z = 2026-12-31 17:00 PST.
+    // LA year = 2026, UTC year = 2027 — the bug would query year 2027.
+    // Dec 31, 2026 is a Thursday (ISO day 4).
+    // bookingMaxAdvanceWeeks: 14 (98 days) covers the ~79 days to Dec 31.
+    // lessonDays explicitly includes Thursday (4) so the day check passes and
+    // the season lookup is reached.
     const decStart = new Date("2027-01-01T01:00:00.000Z");
-    const bigWindowConfig = { ...configRow, bookingMaxAdvanceWeeks: 12 };
+    const bigWindowConfig = {
+      ...configRow,
+      bookingMaxAdvanceWeeks: 14,
+      lessonDays: [1, 2, 3, 4, 5], // Thursday (4) is a lesson day
+    };
     const decLesson = {
       ...baseLessonRow,
       startsAt: decStart,
       expiresAt: new Date(decStart.getTime() - 16 * 60 * 60 * 1000) as Date | null,
     };
 
+    // Capture the year argument passed to the season_summer_end_dates query.
+    // Drizzle's eq(col, year) stores the year value in its SQL AST; we walk
+    // the expression object to extract the first integer in a plausible year range.
+    let capturedSeasonYear: number | undefined;
+    function findYearInExpr(obj: unknown, depth: number, seen: Set<unknown>): number | undefined {
+      if (depth > 10 || seen.has(obj)) return undefined;
+      seen.add(obj);
+      if (typeof obj === "number" && obj >= 2000 && obj <= 2100) return obj;
+      if (typeof obj !== "object" || obj === null) return undefined;
+      for (const v of Object.values(obj as Record<string, unknown>)) {
+        const found = findYearInExpr(v, depth + 1, seen);
+        if (found !== undefined) return found;
+      }
+      return undefined;
+    }
+    const endDateFromMock = vi.fn().mockReturnValue({
+      where: vi.fn().mockImplementation((arg: unknown) => {
+        capturedSeasonYear = findYearInExpr(arg, 0, new Set());
+        return { limit: vi.fn().mockResolvedValue([{ endDate: "2026-08-31" }]) };
+      }),
+    });
+
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(parentProfile))
       .mockReturnValueOnce(requireHouseholdMemberSelect())
       .mockReturnValueOnce(limitSelect([namedLocationRow]))
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([swimmerRow]) }) })
-      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([bigWindowConfig]) }) })
-      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([]) }) }) });
+      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([bigWindowConfig]) }) }) // config
+      .mockReturnValueOnce({ from: endDateFromMock }); // season end date (year captured above)
 
     mockComputeSlots.mockReturnValueOnce([{ startsAt: decStart, endsAt: new Date(decStart.getTime() + 1800000) }]);
     transactionThatInserts(decLesson, true);
@@ -676,6 +705,7 @@ describe("POST /lessons", () => {
       .send({ ...validBody, startsAt: decStart.toISOString() });
 
     expect(res.status).toBe(201);
-    expect(res.body.status).toBe("pending");
+    // LA year (2026) must be used for the season lookup, not UTC year (2027).
+    expect(capturedSeasonYear).toBe(2026);
   });
 });
