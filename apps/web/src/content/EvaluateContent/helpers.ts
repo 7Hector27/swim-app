@@ -5,7 +5,7 @@ export type EvaluateState =
 
 export function mapSubmitResponse(httpStatus: number, body: unknown): EvaluateState {
   if (httpStatus === 201) {
-    const parsed = body as { sessionId?: unknown; ratingIds?: unknown };
+    const parsed = typeof body === "object" && body !== null ? (body as { sessionId?: unknown; ratingIds?: unknown }) : {};
     if (
       typeof parsed.sessionId === "string" &&
       Array.isArray(parsed.ratingIds) &&
