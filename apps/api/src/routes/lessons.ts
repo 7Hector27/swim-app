@@ -177,6 +177,29 @@ lessonsRouter.post(
     }
 
     // ── Booking window validation (pre-lock) ──────────────────────────────────
+
+    // Derive the calendar date in America/Los_Angeles from startsAt, then
+    // compute ISO day-of-week (1=Mon … 7=Sun) to check lesson_days.
+    const laDateParts = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/Los_Angeles",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(startsAt);
+    const getPart = (type: string) =>
+      laDateParts.find((p) => p.type === type)?.value ?? "";
+    const laDateStr = `${getPart("year")}-${getPart("month")}-${getPart("day")}`;
+    const laYear = Number(laDateStr.slice(0, 4));
+    const laMonth = Number(laDateStr.slice(5, 7));
+    const laDay = Number(laDateStr.slice(8, 10));
+    const jsDay = new Date(Date.UTC(laYear, laMonth - 1, laDay, 12)).getUTCDay();
+    const isoDayOfWeek = jsDay === 0 ? 7 : jsDay;
+
+    if (!config.lessonDays.includes(isoDayOfWeek)) {
+      res.status(422).json({ error: "not_a_lesson_day" });
+      return;
+    }
+
     const minMs = nowUtc.getTime() + config.bookingMinAdvanceHours * 60 * 60 * 1000;
     const maxMs = nowUtc.getTime() + config.bookingMaxAdvanceWeeks * 7 * 24 * 60 * 60 * 1000;
 

@@ -360,6 +360,64 @@ describe("POST /lessons", () => {
     expect(res.body.approvedAt).not.toBeNull();
   });
 
+  it("auto-approves when household has a completed lesson at this pool", async () => {
+    authAs(parentProfile);
+    const completedLesson = {
+      ...baseLessonRow,
+      status: "completed" as typeof baseLessonRow.status,
+      approvedAt: now,
+      completedAt: now,
+      expiresAt: null as Date | null,
+    };
+
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(parentProfile))
+      .mockReturnValueOnce(requireHouseholdMemberSelect())
+      .mockReturnValueOnce(limitSelect([namedLocationRow]))
+      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([swimmerRow]) }) })
+      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([configRow]) }) })
+      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([]) }) }) });
+
+    mockComputeSlots.mockReturnValueOnce([{ startsAt: futureStart, endsAt: new Date(futureStart.getTime() + 1800000) }]);
+    transactionThatInserts({ ...completedLesson, status: "approved" as typeof baseLessonRow.status }, false);
+
+    mockDbSelect.mockReturnValueOnce(swimmerResponseSelect());
+
+    const res = await request(app)
+      .post("/lessons")
+      .set("Authorization", "Bearer token")
+      .send(validBody);
+
+    expect(res.status).toBe(201);
+    expect(res.body.status).toBe("approved");
+  });
+
+  it("creates pending when household has only declined or canceled lessons", async () => {
+    authAs(parentProfile);
+
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(parentProfile))
+      .mockReturnValueOnce(requireHouseholdMemberSelect())
+      .mockReturnValueOnce(limitSelect([namedLocationRow]))
+      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([swimmerRow]) }) })
+      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([configRow]) }) })
+      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([]) }) }) });
+
+    mockComputeSlots.mockReturnValueOnce([{ startsAt: futureStart, endsAt: new Date(futureStart.getTime() + 1800000) }]);
+    // needsApproval=true because declined/canceled don't count
+    transactionThatInserts(baseLessonRow, true);
+
+    mockDbSelect.mockReturnValueOnce(swimmerResponseSelect());
+
+    const res = await request(app)
+      .post("/lessons")
+      .set("Authorization", "Bearer token")
+      .send(validBody);
+
+    expect(res.status).toBe(201);
+    expect(res.body.status).toBe("pending");
+  });
+
   it("creates pending when household has approved lessons at other pools only", async () => {
     authAs(parentProfile);
 
@@ -384,6 +442,35 @@ describe("POST /lessons", () => {
 
     expect(res.status).toBe(201);
     expect(res.body.status).toBe("pending");
+  });
+
+  it("returns 422 not_a_lesson_day for a day not in lesson_days", async () => {
+    authAs(parentProfile);
+
+    // Find the next Sunday in LA time, starting from futureStart.
+    // Set time to 20:00 UTC (≈ noon LA, avoids DST day-boundary issues).
+    // getUTCDay() === 0 at 20:00 UTC means it is Sunday in both UTC and LA.
+    const weekendStart = new Date(futureStart);
+    weekendStart.setUTCHours(20, 0, 0, 0);
+    while (weekendStart.getUTCDay() !== 0) {
+      weekendStart.setUTCDate(weekendStart.getUTCDate() + 1);
+    }
+
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(parentProfile))
+      .mockReturnValueOnce(requireHouseholdMemberSelect())
+      .mockReturnValueOnce(limitSelect([namedLocationRow]))
+      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([swimmerRow]) }) })
+      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([configRow]) }) })
+      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([]) }) }) });
+
+    const res = await request(app)
+      .post("/lessons")
+      .set("Authorization", "Bearer token")
+      .send({ ...validBody, startsAt: weekendStart.toISOString() });
+
+    expect(res.status).toBe(422);
+    expect(res.body.error).toBe("not_a_lesson_day");
   });
 
   it("returns 422 too_soon when slot is under 16 h away", async () => {

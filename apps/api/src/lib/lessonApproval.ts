@@ -1,10 +1,10 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import * as schema from "../db/schema";
 
 // Approval gate: approval is required if the household has no prior approved
-// lessons at all, or has never been approved at this specific location.
-// Declined and canceled lessons are excluded from the count.
+// or completed lessons at this specific location. Declined, canceled, expired,
+// no_show, and pending lessons do not count toward the approval threshold.
 export async function needsApproval(
   householdId: string,
   locationId: string,
@@ -17,7 +17,7 @@ export async function needsApproval(
       and(
         eq(schema.lessons.householdId, householdId),
         eq(schema.lessons.locationId, locationId),
-        eq(schema.lessons.status, "approved"),
+        inArray(schema.lessons.status, ["approved", "completed"]),
       ),
     )
     .limit(1);
