@@ -3,7 +3,8 @@ import {
   type CategoriesResponse,
   CoachSkillRatingSchema,
   type CoachSkillRating,
-  type StartGradeResult,
+  SwimmerSkillsResponseSchema,
+  type SwimmerSkillsResponse,
 } from "@swim-app/shared";
 
 export type FetchCategoriesResult =
@@ -51,12 +52,6 @@ export async function fetchSkillRatingHistory(
   }
 }
 
-type SwimmerSkillsResponse = {
-  grades: Record<string, number | "not_legal" | "no_concept">;
-  startGrades: Record<string, StartGradeResult>;
-  coachingPriorities: Array<{ targetSlug: string; chain: Array<{ slug: string; grade: unknown; sortOrder: number }> }>;
-};
-
 export type FetchSwimmerSkillsResult =
   | { ok: true; data: SwimmerSkillsResponse }
   | { ok: false; status: number };
@@ -71,8 +66,10 @@ export async function fetchSwimmerSkills(
       { headers: { Authorization: `Bearer ${accessToken}` } },
     );
     if (!response.ok) return { ok: false, status: response.status };
-    const body = await response.json() as SwimmerSkillsResponse;
-    return { ok: true, data: body };
+    const body: unknown = await response.json();
+    const parsed = SwimmerSkillsResponseSchema.safeParse(body);
+    if (!parsed.success) return { ok: false, status: 500 };
+    return { ok: true, data: parsed.data };
   } catch {
     return { ok: false, status: 500 };
   }

@@ -44,6 +44,7 @@ export default function EvaluateContent({ swimmer, categories, accessToken }: Ev
   >({ status: "idle" });
   const mountedRef = useRef(false);
   const savedAtRef = useRef<number>(0);
+  const savedCategoryIdRef = useRef<string>("");
 
   // Restore draft from localStorage on mount (Fix 6: keyed by swimmer AND category)
   useEffect(() => {
@@ -130,6 +131,7 @@ export default function EvaluateContent({ swimmer, categories, accessToken }: Ev
   useEffect(() => {
     if (state.status === "saved") {
       savedAtRef.current = Date.now();
+      savedCategoryIdRef.current = draft.categoryId;
       try {
         localStorage.removeItem(metaKey);
         if (draft.categoryId) {
@@ -139,7 +141,7 @@ export default function EvaluateContent({ swimmer, categories, accessToken }: Ev
         // ignore
       }
     }
-  }, [state.status]); // savedAtRef, metaKey, skillsKey, draft.categoryId are stable at save time
+  }, [state.status]); // savedAtRef, savedCategoryIdRef, metaKey, skillsKey, draft.categoryId are stable at save time
 
   function handleCategoryChange(newCategoryId: string) {
     let skills: Record<string, SkillDraft> = {};
@@ -163,6 +165,10 @@ export default function EvaluateContent({ swimmer, categories, accessToken }: Ev
   }
 
   const selectedCategory = categories.find((cat) => cat.id === draft.categoryId) ?? null;
+
+  const slugToName = Object.fromEntries(
+    categories.flatMap((cat) => cat.skills.map((skill) => [skill.slug, skill.name])),
+  );
 
   function buildSkillGroups(category: SkillCategoryWithSkills) {
     const startParents = category.skills.filter(
@@ -266,6 +272,7 @@ export default function EvaluateContent({ swimmer, categories, accessToken }: Ev
               value={draft.coachingPriority}
               onChange={(value) => setDraft((prev) => ({ ...prev, coachingPriority: value }))}
               suggestion={depSuggestion}
+              slugToName={slugToName}
             />
 
             {/* Skills */}

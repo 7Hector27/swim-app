@@ -196,6 +196,7 @@ export type {
   SkillForRating,
   SkillCategoryWithSkills,
   CategoriesResponse,
+  SwimmerSkillsResponse,
 } from "./schemas/evaluations";
 export {
   EvaluationContextSchema,
@@ -215,4 +216,5 @@ export {
   SkillForRatingSchema,
   SkillCategoryWithSkillsSchema,
   CategoriesResponseSchema,
+  SwimmerSkillsResponseSchema,
 } from "./schemas/evaluations";

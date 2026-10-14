@@ -12,6 +12,8 @@ export async function submitEvaluation(
   formData: FormData,
 ): Promise<EvaluateState> {
   const supabase = await createClient();
+  // getSession() is used only to extract the raw token for forwarding to the API.
+  // The API's requireUser middleware calls getUser() server-to-server to verify it.
   const {
     data: { session },
   } = await supabase.auth.getSession();
@@ -46,6 +48,7 @@ export async function submitEvaluation(
     },
   );
 
+  if (response.status === 401) redirect("/api/signout");
   const body: unknown = await response.json().catch(() => null);
   return mapSubmitResponse(response.status, body);
 }

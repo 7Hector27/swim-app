@@ -139,7 +139,7 @@ export default function SwimmerSkillsHistory({
                                   ? "var(--color-danger)"
                                   : "var(--color-border)",
                               color:
-                                currentGrade === "not_legal" ? "#fff" : "var(--color-text)",
+                                currentGrade === "not_legal" ? "var(--color-on-danger)" : "var(--color-text)",
                             }}
                           >
                             {currentGrade === "not_legal"
@@ -187,7 +187,7 @@ export default function SwimmerSkillsHistory({
                                       backgroundColor: rating.notLegal
                                         ? "var(--color-danger)"
                                         : "var(--color-border)",
-                                      color: rating.notLegal ? "#fff" : "var(--color-text)",
+                                      color: rating.notLegal ? "var(--color-on-danger)" : "var(--color-text)",
                                     }}
                                   >
                                     {gradeLabel(rating.grade, rating.noConcept, rating.notLegal)}
@@ -239,7 +239,7 @@ export default function SwimmerSkillsHistory({
                                         className="text-xs font-semibold px-3 min-h-[44px] rounded"
                                         style={{
                                           backgroundColor: "var(--color-danger)",
-                                          color: "#fff",
+                                          color: "var(--color-on-danger)",
                                           opacity: (voidReasons[rating.id] ?? "").trim() ? 1 : 0.5,
                                           cursor: (voidReasons[rating.id] ?? "").trim()
                                             ? "pointer"

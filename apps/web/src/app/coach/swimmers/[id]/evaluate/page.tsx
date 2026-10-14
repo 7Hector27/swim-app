@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { notFound, redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 
 import AccountInactiveScreen from "@/components/AccountInactiveScreen";
 import EvaluateContent from "@/content/EvaluateContent";
@@ -18,11 +18,7 @@ interface EvaluatePageProps {
 export default async function EvaluatePage({ params }: EvaluatePageProps) {
   const [auth, { id }] = await Promise.all([requireAuth(), params]);
   if (!auth) return <AccountInactiveScreen />;
-  if (auth.profile.role !== "coach") {
-    redirect("/dashboard");
-  }
-
-  const [swimmerResult, categoriesResult] = await Promise.all([
+const [swimmerResult, categoriesResult] = await Promise.all([
     fetchCoachSwimmerDetail(id, auth.accessToken),
     fetchSkillCategories(auth.accessToken),
   ]);

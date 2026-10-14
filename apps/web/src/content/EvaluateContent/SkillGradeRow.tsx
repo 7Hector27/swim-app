@@ -16,10 +16,9 @@ interface SkillGradeRowProps {
 export default function SkillGradeRow({ skill, draftKey, label, draft, onChange }: SkillGradeRowProps) {
   return (
     <fieldset
-      className="flex flex-col gap-3 p-3 rounded border"
+      className={`flex flex-col gap-3 p-3 rounded border ${draft.notLegal ? "border-l-[3px]" : ""}`}
       style={{
         borderColor: draft.notLegal ? "var(--color-danger)" : "var(--color-border)",
-        borderLeftWidth: draft.notLegal ? "3px" : "1px",
       }}
     >
       <legend className="font-semibold text-sm px-1" style={{ color: "var(--color-text)" }}>
@@ -59,7 +58,7 @@ export default function SkillGradeRow({ skill, draftKey, label, draft, onChange 
           style={{
             borderColor: draft.noConcept ? "var(--color-text-secondary)" : "var(--color-border)",
             color: draft.noConcept ? "var(--color-text)" : "var(--color-text-secondary)",
-            backgroundColor: draft.noConcept ? "color-mix(in srgb, var(--color-text-secondary) 15%, transparent)" : "transparent",
+            backgroundColor: draft.noConcept ? "var(--color-surface-soft)" : "transparent",
           }}
         >
           No concept

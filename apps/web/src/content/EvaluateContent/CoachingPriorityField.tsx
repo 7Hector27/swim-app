@@ -6,9 +6,10 @@ interface CoachingPriorityFieldProps {
   suggestion:
     | { status: "idle" | "loading" | "error" }
     | { status: "loaded"; chain: Array<{ slug: string }> | null };
+  slugToName: Record<string, string>;
 }
 
-export default function CoachingPriorityField({ value, onChange, suggestion }: CoachingPriorityFieldProps) {
+export default function CoachingPriorityField({ value, onChange, suggestion, slugToName }: CoachingPriorityFieldProps) {
   return (
     <fieldset className="flex flex-col gap-2">
       <legend className="font-bold text-sm" style={{ color: "var(--color-text)" }}>
@@ -21,7 +22,10 @@ export default function CoachingPriorityField({ value, onChange, suggestion }: C
         <p className="text-xs" style={{ color: "var(--color-text-secondary)" }}>
           Suggestion: Focus on{" "}
           <strong style={{ color: "var(--color-text)" }}>
-            {suggestion.chain[suggestion.chain.length - 1]?.slug ?? ""}
+            {(() => {
+              const lastSlug = suggestion.chain[suggestion.chain.length - 1]?.slug ?? "";
+              return slugToName[lastSlug] ?? lastSlug;
+            })()}
           </strong>
         </p>
       )}

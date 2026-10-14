@@ -39,6 +39,7 @@
   --color-on-accent: #FFFFFF;
   --color-success: #0E7A3E;
   --color-danger: #C8102E;
+  --color-on-danger: #FFFFFF;
   --color-button-danger-text: #FFFFFF;
 
   /* Type */
@@ -85,6 +86,7 @@
   --color-on-accent: #07080B;
   --color-success: #4ADE80;
   --color-danger: #FF6B6B;
+  --color-on-danger: #141A2E;
   --color-button-danger-text: #141A2E;
 }
 

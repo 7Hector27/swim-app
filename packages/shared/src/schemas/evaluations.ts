@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { StartGradeResultSchema } from "../lib/startGrade";
 
 export const EvaluationContextSchema = z.enum(["drill", "practice", "race"]);
 export type EvaluationContext = z.infer<typeof EvaluationContextSchema>;
@@ -210,3 +211,17 @@ export type SkillCategoryWithSkills = z.infer<typeof SkillCategoryWithSkillsSche
 
 export const CategoriesResponseSchema = z.array(SkillCategoryWithSkillsSchema);
 export type CategoriesResponse = z.infer<typeof CategoriesResponseSchema>;
+
+export const SwimmerSkillsResponseSchema = z.object({
+  grades: z.record(
+    z.union([z.number().int().min(1).max(5), z.literal("not_legal"), z.literal("no_concept")]),
+  ),
+  startGrades: z.record(StartGradeResultSchema),
+  coachingPriorities: z.array(
+    z.object({
+      targetSlug: z.string(),
+      chain: z.array(z.object({ slug: z.string(), grade: z.unknown(), sortOrder: z.number().int() })),
+    }),
+  ),
+});
+export type SwimmerSkillsResponse = z.infer<typeof SwimmerSkillsResponseSchema>;

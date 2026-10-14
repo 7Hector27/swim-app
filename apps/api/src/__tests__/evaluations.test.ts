@@ -609,6 +609,66 @@ describe("GET /categories", () => {
       .set("Authorization", "Bearer token")
       .expect(403);
   });
+
+  it("coach → 200 with categories array", async () => {
+    authAs(profileCoach);
+
+    const categoryRow = {
+      id: CATEGORY_ID,
+      slug: "freestyle",
+      name: "Freestyle",
+      sortOrder: 1,
+    };
+    const skillRow = {
+      id: SKILL_ID,
+      slug: "freestyle-kick",
+      name: "Freestyle Kick",
+      type: "rubric" as const,
+      unit: null,
+      ratedPerSide: false,
+      parentSkillId: null,
+      sortOrder: 1,
+      faultTags: ["flat-kick"],
+      categoryId: CATEGORY_ID,
+    };
+
+    // requireUser calls: coachAvailabilityRouter, coachLessonsRouter, coachCategoriesRouter
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(profileCoach))
+      .mockReturnValueOnce(requireUserSelect(profileCoach))
+      .mockReturnValueOnce(requireUserSelect(profileCoach))
+      .mockReturnValueOnce(
+        (() => {
+          const orderBy = vi.fn().mockResolvedValue([categoryRow]);
+          const from = vi.fn().mockReturnValue({ orderBy });
+          return { from };
+        })(),
+      )
+      .mockReturnValueOnce(
+        (() => {
+          const orderBy = vi.fn().mockResolvedValue([skillRow]);
+          const where = vi.fn().mockReturnValue({ orderBy });
+          const from = vi.fn().mockReturnValue({ where });
+          return { from };
+        })(),
+      );
+
+    const res = await request(app)
+      .get("/coach/categories")
+      .set("Authorization", "Bearer token")
+      .expect(200);
+
+    expect(Array.isArray(res.body)).toBe(true);
+    expect(res.body).toHaveLength(1);
+    expect(res.body[0]).toMatchObject({
+      id: CATEGORY_ID,
+      slug: "freestyle",
+      name: "Freestyle",
+      skills: expect.arrayContaining([
+        expect.objectContaining({ id: SKILL_ID, slug: "freestyle-kick" }),
+      ]),
+    });
+  });
 });
 
 // ── PATCH /ratings/:id/void ───────────────────────────────────────────────────
