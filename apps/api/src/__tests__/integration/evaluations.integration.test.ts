@@ -18,6 +18,7 @@ import {
   evaluationSessions,
   profiles,
   ratingFaultTags,
+  skillDependencies,
   skillRatings,
   skills,
   swimmers,
@@ -680,5 +681,81 @@ describe("API integration tests — evaluations routes", () => {
     for (const row of [r1[0]!, r2[0]!, r3[0]!, r4[0]!]) {
       await adminDb().delete(skillRatings).where(eq(skillRatings.id, row.id));
     }
+  });
+
+  it("GET /skills coachingPriorities: weak left side on a sided skill produces a chain with plain slug", async () => {
+    // 1. Look up a foundation skill of breathing-timing-free.
+    const depRows = await adminDb()
+      .select({ dependsOnSkillId: skillDependencies.dependsOnSkillId })
+      .from(skillDependencies)
+      .where(eq(skillDependencies.skillId, ratedPerSideSkillId))
+      .limit(1);
+    if (!depRows[0]) throw new Error("breathing-timing-free has no dependencies in catalog — cannot run test");
+    const foundationSkillId = depRows[0].dependsOnSkillId;
+
+    const foundationSlugRows = await adminDb()
+      .select({ slug: skills.slug })
+      .from(skills)
+      .where(eq(skills.id, foundationSkillId))
+      .limit(1);
+    if (!foundationSlugRows[0]) throw new Error("Foundation skill not found");
+    const foundationSlug = foundationSlugRows[0].slug;
+
+    // 2. Insert a grade-1 rating for breathing-timing-free left side.
+    const r1 = await adminDb()
+      .insert(skillRatings)
+      .values({
+        sessionId,
+        swimmerId,
+        skillId: ratedPerSideSkillId,
+        coachId,
+        grade: 1,
+        notLegal: false,
+        noConcept: false,
+        side: "left",
+        ratedAt: new Date("2026-10-10T10:00:00Z"),
+      })
+      .returning({ id: skillRatings.id });
+
+    // 3. Insert a grade-1 rating for the foundation skill (non-sided).
+    const r2 = await adminDb()
+      .insert(skillRatings)
+      .values({
+        sessionId,
+        swimmerId,
+        skillId: foundationSkillId,
+        coachId,
+        grade: 1,
+        notLegal: false,
+        noConcept: false,
+        ratedAt: new Date("2026-10-10T10:00:00Z"),
+      })
+      .returning({ id: skillRatings.id });
+
+    // 4. Call GET /coach/swimmers/:id/skills.
+    const response = await request(app)
+      .get(`/coach/swimmers/${swimmerId}/skills`)
+      .set("Authorization", `Bearer ${coachToken}`);
+
+    // 5. Assert 200.
+    expect(response.status).toBe(200);
+
+    // 6. Find the coachingPriority entry with targetSlug === "breathing-timing-free" (plain slug).
+    const { coachingPriorities } = response.body as {
+      coachingPriorities: Array<{ targetSlug: string; chain: Array<{ slug: string }> }>;
+    };
+    const entry = coachingPriorities.find((priority) => priority.targetSlug === "breathing-timing-free");
+    expect(entry).toBeDefined();
+
+    // 7. Assert the chain has length >= 2 (breathing-timing-free -> foundation).
+    expect(entry!.chain.length).toBeGreaterThanOrEqual(2);
+
+    // Verify the foundation slug appears somewhere in the chain.
+    const chainSlugs = entry!.chain.map((chainEntry) => chainEntry.slug);
+    expect(chainSlugs).toContain(foundationSlug);
+
+    // 8. Cleanup.
+    await adminDb().delete(skillRatings).where(eq(skillRatings.id, r1[0]!.id));
+    await adminDb().delete(skillRatings).where(eq(skillRatings.id, r2[0]!.id));
   });
 });

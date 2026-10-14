@@ -236,6 +236,28 @@ describe("parent role restrictions", () => {
       .send({ reason: "mistake" });
     expect(res.status).toBe(403);
   });
+
+  it("GET /swimmers/:id/skills → 403 for parent", async () => {
+    const res = await request(app)
+      .get(`/coach/swimmers/${SWIMMER_ID}/skills`)
+      .set("Authorization", "Bearer token");
+    expect(res.status).toBe(403);
+  });
+
+  it("GET /swimmers/:id/skills/:skillId/ratings → 403 for parent", async () => {
+    const res = await request(app)
+      .get(`/coach/swimmers/${SWIMMER_ID}/skills/${SKILL_ID}/ratings`)
+      .set("Authorization", "Bearer token");
+    expect(res.status).toBe(403);
+  });
+
+  it("GET /swimmers/:id/sessions/dependency-map → 403 for parent", async () => {
+    const res = await request(app)
+      .get(`/coach/swimmers/${SWIMMER_ID}/sessions/dependency-map`)
+      .set("Authorization", "Bearer token")
+      .query({ categoryId: CATEGORY_ID });
+    expect(res.status).toBe(403);
+  });
 });
 
 // ── POST /swimmers/:id/sessions — input validation ────────────────────────────

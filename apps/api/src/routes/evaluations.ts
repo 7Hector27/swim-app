@@ -24,10 +24,12 @@ import {
   CreateSessionBodySchema,
   VoidRatingBodySchema,
   DependencyMapQuerySchema,
+  CoachSkillRatingSchema,
   findDeepestLowFoundation,
   headPositionOverall,
   latestEffectiveRatings,
   calculateStartGrade,
+  weakerSideGrade,
   type RatingRecord,
   type GradeMap,
   type BuiltOnGraph,
@@ -300,6 +302,24 @@ evaluationsRouter.get(
 
     const grades: GradeMap = latestEffectiveRatings(ratingRecords);
 
+    // Collapse compound keys ("slug:left"/"slug:right") to plain slug keys so
+    // graph lookups in findDeepestLowFoundation (which uses plain slugs) work
+    // correctly. The raw `grades` map is still sent in the response.
+    const collapsedGrades: GradeMap = {};
+    for (const [key, value] of Object.entries(grades)) {
+      if (!key.includes(":")) {
+        collapsedGrades[key] = value;
+      } else {
+        const plainSlug = key.slice(0, key.lastIndexOf(":"));
+        if (!(plainSlug in collapsedGrades)) {
+          collapsedGrades[plainSlug] = weakerSideGrade(
+            grades[`${plainSlug}:left`],
+            grades[`${plainSlug}:right`],
+          );
+        }
+      }
+    }
+
     // Build sort order map from skill rows
     const sortOrder: SortOrderMap = {};
     for (const row of ratingRows) {
@@ -338,7 +358,7 @@ evaluationsRouter.get(
       startGrades[startSlug] = calculateStartGrade(componentSlugs, ratingRecords);
     }
 
-    // Extract per-stroke head position grades from the grades map
+    // Extract per-stroke head position grades from the collapsed grades map
     const headPositionSlugs = {
       free: "head-position-free",
       back: "head-position-back",
@@ -347,10 +367,10 @@ evaluationsRouter.get(
     } as const;
 
     const perStrokeGrades: PerStrokeGrades = {
-      ...(grades[headPositionSlugs.free] !== undefined && { free: grades[headPositionSlugs.free] }),
-      ...(grades[headPositionSlugs.back] !== undefined && { back: grades[headPositionSlugs.back] }),
-      ...(grades[headPositionSlugs.breast] !== undefined && { breast: grades[headPositionSlugs.breast] }),
-      ...(grades[headPositionSlugs.fly] !== undefined && { fly: grades[headPositionSlugs.fly] }),
+      ...(collapsedGrades[headPositionSlugs.free] !== undefined && { free: collapsedGrades[headPositionSlugs.free] }),
+      ...(collapsedGrades[headPositionSlugs.back] !== undefined && { back: collapsedGrades[headPositionSlugs.back] }),
+      ...(collapsedGrades[headPositionSlugs.breast] !== undefined && { breast: collapsedGrades[headPositionSlugs.breast] }),
+      ...(collapsedGrades[headPositionSlugs.fly] !== undefined && { fly: collapsedGrades[headPositionSlugs.fly] }),
     };
 
     const headPositionResult = headPositionOverall(perStrokeGrades);
@@ -382,10 +402,11 @@ evaluationsRouter.get(
       fullSortOrder[skill.slug] = skill.sortOrder;
     }
 
-    // Compute coaching priorities — deepest low foundation for each rated skill
+    // Compute coaching priorities using collapsedGrades so sided-skill plain
+    // slugs resolve correctly against the dependency graph.
     const coachingPriorities: Array<{ targetSlug: string; chain: ChainEntry[] }> = [];
-    for (const slug of Object.keys(grades)) {
-      const chain = findDeepestLowFoundation(slug, grades, graph, fullSortOrder);
+    for (const slug of Object.keys(collapsedGrades)) {
+      const chain = findDeepestLowFoundation(slug, collapsedGrades, graph, fullSortOrder);
       if (chain !== null) {
         coachingPriorities.push({ targetSlug: slug, chain });
       }
@@ -463,30 +484,14 @@ evaluationsRouter.get(
 
     req.log.info({ swimmerId, skillId, count: ratingRows.length }, "skill rating history fetched");
 
-    const response = ratingRows.map((row) => ({
-      id: row.id,
-      sessionId: row.sessionId,
-      swimmerId: row.swimmerId,
-      skillId: row.skillId,
-      coachId: row.coachId,
-      grade: row.grade,
-      notLegal: row.notLegal,
-      noConcept: row.noConcept,
-      side: row.side,
-      capacityValue: row.capacityValue,
-      capacityUnit: row.capacityUnit,
-      measurementValue: row.measurementValue,
-      measurementUnit: row.measurementUnit,
-      note: row.note,
+    // coach-only route — switch to ParentSkillRatingSchema before adding any parent access
+    res.json(ratingRows.map((row) => CoachSkillRatingSchema.parse({
+      ...row,
       voidedAt: row.voidedAt?.toISOString() ?? null,
-      voidReason: row.voidReason,
-      voidBy: row.voidBy,
       ratedAt: row.ratedAt.toISOString(),
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
-    }));
-
-    res.json(response);
+    })));
   }),
 );
 
@@ -720,27 +725,13 @@ ratingsRouter.patch(
 
     req.log.info({ ratingId, coachId }, "rating voided");
 
-    res.json({
-      id: updated.id,
-      sessionId: updated.sessionId,
-      swimmerId: updated.swimmerId,
-      skillId: updated.skillId,
-      coachId: updated.coachId,
-      grade: updated.grade,
-      notLegal: updated.notLegal,
-      noConcept: updated.noConcept,
-      side: updated.side,
-      capacityValue: updated.capacityValue,
-      capacityUnit: updated.capacityUnit,
-      measurementValue: updated.measurementValue,
-      measurementUnit: updated.measurementUnit,
-      note: updated.note,
+    // coach-only route — switch to ParentSkillRatingSchema before adding any parent access
+    res.json(CoachSkillRatingSchema.parse({
+      ...updated,
       voidedAt: updated.voidedAt?.toISOString() ?? null,
-      voidReason: updated.voidReason,
-      voidBy: updated.voidBy,
       ratedAt: updated.ratedAt.toISOString(),
       createdAt: updated.createdAt.toISOString(),
       updatedAt: updated.updatedAt.toISOString(),
-    });
+    }));
   }),
 );
