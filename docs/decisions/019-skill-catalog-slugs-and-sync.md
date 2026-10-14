@@ -56,6 +56,8 @@ These decisions were made to build the catalog but were not confirmed with Jason
 
 10. **`stroke-breath-coordination-breast` and `stroke-breath-coordination-fly` do not depend on body rotation.** RESOLVED (Phase 1, A10) — body rotation removed from breaststroke and fly stroke-breath coordination. `stroke-breath-coordination-breast` depends only on `breathing-timing-breast`; `stroke-breath-coordination-fly` depends only on `breathing-timing-fly`.
 
-**New open question (from Phase 1 review):**
+**Open questions from Phase 1 review:**
 
 - **Breaststroke breakout dependency** — question 4 above remains unresolved. Is `breast-timing` the correct stand-in for "Stroke timing" in the breaststroke breakout, or should it depend on something else?
+
+- **"Not assessed" in the dependency map** — when the dependency map walks the `buildsOn` chain and hits a skill with no rating yet ("not assessed"), should it surface "this foundation skill hasn't been observed yet — check it" rather than stopping silently? Stopping silently means the coach sees no coaching priority even though there may be an unobserved gap. Surfacing it as a prompt distinguishes "not a problem" from "unknown." Needs Jason's input before the dependency-map PR (E-0).

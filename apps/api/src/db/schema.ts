@@ -26,8 +26,6 @@ export const skillTypeEnum = pgEnum("skill_type", [
   "rollup",
 ]);
 
-export const skillSideEnum = pgEnum("skill_side", ["left", "right"]);
-
 export const strokeEnum = pgEnum("stroke", ["free", "back", "breast", "fly"]);
 
 export const skillCategories = pgTable("skill_categories", {
@@ -52,7 +50,7 @@ export const skills = pgTable("skills", {
   sortOrder: integer("sort_order").notNull(),
   archivedAt: timestamp("archived_at", { withTimezone: true }),
   faultTags: text("fault_tags").array(),
-  side: skillSideEnum("side"),
+  ratedPerSide: boolean("rated_per_side").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdateFn(() => new Date()),
 }).enableRLS();

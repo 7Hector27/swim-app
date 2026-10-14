@@ -29,7 +29,7 @@ export const SkillSchema = z.object({
   sortOrder: z.number().int(),
   archivedAt: z.string().datetime({ offset: true }).nullable(),
   faultTags: z.array(z.string()).nullable(),
-  side: z.enum(["left", "right"]).nullable(),
+  ratedPerSide: z.boolean(),
   createdAt: z.string().datetime({ offset: true }),
   updatedAt: z.string().datetime({ offset: true }),
 });

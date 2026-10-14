@@ -22,7 +22,7 @@ export type CatalogSkill = {
   builtOnSlugs?: string[];
   descriptors?: CatalogDescriptor[];
   faultTags?: string[];
-  side?: "left" | "right";
+  ratedPerSide?: boolean;
 };
 
 export type CatalogCategory = {
@@ -188,6 +188,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         type: "rubric",
         stroke: "free",
         sortOrder: 3,
+        ratedPerSide: true,
         builtOnSlugs: ["free-head-position", "free-stroke-timing"],
       },
       // breathing-timing-back archived per Jason A5.
@@ -215,6 +216,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         type: "rubric",
         stroke: "free",
         sortOrder: 6,
+        ratedPerSide: true,
         // Per Jason A15: links to free-rotation, not shared body-rotation.
         builtOnSlugs: ["breathing-timing-free", "free-rotation"],
       },
@@ -268,6 +270,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         type: "rubric",
         stroke: "free",
         sortOrder: 12,
+        ratedPerSide: true,
         builtOnSlugs: ["free-rhythmic-breathing", "free-rotation"],
       },
     ],
@@ -285,8 +288,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         type: "rubric",
         stroke: "free",
         sortOrder: 1,
-        // Per Jason A1: per-stroke head positions depend on core-stability (input to the rollup).
-        builtOnSlugs: ["core-stability"],
+        // Per Jason: per-stroke head positions have no explicit builds-on; they are the inputs to the rollup.
         descriptors: HEAD_POSITION_DESCRIPTORS,
       },
       {
@@ -422,8 +424,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         type: "rubric",
         stroke: "back",
         sortOrder: 2,
-        // Per Jason A1: per-stroke head positions depend on core-stability.
-        builtOnSlugs: ["core-stability"],
+        // Per Jason: per-stroke head positions have no explicit builds-on.
         descriptors: HEAD_POSITION_DESCRIPTORS,
       },
       {
@@ -571,8 +572,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         type: "rubric",
         stroke: "breast",
         sortOrder: 3,
-        // Per Jason A1: per-stroke head positions depend on core-stability.
-        builtOnSlugs: ["core-stability"],
+        // Per Jason: per-stroke head positions have no explicit builds-on.
         descriptors: HEAD_POSITION_DESCRIPTORS,
       },
       {
@@ -691,8 +691,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         type: "rubric",
         stroke: "fly",
         sortOrder: 4,
-        // Per Jason A1: per-stroke head positions depend on core-stability.
-        builtOnSlugs: ["core-stability"],
+        // Per Jason: per-stroke head positions have no explicit builds-on.
         descriptors: HEAD_POSITION_DESCRIPTORS,
       },
       {
@@ -770,13 +769,23 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
     name: "Starts, Turns & Underwaters",
     sortOrder: 7,
     skills: [
-      // Underwaters
+      // Underwaters — three separate grades per Jason A4.
+      // udk-free-fly (old shared skill) is archived; udk-free and udk-fly are new slugs.
       {
-        slug: "udk-free-fly",
+        slug: "udk-free",
         name: "Underwater dolphin kick",
         type: "rubric",
-        appliesTo: ["free", "fly"],
+        stroke: "free",
         sortOrder: 1,
+        builtOnSlugs: ["static-streamline", "fly-dolphin-kick"],
+        descriptors: UDK_DESCRIPTORS,
+      },
+      {
+        slug: "udk-fly",
+        name: "Underwater dolphin kick",
+        type: "rubric",
+        stroke: "fly",
+        sortOrder: 2,
         builtOnSlugs: ["static-streamline", "fly-dolphin-kick"],
         descriptors: UDK_DESCRIPTORS,
       },
@@ -785,7 +794,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         name: "Underwater dolphin kick",
         type: "rubric",
         stroke: "back",
-        sortOrder: 2,
+        sortOrder: 3,
         builtOnSlugs: ["static-streamline", "fly-dolphin-kick"],
         descriptors: UDK_DESCRIPTORS,
       },
@@ -811,7 +820,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         type: "rubric",
         stroke: "free",
         sortOrder: 5,
-        builtOnSlugs: ["udk-free-fly", "free-stroke-timing"],
+        builtOnSlugs: ["udk-free", "free-stroke-timing"],
       },
       {
         slug: "breakout-back",
@@ -836,8 +845,8 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         type: "rubric",
         stroke: "fly",
         sortOrder: 8,
-        // Per Jason A9: confirmed builds on udk-free-fly and fly-two-kick-rhythm.
-        builtOnSlugs: ["udk-free-fly", "fly-two-kick-rhythm"],
+        // Per Jason A9: fly breakout builds on fly UDK and two-kick rhythm.
+        builtOnSlugs: ["udk-fly", "fly-two-kick-rhythm"],
       },
 
       // Track start (composite) + 6 components

@@ -116,7 +116,7 @@ describe("SKILLS_CATALOG", () => {
       backstroke: 14,
       breaststroke: 11,
       butterfly: 12,
-      "starts-turns-underwaters": 39,
+      "starts-turns-underwaters": 40,
       "racing-performance": 5,
       "water-confidence": 5,
     });
@@ -134,13 +134,11 @@ describe("SKILLS_CATALOG", () => {
     expect(invalid).toEqual([]);
   });
 
-  it("all skills with side have valid side values", () => {
+  it("ratedPerSide is a boolean when present", () => {
     const invalid: string[] = [];
     for (const skill of allSkills) {
-      if (skill.side !== undefined) {
-        if (skill.side !== "left" && skill.side !== "right") {
-          invalid.push(skill.slug);
-        }
+      if (skill.ratedPerSide !== undefined && typeof skill.ratedPerSide !== "boolean") {
+        invalid.push(skill.slug);
       }
     }
     expect(invalid).toEqual([]);
@@ -159,6 +157,7 @@ describe("SKILLS_CATALOG", () => {
       "free-distance-per-stroke",
       "tempo",
       "finishing",
+      "udk-free-fly",
     ];
     const present = archivedSlugs.filter((slug) => slugSet.has(slug));
     expect(present).toEqual([]);
