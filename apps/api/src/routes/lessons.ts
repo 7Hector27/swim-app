@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { and, asc, eq, gt, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import type {
   AvailableSlot,
   AvailableSlotsQuery,
@@ -40,6 +40,7 @@ lessonsRouter.use(requireUser);
 
 lessonsRouter.get(
   "/",
+  requireParent,
   requireHouseholdMember,
   validate({ query: UpcomingLessonsQuerySchema }),
   asyncHandler(async (req, res) => {
@@ -47,13 +48,15 @@ lessonsRouter.get(
     const { householdId } = req;
     const now = new Date();
 
-    const afterDate = query.after ? new Date(query.after) : now;
-    const limitCount = query.limit ?? 10;
+    const afterDate = query.after
+      ? new Date(Math.max(new Date(query.after).getTime(), now.getTime()))
+      : now;
+
+    const limit = query.limit ?? 20;
 
     const lessonRows = await db
       .select({
         id: lessons.id,
-        householdId: lessons.householdId,
         locationId: lessons.locationId,
         locationName: lessonLocations.name,
         startsAt: lessons.startsAt,
@@ -72,11 +75,11 @@ lessonsRouter.get(
         and(
           eq(lessons.householdId, householdId),
           inArray(lessons.status, ["pending", "approved"]),
-          gt(lessons.startsAt, afterDate),
+          sql`${lessons.startsAt} >= ${afterDate.toISOString()}`,
         ),
       )
       .orderBy(asc(lessons.startsAt))
-      .limit(limitCount);
+      .limit(limit);
 
     const lessonIds = lessonRows.map((row) => row.id);
 
@@ -103,7 +106,6 @@ lessonsRouter.get(
 
     const body: UpcomingLesson[] = lessonRows.map((row) => ({
       id: row.id,
-      householdId: row.householdId,
       locationId: row.locationId,
       locationName: row.locationName,
       startsAt: row.startsAt.toISOString(),

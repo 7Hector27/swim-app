@@ -16,7 +16,7 @@ interface Props {
 
 export default async function CoachDashboardContent({ accessToken }: Props) {
   const today = todayLA();
-  const [swimmers, pendingLessons, schedule, stats] = await Promise.all([
+  const [swimmers, pendingLessons, scheduleItems, stats] = await Promise.all([
     fetchCoachSwimmers(accessToken),
     coachGetPendingLessons(accessToken),
     fetchCoachSchedule(accessToken, today),
@@ -87,7 +87,7 @@ export default async function CoachDashboardContent({ accessToken }: Props) {
           <div className="flex flex-col tablet:flex-row gap-6 desktop:gap-8 items-start">
             {/* Main column */}
             <div className="flex-1 min-w-0 flex flex-col gap-6">
-              <TodayScheduleCard items={schedule?.items ?? []} />
+              <TodayScheduleCard items={scheduleItems} />
 
               <SwimmersSection swimmers={swimmers} />
             </div>

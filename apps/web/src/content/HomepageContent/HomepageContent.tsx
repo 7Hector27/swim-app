@@ -9,12 +9,16 @@ import HeroSection from "./HeroSection";
 import HowItWorksSection from "./HowItWorksSection";
 import LeaderboardSection from "./LeaderboardSection";
 
-export default function HomepageContent() {
+interface Props {
+  isAuthenticatedParent: boolean;
+}
+
+export default function HomepageContent({ isAuthenticatedParent }: Props) {
   return (
     <>
       <SiteNav />
       <main id="main">
-        <HeroSection />
+        <HeroSection isAuthenticatedParent={isAuthenticatedParent} />
         <WaveDivider from="background" to="section" />
         <HowItWorksSection />
         <LeaderboardSection />

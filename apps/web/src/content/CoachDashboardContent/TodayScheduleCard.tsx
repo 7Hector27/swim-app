@@ -1,5 +1,4 @@
 import type { ScheduleItem } from "@swim-app/shared";
-import Link from "next/link";
 
 interface Props {
   items: ScheduleItem[];
@@ -10,49 +9,26 @@ export default function TodayScheduleCard({ items }: Props) {
     <div className="rounded-card border border-border p-5 tablet:p-6">
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-xl text-heading">Today&apos;s schedule</h2>
-        <Link
+        <a
           href="/coach/schedule"
           className="text-sm font-semibold text-link hover:text-link-hover transition-colors duration-150"
         >
           Full calendar
-        </Link>
+        </a>
       </div>
 
       {items.length === 0 ? (
-        <p className="text-sm text-text-secondary py-4">No lessons scheduled for today.</p>
+        <p className="text-sm text-text-secondary py-4">No lessons scheduled today.</p>
       ) : (
         <div className="divide-y divide-border">
-          {items.map((item, index) => {
+          {items.map((item) => {
             if (item.type === "lesson") {
-              const startsAt = new Date(item.lesson.startsAt);
-              const swimmerNames = item.lesson.swimmers.map((swimmer) => swimmer.firstName).join(", ");
-              return (
-                <ScheduleRow
-                  key={item.lesson.id}
-                  time={formatTime(startsAt)}
-                  title={`${swimmerNames}, ${item.lesson.durationMinutes} min`}
-                  detail={`${item.lesson.type === "private" ? "Private" : "Family"} lesson at ${item.lesson.locationName}`}
-                  badge={item.lesson.status === "approved" ? "confirmed" : "pending"}
-                />
-              );
+              return <LessonRow key={item.lesson.id} item={item} />;
             }
             if (item.type === "travel_buffer") {
-              return (
-                <TravelBufferRow
-                  key={`buffer-${index}`}
-                  time={formatTime(new Date(item.startsAt))}
-                  duration={`${item.bufferMinutes} min`}
-                  fromTo={`${item.fromLocationName} → ${item.toLocationName}`}
-                />
-              );
+              return <TravelBufferRow key={`travel_buffer-${item.startsAt}`} item={item} />;
             }
-            return (
-              <OpenSlotRow
-                key={`open-${item.startsAt}`}
-                time={formatTime(new Date(item.startsAt))}
-                until={formatTime(new Date(item.endsAt))}
-              />
-            );
+            return <OpenSlotRow key={`open_slot-${item.startsAt}`} item={item} />;
           })}
         </div>
       )}
@@ -60,53 +36,48 @@ export default function TodayScheduleCard({ items }: Props) {
   );
 }
 
-function formatTime(date: Date): string {
+// ── Sub-components ─────────────────────────────────────────────────────────────
+
+function formatTime(isoString: string): string {
   return new Intl.DateTimeFormat("en-US", {
     timeZone: "America/Los_Angeles",
     hour: "numeric",
     minute: "2-digit",
-    hour12: true,
-  }).format(date);
+  }).format(new Date(isoString));
 }
 
-function ScheduleRow({
-  time,
-  title,
-  detail,
-  badge,
-}: {
-  time: string;
-  title: string;
-  detail: string;
-  badge?: "confirmed" | "pending";
-}) {
+function LessonRow({ item }: { item: Extract<ScheduleItem, { type: "lesson" }> }) {
+  const time = formatTime(item.lesson.startsAt);
+  const swimmerNames = item.lesson.swimmers.map((swimmer) => swimmer.firstName).join(", ");
+
   return (
     <div className="flex items-center gap-4 py-4">
       <div className="flex-shrink-0 w-[68px]">
         <p className="text-xs font-semibold text-text-secondary tabular-nums">{time}</p>
       </div>
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold text-text">{title}</p>
-        <p className="text-xs text-text-secondary mt-0.5">{detail}</p>
+        <p className="text-sm font-semibold text-text">
+          {swimmerNames || "No swimmers"}, {item.lesson.durationMinutes} min
+        </p>
+        <p className="text-xs text-text-secondary mt-0.5">
+          {item.lesson.type === "private" ? "Private" : "Family"} lesson &middot; {item.locationName}
+        </p>
       </div>
-      {badge && (
-        <div className="flex-shrink-0">
-          {badge === "confirmed" ? (
-            <span className="inline-flex items-center rounded-full text-xs font-semibold px-2.5 py-1 bg-success/10 text-success">
-              Confirmed
-            </span>
-          ) : (
-            <span className="inline-flex items-center rounded-full text-xs font-semibold px-2.5 py-1 bg-surface-soft text-text-secondary border border-border">
-              Pending
-            </span>
-          )}
-        </div>
-      )}
+      <button
+        type="button"
+        className="flex-shrink-0 text-sm font-semibold text-link hover:text-link-hover transition-colors duration-150 min-h-[44px] flex items-center"
+      >
+        Open swimmer
+      </button>
     </div>
   );
 }
 
-function TravelBufferRow({ time, duration, fromTo }: { time: string; duration: string; fromTo: string }) {
+function TravelBufferRow({ item }: { item: Extract<ScheduleItem, { type: "travel_buffer" }> }) {
+  const time = formatTime(item.startsAt);
+  const durationMs = new Date(item.endsAt).getTime() - new Date(item.startsAt).getTime();
+  const durationMin = Math.round(durationMs / 60_000);
+
   return (
     <div className="flex items-center gap-4 py-4">
       <div className="flex-shrink-0 w-[68px]">
@@ -131,15 +102,22 @@ function TravelBufferRow({ time, duration, fromTo }: { time: string; duration: s
           <circle cx="18.5" cy="18.5" r="2.5" />
         </svg>
         <div>
-          <p className="text-sm font-semibold text-text">Travel buffer, {duration}</p>
-          <p className="text-xs text-text-secondary mt-0.5">{fromTo}</p>
+          <p className="text-sm font-semibold text-text">
+            Travel buffer, {durationMin} min
+          </p>
+          <p className="text-xs text-text-secondary mt-0.5">
+            Blocked automatically. Not bookable.
+          </p>
         </div>
       </div>
     </div>
   );
 }
 
-function OpenSlotRow({ time, until }: { time: string; until: string }) {
+function OpenSlotRow({ item }: { item: Extract<ScheduleItem, { type: "open_slot" }> }) {
+  const time = formatTime(item.startsAt);
+  const until = formatTime(item.endsAt);
+
   return (
     <div className="flex items-center gap-4 py-4">
       <div className="flex-shrink-0 w-[68px]">

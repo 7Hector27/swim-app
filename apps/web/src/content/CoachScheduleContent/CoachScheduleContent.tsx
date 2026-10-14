@@ -1,30 +1,27 @@
-import SiteNav from "@/components/SiteNav";
-import SiteFooter from "@/components/SiteFooter";
-import { fetchCoachSchedule } from "@/lib/api/lessons";
-import type { ScheduleItem } from "@swim-app/shared";
 import Link from "next/link";
+
+import { todayLA } from "@swim-app/shared";
+import type { ScheduleItem } from "@swim-app/shared";
+
+import SiteFooter from "@/components/SiteFooter";
+import SiteNav from "@/components/SiteNav";
+import { fetchCoachSchedule } from "@/lib/api/lessons";
 
 interface Props {
   accessToken: string;
-  date: string;
+  date?: string;
 }
 
 export default async function CoachScheduleContent({ accessToken, date }: Props) {
-  const schedule = await fetchCoachSchedule(accessToken, date);
-  const items = schedule?.items ?? [];
+  const scheduleDate = date ?? todayLA();
+  const items = await fetchCoachSchedule(accessToken, scheduleDate);
 
   const dateLabel = new Intl.DateTimeFormat("en-US", {
     timeZone: "America/Los_Angeles",
     weekday: "long",
     month: "long",
     day: "numeric",
-    year: "numeric",
-  }).format(new Date(date + "T12:00:00Z"));
-
-  const prevDate = offsetDate(date, -1);
-  const nextDate = offsetDate(date, 1);
-
-  const lessonCount = items.filter((item) => item.type === "lesson").length;
+  }).format(new Date(`${scheduleDate}T12:00:00`));
 
   return (
     <div className="flex flex-col min-h-screen bg-background">
@@ -32,56 +29,28 @@ export default async function CoachScheduleContent({ accessToken, date }: Props)
 
       <main id="main-content" className="flex-1">
         <div className="mx-auto max-w-content px-page pt-10 pb-20 tablet:pt-14 tablet:pb-32">
-          <div className="flex items-center gap-4 mb-8">
+          <div className="flex flex-col gap-4 mb-8 tablet:flex-row tablet:items-center tablet:justify-between">
+            <h1 className="text-3xl tablet:text-4xl text-heading">{dateLabel}</h1>
             <Link
-              href="/coach/dashboard"
-              className="flex items-center gap-1.5 text-sm font-semibold text-link hover:text-link-hover transition-colors duration-150"
+              href="/coach"
+              className="text-sm font-semibold text-link hover:text-link-hover transition-colors duration-150"
             >
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                <path d="M10 3L5 8l5 5" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-              Dashboard
+              Back to dashboard
             </Link>
-          </div>
-
-          <div className="flex items-center justify-between mb-8">
-            <div>
-              <h1 className="text-3xl tablet:text-4xl text-heading">{dateLabel}</h1>
-              <p className="mt-1 text-sm text-text-secondary">
-                {lessonCount} lesson{lessonCount !== 1 ? "s" : ""} scheduled
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <Link
-                href={`/coach/schedule?date=${prevDate}`}
-                className="inline-flex items-center justify-center w-10 h-10 rounded-card border border-border text-text-secondary hover:text-text hover:border-heading transition-colors duration-150"
-                aria-label="Previous day"
-              >
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                  <path d="M10 3L5 8l5 5" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              </Link>
-              <Link
-                href={`/coach/schedule?date=${nextDate}`}
-                className="inline-flex items-center justify-center w-10 h-10 rounded-card border border-border text-text-secondary hover:text-text hover:border-heading transition-colors duration-150"
-                aria-label="Next day"
-              >
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                  <path d="M6 3l5 5-5 5" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              </Link>
-            </div>
           </div>
 
           <div className="rounded-card border border-border overflow-hidden">
             {items.length === 0 ? (
-              <div className="px-6 py-12 text-center">
-                <p className="text-sm text-text-secondary">No lessons or open slots on this day.</p>
-              </div>
+              <p className="px-5 py-10 text-sm text-text-secondary text-center">
+                No lessons or open slots for this day.
+              </p>
             ) : (
               <div className="divide-y divide-border">
-                {items.map((item, index) => (
-                  <ScheduleItemRow key={index} item={item} />
+                {items.map((item) => (
+                  <ScheduleRow
+                    key={item.type === "lesson" ? item.lesson.id : `${item.type}-${item.startsAt}`}
+                    item={item}
+                  />
                 ))}
               </div>
             )}
@@ -94,51 +63,60 @@ export default async function CoachScheduleContent({ accessToken, date }: Props)
   );
 }
 
-function ScheduleItemRow({ item }: { item: ScheduleItem }) {
+// ── Sub-components ─────────────────────────────────────────────────────────────
+
+function ScheduleRow({ item }: { item: ScheduleItem }) {
   if (item.type === "lesson") {
-    const startsAt = new Date(item.lesson.startsAt);
-    const endsAt = new Date(startsAt.getTime() + item.lesson.durationMinutes * 60 * 1000);
+    const startLabel = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/Los_Angeles",
+      hour: "numeric",
+      minute: "2-digit",
+    }).format(new Date(item.lesson.startsAt));
+
     const swimmerNames = item.lesson.swimmers
-      .map((swimmer) => swimmer.firstName + " " + swimmer.lastName)
+      .map((swimmer) => swimmer.firstName)
       .join(", ");
+
     return (
-      <div className="flex items-start gap-4 px-6 py-5">
-        <div className="flex-shrink-0 w-20">
-          <p className="text-xs font-semibold text-text-secondary tabular-nums">
-            {formatTime(startsAt)}
-          </p>
-          <p className="text-xs text-text-secondary mt-0.5 tabular-nums">
-            {formatTime(endsAt)}
-          </p>
+      <div className="flex items-center gap-4 px-5 py-4">
+        <div className="flex-shrink-0 w-[72px]">
+          <p className="text-xs font-semibold text-text-secondary tabular-nums">{startLabel}</p>
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-text">{swimmerNames}</p>
+          <p className="text-sm font-semibold text-text">
+            {swimmerNames || "No swimmers"}, {item.lesson.durationMinutes} min
+          </p>
           <p className="text-xs text-text-secondary mt-0.5">
-            {item.lesson.durationMinutes} min · {item.lesson.type === "private" ? "Private" : "Family"} · {item.lesson.locationName}
+            {item.locationName} &middot; {item.lesson.type === "private" ? "Private" : "Family"} lesson
           </p>
         </div>
-        <div className="flex-shrink-0">
-          {item.lesson.status === "approved" ? (
-            <span className="inline-flex items-center rounded-full text-xs font-semibold px-2.5 py-1 bg-success/10 text-success">
-              Confirmed
-            </span>
-          ) : (
-            <span className="inline-flex items-center rounded-full text-xs font-semibold px-2.5 py-1 bg-surface-soft text-text-secondary border border-border">
-              Pending
-            </span>
-          )}
-        </div>
+        <span
+          className={`inline-flex items-center rounded-full text-xs font-semibold px-2.5 py-1 ${
+            item.lesson.status === "approved"
+              ? "bg-success/10 text-success"
+              : "bg-surface-soft text-text-secondary border border-border"
+          }`}
+        >
+          {item.lesson.status === "approved" ? "Confirmed" : "Pending"}
+        </span>
       </div>
     );
   }
 
   if (item.type === "travel_buffer") {
+    const startLabel = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/Los_Angeles",
+      hour: "numeric",
+      minute: "2-digit",
+    }).format(new Date(item.startsAt));
+
+    const durationMs = new Date(item.endsAt).getTime() - new Date(item.startsAt).getTime();
+    const durationMin = Math.round(durationMs / 60_000);
+
     return (
-      <div className="flex items-center gap-4 px-6 py-4 bg-surface-soft">
-        <div className="flex-shrink-0 w-20">
-          <p className="text-xs font-semibold text-text-secondary tabular-nums">
-            {formatTime(new Date(item.startsAt))}
-          </p>
+      <div className="flex items-center gap-4 px-5 py-4 bg-surface-soft">
+        <div className="flex-shrink-0 w-[72px]">
+          <p className="text-xs font-semibold text-text-secondary tabular-nums">{startLabel}</p>
         </div>
         <div className="flex-1 min-w-0 flex items-center gap-2">
           <svg
@@ -159,11 +137,11 @@ function ScheduleItemRow({ item }: { item: ScheduleItem }) {
             <circle cx="18.5" cy="18.5" r="2.5" />
           </svg>
           <div>
-            <p className="text-xs font-semibold text-text-secondary">
-              Travel buffer · {item.bufferMinutes} min
+            <p className="text-sm font-semibold text-text">
+              Travel buffer, {durationMin} min
             </p>
             <p className="text-xs text-text-secondary mt-0.5">
-              {item.fromLocationName} → {item.toLocationName}
+              {item.fromLocationName} &rarr; {item.toLocationName}
             </p>
           </div>
         </div>
@@ -171,33 +149,29 @@ function ScheduleItemRow({ item }: { item: ScheduleItem }) {
     );
   }
 
+  // open_slot
+  const startLabel = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Los_Angeles",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(item.startsAt));
+
+  const endLabel = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Los_Angeles",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(item.endsAt));
+
   return (
-    <div className="flex items-center gap-4 px-6 py-4">
-      <div className="flex-shrink-0 w-20">
-        <p className="text-xs font-semibold text-text-secondary tabular-nums">
-          {formatTime(new Date(item.startsAt))}
-        </p>
+    <div className="flex items-center gap-4 px-5 py-4">
+      <div className="flex-shrink-0 w-[72px]">
+        <p className="text-xs font-semibold text-text-secondary tabular-nums">{startLabel}</p>
       </div>
       <div className="flex-1 min-w-0">
-        <p className="text-sm text-text-secondary">
-          Open · until {formatTime(new Date(item.endsAt))}
+        <p className="text-sm font-semibold text-text-secondary">
+          Open until {endLabel}
         </p>
       </div>
     </div>
   );
-}
-
-function formatTime(date: Date): string {
-  return new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/Los_Angeles",
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  }).format(date);
-}
-
-function offsetDate(dateStr: string, days: number): string {
-  const date = new Date(dateStr + "T12:00:00Z");
-  date.setUTCDate(date.getUTCDate() + days);
-  return date.toISOString().slice(0, 10);
 }

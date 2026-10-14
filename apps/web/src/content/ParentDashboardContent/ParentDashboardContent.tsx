@@ -1,12 +1,13 @@
-import { calculateAge, todayLA, type MeResponse } from "@swim-app/shared";
 import Link from "next/link";
+
+import { calculateAge, todayLA, type MeResponse } from "@swim-app/shared";
 
 import Placeholder from "@/components/Placeholder";
 import SiteFooter from "@/components/SiteFooter";
 import SiteNav from "@/components/SiteNav";
-import { siteLinks } from "@/lib/siteLinks";
-import { fetchSwimmers } from "@/lib/api/swimmers";
+import { fetchHousehold } from "@/lib/api/households";
 import { fetchUpcomingLessons } from "@/lib/api/lessons";
+import { fetchSwimmers } from "@/lib/api/swimmers";
 import { removeSwimmer } from "./actions";
 import SwimmerCard from "./SwimmerCard";
 import UpcomingLessonsCard from "./UpcomingLessonsCard";
@@ -19,13 +20,16 @@ interface Props {
 export default async function ParentDashboardContent({ profile, accessToken }: Props) {
   const firstName = profile.fullName?.trim().split(/\s+/)[0] ?? "there";
   const hasPhone = !!(profile.phone && profile.phone.length > 0);
-  const [swimmers, upcomingLessons] = await Promise.all([
+  const [swimmers, upcomingLessons, household] = await Promise.all([
     fetchSwimmers(accessToken),
     fetchUpcomingLessons(accessToken),
+    fetchHousehold(accessToken),
   ]);
   const today = todayLA();
   const showFinishSetup = !hasPhone;
   const nextLesson = upcomingLessons[0];
+  const householdRole = household?.myRole ?? null;
+  const isViewer = householdRole === "viewer";
 
   return (
     <div className="flex flex-col min-h-screen bg-background">
@@ -51,15 +55,22 @@ export default async function ParentDashboardContent({ profile, accessToken }: P
               >
                 Add a swimmer
               </Link>
-              <a
-                href={siteLinks.booking ?? "/signup"}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center justify-center rounded-button bg-button-primary-background text-button-primary-text font-bold text-sm px-5 h-11 transition-opacity hover:opacity-90"
-              >
-                Book a lesson
-                <span className="sr-only"> (opens in a new tab)</span>
-              </a>
+              {isViewer ? (
+                <span
+                  aria-disabled="true"
+                  title="Ask the household owner to book."
+                  className="inline-flex items-center justify-center rounded-button bg-button-primary-background text-button-primary-text font-bold text-sm px-5 h-11 opacity-50 cursor-not-allowed select-none"
+                >
+                  Book a lesson
+                </span>
+              ) : (
+                <Link
+                  href="/dashboard/book"
+                  className="inline-flex items-center justify-center rounded-button bg-button-primary-background text-button-primary-text font-bold text-sm px-5 h-11 transition-opacity hover:opacity-90"
+                >
+                  Book a lesson
+                </Link>
+              )}
             </div>
           </div>
 

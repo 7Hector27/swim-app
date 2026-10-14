@@ -1,6 +1,71 @@
-import { describe, expect, it } from "vitest";
+// @vitest-environment node
+import { vi, describe, expect, it } from "vitest";
 import { mapApiResponse } from "../content/SignupContent/helpers";
 import { mapZodErrors } from "../lib/mapZodErrors";
+
+// ── Signup server action — password confirm tests ──────────────────────────────
+
+const { mockFetch } = vi.hoisted(() => ({ mockFetch: vi.fn() }));
+
+vi.mock("@swim-app/shared", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@swim-app/shared")>();
+  return { ...original };
+});
+
+vi.stubGlobal("fetch", mockFetch);
+
+process.env["NEXT_PUBLIC_API_URL"] = "http://localhost:3001";
+process.env["NEXT_PUBLIC_SITE_URL"] = "http://localhost:3000";
+
+import { signup } from "../content/SignupContent/actions";
+
+function makeFormData(fields: Record<string, string | null>): FormData {
+  const formData = new FormData();
+  for (const [key, value] of Object.entries(fields)) {
+    if (value !== null) formData.set(key, value);
+  }
+  return formData;
+}
+
+const validFields = {
+  fullName: "Jane Doe",
+  email: "jane@example.com",
+  phone: "",
+  password: "securepassword123",
+  confirmPassword: "securepassword123",
+  birthDate: "1990-01-01",
+  acceptedTerms: "on",
+};
+
+describe("signup server action — confirm password", () => {
+  it("returns field_errors when passwords do not match", async () => {
+    const formData = makeFormData({
+      ...validFields,
+      confirmPassword: "differentpassword",
+    });
+
+    const result = await signup({ status: "idle" }, formData);
+
+    expect(result).toEqual({
+      status: "field_errors",
+      errors: { confirmPassword: "Passwords don't match." },
+    });
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it("calls the API when passwords match", async () => {
+    mockFetch.mockResolvedValueOnce({
+      status: 201,
+      json: async () => ({}),
+    });
+
+    const formData = makeFormData(validFields);
+    const result = await signup({ status: "idle" }, formData);
+
+    expect(mockFetch).toHaveBeenCalledOnce();
+    expect(result).toEqual({ status: "success" });
+  });
+});
 
 describe("mapZodErrors", () => {
   it("maps a single issue to its field", () => {

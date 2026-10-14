@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { siteLinks } from "@/lib/siteLinks";
 
 import HeroBubbleBg from "./HeroBubbleBg";
@@ -5,7 +7,11 @@ import styles from "./HeroSection.module.css";
 
 const SHOW_HERO_PHOTO = false;
 
-export default function HeroSection() {
+interface Props {
+  isAuthenticatedParent: boolean;
+}
+
+export default function HeroSection({ isAuthenticatedParent }: Props) {
   return (
     <section className="relative overflow-hidden bg-background">
       <HeroBubbleBg />
@@ -45,15 +51,24 @@ export default function HeroSection() {
                 styles.ctas,
               ].join(" ")}
             >
-              <a
-                href={siteLinks.booking ?? "/signup"}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center justify-center rounded-button bg-button-primary-background text-button-primary-text font-bold px-8 h-[52px] w-full tablet:w-auto transition-[transform,opacity] duration-150 hover:opacity-90 active:scale-[0.97]"
-              >
-                Book a lesson
-                <span className="sr-only"> (opens in a new tab)</span>
-              </a>
+              {isAuthenticatedParent ? (
+                <Link
+                  href="/dashboard/book"
+                  className="inline-flex items-center justify-center rounded-button bg-button-primary-background text-button-primary-text font-bold px-8 h-[52px] w-full tablet:w-auto transition-[transform,opacity] duration-150 hover:opacity-90 active:scale-[0.97]"
+                >
+                  Book a lesson
+                </Link>
+              ) : (
+                <a
+                  href={siteLinks.booking ?? "/signup"}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center justify-center rounded-button bg-button-primary-background text-button-primary-text font-bold px-8 h-[52px] w-full tablet:w-auto transition-[transform,opacity] duration-150 hover:opacity-90 active:scale-[0.97]"
+                >
+                  Book a lesson
+                  <span className="sr-only"> (opens in a new tab)</span>
+                </a>
+              )}
               <a
                 href="#faq"
                 className="inline-flex items-center justify-center rounded-button border-2 border-button-outline text-button-outline font-bold px-8 h-[52px] w-full tablet:w-auto transition-[transform,opacity] duration-150 hover:opacity-75 active:scale-[0.97]"

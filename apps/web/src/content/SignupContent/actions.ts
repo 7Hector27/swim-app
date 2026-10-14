@@ -17,11 +17,25 @@ export async function signup(
       ? returnToRaw
       : undefined;
 
+  const passwordRaw = formData.get("password");
+  const confirmPasswordRaw = formData.get("confirmPassword");
+
+  if (
+    typeof passwordRaw === "string" &&
+    typeof confirmPasswordRaw === "string" &&
+    passwordRaw !== confirmPasswordRaw
+  ) {
+    return {
+      status: "field_errors",
+      errors: { confirmPassword: "Passwords don't match." },
+    };
+  }
+
   const raw = {
     fullName: formData.get("fullName"),
     email: formData.get("email"),
     phone: (formData.get("phone") as string | null)?.trim() || null,
-    password: formData.get("password"),
+    password: passwordRaw,
     birthDate: formData.get("birthDate"),
     acceptedTerms: formData.get("acceptedTerms") === "on",
     ...(returnTo !== undefined && { returnTo }),
