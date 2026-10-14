@@ -163,6 +163,8 @@ export default async function syncCatalogFn(db: Db): Promise<void> {
             appliesTo: skill.appliesTo ?? null,
             parentSkillId: null,
             sortOrder: skill.sortOrder,
+            faultTags: skill.faultTags ?? null,
+            side: skill.side ?? null,
           })
           .onConflictDoUpdate({
             target: skills.slug,
@@ -176,6 +178,8 @@ export default async function syncCatalogFn(db: Db): Promise<void> {
               parentSkillId: null,
               sortOrder: skill.sortOrder,
               archivedAt: null,
+              faultTags: skill.faultTags ?? null,
+              side: skill.side ?? null,
             },
           })
           .returning({ id: skills.id });

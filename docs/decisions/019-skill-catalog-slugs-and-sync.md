@@ -36,22 +36,26 @@ The generic rating scale (1–5, Emerging–Mastery) lives in `rating_scale_leve
 
 These decisions were made to build the catalog but were not confirmed with Jason. Each inline comment in `skillsCatalog.ts` points here. They should be resolved before milestone 3 work on dependency-map display.
 
-1. **Per-stroke head positions depend on `buoyancy-balance`, not `head-position-overall`.** The rubric says each per-stroke head position skill "builds on" the overall head position rollup, but the rollup is *calculated from* those four per-stroke grades, which would create a cycle. We broke it by depending on `buoyancy-balance` (the shared foundation) instead. Confirm this is the right substitution, or propose a different structure.
+1. **Per-stroke head positions depend on `core-stability`, not `head-position-overall`.** The rubric says each per-stroke head position skill "builds on" the overall head position rollup, but the rollup is *calculated from* those four per-stroke grades, which would create a cycle. Per Jason's Phase 1 answers, the per-stroke head positions are inputs to the rollup and depend on `core-stability`. `buoyancy-balance` now sits above the rollup (depends on `head-position-overall` + `core-stability`). **OPEN:** confirm this restructuring is correct.
 
 2. **Head position descriptors attached to all four per-stroke skills.** The rubric says head position "applies per stroke, then rolls up." We loaded the same five-level descriptor set onto each of the four per-stroke head position skills. Confirm whether the wording should differ per stroke.
 
-3. **`breathing-timing-fly` is the fly instance of Breathing timing (not a separate skill).** The fly rubric table (section 6) lists "Breathing timing — Head position, Breath control," which matches the breathing-timing-fly entry in Breathing & Coordination. Confirm that fly has no separate stroke-timing dependency for breathing.
+3. **`breathing-timing-fly` builds on `fly-head-position` and `fly-two-kick-rhythm`.** RESOLVED (Phase 1, A7) — confirmed that fly breathing timing depends on fly-head-position and fly-two-kick-rhythm, not breath-control.
 
-4. **Breaststroke breakout maps "Stroke timing" → `breast-timing`.** Breaststroke has no "Stroke timing" skill; "Timing" is the closest equivalent. Confirm or provide the correct dependency.
+4. **Breaststroke breakout maps "Stroke timing" → `breast-timing`.** Breaststroke has no "Stroke timing" skill; "Timing" is the closest equivalent. **OPEN:** not answered in Phase 1 — still needs confirmation.
 
-5. **Fly breakout maps "Stroke timing" → `fly-two-kick-rhythm`.** Fly has no explicit stroke-timing skill; two-kick-rhythm is the structural analog for fly stroke coordination. Confirm or provide the correct dependency.
+5. **Fly breakout maps "Stroke timing" → `fly-two-kick-rhythm`.** RESOLVED (Phase 1, A9) — confirmed builds on `udk-free-fly` and `fly-two-kick-rhythm`.
 
-6. **`tempo` (Racing & Performance) has no builds-on link.** The rubric says it builds on "Stroke timing," but at the Racing & Performance level there is no stroke-agnostic stroke timing skill. Left unlinked for now. Confirm which skill(s) tempo should depend on, or whether it should depend on each stroke's timing skill.
+6. **Tempo is now per-stroke.** RESOLVED (Phase 1, A6) — each stroke gets its own tempo skill in that stroke's category, depending on that stroke's timing skill: `free-tempo` → `free-stroke-timing`, `back-tempo` → `back-stroke-timing`, `breast-tempo` → `breast-timing`, `fly-tempo` → `fly-two-kick-rhythm`. The shared `tempo` skill in racing-performance is archived.
 
-7. **`stroke-count` builds on `free-distance-per-stroke` only.** Freestyle DPS is the only distance-per-stroke skill currently in the catalog. If DPS should exist for other strokes, add them and link stroke-count to each.
+7. **Stroke count is now per-stroke; DPS merged in.** RESOLVED (Phase 1, A7) — stroke count exists per stroke (`free-stroke-count`, `back-stroke-count`, `breast-stroke-count`, `fly-stroke-count`). `free-distance-per-stroke` is archived and merged into `free-stroke-count`.
 
-8. **`freestyle-flip-turn` applies only to freestyle.** The rubric lists "Free, IM breast to free" as its context. IM is not a stroke value in the current `stroke` enum. Confirm whether IM turns need a separate enum value or category, or whether the freestyle-flip-turn skill covers the IM case implicitly.
+8. **`freestyle-flip-turn` applies only to freestyle.** RESOLVED (Phase 1, A8) — confirmed applies only to freestyle. The IM breast-to-free case is covered by `im-breast-to-free` (its own skill, renamed to "Breast to free (open turn)").
 
-9. **IM turns store both stroke values in `applies_to`.** `im-fly-to-back` uses `["fly", "back"]`, etc. This may be insufficient once IM events are modelled. Confirm whether IM transitions need their own enum entry.
+9. **IM back-to-breast split into three skills.** RESOLVED (Phase 1, A9) — `im-back-to-breast` is archived and replaced by `im-back-to-breast-open`, `im-back-to-breast-bucket`, and `im-back-to-breast-crossover`.
 
-10. **`stroke-breath-coordination-breast` depends on `body-rotation`.** The rubric lists "Breathing timing, Body rotation" for all four stroke-breath coordination skills. Breaststroke does not rotate the way freestyle and backstroke do. Confirm whether the body-rotation dependency is intentional for breaststroke.
+10. **`stroke-breath-coordination-breast` and `stroke-breath-coordination-fly` do not depend on body rotation.** RESOLVED (Phase 1, A10) — body rotation removed from breaststroke and fly stroke-breath coordination. `stroke-breath-coordination-breast` depends only on `breathing-timing-breast`; `stroke-breath-coordination-fly` depends only on `breathing-timing-fly`.
+
+**New open question (from Phase 1 review):**
+
+- **Breaststroke breakout dependency** — question 4 above remains unresolved. Is `breast-timing` the correct stand-in for "Stroke timing" in the breaststroke breakout, or should it depend on something else?
