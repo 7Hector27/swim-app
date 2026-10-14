@@ -709,6 +709,95 @@ describe("POST /lessons", () => {
     expect(capturedSeasonYear).toBe(2026);
   });
 
+});
+
+// ── GET /lessons ──────────────────────────────────────────────────────────────
+
+describe("GET /lessons", () => {
+  it("returns future pending and approved lessons for the caller's household", async () => {
+    authAs(parentProfile);
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(parentProfile))
+      .mockReturnValueOnce(requireHouseholdMemberSelect());
+
+    const lessonWithLocation = {
+      ...baseLessonRow,
+      locationName: "Egret Park",
+    };
+
+    const limit = vi.fn().mockResolvedValue([lessonWithLocation]);
+    const orderBy = vi.fn().mockReturnValue({ limit });
+    const where = vi.fn().mockReturnValue({ orderBy });
+    const innerJoin = vi.fn().mockReturnValue({ where });
+    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ innerJoin }) });
+
+    const swimWhere = vi.fn().mockResolvedValue([
+      { lessonId: LESSON_ID, swimmerId: SWIMMER_ID, firstName: "Alice", lastName: "Smith" },
+    ]);
+    const swimInnerJoin = vi.fn().mockReturnValue({ where: swimWhere });
+    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ innerJoin: swimInnerJoin }) });
+
+    const res = await request(app)
+      .get("/lessons")
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body)).toBe(true);
+    expect(res.body[0]).toMatchObject({
+      id: LESSON_ID,
+      status: "pending",
+      locationName: "Egret Park",
+    });
+    expect(res.body[0].swimmers).toHaveLength(1);
+  });
+
+  it("returns empty array when no upcoming lessons exist", async () => {
+    authAs(parentProfile);
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(parentProfile))
+      .mockReturnValueOnce(requireHouseholdMemberSelect());
+
+    const limit = vi.fn().mockResolvedValue([]);
+    const orderBy = vi.fn().mockReturnValue({ limit });
+    const where = vi.fn().mockReturnValue({ orderBy });
+    const innerJoin = vi.fn().mockReturnValue({ where });
+    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ innerJoin }) });
+
+    const res = await request(app)
+      .get("/lessons")
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([]);
+  });
+
+  it("returns 403 when caller is not a household member", async () => {
+    authAs(parentProfile);
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(parentProfile));
+
+    const limit = vi.fn().mockResolvedValue([]);
+    const where = vi.fn().mockReturnValue({ limit });
+    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where }) });
+
+    const res = await request(app)
+      .get("/lessons")
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(403);
+  });
+
+  it("returns 401 when unauthenticated", async () => {
+    mockGetUser.mockResolvedValue({ data: { user: null }, error: null });
+    const res = await request(app)
+      .get("/lessons")
+      .set("Authorization", "Bearer token");
+    expect(res.status).toBe(401);
+  });
+});
+
+// kept after the new describe block so the original tests continue to run
+describe("POST /lessons (continued)", () => {
   it("can book any slot returned by available-slots (PST slot whose UTC date is the day after its LA date)", async () => {
     // 4:30 PM PST on Mon 2030-01-14 = 2030-01-15T00:30:00.000Z.
     // slice(0,10) on the ISO string gives "2030-01-15" (UTC, Tuesday) — not the

@@ -356,6 +356,124 @@ describe("POST /internal/cron/tick", () => {
   });
 });
 
+// ── GET /coach/schedule ───────────────────────────────────────────────────────
+
+describe("GET /coach/schedule", () => {
+  it("returns schedule items for the given date", async () => {
+    authAsCoach();
+
+    const lessonWithLocation = {
+      ...pendingLessonRow,
+      locationName: "Egret Park",
+    };
+
+    // lessons query: select({...}).from(lessons).innerJoin(lessonLocations, ...).where(and(...)).orderBy(asc(...))
+    const lessonOrderBy = vi.fn().mockResolvedValue([lessonWithLocation]);
+    const lessonWhere = vi.fn().mockReturnValue({ orderBy: lessonOrderBy });
+    const lessonInnerJoin = vi.fn().mockReturnValue({ where: lessonWhere });
+    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ innerJoin: lessonInnerJoin }) });
+
+    // swimmer join: select({...}).from(lessonSwimmers).innerJoin(swimmers, ...).where(inArray(...))
+    const swimWhere = vi.fn().mockResolvedValue([
+      { lessonId: LESSON_ID, swimmerId: SWIMMER_ID, firstName: "Alice", lastName: "Smith" },
+    ]);
+    const swimInnerJoin = vi.fn().mockReturnValue({ where: swimWhere });
+    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ innerJoin: swimInnerJoin }) });
+
+    // Promise.all: [availabilityConfig.limit(1), travelBufferOverrides, blockedTimes, lessons.where(...), seasonSummerEndDates.where(...).limit(1)]
+    const limitConfig = vi.fn().mockResolvedValue([]);  // no config → skip open slot computation
+    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ limit: limitConfig }) });
+    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockResolvedValue([]) });
+    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockResolvedValue([]) });
+
+    const existingWhere = vi.fn().mockResolvedValue([]);
+    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: existingWhere }) });
+
+    const endDateLimit = vi.fn().mockResolvedValue([]);
+    const endDateWhere = vi.fn().mockReturnValue({ limit: endDateLimit });
+    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: endDateWhere }) });
+
+    const res = await request(app)
+      .get("/coach/schedule?date=2025-09-15")
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ date: "2025-09-15" });
+    expect(Array.isArray(res.body.items)).toBe(true);
+    const lessonItem = res.body.items.find((item: { type: string }) => item.type === "lesson");
+    expect(lessonItem).toBeDefined();
+    expect(lessonItem.lesson.id).toBe(LESSON_ID);
+  });
+
+  it("returns 422 when date query param is missing", async () => {
+    authAsCoach();
+
+    const res = await request(app)
+      .get("/coach/schedule")
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(422);
+  });
+
+  it("returns 403 for a parent", async () => {
+    authAs(parentProfile);
+    mockDbSelect.mockReturnValueOnce(requireUserSelect(parentProfile));
+
+    const res = await request(app)
+      .get("/coach/schedule?date=2025-09-15")
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(403);
+  });
+});
+
+// ── GET /coach/stats ──────────────────────────────────────────────────────────
+
+describe("GET /coach/stats", () => {
+  it("returns accurate counts", async () => {
+    authAsCoach();
+
+    const lessonWhere = vi.fn().mockResolvedValue([{ id: LESSON_ID }]);
+    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: lessonWhere }) });
+
+    const weekWhere = vi.fn().mockResolvedValue([{ id: LESSON_ID }]);
+    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: weekWhere }) });
+
+    const pendingWhere = vi.fn().mockResolvedValue([{ id: LESSON_ID }]);
+    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: pendingWhere }) });
+
+    const swimmerWhere = vi.fn().mockResolvedValue([{ id: SWIMMER_ID }]);
+    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: swimmerWhere }) });
+
+    const syncWhere = vi.fn().mockResolvedValue([]);
+    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: syncWhere }) });
+
+    const res = await request(app)
+      .get("/coach/stats")
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      lessonsToday: 1,
+      lessonsThisWeek: 1,
+      pendingRequests: 1,
+      activeSwimmers: 1,
+      calendarSyncFailures: 0,
+    });
+  });
+
+  it("returns 403 for a parent", async () => {
+    authAs(parentProfile);
+    mockDbSelect.mockReturnValueOnce(requireUserSelect(parentProfile));
+
+    const res = await request(app)
+      .get("/coach/stats")
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(403);
+  });
+});
+
 // ── Lazy expiry in GET /coach/lessons ─────────────────────────────────────────
 
 describe("lazy expiry in GET /coach/lessons", () => {

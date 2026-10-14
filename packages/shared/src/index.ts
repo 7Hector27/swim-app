@@ -117,6 +117,12 @@ export type {
   DeclineLessonBody,
   CoachListLessonsQuery,
   AvailableSlot,
+  UpcomingLesson,
+  UpcomingLessonsQuery,
+  CoachScheduleQuery,
+  ScheduleItem,
+  ScheduleDay,
+  CoachStats,
 } from "./schemas/booking";
 export {
   LessonLocationSchema,
@@ -141,4 +147,10 @@ export {
   DeclineLessonBodySchema,
   CoachListLessonsQuerySchema,
   AvailableSlotSchema,
+  UpcomingLessonSchema,
+  UpcomingLessonsQuerySchema,
+  CoachScheduleQuerySchema,
+  ScheduleItemSchema,
+  ScheduleDaySchema,
+  CoachStatsSchema,
 } from "./schemas/booking";

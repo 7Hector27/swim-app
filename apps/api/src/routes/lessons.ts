@@ -1,13 +1,15 @@
 import { Router } from "express";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, sql } from "drizzle-orm";
 import type {
   AvailableSlot,
   AvailableSlotsQuery,
   CreateLessonBody,
   LessonResponse,
   LessonSwimmer,
+  UpcomingLesson,
+  UpcomingLessonsQuery,
 } from "@swim-app/shared";
-import { AvailableSlotsQuerySchema, CreateLessonBodySchema } from "@swim-app/shared";
+import { AvailableSlotsQuerySchema, CreateLessonBodySchema, UpcomingLessonsQuerySchema } from "@swim-app/shared";
 import { db } from "../db/client";
 import {
   availabilityConfig,
@@ -33,6 +35,92 @@ import { isActiveSwimmer } from "../db/queries";
 export const lessonsRouter = Router();
 
 lessonsRouter.use(requireUser);
+
+// ── GET /lessons ──────────────────────────────────────────────────────────────
+
+lessonsRouter.get(
+  "/",
+  requireHouseholdMember,
+  validate({ query: UpcomingLessonsQuerySchema }),
+  asyncHandler(async (req, res) => {
+    const query = req.query as unknown as UpcomingLessonsQuery;
+    const { householdId } = req;
+    const now = new Date();
+
+    const afterDate = query.after ? new Date(query.after) : now;
+    const limitCount = query.limit ?? 10;
+
+    const lessonRows = await db
+      .select({
+        id: lessons.id,
+        householdId: lessons.householdId,
+        locationId: lessons.locationId,
+        locationName: lessonLocations.name,
+        startsAt: lessons.startsAt,
+        durationMinutes: lessons.durationMinutes,
+        type: lessons.type,
+        status: lessons.status,
+        expiresAt: lessons.expiresAt,
+        approvedAt: lessons.approvedAt,
+        declinedAt: lessons.declinedAt,
+        declineReason: lessons.declineReason,
+        createdAt: lessons.createdAt,
+      })
+      .from(lessons)
+      .innerJoin(lessonLocations, eq(lessons.locationId, lessonLocations.id))
+      .where(
+        and(
+          eq(lessons.householdId, householdId),
+          inArray(lessons.status, ["pending", "approved"]),
+          gt(lessons.startsAt, afterDate),
+        ),
+      )
+      .orderBy(asc(lessons.startsAt))
+      .limit(limitCount);
+
+    const lessonIds = lessonRows.map((row) => row.id);
+
+    const swimmerRows =
+      lessonIds.length > 0
+        ? await db
+            .select({
+              lessonId: lessonSwimmers.lessonId,
+              swimmerId: lessonSwimmers.swimmerId,
+              firstName: swimmers.firstName,
+              lastName: swimmers.lastName,
+            })
+            .from(lessonSwimmers)
+            .innerJoin(swimmers, eq(lessonSwimmers.swimmerId, swimmers.id))
+            .where(inArray(lessonSwimmers.lessonId, lessonIds))
+        : [];
+
+    const swimmersByLesson = new Map<string, LessonSwimmer[]>();
+    for (const row of swimmerRows) {
+      const list = swimmersByLesson.get(row.lessonId) ?? [];
+      list.push({ swimmerId: row.swimmerId, firstName: row.firstName, lastName: row.lastName });
+      swimmersByLesson.set(row.lessonId, list);
+    }
+
+    const body: UpcomingLesson[] = lessonRows.map((row) => ({
+      id: row.id,
+      householdId: row.householdId,
+      locationId: row.locationId,
+      locationName: row.locationName,
+      startsAt: row.startsAt.toISOString(),
+      durationMinutes: row.durationMinutes as 30 | 45 | 60,
+      type: row.type,
+      status: row.status,
+      swimmers: swimmersByLesson.get(row.id) ?? [],
+      expiresAt: row.expiresAt?.toISOString() ?? null,
+      approvedAt: row.approvedAt?.toISOString() ?? null,
+      declinedAt: row.declinedAt?.toISOString() ?? null,
+      declineReason: row.declineReason ?? null,
+      createdAt: row.createdAt.toISOString(),
+    }));
+
+    res.json(body);
+  }),
+);
 
 // ── GET /lessons/available-slots ──────────────────────────────────────────────
 
