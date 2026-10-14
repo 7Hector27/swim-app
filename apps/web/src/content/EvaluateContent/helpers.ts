@@ -85,6 +85,27 @@ export function canSubmit(draft: SessionDraft, ratingsCount: number, isPending: 
   );
 }
 
+export function buildSkillGroups(category: import("@swim-app/shared").SkillCategoryWithSkills): {
+  startParents: import("@swim-app/shared").SkillForRating[];
+  standaloneSkills: import("@swim-app/shared").SkillForRating[];
+  componentSkillsOf: (parentId: string) => import("@swim-app/shared").SkillForRating[];
+} {
+  const startParents = category.skills.filter(
+    (skill) =>
+      skill.parentSkillId === null &&
+      category.skills.some((other) => other.parentSkillId === skill.id),
+  );
+  const startParentIds = new Set(startParents.map((skill) => skill.id));
+  const standaloneSkills = category.skills.filter(
+    (skill) =>
+      !startParentIds.has(skill.id) &&
+      (skill.parentSkillId === null || !startParentIds.has(skill.parentSkillId)),
+  );
+  const componentSkillsOf = (parentId: string): import("@swim-app/shared").SkillForRating[] =>
+    category.skills.filter((skill) => skill.parentSkillId === parentId);
+  return { startParents, standaloneSkills, componentSkillsOf };
+}
+
 export function buildRatingsArray(
   skills: import("@swim-app/shared").SkillForRating[],
   draftSkills: Record<string, SkillDraft>,

@@ -21,7 +21,7 @@ function StartGradePill({ result }: StartGradePillProps) {
   }
   if (result.status === "graded") {
     return (
-      <span className="text-xs px-2 py-0.5 rounded border font-bold" style={{ borderColor: "var(--color-accent)", color: "var(--color-accent)" }}>
+      <span data-testid="start-grade-pill" className="text-xs px-2 py-0.5 rounded border font-bold" style={{ borderColor: "var(--color-accent)", color: "var(--color-accent)" }}>
         {result.grade}
       </span>
     );

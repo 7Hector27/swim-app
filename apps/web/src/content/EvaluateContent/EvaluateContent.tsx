@@ -4,8 +4,6 @@ import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 import type {
   CoachSwimmerDetail,
   CategoriesResponse,
-  SkillCategoryWithSkills,
-  SkillForRating,
 } from "@swim-app/shared";
 import SiteNav from "@/components/SiteNav";
 import SiteFooter from "@/components/SiteFooter";
@@ -17,6 +15,7 @@ import {
   todayLA,
   canSubmit,
   buildRatingsArray,
+  buildSkillGroups,
 } from "./helpers";
 import SessionSetup from "./SessionSetup";
 import CoachingPriorityField from "./CoachingPriorityField";
@@ -171,22 +170,6 @@ export default function EvaluateContent({ swimmer, categories, accessToken }: Ev
   const slugToName = Object.fromEntries(
     categories.flatMap((cat) => cat.skills.map((skill) => [skill.slug, skill.name])),
   );
-
-  function buildSkillGroups(category: SkillCategoryWithSkills) {
-    const startParents = category.skills.filter(
-      (skill) =>
-        skill.parentSkillId === null &&
-        category.skills.some((other) => other.parentSkillId === skill.id),
-    );
-    const startParentIds = new Set(startParents.map((skill) => skill.id));
-    const standaloneSkills = category.skills.filter(
-      (skill) => !startParentIds.has(skill.id) && (skill.parentSkillId === null || !startParentIds.has(skill.parentSkillId)),
-    );
-    const componentSkillsOf = (parentId: string): SkillForRating[] =>
-      category.skills.filter((skill) => skill.parentSkillId === parentId);
-
-    return { startParents, standaloneSkills, componentSkillsOf };
-  }
 
   const ratingsArray = selectedCategory
     ? buildRatingsArray(selectedCategory.skills, draft.skills)

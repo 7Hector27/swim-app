@@ -208,10 +208,9 @@ describe("StartGroupSection", () => {
         onChange={vi.fn()}
       />,
     );
-    // The start grade pill is the only <span> with text "3"
-    const pill = document.querySelector("span.rounded.border.font-bold");
-    expect(pill).not.toBeNull();
-    expect(pill?.textContent).toBe("3");
+    const pill = screen.getByTestId("start-grade-pill");
+    expect(pill).toBeInTheDocument();
+    expect(pill.textContent).toBe("3");
   });
 
   it("shows DQ when any component is not legal", () => {

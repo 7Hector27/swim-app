@@ -24,6 +24,19 @@ function gradeLabel(grade: number | null, noConcept: boolean, notLegal: boolean)
   return String(grade);
 }
 
+function badgeStyle(grade: number | "not_legal" | "no_concept") {
+  return {
+    backgroundColor: grade === "not_legal" ? "var(--color-danger)" : "var(--color-border)",
+    color: grade === "not_legal" ? "var(--color-on-danger)" : "var(--color-text)",
+  };
+}
+
+function badgeText(grade: number | "not_legal" | "no_concept"): string {
+  if (grade === "not_legal") return "DQ";
+  if (grade === "no_concept") return "NC";
+  return String(grade);
+}
+
 function formatDate(isoString: string): string {
   return new Intl.DateTimeFormat("en-US", {
     month: "short",
@@ -58,11 +71,12 @@ export default function SwimmerSkillsHistory({
   async function openSkill(skillId: string) {
     if (openSkillId === skillId) {
       setOpenSkillId(null);
+      setHistoryMap((prev) => ({ ...prev, [skillId]: { status: "idle" } }));
       return;
     }
     setOpenSkillId(skillId);
     const current = historyMap[skillId];
-    if (current && current.status !== "idle") return;
+    if (current && (current.status === "loading" || current.status === "loaded")) return;
     setHistoryMap((prev) => ({ ...prev, [skillId]: { status: "loading" } }));
     const result = await fetchSkillRatingHistory(swimmerId, skillId, accessToken);
     if (result.ok) {
@@ -120,18 +134,6 @@ export default function SwimmerSkillsHistory({
                 const leftGrade = grades[`${skill.slug}:left`];
                 const rightGrade = grades[`${skill.slug}:right`];
                 const singleGrade = skill.ratedPerSide ? undefined : grades[skill.slug];
-
-                function badgeStyle(grade: number | "not_legal" | "no_concept") {
-                  return {
-                    backgroundColor: grade === "not_legal" ? "var(--color-danger)" : "var(--color-border)",
-                    color: grade === "not_legal" ? "var(--color-on-danger)" : "var(--color-text)",
-                  };
-                }
-                function badgeText(grade: number | "not_legal" | "no_concept") {
-                  if (grade === "not_legal") return "DQ";
-                  if (grade === "no_concept") return "NC";
-                  return String(grade);
-                }
 
                 return (
                   <li key={skill.id} className="border-b border-border">

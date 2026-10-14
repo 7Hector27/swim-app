@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import type { SwimmerSkillsResponse } from "@swim-app/shared";
 
 import AccountInactiveScreen from "@/components/AccountInactiveScreen";
@@ -28,6 +28,7 @@ export default async function CoachSwimmerPage({ params }: CoachSwimmerPageProps
 
   if (!swimmerResult.ok) {
     if (swimmerResult.status === 404) notFound();
+    if (swimmerResult.status === 403) redirect("/dashboard");
     throw new Error(`Failed to load swimmer (status ${swimmerResult.status})`);
   }
 
