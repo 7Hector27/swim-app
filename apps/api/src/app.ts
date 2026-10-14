@@ -88,17 +88,21 @@ export function createApp(logger: Logger) {
     }
 
     const siteUrl = process.env["SITE_URL"] ?? "http://localhost:3000";
+    // Always set emailRedirectTo so GoTrue never falls back to the bare site_url
+    // as .RedirectTo — that would break the template's &token_hash= separator.
+    // Trailing ? on the normal-signup path lets the template safely append &token_hash=...
+    const confirmBase = `${siteUrl}/auth/confirm`;
     const emailRedirectTo =
       body.returnTo && isSafeReturnTo(body.returnTo, siteUrl)
-        ? `${siteUrl}/auth/confirm?returnTo=${encodeURIComponent(body.returnTo)}`
-        : undefined;
+        ? `${confirmBase}?returnTo=${encodeURIComponent(body.returnTo)}`
+        : `${confirmBase}?`;
 
     const { data, error } = await supabase.auth.signUp({
       email: body.email,
       password: body.password,
       options: {
         data: { full_name: body.fullName },
-        ...(emailRedirectTo !== undefined && { emailRedirectTo }),
+        emailRedirectTo,
       },
     });
 

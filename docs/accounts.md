@@ -19,6 +19,7 @@ No role: public visitors, and kids under 13 (no accounts ever).
 - The API enforces every permission. Every table has RLS on with no policies, which denies all access on purpose: the browser's public key can't read anything, and the API connects as the database owner.
 - The app role is read from the database on every request, never from the JWT.
 - Tokens are verified against Supabase's auth server on every request via `getUser`, not decoded locally. Revoked sessions and banned users are rejected immediately rather than being allowed until the JWT's `exp` claim expires.
+- **Every signup path must pass `emailRedirectTo`** when calling Supabase's signup API. The confirmation email template (`supabase/templates/confirmation.html`) builds the confirmation link as `{{ .RedirectTo }}&token_hash=…` with no fallback — if `emailRedirectTo` is omitted, `.RedirectTo` is empty and the link is broken. Normal signup sets it to `/auth/confirm?`; invite signup sets it to `/auth/confirm?returnTo=<encoded>`.
 
 ## Households
 
@@ -73,6 +74,7 @@ Coaches access swimmer data through dedicated `/coach/swimmers` routes protected
 - Never expose `publicConsentBy` or `publicConsentAt` fields to the response
 - The roster list (`GET /coach/swimmers`) includes `memberNames` (full names of household members) per swimmer — no contact details. This is intentional: the coach needs to know which family a swimmer belongs to.
 - The swimmer detail (`GET /coach/swimmers/:id`) includes the household's active home pool address. The coach needs the address because lessons take place there. This address is returned only in the per-household context of a single swimmer lookup — never in a flat list of all locations. The coach cannot edit a household's home pool address; that is managed exclusively by the household owner.
+- `GET /lessons/available-slots` is accessible to coach tokens (it sits behind `requireUser`, not `requireParent`). Coaches can query availability for any location. This is intentional — the endpoint is read-only and contains no household-private data — and it will be needed when the coach scheduling UI is built.
 
 ## Kids' data
 

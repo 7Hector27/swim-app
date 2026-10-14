@@ -246,7 +246,7 @@ lessonsRouter.post(
       // Serialize concurrent bookings on the same calendar day (LA time).
       // pg_advisory_xact_lock takes a bigint; we hash the day string.
       await tx.execute(
-        sql`SELECT pg_advisory_xact_lock(hashtext(${"lesson-day:" + body.startsAt.slice(0, 10)}))`,
+        sql`SELECT pg_advisory_xact_lock(hashtext(${"lesson-day:" + laDateStr}))`,
       );
 
       // Fetch fresh state inside the lock.
@@ -264,7 +264,7 @@ lessonsRouter.post(
       ]);
 
       const availableSlots = computeAvailableSlots({
-        date: body.startsAt.slice(0, 10),
+        date: laDateStr,
         durationMinutes: body.durationMinutes,
         locationId: body.locationId,
         existingLessons: existingLessonRows.map((row) => ({
