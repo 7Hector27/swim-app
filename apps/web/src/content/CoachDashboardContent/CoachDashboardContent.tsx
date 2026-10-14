@@ -4,6 +4,8 @@ import Placeholder from "@/components/Placeholder";
 import SiteFooter from "@/components/SiteFooter";
 import SiteNav from "@/components/SiteNav";
 import { fetchCoachSwimmers } from "@/lib/api/coachSwimmers";
+import { coachGetPendingLessons } from "@/lib/api/lessons";
+import BookingRequestsCard from "./BookingRequestsCard";
 import SwimmersTable from "./SwimmersTable";
 
 interface Props {
@@ -11,7 +13,10 @@ interface Props {
 }
 
 export default async function CoachDashboardContent({ accessToken }: Props) {
-  const swimmers = await fetchCoachSwimmers(accessToken);
+  const [swimmers, pendingLessons] = await Promise.all([
+    fetchCoachSwimmers(accessToken),
+    coachGetPendingLessons(accessToken),
+  ]);
 
   const dateLabel = new Intl.DateTimeFormat("en-US", {
     timeZone: "America/Los_Angeles",
@@ -92,9 +97,7 @@ export default async function CoachDashboardContent({ accessToken }: Props) {
 
             {/* Sidebar */}
             <div className="w-full tablet:w-[272px] desktop:w-[300px] flex-shrink-0 flex flex-col gap-4">
-              <Placeholder block>
-                <BookingRequestsCard />
-              </Placeholder>
+              <BookingRequestsCard initialLessons={pendingLessons} />
               <Placeholder block>
                 <NeedsAttentionCard />
               </Placeholder>
@@ -266,49 +269,6 @@ function SwimmersSection({ swimmers }: { swimmers: CoachSwimmer[] }) {
         >
           View all swimmers
         </a>
-      </div>
-    </div>
-  );
-}
-
-function BookingRequestsCard() {
-  return (
-    <div className="rounded-card border border-border p-5">
-      <h3 className="text-base text-heading mb-4">Booking requests</h3>
-      <div className="flex flex-col divide-y divide-border">
-        <BookingRequestRow
-          name="[Swimmer], 30 min"
-          time="[Thu, Oct 23] at [4:30–5:00 PM]"
-        />
-        <BookingRequestRow
-          name="[Swimmer], 30 min"
-          time="[Thu, Oct 21] at [3:30–4:30 PM]"
-        />
-      </div>
-    </div>
-  );
-}
-
-function BookingRequestRow({ name, time }: { name: string; time: string }) {
-  return (
-    <div className="flex flex-col gap-3 py-4 first:pt-0 last:pb-0">
-      <div>
-        <p className="text-sm font-semibold text-text">{name}</p>
-        <p className="text-xs text-text-secondary mt-0.5">{time}</p>
-      </div>
-      <div className="flex gap-2">
-        <button
-          type="button"
-          className="flex-1 rounded-button bg-button-primary-background text-button-primary-text font-semibold text-xs h-9 transition-opacity hover:opacity-90 active:scale-[0.97]"
-        >
-          Approve
-        </button>
-        <button
-          type="button"
-          className="flex-1 rounded-button border border-border text-text-secondary font-semibold text-xs h-9 hover:bg-surface-soft transition-colors duration-150"
-        >
-          Decline
-        </button>
       </div>
     </div>
   );

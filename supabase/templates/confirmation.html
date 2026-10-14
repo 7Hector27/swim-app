@@ -9,14 +9,13 @@
     <p>Click the link below to confirm your email address and activate your account.</p>
     <p style="margin: 24px 0;">
       <!--
-        When emailRedirectTo is passed to supabase.auth.signUp() it becomes
-        {{ .RedirectTo }} here.  We use it as the base URL (which already
-        contains the returnTo query param) and append token_hash + type so our
-        /auth/confirm route can verify the OTP and then forward to returnTo.
-        When emailRedirectTo is not set we fall back to the default URL.
+        emailRedirectTo is always set in the API to either:
+          /auth/confirm?returnTo=<encoded>   (invite signup)
+          /auth/confirm?                     (normal signup, trailing ? so &token_hash appends cleanly)
+        .RedirectTo is therefore always the correct base; append &token_hash and &type directly.
       -->
       <a
-        href="{{ if .RedirectTo }}{{ .RedirectTo }}&token_hash={{ .TokenHash }}&type=email{{ else }}{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email{{ end }}"
+        href="{{ .RedirectTo }}&token_hash={{ .TokenHash }}&type=email"
         style="background: #082c4f; color: #ffffff; text-decoration: none; padding: 12px 24px; border-radius: 999px; font-weight: bold; display: inline-block;"
       >
         Confirm email address

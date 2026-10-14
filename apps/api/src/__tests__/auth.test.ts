@@ -143,7 +143,7 @@ describe("POST /auth/signup", () => {
     expect(res.status).toBe(201);
   });
 
-  it("calls signUp with only full_name in metadata and sets age_attested_at", async () => {
+  it("always passes emailRedirectTo pointing to /auth/confirm? for a normal signup", async () => {
     const userId = "00000000-0000-0000-0000-000000000003";
     mockSignUp.mockResolvedValue({
       data: { user: { id: userId }, session: null },
@@ -157,9 +157,35 @@ describe("POST /auth/signup", () => {
     expect(mockSignUp).toHaveBeenCalledWith({
       email: validSignUpBody.email,
       password: validSignUpBody.password,
-      options: { data: { full_name: validSignUpBody.fullName } },
+      options: {
+        data: { full_name: validSignUpBody.fullName },
+        emailRedirectTo: "http://localhost:3000/auth/confirm?",
+      },
     });
     expect(mockDbReturning).toHaveBeenCalled();
+  });
+
+  it("passes emailRedirectTo with returnTo encoded for an invite signup", async () => {
+    const userId = "00000000-0000-0000-0000-000000000005";
+    mockSignUp.mockResolvedValue({
+      data: { user: { id: userId }, session: null },
+      error: null,
+    });
+    mockDbReturning.mockResolvedValue([baseProfile]);
+
+    const res = await request(app)
+      .post("/auth/signup")
+      .send({ ...validSignUpBody, returnTo: "/invite/abc123" });
+
+    expect(res.status).toBe(201);
+    expect(mockSignUp).toHaveBeenCalledWith({
+      email: validSignUpBody.email,
+      password: validSignUpBody.password,
+      options: {
+        data: { full_name: validSignUpBody.fullName },
+        emailRedirectTo: "http://localhost:3000/auth/confirm?returnTo=%2Finvite%2Fabc123",
+      },
+    });
   });
 
   it("returns 500 if profile row is missing after signUp", async () => {
