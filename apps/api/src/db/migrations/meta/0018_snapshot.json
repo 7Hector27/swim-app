@@ -1583,13 +1583,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "side": {
-          "name": "side",
-          "type": "skill_side",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -1603,6 +1596,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "rated_per_side": {
+          "name": "rated_per_side",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         }
       },
       "indexes": {},
@@ -1953,6 +1953,400 @@
         }
       },
       "isRLSEnabled": true
+    },
+    "public.evaluation_sessions": {
+      "name": "evaluation_sessions",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "swimmer_id": {
+          "name": "swimmer_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "coach_id": {
+          "name": "coach_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "category_id": {
+          "name": "category_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "session_date": {
+          "name": "session_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "context": {
+          "name": "context",
+          "type": "evaluation_context",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "coaching_priority": {
+          "name": "coaching_priority",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "evaluation_sessions_swimmer_id_swimmers_id_fk": {
+          "name": "evaluation_sessions_swimmer_id_swimmers_id_fk",
+          "tableFrom": "evaluation_sessions",
+          "columnsFrom": [
+            "swimmer_id"
+          ],
+          "tableTo": "swimmers",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "restrict"
+        },
+        "evaluation_sessions_coach_id_profiles_id_fk": {
+          "name": "evaluation_sessions_coach_id_profiles_id_fk",
+          "tableFrom": "evaluation_sessions",
+          "columnsFrom": [
+            "coach_id"
+          ],
+          "tableTo": "profiles",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "restrict"
+        },
+        "evaluation_sessions_category_id_skill_categories_id_fk": {
+          "name": "evaluation_sessions_category_id_skill_categories_id_fk",
+          "tableFrom": "evaluation_sessions",
+          "columnsFrom": [
+            "category_id"
+          ],
+          "tableTo": "skill_categories",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "coaching_priority_not_blank": {
+          "name": "coaching_priority_not_blank",
+          "value": "\"evaluation_sessions\".\"coaching_priority\" <> ''"
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "public.skill_ratings": {
+      "name": "skill_ratings",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "session_id": {
+          "name": "session_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "swimmer_id": {
+          "name": "swimmer_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "skill_id": {
+          "name": "skill_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "coach_id": {
+          "name": "coach_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "grade": {
+          "name": "grade",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "not_legal": {
+          "name": "not_legal",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "no_concept": {
+          "name": "no_concept",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "side": {
+          "name": "side",
+          "type": "rating_side",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "capacity_value": {
+          "name": "capacity_value",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "capacity_unit": {
+          "name": "capacity_unit",
+          "type": "capacity_unit",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "measurement_value": {
+          "name": "measurement_value",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "measurement_unit": {
+          "name": "measurement_unit",
+          "type": "measurement_unit",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "voided_at": {
+          "name": "voided_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "void_reason": {
+          "name": "void_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "void_by": {
+          "name": "void_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rated_at": {
+          "name": "rated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "skill_ratings_session_id_evaluation_sessions_id_fk": {
+          "name": "skill_ratings_session_id_evaluation_sessions_id_fk",
+          "tableFrom": "skill_ratings",
+          "columnsFrom": [
+            "session_id"
+          ],
+          "tableTo": "evaluation_sessions",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "restrict"
+        },
+        "skill_ratings_swimmer_id_swimmers_id_fk": {
+          "name": "skill_ratings_swimmer_id_swimmers_id_fk",
+          "tableFrom": "skill_ratings",
+          "columnsFrom": [
+            "swimmer_id"
+          ],
+          "tableTo": "swimmers",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "restrict"
+        },
+        "skill_ratings_skill_id_skills_id_fk": {
+          "name": "skill_ratings_skill_id_skills_id_fk",
+          "tableFrom": "skill_ratings",
+          "columnsFrom": [
+            "skill_id"
+          ],
+          "tableTo": "skills",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "restrict"
+        },
+        "skill_ratings_coach_id_profiles_id_fk": {
+          "name": "skill_ratings_coach_id_profiles_id_fk",
+          "tableFrom": "skill_ratings",
+          "columnsFrom": [
+            "coach_id"
+          ],
+          "tableTo": "profiles",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "restrict"
+        },
+        "skill_ratings_void_by_profiles_id_fk": {
+          "name": "skill_ratings_void_by_profiles_id_fk",
+          "tableFrom": "skill_ratings",
+          "columnsFrom": [
+            "void_by"
+          ],
+          "tableTo": "profiles",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "grade_xor_no_concept": {
+          "name": "grade_xor_no_concept",
+          "value": "(\"skill_ratings\".\"no_concept\" = false AND \"skill_ratings\".\"grade\" IS NOT NULL AND \"skill_ratings\".\"grade\" >= 1 AND \"skill_ratings\".\"grade\" <= 5)\n          OR (\"skill_ratings\".\"no_concept\" = true AND \"skill_ratings\".\"grade\" IS NULL)"
+        },
+        "capacity_value_and_unit_consistent": {
+          "name": "capacity_value_and_unit_consistent",
+          "value": "(\"skill_ratings\".\"capacity_value\" IS NULL) = (\"skill_ratings\".\"capacity_unit\" IS NULL)"
+        },
+        "measurement_value_and_unit_consistent": {
+          "name": "measurement_value_and_unit_consistent",
+          "value": "(\"skill_ratings\".\"measurement_value\" IS NULL) = (\"skill_ratings\".\"measurement_unit\" IS NULL)"
+        },
+        "void_fields_consistent": {
+          "name": "void_fields_consistent",
+          "value": "(\"skill_ratings\".\"voided_at\" IS NULL AND \"skill_ratings\".\"void_reason\" IS NULL AND \"skill_ratings\".\"void_by\" IS NULL)\n          OR (\"skill_ratings\".\"voided_at\" IS NOT NULL AND \"skill_ratings\".\"void_reason\" IS NOT NULL AND \"skill_ratings\".\"void_by\" IS NOT NULL)"
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "public.rating_fault_tags": {
+      "name": "rating_fault_tags",
+      "schema": "",
+      "columns": {
+        "rating_id": {
+          "name": "rating_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fault_tag": {
+          "name": "fault_tag",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "rating_fault_tags_rating_id_skill_ratings_id_fk": {
+          "name": "rating_fault_tags_rating_id_skill_ratings_id_fk",
+          "tableFrom": "rating_fault_tags",
+          "columnsFrom": [
+            "rating_id"
+          ],
+          "tableTo": "skill_ratings",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {
+        "rating_fault_tags_rating_id_fault_tag_pk": {
+          "name": "rating_fault_tags_rating_id_fault_tag_pk",
+          "columns": [
+            "rating_id",
+            "fault_tag"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": true
     }
   },
   "enums": {
@@ -2002,14 +2396,6 @@
         "male"
       ]
     },
-    "public.skill_side": {
-      "name": "skill_side",
-      "schema": "public",
-      "values": [
-        "left",
-        "right"
-      ]
-    },
     "public.skill_type": {
       "name": "skill_type",
       "schema": "public",
@@ -2037,6 +2423,41 @@
       "values": [
         "coach",
         "parent"
+      ]
+    },
+    "public.evaluation_context": {
+      "name": "evaluation_context",
+      "schema": "public",
+      "values": [
+        "drill",
+        "practice",
+        "race"
+      ]
+    },
+    "public.rating_side": {
+      "name": "rating_side",
+      "schema": "public",
+      "values": [
+        "left",
+        "right"
+      ]
+    },
+    "public.capacity_unit": {
+      "name": "capacity_unit",
+      "schema": "public",
+      "values": [
+        "yards",
+        "reps"
+      ]
+    },
+    "public.measurement_unit": {
+      "name": "measurement_unit",
+      "schema": "public",
+      "values": [
+        "stroke_cycles_per_minute",
+        "stroke_count",
+        "seconds",
+        "feet"
       ]
     }
   },

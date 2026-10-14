@@ -56,9 +56,11 @@ Voided ratings are:
 |-------|-----------|------|
 | `evaluation_sessions` | `coaching_priority_not_blank` | `coaching_priority <> ''` |
 | `skill_ratings` | `grade_xor_no_concept` | Grade is 1–5 (with `no_concept=false`) OR `no_concept=true` (with no grade). `not_legal` is orthogonal and can accompany a 1–5 phantom grade. |
+| `skill_ratings` | `not_legal_requires_grade` | `not_legal = true` requires a non-null grade. Prevents `not_legal` and `no_concept` from being set simultaneously (since `no_concept` requires `grade IS NULL`). |
 | `skill_ratings` | `capacity_value_and_unit_consistent` | Both `capacity_value` and `capacity_unit` set, or both null. |
 | `skill_ratings` | `measurement_value_and_unit_consistent` | Both `measurement_value` and `measurement_unit` set, or both null. |
 | `skill_ratings` | `void_fields_consistent` | All three void fields set together, or all null. |
+| `skill_ratings` | `skill_ratings_append_only` trigger | BEFORE UPDATE trigger that raises an exception if any column other than `voided_at`, `void_reason`, `void_by`, and `updated_at` changes. |
 
 ## Constraints enforced at the API layer (E-3)
 

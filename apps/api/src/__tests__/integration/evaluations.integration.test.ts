@@ -285,4 +285,83 @@ describe("skill_ratings CHECK constraints", () => {
     expect(rows[0]!.id).toBeTruthy();
     await adminDb().delete(skillRatings).where(eq(skillRatings.id, rows[0]!.id));
   });
+
+  it("rejects not_legal=true with grade=null (not_legal_requires_grade)", async () => {
+    await expect(
+      adminDb().insert(skillRatings).values({
+        ...validRatingValues(),
+        grade: null,
+        noConcept: true,
+        notLegal: true,
+      }),
+    ).rejects.toMatchObject({ message: expect.stringContaining("not_legal_requires_grade") });
+  });
+
+  it("accepts not_legal=true with a phantom grade (not_legal_requires_grade passes)", async () => {
+    const rows = await adminDb()
+      .insert(skillRatings)
+      .values({ ...validRatingValues(), grade: 2, notLegal: true, noConcept: false })
+      .returning({ id: skillRatings.id });
+    expect(rows[0]!.id).toBeTruthy();
+    await adminDb().delete(skillRatings).where(eq(skillRatings.id, rows[0]!.id));
+  });
+});
+
+// ── skill_ratings append-only trigger ────────────────────────────────────────
+
+describe("skill_ratings append-only trigger", () => {
+  let ratingId: string;
+
+  beforeAll(async () => {
+    const rows = await adminDb()
+      .insert(skillRatings)
+      .values(validRatingValues())
+      .returning({ id: skillRatings.id });
+    ratingId = rows[0]!.id;
+  });
+
+  afterAll(async () => {
+    await adminDb().delete(skillRatings).where(eq(skillRatings.id, ratingId));
+  });
+
+  it("allows setting void fields", async () => {
+    await expect(
+      adminDb()
+        .update(skillRatings)
+        .set({ voidedAt: new Date(), voidReason: "test", voidBy: coachId })
+        .where(eq(skillRatings.id, ratingId)),
+    ).resolves.not.toThrow();
+    // Reset void fields for subsequent tests.
+    await adminDb()
+      .update(skillRatings)
+      .set({ voidedAt: null, voidReason: null, voidBy: null })
+      .where(eq(skillRatings.id, ratingId));
+  });
+
+  it("rejects changing grade after insert", async () => {
+    await expect(
+      adminDb()
+        .update(skillRatings)
+        .set({ grade: 5 })
+        .where(eq(skillRatings.id, ratingId)),
+    ).rejects.toMatchObject({ message: expect.stringContaining("append-only") });
+  });
+
+  it("rejects changing not_legal after insert", async () => {
+    await expect(
+      adminDb()
+        .update(skillRatings)
+        .set({ notLegal: true })
+        .where(eq(skillRatings.id, ratingId)),
+    ).rejects.toMatchObject({ message: expect.stringContaining("append-only") });
+  });
+
+  it("rejects changing note after insert", async () => {
+    await expect(
+      adminDb()
+        .update(skillRatings)
+        .set({ note: "changed" })
+        .where(eq(skillRatings.id, ratingId)),
+    ).rejects.toMatchObject({ message: expect.stringContaining("append-only") });
+  });
 });

@@ -134,6 +134,20 @@
       "when": 1791997255414,
       "tag": "0018_evaluation_sessions_and_skill_ratings",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1791998299455,
+      "tag": "0019_mixed_namor",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1791998309792,
+      "tag": "0020_skill_ratings_append_only_trigger",
+      "breakpoints": true
     }
   ]
 }

@@ -527,6 +527,11 @@ export const skillRatings = pgTable(
       sql`(${table.noConcept} = false AND ${table.grade} IS NOT NULL AND ${table.grade} >= 1 AND ${table.grade} <= 5)
           OR (${table.noConcept} = true AND ${table.grade} IS NULL)`,
     ),
+    // not_legal requires a phantom grade: not_legal=true and no_concept=true can't coexist.
+    check(
+      "not_legal_requires_grade",
+      sql`${table.notLegal} = false OR ${table.grade} IS NOT NULL`,
+    ),
     // Capacity value and unit are both present or both absent.
     check(
       "capacity_value_and_unit_consistent",

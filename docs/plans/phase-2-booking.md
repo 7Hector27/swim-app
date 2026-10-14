@@ -627,7 +627,7 @@ apps/api/src/routes/internal.ts                                 extend cron tick
 apps/api/src/routes/lessons.ts (GET /lessons/available-slots)   fetch cached busy times; pass to computeAvailableSlots
 apps/web/src/content/CoachDashboardContent/CoachDashboardContent.tsx  add warning banner when calendarSyncFailures > 0
 apps/api/src/__tests__/googleCalendar.test.ts                   new — mock googleapis
-docs/decisions/022-gcal-single-coach-env-creds.md
+docs/decisions/023-gcal-single-coach-env-creds.md
 ```
 
 ### Sync points
