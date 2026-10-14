@@ -1,22 +1,45 @@
-export type SkillGrade = 1 | 2 | 3 | 4 | 5 | "not_legal" | "no_concept" | null;
+import { z } from "zod";
 
-export type BuiltOnGraph = Record<string, string[]>;
+export const SkillGradeSchema = z.union([
+  z.literal(1),
+  z.literal(2),
+  z.literal(3),
+  z.literal(4),
+  z.literal(5),
+  z.literal("not_legal"),
+  z.literal("no_concept"),
+  z.null(),
+]);
+export type SkillGrade = z.infer<typeof SkillGradeSchema>;
 
-export type GradeMap = Record<string, SkillGrade>;
+export const BuiltOnGraphSchema = z.record(z.string(), z.array(z.string()));
+export type BuiltOnGraph = z.infer<typeof BuiltOnGraphSchema>;
 
-export type SortOrderMap = Record<string, number>;
+export const GradeMapSchema = z.record(z.string(), SkillGradeSchema);
+export type GradeMap = z.infer<typeof GradeMapSchema>;
 
-export type RatingRecord = {
-  skillSlug: string;
-  grade: 1 | 2 | 3 | 4 | 5 | null;
-  notLegal: boolean;
-  noConcept: boolean;
-  ratedAt: string;
-  voidedAt: string | null;
-};
+export const SortOrderMapSchema = z.record(z.string(), z.number());
+export type SortOrderMap = z.infer<typeof SortOrderMapSchema>;
 
-type Stroke = "free" | "back" | "breast" | "fly";
-export type PerStrokeGrades = Partial<Record<Stroke, SkillGrade>>;
+export const RatingRecordSchema = z.object({
+  skillSlug: z.string(),
+  grade: z
+    .union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)])
+    .nullable(),
+  notLegal: z.boolean(),
+  noConcept: z.boolean(),
+  ratedAt: z.string(),
+  voidedAt: z.string().nullable(),
+});
+export type RatingRecord = z.infer<typeof RatingRecordSchema>;
+
+export const PerStrokeGradesSchema = z.object({
+  free: SkillGradeSchema.optional(),
+  back: SkillGradeSchema.optional(),
+  breast: SkillGradeSchema.optional(),
+  fly: SkillGradeSchema.optional(),
+});
+export type PerStrokeGrades = z.infer<typeof PerStrokeGradesSchema>;
 
 function numericGrade(grade: SkillGrade): number {
   if (grade === "not_legal" || grade === "no_concept") return 0;
@@ -46,7 +69,7 @@ function isLow(grade: SkillGrade, supporterGrade: SkillGrade): boolean {
 export function headPositionOverall(
   perStrokeGrades: PerStrokeGrades,
 ): 1 | 2 | 3 | 4 | 5 | null {
-  const strokes: Stroke[] = ["free", "back", "breast", "fly"];
+  const strokes = ["free", "back", "breast", "fly"] as const;
   let sum = 0;
   let count = 0;
   for (const stroke of strokes) {
@@ -75,10 +98,10 @@ export function latestEffectiveRatings(history: RatingRecord[]): GradeMap {
 
   const result: GradeMap = {};
   for (const [slug, records] of bySkill) {
-    const sorted = [...records].sort((a, b) =>
-      b.ratedAt.localeCompare(a.ratedAt),
+    const sorted = [...records].sort(
+      (recordA, recordB) => Date.parse(recordB.ratedAt) - Date.parse(recordA.ratedAt),
     );
-    const latest = sorted.find((r) => r.voidedAt === null);
+    const latest = sorted.find((record) => record.voidedAt === null);
     if (latest === undefined) continue;
     if (latest.notLegal) {
       result[slug] = "not_legal";
@@ -111,7 +134,7 @@ export function findDeepestLowFoundation(
   const visited = new Set<string>();
 
   function descend(slug: string): string[] {
-    if (visited.has(slug)) return [];
+    if (visited.has(slug)) return [slug];
     visited.add(slug);
 
     const currentGrade = grades[slug] ?? null;

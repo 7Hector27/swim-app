@@ -207,11 +207,11 @@ describe("findDeepestLowFoundation", () => {
   // ── Cycle guard ─────────────────────────────────────────────────────────────
 
   it("does not loop infinitely when the graph has a cycle", () => {
+    // a→b→a: descend(a) picks b, descend(b) picks a, descend(a) is visited → [a]
+    // chain terminates as ["a", "b", "a"]
     const g = graph({ a: ["b"], b: ["a"] });
     const r = grades({ a: 1, b: 1 });
-    const result = findDeepestLowFoundation("a", r, g);
-    expect(result).not.toBeNull();
-    expect(result).toContain("a");
+    expect(findDeepestLowFoundation("a", r, g)).toEqual(["a", "b", "a"]);
   });
 
   // ── Realistic scenario from rubric ─────────────────────────────────────────

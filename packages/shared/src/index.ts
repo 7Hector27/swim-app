@@ -6,7 +6,17 @@ export { LeagueSchema, LeagueRegistrationParamsSchema } from "./schemas/registra
 
 export { currentSeasonStartYear, CLUB_SEASON_START_MONTH } from "./lib/currentSeasonStartYear";
 
-export { findDeepestLowFoundation, headPositionOverall, latestEffectiveRatings } from "./lib/dependencyMap";
+export {
+  findDeepestLowFoundation,
+  headPositionOverall,
+  latestEffectiveRatings,
+  SkillGradeSchema,
+  BuiltOnGraphSchema,
+  GradeMapSchema,
+  SortOrderMapSchema,
+  RatingRecordSchema,
+  PerStrokeGradesSchema,
+} from "./lib/dependencyMap";
 export type { SkillGrade, BuiltOnGraph, GradeMap, SortOrderMap, RatingRecord, PerStrokeGrades } from "./lib/dependencyMap";
 
 export type { HealthResponse } from "./schemas/health";
