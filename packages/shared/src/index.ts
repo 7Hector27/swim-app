@@ -193,6 +193,9 @@ export type {
   CreateSessionResponse,
   VoidRatingBody,
   DependencyMapQuery,
+  SkillForRating,
+  SkillCategoryWithSkills,
+  CategoriesResponse,
 } from "./schemas/evaluations";
 export {
   EvaluationContextSchema,
@@ -209,4 +212,7 @@ export {
   CreateSessionResponseSchema,
   VoidRatingBodySchema,
   DependencyMapQuerySchema,
+  SkillForRatingSchema,
+  SkillCategoryWithSkillsSchema,
+  CategoriesResponseSchema,
 } from "./schemas/evaluations";

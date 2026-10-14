@@ -172,6 +172,7 @@ export type CreateSessionBody = z.infer<typeof CreateSessionBodySchema>;
 export const CreateSessionResponseSchema = z.object({
   sessionId: z.string().uuid(),
   ratingsCount: z.number().int(),
+  ratingIds: z.array(z.string().uuid()),
 });
 export type CreateSessionResponse = z.infer<typeof CreateSessionResponseSchema>;
 
@@ -184,3 +185,28 @@ export const DependencyMapQuerySchema = z.object({
   categoryId: z.string().uuid(),
 });
 export type DependencyMapQuery = z.infer<typeof DependencyMapQuerySchema>;
+
+export const SkillForRatingSchema = z.object({
+  id: z.string().uuid(),
+  slug: z.string(),
+  name: z.string(),
+  type: z.enum(["rubric", "measured", "score", "composite", "rollup"]),
+  unit: z.string().nullable(),
+  ratedPerSide: z.boolean(),
+  parentSkillId: z.string().uuid().nullable(),
+  sortOrder: z.number().int(),
+  faultTags: z.array(z.string()),
+});
+export type SkillForRating = z.infer<typeof SkillForRatingSchema>;
+
+export const SkillCategoryWithSkillsSchema = z.object({
+  id: z.string().uuid(),
+  slug: z.string(),
+  name: z.string(),
+  sortOrder: z.number().int(),
+  skills: z.array(SkillForRatingSchema),
+});
+export type SkillCategoryWithSkills = z.infer<typeof SkillCategoryWithSkillsSchema>;
+
+export const CategoriesResponseSchema = z.array(SkillCategoryWithSkillsSchema);
+export type CategoriesResponse = z.infer<typeof CategoriesResponseSchema>;
