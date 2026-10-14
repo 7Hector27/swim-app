@@ -67,8 +67,8 @@ export default function CoachSwimmerDetailContent({
             </div>
           </div>
 
-          {/* Evaluate button */}
-          <div>
+          {/* Action buttons */}
+          <div className="flex gap-3 flex-wrap">
             <a
               href={`/coach/swimmers/${swimmer.id}/evaluate`}
               className="inline-flex items-center justify-center px-5 min-h-[44px] font-bold text-sm rounded"
@@ -79,6 +79,17 @@ export default function CoachSwimmerDetailContent({
               }}
             >
               Evaluate {swimmer.firstName}
+            </a>
+            <a
+              href={`/coach/swimmers/${swimmer.id}/progress`}
+              className="inline-flex items-center justify-center px-5 min-h-[44px] font-bold text-sm rounded border"
+              style={{
+                borderRadius: "var(--radius-button)",
+                borderColor: "var(--color-button-outline)",
+                color: "var(--color-button-outline)",
+              }}
+            >
+              View progress
             </a>
           </div>
 

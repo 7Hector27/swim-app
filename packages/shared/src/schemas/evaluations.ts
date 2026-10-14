@@ -225,3 +225,87 @@ export const SwimmerSkillsResponseSchema = z.object({
   ),
 });
 export type SwimmerSkillsResponse = z.infer<typeof SwimmerSkillsResponseSchema>;
+
+// ── E-5 Progress schemas ──────────────────────────────────────────────────────
+
+export const SkillCurrentLevelSchema = z.object({
+  grade: z.number().int().min(1).max(5).nullable(),
+  notLegal: z.boolean(),
+  noConcept: z.boolean(),
+  capacityValue: z.string().nullable(),
+  capacityUnit: CapacityUnitSchema.nullable(),
+  measurementValue: z.string().nullable(),
+  measurementUnit: MeasurementUnitSchema.nullable(),
+});
+export type SkillCurrentLevel = z.infer<typeof SkillCurrentLevelSchema>;
+
+export const ProgressRatingPointSchema = z.object({
+  id: z.string().uuid(),
+  grade: z.number().int().min(1).max(5).nullable(),
+  notLegal: z.boolean(),
+  noConcept: z.boolean(),
+  side: RatingSideSchema.nullable(),
+  capacityValue: z.string().nullable(),
+  capacityUnit: CapacityUnitSchema.nullable(),
+  measurementValue: z.string().nullable(),
+  measurementUnit: MeasurementUnitSchema.nullable(),
+  context: EvaluationContextSchema,
+  faultTags: z.array(z.string()),
+  ratedAt: z.string().datetime({ offset: true }),
+  sessionDate: z.string().date(),
+});
+export type ProgressRatingPoint = z.infer<typeof ProgressRatingPointSchema>;
+
+export const SkillProgressSchema = z.object({
+  skillId: z.string().uuid(),
+  slug: z.string(),
+  name: z.string(),
+  categoryId: z.string().uuid(),
+  categoryName: z.string(),
+  type: z.enum(["rubric", "measured", "score", "composite", "rollup"]),
+  unit: z.string().nullable(),
+  ratedPerSide: z.boolean(),
+  parentSkillId: z.string().uuid().nullable(),
+  current: SkillCurrentLevelSchema.nullable(),
+  currentLeft: SkillCurrentLevelSchema.nullable(),
+  currentRight: SkillCurrentLevelSchema.nullable(),
+  history: z.array(ProgressRatingPointSchema),
+});
+export type SkillProgress = z.infer<typeof SkillProgressSchema>;
+
+export const ProgressChainEntrySchema = z.object({
+  slug: z.string(),
+  name: z.string(),
+  notAssessed: z.boolean(),
+});
+export type ProgressChainEntry = z.infer<typeof ProgressChainEntrySchema>;
+
+export const ProgressCoachingPrioritySchema = z.object({
+  targetSlug: z.string(),
+  targetName: z.string(),
+  chain: z.array(ProgressChainEntrySchema),
+});
+export type ProgressCoachingPriority = z.infer<typeof ProgressCoachingPrioritySchema>;
+
+export const StartComponentProgressSchema = z.object({
+  slug: z.string(),
+  name: z.string(),
+  current: SkillCurrentLevelSchema.nullable(),
+});
+export type StartComponentProgress = z.infer<typeof StartComponentProgressSchema>;
+
+export const StartProgressSchema = z.object({
+  slug: z.string(),
+  name: z.string(),
+  grade: StartGradeResultSchema,
+  components: z.array(StartComponentProgressSchema),
+});
+export type StartProgress = z.infer<typeof StartProgressSchema>;
+
+export const SwimmerProgressResponseSchema = z.object({
+  skills: z.array(SkillProgressSchema),
+  startProgress: z.array(StartProgressSchema),
+  headPositionOverall: z.number().int().min(1).max(5).nullable(),
+  coachingPriorities: z.array(ProgressCoachingPrioritySchema),
+});
+export type SwimmerProgressResponse = z.infer<typeof SwimmerProgressResponseSchema>;

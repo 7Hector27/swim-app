@@ -218,3 +218,23 @@ export {
   CategoriesResponseSchema,
   SwimmerSkillsResponseSchema,
 } from "./schemas/evaluations";
+export type {
+  SkillCurrentLevel,
+  ProgressRatingPoint,
+  SkillProgress,
+  ProgressChainEntry,
+  ProgressCoachingPriority,
+  StartComponentProgress,
+  StartProgress,
+  SwimmerProgressResponse,
+} from "./schemas/evaluations";
+export {
+  SkillCurrentLevelSchema,
+  ProgressRatingPointSchema,
+  SkillProgressSchema,
+  ProgressChainEntrySchema,
+  ProgressCoachingPrioritySchema,
+  StartComponentProgressSchema,
+  StartProgressSchema,
+  SwimmerProgressResponseSchema,
+} from "./schemas/evaluations";
