@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { StartGradeResultSchema } from "../lib/startGrade";
 
 export const EvaluationContextSchema = z.enum(["drill", "practice", "race"]);
 export type EvaluationContext = z.infer<typeof EvaluationContextSchema>;
@@ -172,6 +173,7 @@ export type CreateSessionBody = z.infer<typeof CreateSessionBodySchema>;
 export const CreateSessionResponseSchema = z.object({
   sessionId: z.string().uuid(),
   ratingsCount: z.number().int(),
+  ratingIds: z.array(z.string().uuid()),
 });
 export type CreateSessionResponse = z.infer<typeof CreateSessionResponseSchema>;
 
@@ -184,3 +186,42 @@ export const DependencyMapQuerySchema = z.object({
   categoryId: z.string().uuid(),
 });
 export type DependencyMapQuery = z.infer<typeof DependencyMapQuerySchema>;
+
+export const SkillForRatingSchema = z.object({
+  id: z.string().uuid(),
+  slug: z.string(),
+  name: z.string(),
+  type: z.enum(["rubric", "measured", "score", "composite", "rollup"]),
+  unit: z.string().nullable(),
+  ratedPerSide: z.boolean(),
+  parentSkillId: z.string().uuid().nullable(),
+  sortOrder: z.number().int(),
+  faultTags: z.array(z.string()),
+});
+export type SkillForRating = z.infer<typeof SkillForRatingSchema>;
+
+export const SkillCategoryWithSkillsSchema = z.object({
+  id: z.string().uuid(),
+  slug: z.string(),
+  name: z.string(),
+  sortOrder: z.number().int(),
+  skills: z.array(SkillForRatingSchema),
+});
+export type SkillCategoryWithSkills = z.infer<typeof SkillCategoryWithSkillsSchema>;
+
+export const CategoriesResponseSchema = z.array(SkillCategoryWithSkillsSchema);
+export type CategoriesResponse = z.infer<typeof CategoriesResponseSchema>;
+
+export const SwimmerSkillsResponseSchema = z.object({
+  grades: z.record(
+    z.union([z.number().int().min(1).max(5), z.literal("not_legal"), z.literal("no_concept")]),
+  ),
+  startGrades: z.record(StartGradeResultSchema),
+  coachingPriorities: z.array(
+    z.object({
+      targetSlug: z.string(),
+      chain: z.array(z.object({ slug: z.string(), grade: z.unknown(), sortOrder: z.number().int() })),
+    }),
+  ),
+});
+export type SwimmerSkillsResponse = z.infer<typeof SwimmerSkillsResponseSchema>;

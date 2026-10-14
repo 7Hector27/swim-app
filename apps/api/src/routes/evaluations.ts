@@ -208,6 +208,7 @@ evaluationsRouter.post(
 
       const session = sessionRows[0]!;
 
+      const ratingIds: string[] = [];
       for (const ratingInput of body.ratings) {
         const ratingRows = await tx
           .insert(skillRatings)
@@ -230,6 +231,7 @@ evaluationsRouter.post(
           .returning({ id: skillRatings.id });
 
         const rating = ratingRows[0]!;
+        ratingIds.push(rating.id);
 
         if (ratingInput.faultTags.length > 0) {
           await tx.insert(ratingFaultTags).values(
@@ -241,14 +243,15 @@ evaluationsRouter.post(
         }
       }
 
-      return session;
+      return { session, ratingIds };
     });
 
-    req.log.info({ swimmerId, sessionId: result.id, coachId, ratingsCount: body.ratings.length }, "session created");
+    req.log.info({ swimmerId, sessionId: result.session.id, coachId, ratingsCount: body.ratings.length }, "session created");
 
     const response: CreateSessionResponse = {
-      sessionId: result.id,
+      sessionId: result.session.id,
       ratingsCount: body.ratings.length,
+      ratingIds: result.ratingIds,
     };
     res.status(201).json(response);
   }),
@@ -598,6 +601,122 @@ evaluationsRouter.get(
     req.log.info({ swimmerId, categoryId }, "dependency map suggestion computed");
 
     res.json({ suggestion: bestChain });
+  }),
+);
+
+// ── DELETE /sessions/:id ──────────────────────────────────────────────────────
+
+export const sessionsRouter = Router();
+
+const SessionIdParamsSchema = z.object({ id: z.string().uuid() });
+type SessionIdParams = z.infer<typeof SessionIdParamsSchema>;
+
+sessionsRouter.delete(
+  "/:id",
+  requireUser,
+  requireCoach,
+  validate({ params: SessionIdParamsSchema }),
+  asyncHandler(async (req, res) => {
+    const { id: sessionId } = req.params as unknown as SessionIdParams;
+    const coachId = req.profile.id;
+
+    const sessionRows = await db
+      .select({
+        id: evaluationSessions.id,
+        coachId: evaluationSessions.coachId,
+        createdAt: evaluationSessions.createdAt,
+      })
+      .from(evaluationSessions)
+      .where(eq(evaluationSessions.id, sessionId))
+      .limit(1);
+
+    const session = sessionRows[0];
+    if (!session || session.coachId !== coachId) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+
+    const ageMs = Date.now() - session.createdAt.getTime();
+    if (ageMs > UNDO_WINDOW_MS) {
+      res.status(409).json({ error: "Undo window has passed." });
+      return;
+    }
+
+    await db.transaction(async (tx) => {
+      // fault tags cascade-delete when ratings are deleted
+      await tx.delete(skillRatings).where(eq(skillRatings.sessionId, sessionId));
+      await tx.delete(evaluationSessions).where(eq(evaluationSessions.id, sessionId));
+    });
+
+    req.log.info({ sessionId, coachId }, "session deleted");
+    res.status(204).end();
+  }),
+);
+
+// ── GET /categories ──────────────────────────────────────────────────────────
+
+export const coachCategoriesRouter = Router();
+
+coachCategoriesRouter.get(
+  "/categories",
+  requireUser,
+  requireCoach,
+  validate({}),
+  asyncHandler(async (req, res) => {
+    const categoryRows = await db
+      .select({
+        id: skillCategories.id,
+        slug: skillCategories.slug,
+        name: skillCategories.name,
+        sortOrder: skillCategories.sortOrder,
+      })
+      .from(skillCategories)
+      .orderBy(skillCategories.sortOrder);
+
+    const skillRows = await db
+      .select({
+        id: skills.id,
+        slug: skills.slug,
+        name: skills.name,
+        type: skills.type,
+        unit: skills.unit,
+        ratedPerSide: skills.ratedPerSide,
+        parentSkillId: skills.parentSkillId,
+        sortOrder: skills.sortOrder,
+        faultTags: skills.faultTags,
+        categoryId: skills.categoryId,
+      })
+      .from(skills)
+      .where(isNull(skills.archivedAt))
+      .orderBy(skills.sortOrder);
+
+    const skillsByCategory = new Map<string, typeof skillRows>();
+    for (const skill of skillRows) {
+      const list = skillsByCategory.get(skill.categoryId) ?? [];
+      list.push(skill);
+      skillsByCategory.set(skill.categoryId, list);
+    }
+
+    const result = categoryRows.map((cat) => ({
+      id: cat.id,
+      slug: cat.slug,
+      name: cat.name,
+      sortOrder: cat.sortOrder,
+      skills: (skillsByCategory.get(cat.id) ?? []).map((skill) => ({
+        id: skill.id,
+        slug: skill.slug,
+        name: skill.name,
+        type: skill.type,
+        unit: skill.unit ?? null,
+        ratedPerSide: skill.ratedPerSide,
+        parentSkillId: skill.parentSkillId ?? null,
+        sortOrder: skill.sortOrder,
+        faultTags: skill.faultTags ?? [],
+      })),
+    }));
+
+    req.log.info({ count: categoryRows.length }, "skill categories fetched");
+    res.json(result);
   }),
 );
 

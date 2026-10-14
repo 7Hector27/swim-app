@@ -1,0 +1,446 @@
+import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
+import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
+
+// Mock SiteNav and SiteFooter (server components) to avoid import errors
+vi.mock("@/components/SiteNav", () => ({ default: () => null }));
+vi.mock("@/components/SiteFooter", () => ({ default: () => null }));
+vi.mock("@/content/EvaluateContent/actions", () => ({
+  submitEvaluation: vi.fn(),
+}));
+
+// Mock fetch
+const mockFetch = vi.fn();
+vi.stubGlobal("fetch", mockFetch);
+
+import GradeSelector from "../content/EvaluateContent/GradeSelector";
+import SkillGradeRow from "../content/EvaluateContent/SkillGradeRow";
+import StartGroupSection from "../content/EvaluateContent/StartGroupSection";
+import UndoToast from "../content/EvaluateContent/UndoToast";
+import EvaluateContent from "../content/EvaluateContent/EvaluateContent";
+import { canSubmit, buildRatingsArray, defaultSkillDraft, initialSessionDraft } from "../content/EvaluateContent/helpers";
+import { submitEvaluation } from "../content/EvaluateContent/actions";
+import type { SkillForRating, CategoriesResponse, CoachSwimmerDetail } from "@swim-app/shared";
+
+// ── Test data ─────────────────────────────────────────────────────────────────
+
+const SKILL: SkillForRating = {
+  id: "skill-1",
+  slug: "free-kick",
+  name: "Kick",
+  type: "rubric",
+  unit: null,
+  ratedPerSide: false,
+  parentSkillId: null,
+  sortOrder: 1,
+  faultTags: ["Bent knees", "Stiff ankles"],
+};
+
+const SIDED_SKILL: SkillForRating = {
+  id: "skill-2",
+  slug: "free-bilateral",
+  name: "Bilateral breathing",
+  type: "rubric",
+  unit: null,
+  ratedPerSide: true,
+  parentSkillId: null,
+  sortOrder: 2,
+  faultTags: [],
+};
+
+const START_PARENT: SkillForRating = {
+  id: "parent-1",
+  slug: "track-start",
+  name: "Track start",
+  type: "composite",
+  unit: null,
+  ratedPerSide: false,
+  parentSkillId: null,
+  sortOrder: 10,
+  faultTags: [],
+};
+
+function makeComponent(index: number): SkillForRating {
+  return {
+    id: `comp-${index}`,
+    slug: `comp-slug-${index}`,
+    name: `Component ${index}`,
+    type: "rubric",
+    unit: null,
+    ratedPerSide: false,
+    parentSkillId: "parent-1",
+    sortOrder: index,
+    faultTags: [],
+  };
+}
+const COMPONENTS = [1, 2, 3, 4, 5, 6].map(makeComponent);
+
+// ── Helper tests ──────────────────────────────────────────────────────────────
+
+describe("canSubmit", () => {
+  it("returns false when coachingPriority is empty", () => {
+    const draft = { ...initialSessionDraft(), categoryId: "cat-1", sessionDate: "2026-10-14", context: "practice" as const };
+    expect(canSubmit(draft, 1, false)).toBe(false);
+  });
+
+  it("returns false when no ratings", () => {
+    const draft = { ...initialSessionDraft(), categoryId: "cat-1", sessionDate: "2026-10-14", context: "practice" as const, coachingPriority: "Fix kick" };
+    expect(canSubmit(draft, 0, false)).toBe(false);
+  });
+
+  it("returns false when isPending", () => {
+    const draft = { ...initialSessionDraft(), categoryId: "cat-1", sessionDate: "2026-10-14", context: "practice" as const, coachingPriority: "Fix kick" };
+    expect(canSubmit(draft, 1, true)).toBe(false);
+  });
+
+  it("returns true when all fields present", () => {
+    const draft = { ...initialSessionDraft(), categoryId: "cat-1", sessionDate: "2026-10-14", context: "practice" as const, coachingPriority: "Fix kick" };
+    expect(canSubmit(draft, 1, false)).toBe(true);
+  });
+});
+
+describe("buildRatingsArray", () => {
+  it("excludes not-assessed skills (grade null + noConcept false)", () => {
+    const draftSkills = { "skill-1": defaultSkillDraft() };
+    expect(buildRatingsArray([SKILL], draftSkills)).toHaveLength(0);
+  });
+
+  it("includes graded skills", () => {
+    const draftSkills = { "skill-1": { ...defaultSkillDraft(), grade: 3 as const } };
+    const ratings = buildRatingsArray([SKILL], draftSkills);
+    expect(ratings).toHaveLength(1);
+    expect(ratings[0]?.grade).toBe(3);
+    expect(ratings[0]?.skillId).toBe("skill-1");
+    expect(ratings[0]?.side).toBeNull();
+  });
+
+  it("side-rated skill produces two entries with correct sides", () => {
+    const draftSkills = {
+      "skill-2:left": { ...defaultSkillDraft(), grade: 3 as const },
+      "skill-2:right": { ...defaultSkillDraft(), grade: 4 as const },
+    };
+    const ratings = buildRatingsArray([SIDED_SKILL], draftSkills);
+    expect(ratings).toHaveLength(2);
+    const left = ratings.find((r) => r.side === "left");
+    const right = ratings.find((r) => r.side === "right");
+    expect(left?.grade).toBe(3);
+    expect(right?.grade).toBe(4);
+    expect(left?.skillId).toBe("skill-2");
+    expect(right?.skillId).toBe("skill-2");
+  });
+
+  it("includes noConcept skills with grade null", () => {
+    const draftSkills = { "skill-1": { ...defaultSkillDraft(), noConcept: true } };
+    const ratings = buildRatingsArray([SKILL], draftSkills);
+    expect(ratings).toHaveLength(1);
+    expect(ratings[0]?.noConcept).toBe(true);
+    expect(ratings[0]?.grade).toBeNull();
+  });
+});
+
+// ── Component tests ───────────────────────────────────────────────────────────
+
+describe("GradeSelector", () => {
+  it("renders N/A button", () => {
+    const onChange = vi.fn();
+    render(<GradeSelector value={null} disabled={false} onChange={onChange} labelPrefix="Kick" />);
+    expect(screen.getByRole("radio", { name: /n\/a/i })).toBeInTheDocument();
+  });
+
+  it("N/A is selected by default when value is null", () => {
+    const onChange = vi.fn();
+    render(<GradeSelector value={null} disabled={false} onChange={onChange} labelPrefix="Kick" />);
+    expect(screen.getByRole("radio", { name: /n\/a/i })).toHaveAttribute("aria-checked", "true");
+  });
+
+  it("calls onChange with the grade when a grade button is clicked", () => {
+    const onChange = vi.fn();
+    render(<GradeSelector value={null} disabled={false} onChange={onChange} labelPrefix="Kick" />);
+    fireEvent.click(screen.getByRole("radio", { name: "3" }));
+    expect(onChange).toHaveBeenCalledWith(3);
+  });
+});
+
+describe("SkillGradeRow — Not legal", () => {
+  it("clicking Not legal after selecting grade 2 keeps grade and shows DQ badge", () => {
+    const onChange = vi.fn();
+    const draft = { ...defaultSkillDraft(), grade: 2 as const };
+    render(<SkillGradeRow skill={SKILL} draftKey="skill-1" label="Kick" draft={draft} onChange={onChange} />);
+    // Grade 2 is shown as selected
+    const grade2Button = screen.getByRole("radio", { name: "2" });
+    expect(grade2Button).toHaveAttribute("aria-checked", "true");
+    // Click Not legal
+    fireEvent.click(screen.getByRole("button", { name: /not legal/i }));
+    // onChange called with notLegal: true
+    expect(onChange).toHaveBeenCalledWith("skill-1", { notLegal: true });
+  });
+
+  it("shows DQ badge when draft.notLegal is true", () => {
+    const onChange = vi.fn();
+    const draft = { ...defaultSkillDraft(), grade: 2 as const, notLegal: true };
+    render(<SkillGradeRow skill={SKILL} draftKey="skill-1" label="Kick" draft={draft} onChange={onChange} />);
+    expect(screen.getByText("DQ")).toBeInTheDocument();
+  });
+});
+
+describe("StartGroupSection", () => {
+  it("shows In progress when no components are rated", () => {
+    render(
+      <StartGroupSection
+        parent={START_PARENT}
+        components={COMPONENTS}
+        draftSkills={{}}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("In progress")).toBeInTheDocument();
+  });
+
+  it("shows a grade when all 6 components are rated", () => {
+    const draftSkills: Record<string, ReturnType<typeof defaultSkillDraft>> = {};
+    for (const comp of COMPONENTS) {
+      draftSkills[comp.id] = { ...defaultSkillDraft(), grade: 3 as const };
+    }
+    render(
+      <StartGroupSection
+        parent={START_PARENT}
+        components={COMPONENTS}
+        draftSkills={draftSkills}
+        onChange={vi.fn()}
+      />,
+    );
+    const pill = screen.getByTestId("start-grade-pill");
+    expect(pill).toBeInTheDocument();
+    expect(pill.textContent).toBe("3");
+  });
+
+  it("shows DQ when any component is not legal", () => {
+    const draftSkills: Record<string, ReturnType<typeof defaultSkillDraft>> = {};
+    for (const comp of COMPONENTS) {
+      draftSkills[comp.id] = { ...defaultSkillDraft(), grade: 3 as const };
+    }
+    draftSkills["comp-1"] = { ...defaultSkillDraft(), grade: 2 as const, notLegal: true };
+    render(
+      <StartGroupSection
+        parent={START_PARENT}
+        components={COMPONENTS}
+        draftSkills={draftSkills}
+        onChange={vi.fn()}
+      />,
+    );
+    // At least one DQ element must be present (pill and/or legend badge)
+    expect(screen.getAllByText("DQ").length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+// ── Draft persistence — full component ────────────────────────────────────────
+
+const SWIMMER_ID = "00000000-0000-0000-aaaa-000000000001";
+const OTHER_SWIMMER_ID = "00000000-0000-0000-aaaa-000000000002";
+const CAT_A_ID = "00000000-0000-0000-bbbb-000000000001";
+const CAT_B_ID = "00000000-0000-0000-bbbb-000000000002";
+const SKILL_A_ID = "00000000-0000-0000-cccc-000000000001";
+const SKILL_B_ID = "00000000-0000-0000-cccc-000000000002";
+
+const SWIMMER_DETAIL: CoachSwimmerDetail = {
+  id: SWIMMER_ID,
+  firstName: "Alex",
+  lastName: "Smith",
+  age: 10,
+  sex: "female",
+  isPublic: false,
+  createdAt: "2025-01-01T00:00:00.000Z",
+  updatedAt: "2025-01-01T00:00:00.000Z",
+  clubs: [],
+  currentLeagues: [],
+  memberNames: [],
+  birthDate: "2015-01-01",
+  members: [],
+  homePool: null,
+};
+
+const TEST_CATEGORIES: CategoriesResponse = [
+  {
+    id: CAT_A_ID,
+    slug: "freestyle",
+    name: "Freestyle",
+    sortOrder: 1,
+    skills: [{
+      id: SKILL_A_ID, slug: "free-kick", name: "Freestyle Kick",
+      type: "rubric", unit: null, ratedPerSide: false,
+      parentSkillId: null, sortOrder: 1, faultTags: [],
+    }],
+  },
+  {
+    id: CAT_B_ID,
+    slug: "backstroke",
+    name: "Backstroke",
+    sortOrder: 2,
+    skills: [{
+      id: SKILL_B_ID, slug: "back-kick", name: "Backstroke Kick",
+      type: "rubric", unit: null, ratedPerSide: false,
+      parentSkillId: null, sortOrder: 1, faultTags: [],
+    }],
+  },
+];
+
+const metaKey = (swimId: string) => `evaluate-draft-meta-${swimId}`;
+const skillsKey = (swimId: string, catId: string) => `evaluate-draft-skills-${swimId}-${catId}`;
+
+describe("draft persistence — full component", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.mocked(submitEvaluation).mockResolvedValue({ status: "idle" });
+    mockFetch.mockResolvedValue({ ok: true, json: async () => ({ suggestion: null }) });
+  });
+
+  afterEach(() => {
+    localStorage.clear();
+    vi.clearAllMocks();
+  });
+
+  it("restores coaching priority and category from a saved draft on mount", async () => {
+    localStorage.setItem(metaKey(SWIMMER_ID), JSON.stringify({
+      categoryId: CAT_A_ID,
+      sessionDate: "2026-10-14",
+      context: "practice",
+      coachingPriority: "Fix the kick technique",
+    }));
+    localStorage.setItem(skillsKey(SWIMMER_ID, CAT_A_ID), JSON.stringify({ skills: {} }));
+
+    render(<EvaluateContent swimmer={SWIMMER_DETAIL} categories={TEST_CATEGORIES} accessToken="tok" />);
+
+    await waitFor(() => {
+      expect(
+        screen.getByPlaceholderText(/main focus/i),
+      ).toHaveValue("Fix the kick technique");
+    });
+  });
+
+  it("does not restore a different swimmer's draft", async () => {
+    localStorage.setItem(metaKey(OTHER_SWIMMER_ID), JSON.stringify({
+      categoryId: CAT_A_ID,
+      sessionDate: "2026-10-14",
+      context: "practice",
+      coachingPriority: "Wrong swimmer priority",
+    }));
+
+    render(<EvaluateContent swimmer={SWIMMER_DETAIL} categories={TEST_CATEGORIES} accessToken="tok" />);
+
+    await act(async () => {});
+
+    expect(screen.getByPlaceholderText(/main focus/i)).toHaveValue("");
+  });
+
+  it("loads the correct skill draft per category and does not bleed across categories", async () => {
+    localStorage.setItem(skillsKey(SWIMMER_ID, CAT_A_ID), JSON.stringify({
+      skills: { [SKILL_A_ID]: { ...defaultSkillDraft(), grade: 3 } },
+    }));
+    localStorage.setItem(skillsKey(SWIMMER_ID, CAT_B_ID), JSON.stringify({
+      skills: { [SKILL_B_ID]: { ...defaultSkillDraft(), grade: 5 } },
+    }));
+
+    render(<EvaluateContent swimmer={SWIMMER_DETAIL} categories={TEST_CATEGORIES} accessToken="tok" />);
+
+    const select = screen.getByRole("combobox");
+
+    fireEvent.change(select, { target: { value: CAT_A_ID } });
+    await waitFor(() => {
+      const grade3 = screen.getAllByRole("radio", { name: "3" });
+      expect(grade3.some((btn) => btn.getAttribute("aria-checked") === "true")).toBe(true);
+    });
+
+    fireEvent.change(select, { target: { value: CAT_B_ID } });
+    await waitFor(() => {
+      const grade5 = screen.getAllByRole("radio", { name: "5" });
+      expect(grade5.some((btn) => btn.getAttribute("aria-checked") === "true")).toBe(true);
+      // cat A's grade 3 must not be selected in cat B's skill list
+      const grade3 = screen.getAllByRole("radio", { name: "3" });
+      expect(grade3.every((btn) => btn.getAttribute("aria-checked") === "false")).toBe(true);
+    });
+  });
+
+  it("clears both localStorage keys after a successful save", async () => {
+    localStorage.setItem(metaKey(SWIMMER_ID), JSON.stringify({
+      categoryId: CAT_A_ID,
+      sessionDate: "2026-10-14",
+      context: "practice",
+      coachingPriority: "Fix kick",
+    }));
+    localStorage.setItem(skillsKey(SWIMMER_ID, CAT_A_ID), JSON.stringify({
+      skills: { [SKILL_A_ID]: { ...defaultSkillDraft(), grade: 3 } },
+    }));
+    vi.mocked(submitEvaluation).mockResolvedValue({
+      status: "saved",
+      sessionId: "00000000-0000-0000-0000-000000000099",
+      ratingIds: [],
+    });
+
+    const { container } = render(
+      <EvaluateContent swimmer={SWIMMER_DETAIL} categories={TEST_CATEGORIES} accessToken="tok" />,
+    );
+
+    // Wait for draft to be restored (priority textarea populated)
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText(/main focus/i)).toHaveValue("Fix kick");
+    });
+
+    await act(async () => {
+      fireEvent.submit(container.querySelector("form")!);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText(/evaluation saved/i)).toBeInTheDocument();
+    });
+
+    expect(localStorage.getItem(metaKey(SWIMMER_ID))).toBeNull();
+    expect(localStorage.getItem(skillsKey(SWIMMER_ID, CAT_A_ID))).toBeNull();
+  });
+});
+
+describe("UndoToast", () => {
+  const SESSION_ID = "11111111-0000-0000-0000-000000000001";
+  const SWIMMER = { id: "swimmer-1", firstName: "Alex" };
+
+  beforeEach(() => {
+    mockFetch.mockResolvedValue({ ok: true, status: 204 });
+    // Mock window.location.href setter
+    Object.defineProperty(window, "location", {
+      writable: true,
+      value: { href: "" },
+    });
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("renders the undo button", () => {
+    render(
+      <UndoToast
+        swimmer={SWIMMER}
+        sessionId={SESSION_ID}
+        accessToken="tok"
+        savedAt={Date.now()}
+      />,
+    );
+    expect(screen.getByRole("button", { name: /undo/i })).toBeInTheDocument();
+  });
+
+  it("calls DELETE /coach/sessions/:id when undo is clicked", async () => {
+    render(
+      <UndoToast
+        swimmer={SWIMMER}
+        sessionId={SESSION_ID}
+        accessToken="tok"
+        savedAt={Date.now()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /undo/i }));
+    await vi.waitFor(() => {
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining(`/coach/sessions/${SESSION_ID}`),
+        expect.objectContaining({ method: "DELETE" }),
+      );
+    });
+  });
+});
