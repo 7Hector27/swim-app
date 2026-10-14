@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import type { UpcomingLesson } from "@swim-app/shared";
 
 interface Props {
@@ -80,6 +82,12 @@ function LessonRow({ lesson }: { lesson: UpcomingLesson }) {
             Pending
           </span>
         )}
+        <Link
+          href={`/dashboard/lessons/${lesson.id}`}
+          className="text-xs font-semibold text-link hover:text-link-hover transition-colors duration-150"
+        >
+          Change
+        </Link>
       </div>
     </div>
   );

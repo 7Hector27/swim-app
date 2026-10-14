@@ -61,6 +61,7 @@ vi.mock("../lib/lessonApproval", () => ({
   notifyBookingCreated: vi.fn(),
   notifyLessonApproved: vi.fn(),
   notifyLessonDeclined: vi.fn(),
+  notifyCoachOfChange: vi.fn(),
   chargeLessonComplete: vi.fn(),
   syncCalendarApproved: vi.fn(),
 }));
@@ -98,6 +99,18 @@ const viewerProfile = {
   id: PROFILE_VIEWER_ID,
   role: "parent" as const,
   fullName: "Viewer",
+  phone: null,
+  ageAttestedAt: now,
+  disabledAt: null,
+  createdAt: now,
+  updatedAt: now,
+};
+
+// A profile whose role is neither "parent" nor "coach" — blocked by requireParentOrCoach.
+const otherRoleProfile = {
+  id: "aaaaaaaa-0000-0000-0000-000000000077",
+  role: "admin" as string,
+  fullName: "Other",
   phone: null,
   ageAttestedAt: now,
   disabledAt: null,
@@ -837,5 +850,352 @@ describe("POST /lessons", () => {
 
     expect(res.status).toBe(201);
     expect(mockComputeSlots).toHaveBeenCalledWith(expect.objectContaining({ date: laDate }));
+  });
+});
+
+// ── DELETE /lessons/:id ───────────────────────────────────────────────────────
+
+describe("DELETE /lessons/:id", () => {
+  it("cancels lesson and returns 204 (parent owner)", async () => {
+    authAs(parentProfile);
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(parentProfile))
+      .mockReturnValueOnce(requireHouseholdMemberSelect(HOUSEHOLD_ID, "owner"))
+      .mockReturnValueOnce(limitSelect([baseLessonRow]));
+
+    mockDbUpdate.mockReturnValueOnce({
+      set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) }),
+    });
+
+    const res = await request(app)
+      .delete(`/lessons/${LESSON_ID}`)
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(204);
+  });
+
+  it("returns 404 for another household's lesson", async () => {
+    authAs(parentProfile);
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(parentProfile))
+      .mockReturnValueOnce(requireHouseholdMemberSelect(HOUSEHOLD_ID, "owner"))
+      .mockReturnValueOnce(limitSelect([])); // lesson not found for this householdId
+
+    const res = await request(app)
+      .delete(`/lessons/${LESSON_ID}`)
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 422 lesson_not_active for an already-canceled lesson", async () => {
+    authAs(parentProfile);
+    const canceledLesson = { ...baseLessonRow, status: "canceled" as typeof baseLessonRow.status };
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(parentProfile))
+      .mockReturnValueOnce(requireHouseholdMemberSelect(HOUSEHOLD_ID, "owner"))
+      .mockReturnValueOnce(limitSelect([canceledLesson]));
+
+    const res = await request(app)
+      .delete(`/lessons/${LESSON_ID}`)
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(422);
+    expect(res.body.error).toBe("lesson_not_active");
+  });
+
+  it("returns 403 for a viewer", async () => {
+    authAs(viewerProfile);
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(viewerProfile))
+      .mockReturnValueOnce(requireHouseholdMemberSelect(HOUSEHOLD_ID, "viewer"));
+
+    const res = await request(app)
+      .delete(`/lessons/${LESSON_ID}`)
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(403);
+  });
+
+  it("coach cancels any lesson and returns 204", async () => {
+    authAs(coachProfile);
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(coachProfile))
+      .mockReturnValueOnce(limitSelect([baseLessonRow]));
+
+    mockDbUpdate.mockReturnValueOnce({
+      set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) }),
+    });
+
+    const res = await request(app)
+      .delete(`/lessons/${LESSON_ID}`)
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(204);
+  });
+
+  it("returns 403 when caller role is neither parent nor coach", async () => {
+    authAs(otherRoleProfile);
+    mockDbSelect.mockReturnValueOnce(requireUserSelect(otherRoleProfile));
+
+    const res = await request(app)
+      .delete(`/lessons/${LESSON_ID}`)
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(403);
+  });
+});
+
+// ── PATCH /lessons/:id ────────────────────────────────────────────────────────
+
+function swimmerResponseSelectForLesson() {
+  const where = vi.fn().mockResolvedValue([{ swimmerId: SWIMMER_ID, firstName: "Alice", lastName: "Smith" }]);
+  const innerJoin = vi.fn().mockReturnValue({ where });
+  return { from: vi.fn().mockReturnValue({ innerJoin }) };
+}
+
+describe("PATCH /lessons/:id", () => {
+  const validNewStartsAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+  const updatedLessonRow = { ...baseLessonRow, startsAt: new Date(validNewStartsAt) };
+
+  it("reschedules lesson with new time ≥ 16h and returns 200 with updated lesson", async () => {
+    authAs(parentProfile);
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(parentProfile))
+      .mockReturnValueOnce(requireHouseholdMemberSelect(HOUSEHOLD_ID, "owner"))
+      .mockReturnValueOnce(limitSelect([baseLessonRow]))         // load lesson
+      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([configRow]) }) }) // config
+      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([]) }) }) }); // endDate
+
+    mockComputeSlots.mockReturnValueOnce([
+      { startsAt: new Date(validNewStartsAt), endsAt: new Date(new Date(validNewStartsAt).getTime() + 1800000) },
+    ]);
+
+    mockDbTransaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) => {
+      const tx = {
+        execute: vi.fn().mockResolvedValue(undefined),
+        select: vi.fn()
+          .mockReturnValueOnce({ from: vi.fn().mockResolvedValue([]) })   // blockedTimes
+          .mockReturnValueOnce({ from: vi.fn().mockResolvedValue([]) })   // travelBufferOverrides
+          .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) }) }), // lessons (excluding self)
+        update: vi.fn().mockReturnValue({ set: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ returning: vi.fn().mockResolvedValue([updatedLessonRow]) }) }) }),
+        insert: vi.fn(),
+      };
+      return callback(tx);
+    });
+
+    // loadLessonWithSwimmers selects
+    mockDbSelect
+      .mockReturnValueOnce(limitSelect([updatedLessonRow]))
+      .mockReturnValueOnce(swimmerResponseSelectForLesson());
+
+    const res = await request(app)
+      .patch(`/lessons/${LESSON_ID}`)
+      .set("Authorization", "Bearer token")
+      .send({ startsAt: validNewStartsAt, durationMinutes: 30, locationId: LOCATION_NAMED_ID });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ id: LESSON_ID });
+  });
+
+  it("returns 422 too_soon when new time is < 16h away", async () => {
+    const tooSoonStartsAt = new Date(Date.now() + 10 * 60 * 60 * 1000).toISOString();
+    authAs(parentProfile);
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(parentProfile))
+      .mockReturnValueOnce(requireHouseholdMemberSelect(HOUSEHOLD_ID, "owner"))
+      .mockReturnValueOnce(limitSelect([baseLessonRow]))
+      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([configRow]) }) })
+      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([]) }) }) });
+
+    const res = await request(app)
+      .patch(`/lessons/${LESSON_ID}`)
+      .set("Authorization", "Bearer token")
+      .send({ startsAt: tooSoonStartsAt });
+
+    expect(res.status).toBe(422);
+    expect(res.body.error).toBe("too_soon");
+  });
+
+  it("rescheduling an inside-16h lesson to a valid future time returns 200", async () => {
+    // Source lesson is inside 16h but new startsAt is valid — source time must NOT be validated
+    const insideLessonRow = { ...baseLessonRow, startsAt: new Date(Date.now() + 10 * 60 * 60 * 1000) };
+    const updatedRow = { ...insideLessonRow, startsAt: new Date(validNewStartsAt) };
+
+    authAs(parentProfile);
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(parentProfile))
+      .mockReturnValueOnce(requireHouseholdMemberSelect(HOUSEHOLD_ID, "owner"))
+      .mockReturnValueOnce(limitSelect([insideLessonRow]))
+      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([configRow]) }) })
+      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([]) }) }) });
+
+    mockComputeSlots.mockReturnValueOnce([
+      { startsAt: new Date(validNewStartsAt), endsAt: new Date(new Date(validNewStartsAt).getTime() + 1800000) },
+    ]);
+
+    mockDbTransaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) => {
+      const tx = {
+        execute: vi.fn().mockResolvedValue(undefined),
+        select: vi.fn()
+          .mockReturnValueOnce({ from: vi.fn().mockResolvedValue([]) })
+          .mockReturnValueOnce({ from: vi.fn().mockResolvedValue([]) })
+          .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) }) }),
+        update: vi.fn().mockReturnValue({ set: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ returning: vi.fn().mockResolvedValue([updatedRow]) }) }) }),
+        insert: vi.fn(),
+      };
+      return callback(tx);
+    });
+
+    mockDbSelect
+      .mockReturnValueOnce(limitSelect([updatedRow]))
+      .mockReturnValueOnce(swimmerResponseSelectForLesson());
+
+    const res = await request(app)
+      .patch(`/lessons/${LESSON_ID}`)
+      .set("Authorization", "Bearer token")
+      .send({ startsAt: validNewStartsAt });
+
+    expect(res.status).toBe(200);
+  });
+
+  it("new pool triggers re-approval check and lesson reverts to pending", async () => {
+    const NEW_LOCATION_ID = "cccccccc-0000-0000-0000-000000000099";
+    const pendingUpdatedRow = { ...baseLessonRow, locationId: NEW_LOCATION_ID, status: "pending" as typeof baseLessonRow.status };
+
+    authAs(parentProfile);
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(parentProfile))
+      .mockReturnValueOnce(requireHouseholdMemberSelect(HOUSEHOLD_ID, "owner"))
+      .mockReturnValueOnce(limitSelect([baseLessonRow]))
+      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([configRow]) }) })
+      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([]) }) }) });
+
+    mockComputeSlots.mockReturnValueOnce([
+      { startsAt: new Date(validNewStartsAt), endsAt: new Date(new Date(validNewStartsAt).getTime() + 1800000) },
+    ]);
+
+    mockNeedsApproval.mockResolvedValueOnce(true);
+
+    mockDbTransaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) => {
+      const tx = {
+        execute: vi.fn().mockResolvedValue(undefined),
+        select: vi.fn()
+          .mockReturnValueOnce({ from: vi.fn().mockResolvedValue([]) })
+          .mockReturnValueOnce({ from: vi.fn().mockResolvedValue([]) })
+          .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) }) }),
+        update: vi.fn().mockReturnValue({ set: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ returning: vi.fn().mockResolvedValue([pendingUpdatedRow]) }) }) }),
+        insert: vi.fn(),
+      };
+      return callback(tx);
+    });
+
+    mockDbSelect
+      .mockReturnValueOnce(limitSelect([pendingUpdatedRow]))
+      .mockReturnValueOnce(swimmerResponseSelectForLesson());
+
+    const res = await request(app)
+      .patch(`/lessons/${LESSON_ID}`)
+      .set("Authorization", "Bearer token")
+      .send({ startsAt: validNewStartsAt, locationId: NEW_LOCATION_ID });
+
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe("pending");
+  });
+
+  it("returns 403 for a viewer", async () => {
+    authAs(viewerProfile);
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(viewerProfile))
+      .mockReturnValueOnce(requireHouseholdMemberSelect(HOUSEHOLD_ID, "viewer"));
+
+    const res = await request(app)
+      .patch(`/lessons/${LESSON_ID}`)
+      .set("Authorization", "Bearer token")
+      .send({ durationMinutes: 45 });
+
+    expect(res.status).toBe(403);
+  });
+
+  it("returns 403 when caller role is neither parent nor coach", async () => {
+    authAs(otherRoleProfile);
+    mockDbSelect.mockReturnValueOnce(requireUserSelect(otherRoleProfile));
+
+    const res = await request(app)
+      .patch(`/lessons/${LESSON_ID}`)
+      .set("Authorization", "Bearer token")
+      .send({ durationMinutes: 45 });
+
+    expect(res.status).toBe(403);
+  });
+
+  it("duration-only PATCH extending into next lesson returns 422 slot_unavailable", async () => {
+    // No startsAt — honor-system edit. computeAvailableSlots returns empty because
+    // the extended duration (60 min) conflicts with the next lesson on the same day.
+    authAs(parentProfile);
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(parentProfile))
+      .mockReturnValueOnce(requireHouseholdMemberSelect(HOUSEHOLD_ID, "owner"))
+      .mockReturnValueOnce(limitSelect([baseLessonRow]))
+      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([configRow]) }) })
+      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([]) }) }) });
+
+    mockComputeSlots.mockReturnValueOnce([]);
+
+    mockDbTransaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) => {
+      const tx = {
+        execute: vi.fn().mockResolvedValue(undefined),
+        select: vi.fn()
+          .mockReturnValueOnce({ from: vi.fn().mockResolvedValue([]) })
+          .mockReturnValueOnce({ from: vi.fn().mockResolvedValue([]) })
+          .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) }) }),
+        update: vi.fn(),
+        insert: vi.fn(),
+      };
+      return callback(tx);
+    });
+
+    const res = await request(app)
+      .patch(`/lessons/${LESSON_ID}`)
+      .set("Authorization", "Bearer token")
+      .send({ durationMinutes: 60 });
+
+    expect(res.status).toBe(422);
+    expect(res.body.error).toBe("slot_unavailable");
+  });
+
+  it("duration-only PATCH extending past daily cap returns 422 slot_unavailable", async () => {
+    // No startsAt — honor-system edit. computeAvailableSlots returns empty because
+    // increasing duration to 60 min would push total daily minutes past maxDailyLessonMinutes.
+    authAs(parentProfile);
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(parentProfile))
+      .mockReturnValueOnce(requireHouseholdMemberSelect(HOUSEHOLD_ID, "owner"))
+      .mockReturnValueOnce(limitSelect([baseLessonRow]))
+      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([configRow]) }) })
+      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([]) }) }) });
+
+    mockComputeSlots.mockReturnValueOnce([]);
+
+    mockDbTransaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) => {
+      const tx = {
+        execute: vi.fn().mockResolvedValue(undefined),
+        select: vi.fn()
+          .mockReturnValueOnce({ from: vi.fn().mockResolvedValue([]) })
+          .mockReturnValueOnce({ from: vi.fn().mockResolvedValue([]) })
+          .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) }) }),
+        update: vi.fn(),
+        insert: vi.fn(),
+      };
+      return callback(tx);
+    });
+
+    const res = await request(app)
+      .patch(`/lessons/${LESSON_ID}`)
+      .set("Authorization", "Bearer token")
+      .send({ durationMinutes: 60 });
+
+    expect(res.status).toBe(422);
+    expect(res.body.error).toBe("slot_unavailable");
   });
 });

@@ -43,6 +43,7 @@
   --color-focus-ring: var(--color-focus-ring);
   --color-success: var(--color-success);
   --color-danger: var(--color-danger);
+  --color-button-danger-text: var(--color-button-danger-text);
   --font-heading: var(--font-fraunces);
   --font-body: var(--font-figtree);
   --radius-button: var(--radius-button);

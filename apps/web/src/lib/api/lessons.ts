@@ -148,3 +148,70 @@ export async function fetchUpcomingLessons(
     return [];
   }
 }
+
+export async function fetchLesson(accessToken: string, lessonId: string): Promise<UpcomingLesson | null> {
+  try {
+    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/lessons/${lessonId}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      cache: "no-store",
+    });
+    if (!response.ok) return null;
+    const body: unknown = await response.json();
+    const parsed = UpcomingLessonSchema.safeParse(body);
+    if (!parsed.success) {
+      console.warn("fetchLesson: 200 response did not match UpcomingLessonSchema");
+      return null;
+    }
+    return parsed.data;
+  } catch {
+    return null;
+  }
+}
+
+export async function cancelLesson(accessToken: string, lessonId: string): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/lessons/${lessonId}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (response.ok) return { ok: true };
+    let errorCode: string | undefined;
+    try {
+      const data = await response.json() as { error?: string };
+      errorCode = data.error;
+    } catch {
+      // non-JSON body
+    }
+    return { ok: false, error: errorCode ?? "Something went wrong." };
+  } catch {
+    return { ok: false, error: "Could not reach the server." };
+  }
+}
+
+export async function updateLesson(
+  accessToken: string,
+  lessonId: string,
+  body: { startsAt?: string; durationMinutes?: 30 | 45 | 60; locationId?: string },
+): Promise<{ lesson: LessonResponse } | { error: string; code?: string }> {
+  try {
+    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/lessons/${lessonId}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify(body),
+    });
+    const data: unknown = await response.json();
+    if (response.ok) {
+      const parsed = LessonResponseSchema.safeParse(data);
+      if (parsed.success) return { lesson: parsed.data };
+      return { error: "Unexpected response from server." };
+    }
+    const errorData = data as { error?: string };
+    const code = errorData.error;
+    return { error: code ?? "Something went wrong.", ...(code !== undefined ? { code } : {}) };
+  } catch {
+    return { error: "Could not reach the server." };
+  }
+}

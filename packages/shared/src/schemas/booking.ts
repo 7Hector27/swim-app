@@ -262,3 +262,12 @@ export const SetSeasonEndDateBodySchema = z.object({
   endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
 });
 export type SetSeasonEndDateBody = z.infer<typeof SetSeasonEndDateBodySchema>;
+
+// ── Update lesson (cancel / reschedule) ──────────────────────────────────────
+
+export const UpdateLessonBodySchema = z.object({
+  startsAt: z.string().datetime({ offset: true }).optional(),
+  durationMinutes: z.union([z.literal(30), z.literal(45), z.literal(60)]).optional(),
+  locationId: z.string().uuid().optional(),
+});
+export type UpdateLessonBody = z.infer<typeof UpdateLessonBodySchema>;

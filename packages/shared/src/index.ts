@@ -125,6 +125,7 @@ export type {
   ScheduleTravelBufferItem,
   ScheduleOpenSlotItem,
   CoachStats,
+  UpdateLessonBody,
 } from "./schemas/booking";
 export {
   LessonLocationSchema,
@@ -157,4 +158,5 @@ export {
   ScheduleTravelBufferItemSchema,
   ScheduleOpenSlotItemSchema,
   CoachStatsSchema,
+  UpdateLessonBodySchema,
 } from "./schemas/booking";

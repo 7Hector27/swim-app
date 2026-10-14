@@ -1,15 +1,17 @@
-import { Router } from "express";
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { type RequestHandler, Router } from "express";
+import { and, asc, eq, inArray, ne, sql } from "drizzle-orm";
 import type {
   AvailableSlot,
   AvailableSlotsQuery,
   CreateLessonBody,
+  HouseholdRole,
   LessonResponse,
   LessonSwimmer,
+  UpdateLessonBody,
   UpcomingLesson,
   UpcomingLessonsQuery,
 } from "@swim-app/shared";
-import { AvailableSlotsQuerySchema, CreateLessonBodySchema, UpcomingLessonsQuerySchema } from "@swim-app/shared";
+import { AvailableSlotsQuerySchema, CreateLessonBodySchema, HOUSEHOLD_ROLE_RANK, UpdateLessonBodySchema, UpcomingLessonsQuerySchema } from "@swim-app/shared";
 import { db } from "../db/client";
 import {
   availabilityConfig,
@@ -29,10 +31,20 @@ import { requireHouseholdRole } from "../middleware/requireHouseholdRole";
 import { validate } from "../middleware/validate";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { computeAvailableSlots } from "../lib/slots";
-import { needsApproval, notifyBookingCreated } from "../lib/lessonApproval";
+import { needsApproval, notifyBookingCreated, notifyCoachOfChange } from "../lib/lessonApproval";
 import { isActiveSwimmer } from "../db/queries";
 
 export const lessonsRouter = Router();
+
+// Allows parent and coach; rejects any other role (e.g. teen) before the handler runs.
+const requireParentOrCoach: RequestHandler = (req, res, next) => {
+  const role = req.profile.role;
+  if (role !== "parent" && role !== "coach") {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+  next();
+};
 
 lessonsRouter.use(requireUser);
 
@@ -465,6 +477,335 @@ lessonsRouter.post(
     };
 
     res.status(201).json(responseBody);
+  }),
+);
+
+// ── GET /lessons/:id ──────────────────────────────────────────────────────────
+
+lessonsRouter.get(
+  "/:id",
+  requireParent,
+  requireHouseholdMember,
+  validate({}),
+  asyncHandler(async (req, res) => {
+    const id = req.params.id as string;
+
+    const lessonRows = await db
+      .select({
+        id: lessons.id,
+        locationId: lessons.locationId,
+        locationName: lessonLocations.name,
+        startsAt: lessons.startsAt,
+        durationMinutes: lessons.durationMinutes,
+        type: lessons.type,
+        status: lessons.status,
+        expiresAt: lessons.expiresAt,
+        approvedAt: lessons.approvedAt,
+        declinedAt: lessons.declinedAt,
+        declineReason: lessons.declineReason,
+        createdAt: lessons.createdAt,
+      })
+      .from(lessons)
+      .innerJoin(lessonLocations, eq(lessons.locationId, lessonLocations.id))
+      .where(and(eq(lessons.id, id), eq(lessons.householdId, req.householdId)))
+      .limit(1);
+
+    const lessonRow = lessonRows[0];
+    if (!lessonRow) {
+      res.status(404).json({ error: "Lesson not found" });
+      return;
+    }
+
+    const swimmerRows = await db
+      .select({ swimmerId: lessonSwimmers.swimmerId, firstName: swimmers.firstName, lastName: swimmers.lastName })
+      .from(lessonSwimmers)
+      .innerJoin(swimmers, eq(lessonSwimmers.swimmerId, swimmers.id))
+      .where(eq(lessonSwimmers.lessonId, id));
+
+    const body: UpcomingLesson = {
+      id: lessonRow.id,
+      locationId: lessonRow.locationId,
+      locationName: lessonRow.locationName,
+      startsAt: lessonRow.startsAt.toISOString(),
+      durationMinutes: lessonRow.durationMinutes as 30 | 45 | 60,
+      type: lessonRow.type,
+      status: lessonRow.status,
+      swimmers: swimmerRows.map((row) => ({
+        swimmerId: row.swimmerId,
+        firstName: row.firstName,
+        lastName: row.lastName,
+      })),
+      expiresAt: lessonRow.expiresAt?.toISOString() ?? null,
+      approvedAt: lessonRow.approvedAt?.toISOString() ?? null,
+      declinedAt: lessonRow.declinedAt?.toISOString() ?? null,
+      declineReason: lessonRow.declineReason ?? null,
+      createdAt: lessonRow.createdAt.toISOString(),
+    };
+
+    res.json(body);
+  }),
+);
+
+// ── DELETE /lessons/:id ───────────────────────────────────────────────────────
+
+lessonsRouter.delete(
+  "/:id",
+  requireParentOrCoach,
+  validate({}),
+  asyncHandler(async (req, res) => {
+    const id = req.params.id as string;
+    const profileId = req.profile.id;
+    const isCoach = req.profile.role === "coach";
+
+    let lessonToCancel: typeof lessons.$inferSelect | undefined;
+
+    if (isCoach) {
+      const rows = await db.select().from(lessons).where(eq(lessons.id, id)).limit(1);
+      lessonToCancel = rows[0];
+      if (!lessonToCancel) { res.status(404).json({ error: "Lesson not found" }); return; }
+    } else {
+      const memberRows = await db
+        .select({ householdId: householdMembers.householdId, role: householdMembers.role })
+        .from(householdMembers)
+        .where(eq(householdMembers.profileId, profileId))
+        .limit(1);
+      const member = memberRows[0];
+      if (!member || HOUSEHOLD_ROLE_RANK[member.role as HouseholdRole] < HOUSEHOLD_ROLE_RANK["manager"]) {
+        res.status(403).json({ error: "Forbidden" });
+        return;
+      }
+      const rows = await db
+        .select()
+        .from(lessons)
+        .where(and(eq(lessons.id, id), eq(lessons.householdId, member.householdId)))
+        .limit(1);
+      lessonToCancel = rows[0];
+      if (!lessonToCancel) { res.status(404).json({ error: "Lesson not found" }); return; }
+    }
+
+    if (!["pending", "approved"].includes(lessonToCancel.status)) {
+      res.status(422).json({ error: "lesson_not_active" });
+      return;
+    }
+
+    await db
+      .update(lessons)
+      .set({ status: "canceled", canceledAt: new Date(), canceledBy: profileId })
+      .where(eq(lessons.id, id));
+
+    notifyCoachOfChange(id);
+    res.status(204).end();
+  }),
+);
+
+// ── PATCH /lessons/:id ────────────────────────────────────────────────────────
+
+lessonsRouter.patch(
+  "/:id",
+  requireParentOrCoach,
+  validate({ body: UpdateLessonBodySchema }),
+  asyncHandler(async (req, res) => {
+    const id = req.params.id as string;
+    const profileId = req.profile.id;
+    const body = req.body as UpdateLessonBody;
+    const isCoach = req.profile.role === "coach";
+
+    let existingLesson: typeof lessons.$inferSelect | undefined;
+
+    if (isCoach) {
+      const rows = await db.select().from(lessons).where(eq(lessons.id, id)).limit(1);
+      existingLesson = rows[0];
+      if (!existingLesson) { res.status(404).json({ error: "Lesson not found" }); return; }
+    } else {
+      const memberRows = await db
+        .select({ householdId: householdMembers.householdId, role: householdMembers.role })
+        .from(householdMembers)
+        .where(eq(householdMembers.profileId, profileId))
+        .limit(1);
+      const member = memberRows[0];
+      if (!member || HOUSEHOLD_ROLE_RANK[member.role as HouseholdRole] < HOUSEHOLD_ROLE_RANK["manager"]) {
+        res.status(403).json({ error: "Forbidden" });
+        return;
+      }
+      const rows = await db
+        .select()
+        .from(lessons)
+        .where(and(eq(lessons.id, id), eq(lessons.householdId, member.householdId)))
+        .limit(1);
+      existingLesson = rows[0];
+      if (!existingLesson) { res.status(404).json({ error: "Lesson not found" }); return; }
+    }
+
+    if (!["pending", "approved"].includes(existingLesson.status)) {
+      res.status(422).json({ error: "lesson_not_active" });
+      return;
+    }
+
+    const newStartsAt = body.startsAt !== undefined ? new Date(body.startsAt) : existingLesson.startsAt;
+    const newDurationMinutes = (body.durationMinutes ?? existingLesson.durationMinutes) as 30 | 45 | 60;
+    const newLocationId = body.locationId ?? existingLesson.locationId;
+    const nowUtc = new Date();
+
+    // Compute LA calendar date — needed for the advisory lock key and computeAvailableSlots.
+    const laDateParts = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/Los_Angeles",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(newStartsAt);
+    const getPart = (type: string) =>
+      laDateParts.find((part) => part.type === type)?.value ?? "";
+    const laDateStr = `${getPart("year")}-${getPart("month")}-${getPart("day")}`;
+    const laYear = Number(laDateStr.slice(0, 4));
+    const laMonth = Number(laDateStr.slice(5, 7));
+    const laDay = Number(laDateStr.slice(8, 10));
+    const jsDay = new Date(Date.UTC(laYear, laMonth - 1, laDay, 12)).getUTCDay();
+    const isoDayOfWeek = jsDay === 0 ? 7 : jsDay;
+
+    const [configRows, endDateRow] = await Promise.all([
+      db.select().from(availabilityConfig).limit(1),
+      db
+        .select({ endDate: seasonSummerEndDates.endDate })
+        .from(seasonSummerEndDates)
+        .where(eq(seasonSummerEndDates.year, laYear))
+        .limit(1),
+    ]);
+
+    const config = configRows[0];
+    if (!config) { res.status(503).json({ error: "Availability config not found" }); return; }
+
+    // Booking-window checks apply only when a new start time is explicitly requested.
+    if (body.startsAt !== undefined) {
+      if (!config.lessonDays.includes(isoDayOfWeek)) {
+        res.status(422).json({ error: "not_a_lesson_day" });
+        return;
+      }
+      const minMs = nowUtc.getTime() + config.bookingMinAdvanceHours * 60 * 60 * 1000;
+      const maxMs = nowUtc.getTime() + config.bookingMaxAdvanceWeeks * 7 * 24 * 60 * 60 * 1000;
+      if (newStartsAt.getTime() < minMs) {
+        res.status(422).json({ error: "too_soon" });
+        return;
+      }
+      if (newStartsAt.getTime() > maxMs) {
+        res.status(422).json({ error: "too_far" });
+        return;
+      }
+    }
+
+    // For honor-system edits (no new startsAt), shift the slot-check clock backward
+    // so the existing time appears inside the booking window to computeAvailableSlots.
+    const nowForSlotCheck = body.startsAt !== undefined
+      ? nowUtc
+      : new Date(newStartsAt.getTime() - (config.bookingMinAdvanceHours + 1) * 60 * 60 * 1000);
+
+    const updatedLesson = await db.transaction(async (tx) => {
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtext(${"lesson-day:" + laDateStr}))`,
+      );
+
+      const [blockedRows, bufferRows, existingLessonRows] = await Promise.all([
+        tx.select().from(blockedTimes),
+        tx.select().from(travelBufferOverrides),
+        tx
+          .select({
+            startsAt: lessons.startsAt,
+            durationMinutes: lessons.durationMinutes,
+            locationId: lessons.locationId,
+          })
+          .from(lessons)
+          .where(and(inArray(lessons.status, ["pending", "approved"]), ne(lessons.id, id))),
+      ]);
+
+      const availableSlots = computeAvailableSlots({
+        date: laDateStr,
+        durationMinutes: newDurationMinutes,
+        locationId: newLocationId,
+        existingLessons: existingLessonRows.map((row) => ({
+          startsAt: row.startsAt,
+          durationMinutes: row.durationMinutes,
+          locationId: row.locationId,
+        })),
+        blockedTimes: blockedRows.map((row) => ({ startsAt: row.startsAt, endsAt: row.endsAt })),
+        travelBufferOverrides: bufferRows.map((row) => ({
+          fromLocationId: row.fromLocationId,
+          toLocationId: row.toLocationId,
+          bufferMinutes: row.bufferMinutes,
+        })),
+        config: {
+          id: config.id,
+          lessonDays: config.lessonDays,
+          schoolYearStartTime: config.schoolYearStartTime,
+          schoolYearEndTime: config.schoolYearEndTime,
+          summerMorningStartTime: config.summerMorningStartTime,
+          summerMorningEndTime: config.summerMorningEndTime,
+          summerEveningStartTime: config.summerEveningStartTime,
+          summerEveningEndTime: config.summerEveningEndTime,
+          maxDailyLessonMinutes: config.maxDailyLessonMinutes,
+          bookingMinAdvanceHours: config.bookingMinAdvanceHours,
+          bookingMaxAdvanceWeeks: config.bookingMaxAdvanceWeeks,
+        },
+        summerEndDate: endDateRow[0]?.endDate ?? null,
+        gcalBusyTimes: [],
+        nowUtc: nowForSlotCheck,
+      });
+
+      const slotAvailable = availableSlots.some(
+        (slot) => slot.startsAt.getTime() === newStartsAt.getTime(),
+      );
+
+      if (!slotAvailable) return null;
+
+      let newStatus = existingLesson!.status;
+      let newApprovedAt: Date | null = existingLesson!.approvedAt;
+      let newApprovedBy: string | null = existingLesson!.approvedBy;
+      let newExpiresAt: Date | null = existingLesson!.expiresAt;
+
+      if (body.locationId !== undefined && body.locationId !== existingLesson!.locationId) {
+        const approval = await needsApproval(existingLesson!.householdId, newLocationId, tx);
+        if (approval) {
+          newStatus = "pending";
+          newExpiresAt = new Date(newStartsAt.getTime() - 16 * 60 * 60 * 1000);
+          newApprovedAt = null;
+          newApprovedBy = null;
+        } else {
+          newStatus = "approved";
+          newApprovedAt = new Date();
+          newApprovedBy = null;
+          newExpiresAt = null;
+        }
+      } else if (body.startsAt !== undefined && existingLesson!.status === "pending") {
+        newExpiresAt = new Date(newStartsAt.getTime() - 16 * 60 * 60 * 1000);
+      }
+
+      const updatedRows = await tx
+        .update(lessons)
+        .set({
+          startsAt: newStartsAt,
+          durationMinutes: newDurationMinutes,
+          locationId: newLocationId,
+          status: newStatus,
+          approvedAt: newApprovedAt,
+          approvedBy: newApprovedBy,
+          expiresAt: newExpiresAt,
+        })
+        .where(eq(lessons.id, id))
+        .returning();
+
+      return updatedRows[0] ?? null;
+    });
+
+    if (!updatedLesson) {
+      res.status(422).json({ error: "slot_unavailable" });
+      return;
+    }
+
+    notifyCoachOfChange(id);
+
+    const result = isCoach
+      ? await loadLessonWithSwimmers(id)
+      : await loadLessonWithSwimmers(id, existingLesson.householdId);
+    if (!result) { res.status(404).json({ error: "Lesson not found" }); return; }
+    res.json(result);
   }),
 );
 

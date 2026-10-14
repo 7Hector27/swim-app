@@ -42,3 +42,6 @@ export function chargeLessonComplete(_lessonId: string): void {}
 
 // Stub — wired in PR 6.
 export function syncCalendarApproved(_lessonId: string): void {}
+
+// Stub — wired in PR 7.
+export function notifyCoachOfChange(_lessonId: string): void {}
