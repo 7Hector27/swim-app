@@ -1,0 +1,1 @@
+ALTER TABLE "rating_fault_tags" ADD CONSTRAINT "fault_tag_not_blank" CHECK ("rating_fault_tags"."fault_tag" <> '');

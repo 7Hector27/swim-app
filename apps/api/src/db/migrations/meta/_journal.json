@@ -148,6 +148,13 @@
       "when": 1791998309792,
       "tag": "0020_skill_ratings_append_only_trigger",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1791999251395,
+      "tag": "0021_faulty_starfox",
+      "breakpoints": true
     }
   ]
 }

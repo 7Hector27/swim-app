@@ -28,7 +28,9 @@ The only columns that may change after insert are `voided_at`, `void_reason`, an
 
 **Rationale:** An append-only history is the simplest model that preserves a complete audit trail. Mutable grades would require either a shadow history table or accepting that the original observation is lost. The 10-minute undo window covers accidental taps; void covers deliberate corrections with a reason on record.
 
-**Enforcement:** API layer only (not a DB trigger). The `updated_at` column is present and will reflect the timestamp of the void if applied, but no other update path exists.
+**Enforcement:** Two layers.
+- **DB trigger** (`skill_ratings_append_only`, migration 0020): a `BEFORE UPDATE FOR EACH ROW` trigger raises an exception if any column other than `voided_at`, `void_reason`, `void_by`, or `updated_at` changes. This is the primary guard.
+- **API layer** (E-3): enforces the 10-minute undo window and ensures `void_by` equals the authenticated coach (the trigger does not check identity).
 
 ### 2. Session metadata is immutable after creation
 

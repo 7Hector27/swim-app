@@ -562,5 +562,6 @@ export const ratingFaultTags = pgTable(
   },
   (table) => [
     primaryKey({ columns: [table.ratingId, table.faultTag] }),
+    check("fault_tag_not_blank", sql`${table.faultTag} <> ''`),
   ],
 ).enableRLS();
