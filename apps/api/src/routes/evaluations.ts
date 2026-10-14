@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { and, desc, eq, inArray, isNull } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/client";
 import {
@@ -92,9 +92,8 @@ evaluationsRouter.post(
       return;
     }
 
-    // Load all skill ids referenced in ratings for validation
-    const skillIds = [...new Set(body.ratings.map((rating) => rating.skillId))];
-    const skillRows = await db
+    // Load the full non-archived skill catalog for validation.
+    const allSkillRows = await db
       .select({
         id: skills.id,
         slug: skills.slug,
@@ -107,9 +106,9 @@ evaluationsRouter.post(
         archivedAt: skills.archivedAt,
       })
       .from(skills)
-      .where(inArray(skills.id, skillIds));
+      .where(isNull(skills.archivedAt));
 
-    const skillMap = new Map(skillRows.map((skill) => [skill.id, skill]));
+    const skillMap = new Map(allSkillRows.map((skill) => [skill.id, skill]));
 
     // Per-rating cross-field validation
     for (const [index, ratingInput] of body.ratings.entries()) {
@@ -118,47 +117,23 @@ evaluationsRouter.post(
       if (!skill) {
         res.status(422).json({
           error: "Validation error",
-          issues: [{ path: [`ratings[${index}].skillId`], message: "Skill not found" }],
-        });
-        return;
-      }
-
-      if (skill.archivedAt !== null) {
-        res.status(422).json({
-          error: "Validation error",
-          issues: [{ path: [`ratings[${index}].skillId`], message: "Skill is archived" }],
+          issues: [{ path: [`ratings[${index}].skillId`], message: "Skill not found or archived" }],
         });
         return;
       }
 
       // Skill must belong to the session category directly, or via parent_skill_id
-      const skillBelongsToCategory =
+      const categoryMatch =
         skill.categoryId === body.categoryId ||
         (skill.parentSkillId !== null &&
-          skillRows.find(
-            (parentSkill) =>
-              parentSkill.id === skill.parentSkillId &&
-              parentSkill.categoryId === body.categoryId,
-          ) !== undefined);
+          (skillMap.get(skill.parentSkillId)?.categoryId === body.categoryId));
 
-      if (!skillBelongsToCategory) {
-        // Parent might not be in skillMap if it wasn't in the rating list — fetch it
-        let categoryMatch = skill.categoryId === body.categoryId;
-        if (!categoryMatch && skill.parentSkillId) {
-          const parentRows = await db
-            .select({ categoryId: skills.categoryId })
-            .from(skills)
-            .where(eq(skills.id, skill.parentSkillId))
-            .limit(1);
-          categoryMatch = parentRows[0]?.categoryId === body.categoryId;
-        }
-        if (!categoryMatch) {
-          res.status(422).json({
-            error: "Validation error",
-            issues: [{ path: [`ratings[${index}].skillId`], message: "Skill does not belong to the session category" }],
-          });
-          return;
-        }
+      if (!categoryMatch) {
+        res.status(422).json({
+          error: "Validation error",
+          issues: [{ path: [`ratings[${index}].skillId`], message: "Skill does not belong to the session category" }],
+        });
+        return;
       }
 
       // side required when ratedPerSide, must be absent otherwise
@@ -690,23 +665,6 @@ ratingsRouter.patch(
         id: skillRatings.id,
         coachId: skillRatings.coachId,
         voidedAt: skillRatings.voidedAt,
-        sessionId: skillRatings.sessionId,
-        swimmerId: skillRatings.swimmerId,
-        skillId: skillRatings.skillId,
-        grade: skillRatings.grade,
-        notLegal: skillRatings.notLegal,
-        noConcept: skillRatings.noConcept,
-        side: skillRatings.side,
-        capacityValue: skillRatings.capacityValue,
-        capacityUnit: skillRatings.capacityUnit,
-        measurementValue: skillRatings.measurementValue,
-        measurementUnit: skillRatings.measurementUnit,
-        note: skillRatings.note,
-        voidReason: skillRatings.voidReason,
-        voidBy: skillRatings.voidBy,
-        ratedAt: skillRatings.ratedAt,
-        createdAt: skillRatings.createdAt,
-        updatedAt: skillRatings.updatedAt,
       })
       .from(skillRatings)
       .where(eq(skillRatings.id, ratingId))

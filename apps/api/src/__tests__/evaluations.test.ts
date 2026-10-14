@@ -103,11 +103,6 @@ const validSkillRow: SkillRow = {
   archivedAt: null,
 };
 
-const archivedSkillRow: SkillRow = {
-  ...validSkillRow,
-  archivedAt: now,
-};
-
 const ratedPerSideSkillRow = {
   ...validSkillRow,
   ratedPerSide: true,
@@ -276,13 +271,15 @@ describe("POST /swimmers/:id/sessions — validation", () => {
   });
 
   it("archived skill in ratings → 422", async () => {
+    // The route loads ALL non-archived skills via WHERE archived_at IS NULL.
+    // A skill that is archived is simply absent from the catalog — return empty.
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachAvailabilityRouter requireUser
       .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachLessonsRouter requireUser
       .mockReturnValueOnce(requireUserSelect(profileCoach)) // evaluationsRouter requireUser
       .mockReturnValueOnce(swimmerSelect(activeSwimmerRow))
       .mockReturnValueOnce(categorySelect(true))
-      .mockReturnValueOnce(skillsSelect([archivedSkillRow]));
+      .mockReturnValueOnce(skillsSelect([])); // archived skill absent from non-archived catalog
 
     const res = await request(app)
       .post(`/coach/swimmers/${SWIMMER_ID}/sessions`)
@@ -298,6 +295,8 @@ describe("POST /swimmers/:id/sessions — validation", () => {
       categoryId: "99999999-0000-0000-0000-000000000099",
       parentSkillId: null,
     };
+    // The route loads all non-archived skills at once — wrongCategorySkill is returned
+    // with its wrong categoryId; parentSkillId is null, so categoryMatch is false.
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachAvailabilityRouter requireUser
       .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachLessonsRouter requireUser
@@ -305,11 +304,6 @@ describe("POST /swimmers/:id/sessions — validation", () => {
       .mockReturnValueOnce(swimmerSelect(activeSwimmerRow))
       .mockReturnValueOnce(categorySelect(true))
       .mockReturnValueOnce(skillsSelect([wrongCategorySkill]));
-
-    // Parent lookup for category check — also returns wrong category
-    const parentLimit = vi.fn().mockResolvedValue([{ categoryId: "99999999-0000-0000-0000-000000000099" }]);
-    const parentWhere = vi.fn().mockReturnValue({ limit: parentLimit });
-    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: parentWhere }) });
 
     const res = await request(app)
       .post(`/coach/swimmers/${SWIMMER_ID}/sessions`)
@@ -590,33 +584,3 @@ describe("PATCH /ratings/:id/void", () => {
   });
 });
 
-// ── Integration tests (require real DB) ──────────────────────────────────────
-
-const isRealDb =
-  !!process.env["DATABASE_URL"] &&
-  !process.env["DATABASE_URL"].includes("placeholder");
-
-describe.skipIf(!isRealDb)("integration tests — real DB", () => {
-  it("POST transaction: archived skill prevents session and ratings creation", async () => {
-    // This test is a placeholder for when a real DB is available.
-    // It verifies that an archived skill in the middle of a ratings array
-    // causes the entire transaction to be rolled back (no session or ratings created).
-    expect(true).toBe(true);
-  });
-
-  it("DELETE within window → 204, rating gone", async () => {
-    expect(true).toBe(true);
-  });
-
-  it("DELETE just past window → 409", async () => {
-    expect(true).toBe(true);
-  });
-
-  it("PATCH /void sets all three void fields atomically", async () => {
-    expect(true).toBe(true);
-  });
-
-  it("GET /skills: grades match latestEffectiveRatings", async () => {
-    expect(true).toBe(true);
-  });
-});

@@ -3,6 +3,7 @@ import {
   findDeepestLowFoundation,
   headPositionOverall,
   latestEffectiveRatings,
+  weakerSideGrade,
 } from "../lib/dependencyMap";
 import type {
   GradeMap,
@@ -433,5 +434,55 @@ describe("latestEffectiveRatings", () => {
       record("kick", 4, "2026-03-01"),
     ];
     expect(latestEffectiveRatings(history)).toEqual({ kick: 4 });
+  });
+});
+
+describe("weakerSideGrade", () => {
+  it("both sides numeric, different grades → returns the lower", () => {
+    expect(weakerSideGrade(4, 2)).toBe(2);
+  });
+
+  it("both sides the same grade → returns that grade", () => {
+    expect(weakerSideGrade(3, 3)).toBe(3);
+  });
+
+  it("left side only (right undefined) → returns left", () => {
+    expect(weakerSideGrade(4, undefined)).toBe(4);
+  });
+
+  it("right side only (left undefined) → returns right", () => {
+    expect(weakerSideGrade(undefined, 5)).toBe(5);
+  });
+
+  it("left not_legal, right numeric → not_legal", () => {
+    expect(weakerSideGrade("not_legal", 3)).toBe("not_legal");
+  });
+
+  it("right not_legal, left numeric → not_legal", () => {
+    expect(weakerSideGrade(3, "not_legal")).toBe("not_legal");
+  });
+
+  it("left no_concept, right numeric → numeric", () => {
+    expect(weakerSideGrade("no_concept", 4)).toBe(4);
+  });
+
+  it("right no_concept, left numeric → numeric", () => {
+    expect(weakerSideGrade(2, "no_concept")).toBe(2);
+  });
+
+  it("both no_concept → no_concept", () => {
+    expect(weakerSideGrade("no_concept", "no_concept")).toBe("no_concept");
+  });
+
+  it("both undefined → null", () => {
+    expect(weakerSideGrade(undefined, undefined)).toBeNull();
+  });
+
+  it("left null, right numeric → numeric (null is not rated, distinct from undefined)", () => {
+    expect(weakerSideGrade(null, 3)).toBe(3);
+  });
+
+  it("left not_legal, right no_concept → not_legal", () => {
+    expect(weakerSideGrade("not_legal", "no_concept")).toBe("not_legal");
   });
 });
