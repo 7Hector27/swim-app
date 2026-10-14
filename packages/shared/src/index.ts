@@ -174,6 +174,9 @@ export {
   UpdateLessonBodySchema,
 } from "./schemas/booking";
 
+export { calculateStartGrade, StartGradeResultSchema } from "./lib/startGrade";
+export type { StartGradeResult } from "./lib/startGrade";
+
 export type {
   EvaluationContext,
   RatingSide,

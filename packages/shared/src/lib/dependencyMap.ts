@@ -21,16 +21,42 @@ export type GradeMap = z.infer<typeof GradeMapSchema>;
 export const SortOrderMapSchema = z.record(z.string(), z.number());
 export type SortOrderMap = z.infer<typeof SortOrderMapSchema>;
 
-export const RatingRecordSchema = z.object({
-  skillSlug: z.string(),
-  grade: z
-    .union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)])
-    .nullable(),
-  notLegal: z.boolean(),
-  noConcept: z.boolean(),
-  ratedAt: z.string(),
-  voidedAt: z.string().nullable(),
-});
+export const RatingRecordSchema = z
+  .object({
+    skillSlug: z.string(),
+    grade: z
+      .union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)])
+      .nullable(),
+    notLegal: z.boolean(),
+    noConcept: z.boolean(),
+    ratedAt: z.string(),
+    voidedAt: z.string().nullable(),
+  })
+  .superRefine((val, ctx) => {
+    // grade 1–5 when noConcept is false; grade null when noConcept is true.
+    if (!val.noConcept && val.grade === null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "grade must be 1–5 when noConcept is false",
+        path: ["grade"],
+      });
+    }
+    if (val.noConcept && val.grade !== null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "grade must be null when noConcept is true",
+        path: ["grade"],
+      });
+    }
+    // notLegal accompanies a phantom 1–5 grade.
+    if (val.notLegal && val.grade === null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "notLegal requires a non-null grade",
+        path: ["notLegal"],
+      });
+    }
+  });
 export type RatingRecord = z.infer<typeof RatingRecordSchema>;
 
 export const PerStrokeGradesSchema = z.object({

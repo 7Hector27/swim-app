@@ -565,3 +565,4 @@ export const ratingFaultTags = pgTable(
     check("fault_tag_not_blank", sql`${table.faultTag} <> ''`),
   ],
 ).enableRLS();
+
