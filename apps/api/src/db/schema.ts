@@ -565,3 +565,64 @@ export const ratingFaultTags = pgTable(
     check("fault_tag_not_blank", sql`${table.faultTag} <> ''`),
   ],
 ).enableRLS();
+
+// ── Start ratings ─────────────────────────────────────────────────────────────
+
+export const startComponentEnum = pgEnum("start_component", [
+  "reaction_time",
+  "block_position",
+  "entry_angle",
+  "entry_point",
+  "streamline",
+  "breakout",
+]);
+
+// One start rating = one coach observing one swimmer perform a start in one session.
+// stroke is null for track/relay starts, "back" for backstroke starts.
+export const startRatings = pgTable(
+  "start_ratings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    sessionId: uuid("session_id").notNull().references(() => evaluationSessions.id, { onDelete: "restrict" }),
+    swimmerId: uuid("swimmer_id").notNull().references(() => swimmers.id, { onDelete: "restrict" }),
+    coachId: uuid("coach_id").notNull().references(() => profiles.id, { onDelete: "restrict" }),
+    stroke: strokeEnum("stroke"),
+    ratedAt: timestamp("rated_at", { withTimezone: true }).notNull(),
+    voidedAt: timestamp("voided_at", { withTimezone: true }),
+    voidReason: text("void_reason"),
+    voidBy: uuid("void_by").references(() => profiles.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdateFn(() => new Date()),
+  },
+  (table) => [
+    check(
+      "start_ratings_void_fields_consistent",
+      sql`(${table.voidedAt} IS NULL AND ${table.voidReason} IS NULL AND ${table.voidBy} IS NULL)
+          OR (${table.voidedAt} IS NOT NULL AND ${table.voidReason} IS NOT NULL AND ${table.voidBy} IS NOT NULL)`,
+    ),
+  ],
+).enableRLS();
+
+export const startComponentRatings = pgTable(
+  "start_component_ratings",
+  {
+    startRatingId: uuid("start_rating_id").notNull().references(() => startRatings.id, { onDelete: "cascade" }),
+    component: startComponentEnum("component").notNull(),
+    // Nullable because no_concept ratings have no grade.
+    grade: integer("grade"),
+    notLegal: boolean("not_legal").notNull().default(false),
+    noConcept: boolean("no_concept").notNull().default(false),
+  },
+  (table) => [
+    primaryKey({ columns: [table.startRatingId, table.component] }),
+    check(
+      "start_component_grade_xor_no_concept",
+      sql`(${table.noConcept} = false AND ${table.grade} IS NOT NULL AND ${table.grade} >= 1 AND ${table.grade} <= 5)
+          OR (${table.noConcept} = true AND ${table.grade} IS NULL)`,
+    ),
+    check(
+      "start_component_not_legal_requires_grade",
+      sql`${table.notLegal} = false OR ${table.grade} IS NOT NULL`,
+    ),
+  ],
+).enableRLS();

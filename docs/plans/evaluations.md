@@ -294,6 +294,8 @@ Routes (all under `/api/v1`):
 5. **Not assessed vs. No concept UI** — Should "No concept" be a tap option on the rating screen, or reserved for a separate observation flow?
 6. **Void permissions** — Can a coach void only their own ratings, or can an admin void any coach's rating?
 7. **Side tracking scope** — Should any skill other than freestyle breathing track side (e.g. freestyle rotation)?
+8. **No concept toward "all 6 rated"** — Does a no_concept component rating count as one of the 6 required components for a start grade, or does it leave the start "In progress"? *(Implementation currently counts it as rated and excludes it from the average.)*
+9. **Component rating expiry** — Should a component rating from an old session still count toward the current start grade, or should ratings expire (e.g. after N months) so stale components fall out?
 20. **Measured skills grading** — How are tempo, stroke count, reaction seconds, and start distance graded alongside the 1–5 scale? *(Blocks E-5.)*
 21. **Evaluation frequency** — How often should evaluations happen? Does the app enforce or suggest a cadence? *(Blocks E-5.)*
 22. **Drill vs. race on charts** — Are drill and race context ratings shown together or separated on progress charts? *(Blocks E-5.)*
