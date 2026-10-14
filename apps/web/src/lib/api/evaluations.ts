@@ -3,6 +3,7 @@ import {
   type CategoriesResponse,
   CoachSkillRatingSchema,
   type CoachSkillRating,
+  type StartGradeResult,
 } from "@swim-app/shared";
 
 export type FetchCategoriesResult =
@@ -52,9 +53,8 @@ export async function fetchSkillRatingHistory(
 
 type SwimmerSkillsResponse = {
   grades: Record<string, number | "not_legal" | "no_concept">;
-  startGrades: Record<string, unknown>;
-  headPositionOverall: unknown;
-  coachingPriorities: unknown[];
+  startGrades: Record<string, StartGradeResult>;
+  coachingPriorities: Array<{ targetSlug: string; chain: Array<{ slug: string; grade: unknown; sortOrder: number }> }>;
 };
 
 export type FetchSwimmerSkillsResult =
@@ -73,6 +73,29 @@ export async function fetchSwimmerSkills(
     if (!response.ok) return { ok: false, status: response.status };
     const body = await response.json() as SwimmerSkillsResponse;
     return { ok: true, data: body };
+  } catch {
+    return { ok: false, status: 500 };
+  }
+}
+
+export type VoidRatingResult = { ok: true } | { ok: false; status: number };
+
+export async function voidRating(
+  ratingId: string,
+  reason: string,
+  accessToken: string,
+): Promise<VoidRatingResult> {
+  try {
+    const response = await fetch(
+      `${process.env.NEXT_PUBLIC_API_URL}/coach/ratings/${ratingId}/void`,
+      {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ reason }),
+      },
+    );
+    if (!response.ok) return { ok: false, status: response.status };
+    return { ok: true };
   } catch {
     return { ok: false, status: 500 };
   }
