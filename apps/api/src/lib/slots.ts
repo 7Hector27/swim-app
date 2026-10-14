@@ -139,6 +139,26 @@ function subtractIntervals(window: Interval, forbidden: Interval[]): Interval[] 
   return remaining;
 }
 
+// Merge overlapping or adjacent slot windows into a minimal list.
+export function mergeSlotWindows(slots: Slot[]): Slot[] {
+  if (slots.length === 0) return [];
+  const sorted = [...slots].sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
+  const first = sorted[0]!;
+  const merged: Slot[] = [{ startsAt: first.startsAt, endsAt: first.endsAt }];
+  for (let index = 1; index < sorted.length; index++) {
+    const current = sorted[index]!;
+    const last = merged[merged.length - 1]!;
+    if (current.startsAt.getTime() <= last.endsAt.getTime()) {
+      if (current.endsAt.getTime() > last.endsAt.getTime()) {
+        last.endsAt = current.endsAt;
+      }
+    } else {
+      merged.push({ startsAt: current.startsAt, endsAt: current.endsAt });
+    }
+  }
+  return merged;
+}
+
 export function computeAvailableSlots(params: SlotParams): Slot[] {
   const {
     date,

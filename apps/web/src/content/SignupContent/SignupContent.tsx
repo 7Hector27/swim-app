@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useRef, useState } from "react";
 
 import { calculateAge, todayLA } from "@swim-app/shared";
 
@@ -23,12 +23,27 @@ const initialState: SignupState = { status: "idle" };
 export default function SignupContent({ returnTo }: SignupContentProps) {
   const [state, formAction, isPending] = useActionState(signup, initialState);
   const [clientAgeBlocked, setClientAgeBlocked] = useState(false);
+  const [confirmPasswordError, setConfirmPasswordError] = useState("");
+  const passwordRef = useRef<HTMLInputElement>(null);
+  const confirmPasswordRef = useRef<HTMLInputElement>(null);
 
   if (clientAgeBlocked || state.status === "age_blocked") return <AgeBlockedScreen />;
   if (state.status === "success") return <SuccessScreen />;
 
   const fieldErrors = state.status === "field_errors" ? state.errors : {};
   const topError = state.status === "error" ? state.message : "";
+
+  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    const password = passwordRef.current?.value ?? "";
+    const confirmPassword = confirmPasswordRef.current?.value ?? "";
+    if (password !== confirmPassword) {
+      event.preventDefault();
+      setConfirmPasswordError("Passwords don't match.");
+      confirmPasswordRef.current?.focus();
+      return;
+    }
+    setConfirmPasswordError("");
+  }
 
   return (
     <div className="flex flex-col min-h-screen">
@@ -38,7 +53,7 @@ export default function SignupContent({ returnTo }: SignupContentProps) {
           <h1 className="text-heading mb-2">Create account</h1>
           <p className="text-text-secondary mb-8">Join Axiom Aquatics today.</p>
 
-          <form action={formAction} noValidate className="flex flex-col gap-5">
+          <form action={formAction} noValidate onSubmit={handleSubmit} className="flex flex-col gap-5">
             {returnTo !== undefined && (
               <input type="hidden" name="returnTo" value={returnTo} />
             )}
@@ -101,10 +116,30 @@ export default function SignupContent({ returnTo }: SignupContentProps) {
                 type="password"
                 autoComplete="new-password"
                 required
+                ref={passwordRef}
                 className="h-12 px-4 rounded-lg border border-border bg-background text-text"
               />
               <p className="text-text-secondary text-xs">Minimum 8 characters</p>
               <FieldError message={fieldErrors["password"]} />
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="confirmPassword" className="text-sm font-semibold text-text">
+                Confirm password
+              </label>
+              <input
+                id="confirmPassword"
+                name="confirmPassword"
+                type="password"
+                autoComplete="new-password"
+                required
+                ref={confirmPasswordRef}
+                onChange={() => {
+                  if (confirmPasswordError) setConfirmPasswordError("");
+                }}
+                className="h-12 px-4 rounded-lg border border-border bg-background text-text"
+              />
+              <FieldError message={confirmPasswordError || fieldErrors["confirmPassword"]} />
             </div>
 
             <div className="flex flex-col gap-1.5">

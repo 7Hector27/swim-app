@@ -185,6 +185,71 @@ export const AvailableSlotSchema = z.object({
 });
 export type AvailableSlot = z.infer<typeof AvailableSlotSchema>;
 
+// ── Upcoming lessons (parent-facing) ─────────────────────────────────────────
+
+export const UpcomingLessonsQuerySchema = z.object({
+  after: z.string().datetime({ offset: true }).optional(),
+  limit: z
+    .string()
+    .transform((value) => parseInt(value, 10))
+    .pipe(z.number().int().min(1).max(50))
+    .optional(),
+});
+export type UpcomingLessonsQuery = z.infer<typeof UpcomingLessonsQuerySchema>;
+
+export const UpcomingLessonSchema = LessonResponseSchema.omit({ householdId: true }).extend({
+  locationName: z.string(),
+});
+export type UpcomingLesson = z.infer<typeof UpcomingLessonSchema>;
+
+// ── Coach schedule ────────────────────────────────────────────────────────────
+
+export const CoachScheduleQuerySchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+});
+export type CoachScheduleQuery = z.infer<typeof CoachScheduleQuerySchema>;
+
+export const ScheduleLessonItemSchema = z.object({
+  type: z.literal("lesson"),
+  lesson: LessonResponseSchema,
+  locationName: z.string(),
+});
+export type ScheduleLessonItem = z.infer<typeof ScheduleLessonItemSchema>;
+
+export const ScheduleTravelBufferItemSchema = z.object({
+  type: z.literal("travel_buffer"),
+  startsAt: z.string().datetime({ offset: true }),
+  endsAt: z.string().datetime({ offset: true }),
+  fromLocationName: z.string(),
+  toLocationName: z.string(),
+});
+export type ScheduleTravelBufferItem = z.infer<typeof ScheduleTravelBufferItemSchema>;
+
+export const ScheduleOpenSlotItemSchema = z.object({
+  type: z.literal("open_slot"),
+  startsAt: z.string().datetime({ offset: true }),
+  endsAt: z.string().datetime({ offset: true }),
+});
+export type ScheduleOpenSlotItem = z.infer<typeof ScheduleOpenSlotItemSchema>;
+
+export const ScheduleItemSchema = z.discriminatedUnion("type", [
+  ScheduleLessonItemSchema,
+  ScheduleTravelBufferItemSchema,
+  ScheduleOpenSlotItemSchema,
+]);
+export type ScheduleItem = z.infer<typeof ScheduleItemSchema>;
+
+// ── Coach stats ───────────────────────────────────────────────────────────────
+
+export const CoachStatsSchema = z.object({
+  lessonsToday: z.number().int(),
+  lessonsThisWeek: z.number().int(),
+  pendingRequests: z.number().int(),
+  activeSwimmers: z.number().int(),
+  calendarSyncFailures: z.number().int(),
+});
+export type CoachStats = z.infer<typeof CoachStatsSchema>;
+
 // ── Season summer end dates ───────────────────────────────────────────────────
 
 export const SeasonSummerEndDateSchema = z.object({

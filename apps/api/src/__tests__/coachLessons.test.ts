@@ -8,8 +8,10 @@ const COACH_PROFILE_ID = "aaaaaaaa-0000-0000-0000-000000000001";
 const PARENT_PROFILE_ID = "bbbbbbbb-0000-0000-0000-000000000002";
 const HOUSEHOLD_ID = "ffffffff-0000-0000-0000-000000000010";
 const LESSON_ID = "dddddddd-0000-0000-0000-000000000001";
+const LESSON_ID_B = "dddddddd-0000-0000-0000-000000000002";
 const SWIMMER_ID = "cccccccc-0000-0000-0000-000000000001";
 const LOCATION_ID = "eeeeeeee-0000-0000-0000-000000000001";
+const LOCATION_ID_B = "eeeeeeee-0000-0000-0000-000000000002";
 
 const now = new Date();
 const futureStart = new Date(Date.now() + 48 * 60 * 60 * 1000);
@@ -17,14 +19,23 @@ const expiresAt = new Date(futureStart.getTime() - 16 * 60 * 60 * 1000);
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
 
-const { mockGetUser, mockDbSelect, mockDbInsert, mockDbUpdate, mockDbTransaction } =
-  vi.hoisted(() => ({
-    mockGetUser: vi.fn(),
-    mockDbSelect: vi.fn(),
-    mockDbInsert: vi.fn(),
-    mockDbUpdate: vi.fn(),
-    mockDbTransaction: vi.fn(),
-  }));
+const {
+  mockGetUser,
+  mockDbSelect,
+  mockDbInsert,
+  mockDbUpdate,
+  mockDbTransaction,
+  mockComputeSlots,
+  mockMergeSlotWindows,
+} = vi.hoisted(() => ({
+  mockGetUser: vi.fn(),
+  mockDbSelect: vi.fn(),
+  mockDbInsert: vi.fn(),
+  mockDbUpdate: vi.fn(),
+  mockDbTransaction: vi.fn(),
+  mockComputeSlots: vi.fn(),
+  mockMergeSlotWindows: vi.fn(),
+}));
 
 vi.mock("../lib/supabase", () => ({
   supabase: { auth: { getUser: mockGetUser } },
@@ -49,7 +60,8 @@ vi.mock("../lib/lessonApproval", () => ({
 }));
 
 vi.mock("../lib/slots", () => ({
-  computeAvailableSlots: vi.fn().mockReturnValue([]),
+  computeAvailableSlots: mockComputeSlots,
+  mergeSlotWindows: mockMergeSlotWindows,
 }));
 
 import { createApp } from "../app";
@@ -105,6 +117,22 @@ const pendingLessonRow = {
   calendarSyncStatus: "not_synced",
   calendarSyncError: null as string | null,
   calendarSyncAttempts: 0,
+  createdAt: now,
+  updatedAt: now,
+};
+
+const configRow = {
+  id: "config-id-0000-0000-0000-000000000001",
+  lessonDays: [1, 2, 3, 5],
+  schoolYearStartTime: "16:30",
+  schoolYearEndTime: "20:30",
+  summerMorningStartTime: "09:00",
+  summerMorningEndTime: "12:00",
+  summerEveningStartTime: "19:00",
+  summerEveningEndTime: "21:00",
+  maxDailyLessonMinutes: 240,
+  bookingMinAdvanceHours: 16,
+  bookingMaxAdvanceWeeks: 10,
   createdAt: now,
   updatedAt: now,
 };
@@ -385,5 +413,122 @@ describe("lazy expiry in GET /coach/lessons", () => {
 
     expect(res.status).toBe(200);
     expect(res.body[0]?.status).toBe("expired");
+  });
+});
+
+// ── GET /coach/schedule ───────────────────────────────────────────────────────
+
+describe("GET /coach/schedule", () => {
+  it("returns lesson, travel_buffer, and open_slot items", async () => {
+    authAsCoach();
+
+    const lessonA = {
+      id: LESSON_ID,
+      householdId: HOUSEHOLD_ID,
+      locationId: LOCATION_ID,
+      locationName: "Egret Park",
+      startsAt: new Date("2025-09-15T21:30:00.000Z"), // 2:30 PM LA
+      durationMinutes: 30,
+      type: "private" as const,
+      status: "approved" as const,
+      expiresAt: null as Date | null,
+      approvedAt: new Date("2025-09-14T00:00:00.000Z") as Date | null,
+      declinedAt: null as Date | null,
+      declineReason: null as string | null,
+      createdAt: now,
+    };
+
+    const lessonB = {
+      id: LESSON_ID_B,
+      householdId: HOUSEHOLD_ID,
+      locationId: LOCATION_ID_B,
+      locationName: "Stonegate",
+      startsAt: new Date("2025-09-15T23:30:00.000Z"), // 4:30 PM LA
+      durationMinutes: 30,
+      type: "private" as const,
+      status: "approved" as const,
+      expiresAt: null as Date | null,
+      approvedAt: new Date("2025-09-14T00:00:00.000Z") as Date | null,
+      declinedAt: null as Date | null,
+      declineReason: null as string | null,
+      createdAt: now,
+    };
+
+    // 1. lessons + innerJoin(lessonLocations) .where(...).orderBy()
+    const lessonsOrderBy = vi.fn().mockResolvedValue([lessonA, lessonB]);
+    const lessonsWhere = vi.fn().mockReturnValue({ orderBy: lessonsOrderBy });
+    const lessonsInnerJoin = vi.fn().mockReturnValue({ where: lessonsWhere });
+    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ innerJoin: lessonsInnerJoin }) });
+
+    // 2. lessonSwimmers + innerJoin(swimmers) .where()
+    const swimmerWhere = vi.fn().mockResolvedValue([
+      { lessonId: LESSON_ID, swimmerId: SWIMMER_ID, firstName: "Alice", lastName: "Smith" },
+    ]);
+    const swimmerInnerJoin = vi.fn().mockReturnValue({ where: swimmerWhere });
+    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ innerJoin: swimmerInnerJoin }) });
+
+    // 3. Promise.all of 5 selects: [configRows, bufferRows, blockedRows, existingLessonRows, endDateRow]
+    // configRows
+    const configLimit = vi.fn().mockResolvedValue([configRow]);
+    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ limit: configLimit }) });
+    // travelBufferOverrides
+    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockResolvedValue([]) });
+    // blockedTimes
+    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockResolvedValue([]) });
+    // existingLessonRows with .where()
+    const existingWhere = vi.fn().mockResolvedValue([
+      { startsAt: lessonA.startsAt, durationMinutes: 30, locationId: LOCATION_ID },
+      { startsAt: lessonB.startsAt, durationMinutes: 30, locationId: LOCATION_ID_B },
+    ]);
+    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: existingWhere }) });
+    // seasonSummerEndDates
+    const endDateWhere = vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([]) });
+    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: endDateWhere }) });
+
+    // 4. namedPoolRows for open slot computation
+    const poolWhere = vi.fn().mockResolvedValue([{ id: LOCATION_ID }, { id: LOCATION_ID_B }]);
+    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: poolWhere }) });
+
+    // computeAvailableSlots returns one slot per pool
+    const openSlot1 = { startsAt: new Date("2025-09-16T00:00:00.000Z"), endsAt: new Date("2025-09-16T00:30:00.000Z") };
+    const openSlot2 = { startsAt: new Date("2025-09-16T01:00:00.000Z"), endsAt: new Date("2025-09-16T01:30:00.000Z") };
+    mockComputeSlots
+      .mockReturnValueOnce([openSlot1])
+      .mockReturnValueOnce([openSlot2]);
+    // mergeSlotWindows returns the combined slots
+    mockMergeSlotWindows.mockReturnValueOnce([openSlot1, openSlot2]);
+
+    const res = await request(app)
+      .get("/coach/schedule?date=2025-09-15")
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body)).toBe(true);
+
+    const types = res.body.map((item: { type: string }) => item.type);
+    expect(types).toContain("lesson");
+    expect(types).toContain("travel_buffer");
+    expect(types).toContain("open_slot");
+
+    const lessonItems = res.body.filter((item: { type: string }) => item.type === "lesson");
+    expect(lessonItems).toHaveLength(2);
+    expect(lessonItems[0].lesson.id).toBe(LESSON_ID);
+    expect(lessonItems[1].lesson.id).toBe(LESSON_ID_B);
+
+    const travelItem = res.body.find((item: { type: string }) => item.type === "travel_buffer");
+    expect(travelItem).toBeDefined();
+    expect(travelItem.fromLocationName).toBe("Egret Park");
+    expect(travelItem.toLocationName).toBe("Stonegate");
+  });
+
+  it("returns 403 for a parent", async () => {
+    authAs(parentProfile);
+    mockDbSelect.mockReturnValueOnce(requireUserSelect(parentProfile));
+
+    const res = await request(app)
+      .get("/coach/schedule?date=2025-09-15")
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(403);
   });
 });

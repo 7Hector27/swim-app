@@ -1,10 +1,16 @@
 import {
   AvailableSlotSchema,
+  CoachStatsSchema,
   LessonLocationSchema,
   LessonResponseSchema,
+  ScheduleItemSchema,
+  UpcomingLessonSchema,
   type AvailableSlot,
+  type CoachStats,
   type LessonLocation,
   type LessonResponse,
+  type ScheduleItem,
+  type UpcomingLesson,
 } from "@swim-app/shared";
 
 export async function fetchLocations(accessToken: string): Promise<LessonLocation[]> {
@@ -67,6 +73,74 @@ export async function coachGetPendingLessons(accessToken: string): Promise<Lesso
     const parsed = LessonResponseSchema.array().safeParse(body);
     if (!parsed.success) {
       console.warn("coachGetPendingLessons: 200 response did not match LessonResponseSchema.array()");
+      return [];
+    }
+    return parsed.data;
+  } catch {
+    return [];
+  }
+}
+
+export async function fetchCoachSchedule(
+  accessToken: string,
+  date: string,
+): Promise<ScheduleItem[]> {
+  try {
+    const response = await fetch(
+      `${process.env.NEXT_PUBLIC_API_URL}/coach/schedule?date=${date}`,
+      {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        cache: "no-store",
+      },
+    );
+    if (!response.ok) return [];
+    const body: unknown = await response.json();
+    const parsed = ScheduleItemSchema.array().safeParse(body);
+    if (!parsed.success) {
+      console.warn("fetchCoachSchedule: 200 response did not match ScheduleItemSchema.array()");
+      return [];
+    }
+    return parsed.data;
+  } catch {
+    return [];
+  }
+}
+
+export async function fetchCoachStats(accessToken: string): Promise<CoachStats | null> {
+  try {
+    const response = await fetch(
+      `${process.env.NEXT_PUBLIC_API_URL}/coach/stats`,
+      { headers: { Authorization: `Bearer ${accessToken}` }, cache: "no-store" },
+    );
+    if (!response.ok) return null;
+    const body: unknown = await response.json();
+    const parsed = CoachStatsSchema.safeParse(body);
+    if (!parsed.success) {
+      console.warn("fetchCoachStats: response did not match CoachStatsSchema");
+      return null;
+    }
+    return parsed.data;
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchUpcomingLessons(
+  accessToken: string,
+): Promise<UpcomingLesson[]> {
+  try {
+    const response = await fetch(
+      `${process.env.NEXT_PUBLIC_API_URL}/lessons`,
+      {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        cache: "no-store",
+      },
+    );
+    if (!response.ok) return [];
+    const body: unknown = await response.json();
+    const parsed = UpcomingLessonSchema.array().safeParse(body);
+    if (!parsed.success) {
+      console.warn("fetchUpcomingLessons: 200 response did not match UpcomingLessonSchema.array()");
       return [];
     }
     return parsed.data;

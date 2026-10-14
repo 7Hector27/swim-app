@@ -1,13 +1,16 @@
-import { calculateAge, todayLA, type MeResponse } from "@swim-app/shared";
 import Link from "next/link";
+
+import { calculateAge, todayLA, type MeResponse } from "@swim-app/shared";
 
 import Placeholder from "@/components/Placeholder";
 import SiteFooter from "@/components/SiteFooter";
 import SiteNav from "@/components/SiteNav";
-import { siteLinks } from "@/lib/siteLinks";
+import { fetchHousehold } from "@/lib/api/households";
+import { fetchUpcomingLessons } from "@/lib/api/lessons";
 import { fetchSwimmers } from "@/lib/api/swimmers";
 import { removeSwimmer } from "./actions";
 import SwimmerCard from "./SwimmerCard";
+import UpcomingLessonsCard from "./UpcomingLessonsCard";
 
 interface Props {
   profile: MeResponse;
@@ -17,9 +20,16 @@ interface Props {
 export default async function ParentDashboardContent({ profile, accessToken }: Props) {
   const firstName = profile.fullName?.trim().split(/\s+/)[0] ?? "there";
   const hasPhone = !!(profile.phone && profile.phone.length > 0);
-  const swimmers = await fetchSwimmers(accessToken);
+  const [swimmers, upcomingLessons, household] = await Promise.all([
+    fetchSwimmers(accessToken),
+    fetchUpcomingLessons(accessToken),
+    fetchHousehold(accessToken),
+  ]);
   const today = todayLA();
   const showFinishSetup = !hasPhone;
+  const nextLesson = upcomingLessons[0];
+  const householdRole = household?.myRole ?? null;
+  const isViewer = householdRole === "viewer";
 
   return (
     <div className="flex flex-col min-h-screen bg-background">
@@ -32,9 +42,9 @@ export default async function ParentDashboardContent({ profile, accessToken }: P
             <div>
               <h1 className="text-3xl tablet:text-4xl text-heading">Hi, {firstName}.</h1>
               <p className="mt-2 text-sm text-text-secondary">
-                <Placeholder>
-                  <span>Your next lesson is [Day] at [0:00 AM].</span>
-                </Placeholder>
+                {nextLesson
+                  ? `Your next lesson is ${formatNextLessonLabel(nextLesson.startsAt)}.`
+                  : "No lessons booked yet."}
               </p>
             </div>
 
@@ -45,15 +55,22 @@ export default async function ParentDashboardContent({ profile, accessToken }: P
               >
                 Add a swimmer
               </Link>
-              <a
-                href={siteLinks.booking ?? "/signup"}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center justify-center rounded-button bg-button-primary-background text-button-primary-text font-bold text-sm px-5 h-11 transition-opacity hover:opacity-90"
-              >
-                Book a lesson
-                <span className="sr-only"> (opens in a new tab)</span>
-              </a>
+              {isViewer ? (
+                <span
+                  aria-disabled="true"
+                  title="Ask the household owner to book."
+                  className="inline-flex items-center justify-center rounded-button bg-button-primary-background text-button-primary-text font-bold text-sm px-5 h-11 opacity-50 cursor-not-allowed select-none"
+                >
+                  Book a lesson
+                </span>
+              ) : (
+                <Link
+                  href="/dashboard/book"
+                  className="inline-flex items-center justify-center rounded-button bg-button-primary-background text-button-primary-text font-bold text-sm px-5 h-11 transition-opacity hover:opacity-90"
+                >
+                  Book a lesson
+                </Link>
+              )}
             </div>
           </div>
 
@@ -61,9 +78,7 @@ export default async function ParentDashboardContent({ profile, accessToken }: P
           <div className="flex flex-col tablet:flex-row gap-6 desktop:gap-8 items-start">
             {/* Main column */}
             <div className="flex-1 min-w-0 flex flex-col gap-6">
-              <Placeholder block>
-                <UpcomingLessonsCard />
-              </Placeholder>
+              <UpcomingLessonsCard lessons={upcomingLessons} />
 
               <SwimmersSection
                 swimmers={swimmers}
@@ -90,88 +105,24 @@ export default async function ParentDashboardContent({ profile, accessToken }: P
   );
 }
 
+// ── Helper ─────────────────────────────────────────────────────────────────────
+
+function formatNextLessonLabel(startsAt: string): string {
+  const date = new Date(startsAt);
+  const day = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Los_Angeles",
+    weekday: "long",
+  }).format(date);
+  const time = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Los_Angeles",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).format(date);
+  return `${day} at ${time}`;
+}
+
 // ── Sub-components ─────────────────────────────────────────────────────────────
-
-function UpcomingLessonsCard() {
-  return (
-    <div className="rounded-card border border-border p-5 tablet:p-6">
-      <div className="flex items-center justify-between mb-1">
-        <h2 className="text-xl text-heading">Upcoming lessons</h2>
-        <a
-          href="#"
-          className="text-sm font-semibold text-link hover:text-link-hover transition-colors duration-150"
-        >
-          View schedule
-        </a>
-      </div>
-
-      <div className="divide-y divide-border">
-        <LessonRow
-          dayLabel="[SAT]"
-          dateLabel="[18]"
-          title="[Swimmer], private lesson"
-          time="[9:00 to 9:30 AM] at [Location]"
-          status="confirmed"
-        />
-        <LessonRow
-          dayLabel="[TUE]"
-          dateLabel="[21]"
-          title="[Swimmer], private lesson"
-          time="[4:30 to 5:15 PM] at [Location]"
-          status="pending"
-        />
-      </div>
-    </div>
-  );
-}
-
-function LessonRow({
-  dayLabel,
-  dateLabel,
-  title,
-  time,
-  status,
-}: {
-  dayLabel: string;
-  dateLabel: string;
-  title: string;
-  time: string;
-  status: "confirmed" | "pending";
-}) {
-  return (
-    <div className="flex items-center gap-4 py-4">
-      <div className="text-center w-9 flex-shrink-0">
-        <p className="text-[10px] font-bold text-text-secondary uppercase tracking-wide">
-          {dayLabel}
-        </p>
-        <p className="text-xl font-heading text-heading leading-tight">{dateLabel}</p>
-      </div>
-
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold text-text">{title}</p>
-        <p className="text-xs text-text-secondary mt-0.5">{time}</p>
-      </div>
-
-      <div className="flex items-center gap-3 flex-shrink-0">
-        {status === "confirmed" ? (
-          <span className="inline-flex items-center rounded-full text-xs font-semibold px-2.5 py-1 bg-success/10 text-success">
-            Confirmed
-          </span>
-        ) : (
-          <span className="inline-flex items-center rounded-full text-xs font-semibold px-2.5 py-1 bg-surface-soft text-text-secondary border border-border">
-            Pending
-          </span>
-        )}
-        <button
-          type="button"
-          className="text-sm font-semibold text-link hover:text-link-hover transition-colors duration-150"
-        >
-          Change
-        </button>
-      </div>
-    </div>
-  );
-}
 
 interface SwimmersSectionProps {
   swimmers: Awaited<ReturnType<typeof fetchSwimmers>>;

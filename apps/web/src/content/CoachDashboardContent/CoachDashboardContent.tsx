@@ -1,21 +1,26 @@
 import type { CoachSwimmer } from "@swim-app/shared";
+import { todayLA } from "@swim-app/shared";
 
 import Placeholder from "@/components/Placeholder";
 import SiteFooter from "@/components/SiteFooter";
 import SiteNav from "@/components/SiteNav";
 import { fetchCoachSwimmers } from "@/lib/api/coachSwimmers";
-import { coachGetPendingLessons } from "@/lib/api/lessons";
+import { coachGetPendingLessons, fetchCoachSchedule, fetchCoachStats } from "@/lib/api/lessons";
 import BookingRequestsCard from "./BookingRequestsCard";
 import SwimmersTable from "./SwimmersTable";
+import TodayScheduleCard from "./TodayScheduleCard";
 
 interface Props {
   accessToken: string;
 }
 
 export default async function CoachDashboardContent({ accessToken }: Props) {
-  const [swimmers, pendingLessons] = await Promise.all([
+  const today = todayLA();
+  const [swimmers, pendingLessons, scheduleItems, stats] = await Promise.all([
     fetchCoachSwimmers(accessToken),
     coachGetPendingLessons(accessToken),
+    fetchCoachSchedule(accessToken, today),
+    fetchCoachStats(accessToken),
   ]);
 
   const dateLabel = new Intl.DateTimeFormat("en-US", {
@@ -36,9 +41,9 @@ export default async function CoachDashboardContent({ accessToken }: Props) {
             <div>
               <h1 className="text-3xl tablet:text-4xl text-heading">{dateLabel}</h1>
               <p className="mt-2 text-sm text-text-secondary">
-                <Placeholder>
-                  <span>[#] lessons today, [#] at [Location].</span>
-                </Placeholder>
+                {(stats?.lessonsToday ?? 0) === 0
+                  ? "No lessons today."
+                  : `${stats?.lessonsToday} lesson${(stats?.lessonsToday ?? 0) !== 1 ? "s" : ""} today.`}
               </p>
             </div>
 
@@ -72,25 +77,17 @@ export default async function CoachDashboardContent({ accessToken }: Props) {
 
           {/* Stat cards */}
           <div className="grid grid-cols-2 tablet:grid-cols-4 gap-4 mb-8">
-            <Placeholder block>
-              <StatCard label="Lessons today" value="[#]" />
-            </Placeholder>
-            <Placeholder block>
-              <StatCard label="Requests to review" value="[#]" accent />
-            </Placeholder>
-            <StatCard label="Active swimmers" value={String(swimmers.length)} />
-            <Placeholder block>
-              <StatCard label="Lessons this week" value="[#]" />
-            </Placeholder>
+            <StatCard label="Lessons today" value={String(stats?.lessonsToday ?? 0)} />
+            <StatCard label="Requests to review" value={String(stats?.pendingRequests ?? 0)} accent />
+            <StatCard label="Active swimmers" value={String(stats?.activeSwimmers ?? swimmers.length)} />
+            <StatCard label="Lessons this week" value={String(stats?.lessonsThisWeek ?? 0)} />
           </div>
 
           {/* Two-column layout */}
           <div className="flex flex-col tablet:flex-row gap-6 desktop:gap-8 items-start">
             {/* Main column */}
             <div className="flex-1 min-w-0 flex flex-col gap-6">
-              <Placeholder block>
-                <TodayScheduleCard />
-              </Placeholder>
+              <TodayScheduleCard items={scheduleItems} />
 
               <SwimmersSection swimmers={swimmers} />
             </div>
@@ -133,122 +130,6 @@ function StatCard({
       <p className={`text-4xl font-heading ${accent ? "text-accent" : "text-heading"}`}>
         {value}
       </p>
-    </div>
-  );
-}
-
-function TodayScheduleCard() {
-  return (
-    <div className="rounded-card border border-border p-5 tablet:p-6">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-xl text-heading">Today&apos;s schedule</h2>
-        <a
-          href="#"
-          className="text-sm font-semibold text-link hover:text-link-hover transition-colors duration-150"
-        >
-          Full calendar
-        </a>
-      </div>
-
-      <div className="divide-y divide-border">
-        <ScheduleRow
-          time="[1:30 PM]"
-          title="[Swimmer], 30 min"
-          detail="Private lesson"
-        />
-        <ScheduleRow
-          time="[2:30 PM]"
-          title="[Swimmer], 30 min"
-          detail="Open, back to back"
-        />
-        <TravelBufferRow time="[4:00 PM]" duration="[30 min]" />
-        <ScheduleRow
-          time="[5:15 PM]"
-          title="[Swimmer], 45 min"
-          detail="Open until [6:30 PM]"
-        />
-        <OpenSlotRow time="[6:30 PM]" until="[7:30 PM]" />
-      </div>
-    </div>
-  );
-}
-
-function ScheduleRow({
-  time,
-  title,
-  detail,
-}: {
-  time: string;
-  title: string;
-  detail: string;
-}) {
-  return (
-    <div className="flex items-center gap-4 py-4">
-      <div className="flex-shrink-0 w-[68px]">
-        <p className="text-xs font-semibold text-text-secondary tabular-nums">{time}</p>
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold text-text">{title}</p>
-        <p className="text-xs text-text-secondary mt-0.5">{detail}</p>
-      </div>
-      <button
-        type="button"
-        className="flex-shrink-0 text-sm font-semibold text-link hover:text-link-hover transition-colors duration-150 min-h-[44px] flex items-center"
-      >
-        Open swimmer
-      </button>
-    </div>
-  );
-}
-
-function TravelBufferRow({ time, duration }: { time: string; duration: string }) {
-  return (
-    <div className="flex items-center gap-4 py-4">
-      <div className="flex-shrink-0 w-[68px]">
-        <p className="text-xs font-semibold text-text-secondary tabular-nums">{time}</p>
-      </div>
-      <div className="flex-1 min-w-0 flex items-center gap-2">
-        <svg
-          width="14"
-          height="14"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.75"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className="flex-shrink-0 text-text-secondary"
-          aria-hidden="true"
-        >
-          <rect x="1" y="3" width="15" height="13" rx="2" />
-          <path d="M16 8h4l3 3v5h-7V8z" />
-          <circle cx="5.5" cy="18.5" r="2.5" />
-          <circle cx="18.5" cy="18.5" r="2.5" />
-        </svg>
-        <div>
-          <p className="text-sm font-semibold text-text">
-            Travel buffer, {duration}
-          </p>
-          <p className="text-xs text-text-secondary mt-0.5">
-            Blocked automatically. Not bookable.
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function OpenSlotRow({ time, until }: { time: string; until: string }) {
-  return (
-    <div className="flex items-center gap-4 py-4">
-      <div className="flex-shrink-0 w-[68px]">
-        <p className="text-xs font-semibold text-text-secondary tabular-nums">{time}</p>
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold text-text-secondary">
-          Open until {until}
-        </p>
-      </div>
     </div>
   );
 }

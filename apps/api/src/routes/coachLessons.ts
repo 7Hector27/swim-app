@@ -2,26 +2,248 @@ import { Router } from "express";
 import { and, asc, eq, inArray, lt, sql } from "drizzle-orm";
 import type {
   CoachListLessonsQuery,
+  CoachScheduleQuery,
   DeclineLessonBody,
   LessonResponse,
   LessonSwimmer,
+  ScheduleItem,
 } from "@swim-app/shared";
 import {
   CoachListLessonsQuerySchema,
+  CoachScheduleQuerySchema,
   DeclineLessonBodySchema,
 } from "@swim-app/shared";
 import { db } from "../db/client";
-import { lessonSwimmers, lessons, swimmers } from "../db/schema";
+import {
+  availabilityConfig,
+  blockedTimes,
+  lessonLocations,
+  lessonSwimmers,
+  lessons,
+  seasonSummerEndDates,
+  swimmers,
+  travelBufferOverrides,
+} from "../db/schema";
 import { requireUser } from "../middleware/requireUser";
 import { requireCoach } from "../middleware/requireCoach";
 import { validate } from "../middleware/validate";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { notifyLessonApproved, notifyLessonDeclined, syncCalendarApproved } from "../lib/lessonApproval";
+import { computeAvailableSlots, mergeSlotWindows } from "../lib/slots";
 import { z } from "zod";
 
 export const coachLessonsRouter = Router();
 
 coachLessonsRouter.use(requireUser, requireCoach);
+
+// ── GET /coach/schedule ───────────────────────────────────────────────────────
+
+coachLessonsRouter.get(
+  "/schedule",
+  validate({ query: CoachScheduleQuerySchema }),
+  asyncHandler(async (req, res) => {
+    const query = req.query as unknown as CoachScheduleQuery;
+    const date = query.date;
+
+    // 1. Load lessons for this LA day with their location names.
+    const lessonRows = await db
+      .select({
+        id: lessons.id,
+        householdId: lessons.householdId,
+        locationId: lessons.locationId,
+        locationName: lessonLocations.name,
+        startsAt: lessons.startsAt,
+        durationMinutes: lessons.durationMinutes,
+        type: lessons.type,
+        status: lessons.status,
+        expiresAt: lessons.expiresAt,
+        approvedAt: lessons.approvedAt,
+        declinedAt: lessons.declinedAt,
+        declineReason: lessons.declineReason,
+        createdAt: lessons.createdAt,
+      })
+      .from(lessons)
+      .innerJoin(lessonLocations, eq(lessons.locationId, lessonLocations.id))
+      .where(
+        and(
+          inArray(lessons.status, ["pending", "approved"]),
+          sql`date_trunc('day', ${lessons.startsAt} AT TIME ZONE 'America/Los_Angeles') = ${date}::date`,
+        ),
+      )
+      .orderBy(asc(lessons.startsAt));
+
+    const lessonIds = lessonRows.map((row) => row.id);
+
+    // 2. Load swimmers for those lessons.
+    const swimmerRows =
+      lessonIds.length > 0
+        ? await db
+            .select({
+              lessonId: lessonSwimmers.lessonId,
+              swimmerId: lessonSwimmers.swimmerId,
+              firstName: swimmers.firstName,
+              lastName: swimmers.lastName,
+            })
+            .from(lessonSwimmers)
+            .innerJoin(swimmers, eq(lessonSwimmers.swimmerId, swimmers.id))
+            .where(inArray(lessonSwimmers.lessonId, lessonIds))
+        : [];
+
+    const swimmersByLesson = new Map<string, LessonSwimmer[]>();
+    for (const row of swimmerRows) {
+      const list = swimmersByLesson.get(row.lessonId) ?? [];
+      list.push({ swimmerId: row.swimmerId, firstName: row.firstName, lastName: row.lastName });
+      swimmersByLesson.set(row.lessonId, list);
+    }
+
+    // 3. Load config + buffers + blocked times + existing lessons for slot computation.
+    const [configRows, bufferRows, blockedRows, existingLessonRows, endDateRow] =
+      await Promise.all([
+        db.select().from(availabilityConfig).limit(1),
+        db.select().from(travelBufferOverrides),
+        db.select().from(blockedTimes),
+        db
+          .select({
+            startsAt: lessons.startsAt,
+            durationMinutes: lessons.durationMinutes,
+            locationId: lessons.locationId,
+          })
+          .from(lessons)
+          .where(
+            and(
+              inArray(lessons.status, ["pending", "approved"]),
+              sql`date_trunc('day', ${lessons.startsAt} AT TIME ZONE 'America/Los_Angeles') = ${date}::date`,
+            ),
+          ),
+        db
+          .select({ endDate: seasonSummerEndDates.endDate })
+          .from(seasonSummerEndDates)
+          .where(eq(seasonSummerEndDates.year, parseInt(date.slice(0, 4), 10)))
+          .limit(1),
+      ]);
+
+    // 4. Build schedule items.
+    const items: ScheduleItem[] = [];
+
+    // Add lesson items.
+    for (const row of lessonRows) {
+      const lessonResponse: LessonResponse = {
+        id: row.id,
+        householdId: row.householdId,
+        locationId: row.locationId,
+        startsAt: row.startsAt.toISOString(),
+        durationMinutes: row.durationMinutes as 30 | 45 | 60,
+        type: row.type,
+        status: row.status,
+        swimmers: swimmersByLesson.get(row.id) ?? [],
+        expiresAt: row.expiresAt?.toISOString() ?? null,
+        approvedAt: row.approvedAt?.toISOString() ?? null,
+        declinedAt: row.declinedAt?.toISOString() ?? null,
+        declineReason: row.declineReason ?? null,
+        createdAt: row.createdAt.toISOString(),
+      };
+      items.push({ type: "lesson", lesson: lessonResponse, locationName: row.locationName });
+    }
+
+    // Insert travel buffer items between consecutive lessons at different locations.
+    for (let index = 0; index < lessonRows.length - 1; index++) {
+      const current = lessonRows[index]!;
+      const next = lessonRows[index + 1]!;
+
+      if (current.locationId === next.locationId) continue;
+
+      const currentEnd = new Date(current.startsAt.getTime() + current.durationMinutes * 60_000);
+      const nextStart = next.startsAt;
+
+      // Find buffer override or use default 30 min.
+      const bufferOverride = bufferRows.find(
+        (row) => row.fromLocationId === current.locationId && row.toLocationId === next.locationId,
+      );
+      const bufferMinutes = bufferOverride !== undefined ? bufferOverride.bufferMinutes : 30;
+      const bufferEnd = new Date(currentEnd.getTime() + bufferMinutes * 60_000);
+
+      // Only insert if the buffer window doesn't exceed the next lesson's start.
+      if (bufferEnd.getTime() <= nextStart.getTime()) {
+        items.push({
+          type: "travel_buffer",
+          startsAt: currentEnd.toISOString(),
+          endsAt: bufferEnd.toISOString(),
+          fromLocationName: current.locationName,
+          toLocationName: next.locationName,
+        });
+      }
+    }
+
+    // 5. Compute open slots across all named pools.
+    const config = configRows[0];
+    if (config) {
+      const namedPoolRows = await db
+        .select({ id: lessonLocations.id })
+        .from(lessonLocations)
+        .where(
+          and(
+            sql`${lessonLocations.householdId} IS NULL`,
+            eq(lessonLocations.isActive, true),
+          ),
+        );
+
+      const allSlots: Array<{ startsAt: Date; endsAt: Date }> = [];
+      for (const pool of namedPoolRows) {
+        const poolSlots = computeAvailableSlots({
+          date,
+          durationMinutes: 30,
+          locationId: pool.id,
+          existingLessons: existingLessonRows.map((row) => ({
+            startsAt: row.startsAt,
+            durationMinutes: row.durationMinutes,
+            locationId: row.locationId,
+          })),
+          blockedTimes: blockedRows.map((row) => ({ startsAt: row.startsAt, endsAt: row.endsAt })),
+          travelBufferOverrides: bufferRows.map((row) => ({
+            fromLocationId: row.fromLocationId,
+            toLocationId: row.toLocationId,
+            bufferMinutes: row.bufferMinutes,
+          })),
+          config: {
+            id: config.id,
+            lessonDays: config.lessonDays,
+            schoolYearStartTime: config.schoolYearStartTime,
+            schoolYearEndTime: config.schoolYearEndTime,
+            summerMorningStartTime: config.summerMorningStartTime,
+            summerMorningEndTime: config.summerMorningEndTime,
+            summerEveningStartTime: config.summerEveningStartTime,
+            summerEveningEndTime: config.summerEveningEndTime,
+            maxDailyLessonMinutes: config.maxDailyLessonMinutes,
+            bookingMinAdvanceHours: config.bookingMinAdvanceHours,
+            bookingMaxAdvanceWeeks: config.bookingMaxAdvanceWeeks,
+          },
+          summerEndDate: endDateRow[0]?.endDate ?? null,
+          gcalBusyTimes: [],
+          nowUtc: new Date(),
+        });
+        allSlots.push(...poolSlots);
+      }
+
+      const merged = mergeSlotWindows(allSlots);
+      for (const window of merged) {
+        items.push({
+          type: "open_slot",
+          startsAt: window.startsAt.toISOString(),
+          endsAt: window.endsAt.toISOString(),
+        });
+      }
+    }
+
+    // 6. Sort all items by start time numerically.
+    items.sort((itemA, itemB) => {
+      const getStart = (item: ScheduleItem) =>
+        new Date(item.type === "lesson" ? item.lesson.startsAt : item.startsAt).getTime();
+      return getStart(itemA) - getStart(itemB);
+    });
+
+    res.json(items);
+  }),
+);
 
 // ── GET /coach/lessons ────────────────────────────────────────────────────────
 
