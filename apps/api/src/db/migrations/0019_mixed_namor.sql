@@ -1,0 +1,1 @@
+ALTER TABLE "skill_ratings" ADD CONSTRAINT "not_legal_requires_grade" CHECK ("skill_ratings"."not_legal" = false OR "skill_ratings"."grade" IS NOT NULL);

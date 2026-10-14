@@ -180,6 +180,11 @@ Every set of ratings lives inside a session. A session is one coach observing on
 | No concept | Not counted (excluded from denominator) | Always counts as low |
 | Not assessed (no row) | Excluded | Not rated; chain stops there |
 
+**Cross-table rules enforced in E-3 (not the DB):**
+- `side` is only allowed when `skills.rated_per_side = true`.
+- Each `fault_tag` must be in `skills.fault_tags` for the rated skill.
+- The session's `category_id` must match the skill's `category_id`.
+
 **Migration note**: migration must be applied locally and called out in the PR description.
 
 ---
@@ -216,7 +221,7 @@ Routes (all under `/api/v1`):
 
 - Only authenticated coaches may call any of these endpoints.
 - A coach may only create sessions for swimmers on their roster.
-- A coach may only undo or void ratings they created.
+- A coach may only undo or void ratings they created. `void_by` must be set to the authenticated coach's profile ID — never to a different profile. The DB trigger does not enforce identity; the API must.
 - Parents have no access to sessions or ratings. These routes return 403 for parent-role tokens. Access for parents is deferred to a later parent view PR.
 - Tests for each route must include: coach succeeds, parent gets 403, unauthenticated gets 401.
 
@@ -270,6 +275,13 @@ Routes (all under `/api/v1`):
 - Priority coaching flag: deepest low foundation skill from the dependency map, surfaced at top of profile.
 - Tempo cards: grade + measurement value (cycles per minute) alongside.
 - Capacity shown on session detail; chart behavior depends on Q23.
+
+**Parent-facing data rules (enforced in every E-5 response schema):**
+
+- `skill_ratings.note` is never returned to parents. It is a coach observation field.
+- `skill_ratings.void_reason` and `void_by` are never returned to parents.
+- `evaluation_sessions.coaching_priority` visibility is **pending Jason's answer to question 24**. Until that answer is received, treat it as coach-only and omit it from all parent-facing responses.
+- Parent-facing schemas must be defined as separate Zod schemas (e.g. `SkillRatingParentSchema`) that omit coach-only fields, not by filtering at serialisation time.
 
 ---
 
