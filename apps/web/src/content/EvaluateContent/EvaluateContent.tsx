@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useRef, useState } from "react";
+import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 import type {
   CoachSwimmerDetail,
   CategoriesResponse,
@@ -121,27 +121,29 @@ export default function EvaluateContent({ swimmer, categories, accessToken }: Ev
     return () => { cancelled = true; };
   }, [draft.categoryId, swimmer.id, accessToken]);
 
-  const boundAction = submitEvaluation.bind(null, swimmer.id);
+  const boundAction = useMemo(() => submitEvaluation.bind(null, swimmer.id), [swimmer.id]);
   const [state, formAction, isPending] = useActionState<EvaluateState, FormData>(
     boundAction,
     { status: "idle" },
   );
 
-  // Capture savedAt and clear localStorage on success
+  // Capture savedAt and clear localStorage on success.
+  // savedCategoryIdRef is written at submit time (onSubmit handler on the form) so
+  // it holds the correct categoryId even after draft has been reset by the router.
   useEffect(() => {
     if (state.status === "saved") {
       savedAtRef.current = Date.now();
-      savedCategoryIdRef.current = draft.categoryId;
       try {
         localStorage.removeItem(metaKey);
-        if (draft.categoryId) {
-          localStorage.removeItem(skillsKey(draft.categoryId));
+        const catId = savedCategoryIdRef.current;
+        if (catId) {
+          localStorage.removeItem(skillsKey(catId));
         }
       } catch {
         // ignore
       }
     }
-  }, [state.status]); // savedAtRef, savedCategoryIdRef, metaKey, skillsKey, draft.categoryId are stable at save time
+  }, [state.status]); // savedAtRef/savedCategoryIdRef captured at submit; metaKey/skillsKey stable
 
   function handleCategoryChange(newCategoryId: string) {
     let skills: Record<string, SkillDraft> = {};
@@ -258,7 +260,12 @@ export default function EvaluateContent({ swimmer, categories, accessToken }: Ev
             </p>
           )}
 
-          <form action={formAction} noValidate className="flex flex-col gap-6">
+          <form
+            action={formAction}
+            noValidate
+            className="flex flex-col gap-6"
+            onSubmit={() => { savedCategoryIdRef.current = draft.categoryId; }}
+          >
             <input type="hidden" name="bodyJson" value={bodyJson} />
 
             <SessionSetup

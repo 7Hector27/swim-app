@@ -1,4 +1,4 @@
-import { type CoachSwimmerDetail, type League, type CategoriesResponse, type StartGradeResult } from "@swim-app/shared";
+import { type CoachSwimmerDetail, type League, type CategoriesResponse, type SwimmerSkillsResponse, type StartGradeResult } from "@swim-app/shared";
 
 import SiteFooter from "@/components/SiteFooter";
 import SiteNav from "@/components/SiteNav";
@@ -8,9 +8,9 @@ import SwimmerSkillsHistory from "./SwimmerSkillsHistory";
 interface CoachSwimmerDetailContentProps {
   swimmer: CoachSwimmerDetail;
   accessToken: string;
-  grades: Record<string, number | "not_legal" | "no_concept">;
-  startGrades: Record<string, StartGradeResult>;
-  coachingPriorities: Array<{ targetSlug: string; chain: Array<{ slug: string }> }>;
+  grades: SwimmerSkillsResponse["grades"];
+  startGrades: SwimmerSkillsResponse["startGrades"];
+  coachingPriorities: SwimmerSkillsResponse["coachingPriorities"];
   categories: CategoriesResponse;
 }
 
@@ -25,11 +25,20 @@ function gradeDisplay(grade: number | "not_legal" | "no_concept"): string {
   return String(grade);
 }
 
+function formatStartGrade(result: StartGradeResult, slugToName: Map<string, string>): string {
+  if (result.status === "not_legal") return "DQ";
+  if (result.status === "no_concept") return "NC";
+  if (result.status === "graded") return String(result.grade);
+  if (result.missing.length === 0) return "In progress";
+  const names = result.missing.slice(0, 2).map((slug) => slugToName.get(slug) ?? slug).join(", ");
+  return `In progress — needs ${names}`;
+}
+
 export default function CoachSwimmerDetailContent({
   swimmer,
   accessToken,
   grades,
-  startGrades: _startGrades,
+  startGrades,
   coachingPriorities,
   categories,
 }: CoachSwimmerDetailContentProps) {
@@ -88,20 +97,32 @@ export default function CoachSwimmerDetailContent({
           </section>
 
           {categories.length > 0 && (() => {
-            const categoriesWithGrades = categories.filter((cat) =>
-              cat.skills.some((skill) => {
+            const categoriesWithData = categories.filter((cat) => {
+              const startParentIds = new Set(
+                cat.skills.filter((s) => s.parentSkillId !== null).map((s) => s.parentSkillId!),
+              );
+              return cat.skills.some((skill) => {
+                if (startParentIds.has(skill.id)) return startGrades[skill.slug] !== undefined;
                 if (skill.ratedPerSide) {
                   return grades[`${skill.slug}:left`] !== undefined || grades[`${skill.slug}:right`] !== undefined;
                 }
                 return grades[skill.slug] !== undefined;
-              }),
-            );
-            if (categoriesWithGrades.length === 0) return null;
+              });
+            });
+            if (categoriesWithData.length === 0) return null;
             return (
               <section className="flex flex-col gap-3">
                 <h2 className="font-bold text-text">Current Levels</h2>
-                {categoriesWithGrades.map((category) => {
+                {categoriesWithData.map((category) => {
+                  const startParentIds = new Set(
+                    category.skills.filter((s) => s.parentSkillId !== null).map((s) => s.parentSkillId!),
+                  );
+                  const slugToNameMap = new Map(category.skills.map((s) => [s.slug, s.name]));
+                  const startParents = category.skills.filter(
+                    (skill) => startParentIds.has(skill.id) && startGrades[skill.slug] !== undefined,
+                  );
                   const ratedSkills = category.skills.filter((skill) => {
+                    if (startParentIds.has(skill.id)) return false;
                     if (skill.ratedPerSide) {
                       return grades[`${skill.slug}:left`] !== undefined || grades[`${skill.slug}:right`] !== undefined;
                     }
@@ -111,6 +132,14 @@ export default function CoachSwimmerDetailContent({
                     <div key={category.id} className="flex flex-col gap-1">
                       <p className="text-xs font-semibold text-text-secondary">{category.name}</p>
                       <dl className="flex flex-col gap-1">
+                        {startParents.map((skill) => (
+                          <div key={skill.id} className="flex gap-2 text-sm">
+                            <dt className="text-text-secondary w-48 shrink-0">{skill.name}</dt>
+                            <dd className="font-semibold text-text">
+                              {formatStartGrade(startGrades[skill.slug]!, slugToNameMap)}
+                            </dd>
+                          </div>
+                        ))}
                         {ratedSkills.map((skill) => {
                           if (skill.ratedPerSide) {
                             return (
@@ -211,8 +240,8 @@ export default function CoachSwimmerDetailContent({
             <section className="flex flex-col gap-3">
               <h2 className="font-bold text-text">Household</h2>
               <ul className="flex flex-col gap-3">
-                {swimmer.members.map((guardian, index) => (
-                  <li key={index} className="flex flex-col gap-1 text-sm">
+                {swimmer.members.map((guardian) => (
+                  <li key={`${guardian.fullName ?? ""}\u001f${guardian.phone ?? ""}`} className="flex flex-col gap-1 text-sm">
                     <p className="text-text font-semibold">{guardian.fullName ?? "—"}</p>
                     {guardian.phone !== null && (
                       <a

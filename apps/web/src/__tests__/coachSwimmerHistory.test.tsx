@@ -159,9 +159,8 @@ describe("SwimmerSkillsHistory", () => {
   });
 
   it("void form submit calls voidRating with ratingId and reason", async () => {
-    mockFetch.mockResolvedValue({ ok: true, ratings: [TEST_RATING] });
     mockVoid.mockResolvedValue({ ok: true });
-    // After void, re-fetch returns empty list
+    // First expand fetch returns the rating; after void, re-fetch returns empty list
     mockFetch
       .mockResolvedValueOnce({ ok: true, ratings: [TEST_RATING] })
       .mockResolvedValue({ ok: true, ratings: [] });

@@ -117,7 +117,22 @@ export default function SwimmerSkillsHistory({
               {ratedSkills.map((skill) => {
                 const isOpen = openSkillId === skill.id;
                 const historyState = historyMap[skill.id] ?? { status: "idle" };
-                const currentGrade = grades[skill.slug] ?? grades[`${skill.slug}:left`];
+                const leftGrade = grades[`${skill.slug}:left`];
+                const rightGrade = grades[`${skill.slug}:right`];
+                const singleGrade = skill.ratedPerSide ? undefined : grades[skill.slug];
+
+                function badgeStyle(grade: number | "not_legal" | "no_concept") {
+                  return {
+                    backgroundColor: grade === "not_legal" ? "var(--color-danger)" : "var(--color-border)",
+                    color: grade === "not_legal" ? "var(--color-on-danger)" : "var(--color-text)",
+                  };
+                }
+                function badgeText(grade: number | "not_legal" | "no_concept") {
+                  if (grade === "not_legal") return "DQ";
+                  if (grade === "no_concept") return "NC";
+                  return String(grade);
+                }
+
                 return (
                   <li key={skill.id} className="border-b border-border">
                     <button
@@ -130,24 +145,25 @@ export default function SwimmerSkillsHistory({
                     >
                       <span>{skill.name}</span>
                       <span className="flex items-center gap-2">
-                        {currentGrade !== undefined && (
-                          <span
-                            className="text-xs font-semibold px-1.5 py-0.5 rounded"
-                            style={{
-                              backgroundColor:
-                                currentGrade === "not_legal"
-                                  ? "var(--color-danger)"
-                                  : "var(--color-border)",
-                              color:
-                                currentGrade === "not_legal" ? "var(--color-on-danger)" : "var(--color-text)",
-                            }}
-                          >
-                            {currentGrade === "not_legal"
-                              ? "DQ"
-                              : currentGrade === "no_concept"
-                                ? "NC"
-                                : String(currentGrade)}
-                          </span>
+                        {skill.ratedPerSide ? (
+                          <>
+                            {leftGrade !== undefined && (
+                              <span className="text-xs font-semibold px-1.5 py-0.5 rounded" style={badgeStyle(leftGrade)}>
+                                L {badgeText(leftGrade)}
+                              </span>
+                            )}
+                            {rightGrade !== undefined && (
+                              <span className="text-xs font-semibold px-1.5 py-0.5 rounded" style={badgeStyle(rightGrade)}>
+                                R {badgeText(rightGrade)}
+                              </span>
+                            )}
+                          </>
+                        ) : (
+                          singleGrade !== undefined && (
+                            <span className="text-xs font-semibold px-1.5 py-0.5 rounded" style={badgeStyle(singleGrade)}>
+                              {badgeText(singleGrade)}
+                            </span>
+                          )
                         )}
                         <span aria-hidden="true">{isOpen ? "▲" : "▼"}</span>
                       </span>

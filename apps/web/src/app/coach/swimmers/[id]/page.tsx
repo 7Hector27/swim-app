@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import type { StartGradeResult } from "@swim-app/shared";
+import type { SwimmerSkillsResponse } from "@swim-app/shared";
 
 import AccountInactiveScreen from "@/components/AccountInactiveScreen";
 import CoachSwimmerDetailContent from "@/content/CoachSwimmerDetailContent";
@@ -31,9 +31,9 @@ export default async function CoachSwimmerPage({ params }: CoachSwimmerPageProps
     throw new Error(`Failed to load swimmer (status ${swimmerResult.status})`);
   }
 
-  const grades: Record<string, number | "not_legal" | "no_concept"> = skillsResult.ok ? skillsResult.data.grades : {};
-  const startGrades: Record<string, StartGradeResult> = skillsResult.ok ? skillsResult.data.startGrades : {};
-  const coachingPriorities: Array<{ targetSlug: string; chain: Array<{ slug: string }> }> = skillsResult.ok ? skillsResult.data.coachingPriorities : [];
+  const grades: SwimmerSkillsResponse["grades"] = skillsResult.ok ? skillsResult.data.grades : {};
+  const startGrades: SwimmerSkillsResponse["startGrades"] = skillsResult.ok ? skillsResult.data.startGrades : {};
+  const coachingPriorities: SwimmerSkillsResponse["coachingPriorities"] = skillsResult.ok ? skillsResult.data.coachingPriorities : [];
   const categories = categoriesResult.ok ? categoriesResult.categories : [];
 
   return (
