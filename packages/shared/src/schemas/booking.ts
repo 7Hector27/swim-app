@@ -107,6 +107,84 @@ export const UpsertTravelBufferBodySchema = z.object({
 });
 export type UpsertTravelBufferBody = z.infer<typeof UpsertTravelBufferBodySchema>;
 
+// ── Lessons ───────────────────────────────────────────────────────────────────
+
+export const LessonStatusSchema = z.enum([
+  "pending",
+  "approved",
+  "declined",
+  "expired",
+  "canceled",
+  "no_show",
+  "completed",
+]);
+export type LessonStatus = z.infer<typeof LessonStatusSchema>;
+
+export const LessonTypeSchema = z.enum(["private", "family"]);
+export type LessonType = z.infer<typeof LessonTypeSchema>;
+
+export const CreateLessonBodySchema = z.object({
+  startsAt: z.string().datetime({ offset: true }),
+  durationMinutes: z.union([z.literal(30), z.literal(45), z.literal(60)]),
+  locationId: z.string().uuid(),
+  swimmerIds: z.array(z.string().uuid()).min(1).max(4),
+});
+export type CreateLessonBody = z.infer<typeof CreateLessonBodySchema>;
+
+export const AvailableSlotsQuerySchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  durationMinutes: z
+    .string()
+    .transform((value) => parseInt(value, 10))
+    .pipe(z.union([z.literal(30), z.literal(45), z.literal(60)])),
+  locationId: z.string().uuid(),
+});
+export type AvailableSlotsQuery = z.infer<typeof AvailableSlotsQuerySchema>;
+
+export const LessonSwimmerSchema = z.object({
+  swimmerId: z.string().uuid(),
+  firstName: z.string(),
+  lastName: z.string(),
+});
+export type LessonSwimmer = z.infer<typeof LessonSwimmerSchema>;
+
+export const LessonResponseSchema = z.object({
+  id: z.string().uuid(),
+  householdId: z.string().uuid(),
+  locationId: z.string().uuid(),
+  startsAt: z.string().datetime({ offset: true }),
+  durationMinutes: z.union([z.literal(30), z.literal(45), z.literal(60)]),
+  type: LessonTypeSchema,
+  status: LessonStatusSchema,
+  swimmers: z.array(LessonSwimmerSchema),
+  expiresAt: z.string().datetime({ offset: true }).nullable(),
+  approvedAt: z.string().datetime({ offset: true }).nullable(),
+  declinedAt: z.string().datetime({ offset: true }).nullable(),
+  declineReason: z.string().nullable(),
+  createdAt: z.string().datetime({ offset: true }),
+});
+export type LessonResponse = z.infer<typeof LessonResponseSchema>;
+
+export const ApproveLessonBodySchema = z.object({});
+export type ApproveLessonBody = z.infer<typeof ApproveLessonBodySchema>;
+
+export const DeclineLessonBodySchema = z.object({
+  reason: z.string().optional(),
+});
+export type DeclineLessonBody = z.infer<typeof DeclineLessonBodySchema>;
+
+export const CoachListLessonsQuerySchema = z.object({
+  status: LessonStatusSchema.optional(),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  householdId: z.string().uuid().optional(),
+});
+export type CoachListLessonsQuery = z.infer<typeof CoachListLessonsQuerySchema>;
+
+export const AvailableSlotSchema = z.object({
+  startsAt: z.string().datetime({ offset: true }),
+});
+export type AvailableSlot = z.infer<typeof AvailableSlotSchema>;
+
 // ── Season summer end dates ───────────────────────────────────────────────────
 
 export const SeasonSummerEndDateSchema = z.object({
