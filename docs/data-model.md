@@ -286,6 +286,71 @@ RLS is enabled. Policies TBD.
 
 ---
 
+### `lessons`
+
+One row per lesson booking request.
+
+| Column | Type | Nullable | Default | Notes |
+|---|---|---|---|---|
+| `id` | `uuid` | no | `gen_random_uuid()` | Primary key |
+| `household_id` | `uuid` | no | — | FK → `households.id` (restrict on delete) |
+| `location_id` | `uuid` | no | — | FK → `lesson_locations.id` (restrict on delete) |
+| `starts_at` | `timestamptz` | no | — | Stored in UTC; displayed in America/Los_Angeles |
+| `duration_minutes` | `integer` | no | — | CHECK IN (30, 45, 60) |
+| `type` | `lesson_type` | no | — | Enum: `private` (1 swimmer), `family` (2–4 swimmers) |
+| `status` | `lesson_status` | no | `'pending'` | Enum: `pending`, `approved`, `declined`, `expired`, `canceled`, `no_show`, `completed` |
+| `requested_by` | `uuid` | no | — | FK → `profiles.id`. Profile that submitted the booking. |
+| `approved_at` | `timestamptz` | yes | — | Set on approval. Null for pending/declined/etc. |
+| `approved_by` | `uuid` | yes | — | FK → `profiles.id`. Null = system auto-approval. |
+| `declined_at` | `timestamptz` | yes | — | |
+| `declined_by` | `uuid` | yes | — | FK → `profiles.id` |
+| `decline_reason` | `text` | yes | — | Optional coach note on decline |
+| `canceled_at` | `timestamptz` | yes | — | |
+| `canceled_by` | `uuid` | yes | — | FK → `profiles.id` |
+| `no_show_at` | `timestamptz` | yes | — | |
+| `no_show_by` | `uuid` | yes | — | FK → `profiles.id` |
+| `completed_at` | `timestamptz` | yes | — | Set by cron auto-complete or coach manual action |
+| `expires_at` | `timestamptz` | yes | — | `starts_at − 16 h`; null for auto-approved lessons |
+| `google_calendar_event_id` | `text` | yes | — | Populated in PR 6 |
+| `calendar_sync_status` | `text` | no | `'not_synced'` | CHECK IN ('not_synced', 'synced', 'sync_failed') |
+| `calendar_sync_error` | `text` | yes | — | Last sync error message |
+| `calendar_sync_attempts` | `integer` | no | `0` | |
+| `created_at` | `timestamptz` | no | `now()` | |
+| `updated_at` | `timestamptz` | no | `now()` | Auto-updated |
+
+RLS is enabled. Policies TBD.
+
+**Status transitions:**
+- `pending` → `approved` (coach approves or system auto-approves)
+- `pending` → `declined` (coach declines)
+- `pending` → `expired` (cron tick fires after `expires_at`; lazy expiry on read)
+- `approved` → `completed` (cron tick fires after lesson end time)
+- `approved` or `pending` → `canceled`
+- `approved` → `no_show`
+
+**Slot-blocking:** Only `pending` and `approved` lessons block slots in `computeAvailableSlots`. All other statuses are excluded.
+
+**Approval gate:** See ADR 021. A household auto-approves at a given location once they have at least one prior `approved` or `completed` lesson there.
+
+---
+
+### `lesson_swimmers`
+
+Junction table linking a lesson to the swimmers participating in it. One row per (lesson, swimmer) pair.
+
+| Column | Type | Nullable | Notes |
+|---|---|---|---|
+| `lesson_id` | `uuid` | no | PK component; FK → `lessons.id` (cascade on delete) |
+| `swimmer_id` | `uuid` | no | PK component; FK → `swimmers.id` (restrict on delete) |
+
+Constraints: composite PK `(lesson_id, swimmer_id)`.
+
+RLS is enabled. Policies TBD.
+
+**Notes:** Swimmers are restricted (not cascaded) on delete so that archiving a swimmer does not silently erase lesson history. A swimmer with past lessons cannot be hard-deleted.
+
+---
+
 ## Skills catalog
 
 Reference data for the swimmer skills rubric. Loaded via `pnpm db:sync-catalog` (idempotent upsert, never auto-runs). See `docs/reference/skill-rubric.md` for the source rubric and `apps/api/src/db/reference/skillsCatalog.ts` for the typed catalog.

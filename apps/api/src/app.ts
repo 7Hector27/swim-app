@@ -21,6 +21,9 @@ import { householdsRouter } from "./routes/households";
 import { invitesRouter } from "./routes/invites";
 import { locationsRouter } from "./routes/locations";
 import { coachAvailabilityRouter } from "./routes/coachAvailability";
+import { lessonsRouter } from "./routes/lessons";
+import { coachLessonsRouter } from "./routes/coachLessons";
+import { internalRouter } from "./routes/internal";
 import {
   calculateAge,
   HealthQuerySchema,
@@ -167,6 +170,9 @@ export function createApp(logger: Logger) {
   app.use("/invites", invitesRouter);
   app.use("/locations", locationsRouter);
   app.use("/coach", coachAvailabilityRouter);
+  app.use("/lessons", lessonsRouter);
+  app.use("/coach", coachLessonsRouter);
+  app.use("/internal", internalRouter);
 
   app.use(errorHandler);
 

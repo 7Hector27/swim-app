@@ -67,3 +67,9 @@ All signed-in routes are guarded by `requireAuth()` (`apps/web/src/lib/requireAu
 | `GET` | `/coach/swimmers` | requireCoach | All active swimmers sorted by last name |
 | `GET` | `/coach/swimmers/:id` | requireCoach | Swimmer detail with guardians (fullName + phone) |
 | `PATCH` | `/coach/swimmers/:id/visibility` | requireCoach | Set `isPublic` to `false`; idempotent |
+| `GET` | `/lessons/available-slots` | requireUser | Compute open slots for a given date, duration, and location |
+| `POST` | `/lessons` | requireUser + requireParent + requireHouseholdMember + requireHouseholdRole("manager") | Submit a lesson booking request |
+| `GET` | `/coach/lessons` | requireCoach | List lessons; query: `status?`, `date?`, `householdId?` |
+| `PATCH` | `/coach/lessons/:id/approve` | requireCoach | Approve a pending lesson |
+| `PATCH` | `/coach/lessons/:id/decline` | requireCoach | Decline a pending lesson; body: `{ reason? }` |
+| `POST` | `/internal/cron/tick` | CRON_SECRET header | Expire overdue pending lessons; auto-complete finished approved lessons |

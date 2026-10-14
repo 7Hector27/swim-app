@@ -366,6 +366,68 @@ export const blockedTimes = pgTable(
   ],
 ).enableRLS();
 
+// ── Lessons ───────────────────────────────────────────────────────────────────
+
+export const lessonStatusEnum = pgEnum("lesson_status", [
+  "pending",
+  "approved",
+  "declined",
+  "expired",
+  "canceled",
+  "no_show",
+  "completed",
+]);
+
+export const lessonTypeEnum = pgEnum("lesson_type", ["private", "family"]);
+
+export const lessons = pgTable("lessons", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  householdId: uuid("household_id").notNull().references(() => households.id, { onDelete: "restrict" }),
+  locationId: uuid("location_id").notNull().references(() => lessonLocations.id, { onDelete: "restrict" }),
+  startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
+  durationMinutes: integer("duration_minutes").notNull(),
+  type: lessonTypeEnum("type").notNull(),
+  status: lessonStatusEnum("status").notNull().default("pending"),
+  requestedBy: uuid("requested_by").notNull().references(() => profiles.id),
+  approvedAt: timestamp("approved_at", { withTimezone: true }),
+  approvedBy: uuid("approved_by").references(() => profiles.id),
+  declinedAt: timestamp("declined_at", { withTimezone: true }),
+  declinedBy: uuid("declined_by").references(() => profiles.id),
+  declineReason: text("decline_reason"),
+  canceledAt: timestamp("canceled_at", { withTimezone: true }),
+  canceledBy: uuid("canceled_by").references(() => profiles.id),
+  noShowAt: timestamp("no_show_at", { withTimezone: true }),
+  noShowBy: uuid("no_show_by").references(() => profiles.id),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
+  googleCalendarEventId: text("google_calendar_event_id"),
+  calendarSyncStatus: text("calendar_sync_status").notNull().default("not_synced"),
+  calendarSyncError: text("calendar_sync_error"),
+  calendarSyncAttempts: integer("calendar_sync_attempts").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdateFn(() => new Date()),
+}, (table) => [
+  check(
+    "lessons_duration_valid",
+    sql`${table.durationMinutes} IN (30, 45, 60)`,
+  ),
+  check(
+    "lessons_calendar_sync_status_valid",
+    sql`${table.calendarSyncStatus} IN ('not_synced', 'synced', 'sync_failed')`,
+  ),
+]).enableRLS();
+
+export const lessonSwimmers = pgTable(
+  "lesson_swimmers",
+  {
+    lessonId: uuid("lesson_id").notNull().references(() => lessons.id, { onDelete: "cascade" }),
+    swimmerId: uuid("swimmer_id").notNull().references(() => swimmers.id, { onDelete: "restrict" }),
+  },
+  (table) => [
+    primaryKey({ columns: [table.lessonId, table.swimmerId] }),
+  ],
+).enableRLS();
+
 // ── Travel buffer overrides ───────────────────────────────────────────────────
 
 export const travelBufferOverrides = pgTable(
