@@ -258,7 +258,7 @@ export default function LessonDetailContent({ lesson, locations, isViewer }: Pro
                   <button
                     type="button"
                     onClick={() => cancelDialogRef.current?.showModal()}
-                    className="inline-flex items-center justify-center rounded-button bg-danger text-white font-bold text-sm px-5 h-11 transition-opacity hover:opacity-90"
+                    className="inline-flex items-center justify-center rounded-button bg-danger text-button-danger-text font-bold text-sm px-5 h-11 transition-opacity hover:opacity-90"
                   >
                     Cancel this lesson
                   </button>

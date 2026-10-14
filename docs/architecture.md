@@ -69,6 +69,10 @@ All signed-in routes are guarded by `requireAuth()` (`apps/web/src/lib/requireAu
 | `PATCH` | `/coach/swimmers/:id/visibility` | requireCoach | Set `isPublic` to `false`; idempotent |
 | `GET` | `/lessons/available-slots` | requireUser | Compute open slots for a given date, duration, and location |
 | `POST` | `/lessons` | requireUser + requireParent + requireHouseholdMember + requireHouseholdRole("manager") | Submit a lesson booking request |
+| `GET` | `/lessons` | requireUser + requireParent + requireHouseholdMember | List upcoming (pending + approved) lessons for the caller's household |
+| `GET` | `/lessons/:id` | requireUser + requireParent + requireHouseholdMember | Lesson detail with swimmers for the caller's household |
+| `DELETE` | `/lessons/:id` | requireUser + requireParentOrCoach | Cancel a lesson; parent must be manager or owner; coach may cancel any |
+| `PATCH` | `/lessons/:id` | requireUser + requireParentOrCoach | Reschedule or adjust duration/location; advisory lock + slot re-check; parent must be manager or owner |
 | `GET` | `/coach/lessons` | requireCoach | List lessons; query: `status?`, `date?`, `householdId?` |
 | `PATCH` | `/coach/lessons/:id/approve` | requireCoach | Approve a pending lesson |
 | `PATCH` | `/coach/lessons/:id/decline` | requireCoach | Decline a pending lesson; body: `{ reason? }` |

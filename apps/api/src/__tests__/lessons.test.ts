@@ -106,6 +106,18 @@ const viewerProfile = {
   updatedAt: now,
 };
 
+// A profile whose role is neither "parent" nor "coach" — blocked by requireParentOrCoach.
+const otherRoleProfile = {
+  id: "aaaaaaaa-0000-0000-0000-000000000077",
+  role: "admin" as string,
+  fullName: "Other",
+  phone: null,
+  ageAttestedAt: now,
+  disabledAt: null,
+  createdAt: now,
+  updatedAt: now,
+};
+
 const swimmerRow = {
   id: SWIMMER_ID,
   householdId: HOUSEHOLD_ID,
@@ -921,6 +933,17 @@ describe("DELETE /lessons/:id", () => {
 
     expect(res.status).toBe(204);
   });
+
+  it("returns 403 when caller role is neither parent nor coach", async () => {
+    authAs(otherRoleProfile);
+    mockDbSelect.mockReturnValueOnce(requireUserSelect(otherRoleProfile));
+
+    const res = await request(app)
+      .delete(`/lessons/${LESSON_ID}`)
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(403);
+  });
 });
 
 // ── PATCH /lessons/:id ────────────────────────────────────────────────────────
@@ -1092,5 +1115,87 @@ describe("PATCH /lessons/:id", () => {
       .send({ durationMinutes: 45 });
 
     expect(res.status).toBe(403);
+  });
+
+  it("returns 403 when caller role is neither parent nor coach", async () => {
+    authAs(otherRoleProfile);
+    mockDbSelect.mockReturnValueOnce(requireUserSelect(otherRoleProfile));
+
+    const res = await request(app)
+      .patch(`/lessons/${LESSON_ID}`)
+      .set("Authorization", "Bearer token")
+      .send({ durationMinutes: 45 });
+
+    expect(res.status).toBe(403);
+  });
+
+  it("duration-only PATCH extending into next lesson returns 422 slot_unavailable", async () => {
+    // No startsAt — honor-system edit. computeAvailableSlots returns empty because
+    // the extended duration (60 min) conflicts with the next lesson on the same day.
+    authAs(parentProfile);
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(parentProfile))
+      .mockReturnValueOnce(requireHouseholdMemberSelect(HOUSEHOLD_ID, "owner"))
+      .mockReturnValueOnce(limitSelect([baseLessonRow]))
+      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([configRow]) }) })
+      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([]) }) }) });
+
+    mockComputeSlots.mockReturnValueOnce([]);
+
+    mockDbTransaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) => {
+      const tx = {
+        execute: vi.fn().mockResolvedValue(undefined),
+        select: vi.fn()
+          .mockReturnValueOnce({ from: vi.fn().mockResolvedValue([]) })
+          .mockReturnValueOnce({ from: vi.fn().mockResolvedValue([]) })
+          .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) }) }),
+        update: vi.fn(),
+        insert: vi.fn(),
+      };
+      return callback(tx);
+    });
+
+    const res = await request(app)
+      .patch(`/lessons/${LESSON_ID}`)
+      .set("Authorization", "Bearer token")
+      .send({ durationMinutes: 60 });
+
+    expect(res.status).toBe(422);
+    expect(res.body.error).toBe("slot_unavailable");
+  });
+
+  it("duration-only PATCH extending past daily cap returns 422 slot_unavailable", async () => {
+    // No startsAt — honor-system edit. computeAvailableSlots returns empty because
+    // increasing duration to 60 min would push total daily minutes past maxDailyLessonMinutes.
+    authAs(parentProfile);
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(parentProfile))
+      .mockReturnValueOnce(requireHouseholdMemberSelect(HOUSEHOLD_ID, "owner"))
+      .mockReturnValueOnce(limitSelect([baseLessonRow]))
+      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([configRow]) }) })
+      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([]) }) }) });
+
+    mockComputeSlots.mockReturnValueOnce([]);
+
+    mockDbTransaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) => {
+      const tx = {
+        execute: vi.fn().mockResolvedValue(undefined),
+        select: vi.fn()
+          .mockReturnValueOnce({ from: vi.fn().mockResolvedValue([]) })
+          .mockReturnValueOnce({ from: vi.fn().mockResolvedValue([]) })
+          .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) }) }),
+        update: vi.fn(),
+        insert: vi.fn(),
+      };
+      return callback(tx);
+    });
+
+    const res = await request(app)
+      .patch(`/lessons/${LESSON_ID}`)
+      .set("Authorization", "Bearer token")
+      .send({ durationMinutes: 60 });
+
+    expect(res.status).toBe(422);
+    expect(res.body.error).toBe("slot_unavailable");
   });
 });
