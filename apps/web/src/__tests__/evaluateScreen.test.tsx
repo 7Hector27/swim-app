@@ -1,5 +1,5 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 
 // Mock SiteNav and SiteFooter (server components) to avoid import errors
 vi.mock("@/components/SiteNav", () => ({ default: () => null }));
@@ -16,8 +16,10 @@ import GradeSelector from "../content/EvaluateContent/GradeSelector";
 import SkillGradeRow from "../content/EvaluateContent/SkillGradeRow";
 import StartGroupSection from "../content/EvaluateContent/StartGroupSection";
 import UndoToast from "../content/EvaluateContent/UndoToast";
+import EvaluateContent from "../content/EvaluateContent/EvaluateContent";
 import { canSubmit, buildRatingsArray, defaultSkillDraft, initialSessionDraft } from "../content/EvaluateContent/helpers";
-import type { SkillForRating } from "@swim-app/shared";
+import { submitEvaluation } from "../content/EvaluateContent/actions";
+import type { SkillForRating, CategoriesResponse, CoachSwimmerDetail } from "@swim-app/shared";
 
 // ── Test data ─────────────────────────────────────────────────────────────────
 
@@ -228,6 +230,171 @@ describe("StartGroupSection", () => {
     );
     // At least one DQ element must be present (pill and/or legend badge)
     expect(screen.getAllByText("DQ").length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+// ── Draft persistence — full component ────────────────────────────────────────
+
+const SWIMMER_ID = "00000000-0000-0000-aaaa-000000000001";
+const OTHER_SWIMMER_ID = "00000000-0000-0000-aaaa-000000000002";
+const CAT_A_ID = "00000000-0000-0000-bbbb-000000000001";
+const CAT_B_ID = "00000000-0000-0000-bbbb-000000000002";
+const SKILL_A_ID = "00000000-0000-0000-cccc-000000000001";
+const SKILL_B_ID = "00000000-0000-0000-cccc-000000000002";
+
+const SWIMMER_DETAIL: CoachSwimmerDetail = {
+  id: SWIMMER_ID,
+  firstName: "Alex",
+  lastName: "Smith",
+  age: 10,
+  sex: "female",
+  isPublic: false,
+  createdAt: "2025-01-01T00:00:00.000Z",
+  updatedAt: "2025-01-01T00:00:00.000Z",
+  clubs: [],
+  currentLeagues: [],
+  memberNames: [],
+  birthDate: "2015-01-01",
+  members: [],
+  homePool: null,
+};
+
+const TEST_CATEGORIES: CategoriesResponse = [
+  {
+    id: CAT_A_ID,
+    slug: "freestyle",
+    name: "Freestyle",
+    sortOrder: 1,
+    skills: [{
+      id: SKILL_A_ID, slug: "free-kick", name: "Freestyle Kick",
+      type: "rubric", unit: null, ratedPerSide: false,
+      parentSkillId: null, sortOrder: 1, faultTags: [],
+    }],
+  },
+  {
+    id: CAT_B_ID,
+    slug: "backstroke",
+    name: "Backstroke",
+    sortOrder: 2,
+    skills: [{
+      id: SKILL_B_ID, slug: "back-kick", name: "Backstroke Kick",
+      type: "rubric", unit: null, ratedPerSide: false,
+      parentSkillId: null, sortOrder: 1, faultTags: [],
+    }],
+  },
+];
+
+const metaKey = (swimId: string) => `evaluate-draft-meta-${swimId}`;
+const skillsKey = (swimId: string, catId: string) => `evaluate-draft-skills-${swimId}-${catId}`;
+
+describe("draft persistence — full component", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.mocked(submitEvaluation).mockResolvedValue({ status: "idle" });
+    mockFetch.mockResolvedValue({ ok: true, json: async () => ({ suggestion: null }) });
+  });
+
+  afterEach(() => {
+    localStorage.clear();
+    vi.clearAllMocks();
+  });
+
+  it("restores coaching priority and category from a saved draft on mount", async () => {
+    localStorage.setItem(metaKey(SWIMMER_ID), JSON.stringify({
+      categoryId: CAT_A_ID,
+      sessionDate: "2026-10-14",
+      context: "practice",
+      coachingPriority: "Fix the kick technique",
+    }));
+    localStorage.setItem(skillsKey(SWIMMER_ID, CAT_A_ID), JSON.stringify({ skills: {} }));
+
+    render(<EvaluateContent swimmer={SWIMMER_DETAIL} categories={TEST_CATEGORIES} accessToken="tok" />);
+
+    await waitFor(() => {
+      expect(
+        screen.getByPlaceholderText(/main focus/i),
+      ).toHaveValue("Fix the kick technique");
+    });
+  });
+
+  it("does not restore a different swimmer's draft", async () => {
+    localStorage.setItem(metaKey(OTHER_SWIMMER_ID), JSON.stringify({
+      categoryId: CAT_A_ID,
+      sessionDate: "2026-10-14",
+      context: "practice",
+      coachingPriority: "Wrong swimmer priority",
+    }));
+
+    render(<EvaluateContent swimmer={SWIMMER_DETAIL} categories={TEST_CATEGORIES} accessToken="tok" />);
+
+    await act(async () => {});
+
+    expect(screen.getByPlaceholderText(/main focus/i)).toHaveValue("");
+  });
+
+  it("loads the correct skill draft per category and does not bleed across categories", async () => {
+    localStorage.setItem(skillsKey(SWIMMER_ID, CAT_A_ID), JSON.stringify({
+      skills: { [SKILL_A_ID]: { ...defaultSkillDraft(), grade: 3 } },
+    }));
+    localStorage.setItem(skillsKey(SWIMMER_ID, CAT_B_ID), JSON.stringify({
+      skills: { [SKILL_B_ID]: { ...defaultSkillDraft(), grade: 5 } },
+    }));
+
+    render(<EvaluateContent swimmer={SWIMMER_DETAIL} categories={TEST_CATEGORIES} accessToken="tok" />);
+
+    const select = screen.getByRole("combobox");
+
+    fireEvent.change(select, { target: { value: CAT_A_ID } });
+    await waitFor(() => {
+      const grade3 = screen.getAllByRole("radio", { name: "3" });
+      expect(grade3.some((btn) => btn.getAttribute("aria-checked") === "true")).toBe(true);
+    });
+
+    fireEvent.change(select, { target: { value: CAT_B_ID } });
+    await waitFor(() => {
+      const grade5 = screen.getAllByRole("radio", { name: "5" });
+      expect(grade5.some((btn) => btn.getAttribute("aria-checked") === "true")).toBe(true);
+      // cat A's grade 3 must not be selected in cat B's skill list
+      const grade3 = screen.getAllByRole("radio", { name: "3" });
+      expect(grade3.every((btn) => btn.getAttribute("aria-checked") === "false")).toBe(true);
+    });
+  });
+
+  it("clears both localStorage keys after a successful save", async () => {
+    localStorage.setItem(metaKey(SWIMMER_ID), JSON.stringify({
+      categoryId: CAT_A_ID,
+      sessionDate: "2026-10-14",
+      context: "practice",
+      coachingPriority: "Fix kick",
+    }));
+    localStorage.setItem(skillsKey(SWIMMER_ID, CAT_A_ID), JSON.stringify({
+      skills: { [SKILL_A_ID]: { ...defaultSkillDraft(), grade: 3 } },
+    }));
+    vi.mocked(submitEvaluation).mockResolvedValue({
+      status: "saved",
+      sessionId: "00000000-0000-0000-0000-000000000099",
+      ratingIds: [],
+    });
+
+    const { container } = render(
+      <EvaluateContent swimmer={SWIMMER_DETAIL} categories={TEST_CATEGORIES} accessToken="tok" />,
+    );
+
+    // Wait for draft to be restored (priority textarea populated)
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText(/main focus/i)).toHaveValue("Fix kick");
+    });
+
+    await act(async () => {
+      fireEvent.submit(container.querySelector("form")!);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText(/evaluation saved/i)).toBeInTheDocument();
+    });
+
+    expect(localStorage.getItem(metaKey(SWIMMER_ID))).toBeNull();
+    expect(localStorage.getItem(skillsKey(SWIMMER_ID, CAT_A_ID))).toBeNull();
   });
 });
 
