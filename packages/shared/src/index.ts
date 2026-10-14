@@ -10,6 +10,7 @@ export {
   findDeepestLowFoundation,
   headPositionOverall,
   latestEffectiveRatings,
+  weakerSideGrade,
   SkillGradeSchema,
   BuiltOnGraphSchema,
   GradeMapSchema,
@@ -17,7 +18,7 @@ export {
   RatingRecordSchema,
   PerStrokeGradesSchema,
 } from "./lib/dependencyMap";
-export type { SkillGrade, BuiltOnGraph, GradeMap, SortOrderMap, RatingRecord, PerStrokeGrades } from "./lib/dependencyMap";
+export type { SkillGrade, BuiltOnGraph, GradeMap, SortOrderMap, RatingRecord, PerStrokeGrades, ChainEntry } from "./lib/dependencyMap";
 
 export type { HealthResponse } from "./schemas/health";
 export { HealthQuerySchema, HealthResponseSchema } from "./schemas/health";

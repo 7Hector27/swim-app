@@ -24,6 +24,7 @@ export type SortOrderMap = z.infer<typeof SortOrderMapSchema>;
 export const RatingRecordSchema = z
   .object({
     skillSlug: z.string(),
+    side: z.enum(["left", "right"]).nullable(),
     grade: z
       .union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)])
       .nullable(),
@@ -67,6 +68,8 @@ export const PerStrokeGradesSchema = z.object({
 });
 export type PerStrokeGrades = z.infer<typeof PerStrokeGradesSchema>;
 
+export type ChainEntry = { slug: string; notAssessed: boolean };
+
 function numericGrade(grade: SkillGrade): number {
   if (grade === "not_legal" || grade === "no_concept") return 0;
   if (grade === null) return -1;
@@ -108,36 +111,58 @@ export function headPositionOverall(
   return Math.max(1, Math.floor(sum / count)) as 1 | 2 | 3 | 4 | 5;
 }
 
-// Returns the latest non-voided grade per skill from a swimmer's rating history.
-// notLegal and noConcept flags take precedence over the numeric grade field.
-// Skills where every rating has been voided are absent from the result.
+// Returns the latest non-voided grade per skill (or per skill+side for sided skills)
+// from a swimmer's rating history. The key is `skillSlug` for non-sided skills and
+// `skillSlug:side` for side-rated skills. notLegal and noConcept flags take precedence
+// over the numeric grade field. Skills where every rating has been voided are absent.
 export function latestEffectiveRatings(history: RatingRecord[]): GradeMap {
-  const bySkill = new Map<string, RatingRecord[]>();
+  const byKey = new Map<string, RatingRecord[]>();
   for (const record of history) {
-    const existing = bySkill.get(record.skillSlug);
+    const key = record.side !== null ? `${record.skillSlug}:${record.side}` : record.skillSlug;
+    const existing = byKey.get(key);
     if (existing !== undefined) {
       existing.push(record);
     } else {
-      bySkill.set(record.skillSlug, [record]);
+      byKey.set(key, [record]);
     }
   }
 
   const result: GradeMap = {};
-  for (const [slug, records] of bySkill) {
+  for (const [key, records] of byKey) {
     const sorted = [...records].sort(
       (recordA, recordB) => Date.parse(recordB.ratedAt) - Date.parse(recordA.ratedAt),
     );
     const latest = sorted.find((record) => record.voidedAt === null);
     if (latest === undefined) continue;
     if (latest.notLegal) {
-      result[slug] = "not_legal";
+      result[key] = "not_legal";
     } else if (latest.noConcept) {
-      result[slug] = "no_concept";
+      result[key] = "no_concept";
     } else {
-      result[slug] = latest.grade;
+      result[key] = latest.grade;
     }
   }
   return result;
+}
+
+// Returns the effective grade for a side-rated skill given its left and right grades.
+// not_legal on either side → not_legal. Both no_concept → no_concept.
+// One no_concept → the other side's grade. One absent → the other side's grade.
+// Both numeric → the lower (weaker) grade.
+export function weakerSideGrade(
+  left: SkillGrade | undefined,
+  right: SkillGrade | undefined,
+): SkillGrade {
+  if (left === "not_legal" || right === "not_legal") return "not_legal";
+  const l = left === undefined ? null : left;
+  const r = right === undefined ? null : right;
+  if (l === "no_concept" && r === "no_concept") return "no_concept";
+  if (l === "no_concept") return r;
+  if (r === "no_concept") return l;
+  if (l === null && r === null) return null;
+  if (l === null) return r;
+  if (r === null) return l;
+  return Math.min(l, r) as 1 | 2 | 3 | 4 | 5;
 }
 
 // Walks the builtOn chain from targetSlug and returns the full chain from target
@@ -148,19 +173,22 @@ export function latestEffectiveRatings(history: RatingRecord[]): GradeMap {
 //
 // When multiple foundations are equally low, ties break by sortOrder (ascending).
 // Without sortOrder, iteration order (first match) acts as the fallback.
+//
+// When no low foundation exists, checks for an unrated (null) foundation and
+// includes it as the final entry with notAssessed: true.
 export function findDeepestLowFoundation(
   targetSlug: string,
   grades: GradeMap,
   graph: BuiltOnGraph,
   sortOrder?: SortOrderMap,
-): string[] | null {
+): ChainEntry[] | null {
   const targetGrade = grades[targetSlug] ?? null;
   if (!isLow(targetGrade, null)) return null;
 
   const visited = new Set<string>();
 
-  function descend(slug: string): string[] {
-    if (visited.has(slug)) return [slug];
+  function descend(slug: string): ChainEntry[] {
+    if (visited.has(slug)) return [{ slug, notAssessed: false }];
     visited.add(slug);
 
     const currentGrade = grades[slug] ?? null;
@@ -187,8 +215,25 @@ export function findDeepestLowFoundation(
       }
     }
 
-    if (bestSlug === null) return [slug];
-    return [slug, ...descend(bestSlug)];
+    if (bestSlug === null) {
+      let unratedSlug: string | null = null;
+      let unratedOrder = Infinity;
+      for (const [index, foundationSlug] of foundations.entries()) {
+        const foundationGrade = grades[foundationSlug] ?? null;
+        if (foundationGrade === null) {
+          const order = sortOrder?.[foundationSlug] ?? index;
+          if (order < unratedOrder) {
+            unratedOrder = order;
+            unratedSlug = foundationSlug;
+          }
+        }
+      }
+      if (unratedSlug !== null) {
+        return [{ slug, notAssessed: false }, { slug: unratedSlug, notAssessed: true }];
+      }
+      return [{ slug, notAssessed: false }];
+    }
+    return [{ slug, notAssessed: false }, ...descend(bestSlug)];
   }
 
   return descend(targetSlug);

@@ -18,6 +18,7 @@ function rating(
 ): RatingRecord {
   return {
     skillSlug,
+    side: null,
     grade: 3,
     notLegal: false,
     noConcept: false,

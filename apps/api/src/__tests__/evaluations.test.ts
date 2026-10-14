@@ -176,36 +176,36 @@ beforeEach(() => {
 describe("unauthenticated", () => {
   it("POST /swimmers/:id/sessions → 401", async () => {
     const res = await request(app)
-      .post(`/swimmers/${SWIMMER_ID}/sessions`)
+      .post(`/coach/swimmers/${SWIMMER_ID}/sessions`)
       .send(validSessionBody);
     expect(res.status).toBe(401);
   });
 
   it("DELETE /ratings/:id → 401", async () => {
-    const res = await request(app).delete(`/ratings/${RATING_ID}`);
+    const res = await request(app).delete(`/coach/ratings/${RATING_ID}`);
     expect(res.status).toBe(401);
   });
 
   it("PATCH /ratings/:id/void → 401", async () => {
     const res = await request(app)
-      .patch(`/ratings/${RATING_ID}/void`)
+      .patch(`/coach/ratings/${RATING_ID}/void`)
       .send({ reason: "mistake" });
     expect(res.status).toBe(401);
   });
 
   it("GET /swimmers/:id/skills → 401", async () => {
-    const res = await request(app).get(`/swimmers/${SWIMMER_ID}/skills`);
+    const res = await request(app).get(`/coach/swimmers/${SWIMMER_ID}/skills`);
     expect(res.status).toBe(401);
   });
 
   it("GET /swimmers/:id/skills/:skillId/ratings → 401", async () => {
-    const res = await request(app).get(`/swimmers/${SWIMMER_ID}/skills/${SKILL_ID}/ratings`);
+    const res = await request(app).get(`/coach/swimmers/${SWIMMER_ID}/skills/${SKILL_ID}/ratings`);
     expect(res.status).toBe(401);
   });
 
   it("GET /swimmers/:id/sessions/dependency-map → 401", async () => {
     const res = await request(app)
-      .get(`/swimmers/${SWIMMER_ID}/sessions/dependency-map`)
+      .get(`/coach/swimmers/${SWIMMER_ID}/sessions/dependency-map`)
       .query({ categoryId: CATEGORY_ID });
     expect(res.status).toBe(401);
   });
@@ -221,7 +221,7 @@ describe("parent role restrictions", () => {
 
   it("POST /swimmers/:id/sessions → 403 for parent", async () => {
     const res = await request(app)
-      .post(`/swimmers/${SWIMMER_ID}/sessions`)
+      .post(`/coach/swimmers/${SWIMMER_ID}/sessions`)
       .set("Authorization", "Bearer token")
       .send(validSessionBody);
     expect(res.status).toBe(403);
@@ -229,14 +229,14 @@ describe("parent role restrictions", () => {
 
   it("DELETE /ratings/:id → 403 for parent", async () => {
     const res = await request(app)
-      .delete(`/ratings/${RATING_ID}`)
+      .delete(`/coach/ratings/${RATING_ID}`)
       .set("Authorization", "Bearer token");
     expect(res.status).toBe(403);
   });
 
   it("PATCH /ratings/:id/void → 403 for parent", async () => {
     const res = await request(app)
-      .patch(`/ratings/${RATING_ID}/void`)
+      .patch(`/coach/ratings/${RATING_ID}/void`)
       .set("Authorization", "Bearer token")
       .send({ reason: "mistake" });
     expect(res.status).toBe(403);
@@ -253,7 +253,7 @@ describe("POST /swimmers/:id/sessions — validation", () => {
 
   it("missing coachingPriority → 422", async () => {
     const res = await request(app)
-      .post(`/swimmers/${SWIMMER_ID}/sessions`)
+      .post(`/coach/swimmers/${SWIMMER_ID}/sessions`)
       .set("Authorization", "Bearer token")
       .send({ ...validSessionBody, coachingPriority: "" });
     expect(res.status).toBe(422);
@@ -261,7 +261,7 @@ describe("POST /swimmers/:id/sessions — validation", () => {
 
   it("ratings array empty → 422", async () => {
     const res = await request(app)
-      .post(`/swimmers/${SWIMMER_ID}/sessions`)
+      .post(`/coach/swimmers/${SWIMMER_ID}/sessions`)
       .set("Authorization", "Bearer token")
       .send({ ...validSessionBody, ratings: [] });
     expect(res.status).toBe(422);
@@ -269,7 +269,7 @@ describe("POST /swimmers/:id/sessions — validation", () => {
 
   it("invalid context → 422", async () => {
     const res = await request(app)
-      .post(`/swimmers/${SWIMMER_ID}/sessions`)
+      .post(`/coach/swimmers/${SWIMMER_ID}/sessions`)
       .set("Authorization", "Bearer token")
       .send({ ...validSessionBody, context: "invalid" });
     expect(res.status).toBe(422);
@@ -277,13 +277,15 @@ describe("POST /swimmers/:id/sessions — validation", () => {
 
   it("archived skill in ratings → 422", async () => {
     mockDbSelect
-      .mockReturnValueOnce(requireUserSelect(profileCoach))
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachAvailabilityRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachLessonsRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // evaluationsRouter requireUser
       .mockReturnValueOnce(swimmerSelect(activeSwimmerRow))
       .mockReturnValueOnce(categorySelect(true))
       .mockReturnValueOnce(skillsSelect([archivedSkillRow]));
 
     const res = await request(app)
-      .post(`/swimmers/${SWIMMER_ID}/sessions`)
+      .post(`/coach/swimmers/${SWIMMER_ID}/sessions`)
       .set("Authorization", "Bearer token")
       .send(validSessionBody);
     expect(res.status).toBe(422);
@@ -297,7 +299,9 @@ describe("POST /swimmers/:id/sessions — validation", () => {
       parentSkillId: null,
     };
     mockDbSelect
-      .mockReturnValueOnce(requireUserSelect(profileCoach))
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachAvailabilityRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachLessonsRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // evaluationsRouter requireUser
       .mockReturnValueOnce(swimmerSelect(activeSwimmerRow))
       .mockReturnValueOnce(categorySelect(true))
       .mockReturnValueOnce(skillsSelect([wrongCategorySkill]));
@@ -308,7 +312,7 @@ describe("POST /swimmers/:id/sessions — validation", () => {
     mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: parentWhere }) });
 
     const res = await request(app)
-      .post(`/swimmers/${SWIMMER_ID}/sessions`)
+      .post(`/coach/swimmers/${SWIMMER_ID}/sessions`)
       .set("Authorization", "Bearer token")
       .send(validSessionBody);
     expect(res.status).toBe(422);
@@ -317,13 +321,15 @@ describe("POST /swimmers/:id/sessions — validation", () => {
 
   it("side missing when ratedPerSide=true → 422", async () => {
     mockDbSelect
-      .mockReturnValueOnce(requireUserSelect(profileCoach))
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachAvailabilityRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachLessonsRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // evaluationsRouter requireUser
       .mockReturnValueOnce(swimmerSelect(activeSwimmerRow))
       .mockReturnValueOnce(categorySelect(true))
       .mockReturnValueOnce(skillsSelect([ratedPerSideSkillRow]));
 
     const res = await request(app)
-      .post(`/swimmers/${SWIMMER_ID}/sessions`)
+      .post(`/coach/swimmers/${SWIMMER_ID}/sessions`)
       .set("Authorization", "Bearer token")
       .send({
         ...validSessionBody,
@@ -335,13 +341,15 @@ describe("POST /swimmers/:id/sessions — validation", () => {
 
   it("side present when ratedPerSide=false → 422", async () => {
     mockDbSelect
-      .mockReturnValueOnce(requireUserSelect(profileCoach))
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachAvailabilityRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachLessonsRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // evaluationsRouter requireUser
       .mockReturnValueOnce(swimmerSelect(activeSwimmerRow))
       .mockReturnValueOnce(categorySelect(true))
       .mockReturnValueOnce(skillsSelect([validSkillRow]));
 
     const res = await request(app)
-      .post(`/swimmers/${SWIMMER_ID}/sessions`)
+      .post(`/coach/swimmers/${SWIMMER_ID}/sessions`)
       .set("Authorization", "Bearer token")
       .send({
         ...validSessionBody,
@@ -353,13 +361,15 @@ describe("POST /swimmers/:id/sessions — validation", () => {
 
   it("invalid faultTag → 422", async () => {
     mockDbSelect
-      .mockReturnValueOnce(requireUserSelect(profileCoach))
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachAvailabilityRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachLessonsRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // evaluationsRouter requireUser
       .mockReturnValueOnce(swimmerSelect(activeSwimmerRow))
       .mockReturnValueOnce(categorySelect(true))
       .mockReturnValueOnce(skillsSelect([validSkillRow]));
 
     const res = await request(app)
-      .post(`/swimmers/${SWIMMER_ID}/sessions`)
+      .post(`/coach/swimmers/${SWIMMER_ID}/sessions`)
       .set("Authorization", "Bearer token")
       .send({
         ...validSessionBody,
@@ -371,13 +381,15 @@ describe("POST /swimmers/:id/sessions — validation", () => {
 
   it("measurement on non-measured skill → 422", async () => {
     mockDbSelect
-      .mockReturnValueOnce(requireUserSelect(profileCoach))
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachAvailabilityRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachLessonsRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // evaluationsRouter requireUser
       .mockReturnValueOnce(swimmerSelect(activeSwimmerRow))
       .mockReturnValueOnce(categorySelect(true))
       .mockReturnValueOnce(skillsSelect([validSkillRow])); // rubric type, not measured
 
     const res = await request(app)
-      .post(`/swimmers/${SWIMMER_ID}/sessions`)
+      .post(`/coach/swimmers/${SWIMMER_ID}/sessions`)
       .set("Authorization", "Bearer token")
       .send({
         ...validSessionBody,
@@ -414,11 +426,13 @@ describe("DELETE /ratings/:id", () => {
     ]);
     const ratingWhere = vi.fn().mockReturnValue({ limit: ratingLimit });
     mockDbSelect
-      .mockReturnValueOnce(requireUserSelect(profileCoach))
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachAvailabilityRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachLessonsRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // ratingsRouter requireUser
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: ratingWhere }) });
 
     const res = await request(app)
-      .delete(`/ratings/${RATING_ID}`)
+      .delete(`/coach/ratings/${RATING_ID}`)
       .set("Authorization", "Bearer token");
 
     expect(res.status).toBe(409);
@@ -436,11 +450,13 @@ describe("DELETE /ratings/:id", () => {
     ]);
     const ratingWhere = vi.fn().mockReturnValue({ limit: ratingLimit });
     mockDbSelect
-      .mockReturnValueOnce(requireUserSelect(profileCoach))
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachAvailabilityRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachLessonsRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // ratingsRouter requireUser
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: ratingWhere }) });
 
     const res = await request(app)
-      .delete(`/ratings/${RATING_ID}`)
+      .delete(`/coach/ratings/${RATING_ID}`)
       .set("Authorization", "Bearer token");
 
     expect(res.status).toBe(409);
@@ -458,11 +474,13 @@ describe("DELETE /ratings/:id", () => {
     ]);
     const ratingWhere = vi.fn().mockReturnValue({ limit: ratingLimit });
     mockDbSelect
-      .mockReturnValueOnce(requireUserSelect(profileCoach))
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachAvailabilityRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachLessonsRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // ratingsRouter requireUser
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: ratingWhere }) });
 
     const res = await request(app)
-      .delete(`/ratings/${RATING_ID}`)
+      .delete(`/coach/ratings/${RATING_ID}`)
       .set("Authorization", "Bearer token");
 
     expect(res.status).toBe(404);
@@ -503,11 +521,13 @@ describe("PATCH /ratings/:id/void", () => {
     ]);
     const ratingWhere = vi.fn().mockReturnValue({ limit: ratingLimit });
     mockDbSelect
-      .mockReturnValueOnce(requireUserSelect(profileCoach))
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachAvailabilityRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachLessonsRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // ratingsRouter requireUser
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: ratingWhere }) });
 
     const res = await request(app)
-      .patch(`/ratings/${RATING_ID}/void`)
+      .patch(`/coach/ratings/${RATING_ID}/void`)
       .set("Authorization", "Bearer token")
       .send({ reason: "new reason" });
 
@@ -516,10 +536,13 @@ describe("PATCH /ratings/:id/void", () => {
   });
 
   it("missing reason → 422", async () => {
-    mockDbSelect.mockReturnValue(requireUserSelect(profileCoach));
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachAvailabilityRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachLessonsRouter requireUser
+      .mockReturnValue(requireUserSelect(profileCoach));
 
     const res = await request(app)
-      .patch(`/ratings/${RATING_ID}/void`)
+      .patch(`/coach/ratings/${RATING_ID}/void`)
       .set("Authorization", "Bearer token")
       .send({ reason: "" });
 
@@ -553,11 +576,13 @@ describe("PATCH /ratings/:id/void", () => {
     ]);
     const ratingWhere = vi.fn().mockReturnValue({ limit: ratingLimit });
     mockDbSelect
-      .mockReturnValueOnce(requireUserSelect(profileCoach))
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachAvailabilityRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachLessonsRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // ratingsRouter requireUser
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: ratingWhere }) });
 
     const res = await request(app)
-      .patch(`/ratings/${RATING_ID}/void`)
+      .patch(`/coach/ratings/${RATING_ID}/void`)
       .set("Authorization", "Bearer token")
       .send({ reason: "mistake" });
 

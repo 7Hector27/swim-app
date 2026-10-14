@@ -9,10 +9,21 @@ import type {
   BuiltOnGraph,
   PerStrokeGrades,
   RatingRecord,
+  ChainEntry,
 } from "../lib/dependencyMap";
 
 const graph = (edges: BuiltOnGraph): BuiltOnGraph => edges;
 const grades = (g: GradeMap): GradeMap => g;
+
+/** Convenience: build a ChainEntry with notAssessed: false (the common case). */
+function entry(slug: string): ChainEntry {
+  return { slug, notAssessed: false };
+}
+
+/** Convenience: build an unrated ChainEntry. */
+function unrated(slug: string): ChainEntry {
+  return { slug, notAssessed: true };
+}
 
 describe("findDeepestLowFoundation", () => {
   // ── Target-lowness gate ──────────────────────────────────────────────────────
@@ -47,8 +58,8 @@ describe("findDeepestLowFoundation", () => {
     const g = graph({ target: ["foundation"], foundation: [] });
     const r = grades({ target: 2, foundation: 2 });
     expect(findDeepestLowFoundation("target", r, g)).toEqual([
-      "target",
-      "foundation",
+      entry("target"),
+      entry("foundation"),
     ]);
   });
 
@@ -56,15 +67,15 @@ describe("findDeepestLowFoundation", () => {
     const g = graph({ target: ["foundation"], foundation: [] });
     const r = grades({ target: 2, foundation: 1 });
     expect(findDeepestLowFoundation("target", r, g)).toEqual([
-      "target",
-      "foundation",
+      entry("target"),
+      entry("foundation"),
     ]);
   });
 
   it("grade 3 foundation is not low relative to a grade-2 target — chain stops at target", () => {
     const g = graph({ target: ["foundation"] });
     const r = grades({ target: 2, foundation: 3 });
-    expect(findDeepestLowFoundation("target", r, g)).toEqual(["target"]);
+    expect(findDeepestLowFoundation("target", r, g)).toEqual([entry("target")]);
   });
 
   // ── Special grades ──────────────────────────────────────────────────────────
@@ -72,21 +83,21 @@ describe("findDeepestLowFoundation", () => {
   it("not_legal target always counts as low — enters the chain", () => {
     const g = graph({ target: [] });
     const r = grades({ target: "not_legal" });
-    expect(findDeepestLowFoundation("target", r, g)).toEqual(["target"]);
+    expect(findDeepestLowFoundation("target", r, g)).toEqual([entry("target")]);
   });
 
   it("no_concept target always counts as low — enters the chain", () => {
     const g = graph({ target: [] });
     const r = grades({ target: "no_concept" });
-    expect(findDeepestLowFoundation("target", r, g)).toEqual(["target"]);
+    expect(findDeepestLowFoundation("target", r, g)).toEqual([entry("target")]);
   });
 
   it("not_legal foundation always counts as low regardless of supporter grade", () => {
     const g = graph({ target: ["foundation"], foundation: [] });
     const r = grades({ target: 2, foundation: "not_legal" });
     expect(findDeepestLowFoundation("target", r, g)).toEqual([
-      "target",
-      "foundation",
+      entry("target"),
+      entry("foundation"),
     ]);
   });
 
@@ -94,27 +105,33 @@ describe("findDeepestLowFoundation", () => {
     const g = graph({ target: ["foundation"], foundation: [] });
     const r = grades({ target: 2, foundation: "no_concept" });
     expect(findDeepestLowFoundation("target", r, g)).toEqual([
-      "target",
-      "foundation",
+      entry("target"),
+      entry("foundation"),
     ]);
   });
 
   it("not_legal target: foundation grade 3 is not low (relative check skipped for not_legal supporter)", () => {
     const g = graph({ target: ["foundation"] });
     const r = grades({ target: "not_legal", foundation: 3 });
-    expect(findDeepestLowFoundation("target", r, g)).toEqual(["target"]);
+    expect(findDeepestLowFoundation("target", r, g)).toEqual([entry("target")]);
   });
 
-  it("null foundation (not assessed) is not low — chain stops at target", () => {
+  it("null foundation (not assessed) — appended as notAssessed: true", () => {
     const g = graph({ target: ["foundation"] });
     const r = grades({ target: 2, foundation: null });
-    expect(findDeepestLowFoundation("target", r, g)).toEqual(["target"]);
+    expect(findDeepestLowFoundation("target", r, g)).toEqual([
+      entry("target"),
+      unrated("foundation"),
+    ]);
   });
 
-  it("missing foundation key in grade map is treated as null — chain stops at target", () => {
+  it("missing foundation key in grade map is treated as null — appended as notAssessed: true", () => {
     const g = graph({ target: ["foundation"] });
     const r = grades({ target: 2 }); // foundation omitted
-    expect(findDeepestLowFoundation("target", r, g)).toEqual(["target"]);
+    expect(findDeepestLowFoundation("target", r, g)).toEqual([
+      entry("target"),
+      unrated("foundation"),
+    ]);
   });
 
   // ── Multi-step chain ────────────────────────────────────────────────────────
@@ -123,9 +140,9 @@ describe("findDeepestLowFoundation", () => {
     const g = graph({ target: ["middle"], middle: ["root"], root: [] });
     const r = grades({ target: 2, middle: 2, root: 1 });
     expect(findDeepestLowFoundation("target", r, g)).toEqual([
-      "target",
-      "middle",
-      "root",
+      entry("target"),
+      entry("middle"),
+      entry("root"),
     ]);
   });
 
@@ -133,24 +150,30 @@ describe("findDeepestLowFoundation", () => {
     const g = graph({ target: ["middle"], middle: ["root"], root: [] });
     const r = grades({ target: 2, middle: 2, root: 4 });
     expect(findDeepestLowFoundation("target", r, g)).toEqual([
-      "target",
-      "middle",
+      entry("target"),
+      entry("middle"),
     ]);
   });
 
-  it("chain stops when a foundation is not assessed (null)", () => {
+  it("chain stops at null foundation — appended as notAssessed: true", () => {
     const g = graph({ target: ["middle"], middle: ["root"], root: [] });
     const r = grades({ target: 2, middle: 2, root: null });
     expect(findDeepestLowFoundation("target", r, g)).toEqual([
-      "target",
-      "middle",
+      entry("target"),
+      entry("middle"),
+      unrated("root"),
     ]);
   });
 
   it("three-step chain: all low down to the leaf", () => {
     const g = graph({ a: ["b"], b: ["c"], c: ["d"], d: [] });
     const r = grades({ a: 2, b: 1, c: 1, d: "not_legal" });
-    expect(findDeepestLowFoundation("a", r, g)).toEqual(["a", "b", "c", "d"]);
+    expect(findDeepestLowFoundation("a", r, g)).toEqual([
+      entry("a"),
+      entry("b"),
+      entry("c"),
+      entry("d"),
+    ]);
   });
 
   // ── Returns chain with only target when no lower-priority blocker ────────────
@@ -158,19 +181,19 @@ describe("findDeepestLowFoundation", () => {
   it("returns [target] when it has no foundations", () => {
     const g = graph({ target: [] });
     const r = grades({ target: 1 });
-    expect(findDeepestLowFoundation("target", r, g)).toEqual(["target"]);
+    expect(findDeepestLowFoundation("target", r, g)).toEqual([entry("target")]);
   });
 
   it("returns [target] when all foundations have passing grades", () => {
     const g = graph({ target: ["f1", "f2"] });
     const r = grades({ target: 2, f1: 4, f2: 5 });
-    expect(findDeepestLowFoundation("target", r, g)).toEqual(["target"]);
+    expect(findDeepestLowFoundation("target", r, g)).toEqual([entry("target")]);
   });
 
   it("returns [target] when target is not in the graph (no foundations known)", () => {
     const g = graph({});
     const r = grades({ target: 1 });
-    expect(findDeepestLowFoundation("target", r, g)).toEqual(["target"]);
+    expect(findDeepestLowFoundation("target", r, g)).toEqual([entry("target")]);
   });
 
   // ── Multiple foundations — picks the worst ─────────────────────────────────
@@ -178,13 +201,19 @@ describe("findDeepestLowFoundation", () => {
   it("when multiple foundations are low, descends into the one with the lowest grade", () => {
     const g = graph({ target: ["f1", "f2"], f1: [], f2: [] });
     const r = grades({ target: 2, f1: 2, f2: 1 });
-    expect(findDeepestLowFoundation("target", r, g)).toEqual(["target", "f2"]);
+    expect(findDeepestLowFoundation("target", r, g)).toEqual([
+      entry("target"),
+      entry("f2"),
+    ]);
   });
 
   it("not_legal beats a low numeric grade as the worst foundation", () => {
     const g = graph({ target: ["f1", "f2"], f1: [], f2: [] });
     const r = grades({ target: 2, f1: 2, f2: "not_legal" });
-    expect(findDeepestLowFoundation("target", r, g)).toEqual(["target", "f2"]);
+    expect(findDeepestLowFoundation("target", r, g)).toEqual([
+      entry("target"),
+      entry("f2"),
+    ]);
   });
 
   it("ties break by catalog sort order — lower sort order wins", () => {
@@ -192,8 +221,8 @@ describe("findDeepestLowFoundation", () => {
     const r = grades({ target: 2, f1: 2, f2: 2 });
     const so = { f1: 10, f2: 5 }; // f2 has lower sort order → wins
     expect(findDeepestLowFoundation("target", r, g, so)).toEqual([
-      "target",
-      "f2",
+      entry("target"),
+      entry("f2"),
     ]);
   });
 
@@ -201,7 +230,10 @@ describe("findDeepestLowFoundation", () => {
     const g = graph({ target: ["f1", "f2"], f1: [], f2: [] });
     const r = grades({ target: 2, f1: 2, f2: 2 });
     // f1 is at index 0, f2 at index 1 — f1 wins
-    expect(findDeepestLowFoundation("target", r, g)).toEqual(["target", "f1"]);
+    expect(findDeepestLowFoundation("target", r, g)).toEqual([
+      entry("target"),
+      entry("f1"),
+    ]);
   });
 
   // ── Cycle guard ─────────────────────────────────────────────────────────────
@@ -211,7 +243,11 @@ describe("findDeepestLowFoundation", () => {
     // chain terminates as ["a", "b", "a"]
     const g = graph({ a: ["b"], b: ["a"] });
     const r = grades({ a: 1, b: 1 });
-    expect(findDeepestLowFoundation("a", r, g)).toEqual(["a", "b", "a"]);
+    expect(findDeepestLowFoundation("a", r, g)).toEqual([
+      entry("a"),
+      entry("b"),
+      entry("a"),
+    ]);
   });
 
   // ── Realistic scenario from rubric ─────────────────────────────────────────
@@ -242,9 +278,9 @@ describe("findDeepestLowFoundation", () => {
     expect(
       findDeepestLowFoundation("free-breathing-mechanics", r, g),
     ).toEqual([
-      "free-breathing-mechanics",
-      "free-rotation",
-      "core-stability",
+      entry("free-breathing-mechanics"),
+      entry("free-rotation"),
+      entry("core-stability"),
     ]);
   });
 
@@ -271,7 +307,7 @@ describe("findDeepestLowFoundation", () => {
     });
     expect(
       findDeepestLowFoundation("free-breathing-mechanics", r, g),
-    ).toEqual(["free-breathing-mechanics", "free-rotation"]);
+    ).toEqual([entry("free-breathing-mechanics"), entry("free-rotation")]);
   });
 });
 
@@ -343,8 +379,9 @@ describe("latestEffectiveRatings", () => {
     voidedAt: string | null = null,
     notLegal = false,
     noConcept = false,
+    side: "left" | "right" | null = null,
   ): RatingRecord {
-    return { skillSlug, grade, notLegal, noConcept, ratedAt, voidedAt };
+    return { skillSlug, side, grade, notLegal, noConcept, ratedAt, voidedAt };
   }
 
   it("returns empty map for empty history", () => {

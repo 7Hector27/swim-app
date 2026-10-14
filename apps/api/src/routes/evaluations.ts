@@ -33,6 +33,7 @@ import {
   type BuiltOnGraph,
   type SortOrderMap,
   type PerStrokeGrades,
+  type ChainEntry,
 } from "@swim-app/shared";
 
 const RatingIdParamsSchema = z.object({ id: z.string().uuid() });
@@ -299,12 +300,14 @@ evaluationsRouter.get(
         grade: skillRatings.grade,
         notLegal: skillRatings.notLegal,
         noConcept: skillRatings.noConcept,
+        side: skillRatings.side,
         ratedAt: skillRatings.ratedAt,
         voidedAt: skillRatings.voidedAt,
         skillId: skillRatings.skillId,
         parentSkillId: skills.parentSkillId,
         skillType: skills.type,
         sortOrder: skills.sortOrder,
+        ratedPerSide: skills.ratedPerSide,
       })
       .from(skillRatings)
       .innerJoin(skills, eq(skills.id, skillRatings.skillId))
@@ -312,6 +315,7 @@ evaluationsRouter.get(
 
     const ratingRecords: RatingRecord[] = ratingRows.map((row) => ({
       skillSlug: row.slug,
+      side: row.side ?? null,
       grade: row.grade as 1 | 2 | 3 | 4 | 5 | null,
       notLegal: row.notLegal,
       noConcept: row.noConcept,
@@ -404,7 +408,7 @@ evaluationsRouter.get(
     }
 
     // Compute coaching priorities — deepest low foundation for each rated skill
-    const coachingPriorities: Array<{ targetSlug: string; chain: string[] }> = [];
+    const coachingPriorities: Array<{ targetSlug: string; chain: ChainEntry[] }> = [];
     for (const slug of Object.keys(grades)) {
       const chain = findDeepestLowFoundation(slug, grades, graph, fullSortOrder);
       if (chain !== null) {
@@ -535,6 +539,7 @@ evaluationsRouter.get(
         grade: skillRatings.grade,
         notLegal: skillRatings.notLegal,
         noConcept: skillRatings.noConcept,
+        side: skillRatings.side,
         ratedAt: skillRatings.ratedAt,
         voidedAt: skillRatings.voidedAt,
         skillCategoryId: skills.categoryId,
@@ -546,6 +551,7 @@ evaluationsRouter.get(
 
     const ratingRecords: RatingRecord[] = ratingRows.map((row) => ({
       skillSlug: row.slug,
+      side: row.side ?? null,
       grade: row.grade as 1 | 2 | 3 | 4 | 5 | null,
       notLegal: row.notLegal,
       noConcept: row.noConcept,
@@ -597,7 +603,7 @@ evaluationsRouter.get(
     }
 
     // Find deepest low foundation across category skills
-    let bestChain: string[] | null = null;
+    let bestChain: ChainEntry[] | null = null;
     let bestDepth = -1;
 
     for (const slug of categorySkillSlugs) {
