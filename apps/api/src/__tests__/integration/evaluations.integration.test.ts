@@ -2,7 +2,7 @@
 // Requires a running local Supabase stack (pnpm db:up) with migrations applied.
 
 import type { Server } from "http";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import request from "supertest";
 import pino from "pino";
@@ -681,6 +681,72 @@ describe("API integration tests — evaluations routes", () => {
     for (const row of [r1[0]!, r2[0]!, r3[0]!, r4[0]!]) {
       await adminDb().delete(skillRatings).where(eq(skillRatings.id, row.id));
     }
+  });
+
+  // ── DELETE /coach/sessions/:id: undo window ──────────────────────────────────
+
+  describe("DELETE /coach/sessions/:id", () => {
+    let testSessionId: string;
+
+    beforeEach(async () => {
+      // Create a fresh session for each delete test
+      const sessionRows = await adminDb()
+        .insert(evaluationSessions)
+        .values({
+          swimmerId,
+          coachId,
+          categoryId,
+          sessionDate: "2026-10-01",
+          context: "practice",
+          coachingPriority: "Delete test session",
+        })
+        .returning({ id: evaluationSessions.id });
+      testSessionId = sessionRows[0]!.id;
+    });
+
+    afterEach(async () => {
+      // Clean up in case the test didn't delete it
+      await adminDb().delete(skillRatings).where(eq(skillRatings.sessionId, testSessionId)).catch(() => {});
+      await adminDb().delete(evaluationSessions).where(eq(evaluationSessions.id, testSessionId)).catch(() => {});
+    });
+
+    it("deletes session within 10 minutes → 204", async () => {
+      const response = await request(server)
+        .delete(`/coach/sessions/${testSessionId}`)
+        .set("Authorization", `Bearer ${coachToken}`);
+      expect(response.status).toBe(204);
+      // Verify session is gone
+      const rows = await adminDb()
+        .select({ id: evaluationSessions.id })
+        .from(evaluationSessions)
+        .where(eq(evaluationSessions.id, testSessionId));
+      expect(rows).toHaveLength(0);
+    });
+
+    it("session created more than 10 minutes ago → 409", async () => {
+      // Backdate the session by 11 minutes via direct update
+      // (created_at is not protected by the append-only trigger on skill_ratings)
+      await adminDb()
+        .update(evaluationSessions)
+        .set({ createdAt: new Date(Date.now() - 11 * 60 * 1000) })
+        .where(eq(evaluationSessions.id, testSessionId));
+
+      const response = await request(server)
+        .delete(`/coach/sessions/${testSessionId}`)
+        .set("Authorization", `Bearer ${coachToken}`);
+      expect(response.status).toBe(409);
+    });
+
+    it("wrong coach → 404", async () => {
+      const other = await createTestUser("del-session-other");
+      await adminDb().update(profiles).set({ role: "coach" }).where(eq(profiles.id, other.userId));
+
+      const response = await request(server)
+        .delete(`/coach/sessions/${testSessionId}`)
+        .set("Authorization", `Bearer ${other.accessToken}`);
+      await other.cleanup();
+      expect(response.status).toBe(404);
+    });
   });
 
   it("GET /skills coachingPriorities: weak left side on a sided skill produces a chain with plain slug", async () => {

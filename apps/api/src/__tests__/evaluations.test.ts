@@ -503,6 +503,114 @@ describe("DELETE /ratings/:id", () => {
   });
 });
 
+// ── DELETE /sessions/:id ─────────────────────────────────────────────────────
+
+describe("DELETE /sessions/:id", () => {
+  // requireUser calls db.select().from(profiles).where(...) — resolves directly (no .limit())
+  // session lookup calls db.select({...}).from(evaluationSessions).where(...).limit(1) — needs .limit()
+
+  function sessionSelect(rows: Array<{ id: string; coachId: string; createdAt: Date }>) {
+    const limit = vi.fn().mockResolvedValue(rows);
+    const where = vi.fn().mockReturnValue({ limit });
+    return { from: vi.fn().mockReturnValue({ where }) };
+  }
+
+  it("unauthenticated → 401", async () => {
+    mockGetUser.mockResolvedValue({ data: { user: null }, error: null });
+    await request(app)
+      .delete(`/coach/sessions/${SESSION_ID}`)
+      .set("Authorization", "Bearer token")
+      .expect(401);
+  });
+
+  it("parent role → 403", async () => {
+    authAs(profileParent);
+    mockDbSelect.mockReturnValue(requireUserSelect(profileParent));
+    await request(app)
+      .delete(`/coach/sessions/${SESSION_ID}`)
+      .set("Authorization", "Bearer token")
+      .expect(403);
+  });
+
+  it("session not found → 404", async () => {
+    authAs(profileCoach);
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachAvailabilityRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachLessonsRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // sessionsRouter requireUser
+      .mockReturnValueOnce(sessionSelect([])); // session lookup — not found
+    await request(app)
+      .delete(`/coach/sessions/${SESSION_ID}`)
+      .set("Authorization", "Bearer token")
+      .expect(404);
+  });
+
+  it("session not owned by coach → 404", async () => {
+    authAs(profileCoach);
+    const otherCoachSession = { id: SESSION_ID, coachId: "other-coach-id", createdAt: now };
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachAvailabilityRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachLessonsRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // sessionsRouter requireUser
+      .mockReturnValueOnce(sessionSelect([otherCoachSession])); // session lookup — wrong coach
+    await request(app)
+      .delete(`/coach/sessions/${SESSION_ID}`)
+      .set("Authorization", "Bearer token")
+      .expect(404);
+  });
+
+  it("past undo window → 409", async () => {
+    authAs(profileCoach);
+    const oldSession = { id: SESSION_ID, coachId: COACH_ID, createdAt: oldTime };
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachAvailabilityRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachLessonsRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // sessionsRouter requireUser
+      .mockReturnValueOnce(sessionSelect([oldSession])); // session lookup — old
+    await request(app)
+      .delete(`/coach/sessions/${SESSION_ID}`)
+      .set("Authorization", "Bearer token")
+      .expect(409);
+  });
+
+  it("within window → 204 and calls transaction", async () => {
+    authAs(profileCoach);
+    const recentSession = { id: SESSION_ID, coachId: COACH_ID, createdAt: new Date() };
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachAvailabilityRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachLessonsRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // sessionsRouter requireUser
+      .mockReturnValueOnce(sessionSelect([recentSession])); // session lookup — recent
+    mockDbTransaction.mockResolvedValue(undefined);
+    await request(app)
+      .delete(`/coach/sessions/${SESSION_ID}`)
+      .set("Authorization", "Bearer token")
+      .expect(204);
+    expect(mockDbTransaction).toHaveBeenCalled();
+  });
+});
+
+// ── GET /categories ───────────────────────────────────────────────────────────
+
+describe("GET /categories", () => {
+  it("unauthenticated → 401", async () => {
+    mockGetUser.mockResolvedValue({ data: { user: null }, error: null });
+    await request(app)
+      .get("/coach/categories")
+      .set("Authorization", "Bearer token")
+      .expect(401);
+  });
+
+  it("parent role → 403", async () => {
+    authAs(profileParent);
+    mockDbSelect.mockReturnValue(requireUserSelect(profileParent));
+    await request(app)
+      .get("/coach/categories")
+      .set("Authorization", "Bearer token")
+      .expect(403);
+  });
+});
+
 // ── PATCH /ratings/:id/void ───────────────────────────────────────────────────
 
 describe("PATCH /ratings/:id/void", () => {

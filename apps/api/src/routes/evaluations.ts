@@ -604,6 +604,55 @@ evaluationsRouter.get(
   }),
 );
 
+// ── DELETE /sessions/:id ──────────────────────────────────────────────────────
+
+export const sessionsRouter = Router();
+
+const SessionIdParamsSchema = z.object({ id: z.string().uuid() });
+type SessionIdParams = z.infer<typeof SessionIdParamsSchema>;
+
+sessionsRouter.delete(
+  "/:id",
+  requireUser,
+  requireCoach,
+  validate({ params: SessionIdParamsSchema }),
+  asyncHandler(async (req, res) => {
+    const { id: sessionId } = req.params as unknown as SessionIdParams;
+    const coachId = req.profile.id;
+
+    const sessionRows = await db
+      .select({
+        id: evaluationSessions.id,
+        coachId: evaluationSessions.coachId,
+        createdAt: evaluationSessions.createdAt,
+      })
+      .from(evaluationSessions)
+      .where(eq(evaluationSessions.id, sessionId))
+      .limit(1);
+
+    const session = sessionRows[0];
+    if (!session || session.coachId !== coachId) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+
+    const ageMs = Date.now() - session.createdAt.getTime();
+    if (ageMs > UNDO_WINDOW_MS) {
+      res.status(409).json({ error: "Undo window has passed." });
+      return;
+    }
+
+    await db.transaction(async (tx) => {
+      // fault tags cascade-delete when ratings are deleted
+      await tx.delete(skillRatings).where(eq(skillRatings.sessionId, sessionId));
+      await tx.delete(evaluationSessions).where(eq(evaluationSessions.id, sessionId));
+    });
+
+    req.log.info({ sessionId, coachId }, "session deleted");
+    res.status(204).end();
+  }),
+);
+
 // ── GET /categories ──────────────────────────────────────────────────────────
 
 export const coachCategoriesRouter = Router();
