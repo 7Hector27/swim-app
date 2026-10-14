@@ -190,6 +190,26 @@ describe("calculateStartGrade", () => {
     expect(calculateStartGrade([...SLUGS], ratings)).toEqual({ status: "graded", grade: 4 });
   });
 
+  it("treats grade:null with both flags false as not rated (in_progress)", () => {
+    // A record that is invalid per the schema refinements (grade null, noConcept false,
+    // notLegal false) but may exist as a raw TypeScript object. The function must treat
+    // it as not rated rather than silently contributing 0 to the average.
+    const ratings = [
+      // Construct directly to bypass Zod — simulates data arriving before schema validation.
+      { ...rating("track-start-reaction-time"), grade: null } as unknown as ReturnType<typeof rating>,
+      rating("track-start-block-position"),
+      rating("track-start-entry-angle"),
+      rating("track-start-entry-point"),
+      rating("track-start-streamline"),
+      rating("track-start-breakout"),
+    ];
+    const result = calculateStartGrade([...SLUGS], ratings);
+    expect(result).toEqual({
+      status: "in_progress",
+      missing: ["track-start-reaction-time"],
+    });
+  });
+
   it("ignores extra ratings for skills outside componentSlugs", () => {
     const ratings = [
       ...allSix(4),

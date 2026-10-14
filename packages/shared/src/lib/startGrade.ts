@@ -67,6 +67,6 @@ export function calculateStartGrade(
     count += 1;
   }
 
-  const grade = Math.floor(sum / count) as 1 | 2 | 3 | 4 | 5;
+  const grade = Math.max(1, Math.floor(sum / count)) as 1 | 2 | 3 | 4 | 5;
   return { status: "graded", grade };
 }
