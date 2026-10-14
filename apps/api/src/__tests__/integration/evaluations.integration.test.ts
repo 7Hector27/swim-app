@@ -1,21 +1,29 @@
 // Integration tests for evaluation_sessions and skill_ratings CHECK constraints.
 // Requires a running local Supabase stack (pnpm db:up) with migrations applied.
 
+import type { Server } from "http";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
+import request from "supertest";
+import pino from "pino";
+import { createApp } from "../../app";
 import {
   adminDb,
   closeAdminDb,
   createTestUser,
   hardDeleteSwimmer,
 } from "./helpers";
+import type { TestUser } from "./helpers";
 import {
   evaluationSessions,
-  skillCategories,
+  profiles,
+  ratingFaultTags,
+  skillDependencies,
   skillRatings,
   skills,
   swimmers,
 } from "../../db/schema";
+import syncCatalogFn from "../../db/scripts/syncCatalogFn";
 
 let coachId: string;
 let swimmerId: string;
@@ -23,30 +31,31 @@ let categoryId: string;
 let skillId: string;
 let sessionId: string;
 let cleanupCoach: () => Promise<void>;
+let coach: TestUser;
 
 beforeAll(async () => {
-  const coach = await createTestUser("eval-constraints");
+  // Ensure the catalog is populated so we can look up real skills by slug.
+  await syncCatalogFn(adminDb());
+
+  coach = await createTestUser("eval-constraints");
   coachId = coach.userId;
   cleanupCoach = coach.cleanup;
 
-  // Insert a minimal skill category and skill for FK satisfaction.
-  const catRows = await adminDb()
-    .insert(skillCategories)
-    .values({ slug: "eval-test-cat", name: "Eval Test", sortOrder: 9999 })
-    .returning({ id: skillCategories.id });
-  categoryId = catRows[0]!.id;
+  // Promote the test user to coach so requireCoach middleware passes.
+  await adminDb()
+    .update(profiles)
+    .set({ role: "coach" })
+    .where(eq(profiles.id, coachId));
 
-  const skillRows = await adminDb()
-    .insert(skills)
-    .values({
-      slug: "eval-test-skill",
-      categoryId,
-      name: "Eval Test Skill",
-      type: "rubric",
-      sortOrder: 9999,
-    })
-    .returning({ id: skills.id });
-  skillId = skillRows[0]!.id;
+  // Use a real catalog skill so the skillsCatalogSync count tests stay clean.
+  const freeKickRows = await adminDb()
+    .select({ id: skills.id, categoryId: skills.categoryId })
+    .from(skills)
+    .where(eq(skills.slug, "free-kick"))
+    .limit(1);
+  if (!freeKickRows[0]) throw new Error("Catalog skill free-kick not found — run pnpm db:sync-catalog");
+  skillId = freeKickRows[0].id;
+  categoryId = freeKickRows[0].categoryId;
 
   const swimmerRows = await adminDb()
     .insert(swimmers)
@@ -77,13 +86,12 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  // fault_tags cascade-delete from skill_ratings, so just delete ratings first.
-  await adminDb().delete(skillRatings).where(eq(skillRatings.sessionId, sessionId));
-  await adminDb().delete(evaluationSessions).where(eq(evaluationSessions.id, sessionId));
+  // Delete ratings and sessions by swimmerId (catches any rows from API tests
+  // that created additional sessions or from tests that failed mid-cleanup).
+  // Fault tags cascade-delete when their rating is deleted.
+  await adminDb().delete(skillRatings).where(eq(skillRatings.swimmerId, swimmerId));
+  await adminDb().delete(evaluationSessions).where(eq(evaluationSessions.swimmerId, swimmerId));
   await hardDeleteSwimmer(swimmerId);
-  // skill → skill_dependencies cascade; category → skills cascade.
-  await adminDb().delete(skills).where(eq(skills.id, skillId));
-  await adminDb().delete(skillCategories).where(eq(skillCategories.id, categoryId));
   await cleanupCoach();
   await closeAdminDb();
 });
@@ -101,7 +109,7 @@ function validRatingValues() {
   } as const;
 }
 
-// ── evaluation_sessions ───────────────────────────────────────────────────────
+// ── evaluation_sessions CHECK constraints ───────────────────────────────────
 
 describe("evaluation_sessions CHECK constraints", () => {
   it("accepts a valid session", async () => {
@@ -134,7 +142,7 @@ describe("evaluation_sessions CHECK constraints", () => {
   });
 });
 
-// ── skill_ratings CHECK constraints ──────────────────────────────────────────
+// ── skill_ratings CHECK constraints ─────────────────────────────────────────
 
 describe("skill_ratings CHECK constraints", () => {
   it("accepts a valid grade=3 rating", async () => {
@@ -357,5 +365,397 @@ describe("skill_ratings append-only trigger", () => {
           .where(eq(skillRatings.id, id)),
       ).rejects.toMatchObject({ message: expect.stringContaining("append-only") });
     });
+  });
+});
+
+// ── API integration tests ──────────────────────────────────────────────────
+
+describe("API integration tests — evaluations routes", () => {
+  const logger = pino({ level: "silent" });
+  const app = createApp(logger);
+  let server: Server;
+  let coachToken: string;
+  let ratedPerSideSkillId: string;
+
+  beforeAll(async () => {
+    server = app.listen(0);
+    coachToken = coach.accessToken;
+
+    // Use a real catalog sided skill instead of inserting a test fixture.
+    const sidedSkillRows = await adminDb()
+      .select({ id: skills.id })
+      .from(skills)
+      .where(eq(skills.slug, "breathing-timing-free"))
+      .limit(1);
+    if (!sidedSkillRows[0]) throw new Error("Catalog skill breathing-timing-free not found — run pnpm db:sync-catalog");
+    ratedPerSideSkillId = sidedSkillRows[0].id;
+  });
+
+  afterAll(async () => {
+    server.close();
+    // ratedPerSideSkillId is a real catalog skill — do not delete it.
+  });
+
+  // ── POST /coach/swimmers/:id/sessions: invalid rating → no session or ratings ──
+
+  it("a session with one archived skill rating saves nothing (transaction rollback)", async () => {
+    // Archive the real catalog skill temporarily.
+    await adminDb().update(skills).set({ archivedAt: new Date() }).where(eq(skills.id, skillId));
+
+    try {
+      const response = await request(app)
+        .post(`/coach/swimmers/${swimmerId}/sessions`)
+        .set("Authorization", `Bearer ${coachToken}`)
+        .send({
+          categoryId,
+          sessionDate: "2026-10-15",
+          context: "practice",
+          coachingPriority: "Test rollback",
+          ratings: [
+            {
+              skillId,
+              grade: 3,
+              notLegal: false,
+              noConcept: false,
+              side: null,
+              capacityValue: null,
+              capacityUnit: null,
+              measurementValue: null,
+              measurementUnit: null,
+              note: null,
+              faultTags: [],
+              ratedAt: "2026-10-15T10:00:00.000Z",
+            },
+          ],
+        });
+
+      expect(response.status).toBe(422);
+
+      const sessions = await adminDb()
+        .select({ id: evaluationSessions.id })
+        .from(evaluationSessions)
+        .where(eq(evaluationSessions.swimmerId, swimmerId));
+      // Only the one session created in beforeAll should exist.
+      expect(sessions.length).toBe(1);
+    } finally {
+      // Always restore the skill so subsequent tests are not affected.
+      await adminDb().update(skills).set({ archivedAt: null }).where(eq(skills.id, skillId));
+    }
+  });
+
+  // ── DELETE /coach/ratings/:id: undo window ──────────────────────────────────
+
+  it("DELETE within 9-minute window → 204 and rating is gone", async () => {
+    // Insert with a backdated created_at directly — the append-only trigger
+    // blocks UPDATE on created_at, so we cannot insert then update.
+    const rows = await adminDb()
+      .insert(skillRatings)
+      .values({
+        sessionId,
+        swimmerId,
+        skillId,
+        coachId,
+        grade: 3,
+        notLegal: false,
+        noConcept: false,
+        ratedAt: new Date(),
+        createdAt: new Date(Date.now() - 9 * 60 * 1000),
+      })
+      .returning({ id: skillRatings.id });
+    const ratingId = rows[0]!.id;
+
+    const response = await request(app)
+      .delete(`/coach/ratings/${ratingId}`)
+      .set("Authorization", `Bearer ${coachToken}`);
+    expect(response.status).toBe(204);
+
+    const remaining = await adminDb()
+      .select({ id: skillRatings.id })
+      .from(skillRatings)
+      .where(eq(skillRatings.id, ratingId));
+    expect(remaining).toHaveLength(0);
+  });
+
+  it("DELETE after 11-minute window → 409", async () => {
+    // Insert with a backdated created_at directly.
+    const rows = await adminDb()
+      .insert(skillRatings)
+      .values({
+        sessionId,
+        swimmerId,
+        skillId,
+        coachId,
+        grade: 3,
+        notLegal: false,
+        noConcept: false,
+        ratedAt: new Date(),
+        createdAt: new Date(Date.now() - 11 * 60 * 1000),
+      })
+      .returning({ id: skillRatings.id });
+    const ratingId = rows[0]!.id;
+
+    const response = await request(app)
+      .delete(`/coach/ratings/${ratingId}`)
+      .set("Authorization", `Bearer ${coachToken}`);
+    expect(response.status).toBe(409);
+    expect(response.body.error).toMatch(/void/i);
+
+    await adminDb().delete(skillRatings).where(eq(skillRatings.id, ratingId));
+  });
+
+  it("DELETE within window also removes fault tag rows (cascade delete)", async () => {
+    const rows = await adminDb()
+      .insert(skillRatings)
+      .values({
+        sessionId,
+        swimmerId,
+        skillId,
+        coachId,
+        grade: 3,
+        notLegal: false,
+        noConcept: false,
+        ratedAt: new Date(),
+      })
+      .returning({ id: skillRatings.id });
+    const ratingId = rows[0]!.id;
+
+    await adminDb().insert(ratingFaultTags).values({ ratingId, faultTag: "test-tag" });
+
+    const response = await request(app)
+      .delete(`/coach/ratings/${ratingId}`)
+      .set("Authorization", `Bearer ${coachToken}`);
+    expect(response.status).toBe(204);
+
+    const tags = await adminDb()
+      .select()
+      .from(ratingFaultTags)
+      .where(eq(ratingFaultTags.ratingId, ratingId));
+    expect(tags).toHaveLength(0);
+  });
+
+  // ── PATCH void: atomicity and double-void ───────────────────────────────────
+
+  it("PATCH void sets all three void fields atomically", async () => {
+    const rows = await adminDb()
+      .insert(skillRatings)
+      .values({
+        sessionId,
+        swimmerId,
+        skillId,
+        coachId,
+        grade: 3,
+        notLegal: false,
+        noConcept: false,
+        ratedAt: new Date(),
+      })
+      .returning({ id: skillRatings.id });
+    const ratingId = rows[0]!.id;
+
+    const response = await request(app)
+      .patch(`/coach/ratings/${ratingId}/void`)
+      .set("Authorization", `Bearer ${coachToken}`)
+      .send({ reason: "Wrong swimmer" });
+    expect(response.status).toBe(200);
+
+    const updated = await adminDb()
+      .select({
+        voidedAt: skillRatings.voidedAt,
+        voidReason: skillRatings.voidReason,
+        voidBy: skillRatings.voidBy,
+      })
+      .from(skillRatings)
+      .where(eq(skillRatings.id, ratingId));
+    expect(updated[0]!.voidedAt).not.toBeNull();
+    expect(updated[0]!.voidReason).toBe("Wrong swimmer");
+    expect(updated[0]!.voidBy).toBe(coachId);
+
+    await adminDb().delete(skillRatings).where(eq(skillRatings.id, ratingId));
+  });
+
+  it("second void returns 409", async () => {
+    const rows = await adminDb()
+      .insert(skillRatings)
+      .values({
+        sessionId,
+        swimmerId,
+        skillId,
+        coachId,
+        grade: 3,
+        notLegal: false,
+        noConcept: false,
+        ratedAt: new Date(),
+        voidedAt: new Date(),
+        voidReason: "already voided",
+        voidBy: coachId,
+      })
+      .returning({ id: skillRatings.id });
+    const ratingId = rows[0]!.id;
+
+    const response = await request(app)
+      .patch(`/coach/ratings/${ratingId}/void`)
+      .set("Authorization", `Bearer ${coachToken}`)
+      .send({ reason: "Another reason" });
+    expect(response.status).toBe(409);
+
+    await adminDb().delete(skillRatings).where(eq(skillRatings.id, ratingId));
+  });
+
+  // ── GET /coach/swimmers/:id/skills matches shared helpers ───────────────────
+
+  it("GET /skills: grades match latestEffectiveRatings, voided latest falls back, side-rated returns both sides", async () => {
+    const r1 = await adminDb()
+      .insert(skillRatings)
+      .values({
+        sessionId,
+        swimmerId,
+        skillId,
+        coachId,
+        grade: 3,
+        notLegal: false,
+        noConcept: false,
+        ratedAt: new Date("2026-10-01T10:00:00Z"),
+      })
+      .returning({ id: skillRatings.id });
+
+    const r2 = await adminDb()
+      .insert(skillRatings)
+      .values({
+        sessionId,
+        swimmerId,
+        skillId,
+        coachId,
+        grade: 5,
+        notLegal: false,
+        noConcept: false,
+        ratedAt: new Date("2026-10-02T10:00:00Z"),
+        voidedAt: new Date("2026-10-03T10:00:00Z"),
+        voidReason: "Incorrect",
+        voidBy: coachId,
+      })
+      .returning({ id: skillRatings.id });
+
+    const r3 = await adminDb()
+      .insert(skillRatings)
+      .values({
+        sessionId,
+        swimmerId,
+        skillId: ratedPerSideSkillId,
+        coachId,
+        grade: 4,
+        notLegal: false,
+        noConcept: false,
+        side: "left",
+        ratedAt: new Date("2026-10-01T10:00:00Z"),
+      })
+      .returning({ id: skillRatings.id });
+
+    const r4 = await adminDb()
+      .insert(skillRatings)
+      .values({
+        sessionId,
+        swimmerId,
+        skillId: ratedPerSideSkillId,
+        coachId,
+        grade: 2,
+        notLegal: false,
+        noConcept: false,
+        side: "right",
+        ratedAt: new Date("2026-10-01T10:00:00Z"),
+      })
+      .returning({ id: skillRatings.id });
+
+    const response = await request(app)
+      .get(`/coach/swimmers/${swimmerId}/skills`)
+      .set("Authorization", `Bearer ${coachToken}`);
+    expect(response.status).toBe(200);
+
+    const { grades } = response.body as { grades: Record<string, unknown> };
+
+    // skillId (free-kick): latest non-voided is grade 3 (grade 5 was voided).
+    expect(grades["free-kick"]).toBe(3);
+
+    // ratedPerSide skill (breathing-timing-free): both sides present.
+    expect(grades["breathing-timing-free:left"]).toBe(4);
+    expect(grades["breathing-timing-free:right"]).toBe(2);
+
+    for (const row of [r1[0]!, r2[0]!, r3[0]!, r4[0]!]) {
+      await adminDb().delete(skillRatings).where(eq(skillRatings.id, row.id));
+    }
+  });
+
+  it("GET /skills coachingPriorities: weak left side on a sided skill produces a chain with plain slug", async () => {
+    // 1. Look up a foundation skill of breathing-timing-free.
+    const depRows = await adminDb()
+      .select({ dependsOnSkillId: skillDependencies.dependsOnSkillId })
+      .from(skillDependencies)
+      .where(eq(skillDependencies.skillId, ratedPerSideSkillId))
+      .limit(1);
+    if (!depRows[0]) throw new Error("breathing-timing-free has no dependencies in catalog — cannot run test");
+    const foundationSkillId = depRows[0].dependsOnSkillId;
+
+    const foundationSlugRows = await adminDb()
+      .select({ slug: skills.slug })
+      .from(skills)
+      .where(eq(skills.id, foundationSkillId))
+      .limit(1);
+    if (!foundationSlugRows[0]) throw new Error("Foundation skill not found");
+    const foundationSlug = foundationSlugRows[0].slug;
+
+    // 2. Insert a grade-1 rating for breathing-timing-free left side.
+    const r1 = await adminDb()
+      .insert(skillRatings)
+      .values({
+        sessionId,
+        swimmerId,
+        skillId: ratedPerSideSkillId,
+        coachId,
+        grade: 1,
+        notLegal: false,
+        noConcept: false,
+        side: "left",
+        ratedAt: new Date("2026-10-10T10:00:00Z"),
+      })
+      .returning({ id: skillRatings.id });
+
+    // 3. Insert a grade-1 rating for the foundation skill (non-sided).
+    const r2 = await adminDb()
+      .insert(skillRatings)
+      .values({
+        sessionId,
+        swimmerId,
+        skillId: foundationSkillId,
+        coachId,
+        grade: 1,
+        notLegal: false,
+        noConcept: false,
+        ratedAt: new Date("2026-10-10T10:00:00Z"),
+      })
+      .returning({ id: skillRatings.id });
+
+    // 4. Call GET /coach/swimmers/:id/skills.
+    const response = await request(app)
+      .get(`/coach/swimmers/${swimmerId}/skills`)
+      .set("Authorization", `Bearer ${coachToken}`);
+
+    // 5. Assert 200.
+    expect(response.status).toBe(200);
+
+    // 6. Find the coachingPriority entry with targetSlug === "breathing-timing-free" (plain slug).
+    const { coachingPriorities } = response.body as {
+      coachingPriorities: Array<{ targetSlug: string; chain: Array<{ slug: string }> }>;
+    };
+    const entry = coachingPriorities.find((priority) => priority.targetSlug === "breathing-timing-free");
+    expect(entry).toBeDefined();
+
+    // 7. Assert the chain has length >= 2 (breathing-timing-free -> foundation).
+    expect(entry!.chain.length).toBeGreaterThanOrEqual(2);
+
+    // Verify the foundation slug appears somewhere in the chain.
+    const chainSlugs = entry!.chain.map((chainEntry) => chainEntry.slug);
+    expect(chainSlugs).toContain(foundationSlug);
+
+    // 8. Cleanup.
+    await adminDb().delete(skillRatings).where(eq(skillRatings.id, r1[0]!.id));
+    await adminDb().delete(skillRatings).where(eq(skillRatings.id, r2[0]!.id));
   });
 });

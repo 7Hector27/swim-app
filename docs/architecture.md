@@ -77,3 +77,9 @@ All signed-in routes are guarded by `requireAuth()` (`apps/web/src/lib/requireAu
 | `PATCH` | `/coach/lessons/:id/approve` | requireCoach | Approve a pending lesson |
 | `PATCH` | `/coach/lessons/:id/decline` | requireCoach | Decline a pending lesson; body: `{ reason? }` |
 | `POST` | `/internal/cron/tick` | CRON_SECRET header | Expire overdue pending lessons; auto-complete finished approved lessons |
+| `POST` | `/coach/swimmers/:id/sessions` | requireCoach | Create an evaluation session + all ratings in one transaction |
+| `DELETE` | `/coach/ratings/:id` | requireCoach | Undo a rating within 10 minutes of creation; 409 after window |
+| `PATCH` | `/coach/ratings/:id/void` | requireCoach | Void a rating with a required reason; 409 if already voided |
+| `GET` | `/coach/swimmers/:id/skills` | requireCoach | Current grade map, start grades, head-position overall, and coaching priorities |
+| `GET` | `/coach/swimmers/:id/skills/:skillId/ratings` | requireCoach | Full rating history for one skill (newest first, includes voided). Rating history is returned for archived skills (the coach is permitted to see all historical data). |
+| `GET` | `/coach/swimmers/:id/sessions/dependency-map` | requireCoach | Deepest low-foundation suggestion for a category (`?categoryId=`) |
