@@ -593,8 +593,10 @@ export const meetSwims = pgTable("meet_swims", {
   swimType: swimTypeEnum("swim_type").notNull().default("meet"),
   eventDistance: integer("event_distance").notNull(),
   eventStroke: swimStrokeEnum("event_stroke").notNull(),
-  timeSeconds: numeric("time_seconds", { precision: 10, scale: 2 }).notNull(),
+  course: courseEnum("course").notNull(),
   swumOn: date("swum_on").notNull(),
+  timeHundredths: integer("time_hundredths").notNull(),
+  createdBy: uuid("created_by").notNull().references(() => profiles.id, { onDelete: "restrict" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdateFn(() => new Date()),
 }).enableRLS();

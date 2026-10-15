@@ -105,23 +105,21 @@ meetsRouter.get(
       course: meet.course,
       createdAt: meet.createdAt.toISOString(),
       updatedAt: meet.updatedAt.toISOString(),
-      swims: swimRows.map((swim) => {
-        const timeSeconds = parseFloat(swim.timeSeconds);
-        return {
-          id: swim.id,
-          swimmerId: swim.swimmerId,
-          swimType: swim.swimType,
-          meetId: swim.meetId,
-          meetName: meet.name,
-          meetDate: meet.meetDate,
-          eventDistance: swim.eventDistance,
-          eventStroke: swim.eventStroke,
-          timeSeconds,
-          timeString: formatSwimTime(timeSeconds),
-          swumOn: swim.swumOn,
-          createdAt: swim.createdAt.toISOString(),
-        };
-      }),
+      swims: swimRows.map((swim) => ({
+        id: swim.id,
+        swimmerId: swim.swimmerId,
+        swimType: swim.swimType,
+        meetId: swim.meetId,
+        meetName: meet.name,
+        meetDate: meet.meetDate,
+        eventDistance: swim.eventDistance,
+        eventStroke: swim.eventStroke,
+        course: swim.course,
+        timeHundredths: swim.timeHundredths,
+        timeString: formatSwimTime(swim.timeHundredths),
+        swumOn: swim.swumOn,
+        createdAt: swim.createdAt.toISOString(),
+      })),
     };
 
     res.json(responseBody);
@@ -136,26 +134,21 @@ meetsRouter.delete(
   asyncHandler(async (req, res) => {
     const { id: meetId } = req.params as { id: string };
 
-    const swimCount = await db
+    const swimRows = await db
       .select({ id: meetSwims.id })
       .from(meetSwims)
-      .where(eq(meetSwims.meetId, meetId));
+      .where(eq(meetSwims.meetId, meetId))
+      .limit(1);
 
-    if (swimCount.length > 0) {
-      res.status(409).json({ error: "meet_has_swims" });
+    if (swimRows[0]) {
+      res.status(422).json({ error: "meet_has_swims" });
       return;
     }
 
-    const deleted = await db
+    await db
       .delete(meets)
-      .where(eq(meets.id, meetId))
-      .returning({ id: meets.id });
+      .where(eq(meets.id, meetId));
 
-    if (deleted.length === 0) {
-      res.status(404).json({ error: "Not found" });
-      return;
-    }
-
-    res.status(204).end();
+    res.status(200).json({ ok: true });
   }),
 );

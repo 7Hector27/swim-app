@@ -98,11 +98,8 @@ function meetSelect(row: {
 }
 
 function swimsForMeetSelect(hasSwims: boolean) {
-  const where = vi.fn().mockResolvedValue(
-    hasSwims
-      ? [{ id: SWIM_ID }]
-      : [],
-  );
+  const limit = vi.fn().mockResolvedValue(hasSwims ? [{ id: SWIM_ID }] : []);
+  const where = vi.fn().mockReturnValue({ limit });
   return { from: vi.fn().mockReturnValue({ where }) };
 }
 
@@ -122,7 +119,8 @@ const baseSwimRow = {
   meetId: MEET_ID,
   eventDistance: 100,
   eventStroke: "free" as const,
-  timeSeconds: "58.30",
+  course: "scy" as const,
+  timeHundredths: 5830,
   swumOn: "2025-06-01",
   createdAt: now,
   updatedAt: now,
@@ -200,10 +198,9 @@ describe("POST /coach/meets", () => {
 // ── DELETE /coach/meets/:id ───────────────────────────────────────────────────
 
 describe("DELETE /coach/meets/:id", () => {
-  it("returns 204 when meet has no swims", async () => {
+  it("returns 200 when meet has no swims", async () => {
     authAs(profileCoach);
-    const deletedReturning = vi.fn().mockResolvedValue([{ id: MEET_ID }]);
-    const deletedWhere = vi.fn().mockReturnValue({ returning: deletedReturning });
+    const deletedWhere = vi.fn().mockResolvedValue([]);
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachRouter requireUser (once)
       .mockReturnValueOnce(swimsForMeetSelect(false)); // no swims
@@ -213,10 +210,11 @@ describe("DELETE /coach/meets/:id", () => {
       .delete(`/coach/meets/${MEET_ID}`)
       .set("Authorization", "Bearer token");
 
-    expect(res.status).toBe(204);
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
   });
 
-  it("returns 409 when meet has swims", async () => {
+  it("returns 422 when meet has swims", async () => {
     authAs(profileCoach);
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachRouter requireUser (once)
@@ -226,7 +224,7 @@ describe("DELETE /coach/meets/:id", () => {
       .delete(`/coach/meets/${MEET_ID}`)
       .set("Authorization", "Bearer token");
 
-    expect(res.status).toBe(409);
+    expect(res.status).toBe(422);
     expect(res.body.error).toBe("meet_has_swims");
   });
 });
@@ -291,6 +289,7 @@ describe("POST /coach/swimmers/:id/meet-swims", () => {
         meetId: MEET_ID,
         eventDistance: 100,
         eventStroke: "free",
+        course: "scy",
         timeString: "58.30",
         swumOn: "2025-06-01",
       });
@@ -320,6 +319,7 @@ describe("POST /coach/swimmers/:id/meet-swims", () => {
         swimType: "practice",
         eventDistance: 100,
         eventStroke: "free",
+        course: "scy",
         timeString: "58.30",
         swumOn: "2025-06-15",
       });
@@ -339,6 +339,7 @@ describe("POST /coach/swimmers/:id/meet-swims", () => {
         swimType: "meet",
         eventDistance: 100,
         eventStroke: "free",
+        course: "scy",
         timeString: "58.30",
         swumOn: "2025-06-01",
       });
@@ -359,6 +360,7 @@ describe("POST /coach/swimmers/:id/meet-swims", () => {
         swimType: "practice",
         eventDistance: 50,
         eventStroke: "im",
+        course: "scy",
         timeString: "58.30",
         swumOn: "2025-06-15",
       });
@@ -380,6 +382,7 @@ describe("POST /coach/swimmers/:id/meet-swims", () => {
         swimType: "practice",
         eventDistance: 100,
         eventStroke: "free",
+        course: "scy",
         timeString: "not-a-time",
         swumOn: "2025-06-15",
       });
@@ -401,6 +404,7 @@ describe("POST /coach/swimmers/:id/meet-swims", () => {
         swimType: "practice",
         eventDistance: 100,
         eventStroke: "free",
+        course: "scy",
         timeString: "58.30",
         swumOn: "2025-06-15",
       });
@@ -423,6 +427,7 @@ describe("POST /coach/swimmers/:id/meet-swims", () => {
         meetId: MEET_ID,
         eventDistance: 100,
         eventStroke: "free",
+        course: "scy",
         timeString: "58.30",
         swumOn: "2025-06-01",
       });
@@ -442,7 +447,7 @@ describe("GET /coach/swimmers/:id/meet-swims", () => {
       id: "ff000000-0000-0000-0000-000000000099",
       swimType: "practice" as const,
       meetId: null,
-      timeSeconds: "60.00",
+      timeHundredths: 6000,
       meetName: null,
       meetDate: null,
     };
@@ -481,7 +486,7 @@ describe("PATCH /coach/swimmers/:id/meet-swims/:swimId", () => {
 
   it("updates timeString and returns 200 with updated swim", async () => {
     authAs(profileCoach);
-    const updatedRow = { ...baseSwimRow, timeSeconds: "57.50" };
+    const updatedRow = { ...baseSwimRow, timeHundredths: 5750 };
     const returning = vi.fn().mockResolvedValue([updatedRow]);
     const where = vi.fn().mockReturnValue({ returning });
     const set = vi.fn().mockReturnValue({ where });

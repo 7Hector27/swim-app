@@ -39,7 +39,8 @@ export const MeetSwimResponseSchema = z.object({
   meetDate: z.string().nullable().optional(),
   eventDistance: z.number().int().positive(),
   eventStroke: SwimStrokeSchema,
-  timeSeconds: z.number(),
+  course: CourseSchema,
+  timeHundredths: z.number().int(),
   timeString: z.string(),
   swumOn: z.string(),
   createdAt: z.string(),
@@ -52,6 +53,7 @@ export const CreateMeetSwimBodySchema = z
     meetId: z.string().uuid().optional(),
     eventDistance: z.number().int().positive(),
     eventStroke: SwimStrokeSchema,
+    course: CourseSchema,
     timeString: z.string().min(1),
     swumOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   })
@@ -96,10 +98,10 @@ export type MeetWithSwimsResponse = z.infer<typeof MeetWithSwimsResponseSchema>;
 export const PersonalBestSchema = z.object({
   eventDistance: z.number().int().positive(),
   eventStroke: SwimStrokeSchema,
-  timeSeconds: z.number(),
+  course: CourseSchema,
+  timeHundredths: z.number().int(),
   timeString: z.string(),
-  swumOn: z.string(),
-  meetName: z.string().nullable(),
+  swimId: z.string().uuid(),
 });
 export type PersonalBest = z.infer<typeof PersonalBestSchema>;
 

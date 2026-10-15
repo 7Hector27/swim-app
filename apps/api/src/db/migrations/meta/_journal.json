@@ -183,6 +183,13 @@
       "when": 1792092782895,
       "tag": "0025_rapid_junta",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1792095223107,
+      "tag": "0026_fix_meet_swims_schema",
+      "breakpoints": true
     }
   ]
 }

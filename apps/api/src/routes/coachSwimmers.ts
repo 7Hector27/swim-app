@@ -542,14 +542,14 @@ function toSwimResponse(
     meetId: string | null;
     eventDistance: number;
     eventStroke: "free" | "back" | "breast" | "fly" | "im";
-    timeSeconds: string;
+    course: "scy" | "scm" | "lcm";
+    timeHundredths: number;
     swumOn: string;
     createdAt: Date;
   },
   meetName: string | null,
   meetDate: string | null,
 ): MeetSwimResponse {
-  const timeSeconds = parseFloat(swim.timeSeconds);
   return {
     id: swim.id,
     swimmerId: swim.swimmerId,
@@ -559,8 +559,9 @@ function toSwimResponse(
     ...(meetDate !== null && { meetDate }),
     eventDistance: swim.eventDistance,
     eventStroke: swim.eventStroke,
-    timeSeconds,
-    timeString: formatSwimTime(timeSeconds),
+    course: swim.course,
+    timeHundredths: swim.timeHundredths,
+    timeString: formatSwimTime(swim.timeHundredths),
     swumOn: swim.swumOn,
     createdAt: swim.createdAt.toISOString(),
   };
@@ -592,7 +593,8 @@ coachSwimmersRouter.get(
         meetId: meetSwims.meetId,
         eventDistance: meetSwims.eventDistance,
         eventStroke: meetSwims.eventStroke,
-        timeSeconds: meetSwims.timeSeconds,
+        course: meetSwims.course,
+        timeHundredths: meetSwims.timeHundredths,
         swumOn: meetSwims.swumOn,
         createdAt: meetSwims.createdAt,
         meetName: meets.name,
@@ -607,28 +609,25 @@ coachSwimmersRouter.get(
       toSwimResponse(row, row.meetName ?? null, row.meetDate ?? null),
     );
 
-    // Personal bests: only meet swims, best time per event
+    // Personal bests: only meet swims, best time per event+course
     const meetOnlySwims = swimRows.filter((row) => row.swimType === "meet");
     const bestByEvent = new Map<string, typeof meetOnlySwims[0]>();
     for (const swim of meetOnlySwims) {
-      const key = `${swim.eventDistance}-${swim.eventStroke}`;
+      const key = `${swim.eventDistance}:${swim.eventStroke}:${swim.course}`;
       const existing = bestByEvent.get(key);
-      if (!existing || parseFloat(swim.timeSeconds) < parseFloat(existing.timeSeconds)) {
+      if (!existing || swim.timeHundredths < existing.timeHundredths) {
         bestByEvent.set(key, swim);
       }
     }
 
-    const personalBests: PersonalBest[] = [...bestByEvent.values()].map((swim) => {
-      const timeSeconds = parseFloat(swim.timeSeconds);
-      return {
-        eventDistance: swim.eventDistance,
-        eventStroke: swim.eventStroke,
-        timeSeconds,
-        timeString: formatSwimTime(timeSeconds),
-        swumOn: swim.swumOn,
-        meetName: swim.meetName ?? null,
-      };
-    });
+    const personalBests: PersonalBest[] = [...bestByEvent.values()].map((swim) => ({
+      eventDistance: swim.eventDistance,
+      eventStroke: swim.eventStroke,
+      course: swim.course,
+      timeHundredths: swim.timeHundredths,
+      timeString: formatSwimTime(swim.timeHundredths),
+      swimId: swim.id,
+    }));
 
     const body: MeetSwimsResponse = { swims, personalBests };
     res.json(body);
@@ -659,8 +658,8 @@ coachSwimmersRouter.post(
       return;
     }
 
-    const timeSeconds = parseSwimTime(body.timeString);
-    if (timeSeconds === null) {
+    const timeHundredths = parseSwimTime(body.timeString);
+    if (timeHundredths === null) {
       res.status(422).json({ error: "invalid_time" });
       return;
     }
@@ -698,8 +697,10 @@ coachSwimmersRouter.post(
         ...(body.meetId !== undefined && { meetId: body.meetId }),
         eventDistance: body.eventDistance,
         eventStroke: body.eventStroke,
-        timeSeconds: String(timeSeconds),
+        course: body.course,
+        timeHundredths,
         swumOn: body.swumOn,
+        createdBy: req.profile.id,
       })
       .returning();
 
@@ -736,7 +737,8 @@ coachSwimmersRouter.patch(
         meetId: meetSwims.meetId,
         eventDistance: meetSwims.eventDistance,
         eventStroke: meetSwims.eventStroke,
-        timeSeconds: meetSwims.timeSeconds,
+        course: meetSwims.course,
+        timeHundredths: meetSwims.timeHundredths,
         swumOn: meetSwims.swumOn,
         createdAt: meetSwims.createdAt,
       })
@@ -758,14 +760,14 @@ coachSwimmersRouter.patch(
       return;
     }
 
-    let newTimeSeconds: number | undefined;
+    let newTimeHundredths: number | undefined;
     if (body.timeString !== undefined) {
-      const parsed = parseSwimTime(body.timeString);
-      if (parsed === null) {
+      const parsedHundredths = parseSwimTime(body.timeString);
+      if (parsedHundredths === null) {
         res.status(422).json({ error: "invalid_time" });
         return;
       }
-      newTimeSeconds = parsed;
+      newTimeHundredths = parsedHundredths;
     }
 
     const newSwumOn = body.swumOn ?? swim.swumOn;
@@ -789,7 +791,7 @@ coachSwimmersRouter.patch(
       .set({
         ...(body.eventDistance !== undefined && { eventDistance: body.eventDistance }),
         ...(body.eventStroke !== undefined && { eventStroke: body.eventStroke }),
-        ...(newTimeSeconds !== undefined && { timeSeconds: String(newTimeSeconds) }),
+        ...(newTimeHundredths !== undefined && { timeHundredths: newTimeHundredths }),
         ...(body.swumOn !== undefined && { swumOn: body.swumOn }),
       })
       .where(eq(meetSwims.id, swimId))
