@@ -7,6 +7,7 @@ import CoachSwimmerDetailContent from "@/content/CoachSwimmerDetailContent";
 import { requireAuth } from "@/lib/requireAuth";
 import { fetchCoachSwimmerDetail, fetchSwimmerTimeline } from "@/lib/api/coachSwimmers";
 import { fetchSwimmerSkills, fetchSkillCategories } from "@/lib/api/evaluations";
+import { fetchSwimmerMeetSwims, fetchMeets } from "@/lib/api/meets";
 
 export const metadata: Metadata = {
   title: "Swimmer · Axiom Aquatics",
@@ -20,12 +21,15 @@ export default async function CoachSwimmerPage({ params }: CoachSwimmerPageProps
   const [auth, { id }] = await Promise.all([requireAuth(), params]);
   if (!auth) return <AccountInactiveScreen />;
 
-  const [swimmerResult, skillsResult, categoriesResult, timelineResult] = await Promise.all([
-    fetchCoachSwimmerDetail(id, auth.accessToken),
-    fetchSwimmerSkills(id, auth.accessToken),
-    fetchSkillCategories(auth.accessToken),
-    fetchSwimmerTimeline(id, auth.accessToken),
-  ]);
+  const [swimmerResult, skillsResult, categoriesResult, timelineResult, swimsResult, meetsResult] =
+    await Promise.all([
+      fetchCoachSwimmerDetail(id, auth.accessToken),
+      fetchSwimmerSkills(id, auth.accessToken),
+      fetchSkillCategories(auth.accessToken),
+      fetchSwimmerTimeline(id, auth.accessToken),
+      fetchSwimmerMeetSwims(id, auth.accessToken),
+      fetchMeets(auth.accessToken),
+    ]);
 
   if (!swimmerResult.ok) {
     if (swimmerResult.status === 404) notFound();
@@ -38,6 +42,9 @@ export default async function CoachSwimmerPage({ params }: CoachSwimmerPageProps
   const coachingPriorities: SwimmerSkillsResponse["coachingPriorities"] = skillsResult.ok ? skillsResult.data.coachingPriorities : [];
   const categories = categoriesResult.ok ? categoriesResult.categories : [];
   const timelineItems = timelineResult.ok ? timelineResult.items : [];
+  const swims = swimsResult.ok ? swimsResult.data.swims : [];
+  const personalBests = swimsResult.ok ? swimsResult.data.personalBests : [];
+  const meets = meetsResult.ok ? meetsResult.meets : [];
 
   return (
     <CoachSwimmerDetailContent
@@ -48,6 +55,9 @@ export default async function CoachSwimmerPage({ params }: CoachSwimmerPageProps
       coachingPriorities={coachingPriorities}
       categories={categories}
       timelineItems={timelineItems}
+      swims={swims}
+      personalBests={personalBests}
+      meets={meets}
     />
   );
 }

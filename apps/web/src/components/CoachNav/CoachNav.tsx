@@ -13,6 +13,7 @@ const NAV_LINKS = [
   { label: "Home", href: "/dashboard" },
   { label: "Schedule", href: "/coach/schedule" },
   { label: "Swimmers", href: "/coach/swimmers" },
+  { label: "Meets", href: "/coach/meets" },
 ] as const;
 
 type NavLinkLabel = (typeof NAV_LINKS)[number]["label"];
@@ -67,10 +68,20 @@ function SwimmersIcon() {
   );
 }
 
+function MeetsIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <path d="M3 5h14M3 10h14M3 15h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <circle cx="16" cy="15" r="2.5" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
+  );
+}
+
 const ICONS: Record<NavLinkLabel, () => React.ReactElement> = {
   Home: HomeIcon,
   Schedule: ScheduleIcon,
   Swimmers: SwimmersIcon,
+  Meets: MeetsIcon,
 };
 
 export default function CoachNav() {

@@ -1,10 +1,16 @@
-import { type CoachSwimmerDetail, type League, type CategoriesResponse, type SwimmerSkillsResponse, type StartGradeResult, type TimelineResponse } from "@swim-app/shared";
+"use client";
+
+import { useActionState, useRef, useState } from "react";
+import { type CoachSwimmerDetail, type League, type CategoriesResponse, type SwimmerSkillsResponse, type StartGradeResult, type TimelineResponse, type MeetSwimResponse, type PersonalBest, type MeetResponse, VALID_EVENTS } from "@swim-app/shared";
 
 import SiteFooter from "@/components/SiteFooter";
 import AddNoteForm from "@/components/AddNoteForm";
+import ConfirmDialog from "@/components/ConfirmDialog";
 import HidePublicButton from "./HidePublicButton";
 import SwimmerSkillsHistory from "./SwimmerSkillsHistory";
 import SwimmerTimeline from "./SwimmerTimeline";
+import { addSwimForSwimmer, editSwimForSwimmer, deleteSwimForSwimmer } from "./actions";
+import type { AddSwimState, EditSwimState, DeleteSwimState } from "./actions";
 
 interface CoachSwimmerDetailContentProps {
   swimmer: CoachSwimmerDetail;
@@ -14,11 +20,28 @@ interface CoachSwimmerDetailContentProps {
   coachingPriorities: SwimmerSkillsResponse["coachingPriorities"];
   categories: CategoriesResponse;
   timelineItems: TimelineResponse;
+  swims: MeetSwimResponse[];
+  personalBests: PersonalBest[];
+  meets: MeetResponse[];
 }
 
 const LEAGUE_LABELS: Record<League, string> = {
   club: "Club",
   summer_league: "Summer League",
+};
+
+const STROKE_SHORT: Record<string, string> = {
+  free: "Free",
+  back: "Back",
+  breast: "Breast",
+  fly: "Fly",
+  im: "IM",
+};
+
+const COURSE_LABELS: Record<string, string> = {
+  scy: "SCY",
+  scm: "SCM",
+  lcm: "LCM",
 };
 
 function gradeDisplay(grade: number | "not_legal" | "no_concept"): string {
@@ -36,6 +59,355 @@ function formatStartGrade(result: StartGradeResult, slugToName: Map<string, stri
   return `In progress — needs ${names}`;
 }
 
+// ── Times sub-components ──────────────────────────────────────────────────────
+
+interface AddSwimFormProps {
+  swimmerId: string;
+  meets: MeetResponse[];
+  onSuccess: () => void;
+}
+
+function AddSwimForm({ swimmerId, meets, onSuccess }: AddSwimFormProps) {
+  const [selectedStroke, setSelectedStroke] = useState<string>("free");
+  const [state, action, isPending] = useActionState<AddSwimState, FormData>(
+    addSwimForSwimmer.bind(null, swimmerId),
+    { status: "idle" },
+  );
+
+  if (state.status === "success") {
+    onSuccess();
+  }
+
+  const distances = VALID_EVENTS[selectedStroke as keyof typeof VALID_EVENTS] ?? [];
+
+  return (
+    <form action={action} className="flex flex-col gap-3 p-4 rounded-lg border border-border bg-surface-soft">
+      <div className="flex gap-3 flex-wrap">
+        <div className="flex flex-col gap-1 flex-1 min-w-[120px]">
+          <label htmlFor="add-stroke" className="text-xs font-semibold text-text-secondary">Stroke</label>
+          <select
+            id="add-stroke"
+            name="eventStroke"
+            required
+            value={selectedStroke}
+            onChange={(e) => setSelectedStroke(e.target.value)}
+            className="h-10 px-2 rounded-lg border border-border bg-background text-text text-sm focus:outline focus:outline-2 focus:outline-focus-ring"
+          >
+            {Object.entries(STROKE_SHORT).map(([value, label]) => (
+              <option key={value} value={value}>{label}</option>
+            ))}
+          </select>
+        </div>
+
+        <div className="flex flex-col gap-1 flex-1 min-w-[100px]">
+          <label htmlFor="add-distance" className="text-xs font-semibold text-text-secondary">Distance</label>
+          <select
+            id="add-distance"
+            name="eventDistance"
+            required
+            className="h-10 px-2 rounded-lg border border-border bg-background text-text text-sm focus:outline focus:outline-2 focus:outline-focus-ring"
+          >
+            {distances.map((dist) => (
+              <option key={dist} value={dist}>{dist}</option>
+            ))}
+          </select>
+        </div>
+
+        <div className="flex flex-col gap-1 flex-1 min-w-[100px]">
+          <label htmlFor="add-course" className="text-xs font-semibold text-text-secondary">Course</label>
+          <select
+            id="add-course"
+            name="course"
+            required
+            className="h-10 px-2 rounded-lg border border-border bg-background text-text text-sm focus:outline focus:outline-2 focus:outline-focus-ring"
+          >
+            <option value="scy">SCY</option>
+            <option value="scm">SCM</option>
+            <option value="lcm">LCM</option>
+          </select>
+        </div>
+      </div>
+
+      <div className="flex gap-3 flex-wrap">
+        <div className="flex flex-col gap-1 flex-1 min-w-[120px]">
+          <label htmlFor="add-time" className="text-xs font-semibold text-text-secondary">Time</label>
+          <input
+            id="add-time"
+            name="timeString"
+            type="text"
+            required
+            placeholder="e.g. 1:02.34"
+            inputMode="decimal"
+            className="h-10 px-2 rounded-lg border border-border bg-background text-text text-sm tabular-nums focus:outline focus:outline-2 focus:outline-focus-ring"
+          />
+        </div>
+
+        <div className="flex flex-col gap-1 flex-1 min-w-[140px]">
+          <label htmlFor="add-date" className="text-xs font-semibold text-text-secondary">Date</label>
+          <input
+            id="add-date"
+            name="swumOn"
+            type="date"
+            required
+            className="h-10 px-2 rounded-lg border border-border bg-background text-text text-sm focus:outline focus:outline-2 focus:outline-focus-ring"
+          />
+        </div>
+
+        {meets.length > 0 && (
+          <div className="flex flex-col gap-1 flex-1 min-w-[160px]">
+            <label htmlFor="add-meet" className="text-xs font-semibold text-text-secondary">Meet (optional)</label>
+            <select
+              id="add-meet"
+              name="meetId"
+              className="h-10 px-2 rounded-lg border border-border bg-background text-text text-sm focus:outline focus:outline-2 focus:outline-focus-ring"
+            >
+              <option value="">Practice</option>
+              {meets.map((meet) => (
+                <option key={meet.id} value={meet.id}>{meet.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
+      </div>
+
+      {state.status === "error" && (
+        <p role="alert" className="text-xs text-danger">{state.message}</p>
+      )}
+
+      <div className="flex gap-2">
+        <button
+          type="submit"
+          disabled={isPending}
+          className="inline-flex items-center justify-center px-4 h-9 font-bold text-xs rounded-button disabled:opacity-60"
+          style={{ backgroundColor: "var(--color-button-primary-background)", color: "var(--color-button-primary-text)" }}
+        >
+          {isPending ? "Saving…" : "Save time"}
+        </button>
+        <button
+          type="button"
+          onClick={onSuccess}
+          className="inline-flex items-center justify-center px-4 h-9 font-semibold text-xs rounded-button border"
+          style={{ borderColor: "var(--color-button-outline)", color: "var(--color-button-outline)" }}
+        >
+          Cancel
+        </button>
+      </div>
+    </form>
+  );
+}
+
+interface SwimRowProps {
+  swim: MeetSwimResponse;
+  swimmerId: string;
+  isPB: boolean;
+}
+
+function SwimRow({ swim, swimmerId, isPB }: SwimRowProps) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const [editing, setEditing] = useState(false);
+
+  const [deleteState, deleteAction, isDeleting] = useActionState<DeleteSwimState, FormData>(
+    deleteSwimForSwimmer.bind(null, swimmerId, swim.id),
+    { status: "idle" },
+  );
+  const [editState, editAction, isEditing] = useActionState<EditSwimState, FormData>(
+    editSwimForSwimmer.bind(null, swimmerId, swim.id),
+    { status: "idle" },
+  );
+
+  if (editState.status === "success" && editing) setEditing(false);
+
+  const eventLabel = `${swim.eventDistance} ${STROKE_SHORT[swim.eventStroke] ?? swim.eventStroke}`;
+
+  return (
+    <>
+      <li className="flex items-start gap-3 py-3 border-t border-border first:border-t-0">
+        <div className="flex flex-col gap-0.5 flex-1 min-w-0 text-sm">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-semibold text-text">{eventLabel}</span>
+            <span className="text-text-secondary">{COURSE_LABELS[swim.course] ?? swim.course}</span>
+            <span className="tabular-nums font-semibold text-text" style={{ fontVariantNumeric: "tabular-nums" }}>
+              {swim.timeString}
+            </span>
+            {isPB && (
+              <span className="text-xs font-semibold text-accent-on-section bg-section px-1.5 py-0.5 rounded">
+                PB
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-text-secondary">
+            {swim.swumOn}{swim.meetName ? ` · ${swim.meetName}` : ""}
+          </p>
+
+          {editing && (
+            <form action={editAction} className="flex flex-col gap-2 mt-2">
+              <div className="flex gap-2 flex-wrap">
+                <div className="flex flex-col gap-1">
+                  <label htmlFor={`edit-time-${swim.id}`} className="text-xs font-semibold text-text-secondary">Time</label>
+                  <input
+                    id={`edit-time-${swim.id}`}
+                    name="timeString"
+                    type="text"
+                    defaultValue={swim.timeString}
+                    placeholder="e.g. 1:02.34"
+                    inputMode="decimal"
+                    className="h-9 px-2 w-28 rounded-lg border border-border bg-background text-text text-sm tabular-nums focus:outline focus:outline-2 focus:outline-focus-ring"
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label htmlFor={`edit-date-${swim.id}`} className="text-xs font-semibold text-text-secondary">Date</label>
+                  <input
+                    id={`edit-date-${swim.id}`}
+                    name="swumOn"
+                    type="date"
+                    defaultValue={swim.swumOn}
+                    className="h-9 px-2 rounded-lg border border-border bg-background text-text text-sm focus:outline focus:outline-2 focus:outline-focus-ring"
+                  />
+                </div>
+              </div>
+              {editState.status === "error" && (
+                <p role="alert" className="text-xs text-danger">{editState.message}</p>
+              )}
+              <div className="flex gap-2">
+                <button
+                  type="submit"
+                  disabled={isEditing}
+                  className="inline-flex items-center justify-center px-3 h-8 font-bold text-xs rounded-button disabled:opacity-60"
+                  style={{ backgroundColor: "var(--color-button-primary-background)", color: "var(--color-button-primary-text)" }}
+                >
+                  {isEditing ? "Saving…" : "Save"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditing(false)}
+                  className="inline-flex items-center justify-center px-3 h-8 font-semibold text-xs rounded-button border"
+                  style={{ borderColor: "var(--color-button-outline)", color: "var(--color-button-outline)" }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
+
+        {!editing && (
+          <div className="flex items-center gap-1 shrink-0">
+            <button
+              type="button"
+              onClick={() => setEditing(true)}
+              className="text-xs font-semibold text-text-secondary hover:text-text min-h-[44px] px-2"
+            >
+              Edit
+            </button>
+            <form id={`delete-swim-${swim.id}`} action={deleteAction} className="hidden" />
+            <button
+              type="button"
+              onClick={() => dialogRef.current?.showModal()}
+              className="text-xs font-semibold text-danger hover:opacity-80 min-h-[44px] px-2"
+            >
+              Delete
+            </button>
+          </div>
+        )}
+      </li>
+
+      <ConfirmDialog
+        dialogRef={dialogRef}
+        title="Delete this swim?"
+        description={`${eventLabel} — ${swim.timeString} on ${swim.swumOn} will be permanently removed.`}
+        formId={`delete-swim-${swim.id}`}
+        confirmLabel="Delete"
+        confirmDanger
+        isPending={isDeleting}
+        {...(deleteState.status === "error" && { errorMessage: deleteState.message })}
+        onCancel={() => dialogRef.current?.close()}
+      />
+    </>
+  );
+}
+
+interface SwimmerTimesSectionProps {
+  swimmerId: string;
+  swims: MeetSwimResponse[];
+  personalBests: PersonalBest[];
+  meets: MeetResponse[];
+}
+
+function SwimmerTimesSection({ swimmerId, swims, personalBests, meets }: SwimmerTimesSectionProps) {
+  const [showForm, setShowForm] = useState(false);
+  const pbSet = new Set(personalBests.map((pb) => pb.swimId));
+
+  return (
+    <section className="flex flex-col gap-4">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="font-bold text-text">Times</h2>
+        {!showForm && (
+          <button
+            type="button"
+            onClick={() => setShowForm(true)}
+            className="text-xs font-semibold text-accent hover:opacity-80 min-h-[44px] px-2"
+          >
+            + Add time
+          </button>
+        )}
+      </div>
+
+      {showForm && (
+        <AddSwimForm swimmerId={swimmerId} meets={meets} onSuccess={() => setShowForm(false)} />
+      )}
+
+      {personalBests.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <p className="text-xs font-semibold text-text-secondary">Personal bests</p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr>
+                  <th className="text-left font-semibold text-text-secondary pb-1 pr-4 text-xs">Event</th>
+                  <th className="text-left font-semibold text-text-secondary pb-1 pr-4 text-xs">Course</th>
+                  <th className="text-right font-semibold text-text-secondary pb-1 text-xs">Time</th>
+                </tr>
+              </thead>
+              <tbody>
+                {personalBests.map((pb) => (
+                  <tr key={`${pb.eventDistance}-${pb.eventStroke}-${pb.course}`} className="border-t border-border">
+                    <td className="py-2 pr-4 font-semibold text-text">
+                      {pb.eventDistance} {STROKE_SHORT[pb.eventStroke] ?? pb.eventStroke}
+                    </td>
+                    <td className="py-2 pr-4 text-text-secondary">
+                      {COURSE_LABELS[pb.course] ?? pb.course}
+                    </td>
+                    <td className="py-2 text-right tabular-nums font-semibold text-accent" style={{ fontVariantNumeric: "tabular-nums" }}>
+                      {pb.timeString}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {swims.length === 0 ? (
+        !showForm && <p className="text-sm text-text-secondary">No times recorded yet.</p>
+      ) : (
+        <ul className="flex flex-col">
+          {swims.map((swim) => (
+            <SwimRow
+              key={swim.id}
+              swim={swim}
+              swimmerId={swimmerId}
+              isPB={pbSet.has(swim.id)}
+            />
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
+
 export default function CoachSwimmerDetailContent({
   swimmer,
   accessToken,
@@ -44,6 +416,9 @@ export default function CoachSwimmerDetailContent({
   coachingPriorities,
   categories,
   timelineItems,
+  swims,
+  personalBests,
+  meets,
 }: CoachSwimmerDetailContentProps) {
 
   return (
@@ -239,6 +614,13 @@ export default function CoachSwimmerDetailContent({
               </ul>
             </section>
           )}
+
+          <SwimmerTimesSection
+            swimmerId={swimmer.id}
+            swims={swims}
+            personalBests={personalBests}
+            meets={meets}
+          />
 
           <SwimmerSkillsHistory
             swimmerId={swimmer.id}
