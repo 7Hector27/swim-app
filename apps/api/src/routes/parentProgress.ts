@@ -1,124 +1,24 @@
 import { Router } from "express";
-import { and, eq, isNull, or } from "drizzle-orm";
+import { desc, eq, inArray } from "drizzle-orm";
 import { db } from "../db/client";
-import { leagueRegistrations, swimmers, swimmerClubs } from "../db/schema";
+import { evaluationSessions, skillCategories, skillLevelDescriptors } from "../db/schema";
 import { validate } from "../middleware/validate";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { requireUser } from "../middleware/requireUser";
 import { requireParent } from "../middleware/requireParent";
 import { requireHouseholdMember } from "../middleware/requireHouseholdMember";
 import { requireHouseholdSwimmer } from "../middleware/requireHouseholdSwimmer";
-import { isActiveSwimmer } from "../db/queries";
 import { computeSwimmerProgress } from "../lib/progressCalculation";
 import {
   IdParamsSchema,
-  currentSeasonStartYear,
-  todayLA,
   type IdParams,
-  type ParentSwimmer,
+  type ParentCoachingNote,
   type ParentSwimmerProgressResponse,
 } from "@swim-app/shared";
 
 export const parentProgressRouter = Router();
 
-function toISO(date: Date): string {
-  return date.toISOString();
-}
-
-const swimmerColumns = {
-  id: swimmers.id,
-  firstName: swimmers.firstName,
-  lastName: swimmers.lastName,
-  birthDate: swimmers.birthDate,
-  sex: swimmers.sex,
-  isPublic: swimmers.isPublic,
-  publicConsentAt: swimmers.publicConsentAt,
-  createdAt: swimmers.createdAt,
-  updatedAt: swimmers.updatedAt,
-} as const;
-
-const swimmerClubColumns = {
-  id: swimmerClubs.id,
-  swimmerId: swimmerClubs.swimmerId,
-  clubId: swimmerClubs.clubId,
-  otherClubName: swimmerClubs.otherClubName,
-  createdAt: swimmerClubs.createdAt,
-  updatedAt: swimmerClubs.updatedAt,
-} as const;
-
-function activeRegWhereClause(swimmerId: string) {
-  const today = todayLA();
-  const clubYear = currentSeasonStartYear("club", today);
-  const summerYear = currentSeasonStartYear("summer_league", today);
-  return and(
-    eq(leagueRegistrations.swimmerId, swimmerId),
-    isNull(leagueRegistrations.withdrawnAt),
-    or(
-      and(eq(leagueRegistrations.league, "club"), eq(leagueRegistrations.seasonStartYear, clubYear)),
-      and(eq(leagueRegistrations.league, "summer_league"), eq(leagueRegistrations.seasonStartYear, summerYear)),
-    ),
-  );
-}
-
-async function fetchSwimmerWithClubs(swimmerId: string): Promise<ParentSwimmer | null> {
-  const rows = await db
-    .select(swimmerColumns)
-    .from(swimmers)
-    .where(and(isActiveSwimmer, eq(swimmers.id, swimmerId)))
-    .limit(1);
-  const swimmer = rows[0];
-  if (!swimmer) return null;
-
-  const [clubRows, regRows] = await Promise.all([
-    db.select(swimmerClubColumns).from(swimmerClubs).where(eq(swimmerClubs.swimmerId, swimmerId)),
-    db
-      .select({ league: leagueRegistrations.league })
-      .from(leagueRegistrations)
-      .where(activeRegWhereClause(swimmerId)),
-  ]);
-
-  return {
-    id: swimmer.id,
-    firstName: swimmer.firstName,
-    lastName: swimmer.lastName,
-    birthDate: swimmer.birthDate,
-    sex: swimmer.sex,
-    isPublic: swimmer.isPublic,
-    publicConsentAt: swimmer.publicConsentAt ? toISO(swimmer.publicConsentAt) : null,
-    createdAt: toISO(swimmer.createdAt),
-    updatedAt: toISO(swimmer.updatedAt),
-    clubs: clubRows.map((club) => ({
-      id: club.id,
-      swimmerId: club.swimmerId,
-      clubId: club.clubId,
-      otherClubName: club.otherClubName,
-      createdAt: toISO(club.createdAt),
-      updatedAt: toISO(club.updatedAt),
-    })),
-    currentLeagues: regRows.map((row) => row.league),
-  };
-}
-
-// GET /swimmers/:id — single swimmer for household members
-parentProgressRouter.get(
-  "/:id",
-  requireUser,
-  requireParent,
-  requireHouseholdMember,
-  requireHouseholdSwimmer,
-  validate({ params: IdParamsSchema }),
-  asyncHandler(async (req, res) => {
-    const { id: swimmerId } = req.params as unknown as IdParams;
-    const swimmer = await fetchSwimmerWithClubs(swimmerId);
-    if (!swimmer) {
-      res.status(404).json({ error: "Not found" });
-      return;
-    }
-    res.json(swimmer);
-  }),
-);
-
-// GET /swimmers/:id/progress — parent-facing progress (no fault tags)
+// GET /swimmers/:id/progress — parent-facing progress (no fault tags, no coach fields)
 parentProgressRouter.get(
   "/:id/progress",
   requireUser,
@@ -130,10 +30,56 @@ parentProgressRouter.get(
     const { id: swimmerId } = req.params as unknown as IdParams;
     const full = await computeSwimmerProgress(swimmerId);
 
-    // Strip faultTags from every history point
+    const displayedSkillIds = full.skills.map((s) => s.skillId);
+
+    // Fetch level descriptors and latest coaching notes in parallel
+    const [descriptorRows, sessionRows] = await Promise.all([
+      displayedSkillIds.length > 0
+        ? db
+            .select({ skillId: skillLevelDescriptors.skillId, level: skillLevelDescriptors.level, text: skillLevelDescriptors.text })
+            .from(skillLevelDescriptors)
+            .where(inArray(skillLevelDescriptors.skillId, displayedSkillIds))
+        : Promise.resolve([]),
+      db
+        .select({
+          categoryId: evaluationSessions.categoryId,
+          categoryName: skillCategories.name,
+          sessionDate: evaluationSessions.sessionDate,
+          coachingPriority: evaluationSessions.coachingPriority,
+        })
+        .from(evaluationSessions)
+        .innerJoin(skillCategories, eq(skillCategories.id, evaluationSessions.categoryId))
+        .where(eq(evaluationSessions.swimmerId, swimmerId))
+        .orderBy(desc(evaluationSessions.sessionDate)),
+    ]);
+
+    // Build per-skill descriptor map: skillId -> { "1": text, "2": text, ... }
+    const descriptorMap = new Map<string, Record<string, string>>();
+    for (const row of descriptorRows) {
+      const existing = descriptorMap.get(row.skillId) ?? {};
+      existing[String(row.level)] = row.text;
+      descriptorMap.set(row.skillId, existing);
+    }
+
+    // Latest coaching note per category (first seen wins since ordered by date DESC)
+    const seenCategories = new Set<string>();
+    const latestCoachingNotes: ParentCoachingNote[] = [];
+    for (const row of sessionRows) {
+      if (seenCategories.has(row.categoryId)) continue;
+      seenCategories.add(row.categoryId);
+      latestCoachingNotes.push({
+        categoryId: row.categoryId,
+        categoryName: row.categoryName,
+        text: row.coachingPriority,
+        sessionDate: row.sessionDate,
+      });
+    }
+
+    // Strip faultTags from every history point, attach level descriptors
     const parentSkills = full.skills.map((skill) => ({
       ...skill,
       history: skill.history.map(({ faultTags: _faultTags, ...point }) => point),
+      ...(descriptorMap.has(skill.skillId) && { levelDescriptors: descriptorMap.get(skill.skillId) }),
     }));
 
     const response: ParentSwimmerProgressResponse = {
@@ -141,6 +87,7 @@ parentProgressRouter.get(
       startProgress: full.startProgress,
       headPositionOverall: full.headPositionOverall,
       coachingPriorities: full.coachingPriorities,
+      latestCoachingNotes,
     };
 
     req.log.info({ swimmerId, skillCount: parentSkills.length }, "parent swimmer progress fetched");

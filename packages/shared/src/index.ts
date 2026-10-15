@@ -229,6 +229,7 @@ export type {
   SwimmerProgressResponse,
   ParentProgressRatingPoint,
   ParentSkillProgress,
+  ParentCoachingNote,
   ParentSwimmerProgressResponse,
 } from "./schemas/evaluations";
 export {
@@ -242,5 +243,6 @@ export {
   SwimmerProgressResponseSchema,
   ParentProgressRatingPointSchema,
   ParentSkillProgressSchema,
+  ParentCoachingNoteSchema,
   ParentSwimmerProgressResponseSchema,
 } from "./schemas/evaluations";

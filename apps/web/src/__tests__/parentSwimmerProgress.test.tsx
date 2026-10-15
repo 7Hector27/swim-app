@@ -33,6 +33,7 @@ const emptyProgress: ParentSwimmerProgressResponse = {
   startProgress: [],
   headPositionOverall: null,
   coachingPriorities: [],
+  latestCoachingNotes: [],
 };
 
 const categories: CategoriesResponse = [];

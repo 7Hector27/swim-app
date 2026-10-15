@@ -316,10 +316,20 @@ export type ParentProgressRatingPoint = z.infer<typeof ParentProgressRatingPoint
 
 export const ParentSkillProgressSchema = SkillProgressSchema.extend({
   history: z.array(ParentProgressRatingPointSchema),
+  levelDescriptors: z.record(z.string(), z.string()).optional(),
 });
 export type ParentSkillProgress = z.infer<typeof ParentSkillProgressSchema>;
 
+export const ParentCoachingNoteSchema = z.object({
+  categoryId: z.string().uuid(),
+  categoryName: z.string(),
+  text: z.string(),
+  sessionDate: z.string(),
+});
+export type ParentCoachingNote = z.infer<typeof ParentCoachingNoteSchema>;
+
 export const ParentSwimmerProgressResponseSchema = SwimmerProgressResponseSchema.extend({
   skills: z.array(ParentSkillProgressSchema),
+  latestCoachingNotes: z.array(ParentCoachingNoteSchema),
 });
 export type ParentSwimmerProgressResponse = z.infer<typeof ParentSwimmerProgressResponseSchema>;
