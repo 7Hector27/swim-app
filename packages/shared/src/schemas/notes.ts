@@ -24,3 +24,27 @@ export type TimelineItem = z.infer<typeof TimelineItemSchema>;
 
 export const TimelineResponseSchema = z.array(TimelineItemSchema);
 export type TimelineResponse = z.infer<typeof TimelineResponseSchema>;
+
+export const CreateCoachNoteBodySchema = z.object({
+  body: z.string().min(1),
+  sessionId: z.string().uuid().optional(),
+  lessonId: z.string().uuid().optional(),
+});
+export type CreateCoachNoteBody = z.infer<typeof CreateCoachNoteBodySchema>;
+
+export const UpdateCoachNoteBodySchema = z.object({
+  body: z.string().min(1),
+});
+export type UpdateCoachNoteBody = z.infer<typeof UpdateCoachNoteBodySchema>;
+
+export const CoachNoteResponseSchema = z.object({
+  id: z.string().uuid(),
+  swimmerId: z.string().uuid(),
+  sessionId: z.string().uuid().nullable(),
+  lessonId: z.string().uuid().nullable(),
+  body: z.string(),
+  createdBy: z.string().uuid(),
+  createdAt: z.string().datetime({ offset: true }),
+  updatedAt: z.string().datetime({ offset: true }),
+});
+export type CoachNoteResponse = z.infer<typeof CoachNoteResponseSchema>;

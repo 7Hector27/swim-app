@@ -3,12 +3,18 @@ import { render, screen } from "@testing-library/react";
 
 vi.mock("@/components/SiteNav", () => ({ default: () => <nav /> }));
 vi.mock("@/components/SiteFooter", () => ({ default: () => <footer /> }));
+vi.mock("@/components/AddNoteForm", () => ({ default: () => <div data-testid="add-note-form" /> }));
 vi.mock("@/content/CoachSwimmerDetailContent/HidePublicButton", () => ({
   default: () => <button>Hide</button>,
 }));
 vi.mock("@/content/CoachSwimmerDetailContent/SwimmerSkillsHistory", () => ({
   default: (props: { swimmerId: string }) => (
     <div data-testid="skills-history" data-swimmer-id={props.swimmerId} />
+  ),
+}));
+vi.mock("@/content/CoachSwimmerDetailContent/SwimmerTimeline", () => ({
+  default: (props: { swimmerId: string }) => (
+    <div data-testid="swimmer-timeline" data-swimmer-id={props.swimmerId} />
   ),
 }));
 

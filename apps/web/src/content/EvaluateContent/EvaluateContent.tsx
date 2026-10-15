@@ -6,6 +6,7 @@ import type {
   CategoriesResponse,
 } from "@swim-app/shared";
 import SiteFooter from "@/components/SiteFooter";
+import AddNoteForm from "@/components/AddNoteForm";
 import { submitEvaluation } from "./actions";
 import type { EvaluateState, SessionDraft, SkillDraft } from "./helpers";
 import {
@@ -201,6 +202,16 @@ export default function EvaluateContent({ swimmer, categories, accessToken }: Ev
               accessToken={accessToken}
               savedAt={savedAtRef.current}
             />
+
+            <section className="flex flex-col gap-3">
+              <h2 className="font-bold text-sm" style={{ color: "var(--color-text)" }}>
+                Add a session note
+              </h2>
+              <AddNoteForm
+                swimmerId={swimmer.id}
+                sessionId={state.sessionId}
+              />
+            </section>
 
             <a
               href={`/coach/swimmers/${swimmer.id}`}

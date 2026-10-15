@@ -201,11 +201,17 @@ export type {
   TimelineItemType,
   TimelineItem,
   TimelineResponse,
+  CreateCoachNoteBody,
+  UpdateCoachNoteBody,
+  CoachNoteResponse,
 } from "./schemas/notes";
 export {
   TimelineItemTypeSchema,
   TimelineItemSchema,
   TimelineResponseSchema,
+  CreateCoachNoteBodySchema,
+  UpdateCoachNoteBodySchema,
+  CoachNoteResponseSchema,
 } from "./schemas/notes";
 
 export { calculateStartGrade, StartGradeResultSchema } from "./lib/startGrade";

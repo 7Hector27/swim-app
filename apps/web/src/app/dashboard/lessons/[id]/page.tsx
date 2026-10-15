@@ -25,6 +25,7 @@ export default async function LessonDetailPage({ params }: { params: Promise<{ i
   if (!lesson) redirect("/dashboard");
 
   const isViewer = household?.myRole === "viewer";
+  const isCoach = auth.profile.role === "coach";
 
-  return <LessonDetailContent lesson={lesson} locations={locations} isViewer={isViewer} />;
+  return <LessonDetailContent lesson={lesson} locations={locations} isViewer={isViewer} isCoach={isCoach} />;
 }
