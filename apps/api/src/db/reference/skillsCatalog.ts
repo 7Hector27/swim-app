@@ -23,6 +23,7 @@ export type CatalogSkill = {
   descriptors?: CatalogDescriptor[];
   faultTags?: string[];
   ratedPerSide?: boolean;
+  notLegalAllowed?: boolean;
 };
 
 export type CatalogCategory = {
@@ -212,7 +213,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
       // Per-stroke instances of Stroke-breath coordination
       {
         slug: "stroke-breath-coordination-free",
-        name: "Stroke-breath coordination",
+        name: "Stroke hold on breath",
         type: "rubric",
         stroke: "free",
         sortOrder: 6,
@@ -223,7 +224,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
       // stroke-breath-coordination-back archived per Jason A5.
       {
         slug: "stroke-breath-coordination-breast",
-        name: "Stroke-breath coordination",
+        name: "Stroke hold on breath",
         type: "rubric",
         stroke: "breast",
         sortOrder: 7,
@@ -232,7 +233,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
       },
       {
         slug: "stroke-breath-coordination-fly",
-        name: "Stroke-breath coordination",
+        name: "Stroke hold on breath",
         type: "rubric",
         stroke: "fly",
         sortOrder: 8,
@@ -264,13 +265,13 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         sortOrder: 11,
         builtOnSlugs: ["exhalation", "back-head-position-stability"],
       },
+      // Rollup: grade = weaker of left/right breathing-timing-free grades. confirm with Jason: which grades and how
       {
         slug: "free-bilateral-breathing",
         name: "Bilateral breathing",
-        type: "rubric",
+        type: "rollup",
         stroke: "free",
         sortOrder: 12,
-        ratedPerSide: true,
         builtOnSlugs: ["free-rhythmic-breathing", "free-rotation"],
       },
     ],
@@ -339,6 +340,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         stroke: "free",
         sortOrder: 6,
         builtOnSlugs: ["horizontal-alignment"],
+        notLegalAllowed: true,
       },
       {
         slug: "free-rotation",
@@ -475,6 +477,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         stroke: "back",
         sortOrder: 8,
         builtOnSlugs: ["back-body-alignment"],
+        notLegalAllowed: true,
       },
       {
         slug: "back-kick-rate",
@@ -550,6 +553,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         stroke: "breast",
         sortOrder: 1,
         builtOnSlugs: ["hip-position"],
+        notLegalAllowed: true,
         descriptors: [
           { level: 1, text: "Scissor or flutter kick; feet not turned out." },
           { level: 2, text: "Whip kick shape when cued; feet turn out on some kicks; knees too wide." },
@@ -675,6 +679,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         stroke: "fly",
         sortOrder: 2,
         builtOnSlugs: ["fly-body-undulation"],
+        notLegalAllowed: true,
       },
       {
         slug: "fly-kick-rate",
@@ -821,6 +826,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         stroke: "free",
         sortOrder: 5,
         builtOnSlugs: ["udk-free", "free-stroke-timing"],
+        notLegalAllowed: true,
       },
       {
         slug: "breakout-back",
@@ -829,6 +835,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         stroke: "back",
         sortOrder: 6,
         builtOnSlugs: ["udk-back", "back-stroke-timing"],
+        notLegalAllowed: true,
       },
       {
         slug: "breakout-breast",
@@ -838,7 +845,9 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         sortOrder: 7,
         // "Stroke timing" → breast-timing (closest equivalent). See ADR 019, question 4.
         builtOnSlugs: ["pullout", "breast-timing"],
+        notLegalAllowed: true,
       },
+      // Per Jason A9: builds on udk-fly (confirmed). fly-two-kick-rhythm kept — confirm with Jason.
       {
         slug: "breakout-fly",
         name: "Breakout",
@@ -847,6 +856,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         sortOrder: 8,
         // Per Jason A9: fly breakout builds on fly UDK and two-kick rhythm.
         builtOnSlugs: ["udk-fly", "fly-two-kick-rhythm"],
+        notLegalAllowed: true,
       },
 
       // Track start (composite) + 6 components
@@ -863,6 +873,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         unit: "s",
         parentSlug: "track-start",
         sortOrder: 10,
+        notLegalAllowed: true,
       },
       {
         slug: "track-start-acceleration",
@@ -870,6 +881,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         type: "rubric",
         parentSlug: "track-start",
         sortOrder: 11,
+        notLegalAllowed: true,
       },
       {
         slug: "track-start-height",
@@ -877,6 +889,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         type: "rubric",
         parentSlug: "track-start",
         sortOrder: 12,
+        notLegalAllowed: true,
       },
       {
         slug: "track-start-distance",
@@ -885,6 +898,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         unit: "ft",
         parentSlug: "track-start",
         sortOrder: 13,
+        notLegalAllowed: true,
       },
       {
         slug: "track-start-head-arm-hand",
@@ -892,6 +906,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         type: "rubric",
         parentSlug: "track-start",
         sortOrder: 14,
+        notLegalAllowed: true,
       },
       {
         slug: "track-start-leg-feet",
@@ -899,6 +914,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         type: "rubric",
         parentSlug: "track-start",
         sortOrder: 15,
+        notLegalAllowed: true,
       },
 
       // Relay start (composite) + 6 components
@@ -915,6 +931,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         unit: "s",
         parentSlug: "relay-start",
         sortOrder: 17,
+        notLegalAllowed: true,
       },
       {
         slug: "relay-start-acceleration",
@@ -922,6 +939,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         type: "rubric",
         parentSlug: "relay-start",
         sortOrder: 18,
+        notLegalAllowed: true,
       },
       {
         slug: "relay-start-height",
@@ -929,6 +947,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         type: "rubric",
         parentSlug: "relay-start",
         sortOrder: 19,
+        notLegalAllowed: true,
       },
       {
         slug: "relay-start-distance",
@@ -937,6 +956,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         unit: "ft",
         parentSlug: "relay-start",
         sortOrder: 20,
+        notLegalAllowed: true,
       },
       {
         slug: "relay-start-head-arm-hand",
@@ -944,6 +964,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         type: "rubric",
         parentSlug: "relay-start",
         sortOrder: 21,
+        notLegalAllowed: true,
       },
       {
         slug: "relay-start-leg-feet",
@@ -951,6 +972,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         type: "rubric",
         parentSlug: "relay-start",
         sortOrder: 22,
+        notLegalAllowed: true,
       },
 
       // Turns (rubric)
@@ -960,6 +982,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         type: "rubric",
         appliesTo: ["free", "back", "breast", "fly"],
         sortOrder: 23,
+        notLegalAllowed: true,
       },
       {
         slug: "freestyle-flip-turn",
@@ -968,6 +991,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         // Per Jason A8: applies only to freestyle; IM breast-to-free is its own skill.
         appliesTo: ["free"],
         sortOrder: 24,
+        notLegalAllowed: true,
       },
       {
         slug: "backstroke-flip-turn",
@@ -975,6 +999,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         type: "rubric",
         stroke: "back",
         sortOrder: 25,
+        notLegalAllowed: true,
       },
       {
         slug: "breaststroke-open-turn",
@@ -982,6 +1007,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         type: "rubric",
         stroke: "breast",
         sortOrder: 26,
+        notLegalAllowed: true,
       },
       {
         slug: "butterfly-open-turn",
@@ -989,6 +1015,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         type: "rubric",
         stroke: "fly",
         sortOrder: 27,
+        notLegalAllowed: true,
       },
       {
         slug: "im-fly-to-back",
@@ -996,6 +1023,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         type: "rubric",
         appliesTo: ["fly", "back"],
         sortOrder: 28,
+        notLegalAllowed: true,
       },
       // im-back-to-breast archived — split into three skills below per Jason A9.
       {
@@ -1004,6 +1032,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         type: "rubric",
         appliesTo: ["back", "breast"],
         sortOrder: 29,
+        notLegalAllowed: true,
       },
       {
         slug: "im-back-to-breast-bucket",
@@ -1011,6 +1040,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         type: "rubric",
         appliesTo: ["back", "breast"],
         sortOrder: 30,
+        notLegalAllowed: true,
       },
       {
         slug: "im-back-to-breast-crossover",
@@ -1018,6 +1048,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         type: "rubric",
         appliesTo: ["back", "breast"],
         sortOrder: 31,
+        notLegalAllowed: true,
       },
       {
         slug: "im-breast-to-free",
@@ -1025,6 +1056,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         type: "rubric",
         appliesTo: ["breast", "free"],
         sortOrder: 32,
+        notLegalAllowed: true,
       },
 
       // Backstroke start (composite) + 6 components
@@ -1043,6 +1075,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         stroke: "back",
         parentSlug: "back-start",
         sortOrder: 34,
+        notLegalAllowed: true,
       },
       {
         slug: "back-start-push",
@@ -1051,6 +1084,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         stroke: "back",
         parentSlug: "back-start",
         sortOrder: 35,
+        notLegalAllowed: true,
       },
       {
         slug: "back-start-arch",
@@ -1059,6 +1093,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         stroke: "back",
         parentSlug: "back-start",
         sortOrder: 36,
+        notLegalAllowed: true,
       },
       {
         slug: "back-start-distance",
@@ -1068,6 +1103,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         stroke: "back",
         parentSlug: "back-start",
         sortOrder: 37,
+        notLegalAllowed: true,
       },
       {
         slug: "back-start-entry-alignment",
@@ -1076,6 +1112,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         stroke: "back",
         parentSlug: "back-start",
         sortOrder: 38,
+        notLegalAllowed: true,
       },
       {
         slug: "back-start-streamline",
@@ -1084,6 +1121,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         stroke: "back",
         parentSlug: "back-start",
         sortOrder: 39,
+        notLegalAllowed: true,
       },
     ],
   },

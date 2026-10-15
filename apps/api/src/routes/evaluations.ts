@@ -106,6 +106,7 @@ evaluationsRouter.post(
         unit: skills.unit,
         faultTags: skills.faultTags,
         ratedPerSide: skills.ratedPerSide,
+        notLegalAllowed: skills.notLegalAllowed,
         archivedAt: skills.archivedAt,
       })
       .from(skills)
@@ -165,6 +166,15 @@ evaluationsRouter.post(
           });
           return;
         }
+      }
+
+      // not_legal is only allowed on skills with notLegalAllowed = true
+      if (ratingInput.notLegal && !skill.notLegalAllowed) {
+        res.status(422).json({
+          error: "Validation error",
+          issues: [{ path: [`ratings[${index}].notLegal`], message: "Not legal is not allowed for this skill" }],
+        });
+        return;
       }
 
       // measurement only allowed on measured skills

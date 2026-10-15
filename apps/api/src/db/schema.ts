@@ -52,6 +52,7 @@ export const skills = pgTable("skills", {
   archivedAt: timestamp("archived_at", { withTimezone: true }),
   faultTags: text("fault_tags").array(),
   ratedPerSide: boolean("rated_per_side").notNull().default(false),
+  notLegalAllowed: boolean("not_legal_allowed").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdateFn(() => new Date()),
 }).enableRLS();

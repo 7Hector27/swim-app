@@ -42,7 +42,7 @@ These decisions were made to build the catalog but were not confirmed with Jason
 
 3. **`breathing-timing-fly` builds on `fly-head-position` and `fly-two-kick-rhythm`.** RESOLVED (Phase 1, A7) — confirmed that fly breathing timing depends on fly-head-position and fly-two-kick-rhythm, not breath-control.
 
-4. **Breaststroke breakout maps "Stroke timing" → `breast-timing`.** Breaststroke has no "Stroke timing" skill; "Timing" is the closest equivalent. **OPEN:** not answered in Phase 1 — still needs confirmation.
+4. **Breaststroke breakout maps "Stroke timing" → `breast-timing`.** RESOLVED (Phase 1 update, A8) — confirmed: breaststroke breakout builds on pullout and breaststroke timing.
 
 5. **Fly breakout maps "Stroke timing" → `fly-two-kick-rhythm`.** RESOLVED (Phase 1, A9) — confirmed builds on `udk-free-fly` and `fly-two-kick-rhythm`.
 
@@ -58,6 +58,6 @@ These decisions were made to build the catalog but were not confirmed with Jason
 
 **Open questions from Phase 1 review:**
 
-- **Breaststroke breakout dependency** — question 4 above remains unresolved. Is `breast-timing` the correct stand-in for "Stroke timing" in the breaststroke breakout, or should it depend on something else?
-
 - **"Not assessed" in the dependency map** — when the dependency map walks the `buildsOn` chain and hits a skill with no rating yet ("not assessed"), should it surface "this foundation skill hasn't been observed yet — check it" rather than stopping silently? Stopping silently means the coach sees no coaching priority even though there may be an unobserved gap. Surfacing it as a prompt distinguishes "not a problem" from "unknown." Needs Jason's input before the dependency-map PR (E-0).
+
+- **Does "Not legal" apply in all contexts?** Does it apply to beginners in drills and practice, or only in race context / competitive swimmers? Default for now: allowed in any context (the `not_legal_allowed` catalog field gates which skills can be marked, not which contexts). Needs Jason's input.
