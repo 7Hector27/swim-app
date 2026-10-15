@@ -245,7 +245,7 @@ coachSwimmersRouter.get(
       currentLeagues: regRows.map((row) => row.league),
       members: memberRows,
       memberNames: memberRows
-        .map((m) => m.fullName)
+        .map((member) => member.fullName)
         .filter((name): name is string => name !== null),
       homePool,
     };
@@ -353,16 +353,18 @@ coachSwimmersRouter.get(
           }
         ),
       })),
-      ...ratingRows.map((rating): TimelineItem => ({
-        type: "rating_note",
-        id: rating.id,
-        body: rating.note!,
-        createdAt: toISO(rating.createdAt),
-        tiedTo: {
-          sessionId: rating.sessionId,
-          skillId: rating.skillId,
-        },
-      })),
+      ...ratingRows
+        .filter((rating): rating is typeof rating & { note: string } => rating.note !== null)
+        .map((rating): TimelineItem => ({
+          type: "rating_note",
+          id: rating.id,
+          body: rating.note,
+          createdAt: toISO(rating.createdAt),
+          tiedTo: {
+            sessionId: rating.sessionId,
+            skillId: rating.skillId,
+          },
+        })),
       ...sessionRows.map((session): TimelineItem => ({
         type: "coaching_priority",
         id: session.id,
@@ -449,6 +451,17 @@ coachSwimmersRouter.patch(
     const { id: swimmerId, noteId } = req.params as unknown as NoteIdParams;
     const body = req.body as UpdateCoachNoteBody;
 
+    const swimmerRows = await db
+      .select({ id: swimmers.id })
+      .from(swimmers)
+      .where(and(isActiveSwimmer, eq(swimmers.id, swimmerId)))
+      .limit(1);
+
+    if (!swimmerRows[0]) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+
     const noteRows = await db
       .select({ id: coachNotes.id, swimmerId: coachNotes.swimmerId, createdBy: coachNotes.createdBy })
       .from(coachNotes)
@@ -486,6 +499,17 @@ coachSwimmersRouter.delete(
   validate({ params: NoteIdParamsSchema }),
   asyncHandler(async (req, res) => {
     const { id: swimmerId, noteId } = req.params as unknown as NoteIdParams;
+
+    const swimmerRows = await db
+      .select({ id: swimmers.id })
+      .from(swimmers)
+      .where(and(isActiveSwimmer, eq(swimmers.id, swimmerId)))
+      .limit(1);
+
+    if (!swimmerRows[0]) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
 
     const noteRows = await db
       .select({ id: coachNotes.id, swimmerId: coachNotes.swimmerId, createdBy: coachNotes.createdBy })

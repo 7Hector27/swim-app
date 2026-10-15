@@ -503,6 +503,7 @@ describe("PATCH /coach/swimmers/:id/notes/:noteId", () => {
     authAs(profileCoach);
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(profileCoach))
+      .mockReturnValueOnce(swimmerExistsSelect(true))
       .mockReturnValueOnce(noteByIdSelect(true, PROFILE_COACH_ID));
     setupUpdate();
 
@@ -518,6 +519,7 @@ describe("PATCH /coach/swimmers/:id/notes/:noteId", () => {
     authAs(profileCoach2);
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(profileCoach2))
+      .mockReturnValueOnce(swimmerExistsSelect(true))
       .mockReturnValueOnce(noteByIdSelect(true, PROFILE_COACH_ID));
 
     const res = await request(app)
@@ -540,10 +542,25 @@ describe("PATCH /coach/swimmers/:id/notes/:noteId", () => {
     expect(res.status).toBe(422);
   });
 
+  it("returns 404 when swimmer is archived", async () => {
+    authAs(profileCoach);
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(profileCoach))
+      .mockReturnValueOnce(swimmerExistsSelect(false));
+
+    const res = await request(app)
+      .patch(`/coach/swimmers/${SWIMMER_A_ID}/notes/${NOTE_ID}`)
+      .set("Authorization", "Bearer token")
+      .send({ body: "Updated", noteType: "correction" });
+
+    expect(res.status).toBe(404);
+  });
+
   it("returns 404 when note belongs to different swimmer", async () => {
     authAs(profileCoach);
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(profileCoach))
+      .mockReturnValueOnce(swimmerExistsSelect(true))
       .mockReturnValueOnce(noteByIdSelect(false));
 
     const res = await request(app)
@@ -570,6 +587,7 @@ describe("DELETE /coach/swimmers/:id/notes/:noteId", () => {
     authAs(profileCoach);
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(profileCoach))
+      .mockReturnValueOnce(swimmerExistsSelect(true))
       .mockReturnValueOnce(noteByIdSelect(true, PROFILE_COACH_ID));
     setupDelete();
 
@@ -584,6 +602,7 @@ describe("DELETE /coach/swimmers/:id/notes/:noteId", () => {
     authAs(profileCoach2);
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(profileCoach2))
+      .mockReturnValueOnce(swimmerExistsSelect(true))
       .mockReturnValueOnce(noteByIdSelect(true, PROFILE_COACH_ID));
 
     const res = await request(app)
@@ -593,10 +612,24 @@ describe("DELETE /coach/swimmers/:id/notes/:noteId", () => {
     expect(res.status).toBe(403);
   });
 
+  it("returns 404 when swimmer is archived", async () => {
+    authAs(profileCoach);
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(profileCoach))
+      .mockReturnValueOnce(swimmerExistsSelect(false));
+
+    const res = await request(app)
+      .delete(`/coach/swimmers/${SWIMMER_A_ID}/notes/${NOTE_ID}`)
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(404);
+  });
+
   it("returns 404 when note belongs to different swimmer", async () => {
     authAs(profileCoach);
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(profileCoach))
+      .mockReturnValueOnce(swimmerExistsSelect(true))
       .mockReturnValueOnce(noteByIdSelect(false));
 
     const res = await request(app)
