@@ -137,6 +137,49 @@ export function isInSelectionSpan(
   return rowMin >= startMin && rowMin < endMin;
 }
 
+export function isSlotInSelection(
+  slotStartsAt: string,
+  selectedStartsAt: string,
+  durationMinutes: number,
+): boolean {
+  const slotMs = new Date(slotStartsAt).getTime();
+  const startMs = new Date(selectedStartsAt).getTime();
+  return slotMs >= startMs && slotMs < startMs + durationMinutes * 60 * 1000;
+}
+
+export function formatSlotRangeWithDate(isoStr: string, durationMinutes: number): string {
+  const start = new Date(isoStr);
+  const end = new Date(start.getTime() + durationMinutes * 60 * 1000);
+
+  const laOptions = { timeZone: "America/Los_Angeles" } as const;
+
+  const dayLabel = new Intl.DateTimeFormat("en-US", {
+    ...laOptions,
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  }).format(start);
+
+  const fmt = (date: Date) =>
+    new Intl.DateTimeFormat("en-US", {
+      ...laOptions,
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    }).format(date);
+
+  const startStr = fmt(start);
+  const endStr = fmt(end);
+  const startMeridiem = startStr.slice(-2);
+  const endMeridiem = endStr.slice(-2);
+  const rangeStr =
+    startMeridiem === endMeridiem
+      ? `${startStr.slice(0, -3)} to ${endStr}`
+      : `${startStr} to ${endStr}`;
+
+  return `${dayLabel} · ${rangeStr}`;
+}
+
 export function formatHHMM(hhmm: string): string {
   const [h, m] = hhmm.split(":").map(Number);
   const hour = h ?? 0;

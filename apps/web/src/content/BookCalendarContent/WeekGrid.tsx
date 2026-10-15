@@ -1,7 +1,7 @@
 "use client";
 
 import type { WeekDayAvailability } from "@swim-app/shared";
-import { buildGridRows, getSlotHHMM, formatHHMM, isHourMark } from "./helpers";
+import { buildGridRows, formatHHMM, isHourMark } from "./helpers";
 import DayColumn from "./DayColumn";
 
 interface Props {
@@ -20,7 +20,6 @@ export default function WeekGrid({
   onSlotClick,
 }: Props) {
   const gridRows = buildGridRows(days);
-  const selectedStartHHMM = selectedStartsAt !== null ? getSlotHHMM(selectedStartsAt) : null;
 
   if (gridRows.length === 0) {
     return (
@@ -51,7 +50,7 @@ export default function WeekGrid({
             day={day}
             gridRows={gridRows}
             durationMinutes={durationMinutes}
-            selectedStartHHMM={selectedStartHHMM}
+            selectedStartsAt={selectedStartsAt}
             todayStr={todayStr}
             onSlotClick={onSlotClick}
           />

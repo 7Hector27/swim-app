@@ -1,7 +1,7 @@
 "use client";
 
 import type { WeekDayAvailability } from "@swim-app/shared";
-import { formatSlotTime, getSlotHHMM, isInSelectionSpan } from "./helpers";
+import { formatSlotTime, isSlotInSelection } from "./helpers";
 
 type Slot = WeekDayAvailability["slots"][number];
 
@@ -85,15 +85,12 @@ export default function PhoneTimeList({ day, durationMinutes, selectedStartsAt, 
     );
   }
 
-  const selectedHHMM = selectedStartsAt !== null ? getSlotHHMM(selectedStartsAt) : null;
-
   return (
     <div className="flex flex-col gap-2">
       {day.slots.map((slot) => {
-        const slotHHMM = getSlotHHMM(slot.startsAt);
         const isYourPick =
-          selectedHHMM !== null &&
-          isInSelectionSpan(slotHHMM, selectedHHMM, durationMinutes);
+          selectedStartsAt !== null &&
+          isSlotInSelection(slot.startsAt, selectedStartsAt, durationMinutes);
 
         return (
           <SlotRow

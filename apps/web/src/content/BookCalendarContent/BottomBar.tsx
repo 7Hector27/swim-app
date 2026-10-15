@@ -1,7 +1,7 @@
 "use client";
 
 import { lessonPrice } from "@/lib/pricing";
-import { formatSlotRange } from "./helpers";
+import { formatSlotRangeWithDate } from "./helpers";
 
 interface Props {
   selectedStartsAt: string | null;
@@ -36,7 +36,7 @@ export default function BottomBar({
     timeLabel = "Less than 16 hours away";
     subLabel = "Text Jason to book this one.";
   } else if (hasSelection) {
-    timeLabel = formatSlotRange(selectedStartsAt, durationMinutes);
+    timeLabel = formatSlotRangeWithDate(selectedStartsAt, durationMinutes);
     subLabel = `${durationMinutes} min · ${swimmerIds.length} swimmer${swimmerIds.length === 1 ? "" : "s"}`;
     if (hasSwimmers) {
       const price = lessonPrice(durationMinutes, swimmerIds.length);

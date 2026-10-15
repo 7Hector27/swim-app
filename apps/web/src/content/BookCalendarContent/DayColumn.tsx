@@ -1,14 +1,14 @@
 "use client";
 
 import type { WeekDayAvailability } from "@swim-app/shared";
-import { getSlotHHMM, isInSelectionSpan } from "./helpers";
+import { getSlotHHMM, isSlotInSelection } from "./helpers";
 import SlotCell from "./SlotCell";
 
 interface Props {
   day: WeekDayAvailability;
   gridRows: string[];
   durationMinutes: 30 | 45 | 60;
-  selectedStartHHMM: string | null;
+  selectedStartsAt: string | null;
   todayStr: string;
   onSlotClick: (slot: { startsAt: string; state: string }) => void;
 }
@@ -39,7 +39,7 @@ export default function DayColumn({
   day,
   gridRows,
   durationMinutes,
-  selectedStartHHMM,
+  selectedStartsAt,
   todayStr,
   onSlotClick,
 }: Props) {
@@ -75,8 +75,9 @@ export default function DayColumn({
           {gridRows.map((rowHHMM) => {
             const slot = slotsByHHMM.get(rowHHMM) ?? null;
             const isYourPick =
-              selectedStartHHMM !== null &&
-              isInSelectionSpan(rowHHMM, selectedStartHHMM, durationMinutes);
+              selectedStartsAt !== null &&
+              slot !== null &&
+              isSlotInSelection(slot.startsAt, selectedStartsAt, durationMinutes);
 
             return (
               <SlotCell

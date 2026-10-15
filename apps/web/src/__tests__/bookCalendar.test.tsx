@@ -195,6 +195,24 @@ describe("BottomBar", () => {
     expect(screen.getByRole("button", { name: /book lesson/i })).not.toBeDisabled();
   });
 
+  it("shows day and date in time label when selection present", () => {
+    // 2026-10-12T23:00:00.000Z = Mon Oct 12 4:00 PM PDT
+    render(
+      <BottomBar
+        selectedStartsAt="2026-10-12T23:00:00.000Z"
+        tooSoon={false}
+        durationMinutes={60}
+        swimmerIds={["s-1"]}
+        needsApproval={false}
+        onConfirm={noop}
+        isConfirming={false}
+        errorMessage={null}
+      />,
+    );
+    expect(screen.getByText(/Mon/)).toBeInTheDocument();
+    expect(screen.getByText(/Oct 12/)).toBeInTheDocument();
+  });
+
   it("shows 'Jason will confirm' when needsApproval=true and selection present", () => {
     render(
       <BottomBar
@@ -326,6 +344,33 @@ describe("WeekGrid", () => {
       (btn) => btn.getAttribute("aria-pressed") === "true",
     );
     expect(pressed.length).toBeGreaterThan(0);
+  });
+
+  it("picking Monday slot does not highlight the same clock time on other days", () => {
+    // Mon and Tue both have a slot at 23:00 UTC (same LA clock time, different dates)
+    const monSlot = "2026-10-12T23:00:00.000Z";
+    const tueSlot = "2026-10-13T23:00:00.000Z";
+    const twoDays = [
+      makeDay("2026-10-12", { teachingWindows: [{ start: "16:00", end: "17:00" }], slots: [{ startsAt: monSlot, state: "available" }] }),
+      makeDay("2026-10-13", { teachingWindows: [{ start: "16:00", end: "17:00" }], slots: [{ startsAt: tueSlot, state: "available" }] }),
+      ...["2026-10-14","2026-10-15","2026-10-16","2026-10-17","2026-10-18"].map((d) =>
+        makeDay(d, { dayState: "closed", openCount: 0, totalCount: 0, teachingWindows: [], slots: [] }),
+      ),
+    ];
+    render(
+      <WeekGrid
+        days={twoDays}
+        durationMinutes={60}
+        selectedStartsAt={monSlot}
+        todayStr="2026-10-14"
+        onSlotClick={() => {}}
+      />,
+    );
+    const pressed = screen.getAllByRole("button").filter(
+      (btn) => btn.getAttribute("aria-pressed") === "true",
+    );
+    // Only Monday's slot should be pressed, not Tuesday's
+    expect(pressed).toHaveLength(1);
   });
 });
 
