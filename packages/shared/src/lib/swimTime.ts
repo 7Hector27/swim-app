@@ -1,6 +1,6 @@
 export function parseSwimTime(value: string): number | null {
   if (!value) return null;
-  const withMin = /^(\d+):(\d{1,2})\.(\d{1,2})$/.exec(value);
+  const withMin = /^(\d+):(\d{2})\.(\d{1,2})$/.exec(value);
   if (withMin) {
     const minutes = parseInt(withMin[1]!, 10);
     const seconds = parseInt(withMin[2]!, 10);

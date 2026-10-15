@@ -228,9 +228,31 @@ describe("DELETE /coach/meets/:id", () => {
     expect(res.status).toBe(422);
     expect(res.body.error).toBe("meet_has_swims");
   });
+
+  it("returns 404 when meet does not exist", async () => {
+    authAs(profileCoach);
+    const returning = vi.fn().mockResolvedValue([]);
+    const deletedWhere = vi.fn().mockReturnValue({ returning });
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachRouter requireUser (once)
+      .mockReturnValueOnce(swimsForMeetSelect(false)); // no swims
+    mockDbDelete.mockReturnValue({ where: deletedWhere });
+
+    const res = await request(app)
+      .delete(`/coach/meets/${MEET_ID}`)
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(404);
+  });
 });
 
 // ── GET /coach/meets/:id ──────────────────────────────────────────────────────
+
+function pbGroupBySelect(rows: Array<{ eventDistance: number; eventStroke: string; course: string; timeHundredths: number }>) {
+  const groupBy = vi.fn().mockResolvedValue(rows);
+  const where = vi.fn().mockReturnValue({ groupBy });
+  return { from: vi.fn().mockReturnValue({ where }) };
+}
 
 function swimsWhereSelect(rows: typeof baseSwimRow[]) {
   const orderBy = vi.fn().mockResolvedValue(rows);
@@ -464,7 +486,8 @@ describe("GET /coach/swimmers/:id/meet-swims", () => {
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachRouter requireUser (once)
       .mockReturnValueOnce(swimmerExistsSelect(true))
-      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ leftJoin }) });
+      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ leftJoin }) })
+      .mockReturnValueOnce(pbGroupBySelect([{ eventDistance: 100, eventStroke: "free", course: "scy", timeHundredths: 5830 }]));
 
     const res = await request(app)
       .get(`/coach/swimmers/${SWIMMER_ID}/meet-swims`)
@@ -572,5 +595,83 @@ describe("PATCH /coach/swimmers/:id/meet-swims/:swimId", () => {
 
     expect(res.status).toBe(422);
     expect(res.body.error).toBe("swum_on_before_meet");
+  });
+
+  it("returns 422 for empty body", async () => {
+    authAs(profileCoach);
+    mockDbSelect.mockReturnValueOnce(requireUserSelect(profileCoach));
+
+    const res = await request(app)
+      .patch(`/coach/swimmers/${SWIMMER_ID}/meet-swims/${SWIM_ID}`)
+      .set("Authorization", "Bearer token")
+      .send({});
+
+    expect(res.status).toBe(422);
+  });
+});
+
+// ── DELETE /coach/swimmers/:id/meet-swims/:swimId ─────────────────────────────
+
+describe("DELETE /coach/swimmers/:id/meet-swims/:swimId", () => {
+  function swimByIdSelect(row: { id: string; swimmerId: string } | null) {
+    const limit = vi.fn().mockResolvedValue(row ? [row] : []);
+    const where = vi.fn().mockReturnValue({ limit });
+    return { from: vi.fn().mockReturnValue({ where }) };
+  }
+
+  it("returns 204 when swim is deleted", async () => {
+    authAs(profileCoach);
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachRouter requireUser (once)
+      .mockReturnValueOnce(swimmerExistsSelect(true))
+      .mockReturnValueOnce(swimByIdSelect({ id: SWIM_ID, swimmerId: SWIMMER_ID }));
+    mockDbDelete.mockReturnValue({ where: vi.fn().mockResolvedValue([]) });
+
+    const res = await request(app)
+      .delete(`/coach/swimmers/${SWIMMER_ID}/meet-swims/${SWIM_ID}`)
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(204);
+  });
+
+  it("returns 404 when swimmer not found", async () => {
+    authAs(profileCoach);
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachRouter requireUser (once)
+      .mockReturnValueOnce(swimmerExistsSelect(false));
+
+    const res = await request(app)
+      .delete(`/coach/swimmers/${SWIMMER_ID}/meet-swims/${SWIM_ID}`)
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 404 when swim not found", async () => {
+    authAs(profileCoach);
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachRouter requireUser (once)
+      .mockReturnValueOnce(swimmerExistsSelect(true))
+      .mockReturnValueOnce(swimByIdSelect(null));
+
+    const res = await request(app)
+      .delete(`/coach/swimmers/${SWIMMER_ID}/meet-swims/${SWIM_ID}`)
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 404 when swim belongs to a different swimmer", async () => {
+    authAs(profileCoach);
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachRouter requireUser (once)
+      .mockReturnValueOnce(swimmerExistsSelect(true))
+      .mockReturnValueOnce(swimByIdSelect({ id: SWIM_ID, swimmerId: "xxxxxxxx-0000-0000-0000-000000000099" }));
+
+    const res = await request(app)
+      .delete(`/coach/swimmers/${SWIMMER_ID}/meet-swims/${SWIM_ID}`)
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(404);
   });
 });

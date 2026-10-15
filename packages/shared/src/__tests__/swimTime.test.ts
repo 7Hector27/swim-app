@@ -32,6 +32,9 @@ describe("parseSwimTime", () => {
   it("returns null for malformed fraction", () => {
     expect(parseSwimTime("58.")).toBeNull();
   });
+  it("returns null for single-digit seconds after colon", () => {
+    expect(parseSwimTime("1:3.45")).toBeNull();
+  });
 });
 
 describe("formatSwimTime", () => {

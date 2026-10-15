@@ -566,6 +566,65 @@ RLS is enabled.
 
 ---
 
+## Meet times
+
+### `meets`
+
+One row per swim meet. Coach-created. Meets with at least one associated swim cannot be deleted.
+
+| Column | Type | Nullable | Default | Notes |
+|---|---|---|---|---|
+| `id` | `uuid` | no | `gen_random_uuid()` | Primary key |
+| `name` | `text` | no | — | e.g. "Summer Champs" |
+| `meet_date` | `date` | no | — | Date of the meet (YYYY-MM-DD) |
+| `course` | `course` | no | — | Enum: `scy`, `scm`, `lcm` |
+| `created_by` | `uuid` | no | — | FK → `profiles.id` (restrict on delete). Coach who created the meet. |
+| `created_at` | `timestamptz` | no | `now()` | |
+| `updated_at` | `timestamptz` | no | `now()` | Auto-updated |
+
+RLS is enabled. Policies TBD.
+
+**API behaviour:**
+- `GET /coach/meets` — list all meets ordered by `meet_date`.
+- `POST /coach/meets` — create a meet.
+- `GET /coach/meets/:id` — meet details including all swims for active swimmers, ordered by `swum_on` then event.
+- `DELETE /coach/meets/:id` — delete a meet. Returns 422 `meet_has_swims` if any swims are recorded for it.
+
+---
+
+### `meet_swims`
+
+One row per timed swim. A swim may be a meet swim (`swim_type = 'meet'`, requires `meet_id`) or a practice swim (`swim_type = 'practice'`, `meet_id` is null). Practice swims are excluded from personal bests.
+
+Times are stored as integer hundredths of a second (e.g. 6234 = 1:02.34). The `formatSwimTime` / `parseSwimTime` helpers in `packages/shared` convert between this integer and human-readable strings.
+
+| Column | Type | Nullable | Default | Notes |
+|---|---|---|---|---|
+| `id` | `uuid` | no | `gen_random_uuid()` | Primary key |
+| `swimmer_id` | `uuid` | no | — | FK → `swimmers.id` (restrict on delete) |
+| `meet_id` | `uuid` | yes | — | FK → `meets.id` (restrict on delete). Null for practice swims. |
+| `swim_type` | `swim_type` | no | `meet` | Enum: `meet`, `practice` |
+| `event_distance` | `integer` | no | — | Distance in yards/meters (e.g. 50, 100, 200, 400) |
+| `event_stroke` | `swim_stroke` | no | — | Enum: `free`, `back`, `breast`, `fly`, `im` |
+| `course` | `course` | no | — | Enum: `scy`, `scm`, `lcm` |
+| `swum_on` | `date` | no | — | Date the swim was performed. Must be ≥ `meets.meet_date` for meet swims. |
+| `time_hundredths` | `integer` | no | — | Elapsed time in hundredths of a second |
+| `created_by` | `uuid` | no | — | FK → `profiles.id` (restrict on delete). Coach who recorded the swim. |
+| `created_at` | `timestamptz` | no | `now()` | |
+| `updated_at` | `timestamptz` | no | `now()` | Auto-updated |
+
+RLS is enabled. Policies TBD.
+
+**Valid events:** Not all distance/stroke combinations are legal. The `isValidEvent` helper in `packages/shared` enforces the catalog. For example, 50 IM is not a valid event.
+
+**API behaviour:**
+- `GET /coach/swimmers/:id/meet-swims` — all swims for a swimmer (meet and practice), plus personal bests (fastest `time_hundredths` per `event_distance` / `event_stroke` / `course` across meet swims only).
+- `POST /coach/swimmers/:id/meet-swims` — record a swim. Validates event, time string, and (for meet swims) that `swum_on ≥ meet_date`.
+- `PATCH /coach/swimmers/:id/meet-swims/:swimId` — update time, date, or event. At least one field required. Re-validates event and time after merge.
+- `DELETE /coach/swimmers/:id/meet-swims/:swimId` — delete a swim. Swim must belong to the given swimmer.
+
+---
+
 ## Conventions
 
 - All tables use `id` as a UUID primary key (`gen_random_uuid()`), except `household_members` (composite PK `(household_id, profile_id)`), `skill_level_descriptors` (composite PK `(skill_id, level)`), `skill_dependencies` (composite PK `(skill_id, depends_on_skill_id)`), and `rating_scale_levels` (integer PK `level`)

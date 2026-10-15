@@ -1,5 +1,5 @@
 {
-  "id": "120b4dca-8977-45d3-b429-a77d7c52e071",
+  "id": "6a10e8a7-d240-46fe-b6b9-35b56625f91d",
   "prevId": "f24a3d5a-de54-4b02-8621-c400ad8a9fe5",
   "version": "7",
   "dialect": "postgresql",
@@ -1447,15 +1447,28 @@
           "primaryKey": false,
           "notNull": true
         },
-        "time_seconds": {
-          "name": "time_seconds",
-          "type": "numeric(10, 2)",
+        "course": {
+          "name": "course",
+          "type": "course",
+          "typeSchema": "public",
           "primaryKey": false,
           "notNull": true
         },
         "swum_on": {
           "name": "swum_on",
           "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "time_hundredths": {
+          "name": "time_hundredths",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "uuid",
           "primaryKey": false,
           "notNull": true
         },
@@ -1501,6 +1514,19 @@
           ],
           "onDelete": "restrict",
           "onUpdate": "no action"
+        },
+        "meet_swims_created_by_profiles_id_fk": {
+          "name": "meet_swims_created_by_profiles_id_fk",
+          "tableFrom": "meet_swims",
+          "tableTo": "profiles",
+          "columnsFrom": [
+            "created_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -1539,6 +1565,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "created_by": {
+          "name": "created_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -1555,7 +1587,21 @@
         }
       },
       "indexes": {},
-      "foreignKeys": {},
+      "foreignKeys": {
+        "meets_created_by_profiles_id_fk": {
+          "name": "meets_created_by_profiles_id_fk",
+          "tableFrom": "meets",
+          "tableTo": "profiles",
+          "columnsFrom": [
+            "created_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},

@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { and, asc, desc, eq, inArray, isNotNull, isNull, or } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import type { IdParams } from "@swim-app/shared";
 import { db } from "../db/client";
 import {
@@ -609,25 +609,39 @@ coachSwimmersRouter.get(
       toSwimResponse(row, row.meetName ?? null, row.meetDate ?? null),
     );
 
-    // Personal bests: only meet swims, best time per event+course
-    const meetOnlySwims = swimRows.filter((row) => row.swimType === "meet");
-    const bestByEvent = new Map<string, typeof meetOnlySwims[0]>();
-    for (const swim of meetOnlySwims) {
-      const key = `${swim.eventDistance}:${swim.eventStroke}:${swim.course}`;
-      const existing = bestByEvent.get(key);
-      if (!existing || swim.timeHundredths < existing.timeHundredths) {
-        bestByEvent.set(key, swim);
-      }
-    }
+    // Personal bests: fastest time per event+course for meet swims only, computed in SQL
+    const pbRows = await db
+      .select({
+        eventDistance: meetSwims.eventDistance,
+        eventStroke: meetSwims.eventStroke,
+        course: meetSwims.course,
+        timeHundredths: sql<number>`MIN(${meetSwims.timeHundredths})`.as("time_hundredths"),
+      })
+      .from(meetSwims)
+      .where(and(eq(meetSwims.swimmerId, swimmerId), eq(meetSwims.swimType, "meet")))
+      .groupBy(meetSwims.eventDistance, meetSwims.eventStroke, meetSwims.course);
 
-    const personalBests: PersonalBest[] = [...bestByEvent.values()].map((swim) => ({
-      eventDistance: swim.eventDistance,
-      eventStroke: swim.eventStroke,
-      course: swim.course,
-      timeHundredths: swim.timeHundredths,
-      timeString: formatSwimTime(swim.timeHundredths),
-      swimId: swim.id,
-    }));
+    const personalBests: PersonalBest[] = pbRows.flatMap((pb) => {
+      const match = swimRows.find(
+        (row) =>
+          row.swimType === "meet" &&
+          row.eventDistance === pb.eventDistance &&
+          row.eventStroke === pb.eventStroke &&
+          row.course === pb.course &&
+          row.timeHundredths === pb.timeHundredths,
+      );
+      if (!match) return [];
+      return [
+        {
+          eventDistance: pb.eventDistance,
+          eventStroke: pb.eventStroke,
+          course: pb.course,
+          timeHundredths: pb.timeHundredths,
+          timeString: formatSwimTime(pb.timeHundredths),
+          swimId: match.id,
+        },
+      ];
+    });
 
     const body: MeetSwimsResponse = { swims, personalBests };
     res.json(body);
@@ -815,5 +829,41 @@ coachSwimmersRouter.patch(
     }
 
     res.json(toSwimResponse(updated, meetName, meetDate));
+  }),
+);
+
+// DELETE /coach/swimmers/:id/meet-swims/:swimId
+coachSwimmersRouter.delete(
+  "/:id/meet-swims/:swimId",
+  validate({ params: SwimIdParamsSchema }),
+  asyncHandler(async (req, res) => {
+    const { id: swimmerId, swimId } = req.params as unknown as SwimIdParams;
+
+    const swimmerRows = await db
+      .select({ id: swimmers.id })
+      .from(swimmers)
+      .where(and(isActiveSwimmer, eq(swimmers.id, swimmerId)))
+      .limit(1);
+
+    if (!swimmerRows[0]) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+
+    const swimRows = await db
+      .select({ id: meetSwims.id, swimmerId: meetSwims.swimmerId })
+      .from(meetSwims)
+      .where(eq(meetSwims.id, swimId))
+      .limit(1);
+
+    const swim = swimRows[0];
+    if (!swim || swim.swimmerId !== swimmerId) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+
+    await db.delete(meetSwims).where(eq(meetSwims.id, swimId));
+
+    res.status(204).send();
   }),
 );
