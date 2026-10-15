@@ -298,9 +298,7 @@ describe("POST /swimmers/:id/sessions — validation", () => {
     // The route loads ALL non-archived skills via WHERE archived_at IS NULL.
     // A skill that is archived is simply absent from the catalog — return empty.
     mockDbSelect
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachAvailabilityRouter requireUser
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachLessonsRouter requireUser
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // evaluationsRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachRouter requireUser (once)
       .mockReturnValueOnce(swimmerSelect(activeSwimmerRow))
       .mockReturnValueOnce(categorySelect(true))
       .mockReturnValueOnce(skillsSelect([])); // archived skill absent from non-archived catalog
@@ -322,9 +320,7 @@ describe("POST /swimmers/:id/sessions — validation", () => {
     // The route loads all non-archived skills at once — wrongCategorySkill is returned
     // with its wrong categoryId; parentSkillId is null, so categoryMatch is false.
     mockDbSelect
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachAvailabilityRouter requireUser
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachLessonsRouter requireUser
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // evaluationsRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachRouter requireUser (once)
       .mockReturnValueOnce(swimmerSelect(activeSwimmerRow))
       .mockReturnValueOnce(categorySelect(true))
       .mockReturnValueOnce(skillsSelect([wrongCategorySkill]));
@@ -339,9 +335,7 @@ describe("POST /swimmers/:id/sessions — validation", () => {
 
   it("side missing when ratedPerSide=true → 422", async () => {
     mockDbSelect
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachAvailabilityRouter requireUser
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachLessonsRouter requireUser
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // evaluationsRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachRouter requireUser (once)
       .mockReturnValueOnce(swimmerSelect(activeSwimmerRow))
       .mockReturnValueOnce(categorySelect(true))
       .mockReturnValueOnce(skillsSelect([ratedPerSideSkillRow]));
@@ -359,9 +353,7 @@ describe("POST /swimmers/:id/sessions — validation", () => {
 
   it("side present when ratedPerSide=false → 422", async () => {
     mockDbSelect
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachAvailabilityRouter requireUser
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachLessonsRouter requireUser
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // evaluationsRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachRouter requireUser (once)
       .mockReturnValueOnce(swimmerSelect(activeSwimmerRow))
       .mockReturnValueOnce(categorySelect(true))
       .mockReturnValueOnce(skillsSelect([validSkillRow]));
@@ -379,9 +371,7 @@ describe("POST /swimmers/:id/sessions — validation", () => {
 
   it("invalid faultTag → 422", async () => {
     mockDbSelect
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachAvailabilityRouter requireUser
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachLessonsRouter requireUser
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // evaluationsRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachRouter requireUser (once)
       .mockReturnValueOnce(swimmerSelect(activeSwimmerRow))
       .mockReturnValueOnce(categorySelect(true))
       .mockReturnValueOnce(skillsSelect([validSkillRow]));
@@ -399,9 +389,7 @@ describe("POST /swimmers/:id/sessions — validation", () => {
 
   it("measurement on non-measured skill → 422", async () => {
     mockDbSelect
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachAvailabilityRouter requireUser
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachLessonsRouter requireUser
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // evaluationsRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachRouter requireUser (once)
       .mockReturnValueOnce(swimmerSelect(activeSwimmerRow))
       .mockReturnValueOnce(categorySelect(true))
       .mockReturnValueOnce(skillsSelect([validSkillRow])); // rubric type, not measured
@@ -425,9 +413,7 @@ describe("POST /swimmers/:id/sessions — validation", () => {
 
   it("duplicate skill+side in same session → 422", async () => {
     mockDbSelect
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachAvailabilityRouter requireUser
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachLessonsRouter requireUser
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // evaluationsRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachRouter requireUser (once)
       .mockReturnValueOnce(swimmerSelect(activeSwimmerRow))
       .mockReturnValueOnce(categorySelect(true))
       .mockReturnValueOnce(skillsSelect([validSkillRow]));
@@ -445,9 +431,7 @@ describe("POST /swimmers/:id/sessions — validation", () => {
 
   it("rejects notLegal=true on a skill that does not allow it", async () => {
     mockDbSelect
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachAvailabilityRouter requireUser
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachLessonsRouter requireUser
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // evaluationsRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachRouter requireUser (once)
       .mockReturnValueOnce(swimmerSelect(activeSwimmerRow))
       .mockReturnValueOnce(categorySelect(true))
       .mockReturnValueOnce(skillsSelect([{ ...validSkillRow, notLegalAllowed: false }]));
@@ -470,9 +454,7 @@ describe("POST /swimmers/:id/sessions — validation", () => {
 
   it("rejects direct rating of a rollup skill", async () => {
     mockDbSelect
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachAvailabilityRouter requireUser
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachLessonsRouter requireUser
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // evaluationsRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachRouter requireUser (once)
       .mockReturnValueOnce(swimmerSelect(activeSwimmerRow))
       .mockReturnValueOnce(categorySelect(true))
       .mockReturnValueOnce(skillsSelect([{ ...validSkillRow, type: "rollup" as const }]));
@@ -492,9 +474,7 @@ describe("POST /swimmers/:id/sessions — validation", () => {
 
   it("same skill rated on different sides is allowed → not 422", async () => {
     mockDbSelect
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachAvailabilityRouter requireUser
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachLessonsRouter requireUser
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // evaluationsRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachRouter requireUser (once)
       .mockReturnValueOnce(swimmerSelect(activeSwimmerRow))
       .mockReturnValueOnce(categorySelect(true))
       .mockReturnValueOnce(skillsSelect([ratedPerSideSkillRow]));
@@ -535,9 +515,7 @@ describe("DELETE /ratings/:id", () => {
     ]);
     const ratingWhere = vi.fn().mockReturnValue({ limit: ratingLimit });
     mockDbSelect
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachAvailabilityRouter requireUser
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachLessonsRouter requireUser
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // ratingsRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachRouter requireUser (once)
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: ratingWhere }) });
 
     const res = await request(app)
@@ -559,9 +537,7 @@ describe("DELETE /ratings/:id", () => {
     ]);
     const ratingWhere = vi.fn().mockReturnValue({ limit: ratingLimit });
     mockDbSelect
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachAvailabilityRouter requireUser
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachLessonsRouter requireUser
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // ratingsRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachRouter requireUser (once)
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: ratingWhere }) });
 
     const res = await request(app)
@@ -583,9 +559,7 @@ describe("DELETE /ratings/:id", () => {
     ]);
     const ratingWhere = vi.fn().mockReturnValue({ limit: ratingLimit });
     mockDbSelect
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachAvailabilityRouter requireUser
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachLessonsRouter requireUser
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // ratingsRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachRouter requireUser (once)
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: ratingWhere }) });
 
     const res = await request(app)
@@ -628,9 +602,7 @@ describe("DELETE /sessions/:id", () => {
   it("session not found → 404", async () => {
     authAs(profileCoach);
     mockDbSelect
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachAvailabilityRouter requireUser
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachLessonsRouter requireUser
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // sessionsRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachRouter requireUser (once)
       .mockReturnValueOnce(sessionSelect([])); // session lookup — not found
     await request(app)
       .delete(`/coach/sessions/${SESSION_ID}`)
@@ -642,9 +614,7 @@ describe("DELETE /sessions/:id", () => {
     authAs(profileCoach);
     const otherCoachSession = { id: SESSION_ID, coachId: "other-coach-id", createdAt: now };
     mockDbSelect
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachAvailabilityRouter requireUser
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachLessonsRouter requireUser
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // sessionsRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachRouter requireUser (once)
       .mockReturnValueOnce(sessionSelect([otherCoachSession])); // session lookup — wrong coach
     await request(app)
       .delete(`/coach/sessions/${SESSION_ID}`)
@@ -656,9 +626,7 @@ describe("DELETE /sessions/:id", () => {
     authAs(profileCoach);
     const oldSession = { id: SESSION_ID, coachId: COACH_ID, createdAt: oldTime };
     mockDbSelect
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachAvailabilityRouter requireUser
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachLessonsRouter requireUser
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // sessionsRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachRouter requireUser (once)
       .mockReturnValueOnce(sessionSelect([oldSession])); // session lookup — old
     await request(app)
       .delete(`/coach/sessions/${SESSION_ID}`)
@@ -670,9 +638,7 @@ describe("DELETE /sessions/:id", () => {
     authAs(profileCoach);
     const recentSession = { id: SESSION_ID, coachId: COACH_ID, createdAt: new Date() };
     mockDbSelect
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachAvailabilityRouter requireUser
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachLessonsRouter requireUser
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // sessionsRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachRouter requireUser (once)
       .mockReturnValueOnce(sessionSelect([recentSession])); // session lookup — recent
     mockDbTransaction.mockResolvedValue(undefined);
     await request(app)
@@ -725,11 +691,9 @@ describe("GET /categories", () => {
       categoryId: CATEGORY_ID,
     };
 
-    // requireUser calls: coachAvailabilityRouter, coachLessonsRouter, coachCategoriesRouter
+    // requireUser runs once in the unified coachRouter parent
     mockDbSelect
-      .mockReturnValueOnce(requireUserSelect(profileCoach))
-      .mockReturnValueOnce(requireUserSelect(profileCoach))
-      .mockReturnValueOnce(requireUserSelect(profileCoach))
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachRouter requireUser (once)
       .mockReturnValueOnce(
         (() => {
           const orderBy = vi.fn().mockResolvedValue([categoryRow]);
@@ -798,9 +762,7 @@ describe("PATCH /ratings/:id/void", () => {
     ]);
     const ratingWhere = vi.fn().mockReturnValue({ limit: ratingLimit });
     mockDbSelect
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachAvailabilityRouter requireUser
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachLessonsRouter requireUser
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // ratingsRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachRouter requireUser (once)
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: ratingWhere }) });
 
     const res = await request(app)
@@ -814,8 +776,7 @@ describe("PATCH /ratings/:id/void", () => {
 
   it("missing reason → 422", async () => {
     mockDbSelect
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachAvailabilityRouter requireUser
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachLessonsRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachRouter requireUser (once)
       .mockReturnValue(requireUserSelect(profileCoach));
 
     const res = await request(app)
@@ -853,9 +814,7 @@ describe("PATCH /ratings/:id/void", () => {
     ]);
     const ratingWhere = vi.fn().mockReturnValue({ limit: ratingLimit });
     mockDbSelect
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachAvailabilityRouter requireUser
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachLessonsRouter requireUser
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // ratingsRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachRouter requireUser (once)
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: ratingWhere }) });
 
     const res = await request(app)

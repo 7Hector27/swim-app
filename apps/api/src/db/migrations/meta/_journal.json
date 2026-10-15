@@ -176,6 +176,13 @@
       "when": 1792089377884,
       "tag": "0024_brainy_ben_urich",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1792092782895,
+      "tag": "0025_rapid_junta",
+      "breakpoints": true
     }
   ]
 }

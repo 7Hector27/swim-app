@@ -24,8 +24,6 @@ import {
   swimmers,
   travelBufferOverrides,
 } from "../db/schema";
-import { requireUser } from "../middleware/requireUser";
-import { requireCoach } from "../middleware/requireCoach";
 import { validate } from "../middleware/validate";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { notifyLessonApproved, notifyLessonDeclined, syncCalendarApproved } from "../lib/lessonApproval";
@@ -33,8 +31,6 @@ import { computeAvailableSlots, mergeSlotWindows } from "../lib/slots";
 import { z } from "zod";
 
 export const coachLessonsRouter = Router();
-
-coachLessonsRouter.use(requireUser, requireCoach);
 
 // ── GET /coach/schedule ───────────────────────────────────────────────────────
 

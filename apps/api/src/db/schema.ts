@@ -29,6 +29,9 @@ export const skillTypeEnum = pgEnum("skill_type", [
 
 export const strokeEnum = pgEnum("stroke", ["free", "back", "breast", "fly"]);
 
+// Separate enum for swim event strokes — includes IM which is not a catalog skill stroke.
+export const swimStrokeEnum = pgEnum("swim_stroke", ["free", "back", "breast", "fly", "im"]);
+
 export const skillCategories = pgTable("skill_categories", {
   id: uuid("id").primaryKey().defaultRandom(),
   slug: text("slug").notNull().unique(),
@@ -566,6 +569,35 @@ export const ratingFaultTags = pgTable(
     check("fault_tag_not_blank", sql`${table.faultTag} <> ''`),
   ],
 ).enableRLS();
+
+// ── Meets and meet swims ──────────────────────────────────────────────────────
+
+export const courseEnum = pgEnum("course", ["scy", "scm", "lcm"]);
+
+export const swimTypeEnum = pgEnum("swim_type", ["meet", "practice"]);
+
+export const meets = pgTable("meets", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  meetDate: date("meet_date").notNull(),
+  course: courseEnum("course").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdateFn(() => new Date()),
+}).enableRLS();
+
+export const meetSwims = pgTable("meet_swims", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  swimmerId: uuid("swimmer_id").notNull().references(() => swimmers.id, { onDelete: "restrict" }),
+  // meetId is null for practice swims
+  meetId: uuid("meet_id").references(() => meets.id, { onDelete: "restrict" }),
+  swimType: swimTypeEnum("swim_type").notNull().default("meet"),
+  eventDistance: integer("event_distance").notNull(),
+  eventStroke: swimStrokeEnum("event_stroke").notNull(),
+  timeSeconds: numeric("time_seconds", { precision: 10, scale: 2 }).notNull(),
+  swumOn: date("swum_on").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdateFn(() => new Date()),
+}).enableRLS();
 
 // ── Coach notes ───────────────────────────────────────────────────────────────
 

@@ -165,13 +165,11 @@ function requireUserSelect(profile: AnyProfile) {
   return { from: vi.fn().mockReturnValue({ where }) };
 }
 
-// Coach routes pass through coachAvailabilityRouter.use(requireUser) AND
-// coachLessonsRouter.use(requireUser), so we need two mocks per request.
+// Auth runs exactly once in the unified coachRouter parent.
 function authAsCoach() {
   authAs(coachProfile);
   mockDbSelect
-    .mockReturnValueOnce(requireUserSelect(coachProfile))  // coachAvailabilityRouter requireUser
-    .mockReturnValueOnce(requireUserSelect(coachProfile)); // coachLessonsRouter requireUser
+    .mockReturnValueOnce(requireUserSelect(coachProfile)); // coachRouter requireUser (once)
 }
 
 
@@ -327,7 +325,7 @@ describe("PATCH /coach/lessons/:id/decline", () => {
 
   it("returns 403 when a parent tries to decline", async () => {
     authAs(parentProfile);
-    mockDbSelect.mockReturnValueOnce(requireUserSelect(parentProfile)); // coachAvailabilityRouter requireUser; requireCoach rejects
+    mockDbSelect.mockReturnValueOnce(requireUserSelect(parentProfile)); // coachRouter requireUser; requireCoach rejects
 
     const res = await request(app)
       .patch(`/coach/lessons/${LESSON_ID}/decline`)
