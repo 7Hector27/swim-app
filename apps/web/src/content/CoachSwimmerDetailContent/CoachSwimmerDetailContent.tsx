@@ -1,8 +1,10 @@
-import { type CoachSwimmerDetail, type League, type CategoriesResponse, type SwimmerSkillsResponse, type StartGradeResult } from "@swim-app/shared";
+import { type CoachSwimmerDetail, type League, type CategoriesResponse, type SwimmerSkillsResponse, type StartGradeResult, type TimelineResponse } from "@swim-app/shared";
 
 import SiteFooter from "@/components/SiteFooter";
+import AddNoteForm from "@/components/AddNoteForm";
 import HidePublicButton from "./HidePublicButton";
 import SwimmerSkillsHistory from "./SwimmerSkillsHistory";
+import SwimmerTimeline from "./SwimmerTimeline";
 
 interface CoachSwimmerDetailContentProps {
   swimmer: CoachSwimmerDetail;
@@ -11,6 +13,7 @@ interface CoachSwimmerDetailContentProps {
   startGrades: SwimmerSkillsResponse["startGrades"];
   coachingPriorities: SwimmerSkillsResponse["coachingPriorities"];
   categories: CategoriesResponse;
+  timelineItems: TimelineResponse;
 }
 
 const LEAGUE_LABELS: Record<League, string> = {
@@ -40,6 +43,7 @@ export default function CoachSwimmerDetailContent({
   startGrades,
   coachingPriorities,
   categories,
+  timelineItems,
 }: CoachSwimmerDetailContentProps) {
 
   return (
@@ -242,6 +246,17 @@ export default function CoachSwimmerDetailContent({
             categories={categories}
             grades={grades}
           />
+
+          <SwimmerTimeline
+            swimmerId={swimmer.id}
+            items={timelineItems}
+            categories={categories}
+          />
+
+          <section className="flex flex-col gap-3">
+            <h2 className="font-bold text-text">Add note</h2>
+            <AddNoteForm swimmerId={swimmer.id} categories={categories} />
+          </section>
 
           {swimmer.members.length > 0 && (
             <section className="flex flex-col gap-3">

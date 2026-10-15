@@ -538,6 +538,34 @@ RLS enabled. Policies TBD.
 
 ---
 
+## Coach notes
+
+### `coach_notes`
+
+Free-text notes written by a coach about a swimmer. Notes may be standalone or attached to an evaluation session, a lesson, or a skill.
+
+| Column | Type | Nullable | Default | Notes |
+|---|---|---|---|---|
+| `id` | `uuid` | no | `gen_random_uuid()` | Primary key |
+| `swimmer_id` | `uuid` | no | — | FK → `swimmers.id` (restrict on delete) |
+| `session_id` | `uuid` | yes | — | FK → `evaluation_sessions.id` (restrict on delete). Set when the note is tied to an evaluation session. |
+| `lesson_id` | `uuid` | yes | — | FK → `lessons.id` (restrict on delete). Set when the note is tied to a lesson. |
+| `skill_id` | `uuid` | yes | — | FK → `skills.id` (restrict on delete). Set when the note is tied to a specific skill. |
+| `note_type` | `coach_note_type` | no | `'observation'` | Enum: `observation`, `correction`, `drill`, `recommendation` |
+| `body` | `text` | no | — | Note text |
+| `created_by` | `uuid` | no | — | FK → `profiles.id` (restrict on delete). Coach who wrote the note. |
+| `created_at` | `timestamptz` | no | `now()` | |
+| `updated_at` | `timestamptz` | no | `now()` | Auto-updated |
+
+Constraints:
+- `CHECK (coach_notes_body_not_blank)` — `body <> ''`
+
+Enum: `coach_note_type` = `observation` | `correction` | `drill` | `recommendation`
+
+RLS is enabled.
+
+---
+
 ## Conventions
 
 - All tables use `id` as a UUID primary key (`gen_random_uuid()`), except `household_members` (composite PK `(household_id, profile_id)`), `skill_level_descriptors` (composite PK `(skill_id, level)`), `skill_dependencies` (composite PK `(skill_id, depends_on_skill_id)`), and `rating_scale_levels` (integer PK `level`)

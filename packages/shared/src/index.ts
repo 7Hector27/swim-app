@@ -197,6 +197,25 @@ export {
   WeekAvailabilityResponseSchema,
 } from "./schemas/booking";
 
+export type {
+  CoachNoteType,
+  TimelineItemType,
+  TimelineItem,
+  TimelineResponse,
+  CreateCoachNoteBody,
+  UpdateCoachNoteBody,
+  CoachNoteResponse,
+} from "./schemas/notes";
+export {
+  CoachNoteTypeSchema,
+  TimelineItemTypeSchema,
+  TimelineItemSchema,
+  TimelineResponseSchema,
+  CreateCoachNoteBodySchema,
+  UpdateCoachNoteBodySchema,
+  CoachNoteResponseSchema,
+} from "./schemas/notes";
+
 export { calculateStartGrade, StartGradeResultSchema } from "./lib/startGrade";
 export type { StartGradeResult } from "./lib/startGrade";
 
