@@ -5,7 +5,7 @@ import type { SwimmerSkillsResponse } from "@swim-app/shared";
 import AccountInactiveScreen from "@/components/AccountInactiveScreen";
 import CoachSwimmerDetailContent from "@/content/CoachSwimmerDetailContent";
 import { requireAuth } from "@/lib/requireAuth";
-import { fetchCoachSwimmerDetail } from "@/lib/api/coachSwimmers";
+import { fetchCoachSwimmerDetail, fetchSwimmerTimeline } from "@/lib/api/coachSwimmers";
 import { fetchSwimmerSkills, fetchSkillCategories } from "@/lib/api/evaluations";
 
 export const metadata: Metadata = {
@@ -20,10 +20,11 @@ export default async function CoachSwimmerPage({ params }: CoachSwimmerPageProps
   const [auth, { id }] = await Promise.all([requireAuth(), params]);
   if (!auth) return <AccountInactiveScreen />;
 
-  const [swimmerResult, skillsResult, categoriesResult] = await Promise.all([
+  const [swimmerResult, skillsResult, categoriesResult, timelineResult] = await Promise.all([
     fetchCoachSwimmerDetail(id, auth.accessToken),
     fetchSwimmerSkills(id, auth.accessToken),
     fetchSkillCategories(auth.accessToken),
+    fetchSwimmerTimeline(id, auth.accessToken),
   ]);
 
   if (!swimmerResult.ok) {
@@ -36,6 +37,7 @@ export default async function CoachSwimmerPage({ params }: CoachSwimmerPageProps
   const startGrades: SwimmerSkillsResponse["startGrades"] = skillsResult.ok ? skillsResult.data.startGrades : {};
   const coachingPriorities: SwimmerSkillsResponse["coachingPriorities"] = skillsResult.ok ? skillsResult.data.coachingPriorities : [];
   const categories = categoriesResult.ok ? categoriesResult.categories : [];
+  const timelineItems = timelineResult.ok ? timelineResult.items : [];
 
   return (
     <CoachSwimmerDetailContent
@@ -45,6 +47,7 @@ export default async function CoachSwimmerPage({ params }: CoachSwimmerPageProps
       startGrades={startGrades}
       coachingPriorities={coachingPriorities}
       categories={categories}
+      timelineItems={timelineItems}
     />
   );
 }

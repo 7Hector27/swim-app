@@ -76,6 +76,7 @@ describe("CoachSwimmerDetailContent", () => {
         startGrades={{}}
         coachingPriorities={[]}
         categories={[]}
+        timelineItems={[]}
       />,
     );
     const link = screen.getByRole("link", { name: /evaluate alex/i });
@@ -94,6 +95,7 @@ describe("CoachSwimmerDetailContent", () => {
         startGrades={{}}
         coachingPriorities={[]}
         categories={TEST_CATEGORIES}
+        timelineItems={[]}
       />,
     );
     // Grade "3" should appear inside Current Levels
@@ -109,6 +111,7 @@ describe("CoachSwimmerDetailContent", () => {
         startGrades={{}}
         coachingPriorities={[]}
         categories={[]}
+        timelineItems={[]}
       />,
     );
     expect(
@@ -126,6 +129,7 @@ describe("CoachSwimmerDetailContent", () => {
         startGrades={{}}
         coachingPriorities={[]}
         categories={TEST_CATEGORIES}
+        timelineItems={[]}
       />,
     );
     const history = screen.getByTestId("skills-history");

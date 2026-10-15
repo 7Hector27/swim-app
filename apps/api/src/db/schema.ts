@@ -567,3 +567,22 @@ export const ratingFaultTags = pgTable(
   ],
 ).enableRLS();
 
+// ── Coach notes ───────────────────────────────────────────────────────────────
+
+export const coachNotes = pgTable(
+  "coach_notes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    swimmerId: uuid("swimmer_id").notNull().references(() => swimmers.id, { onDelete: "restrict" }),
+    sessionId: uuid("session_id").references(() => evaluationSessions.id, { onDelete: "restrict" }),
+    lessonId: uuid("lesson_id").references(() => lessons.id, { onDelete: "restrict" }),
+    body: text("body").notNull(),
+    createdBy: uuid("created_by").notNull().references(() => profiles.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdateFn(() => new Date()),
+  },
+  (table) => [
+    check("coach_notes_body_not_blank", sql`${table.body} <> ''`),
+  ],
+).enableRLS();
+

@@ -197,6 +197,17 @@ export {
   WeekAvailabilityResponseSchema,
 } from "./schemas/booking";
 
+export type {
+  TimelineItemType,
+  TimelineItem,
+  TimelineResponse,
+} from "./schemas/notes";
+export {
+  TimelineItemTypeSchema,
+  TimelineItemSchema,
+  TimelineResponseSchema,
+} from "./schemas/notes";
+
 export { calculateStartGrade, StartGradeResultSchema } from "./lib/startGrade";
 export type { StartGradeResult } from "./lib/startGrade";
 

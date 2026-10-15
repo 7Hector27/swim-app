@@ -1,8 +1,9 @@
-import { type CoachSwimmerDetail, type League, type CategoriesResponse, type SwimmerSkillsResponse, type StartGradeResult } from "@swim-app/shared";
+import { type CoachSwimmerDetail, type League, type CategoriesResponse, type SwimmerSkillsResponse, type StartGradeResult, type TimelineResponse } from "@swim-app/shared";
 
 import SiteFooter from "@/components/SiteFooter";
 import HidePublicButton from "./HidePublicButton";
 import SwimmerSkillsHistory from "./SwimmerSkillsHistory";
+import SwimmerTimeline from "./SwimmerTimeline";
 
 interface CoachSwimmerDetailContentProps {
   swimmer: CoachSwimmerDetail;
@@ -11,6 +12,7 @@ interface CoachSwimmerDetailContentProps {
   startGrades: SwimmerSkillsResponse["startGrades"];
   coachingPriorities: SwimmerSkillsResponse["coachingPriorities"];
   categories: CategoriesResponse;
+  timelineItems: TimelineResponse;
 }
 
 const LEAGUE_LABELS: Record<League, string> = {

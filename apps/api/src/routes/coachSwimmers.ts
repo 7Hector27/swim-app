@@ -1,8 +1,18 @@
 import { Router } from "express";
-import { and, asc, eq, inArray, isNull, or } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, isNull, or } from "drizzle-orm";
 import type { IdParams } from "@swim-app/shared";
 import { db } from "../db/client";
-import { householdMembers, leagueRegistrations, lessonLocations, profiles, swimmers, swimmerClubs } from "../db/schema";
+import {
+  coachNotes,
+  evaluationSessions,
+  householdMembers,
+  leagueRegistrations,
+  lessonLocations,
+  profiles,
+  skillRatings,
+  swimmers,
+  swimmerClubs,
+} from "../db/schema";
 import { requireUser } from "../middleware/requireUser";
 import { requireCoach } from "../middleware/requireCoach";
 import { validate } from "../middleware/validate";
@@ -17,6 +27,7 @@ import {
   type CoachSwimmer,
   type CoachSwimmerDetail,
   type CoachVisibilityBody,
+  type TimelineItem,
 } from "@swim-app/shared";
 
 export const coachSwimmersRouter = Router();
@@ -255,5 +266,101 @@ coachSwimmersRouter.patch(
     }
 
     res.status(204).end();
+  }),
+);
+
+coachSwimmersRouter.get(
+  "/:id/timeline",
+  requireUser,
+  requireCoach,
+  validate({ params: IdParamsSchema }),
+  asyncHandler(async (req, res) => {
+    const { id: swimmerId } = req.params as unknown as IdParams;
+
+    const swimmerRows = await db
+      .select({ id: swimmers.id })
+      .from(swimmers)
+      .where(and(isActiveSwimmer, eq(swimmers.id, swimmerId)))
+      .limit(1);
+
+    if (!swimmerRows[0]) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+
+    const [noteRows, ratingRows, sessionRows] = await Promise.all([
+      db
+        .select({
+          id: coachNotes.id,
+          body: coachNotes.body,
+          sessionId: coachNotes.sessionId,
+          lessonId: coachNotes.lessonId,
+          createdAt: coachNotes.createdAt,
+        })
+        .from(coachNotes)
+        .where(eq(coachNotes.swimmerId, swimmerId)),
+      db
+        .select({
+          id: skillRatings.id,
+          note: skillRatings.note,
+          sessionId: skillRatings.sessionId,
+          skillId: skillRatings.skillId,
+          createdAt: skillRatings.createdAt,
+        })
+        .from(skillRatings)
+        .where(
+          and(
+            eq(skillRatings.swimmerId, swimmerId),
+            isNotNull(skillRatings.note),
+            isNull(skillRatings.voidedAt),
+          ),
+        ),
+      db
+        .select({
+          id: evaluationSessions.id,
+          coachingPriority: evaluationSessions.coachingPriority,
+          createdAt: evaluationSessions.createdAt,
+        })
+        .from(evaluationSessions)
+        .where(eq(evaluationSessions.swimmerId, swimmerId)),
+    ]);
+
+    const items: TimelineItem[] = [
+      ...noteRows.map((note): TimelineItem => ({
+        type: "note",
+        id: note.id,
+        body: note.body,
+        createdAt: toISO(note.createdAt),
+        ...(
+          (note.sessionId !== null || note.lessonId !== null) && {
+            tiedTo: {
+              ...(note.sessionId !== null && { sessionId: note.sessionId }),
+              ...(note.lessonId !== null && { lessonId: note.lessonId }),
+            },
+          }
+        ),
+      })),
+      ...ratingRows.map((rating): TimelineItem => ({
+        type: "rating_note",
+        id: rating.id,
+        body: rating.note!,
+        createdAt: toISO(rating.createdAt),
+        tiedTo: {
+          sessionId: rating.sessionId,
+          skillId: rating.skillId,
+        },
+      })),
+      ...sessionRows.map((session): TimelineItem => ({
+        type: "coaching_priority",
+        id: session.id,
+        body: session.coachingPriority,
+        createdAt: toISO(session.createdAt),
+        tiedTo: { sessionId: session.id },
+      })),
+    ];
+
+    items.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+    res.json(items);
   }),
 );
