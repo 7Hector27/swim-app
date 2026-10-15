@@ -604,7 +604,6 @@ describe("GET /lessons/available-range — excludeLessonId", () => {
     // classifyDaySlots should be called with existingLessons that does NOT include OWN_LESSON_ID
     const calls = mockClassifySlots.mock.calls;
     for (const [params] of calls) {
-      const ids = (params.existingLessons as { startsAt: Date }[]).map((l) => l);
       // existingLessons should be empty (the only lesson was excluded)
       expect((params.existingLessons as unknown[]).length).toBe(0);
     }

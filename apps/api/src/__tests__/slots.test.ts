@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { computeAvailableSlots, classifyDaySlots } from "../lib/slots";
 import type { SlotParams } from "../lib/slots";
-import type { AvailabilityConfig, SlotWithState } from "@swim-app/shared";
+import type { AvailabilityConfig } from "@swim-app/shared";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

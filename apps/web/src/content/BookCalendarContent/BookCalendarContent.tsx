@@ -6,7 +6,7 @@ import { todayLA } from "@swim-app/shared";
 import type { ParentSwimmer, WeekAvailabilityResponse } from "@swim-app/shared";
 
 import { fetchRangeAction, createBookingAction } from "./actions";
-import { getMondayOfWeek, addDaysToDateStr, getSlotHHMM, formatDayLabel } from "./helpers";
+import { getMondayOfWeek, addDaysToDateStr, formatDayLabel } from "./helpers";
 import type { BookingState } from "./helpers";
 import CalendarConfigRow from "./CalendarConfigRow";
 import WeekNav from "./WeekNav";
@@ -74,7 +74,6 @@ export default function BookCalendarContent({
         setFetchError("Could not load availability. Try again.");
       }
     });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locationId, durationMinutes, mondayStr, retryCount]);
 
   useEffect(() => {
@@ -140,9 +139,6 @@ export default function BookCalendarContent({
 
   const selectedPhoneDayData =
     weekData?.days.find((day) => day.date === selectedPhoneDay) ?? null;
-
-  const selectedStartHHMM =
-    selectedStartsAt !== null ? getSlotHHMM(selectedStartsAt) : null;
 
   if (householdFailed) {
     return (

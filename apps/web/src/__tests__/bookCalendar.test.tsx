@@ -14,7 +14,6 @@ import * as actions from "../content/BookCalendarContent/actions";
 
 import {
   getMondayOfWeek,
-  addDaysToDateStr,
   formatWeekLabel,
   isHourMark,
   buildGridRows,
