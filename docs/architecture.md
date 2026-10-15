@@ -83,3 +83,19 @@ All signed-in routes are guarded by `requireAuth()` (`apps/web/src/lib/requireAu
 | `GET` | `/coach/swimmers/:id/skills` | requireCoach | Current grade map, start grades, head-position overall, and coaching priorities |
 | `GET` | `/coach/swimmers/:id/skills/:skillId/ratings` | requireCoach | Full rating history for one skill (newest first, includes voided). Rating history is returned for archived skills (the coach is permitted to see all historical data). |
 | `GET` | `/coach/swimmers/:id/sessions/dependency-map` | requireCoach | Deepest low-foundation suggestion for a category (`?categoryId=`) |
+| `GET` | `/coach/swimmers/:id/progress` | requireCoach | Per-skill current levels, history (last 12), start grades, head-position overall, and coaching priorities with names resolved |
+
+## Progress endpoint data loading
+
+`GET /coach/swimmers/:id/progress` uses two DB queries to separate computation from display:
+
+**Query A** (`allRatingRows`) — fetches all ratings including voided ones. Voided rows are needed by `latestEffectiveRatings` (which handles voids internally) to compute the correct current grade map, start grades, head-position overall, and coaching priorities.
+
+**Query B** (`displayRatingRows`) — fetches only non-voided ratings, joined to `evaluation_sessions` for context and session date. This is the source for `history` arrays and start-component current levels returned to the client. Voided ratings never appear in the response payload.
+
+**Coaching priority ordering** — after `findDeepestLowFoundation` runs for each rated skill, the resulting priorities are sorted deterministically before the response is sent:
+1. Chains whose deepest skill is `not_legal` come first (score −1).
+2. Then `no_concept` (score 0).
+3. Then grades 1–5 ascending (lower grade = more urgent).
+4. Not-assessed deepest skills sort last (score 999).
+5. Tie-broken by the target skill's catalog `sort_order`.

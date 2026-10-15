@@ -686,42 +686,8 @@ evaluationsRouter.get(
     // Build slug -> name map for priority name resolution
     const slugToName = new Map(allSkillRows.map((s) => [s.slug, s.name]));
 
-    // Start grades
+    // Start grades (loop runs after Query B so component current levels use displayRatingRows)
     const startParentRows = allSkillRows.filter((s) => s.slug.endsWith("-start"));
-    const startProgressEntries: StartProgress[] = [];
-
-    for (const startParent of startParentRows) {
-      const componentRows = allSkillRows.filter((s) => s.parentSkillId === startParent.id);
-      if (componentRows.length === 0) continue;
-      const componentSlugs = componentRows.map((s) => s.slug);
-      const startGrade = calculateStartGrade(componentSlugs, allRatingRecords);
-
-      // Current level per component (latest non-voided)
-      const components = componentRows.map((comp) => {
-        const latest = allRatingRows
-          .filter((r) => r.slug === comp.slug && r.voidedAt === null)
-          .sort((a, b) => b.ratedAt.getTime() - a.ratedAt.getTime())[0];
-        const current: SkillCurrentLevel | null = latest
-          ? {
-              grade: latest.grade as 1 | 2 | 3 | 4 | 5 | null,
-              notLegal: latest.notLegal,
-              noConcept: latest.noConcept,
-              capacityValue: null,
-              capacityUnit: null,
-              measurementValue: null,
-              measurementUnit: null,
-            }
-          : null;
-        return { slug: comp.slug, name: comp.name, current };
-      });
-
-      startProgressEntries.push({
-        slug: startParent.slug,
-        name: startParent.name,
-        grade: startGrade,
-        components,
-      });
-    }
 
     // Head position overall
     const headPositionSlugs = {
@@ -778,6 +744,25 @@ evaluationsRouter.get(
       });
     }
 
+    // Sort: not-legal chains first, then lowest effective grade of deepest skill, then catalog sort order
+    coachingPriorities.sort((a, b) => {
+      const deepestA = a.chain[a.chain.length - 1];
+      const deepestB = b.chain[b.chain.length - 1];
+
+      function gradeScore(entry: typeof deepestA): number {
+        if (!entry || entry.notAssessed) return 999;
+        const grade = collapsedGrades[entry.slug];
+        if (grade === "not_legal") return -1;
+        if (grade === "no_concept") return 0;
+        if (typeof grade === "number") return grade;
+        return 999;
+      }
+
+      const diff = gradeScore(deepestA) - gradeScore(deepestB);
+      if (diff !== 0) return diff;
+      return (fullSortOrder[a.targetSlug] ?? 0) - (fullSortOrder[b.targetSlug] ?? 0);
+    });
+
     // Query B: non-voided ratings with session context for the display
     const displayRatingRows = await db
       .select({
@@ -832,6 +817,38 @@ evaluationsRouter.get(
         existing.push(tag.faultTag);
         faultTagsMap.set(tag.ratingId, existing);
       }
+    }
+
+    // Build start progress entries using displayRatingRows for component current levels
+    const startProgressEntries: StartProgress[] = [];
+    for (const startParent of startParentRows) {
+      const componentRows = allSkillRows.filter((s) => s.parentSkillId === startParent.id);
+      if (componentRows.length === 0) continue;
+      const componentSlugs = componentRows.map((s) => s.slug);
+      const startGrade = calculateStartGrade(componentSlugs, allRatingRecords);
+
+      const components = componentRows.map((comp) => {
+        const latestDisplay = displayRatingRows.find((r) => r.slug === comp.slug);
+        const current: SkillCurrentLevel | null = latestDisplay
+          ? {
+              grade: latestDisplay.grade as 1 | 2 | 3 | 4 | 5 | null,
+              notLegal: latestDisplay.notLegal,
+              noConcept: latestDisplay.noConcept,
+              capacityValue: latestDisplay.capacityValue ?? null,
+              capacityUnit: latestDisplay.capacityUnit as "yards" | "reps" | null,
+              measurementValue: latestDisplay.measurementValue ?? null,
+              measurementUnit: latestDisplay.measurementUnit as "stroke_cycles_per_minute" | "stroke_count" | "seconds" | "feet" | null,
+            }
+          : null;
+        return { slug: comp.slug, name: comp.name, current };
+      });
+
+      startProgressEntries.push({
+        slug: startParent.slug,
+        name: startParent.name,
+        grade: startGrade,
+        components,
+      });
     }
 
     // Build per-skill data (ordered by ratedAt desc from query)

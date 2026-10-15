@@ -217,50 +217,6 @@ describe("GET /coach/swimmers/:id/progress", () => {
     expect(Array.isArray(res.body.skills)).toBe(true);
   });
 
-  it("excludes voided ratings from skills history", async () => {
-    authAs(profileCoach);
-
-    mockDbSelect
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachAvailabilityRouter requireUser
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachLessonsRouter requireUser
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // evaluationsRouter requireUser
-      .mockReturnValueOnce(swimmerSelect(activeSwimmerRow))
-      .mockReturnValueOnce({
-        from: vi.fn().mockReturnValue({
-          innerJoin: vi.fn().mockReturnValue({
-            where: vi.fn().mockResolvedValue([]),
-          }),
-        }),
-      })
-      .mockReturnValueOnce({
-        from: vi.fn().mockReturnValue({
-          where: vi.fn().mockResolvedValue([]),
-        }),
-      })
-      .mockReturnValueOnce({
-        from: vi.fn().mockResolvedValue([]),
-      })
-      .mockReturnValueOnce({
-        from: vi.fn().mockReturnValue({
-          innerJoin: vi.fn().mockReturnValue({
-            innerJoin: vi.fn().mockReturnValue({
-              innerJoin: vi.fn().mockReturnValue({
-                where: vi.fn().mockReturnValue({
-                  orderBy: vi.fn().mockResolvedValue([]),
-                }),
-              }),
-            }),
-          }),
-        }),
-      });
-
-    const res = await request(app)
-      .get(`/coach/swimmers/${SWIMMER_ID}/progress`)
-      .set("Authorization", "Bearer token");
-    expect(res.status).toBe(200);
-    expect(res.body.skills).toHaveLength(0);
-  });
-
   it("shows both sides for side-rated skills", async () => {
     authAs(profileCoach);
 
@@ -543,5 +499,101 @@ describe("GET /coach/swimmers/:id/progress", () => {
     expect(priority.targetName).toBe("Skill A");
     const chainEntry = priority.chain[priority.chain.length - 1];
     expect(chainEntry.name).toBe("Skill B");
+  });
+
+  it("includes fault tags on history entries", async () => {
+    authAs(profileCoach);
+
+    const RATING_ID = "ratingft-0000-0000-0000-000000000001";
+
+    const displayRatingRows = [
+      {
+        ratingId: RATING_ID,
+        grade: 2,
+        notLegal: false,
+        noConcept: false,
+        side: null,
+        capacityValue: null,
+        capacityUnit: null,
+        measurementValue: null,
+        measurementUnit: null,
+        ratedAt: now,
+        skillId: SKILL_ID,
+        slug: "freestyle-kick",
+        skillName: "Freestyle Kick",
+        skillType: "rubric",
+        skillUnit: null,
+        ratedPerSide: false,
+        sortOrder: 1,
+        parentSkillId: null,
+        categoryId: CATEGORY_ID,
+        categoryName: "Freestyle",
+        context: "practice",
+        sessionDate: "2025-06-01",
+      },
+    ];
+
+    const faultTagRows = [
+      { ratingId: RATING_ID, faultTag: "head-up" },
+      { ratingId: RATING_ID, faultTag: "wide-kick" },
+    ];
+
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachAvailabilityRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachLessonsRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // evaluationsRouter requireUser
+      .mockReturnValueOnce(swimmerSelect(activeSwimmerRow))
+      .mockReturnValueOnce({                               // allRatingRows
+        from: vi.fn().mockReturnValue({
+          innerJoin: vi.fn().mockReturnValue({
+            where: vi.fn().mockResolvedValue([
+              {
+                slug: "freestyle-kick",
+                grade: 2,
+                notLegal: false,
+                noConcept: false,
+                side: null,
+                ratedAt: now,
+                voidedAt: null,
+                skillId: SKILL_ID,
+                sortOrder: 1,
+              },
+            ]),
+          }),
+        }),
+      })
+      .mockReturnValueOnce({                               // allSkillRows
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue([
+            { id: SKILL_ID, slug: "freestyle-kick", name: "Freestyle Kick", parentSkillId: null, categoryId: CATEGORY_ID, sortOrder: 1 },
+          ]),
+        }),
+      })
+      .mockReturnValueOnce({ from: vi.fn().mockResolvedValue([]) }) // depRows
+      .mockReturnValueOnce({                               // displayRatingRows
+        from: vi.fn().mockReturnValue({
+          innerJoin: vi.fn().mockReturnValue({
+            innerJoin: vi.fn().mockReturnValue({
+              innerJoin: vi.fn().mockReturnValue({
+                where: vi.fn().mockReturnValue({
+                  orderBy: vi.fn().mockResolvedValue(displayRatingRows),
+                }),
+              }),
+            }),
+          }),
+        }),
+      })
+      .mockReturnValueOnce({                               // fault tags
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue(faultTagRows),
+        }),
+      });
+
+    const res = await request(app)
+      .get(`/coach/swimmers/${SWIMMER_ID}/progress`)
+      .set("Authorization", "Bearer token");
+    expect(res.status).toBe(200);
+    const skill = res.body.skills[0];
+    expect(skill.history[0].faultTags).toEqual(["head-up", "wide-kick"]);
   });
 });

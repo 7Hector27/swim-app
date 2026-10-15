@@ -44,7 +44,6 @@ export default async function SwimmerProgressPage({ params }: ProgressPageProps)
       swimmer={swimmerResult.swimmer}
       progress={progressResult.data}
       categories={categories}
-      accessToken={auth.accessToken}
     />
   );
 }

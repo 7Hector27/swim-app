@@ -44,7 +44,6 @@ describe("SwimmerProgressContent", () => {
         swimmer={swimmer}
         progress={emptyProgress}
         categories={categories}
-        accessToken="token"
       />,
     );
     expect(screen.getByText(/no evaluations recorded yet/i)).toBeInTheDocument();
@@ -84,7 +83,6 @@ describe("SwimmerProgressContent", () => {
         swimmer={swimmer}
         progress={progress}
         categories={categories}
-        accessToken="token"
       />,
     );
     expect(screen.getByText("Freestyle Kick")).toBeInTheDocument();
@@ -125,7 +123,6 @@ describe("SwimmerProgressContent", () => {
         swimmer={swimmer}
         progress={progress}
         categories={categories}
-        accessToken="token"
       />,
     );
     expect(screen.getByText("DQ")).toBeInTheDocument();
@@ -158,7 +155,6 @@ describe("SwimmerProgressContent", () => {
         swimmer={swimmer}
         progress={emptyProgress}
         categories={cats}
-        accessToken="token"
       />,
     );
     expect(screen.getByText("Freestyle Kick")).toBeInTheDocument();
@@ -196,11 +192,60 @@ describe("SwimmerProgressContent", () => {
         swimmer={swimmer}
         progress={progress}
         categories={categories}
-        accessToken="token"
       />,
     );
     expect(screen.getByText("Track Start")).toBeInTheDocument();
     expect(screen.getAllByText("4").length).toBeGreaterThan(0);
+  });
+
+  it("shows L and R badges for side-rated skills", () => {
+    const SIDED_ID = "dddd0000-0000-0000-0000-000000000001";
+    const progress: SwimmerProgressResponse = {
+      ...emptyProgress,
+      skills: [
+        {
+          skillId: SIDED_ID,
+          slug: "freestyle-breathing",
+          name: "Freestyle Breathing",
+          categoryId: CAT_ID,
+          categoryName: "Freestyle",
+          type: "rubric",
+          unit: null,
+          ratedPerSide: true,
+          parentSkillId: null,
+          current: null,
+          currentLeft: {
+            grade: 3,
+            notLegal: false,
+            noConcept: false,
+            capacityValue: null,
+            capacityUnit: null,
+            measurementValue: null,
+            measurementUnit: null,
+          },
+          currentRight: {
+            grade: 4,
+            notLegal: false,
+            noConcept: false,
+            capacityValue: null,
+            capacityUnit: null,
+            measurementValue: null,
+            measurementUnit: null,
+          },
+          history: [],
+        },
+      ],
+    };
+    render(
+      <SwimmerProgressContent
+        swimmer={swimmer}
+        progress={progress}
+        categories={categories}
+      />,
+    );
+    expect(screen.getByText("Freestyle Breathing")).toBeInTheDocument();
+    expect(screen.getByText("L 3")).toBeInTheDocument();
+    expect(screen.getByText("R 4")).toBeInTheDocument();
   });
 
   it("shows coaching priority with chain names", () => {
@@ -222,7 +267,6 @@ describe("SwimmerProgressContent", () => {
         swimmer={swimmer}
         progress={progress}
         categories={categories}
-        accessToken="token"
       />,
     );
     expect(screen.getByText(/what to work on next/i)).toBeInTheDocument();

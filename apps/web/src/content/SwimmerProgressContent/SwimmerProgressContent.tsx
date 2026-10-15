@@ -8,7 +8,6 @@ interface SwimmerProgressContentProps {
   swimmer: CoachSwimmerDetail;
   progress: SwimmerProgressResponse;
   categories: CategoriesResponse;
-  accessToken: string;
 }
 
 function startGradeIsDanger(result: StartGradeResult): boolean {
@@ -129,7 +128,7 @@ export default function SwimmerProgressContent({
                             {priority.chain.map((entry, index) => (
                               <span key={entry.slug}>
                                 {index > 0 && " → "}
-                                <span style={{ color: entry.notAssessed ? "var(--color-text-secondary)" : undefined }}>
+                                <span style={entry.notAssessed ? { color: "var(--color-text-secondary)" } : undefined}>
                                   {entry.name}
                                   {entry.notAssessed ? " (not assessed yet — check it)" : ""}
                                 </span>

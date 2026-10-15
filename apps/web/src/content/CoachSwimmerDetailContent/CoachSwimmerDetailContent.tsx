@@ -71,9 +71,8 @@ export default function CoachSwimmerDetailContent({
           <div className="flex gap-3 flex-wrap">
             <a
               href={`/coach/swimmers/${swimmer.id}/evaluate`}
-              className="inline-flex items-center justify-center px-5 min-h-[44px] font-bold text-sm rounded"
+              className="inline-flex items-center justify-center px-5 min-h-[44px] font-bold text-sm rounded-[var(--radius-button)]"
               style={{
-                borderRadius: "var(--radius-button)",
                 backgroundColor: "var(--color-button-primary-background)",
                 color: "var(--color-button-primary-text)",
               }}
@@ -82,9 +81,8 @@ export default function CoachSwimmerDetailContent({
             </a>
             <a
               href={`/coach/swimmers/${swimmer.id}/progress`}
-              className="inline-flex items-center justify-center px-5 min-h-[44px] font-bold text-sm rounded border"
+              className="inline-flex items-center justify-center px-5 min-h-[44px] font-bold text-sm rounded-[var(--radius-button)] border"
               style={{
-                borderRadius: "var(--radius-button)",
                 borderColor: "var(--color-button-outline)",
                 color: "var(--color-button-outline)",
               }}
