@@ -84,6 +84,14 @@ All signed-in routes are guarded by `requireAuth()` (`apps/web/src/lib/requireAu
 | `GET` | `/coach/swimmers/:id/skills/:skillId/ratings` | requireCoach | Full rating history for one skill (newest first, includes voided). Rating history is returned for archived skills (the coach is permitted to see all historical data). |
 | `GET` | `/coach/swimmers/:id/sessions/dependency-map` | requireCoach | Deepest low-foundation suggestion for a category (`?categoryId=`) |
 | `GET` | `/coach/swimmers/:id/progress` | requireCoach | Per-skill current levels, history (last 12), start grades, head-position overall, and coaching priorities with names resolved |
+| `GET` | `/leaderboard/club` | public (rate-limited) | Club board: fastest meet PB per swimmer per event, club-registered swimmers only, public (`is_public = true`) |
+| `GET` | `/leaderboard/isl` | public (rate-limited) | Irvine Swim League board: ISL-registered swimmers, age computed from `registered_on` date |
+| `GET` | `/leaderboard/master` | public (rate-limited) | Master board: highest motivational standard reached per swimmer per event; returns `standardsAvailable: false` when standards table is empty |
+| `GET` | `/coach/leaderboard/club` | requireCoach | Club board for all active swimmers (no `is_public` filter), full names |
+| `GET` | `/coach/leaderboard/isl` | requireCoach | ISL board for all active swimmers, full names |
+| `GET` | `/coach/leaderboard/master` | requireCoach | Master board for all active swimmers, full names |
+
+**Leaderboard notes (inferred — confirm with Jason):** Board eligibility (club = active club registration; ISL = active summer_league registration; master = all active swimmers). Sex split and age-group partitioning applied on all three boards. Rate limit: 60 req/min per IP (in-memory, resets on restart).
 
 ## Progress endpoint data loading
 

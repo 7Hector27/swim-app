@@ -602,6 +602,38 @@ export const meetSwims = pgTable("meet_swims", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdateFn(() => new Date()),
 }).enableRLS();
 
+// ── Motivational standards ────────────────────────────────────────────────────
+
+export const standardNameEnum = pgEnum("standard_name", ["B", "BB", "A", "AA", "AAA", "AAAA"]);
+
+export const motivationalStandards = pgTable(
+  "motivational_standards",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    standardName: standardNameEnum("standard_name").notNull(),
+    eventDistance: integer("event_distance").notNull(),
+    eventStroke: swimStrokeEnum("event_stroke").notNull(),
+    course: courseEnum("course").notNull(),
+    sex: sexEnum("sex").notNull(),
+    // One of: "6-under", "7-8", "9-10", "11-12", "13-14", "15-18"
+    ageGroup: text("age_group").notNull(),
+    cutTimeHundredths: integer("cut_time_hundredths").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdateFn(() => new Date()),
+  },
+  (table) => [
+    uniqueIndex("motivational_standards_uniq").on(
+      table.standardName,
+      table.eventDistance,
+      table.eventStroke,
+      table.course,
+      table.sex,
+      table.ageGroup,
+    ),
+    check("cut_time_positive", sql`${table.cutTimeHundredths} > 0`),
+  ],
+).enableRLS();
+
 // ── Coach notes ───────────────────────────────────────────────────────────────
 
 export const coachNoteTypeEnum = pgEnum("coach_note_type", [

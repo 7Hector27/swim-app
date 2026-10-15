@@ -22,6 +22,7 @@ import { lessonsRouter } from "./routes/lessons";
 import { internalRouter } from "./routes/internal";
 import { parentProgressRouter } from "./routes/parentProgress";
 import { coachRouter } from "./routes/coach";
+import { leaderboardRouter } from "./routes/leaderboard";
 import {
   calculateAge,
   HealthQuerySchema,
@@ -170,6 +171,7 @@ export function createApp(logger: Logger) {
   app.use("/lessons", lessonsRouter);
   app.use("/internal", internalRouter);
   app.use("/coach", coachRouter);
+  app.use(leaderboardRouter);
 
   app.use(errorHandler);
 
