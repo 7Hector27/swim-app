@@ -1,0 +1,53 @@
+import type { Metadata } from "next";
+import { notFound, redirect } from "next/navigation";
+import AccountInactiveScreen from "@/components/AccountInactiveScreen";
+import ParentSwimmerProgressContent from "@/content/ParentSwimmerProgressContent";
+import { requireAuth } from "@/lib/requireAuth";
+import { fetchParentSwimmer, fetchParentSwimmerProgress } from "@/lib/api/parentProgress";
+import { fetchSkillCategories } from "@/lib/api/evaluations";
+
+export const metadata: Metadata = {
+  title: "Progress · Axiom Aquatics",
+};
+
+interface Props {
+  params: Promise<{ id: string }>;
+}
+
+export default async function ParentSwimmerProgressPage({ params }: Props) {
+  const [auth, { id }] = await Promise.all([requireAuth(), params]);
+  if (!auth) return <AccountInactiveScreen />;
+
+  // Coaches have their own progress route
+  if (auth.profile.role === "coach") {
+    redirect(`/coach/swimmers/${id}/progress`);
+  }
+
+  const [swimmerResult, progressResult, categoriesResult] = await Promise.all([
+    fetchParentSwimmer(id, auth.accessToken),
+    fetchParentSwimmerProgress(id, auth.accessToken),
+    fetchSkillCategories(auth.accessToken),
+  ]);
+
+  if (!swimmerResult.ok) {
+    if (swimmerResult.status === 404) notFound();
+    if (swimmerResult.status === 403) redirect("/dashboard");
+    throw new Error(`Failed to load swimmer (status ${swimmerResult.status})`);
+  }
+
+  if (!progressResult.ok) {
+    if (progressResult.status === 404) notFound();
+    if (progressResult.status === 403) redirect("/dashboard");
+    throw new Error(`Failed to load progress (status ${progressResult.status})`);
+  }
+
+  const categories = categoriesResult.ok ? categoriesResult.categories : [];
+
+  return (
+    <ParentSwimmerProgressContent
+      swimmer={swimmerResult.swimmer}
+      progress={progressResult.data}
+      categories={categories}
+    />
+  );
+}

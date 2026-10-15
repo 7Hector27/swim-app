@@ -309,3 +309,17 @@ export const SwimmerProgressResponseSchema = z.object({
   coachingPriorities: z.array(ProgressCoachingPrioritySchema),
 });
 export type SwimmerProgressResponse = z.infer<typeof SwimmerProgressResponseSchema>;
+
+// Parent-facing progress schemas — no fault tags
+export const ParentProgressRatingPointSchema = ProgressRatingPointSchema.omit({ faultTags: true });
+export type ParentProgressRatingPoint = z.infer<typeof ParentProgressRatingPointSchema>;
+
+export const ParentSkillProgressSchema = SkillProgressSchema.extend({
+  history: z.array(ParentProgressRatingPointSchema),
+});
+export type ParentSkillProgress = z.infer<typeof ParentSkillProgressSchema>;
+
+export const ParentSwimmerProgressResponseSchema = SwimmerProgressResponseSchema.extend({
+  skills: z.array(ParentSkillProgressSchema),
+});
+export type ParentSwimmerProgressResponse = z.infer<typeof ParentSwimmerProgressResponseSchema>;

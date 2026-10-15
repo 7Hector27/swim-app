@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import type { SkillProgress } from "@swim-app/shared";
-import TrendLine from "./TrendLine";
-import SkillChart from "./SkillChart";
+import TrendLine from "@/components/TrendLine";
+import SkillChart from "@/components/SkillChart";
 import { currentLevelDisplay, currentLevelIsDanger } from "./helpers";
 
 interface SkillProgressRowProps {

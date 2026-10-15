@@ -227,6 +227,9 @@ export type {
   StartComponentProgress,
   StartProgress,
   SwimmerProgressResponse,
+  ParentProgressRatingPoint,
+  ParentSkillProgress,
+  ParentSwimmerProgressResponse,
 } from "./schemas/evaluations";
 export {
   SkillCurrentLevelSchema,
@@ -237,4 +240,7 @@ export {
   StartComponentProgressSchema,
   StartProgressSchema,
   SwimmerProgressResponseSchema,
+  ParentProgressRatingPointSchema,
+  ParentSkillProgressSchema,
+  ParentSwimmerProgressResponseSchema,
 } from "./schemas/evaluations";

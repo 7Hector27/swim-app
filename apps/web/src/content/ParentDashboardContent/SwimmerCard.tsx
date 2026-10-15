@@ -157,8 +157,14 @@ export default function SwimmerCard({
       {/* Action buttons */}
       <div className="mt-auto flex flex-col gap-2">
         <a
-          href={`/dashboard/swimmers/${id}/edit`}
+          href={`/dashboard/swimmers/${id}/progress`}
           className="rounded-button bg-button-primary-background text-button-primary-text font-bold text-sm h-11 flex items-center justify-center transition-opacity hover:opacity-90"
+        >
+          View progress
+        </a>
+        <a
+          href={`/dashboard/swimmers/${id}/edit`}
+          className="rounded-button border-2 border-button-outline text-button-outline font-bold text-sm h-11 flex items-center justify-center transition-opacity hover:opacity-90"
         >
           View profile
         </a>

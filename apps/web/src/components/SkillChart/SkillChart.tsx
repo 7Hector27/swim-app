@@ -1,17 +1,38 @@
 "use client";
 
-import type { ProgressRatingPoint } from "@swim-app/shared";
-import { formatSessionDate } from "./helpers";
-
 const CONTEXT_COLORS: Record<string, string> = {
   drill: "var(--color-text-secondary)",
   practice: "var(--color-accent)",
   race: "var(--color-danger)",
 };
 
+type ChartPoint = {
+  id: string;
+  grade: number | null;
+  notLegal: boolean;
+  noConcept: boolean;
+  context: string;
+  sessionDate: string;
+  capacityValue: string | null;
+  capacityUnit: string | null;
+  measurementValue: string | null;
+  measurementUnit: string | null;
+  faultTags?: string[];
+};
+
 interface SkillChartProps {
-  history: ProgressRatingPoint[];
+  history: ChartPoint[];
   skillName: string;
+}
+
+function formatSessionDate(dateStr: string): string {
+  const [year, month, day] = dateStr.split("-").map(Number);
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "America/Los_Angeles",
+  }).format(new Date(year!, month! - 1, day!));
 }
 
 export default function SkillChart({ history, skillName }: SkillChartProps) {
@@ -40,12 +61,12 @@ export default function SkillChart({ history, skillName }: SkillChartProps) {
   }
 
   const linePoints = points
-    .map((p, i) => {
-      const numericGrade = p.notLegal ? 0 : p.noConcept ? null : p.grade;
+    .map((point, index) => {
+      const numericGrade = point.notLegal ? 0 : point.noConcept ? null : point.grade;
       if (numericGrade === null) return null;
-      return `${xFor(i).toFixed(1)},${yFor(numericGrade).toFixed(1)}`;
+      return `${xFor(index).toFixed(1)},${yFor(numericGrade).toFixed(1)}`;
     })
-    .filter((c): c is string => c !== null)
+    .filter((coord): coord is string => coord !== null)
     .join(" ");
 
   return (
@@ -104,13 +125,13 @@ export default function SkillChart({ history, skillName }: SkillChartProps) {
         )}
 
         {/* Data points */}
-        {points.map((p, i) => {
-          const numericGrade = p.notLegal ? 0 : p.noConcept ? null : p.grade;
-          const cx = xFor(i);
-          if (p.notLegal) {
+        {points.map((point, index) => {
+          const numericGrade = point.notLegal ? 0 : point.noConcept ? null : point.grade;
+          const cx = xFor(index);
+          if (point.notLegal) {
             return (
               <text
-                key={p.id}
+                key={point.id}
                 x={cx}
                 y={yFor(0) + 4}
                 textAnchor="middle"
@@ -125,11 +146,11 @@ export default function SkillChart({ history, skillName }: SkillChartProps) {
           const cy = yFor(numericGrade);
           return (
             <circle
-              key={p.id}
+              key={point.id}
               cx={cx}
               cy={cy}
               r={3}
-              fill={CONTEXT_COLORS[p.context] ?? "var(--color-accent)"}
+              fill={CONTEXT_COLORS[point.context] ?? "var(--color-accent)"}
               stroke="var(--color-surface-soft)"
               strokeWidth={1}
             />
@@ -151,28 +172,28 @@ export default function SkillChart({ history, skillName }: SkillChartProps) {
           </tr>
         </thead>
         <tbody>
-          {points.map((p) => (
-            <tr key={p.id}>
-              <td>{formatSessionDate(p.sessionDate)}</td>
-              <td className="capitalize">{p.context}</td>
+          {points.map((point) => (
+            <tr key={point.id}>
+              <td>{formatSessionDate(point.sessionDate)}</td>
+              <td className="capitalize">{point.context}</td>
               <td>
-                {p.notLegal
+                {point.notLegal
                   ? "Not legal (DQ)"
-                  : p.noConcept
+                  : point.noConcept
                     ? "No concept"
-                    : String(p.grade ?? "—")}
+                    : String(point.grade ?? "—")}
               </td>
               <td>
-                {p.capacityValue !== null
-                  ? `${p.capacityValue} ${p.capacityUnit ?? ""}`
+                {point.capacityValue !== null
+                  ? `${point.capacityValue} ${point.capacityUnit ?? ""}`
                   : "—"}
               </td>
               <td>
-                {p.measurementValue !== null
-                  ? `${p.measurementValue} ${p.measurementUnit ?? ""}`
+                {point.measurementValue !== null
+                  ? `${point.measurementValue} ${point.measurementUnit ?? ""}`
                   : "—"}
               </td>
-              <td>{p.faultTags.length > 0 ? p.faultTags.join(", ") : "—"}</td>
+              <td>{point.faultTags && point.faultTags.length > 0 ? point.faultTags.join(", ") : "—"}</td>
             </tr>
           ))}
         </tbody>
