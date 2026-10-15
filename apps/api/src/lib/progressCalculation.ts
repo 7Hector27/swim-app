@@ -103,7 +103,8 @@ export async function computeSwimmerProgress(
     }
   }
 
-  // Load all non-archived skills for start grades, head position, and graph
+  // Load all non-archived skills for start grades, head position, and graph.
+  // categoryName is included here so the rollup injection below needs no extra query.
   const allSkillRows = await db
     .select({
       id: skills.id,
@@ -111,9 +112,11 @@ export async function computeSwimmerProgress(
       name: skills.name,
       parentSkillId: skills.parentSkillId,
       categoryId: skills.categoryId,
+      categoryName: skillCategories.name,
       sortOrder: skills.sortOrder,
     })
     .from(skills)
+    .innerJoin(skillCategories, eq(skillCategories.id, skills.categoryId))
     .where(isNull(skills.archivedAt));
 
   // Build slug -> name map for priority name resolution
@@ -397,7 +400,10 @@ export async function computeSwimmerProgress(
     }
   }
 
-  // Inject synthetic progress entry for free-bilateral-breathing (rollup)
+  // Inject synthetic progress entry for free-bilateral-breathing (rollup).
+  // grade = weaker of left/right breathing-timing-free; null if either side unrated.
+  // No coach-only fields (fault tags, notes, voidedAt) on this entry;
+  // parent responses are further enforced by ParentSwimmerProgressResponseSchema downstream.
   const leftGradeRaw = grades["breathing-timing-free:left"];
   const rightGradeRaw = grades["breathing-timing-free:right"];
   const leftGrade = typeof leftGradeRaw === "number" ? leftGradeRaw : null;
@@ -406,18 +412,12 @@ export async function computeSwimmerProgress(
   if (bilateralGrade !== null) {
     const bilateralSkill = allSkillRows.find((skill) => skill.slug === "free-bilateral-breathing");
     if (bilateralSkill) {
-      const catRow = await db
-        .select({ name: skillCategories.name })
-        .from(skillCategories)
-        .where(eq(skillCategories.id, bilateralSkill.categoryId))
-        .limit(1);
-      const categoryName = catRow[0]?.name ?? "";
       skillProgressEntries.push({
         skillId: bilateralSkill.id,
         slug: bilateralSkill.slug,
         name: bilateralSkill.name,
         categoryId: bilateralSkill.categoryId,
-        categoryName,
+        categoryName: bilateralSkill.categoryName,
         type: "rollup",
         unit: null,
         ratedPerSide: false,

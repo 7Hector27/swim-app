@@ -8,7 +8,7 @@
 export function calculateBilateralBreathingGrade(
   leftGrade: number | null,
   rightGrade: number | null,
-): number | null {
+): 1 | 2 | 3 | 4 | 5 | null {
   if (leftGrade === null || rightGrade === null) return null;
-  return Math.min(leftGrade, rightGrade);
+  return Math.min(leftGrade, rightGrade) as 1 | 2 | 3 | 4 | 5;
 }
