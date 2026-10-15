@@ -67,18 +67,27 @@ export default function CoachSwimmerDetailContent({
             </div>
           </div>
 
-          {/* Evaluate button */}
-          <div>
+          {/* Action buttons */}
+          <div className="flex gap-3 flex-wrap">
             <a
               href={`/coach/swimmers/${swimmer.id}/evaluate`}
-              className="inline-flex items-center justify-center px-5 min-h-[44px] font-bold text-sm rounded"
+              className="inline-flex items-center justify-center px-5 min-h-[44px] font-bold text-sm rounded-[var(--radius-button)]"
               style={{
-                borderRadius: "var(--radius-button)",
                 backgroundColor: "var(--color-button-primary-background)",
                 color: "var(--color-button-primary-text)",
               }}
             >
               Evaluate {swimmer.firstName}
+            </a>
+            <a
+              href={`/coach/swimmers/${swimmer.id}/progress`}
+              className="inline-flex items-center justify-center px-5 min-h-[44px] font-bold text-sm rounded-[var(--radius-button)] border"
+              style={{
+                borderColor: "var(--color-button-outline)",
+                color: "var(--color-button-outline)",
+              }}
+            >
+              View progress
             </a>
           </div>
 
