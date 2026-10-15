@@ -144,6 +144,7 @@ describe("ParentSwimmerProgressContent", () => {
             type: "rubric",
             unit: null,
             ratedPerSide: false,
+            notLegalAllowed: false,
             parentSkillId: null,
             sortOrder: 1,
             faultTags: [],

@@ -150,7 +150,9 @@ function setupProgressMocks() {
     })
     .mockReturnValueOnce({                               // allSkillRows
       from: vi.fn().mockReturnValue({
-        where: vi.fn().mockResolvedValue(allSkillRows),
+        innerJoin: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue(allSkillRows),
+        }),
       }),
     })
     .mockReturnValueOnce({                               // depRows
@@ -312,7 +314,9 @@ describe("GET /coach/swimmers/:id/progress", () => {
       })
       .mockReturnValueOnce({
         from: vi.fn().mockReturnValue({
-          where: vi.fn().mockResolvedValue([]),
+          innerJoin: vi.fn().mockReturnValue({
+            where: vi.fn().mockResolvedValue([]),
+          }),
         }),
       })
       .mockReturnValueOnce({ from: vi.fn().mockResolvedValue([]) })
@@ -372,7 +376,9 @@ describe("GET /coach/swimmers/:id/progress", () => {
       })
       .mockReturnValueOnce({
         from: vi.fn().mockReturnValue({
-          where: vi.fn().mockResolvedValue(allSkillRows),
+          innerJoin: vi.fn().mockReturnValue({
+            where: vi.fn().mockResolvedValue(allSkillRows),
+          }),
         }),
       })
       .mockReturnValueOnce({ from: vi.fn().mockResolvedValue([]) })
@@ -467,7 +473,9 @@ describe("GET /coach/swimmers/:id/progress", () => {
       })
       .mockReturnValueOnce({
         from: vi.fn().mockReturnValue({
-          where: vi.fn().mockResolvedValue(allSkillRows),
+          innerJoin: vi.fn().mockReturnValue({
+            where: vi.fn().mockResolvedValue(allSkillRows),
+          }),
         }),
       })
       .mockReturnValueOnce({ from: vi.fn().mockResolvedValue(depRows) })
@@ -564,9 +572,11 @@ describe("GET /coach/swimmers/:id/progress", () => {
       })
       .mockReturnValueOnce({                               // allSkillRows
         from: vi.fn().mockReturnValue({
-          where: vi.fn().mockResolvedValue([
-            { id: SKILL_ID, slug: "freestyle-kick", name: "Freestyle Kick", parentSkillId: null, categoryId: CATEGORY_ID, sortOrder: 1 },
-          ]),
+          innerJoin: vi.fn().mockReturnValue({
+            where: vi.fn().mockResolvedValue([
+              { id: SKILL_ID, slug: "freestyle-kick", name: "Freestyle Kick", parentSkillId: null, categoryId: CATEGORY_ID, categoryName: "Freestyle", sortOrder: 1 },
+            ]),
+          }),
         }),
       })
       .mockReturnValueOnce({ from: vi.fn().mockResolvedValue([]) }) // depRows

@@ -144,6 +144,43 @@ describe("SKILLS_CATALOG", () => {
     expect(invalid).toEqual([]);
   });
 
+  it("free-bilateral-breathing is type rollup", () => {
+    const allSkills = SKILLS_CATALOG.flatMap((c) => c.skills);
+    const bilateral = allSkills.find((s) => s.slug === "free-bilateral-breathing");
+    expect(bilateral?.type).toBe("rollup");
+    expect(bilateral?.ratedPerSide).toBeUndefined();
+  });
+
+  it("notLegalAllowed is true on the correct skills and false/absent on all others", () => {
+    const expectedAllowed = new Set([
+      // start components
+      "track-start-reaction", "track-start-acceleration", "track-start-height",
+      "track-start-distance", "track-start-head-arm-hand", "track-start-leg-feet",
+      "relay-start-reaction", "relay-start-acceleration", "relay-start-height",
+      "relay-start-distance", "relay-start-head-arm-hand", "relay-start-leg-feet",
+      "back-start-reaction", "back-start-push", "back-start-arch",
+      "back-start-distance", "back-start-entry-alignment", "back-start-streamline",
+      // turns
+      "freestyle-flip-turn", "backstroke-flip-turn",
+      "breaststroke-open-turn", "butterfly-open-turn",
+      "im-fly-to-back", "im-back-to-breast-open", "im-back-to-breast-bucket",
+      "im-back-to-breast-crossover", "im-breast-to-free",
+      // breakouts
+      "breakout-free", "breakout-back", "breakout-breast", "breakout-fly",
+      // stroke kicks
+      "free-kick", "back-kick", "breast-kick-mechanics", "fly-dolphin-kick",
+    ]);
+    const allSkills = SKILLS_CATALOG.flatMap((c) => c.skills);
+    const actualAllowed = allSkills
+      .filter((s) => s.notLegalAllowed === true)
+      .map((s) => s.slug);
+    expect(new Set(actualAllowed)).toEqual(expectedAllowed);
+
+    const wronglyAllowed = allSkills
+      .filter((s) => s.notLegalAllowed === true && !expectedAllowed.has(s.slug));
+    expect(wronglyAllowed).toEqual([]);
+  });
+
   it("archived skills are not present in the catalog", () => {
     const archivedSlugs = [
       "body-rotation",

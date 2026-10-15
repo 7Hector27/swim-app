@@ -391,6 +391,7 @@ One row per skill. Slugs are permanent — never change a slug once it ships to 
 | `archived_at` | `timestamptz` | yes | Null = active. Set when a skill is removed from the catalog |
 | `fault_tags` | `text[]` | yes | Common coaching faults for this skill; empty at initial migration, filled in a follow-up |
 | `rated_per_side` | `boolean` | no | `true` when ratings for this skill record left/right side (e.g. freestyle bilateral breathing). Default `false`. |
+| `not_legal_allowed` | `boolean` | no | When `true`, ratings for this skill may have `not_legal = true`. True for start components, turns, breakouts, and stroke kicks. The API rejects `not_legal = true` on any other skill. Default `false`. |
 | `created_at` | `timestamptz` | no | `now()` |
 | `updated_at` | `timestamptz` | no | Auto-updated |
 

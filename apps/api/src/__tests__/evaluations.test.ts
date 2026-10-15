@@ -84,10 +84,11 @@ type SkillRow = {
   slug: string;
   categoryId: string;
   parentSkillId: null;
-  type: "rubric" | "measured";
+  type: "rubric" | "measured" | "rollup";
   unit: string | null;
   faultTags: string[];
   ratedPerSide: boolean;
+  notLegalAllowed: boolean;
   archivedAt: Date | null;
 };
 
@@ -100,6 +101,7 @@ const validSkillRow: SkillRow = {
   unit: null,
   faultTags: ["flat-kick", "crossover"],
   ratedPerSide: false,
+  notLegalAllowed: false,
   archivedAt: null,
 };
 
@@ -439,6 +441,53 @@ describe("POST /swimmers/:id/sessions — validation", () => {
       });
     expect(res.status).toBe(422);
     expect(res.body.issues[0].message).toContain("Duplicate rating");
+  });
+
+  it("rejects notLegal=true on a skill that does not allow it", async () => {
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachAvailabilityRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachLessonsRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // evaluationsRouter requireUser
+      .mockReturnValueOnce(swimmerSelect(activeSwimmerRow))
+      .mockReturnValueOnce(categorySelect(true))
+      .mockReturnValueOnce(skillsSelect([{ ...validSkillRow, notLegalAllowed: false }]));
+
+    const res = await request(app)
+      .post(`/coach/swimmers/${SWIMMER_ID}/sessions`)
+      .set("Authorization", "Bearer token")
+      .send({
+        ...validSessionBody,
+        ratings: [{
+          ...validRatingInput,
+          notLegal: true,
+        }],
+      });
+
+    expect(res.status).toBe(422);
+    expect(res.body.error).toBe("Validation error");
+    expect(res.body.issues[0].message).toMatch(/not legal is not allowed/i);
+  });
+
+  it("rejects direct rating of a rollup skill", async () => {
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachAvailabilityRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachLessonsRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // evaluationsRouter requireUser
+      .mockReturnValueOnce(swimmerSelect(activeSwimmerRow))
+      .mockReturnValueOnce(categorySelect(true))
+      .mockReturnValueOnce(skillsSelect([{ ...validSkillRow, type: "rollup" as const }]));
+
+    const res = await request(app)
+      .post(`/coach/swimmers/${SWIMMER_ID}/sessions`)
+      .set("Authorization", "Bearer token")
+      .send({
+        ...validSessionBody,
+        ratings: [validRatingInput],
+      });
+
+    expect(res.status).toBe(422);
+    expect(res.body.error).toBe("Validation error");
+    expect(res.body.issues[0].message).toMatch(/rollup skills are calculated/i);
   });
 
   it("same skill rated on different sides is allowed → not 422", async () => {

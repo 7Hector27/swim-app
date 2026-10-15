@@ -34,6 +34,7 @@ const TEST_CATEGORIES = [
         type: "rubric" as const,
         unit: null,
         ratedPerSide: false,
+        notLegalAllowed: false,
         parentSkillId: null,
         sortOrder: 1,
         faultTags: [],

@@ -1,0 +1,1 @@
+ALTER TABLE "skills" ADD COLUMN "not_legal_allowed" boolean DEFAULT false NOT NULL;

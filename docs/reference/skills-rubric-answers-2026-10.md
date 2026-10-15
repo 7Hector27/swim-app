@@ -17,8 +17,8 @@ Yes.
 No — each of those applies to specific strokes only:
 
 - Body rotation: freestyle and backstroke only.
-- Rhythmic breathing: butterfly and freestyle only.
-- Bilateral breathing: freestyle only.
+- Rhythmic breathing: freestyle, butterfly, and backstroke.
+- Bilateral breathing: freestyle only — and it is **calculated** (not rated directly). Its grade is the weaker of the left and right freestyle breath timing grades.
 
 ---
 
@@ -30,23 +30,24 @@ Rate the 6 components separately; the app calculates the start grade as the aver
 
 **4. Underwater dolphin kick: one shared grade for free and fly, a separate one for back. OK?**
 
-No. Three separate grades:
+No. Three separate grades — one per stroke:
 
-- Free/fly dolphin kick (one shared grade).
-- Backstroke dolphin kick (separate grade with its own rubric; higher speed/distance standard because backstroke underwaters are typically faster).
+- Freestyle underwater dolphin kick (its own grade).
+- Fly underwater dolphin kick (its own grade).
+- Backstroke underwater dolphin kick (separate grade with its own rubric; higher speed/distance standard because backstroke underwaters are typically faster).
 
 ---
 
 **5. Anything to add, remove, split, or merge in the skill list?**
 
 - **Body rotation**: remove the shared grade; rate rotation separately for freestyle and backstroke.
-- **Freestyle breathing**: keep bilateral breathing, breathing timing, and stroke-breath coordination as separate skills. Ratings record left/right side so each side can be graded independently.
-- **Fault tags**: each skill gets a short list of common faults the coach can tap when rating (e.g. breaststroke breathing: head lifts late, lifts early, returns too slow, returns too fast), so two swimmers with the same grade show what's actually different.
-- **Rhythmic breathing**: applies to freestyle, butterfly, and backstroke. Drop backstroke breathing timing and stroke-breath coordination.
+- **Freestyle breathing**: breath timing and stroke hold on breath (renamed from stroke-breath coordination) are separate skills, each rated left and right. Bilateral breathing is calculated from the left and right grades, not rated.
+- **Fault tags**: each skill gets a short list of common faults the coach can tap when rating (e.g. breaststroke breath timing: head lifts late, lifts early, returns too slow, returns too fast), so two swimmers with the same grade show what's actually different.
+- **Rhythmic breathing**: applies to free, fly and back. Drop backstroke breath timing and stroke-breath coordination.
 - **Tempo**: rated per stroke. Drop breaststroke stroke rate (same measurement as breaststroke tempo). Use one unit for tempo everywhere (stroke cycles per minute).
-- **Fly stroke-breath coordination**: remove the body rotation link (fly doesn't rotate).
+- **Fly stroke hold on breath**: remove the body rotation link (fly doesn't rotate).
 - **Finishing**: split into four, one per stroke.
-- **Add**: Backstroke start, Sculling / feel for the water, and a Water confidence category (e.g. submerging, front float, back float, treading water, getting to the wall).
+- **Add**: Backstroke start, Sculling / feel for the water, and a Water confidence category (submerging, front float, back float, treading water, getting to the wall).
 - **Undecided**: add Block setup / stance as a 7th start component?
 
 ---
@@ -67,17 +68,13 @@ No. Fly breath timing builds on fly head position and two-kick rhythm. The head 
 
 **8. Breaststroke breakout depends on breaststroke timing. Correct?**
 
-(Note: the question text was replaced by the Not legal grading rule in Jason's answers.)
-
-Not legal rule: the coach still gives the technique a 1–5 ("phantom" grade) to track development, but the rating is flagged "Not legal" in red. Not legal counts as 0 in any average or rollup and is the top coaching priority. On progress charts it shows as a red DQ marker. If any start component is not legal, the whole start shows "Not legal."
-
-Labels below 1 (not counted in averages): "Not assessed" (coach hasn't observed it yet) and "No concept" (observed, swimmer can't do it at all).
+Yes. Breaststroke breakout builds on the pullout and breaststroke timing.
 
 ---
 
 **9. Fly breakout depends on two-kick rhythm. Correct?**
 
-Yes. Fly breakout builds on underwater dolphin kick (free/fly) and two-kick rhythm: a kick should happen during the first arm pull, with no pause between the last underwater kick and the first stroke. Surfacing past 15 m is "Not legal" (same rule applies to freestyle and backstroke breakouts).
+Builds on underwater dolphin kick (fly). Two-kick rhythm is kept as a secondary dependency — confirm with Jason.
 
 ---
 
@@ -124,7 +121,7 @@ Different per stroke. Keep the shared 1–5 progression (cued → practice pace 
 
 **15. Breaststroke stroke-breath coordination lists body rotation, but breaststroke doesn't really rotate. Drop it?**
 
-Yes. Drop body rotation from breaststroke and butterfly stroke-breath coordination; neither stroke rotates. Freestyle stroke-breath coordination links to freestyle rotation (not a shared body rotation grade). Backstroke stroke-breath coordination was dropped in answer 5.
+Yes. Drop body rotation from breaststroke and butterfly stroke-hold-on-breath; neither stroke rotates. Freestyle stroke-hold-on-breath links to freestyle rotation (not a shared body rotation grade). Backstroke stroke-hold-on-breath was dropped in answer 5.
 
 ---
 
@@ -151,3 +148,15 @@ Either: a foundation skill counts as low if it's 2 or below, or lower than the s
 **19. How far back should it look: one step (body rotation), or keep going (body rotation, then core stability)?**
 
 Keep going down the foundation chain while each skill is also low; stop at the first one that isn't. Example: if freestyle breathing is low, check freestyle rotation; if that's also low, check core stability. The deepest low skill is the top coaching priority.
+
+---
+
+## Grading rules (decided)
+
+Not legal: the coach still gives the technique a 1–5 ("phantom" grade) to track development, but the rating is flagged "Not legal" in red. Not legal counts as 0 in any average or rollup and is the top coaching priority. On progress charts it shows as a red DQ marker. If any start component is not legal, the whole start shows "Not legal." Breakouts surfacing past 15 m and illegal breaststroke breakouts are Not legal.
+
+"Not legal" only appears on skills with a legality rule: start components, turns, breakouts, stroke kicks (freestyle kick, backstroke kick, breaststroke kick mechanics, butterfly dolphin kick).
+
+Labels below 1 (not counted in averages): "Not assessed" (coach hasn't observed it yet) and "No concept" (observed, swimmer can't do it at all).
+
+**Open: does Not legal apply to beginners in drills and practice, or only in race context / competitive swimmers?** Default for now: allowed in any context.

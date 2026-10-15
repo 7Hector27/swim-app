@@ -126,6 +126,7 @@ export function buildRatingsArray(
   const ratings = [];
   const now = new Date().toISOString();
   for (const skill of skills) {
+    if (skill.type === "rollup") continue;
     const keys = skill.ratedPerSide ? [`${skill.id}:left`, `${skill.id}:right`] : [skill.id];
     for (const key of keys) {
       const d = draftSkills[key];

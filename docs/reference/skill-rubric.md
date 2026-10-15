@@ -59,14 +59,14 @@ The foundation category: almost every stroke skill builds on these.
 
 ## 2. Breathing & Coordination
 
-| Skill                      | Applies to                         | Type   | Builds on                         |
-| -------------------------- | ---------------------------------- | ------ | --------------------------------- |
-| Exhalation                 | Swimmer                            | Rubric | (none)                            |
-| Breath control             | Swimmer; graded per event distance | Rubric | Exhalation                        |
-| Rhythmic breathing         | Free, fly                          | Rubric | Exhalation, Head position         |
-| Bilateral breathing        | Free                               | Rubric | Rhythmic breathing, Body rotation |
-| Breathing timing           | Each stroke                        | Rubric | Head position, Stroke timing      |
-| Stroke-breath coordination | Each stroke                        | Rubric | Breathing timing, Body rotation   |
+| Skill                   | Applies to                         | Type                    | Builds on                                                   |
+| ----------------------- | ---------------------------------- | ----------------------- | ----------------------------------------------------------- |
+| Exhalation              | Swimmer                            | Rubric                  | (none)                                                      |
+| Breath control          | Swimmer; graded per event distance | Rubric                  | Exhalation                                                  |
+| Rhythmic breathing      | Free, fly, back                    | Rubric                  | Exhalation, Head position                                   |
+| Bilateral breathing     | Free                               | Rollup (calculated)     | Calculated as the weaker of left/right breathing timing (free) grades |
+| Breathing timing        | Each stroke                        | Rubric                  | Head position, Stroke timing                                |
+| Stroke hold on breath   | Each stroke (free, breast, fly)    | Rubric                  | Breathing timing, (free: free-rotation; others: none)       |
 
 ### Breath control (by event distance)
 
@@ -368,3 +368,14 @@ These catalog changes were made based on Jason's Phase 1 answers (`docs/referenc
 - `pacing` no longer depends on `tempo` (archived); depends on `breath-control` only.
 - `im-fly-to-back` renamed to "Fly to back (open turn)"; `im-breast-to-free` renamed to "Breast to free (open turn)".
 - Head-position rollup method: **average of the rated strokes, rounded down**.
+
+---
+
+**Changes from Jason's Phase 1 update (October 2026, round 2):**
+
+- `stroke-breath-coordination-free`, `stroke-breath-coordination-breast`, `stroke-breath-coordination-fly` renamed to "Stroke hold on breath" (slugs unchanged).
+- `free-bilateral-breathing` changed from `rubric` to `rollup`; grade is calculated as the weaker of left/right freestyle breath timing grades. `ratedPerSide` removed (calculated, not tappable). Confirm with Jason: which grades and how.
+- `breakout-fly` already builds on `udk-fly` (confirmed); `fly-two-kick-rhythm` kept as secondary dependency — confirm with Jason.
+- `notLegalAllowed` field added to catalog: `true` on start components, turns, breakouts, and stroke kicks. The API rejects `not_legal = true` on any other skill; the rating screen shows the Not legal toggle only where allowed. Open: does Not legal apply in all contexts (see ADR 019)?
+- UDK updated to 3 separate grades (free, fly, back each separate — answers 4 updated in answers doc).
+- Breaststroke breakout A8 confirmed: builds on pullout and breaststroke timing.

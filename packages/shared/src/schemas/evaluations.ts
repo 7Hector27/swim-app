@@ -194,6 +194,7 @@ export const SkillForRatingSchema = z.object({
   type: z.enum(["rubric", "measured", "score", "composite", "rollup"]),
   unit: z.string().nullable(),
   ratedPerSide: z.boolean(),
+  notLegalAllowed: z.boolean(),
   parentSkillId: z.string().uuid().nullable(),
   sortOrder: z.number().int(),
   faultTags: z.array(z.string()),

@@ -14,6 +14,7 @@ import {
   latestEffectiveRatings,
   calculateStartGrade,
   weakerSideGrade,
+  calculateBilateralBreathingGrade,
   type RatingRecord,
   type GradeMap,
   type BuiltOnGraph,
@@ -102,7 +103,8 @@ export async function computeSwimmerProgress(
     }
   }
 
-  // Load all non-archived skills for start grades, head position, and graph
+  // Load all non-archived skills for start grades, head position, and graph.
+  // categoryName is included here so the rollup injection below needs no extra query.
   const allSkillRows = await db
     .select({
       id: skills.id,
@@ -110,9 +112,11 @@ export async function computeSwimmerProgress(
       name: skills.name,
       parentSkillId: skills.parentSkillId,
       categoryId: skills.categoryId,
+      categoryName: skillCategories.name,
       sortOrder: skills.sortOrder,
     })
     .from(skills)
+    .innerJoin(skillCategories, eq(skillCategories.id, skills.categoryId))
     .where(isNull(skills.archivedAt));
 
   // Build slug -> name map for priority name resolution
@@ -392,6 +396,36 @@ export async function computeSwimmerProgress(
         currentLeft: null,
         currentRight: null,
         history,
+      });
+    }
+  }
+
+  // Inject synthetic progress entry for free-bilateral-breathing (rollup).
+  // grade = weaker of left/right breathing-timing-free; null if either side unrated.
+  // No coach-only fields (fault tags, notes, voidedAt) on this entry;
+  // parent responses are further enforced by ParentSwimmerProgressResponseSchema downstream.
+  const leftGradeRaw = grades["breathing-timing-free:left"];
+  const rightGradeRaw = grades["breathing-timing-free:right"];
+  const leftGrade = typeof leftGradeRaw === "number" ? leftGradeRaw : null;
+  const rightGrade = typeof rightGradeRaw === "number" ? rightGradeRaw : null;
+  const bilateralGrade = calculateBilateralBreathingGrade(leftGrade, rightGrade);
+  if (bilateralGrade !== null) {
+    const bilateralSkill = allSkillRows.find((skill) => skill.slug === "free-bilateral-breathing");
+    if (bilateralSkill) {
+      skillProgressEntries.push({
+        skillId: bilateralSkill.id,
+        slug: bilateralSkill.slug,
+        name: bilateralSkill.name,
+        categoryId: bilateralSkill.categoryId,
+        categoryName: bilateralSkill.categoryName,
+        type: "rollup",
+        unit: null,
+        ratedPerSide: false,
+        parentSkillId: null,
+        current: { grade: bilateralGrade, notLegal: false, noConcept: false, capacityValue: null, capacityUnit: null, measurementValue: null, measurementUnit: null },
+        currentLeft: null,
+        currentRight: null,
+        history: [],
       });
     }
   }

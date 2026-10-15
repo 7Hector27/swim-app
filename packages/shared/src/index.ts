@@ -200,6 +200,8 @@ export {
 export { calculateStartGrade, StartGradeResultSchema } from "./lib/startGrade";
 export type { StartGradeResult } from "./lib/startGrade";
 
+export { calculateBilateralBreathingGrade } from "./lib/bilateralBreathingGrade";
+
 export type {
   EvaluationContext,
   RatingSide,

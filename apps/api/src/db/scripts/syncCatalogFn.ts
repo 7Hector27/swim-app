@@ -165,6 +165,7 @@ export default async function syncCatalogFn(db: Db): Promise<void> {
             sortOrder: skill.sortOrder,
             faultTags: skill.faultTags ?? null,
             ratedPerSide: skill.ratedPerSide ?? false,
+            notLegalAllowed: skill.notLegalAllowed ?? false,
           })
           .onConflictDoUpdate({
             target: skills.slug,
@@ -180,6 +181,7 @@ export default async function syncCatalogFn(db: Db): Promise<void> {
               archivedAt: null,
               faultTags: skill.faultTags ?? null,
               ratedPerSide: skill.ratedPerSide ?? false,
+              notLegalAllowed: skill.notLegalAllowed ?? false,
             },
           })
           .returning({ id: skills.id });
