@@ -20,7 +20,6 @@ import {
   formatSwimTime,
 } from "@swim-app/shared";
 import {
-  type RawSwimmer,
   type RawStandard,
   fetchPbs,
   applyFilters,
@@ -69,14 +68,24 @@ coachLeaderboardRouter.get(
 
     const pbs = await fetchPbs(eligibleSwimmers.map((swimmer) => swimmer.id));
 
-    const swimmerMap = new Map<string, RawSwimmer>(eligibleSwimmers.map((swimmer) => [swimmer.id, swimmer as RawSwimmer]));
+    const swimmerMap = new Map(eligibleSwimmers.map((swimmer) => [swimmer.id, swimmer]));
 
+    // Age group is resolved here; birthDate and id never travel past this point.
     const rawRows = pbs.flatMap((pb) => {
       const swimmer = swimmerMap.get(pb.swimmerId);
       if (!swimmer) return [];
       const ageGroup = ageToGroup(calculateAge(swimmer.birthDate, today));
       if (!ageGroup) return [];
-      return [{ ...pb, ...swimmer, ageGroup }];
+      return [{
+        firstName: swimmer.firstName,
+        lastName: swimmer.lastName,
+        sex: swimmer.sex,
+        ageGroup,
+        eventDistance: pb.eventDistance,
+        eventStroke: pb.eventStroke,
+        course: pb.course,
+        timeHundredths: pb.timeHundredths,
+      }];
     });
 
     const filtered = applyFilters(rawRows, query);
@@ -144,8 +153,9 @@ coachLeaderboardRouter.get(
 
     const pbs = await fetchPbs(eligibleSwimmers.map((swimmer) => swimmer.id));
 
-    const swimmerMap = new Map<string, RawSwimmer>(eligibleSwimmers.map((swimmer) => [swimmer.id, swimmer as RawSwimmer]));
+    const swimmerMap = new Map(eligibleSwimmers.map((swimmer) => [swimmer.id, swimmer]));
 
+    // Age group is resolved here; birthDate and id never travel past this point.
     const rawRows = pbs.flatMap((pb) => {
       const swimmer = swimmerMap.get(pb.swimmerId);
       if (!swimmer) return [];
@@ -153,7 +163,16 @@ coachLeaderboardRouter.get(
       if (!ageDate) return [];
       const ageGroup = ageToGroup(calculateAge(swimmer.birthDate, ageDate));
       if (!ageGroup) return [];
-      return [{ ...pb, ...swimmer, ageGroup }];
+      return [{
+        firstName: swimmer.firstName,
+        lastName: swimmer.lastName,
+        sex: swimmer.sex,
+        ageGroup,
+        eventDistance: pb.eventDistance,
+        eventStroke: pb.eventStroke,
+        course: pb.course,
+        timeHundredths: pb.timeHundredths,
+      }];
     });
 
     const filtered = applyFilters(rawRows, query);
@@ -218,8 +237,10 @@ coachLeaderboardRouter.get(
 
     const pbs = await fetchPbs(eligibleSwimmers.map((swimmer) => swimmer.id));
 
-    const swimmerMap = new Map<string, RawSwimmer>(eligibleSwimmers.map((swimmer) => [swimmer.id, swimmer as RawSwimmer]));
+    const swimmerMap = new Map(eligibleSwimmers.map((swimmer) => [swimmer.id, swimmer]));
 
+    // Age group and standard are resolved here; birthDate and id never travel
+    // past this point.
     const rawRows = pbs.flatMap((pb) => {
       const swimmer = swimmerMap.get(pb.swimmerId);
       if (!swimmer) return [];
@@ -227,7 +248,17 @@ coachLeaderboardRouter.get(
       if (!ageGroup) return [];
       const standard = highestStandard(pb, swimmer.sex, ageGroup, allStandards as RawStandard[]);
       if (!standard) return [];
-      return [{ ...pb, ...swimmer, ageGroup, standard }];
+      return [{
+        firstName: swimmer.firstName,
+        lastName: swimmer.lastName,
+        sex: swimmer.sex,
+        ageGroup,
+        eventDistance: pb.eventDistance,
+        eventStroke: pb.eventStroke,
+        course: pb.course,
+        timeHundredths: pb.timeHundredths,
+        standard,
+      }];
     });
 
     const filtered = applyFilters(rawRows, query);

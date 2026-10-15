@@ -631,6 +631,10 @@ export const motivationalStandards = pgTable(
       table.ageGroup,
     ),
     check("cut_time_positive", sql`${table.cutTimeHundredths} > 0`),
+    check(
+      "age_group_valid",
+      sql`${table.ageGroup} IN ('6-under', '7-8', '9-10', '11-12', '13-14', '15-18')`,
+    ),
   ],
 ).enableRLS();
 

@@ -9,10 +9,8 @@ import { isActiveSwimmer } from "../db/queries";
 import {
   LeaderboardQuerySchema,
   type LeaderboardQuery,
-  type PublicBoardRow,
-  type PublicMasterRow,
-  type PublicBoardResponse,
-  type PublicMasterResponse,
+  PublicBoardResponseSchema,
+  PublicMasterResponseSchema,
   ageToGroup,
   type MotivationalStandardName,
   calculateAge,
@@ -21,7 +19,6 @@ import {
   formatSwimTime,
 } from "@swim-app/shared";
 import {
-  type RawSwimmer,
   type RawStandard,
   fetchPbs,
   applyFilters,
@@ -76,28 +73,37 @@ leaderboardRouter.get(
             sex: swimmers.sex,
           })
           .from(swimmers)
-          .where(
-            and(isActiveSwimmer, eq(swimmers.isPublic, true), inArray(swimmers.id, swimmerIds)),
-          );
+          .where(and(isActiveSwimmer, eq(swimmers.isPublic, true), inArray(swimmers.id, swimmerIds)));
 
     const pbs = await fetchPbs(eligibleSwimmers.map((swimmer) => swimmer.id));
 
-    const swimmerMap = new Map<string, RawSwimmer>(eligibleSwimmers.map((swimmer) => [swimmer.id, swimmer as RawSwimmer]));
+    const swimmerMap = new Map(eligibleSwimmers.map((swimmer) => [swimmer.id, swimmer]));
 
+    // Age group and lastInitial are resolved here; birthDate, id, and lastName
+    // never travel past this point on the public path.
     const rawRows = pbs.flatMap((pb) => {
       const swimmer = swimmerMap.get(pb.swimmerId);
       if (!swimmer) return [];
       const ageGroup = ageToGroup(calculateAge(swimmer.birthDate, today));
       if (!ageGroup) return [];
-      return [{ ...pb, ...swimmer, ageGroup }];
+      return [{
+        firstName: swimmer.firstName,
+        lastInitial: swimmer.lastName.charAt(0).toUpperCase(),
+        sex: swimmer.sex,
+        ageGroup,
+        eventDistance: pb.eventDistance,
+        eventStroke: pb.eventStroke,
+        course: pb.course,
+        timeHundredths: pb.timeHundredths,
+      }];
     });
 
     const filtered = applyFilters(rawRows, query);
     const ranked = assignRanks(filtered);
 
-    const rows: PublicBoardRow[] = ranked.map((row) => ({
+    const rows = ranked.map((row) => ({
       firstName: row.firstName,
-      lastInitial: row.lastName.charAt(0).toUpperCase(),
+      lastInitial: row.lastInitial,
       ageGroup: row.ageGroup,
       sex: row.sex,
       time: formatSwimTime(row.timeHundredths),
@@ -107,8 +113,7 @@ leaderboardRouter.get(
       rank: row.rank,
     }));
 
-    const body: PublicBoardResponse = { rows };
-    res.json(body);
+    res.json(PublicBoardResponseSchema.parse({ rows }));
   }),
 );
 
@@ -153,14 +158,14 @@ leaderboardRouter.get(
             sex: swimmers.sex,
           })
           .from(swimmers)
-          .where(
-            and(isActiveSwimmer, eq(swimmers.isPublic, true), inArray(swimmers.id, swimmerIds)),
-          );
+          .where(and(isActiveSwimmer, eq(swimmers.isPublic, true), inArray(swimmers.id, swimmerIds)));
 
     const pbs = await fetchPbs(eligibleSwimmers.map((swimmer) => swimmer.id));
 
-    const swimmerMap = new Map<string, RawSwimmer>(eligibleSwimmers.map((swimmer) => [swimmer.id, swimmer as RawSwimmer]));
+    const swimmerMap = new Map(eligibleSwimmers.map((swimmer) => [swimmer.id, swimmer]));
 
+    // Age group and lastInitial are resolved here; birthDate, id, and lastName
+    // never travel past this point on the public path.
     const rawRows = pbs.flatMap((pb) => {
       const swimmer = swimmerMap.get(pb.swimmerId);
       if (!swimmer) return [];
@@ -168,15 +173,24 @@ leaderboardRouter.get(
       if (!ageDate) return [];
       const ageGroup = ageToGroup(calculateAge(swimmer.birthDate, ageDate));
       if (!ageGroup) return [];
-      return [{ ...pb, ...swimmer, ageGroup }];
+      return [{
+        firstName: swimmer.firstName,
+        lastInitial: swimmer.lastName.charAt(0).toUpperCase(),
+        sex: swimmer.sex,
+        ageGroup,
+        eventDistance: pb.eventDistance,
+        eventStroke: pb.eventStroke,
+        course: pb.course,
+        timeHundredths: pb.timeHundredths,
+      }];
     });
 
     const filtered = applyFilters(rawRows, query);
     const ranked = assignRanks(filtered);
 
-    const rows: PublicBoardRow[] = ranked.map((row) => ({
+    const rows = ranked.map((row) => ({
       firstName: row.firstName,
-      lastInitial: row.lastName.charAt(0).toUpperCase(),
+      lastInitial: row.lastInitial,
       ageGroup: row.ageGroup,
       sex: row.sex,
       time: formatSwimTime(row.timeHundredths),
@@ -186,8 +200,7 @@ leaderboardRouter.get(
       rank: row.rank,
     }));
 
-    const body: PublicBoardResponse = { rows };
-    res.json(body);
+    res.json(PublicBoardResponseSchema.parse({ rows }));
   }),
 );
 
@@ -215,8 +228,7 @@ leaderboardRouter.get(
       .from(motivationalStandards);
 
     if (allStandards.length === 0) {
-      const body: PublicMasterResponse = { standardsAvailable: false, rows: [] };
-      res.json(body);
+      res.json(PublicMasterResponseSchema.parse({ standardsAvailable: false, rows: [] }));
       return;
     }
 
@@ -233,8 +245,10 @@ leaderboardRouter.get(
 
     const pbs = await fetchPbs(eligibleSwimmers.map((swimmer) => swimmer.id));
 
-    const swimmerMap = new Map<string, RawSwimmer>(eligibleSwimmers.map((swimmer) => [swimmer.id, swimmer as RawSwimmer]));
+    const swimmerMap = new Map(eligibleSwimmers.map((swimmer) => [swimmer.id, swimmer]));
 
+    // Age group, lastInitial, and standard are resolved here; birthDate, id, and
+    // lastName never travel past this point on the public path.
     const rawRows = pbs.flatMap((pb) => {
       const swimmer = swimmerMap.get(pb.swimmerId);
       if (!swimmer) return [];
@@ -242,15 +256,25 @@ leaderboardRouter.get(
       if (!ageGroup) return [];
       const standard = highestStandard(pb, swimmer.sex, ageGroup, allStandards as RawStandard[]);
       if (!standard) return [];
-      return [{ ...pb, ...swimmer, ageGroup, standard }];
+      return [{
+        firstName: swimmer.firstName,
+        lastInitial: swimmer.lastName.charAt(0).toUpperCase(),
+        sex: swimmer.sex,
+        ageGroup,
+        eventDistance: pb.eventDistance,
+        eventStroke: pb.eventStroke,
+        course: pb.course,
+        timeHundredths: pb.timeHundredths,
+        standard,
+      }];
     });
 
     const filtered = applyFilters(rawRows, query);
     const ranked = assignMasterRanks(filtered);
 
-    const rows: PublicMasterRow[] = ranked.map((row) => ({
+    const rows = ranked.map((row) => ({
       firstName: row.firstName,
-      lastInitial: row.lastName.charAt(0).toUpperCase(),
+      lastInitial: row.lastInitial,
       ageGroup: row.ageGroup,
       sex: row.sex,
       time: formatSwimTime(row.timeHundredths),
@@ -261,7 +285,6 @@ leaderboardRouter.get(
       standard: row.standard as MotivationalStandardName,
     }));
 
-    const body: PublicMasterResponse = { standardsAvailable: true, rows };
-    res.json(body);
+    res.json(PublicMasterResponseSchema.parse({ standardsAvailable: true, rows }));
   }),
 );
