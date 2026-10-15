@@ -14,12 +14,13 @@ const now = new Date("2025-06-15T12:00:00.000Z");
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
 
-const { mockGetUser, mockDbSelect, mockDbInsert, mockDbUpdate, mockDbDelete } = vi.hoisted(() => ({
+const { mockGetUser, mockDbSelect, mockDbInsert, mockDbUpdate, mockDbDelete, mockDbTransaction } = vi.hoisted(() => ({
   mockGetUser: vi.fn(),
   mockDbSelect: vi.fn(),
   mockDbInsert: vi.fn(),
   mockDbUpdate: vi.fn(),
   mockDbDelete: vi.fn(),
+  mockDbTransaction: vi.fn(),
 }));
 
 vi.mock("../lib/supabase", () => ({
@@ -32,6 +33,7 @@ vi.mock("../db/client", () => ({
     insert: mockDbInsert,
     update: mockDbUpdate,
     delete: mockDbDelete,
+    transaction: mockDbTransaction,
   },
 }));
 
@@ -227,6 +229,9 @@ describe("DELETE /coach/meets/:id", () => {
     mockDbDelete
       .mockReturnValueOnce({ where: swimsWhere })
       .mockReturnValueOnce({ where: meetWhere });
+    mockDbTransaction.mockImplementationOnce(async (callback: (tx: typeof import("../db/client").db) => Promise<unknown>) =>
+      callback({ delete: mockDbDelete } as unknown as typeof import("../db/client").db),
+    );
 
     const res = await request(app)
       .delete(`/coach/meets/${MEET_ID}`)
@@ -246,6 +251,9 @@ describe("DELETE /coach/meets/:id", () => {
     mockDbDelete
       .mockReturnValueOnce({ where: swimsWhere })
       .mockReturnValueOnce({ where: meetWhere });
+    mockDbTransaction.mockImplementationOnce(async (callback: (tx: typeof import("../db/client").db) => Promise<unknown>) =>
+      callback({ delete: mockDbDelete } as unknown as typeof import("../db/client").db),
+    );
 
     const res = await request(app)
       .delete(`/coach/meets/${MEET_ID}`)
@@ -265,6 +273,9 @@ describe("DELETE /coach/meets/:id", () => {
     mockDbDelete
       .mockReturnValueOnce({ where: swimsWhere })
       .mockReturnValueOnce({ where: meetWhere });
+    mockDbTransaction.mockImplementationOnce(async (callback: (tx: typeof import("../db/client").db) => Promise<unknown>) =>
+      callback({ delete: mockDbDelete } as unknown as typeof import("../db/client").db),
+    );
 
     const res = await request(app)
       .delete(`/coach/meets/${MEET_ID}`)

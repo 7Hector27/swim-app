@@ -165,21 +165,25 @@ meetsRouter.delete(
   asyncHandler(async (req, res) => {
     const { id: meetId } = req.params as { id: string };
 
-    const deletedSwims = await db
-      .delete(meetSwims)
-      .where(eq(meetSwims.meetId, meetId))
-      .returning({ id: meetSwims.id });
+    const result = await db.transaction(async (tx) => {
+      const deletedSwims = await tx
+        .delete(meetSwims)
+        .where(eq(meetSwims.meetId, meetId))
+        .returning({ id: meetSwims.id });
 
-    const deleted = await db
-      .delete(meets)
-      .where(eq(meets.id, meetId))
-      .returning({ id: meets.id });
+      const deleted = await tx
+        .delete(meets)
+        .where(eq(meets.id, meetId))
+        .returning({ id: meets.id });
 
-    if (deleted.length === 0) {
+      return { deletedSwims, deleted };
+    });
+
+    if (result.deleted.length === 0) {
       res.status(404).json({ error: "Not found" });
       return;
     }
 
-    res.status(200).json({ ok: true, deletedSwims: deletedSwims.length });
+    res.status(200).json({ ok: true, deletedSwims: result.deletedSwims.length });
   }),
 );
