@@ -420,6 +420,50 @@ describe("POST /swimmers/:id/sessions — validation", () => {
     expect(res.status).toBe(422);
     expect(res.body.issues[0].message).toContain("measured");
   });
+
+  it("duplicate skill+side in same session → 422", async () => {
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachAvailabilityRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachLessonsRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // evaluationsRouter requireUser
+      .mockReturnValueOnce(swimmerSelect(activeSwimmerRow))
+      .mockReturnValueOnce(categorySelect(true))
+      .mockReturnValueOnce(skillsSelect([validSkillRow]));
+
+    const res = await request(app)
+      .post(`/coach/swimmers/${SWIMMER_ID}/sessions`)
+      .set("Authorization", "Bearer token")
+      .send({
+        ...validSessionBody,
+        ratings: [validRatingInput, { ...validRatingInput, grade: 4 }],
+      });
+    expect(res.status).toBe(422);
+    expect(res.body.issues[0].message).toContain("Duplicate rating");
+  });
+
+  it("same skill rated on different sides is allowed → not 422", async () => {
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachAvailabilityRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachLessonsRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // evaluationsRouter requireUser
+      .mockReturnValueOnce(swimmerSelect(activeSwimmerRow))
+      .mockReturnValueOnce(categorySelect(true))
+      .mockReturnValueOnce(skillsSelect([ratedPerSideSkillRow]));
+
+    mockDbTransaction.mockResolvedValue({ sessionId: SESSION_ID, ratingIds: [] });
+
+    const res = await request(app)
+      .post(`/coach/swimmers/${SWIMMER_ID}/sessions`)
+      .set("Authorization", "Bearer token")
+      .send({
+        ...validSessionBody,
+        ratings: [
+          { ...validRatingInput, side: "left" },
+          { ...validRatingInput, side: "right" },
+        ],
+      });
+    expect(res.status).not.toBe(422);
+  });
 });
 
 // ── DELETE /ratings/:id ───────────────────────────────────────────────────────

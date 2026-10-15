@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { and, desc, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/client";
 import {
@@ -195,6 +195,19 @@ evaluationsRouter.post(
         });
         return;
       }
+    }
+
+    const seenRatingKeys = new Set<string>();
+    for (const [index, ratingInput] of body.ratings.entries()) {
+      const key = `${ratingInput.skillId}:${ratingInput.side ?? ""}`;
+      if (seenRatingKeys.has(key)) {
+        res.status(422).json({
+          error: "Validation error",
+          issues: [{ path: [`ratings[${index}]`], message: "Duplicate rating for the same skill and side in this session" }],
+        });
+        return;
+      }
+      seenRatingKeys.add(key);
     }
 
     // All validations passed — insert session + ratings in one transaction
@@ -799,7 +812,7 @@ evaluationsRouter.get(
           isNull(skillRatings.voidedAt),
         ),
       )
-      .orderBy(desc(skillRatings.ratedAt), desc(skillRatings.createdAt));
+      .orderBy(desc(skillRatings.ratedAt), desc(skillRatings.createdAt), asc(skillRatings.id));
 
     // Fetch fault tags for displayed ratings
     const displayRatingIds = displayRatingRows.map((r) => r.ratingId);
