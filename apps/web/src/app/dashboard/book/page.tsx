@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
-import BookLessonContent from "@/content/BookLessonContent";
+import BookCalendarContent from "@/content/BookCalendarContent";
 import ParentNav from "@/components/ParentNav";
 import SiteFooter from "@/components/SiteFooter";
 import { requireAuth } from "@/lib/requireAuth";
@@ -32,7 +32,7 @@ export default async function BookPage() {
       <ParentNav />
       <main id="main-content" className="flex-1">
         <div className="mx-auto max-w-content px-page pt-10 pb-tab-safe tablet:pt-14 tablet:pb-32">
-          <BookLessonContent
+          <BookCalendarContent
             locations={locations}
             swimmers={swimmers}
             isViewer={isViewer}

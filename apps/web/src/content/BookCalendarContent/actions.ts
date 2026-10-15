@@ -1,9 +1,15 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
-import { fetchAvailableSlots } from "@/lib/api/lessons";
-import { CreateLessonBodySchema, LessonResponseSchema, type AvailableSlot } from "@swim-app/shared";
-import { mapBookingApiResponse, type BookLessonState } from "./helpers";
+import { fetchRangeAvailability, fetchAvailableSlots } from "@/lib/api/lessons";
+import {
+  type AvailableSlot,
+  CreateLessonBodySchema,
+  LessonResponseSchema,
+  WeekAvailabilityResponseSchema,
+  type WeekAvailabilityResponse,
+} from "@swim-app/shared";
+import { mapBookingApiResponse, type BookingState } from "./helpers";
 
 export async function fetchSlotsDirectAction(
   date: string,
@@ -11,24 +17,38 @@ export async function fetchSlotsDirectAction(
   locationId: string,
 ): Promise<{ slots: AvailableSlot[] } | { error: string }> {
   const supabase = await createClient();
-  // getSession is called only to extract the raw access token for forwarding to
-  // the API. The API's requireUser middleware verifies the token independently.
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
-  if (!token) {
-    return { error: "Session expired. Please sign in again." };
-  }
+  if (!token) return { error: "Session expired. Please sign in again." };
   const slots = await fetchAvailableSlots(token, { date, durationMinutes, locationId });
-  if (slots === null) {
-    return { error: "Couldn't load times. Please try again." };
-  }
+  if (slots === null) return { error: "Couldn't load times. Please try again." };
   return { slots };
 }
 
-export async function createLessonAction(
-  _prev: BookLessonState,
+export async function fetchRangeAction(params: {
+  view: "week" | "month";
+  date: string;
+  durationMinutes: 30 | 45 | 60;
+  locationId: string;
+  excludeLessonId?: string;
+}): Promise<WeekAvailabilityResponse | null> {
+  const supabase = await createClient();
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) return null;
+
+  const result = await fetchRangeAvailability(token, { ...params, view: "week" });
+  if (result === null) return null;
+
+  const parsed = WeekAvailabilityResponseSchema.safeParse(result);
+  if (!parsed.success) return null;
+  return parsed.data;
+}
+
+export async function createBookingAction(
+  _prev: BookingState,
   formData: FormData,
-): Promise<BookLessonState> {
+): Promise<BookingState> {
   const parsed = CreateLessonBodySchema.safeParse({
     startsAt: formData.get("startsAt"),
     durationMinutes: Number(formData.get("durationMinutes")),
@@ -41,13 +61,9 @@ export async function createLessonAction(
   }
 
   const supabase = await createClient();
-  // getSession is called only to extract the raw access token for forwarding to
-  // the API. The API's requireUser middleware verifies the token independently.
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
-  if (!token) {
-    return { status: "error", message: "Session expired. Please sign in again." };
-  }
+  if (!token) return { status: "error", message: "Session expired. Please sign in again." };
 
   let responseStatus: number;
   let responseBody: unknown = null;

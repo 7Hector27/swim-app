@@ -1,15 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { formatSlotTime, mapBookingApiResponse } from "../content/BookLessonContent/helpers";
+import { formatSlotTime, mapBookingApiResponse } from "../content/BookCalendarContent/helpers";
 
 describe("formatSlotTime", () => {
   it("displays 4:30 PM for a 4:30 PM Los Angeles slot regardless of the server's time zone", () => {
     // 4:30 PM PST = 2026-01-26T00:30:00.000Z (UTC date is Jan 27, LA date is Jan 26)
-    expect(formatSlotTime(new Date("2026-01-27T00:30:00.000Z"))).toBe("4:30 PM");
+    expect(formatSlotTime("2026-01-27T00:30:00.000Z")).toBe("4:30 PM");
   });
 
   it("displays 7:00 AM for a 7:00 AM Los Angeles summer slot (PDT)", () => {
     // 7:00 AM PDT = 2026-07-15T14:00:00.000Z
-    expect(formatSlotTime(new Date("2026-07-15T14:00:00.000Z"))).toBe("7:00 AM");
+    expect(formatSlotTime("2026-07-15T14:00:00.000Z")).toBe("7:00 AM");
   });
 });
 

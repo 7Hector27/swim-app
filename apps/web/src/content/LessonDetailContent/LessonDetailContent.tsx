@@ -8,7 +8,7 @@ import type { AvailableSlot, LessonLocation, UpcomingLesson } from "@swim-app/sh
 import ConfirmDialog from "@/components/ConfirmDialog";
 import SiteFooter from "@/components/SiteFooter";
 import ParentNav from "@/components/ParentNav";
-import { fetchSlotsDirectAction } from "@/content/BookLessonContent/actions";
+import { fetchSlotsDirectAction } from "@/content/BookCalendarContent/actions";
 import { cancelLessonAction, rescheduleLessonAction, type LessonDetailState } from "./actions";
 
 interface Props {
