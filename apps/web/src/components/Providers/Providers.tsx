@@ -7,12 +7,14 @@ interface SessionContextValue {
   isSignedIn: boolean;
   userName: string | null;
   role: "coach" | "parent" | null;
+  isViewer: boolean;
 }
 
 const SessionContext = createContext<SessionContextValue>({
   isSignedIn: false,
   userName: null,
   role: null,
+  isViewer: false,
 });
 
 export function useSession(): SessionContextValue {
@@ -24,11 +26,13 @@ export default function Providers({
   isSignedIn,
   userName,
   role,
+  isViewer,
 }: {
   children: React.ReactNode;
   isSignedIn: boolean;
   userName: string | null;
   role: "coach" | "parent" | null;
+  isViewer: boolean;
 }) {
   return (
     <ThemeProvider
@@ -37,7 +41,7 @@ export default function Providers({
       enableSystem={false}
       storageKey="axiom-theme"
     >
-      <SessionContext.Provider value={{ isSignedIn, userName, role }}>
+      <SessionContext.Provider value={{ isSignedIn, userName, role, isViewer }}>
         {children}
       </SessionContext.Provider>
     </ThemeProvider>

@@ -4,7 +4,7 @@ import { calculateAge, todayLA, type MeResponse } from "@swim-app/shared";
 
 import Placeholder from "@/components/Placeholder";
 import SiteFooter from "@/components/SiteFooter";
-import SiteNav from "@/components/SiteNav";
+import ParentNav from "@/components/ParentNav";
 import { fetchHousehold } from "@/lib/api/households";
 import { fetchLesson, fetchUpcomingLessons } from "@/lib/api/lessons";
 import { fetchSwimmers } from "@/lib/api/swimmers";
@@ -36,12 +36,12 @@ export default async function ParentDashboardContent({ profile, accessToken, boo
 
   return (
     <div className="flex flex-col min-h-screen bg-background">
-      <SiteNav />
+      <ParentNav />
 
       {bookedLesson && <BookingConfirmDialog lesson={bookedLesson} />}
 
       <main id="main-content" className="flex-1">
-        <div className="mx-auto max-w-content px-page pt-10 pb-20 tablet:pt-14 tablet:pb-32">
+        <div className="mx-auto max-w-content px-page pt-10 pb-tab-safe tablet:pt-14 tablet:pb-32">
           {/* Page header */}
           <div className="flex flex-col gap-4 mb-8 tablet:flex-row tablet:items-start tablet:justify-between">
             <div>

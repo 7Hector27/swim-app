@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
 import BookLessonContent from "@/content/BookLessonContent";
-import SiteNav from "@/components/SiteNav";
+import ParentNav from "@/components/ParentNav";
 import SiteFooter from "@/components/SiteFooter";
 import { requireAuth } from "@/lib/requireAuth";
 import { fetchHousehold } from "@/lib/api/households";
@@ -29,9 +29,9 @@ export default async function BookPage() {
 
   return (
     <div className="flex flex-col min-h-screen bg-background">
-      <SiteNav />
+      <ParentNav />
       <main id="main-content" className="flex-1">
-        <div className="mx-auto max-w-content px-page pt-10 pb-20 tablet:pt-14 tablet:pb-32">
+        <div className="mx-auto max-w-content px-page pt-10 pb-tab-safe tablet:pt-14 tablet:pb-32">
           <BookLessonContent
             locations={locations}
             swimmers={swimmers}

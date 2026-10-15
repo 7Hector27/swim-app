@@ -1,0 +1,10 @@
+.tabBar {
+  /* Push content up above the iPhone home indicator */
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.tabItem {
+  min-height: 44px;
+  padding-top: 6px;
+  padding-bottom: 6px;
+}

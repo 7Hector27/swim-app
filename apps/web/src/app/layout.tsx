@@ -4,6 +4,7 @@ import { Fraunces, Figtree } from "next/font/google";
 
 import Providers from "@/components/Providers";
 import { fetchMe } from "@/lib/api/me";
+import { fetchHousehold } from "@/lib/api/households";
 
 const fraunces = Fraunces({
   subsets: ["latin"],
@@ -39,9 +40,9 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
+  viewportFit: "cover",
   // <meta name="theme-color"> requires static strings — CSS variables don't work here.
-  // These match --color-background (light) and --color-background (dark) in tokens.css.
-  // Update both if those token values change.
+  // These match --color-background in tokens.css. Update both if those token values change.
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#F5F7FA" },
     { media: "(prefers-color-scheme: dark)", color: "#10131C" },
@@ -58,10 +59,18 @@ export default async function RootLayout({
   const userName = meResult.ok ? (meResult.profile.fullName ?? meResult.profile.email) : null;
   const role = meResult.ok ? meResult.profile.role : null;
 
+  let isViewer = false;
+  if (meResult.ok && meResult.profile.role === "parent") {
+    const household = await fetchHousehold(meResult.accessToken);
+    isViewer = household?.myRole === "viewer";
+  }
+
   return (
     <html lang="en" className={`${fraunces.variable} ${figtree.variable}`} suppressHydrationWarning>
       <body className="min-h-screen bg-background text-text antialiased">
-        <Providers isSignedIn={isSignedIn} userName={userName} role={role}>{children}</Providers>
+        <Providers isSignedIn={isSignedIn} userName={userName} role={role} isViewer={isViewer}>
+          {children}
+        </Providers>
       </body>
     </html>
   );
