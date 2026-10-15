@@ -14,6 +14,7 @@ vi.stubGlobal("fetch", mockFetch);
 
 import GradeSelector from "../content/EvaluateContent/GradeSelector";
 import SkillGradeRow from "../content/EvaluateContent/SkillGradeRow";
+import CalculatedSkillRow from "../content/EvaluateContent/CalculatedSkillRow";
 import StartGroupSection from "../content/EvaluateContent/StartGroupSection";
 import UndoToast from "../content/EvaluateContent/UndoToast";
 import EvaluateContent from "../content/EvaluateContent/EvaluateContent";
@@ -30,6 +31,7 @@ const SKILL: SkillForRating = {
   type: "rubric",
   unit: null,
   ratedPerSide: false,
+  notLegalAllowed: true,
   parentSkillId: null,
   sortOrder: 1,
   faultTags: ["Bent knees", "Stiff ankles"],
@@ -42,6 +44,7 @@ const SIDED_SKILL: SkillForRating = {
   type: "rubric",
   unit: null,
   ratedPerSide: true,
+  notLegalAllowed: false,
   parentSkillId: null,
   sortOrder: 2,
   faultTags: [],
@@ -54,6 +57,7 @@ const START_PARENT: SkillForRating = {
   type: "composite",
   unit: null,
   ratedPerSide: false,
+  notLegalAllowed: false,
   parentSkillId: null,
   sortOrder: 10,
   faultTags: [],
@@ -67,6 +71,7 @@ function makeComponent(index: number): SkillForRating {
     type: "rubric",
     unit: null,
     ratedPerSide: false,
+    notLegalAllowed: true,
     parentSkillId: "parent-1",
     sortOrder: index,
     faultTags: [],
@@ -182,6 +187,58 @@ describe("SkillGradeRow — Not legal", () => {
   });
 });
 
+describe("SkillGradeRow — notLegalAllowed gating", () => {
+  it("hides Not legal button when notLegalAllowed is false", () => {
+    const skill: SkillForRating = { ...SKILL, notLegalAllowed: false };
+    render(<SkillGradeRow skill={skill} draftKey="s" label="Kick" draft={{ ...defaultSkillDraft(), grade: 3 as const }} onChange={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: /not legal/i })).toBeNull();
+  });
+
+  it("shows Not legal button when notLegalAllowed is true", () => {
+    render(<SkillGradeRow skill={SKILL} draftKey="s" label="Kick" draft={{ ...defaultSkillDraft(), grade: 3 as const }} onChange={vi.fn()} />);
+    expect(screen.getByRole("button", { name: /not legal/i })).toBeInTheDocument();
+  });
+});
+
+describe("CalculatedSkillRow", () => {
+  const rollupSkill: SkillForRating = {
+    id: "rollup-1",
+    slug: "free-bilateral-breathing",
+    name: "Bilateral Breathing",
+    type: "rollup",
+    unit: null,
+    ratedPerSide: false,
+    notLegalAllowed: false,
+    parentSkillId: null,
+    sortOrder: 5,
+    faultTags: [],
+  };
+
+  it("renders the skill label", () => {
+    render(<CalculatedSkillRow skill={rollupSkill} label="Bilateral Breathing" />);
+    expect(screen.getByText("Bilateral Breathing")).toBeInTheDocument();
+  });
+
+  it("shows Calculated automatically text", () => {
+    render(<CalculatedSkillRow skill={rollupSkill} label="Bilateral Breathing" />);
+    expect(screen.getByText(/calculated automatically/i)).toBeInTheDocument();
+  });
+
+  it("renders no grade selector or interactive buttons", () => {
+    render(<CalculatedSkillRow skill={rollupSkill} label="Bilateral Breathing" />);
+    expect(screen.queryByRole("radio")).toBeNull();
+    expect(screen.queryByRole("button")).toBeNull();
+  });
+});
+
+describe("buildRatingsArray — rollup exclusion", () => {
+  it("excludes rollup skills from the ratings array", () => {
+    const rollupSkill: SkillForRating = { ...SKILL, id: "rollup-1", type: "rollup" };
+    const draftSkills = { "rollup-1": { ...defaultSkillDraft(), grade: 3 as const } };
+    expect(buildRatingsArray([rollupSkill], draftSkills)).toHaveLength(0);
+  });
+});
+
 describe("StartGroupSection", () => {
   it("shows In progress when no components are rated", () => {
     render(
@@ -266,7 +323,7 @@ const TEST_CATEGORIES: CategoriesResponse = [
     sortOrder: 1,
     skills: [{
       id: SKILL_A_ID, slug: "free-kick", name: "Freestyle Kick",
-      type: "rubric", unit: null, ratedPerSide: false,
+      type: "rubric", unit: null, ratedPerSide: false, notLegalAllowed: false,
       parentSkillId: null, sortOrder: 1, faultTags: [],
     }],
   },
@@ -277,7 +334,7 @@ const TEST_CATEGORIES: CategoriesResponse = [
     sortOrder: 2,
     skills: [{
       id: SKILL_B_ID, slug: "back-kick", name: "Backstroke Kick",
-      type: "rubric", unit: null, ratedPerSide: false,
+      type: "rubric", unit: null, ratedPerSide: false, notLegalAllowed: false,
       parentSkillId: null, sortOrder: 1, faultTags: [],
     }],
   },

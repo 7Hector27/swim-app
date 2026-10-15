@@ -74,6 +74,7 @@ function makeSkill(overrides: Partial<SkillForRating> & { id: string }): SkillFo
     sortOrder: 0,
     faultTags: [],
     ...overrides,
+    notLegalAllowed: overrides.notLegalAllowed ?? false,
   };
 }
 

@@ -161,7 +161,7 @@ describe("SKILLS_CATALOG", () => {
       "back-start-reaction", "back-start-push", "back-start-arch",
       "back-start-distance", "back-start-entry-alignment", "back-start-streamline",
       // turns
-      "wall-approach", "freestyle-flip-turn", "backstroke-flip-turn",
+      "freestyle-flip-turn", "backstroke-flip-turn",
       "breaststroke-open-turn", "butterfly-open-turn",
       "im-fly-to-back", "im-back-to-breast-open", "im-back-to-breast-bucket",
       "im-back-to-breast-crossover", "im-breast-to-free",

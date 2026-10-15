@@ -982,7 +982,6 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         type: "rubric",
         appliesTo: ["free", "back", "breast", "fly"],
         sortOrder: 23,
-        notLegalAllowed: true,
       },
       {
         slug: "freestyle-flip-turn",

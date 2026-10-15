@@ -21,6 +21,7 @@ import CoachingPriorityField from "./CoachingPriorityField";
 import StartGroupSection from "./StartGroupSection";
 import SkillGradeRow from "./SkillGradeRow";
 import SideRatedRowPair from "./SideRatedRowPair";
+import CalculatedSkillRow from "./CalculatedSkillRow";
 import UndoToast from "./UndoToast";
 
 interface EvaluateContentProps {
@@ -282,6 +283,15 @@ export default function EvaluateContent({ swimmer, categories, accessToken }: Ev
                   ))}
 
                   {standaloneSkills.map((skill) => {
+                    if (skill.type === "rollup") {
+                      return (
+                        <CalculatedSkillRow
+                          key={skill.id}
+                          skill={skill}
+                          label={skill.name}
+                        />
+                      );
+                    }
                     if (skill.ratedPerSide) {
                       return (
                         <SideRatedRowPair

@@ -126,6 +126,15 @@ evaluationsRouter.post(
         return;
       }
 
+      // Rollup skills are calculated — they cannot be rated directly
+      if (skill.type === "rollup") {
+        res.status(422).json({
+          error: "Validation error",
+          issues: [{ path: [`ratings[${index}].skillId`], message: "Rollup skills are calculated and cannot be rated directly" }],
+        });
+        return;
+      }
+
       // Skill must belong to the session category directly, or via parent_skill_id
       const categoryMatch =
         skill.categoryId === body.categoryId ||
@@ -727,6 +736,7 @@ coachCategoriesRouter.get(
         type: skills.type,
         unit: skills.unit,
         ratedPerSide: skills.ratedPerSide,
+        notLegalAllowed: skills.notLegalAllowed,
         parentSkillId: skills.parentSkillId,
         sortOrder: skills.sortOrder,
         faultTags: skills.faultTags,
@@ -755,6 +765,7 @@ coachCategoriesRouter.get(
         type: skill.type,
         unit: skill.unit ?? null,
         ratedPerSide: skill.ratedPerSide,
+        notLegalAllowed: skill.notLegalAllowed,
         parentSkillId: skill.parentSkillId ?? null,
         sortOrder: skill.sortOrder,
         faultTags: skill.faultTags ?? [],

@@ -64,21 +64,23 @@ export default function SkillGradeRow({ skill, draftKey, label, draft, onChange 
           No concept
         </button>
 
-        <button
-          type="button"
-          disabled={draft.grade === null || draft.noConcept}
-          onClick={() => onChange(draftKey, { notLegal: !draft.notLegal })}
-          className="min-h-[44px] px-3 rounded border text-xs font-semibold transition-colors"
-          style={{
-            borderColor: draft.notLegal ? "var(--color-danger)" : "var(--color-border)",
-            color: draft.notLegal ? "var(--color-danger)" : "var(--color-text-secondary)",
-            opacity: (draft.grade === null || draft.noConcept) ? 0.4 : 1,
-            cursor: (draft.grade === null || draft.noConcept) ? "not-allowed" : "pointer",
-            backgroundColor: "transparent",
-          }}
-        >
-          Not legal
-        </button>
+        {skill.notLegalAllowed && (
+          <button
+            type="button"
+            disabled={draft.grade === null || draft.noConcept}
+            onClick={() => onChange(draftKey, { notLegal: !draft.notLegal })}
+            className="min-h-[44px] px-3 rounded border text-xs font-semibold transition-colors"
+            style={{
+              borderColor: draft.notLegal ? "var(--color-danger)" : "var(--color-border)",
+              color: draft.notLegal ? "var(--color-danger)" : "var(--color-text-secondary)",
+              opacity: (draft.grade === null || draft.noConcept) ? 0.4 : 1,
+              cursor: (draft.grade === null || draft.noConcept) ? "not-allowed" : "pointer",
+              backgroundColor: "transparent",
+            }}
+          >
+            Not legal
+          </button>
+        )}
 
         <button
           type="button"

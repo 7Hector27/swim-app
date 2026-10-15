@@ -14,6 +14,7 @@ import {
   latestEffectiveRatings,
   calculateStartGrade,
   weakerSideGrade,
+  calculateBilateralBreathingGrade,
   type RatingRecord,
   type GradeMap,
   type BuiltOnGraph,
@@ -392,6 +393,39 @@ export async function computeSwimmerProgress(
         currentLeft: null,
         currentRight: null,
         history,
+      });
+    }
+  }
+
+  // Inject synthetic progress entry for free-bilateral-breathing (rollup)
+  const leftGradeRaw = grades["breathing-timing-free:left"];
+  const rightGradeRaw = grades["breathing-timing-free:right"];
+  const leftGrade = typeof leftGradeRaw === "number" ? leftGradeRaw : null;
+  const rightGrade = typeof rightGradeRaw === "number" ? rightGradeRaw : null;
+  const bilateralGrade = calculateBilateralBreathingGrade(leftGrade, rightGrade);
+  if (bilateralGrade !== null) {
+    const bilateralSkill = allSkillRows.find((skill) => skill.slug === "free-bilateral-breathing");
+    if (bilateralSkill) {
+      const catRow = await db
+        .select({ name: skillCategories.name })
+        .from(skillCategories)
+        .where(eq(skillCategories.id, bilateralSkill.categoryId))
+        .limit(1);
+      const categoryName = catRow[0]?.name ?? "";
+      skillProgressEntries.push({
+        skillId: bilateralSkill.id,
+        slug: bilateralSkill.slug,
+        name: bilateralSkill.name,
+        categoryId: bilateralSkill.categoryId,
+        categoryName,
+        type: "rollup",
+        unit: null,
+        ratedPerSide: false,
+        parentSkillId: null,
+        current: { grade: bilateralGrade, notLegal: false, noConcept: false, capacityValue: null, capacityUnit: null, measurementValue: null, measurementUnit: null },
+        currentLeft: null,
+        currentRight: null,
+        history: [],
       });
     }
   }
