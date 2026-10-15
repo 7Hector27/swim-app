@@ -13,6 +13,16 @@ vi.mock("@/lib/actions/notes", () => ({
   deleteNoteAction: vi.fn(),
 }));
 
+vi.mock("@/components/ConfirmDialog", () => ({
+  default: ({ title, onCancel }: { title: string; onCancel: () => void }) => (
+    <div data-testid="confirm-dialog">
+      <span>{title}</span>
+      <button type="button" onClick={onCancel}>Cancel</button>
+      <button type="submit">Confirm</button>
+    </div>
+  ),
+}));
+
 vi.mock("@/components/SiteFooter", () => ({ default: () => <footer /> }));
 vi.mock("@/components/SiteNav", () => ({ default: () => <nav /> }));
 vi.mock("@/content/CoachSwimmerDetailContent/HidePublicButton", () => ({
@@ -74,13 +84,35 @@ describe("AddNoteForm", () => {
     const textarea = screen.getByRole("textbox");
     expect(textarea).toHaveAttribute("required");
   });
+
+  it("renders note type selector with all four types", () => {
+    render(<AddNoteForm swimmerId={SWIMMER_ID} />);
+    const select = screen.getByRole("combobox");
+    expect(select).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Observation" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Correction" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Drill" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Recommendation" })).toBeInTheDocument();
+  });
+
+  it("renders skill selector when categories are provided", () => {
+    render(<AddNoteForm swimmerId={SWIMMER_ID} categories={CATEGORIES_WITH_SKILL} />);
+    expect(screen.getByRole("option", { name: "Flutter Kick" })).toBeInTheDocument();
+  });
+
+  it("does not render skill selector when categories are empty", () => {
+    render(<AddNoteForm swimmerId={SWIMMER_ID} categories={[]} />);
+    const selects = screen.getAllByRole("combobox");
+    // Only the noteType select, no skill select
+    expect(selects).toHaveLength(1);
+  });
 });
 
 // ── SwimmerTimeline — filter chips ────────────────────────────────────────────
 
 describe("SwimmerTimeline — filter chips", () => {
   const items: import("@swim-app/shared").TimelineResponse = [
-    { type: "note", id: NOTE_ID, body: "Coach note body", createdAt: "2025-01-10T12:00:00.000Z" },
+    { type: "note", noteType: "observation", id: NOTE_ID, body: "Coach note body", createdAt: "2025-01-10T12:00:00.000Z" },
     {
       type: "rating_note",
       id: "rn-1",
@@ -90,10 +122,13 @@ describe("SwimmerTimeline — filter chips", () => {
     },
   ];
 
-  it("renders All, Note, Rating note, Priority filter buttons", () => {
+  it("renders All, four note types, Rating note, and Priority filter buttons", () => {
     render(<SwimmerTimeline swimmerId={SWIMMER_ID} items={items} categories={EMPTY_CATEGORIES} />);
     expect(screen.getByRole("button", { name: "All" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Note" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Observation" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Correction" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Drill" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Recommendation" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Rating note" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Priority" })).toBeInTheDocument();
   });
@@ -104,9 +139,9 @@ describe("SwimmerTimeline — filter chips", () => {
     expect(screen.getByText("Rating note body")).toBeInTheDocument();
   });
 
-  it("filters to only notes when Note filter is clicked", () => {
+  it("filters to only observation notes when Observation filter is clicked", () => {
     render(<SwimmerTimeline swimmerId={SWIMMER_ID} items={items} categories={EMPTY_CATEGORIES} />);
-    fireEvent.click(screen.getByRole("button", { name: "Note" }));
+    fireEvent.click(screen.getByRole("button", { name: "Observation" }));
     expect(screen.getByText("Coach note body")).toBeInTheDocument();
     expect(screen.queryByText("Rating note body")).toBeNull();
   });
@@ -122,6 +157,23 @@ describe("SwimmerTimeline — filter chips", () => {
     render(<SwimmerTimeline swimmerId={SWIMMER_ID} items={items} categories={EMPTY_CATEGORIES} />);
     fireEvent.click(screen.getByRole("button", { name: "Priority" }));
     expect(screen.getByText(/no timeline entries/i)).toBeInTheDocument();
+  });
+
+  it("filters Correction items by note type", () => {
+    const correctionItem: import("@swim-app/shared").TimelineItem = {
+      type: "note",
+      noteType: "correction",
+      id: "corr-1",
+      body: "Correction note",
+      createdAt: "2025-01-08T12:00:00.000Z",
+    };
+    render(
+      <SwimmerTimeline swimmerId={SWIMMER_ID} items={[...items, correctionItem]} categories={EMPTY_CATEGORIES} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Correction" }));
+    expect(screen.getByText("Correction note")).toBeInTheDocument();
+    expect(screen.queryByText("Coach note body")).toBeNull();
+    expect(screen.queryByText("Rating note body")).toBeNull();
   });
 });
 
@@ -158,6 +210,7 @@ describe("SwimmerTimeline — skill filter", () => {
 describe("SwimmerTimeline — edit/delete on notes", () => {
   const noteItem: import("@swim-app/shared").TimelineItem = {
     type: "note",
+    noteType: "observation",
     id: NOTE_ID,
     body: "A coach note",
     createdAt: "2025-01-10T12:00:00.000Z",
@@ -207,12 +260,12 @@ describe("SwimmerTimeline — edit/delete on notes", () => {
     expect(screen.queryByRole("textbox")).toBeNull();
   });
 
-  it("shows confirm prompt when Delete is clicked", () => {
+  it("shows ConfirmDialog when Delete is clicked", () => {
     render(
       <SwimmerTimeline swimmerId={SWIMMER_ID} items={[noteItem]} categories={EMPTY_CATEGORIES} />,
     );
-    fireEvent.click(screen.getByRole("button", { name: /delete/i }));
-    expect(screen.getByText(/delete this note/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /confirm/i })).toBeInTheDocument();
+    // ConfirmDialog is always rendered (it's a <dialog>); delete button triggers showModal
+    expect(screen.getByTestId("confirm-dialog")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /delete/i })).toBeInTheDocument();
   });
 });

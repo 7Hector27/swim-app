@@ -1,6 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { CoachNoteTypeSchema } from "@swim-app/shared";
 import { createClient } from "@/lib/supabase/server";
 
 export type NoteActionState =
@@ -20,15 +21,22 @@ export async function createNoteAction(
     return { status: "error", message: "Note cannot be blank." };
   }
 
+  const noteTypeParsed = CoachNoteTypeSchema.safeParse(formData.get("noteType"));
+  if (!noteTypeParsed.success) {
+    return { status: "error", message: "Invalid note type." };
+  }
+
   const supabase = await createClient();
   const {
     data: { session },
   } = await supabase.auth.getSession();
   if (!session) redirect("/login");
 
-  const payload: Record<string, string> = { body: body.trim() };
+  const payload: Record<string, string> = { body: body.trim(), noteType: noteTypeParsed.data };
   if (sessionId) payload["sessionId"] = sessionId;
   if (lessonId) payload["lessonId"] = lessonId;
+  const skillId = formData.get("skillId");
+  if (typeof skillId === "string" && skillId) payload["skillId"] = skillId;
 
   const response = await fetch(
     `${process.env.NEXT_PUBLIC_API_URL}/coach/swimmers/${swimmerId}/notes`,
@@ -58,11 +66,23 @@ export async function updateNoteAction(
     return { status: "error", message: "Note cannot be blank." };
   }
 
+  const noteTypeParsed = CoachNoteTypeSchema.safeParse(formData.get("noteType"));
+  if (!noteTypeParsed.success) {
+    return { status: "error", message: "Invalid note type." };
+  }
+
   const supabase = await createClient();
   const {
     data: { session },
   } = await supabase.auth.getSession();
   if (!session) redirect("/login");
+
+  const skillId = formData.get("skillId");
+  const payload: Record<string, string | null> = {
+    body: body.trim(),
+    noteType: noteTypeParsed.data,
+    skillId: typeof skillId === "string" && skillId ? skillId : null,
+  };
 
   const response = await fetch(
     `${process.env.NEXT_PUBLIC_API_URL}/coach/swimmers/${swimmerId}/notes/${noteId}`,
@@ -72,7 +92,7 @@ export async function updateNoteAction(
         Authorization: `Bearer ${session.access_token}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ body: body.trim() }),
+      body: JSON.stringify(payload),
     },
   );
 

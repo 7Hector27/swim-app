@@ -255,7 +255,7 @@ export default function CoachSwimmerDetailContent({
 
           <section className="flex flex-col gap-3">
             <h2 className="font-bold text-text">Add note</h2>
-            <AddNoteForm swimmerId={swimmer.id} />
+            <AddNoteForm swimmerId={swimmer.id} categories={categories} />
           </section>
 
           {swimmer.members.length > 0 && (

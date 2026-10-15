@@ -210,7 +210,7 @@ describe("GET /coach/swimmers/:id/timeline — content", () => {
   it("returns items from all three sources merged and sorted newest first", async () => {
     authAs(profileCoach);
     setupTimeline({
-      notes: [{ id: NOTE_ID, body: "Great effort", sessionId: null, lessonId: null, createdAt: t1 }],
+      notes: [{ id: NOTE_ID, body: "Great effort", noteType: "observation", sessionId: null, lessonId: null, skillId: null, createdAt: t1 }],
       ratingNotes: [{ id: RATING_ID, note: "Good arm pull", sessionId: SESSION_ID, skillId: SKILL_ID, createdAt: t2 }],
       sessions: [{ id: SESSION_ID, coachingPriority: "Work on turns", createdAt: t3 }],
     });
@@ -271,7 +271,7 @@ describe("GET /coach/swimmers/:id/timeline — content", () => {
   it("omits tiedTo on standalone note (no sessionId or lessonId)", async () => {
     authAs(profileCoach);
     setupTimeline({
-      notes: [{ id: NOTE_ID, body: "Standalone", sessionId: null, lessonId: null, createdAt: t1 }],
+      notes: [{ id: NOTE_ID, body: "Standalone", noteType: "observation", sessionId: null, lessonId: null, skillId: null, createdAt: t1 }],
     });
 
     const res = await request(app)
@@ -347,7 +347,7 @@ describe("POST /coach/swimmers/:id/notes — auth", () => {
     mockGetUser.mockResolvedValue({ data: { user: null }, error: null });
     const res = await request(app)
       .post(`/coach/swimmers/${SWIMMER_A_ID}/notes`)
-      .send({ body: "Note" });
+      .send({ body: "Note", noteType: "observation" });
     expect(res.status).toBe(401);
   });
 
@@ -357,7 +357,7 @@ describe("POST /coach/swimmers/:id/notes — auth", () => {
     const res = await request(app)
       .post(`/coach/swimmers/${SWIMMER_A_ID}/notes`)
       .set("Authorization", "Bearer token")
-      .send({ body: "Note" });
+      .send({ body: "Note", noteType: "observation" });
     expect(res.status).toBe(403);
   });
 });
@@ -373,7 +373,7 @@ describe("POST /coach/swimmers/:id/notes — 201 standalone", () => {
     const res = await request(app)
       .post(`/coach/swimmers/${SWIMMER_A_ID}/notes`)
       .set("Authorization", "Bearer token")
-      .send({ body: "Great effort" });
+      .send({ body: "Great effort", noteType: "observation" });
 
     expect(res.status).toBe(201);
     expect(res.body).toMatchObject({ id: NOTE_ID });
@@ -390,7 +390,7 @@ describe("POST /coach/swimmers/:id/notes — 404", () => {
     const res = await request(app)
       .post(`/coach/swimmers/${SWIMMER_A_ID}/notes`)
       .set("Authorization", "Bearer token")
-      .send({ body: "Note" });
+      .send({ body: "Note", noteType: "observation" });
 
     expect(res.status).toBe(404);
   });
@@ -404,7 +404,7 @@ describe("POST /coach/swimmers/:id/notes — 404", () => {
     const res = await request(app)
       .post(`/coach/swimmers/${SWIMMER_A_ID}/notes`)
       .set("Authorization", "Bearer token")
-      .send({ body: "Note" });
+      .send({ body: "Note", noteType: "observation" });
 
     expect(res.status).toBe(404);
   });
@@ -421,7 +421,7 @@ describe("POST /coach/swimmers/:id/notes — session mismatch", () => {
     const res = await request(app)
       .post(`/coach/swimmers/${SWIMMER_A_ID}/notes`)
       .set("Authorization", "Bearer token")
-      .send({ body: "Note", sessionId: SESSION_ID });
+      .send({ body: "Note", noteType: "observation", sessionId: SESSION_ID });
 
     expect(res.status).toBe(422);
     expect(res.body.error).toBe("session_swimmer_mismatch");
@@ -437,7 +437,7 @@ describe("POST /coach/swimmers/:id/notes — session mismatch", () => {
     const res = await request(app)
       .post(`/coach/swimmers/${SWIMMER_A_ID}/notes`)
       .set("Authorization", "Bearer token")
-      .send({ body: "Note", sessionId: SESSION_ID });
+      .send({ body: "Note", noteType: "observation", sessionId: SESSION_ID });
 
     expect(res.status).toBe(422);
     expect(res.body.error).toBe("session_swimmer_mismatch");
@@ -455,7 +455,7 @@ describe("POST /coach/swimmers/:id/notes — lesson mismatch", () => {
     const res = await request(app)
       .post(`/coach/swimmers/${SWIMMER_A_ID}/notes`)
       .set("Authorization", "Bearer token")
-      .send({ body: "Note", lessonId: LESSON_ID });
+      .send({ body: "Note", noteType: "observation", lessonId: LESSON_ID });
 
     expect(res.status).toBe(422);
     expect(res.body.error).toBe("lesson_swimmer_mismatch");
@@ -472,7 +472,7 @@ describe("POST /coach/swimmers/:id/notes — lesson mismatch", () => {
     const res = await request(app)
       .post(`/coach/swimmers/${SWIMMER_A_ID}/notes`)
       .set("Authorization", "Bearer token")
-      .send({ body: "Note", lessonId: LESSON_ID });
+      .send({ body: "Note", noteType: "observation", lessonId: LESSON_ID });
 
     expect(res.status).toBe(201);
   });
@@ -490,7 +490,7 @@ describe("POST /coach/swimmers/:id/notes — valid sessionId", () => {
     const res = await request(app)
       .post(`/coach/swimmers/${SWIMMER_A_ID}/notes`)
       .set("Authorization", "Bearer token")
-      .send({ body: "Session note", sessionId: SESSION_ID });
+      .send({ body: "Session note", noteType: "observation", sessionId: SESSION_ID });
 
     expect(res.status).toBe(201);
   });
@@ -509,7 +509,7 @@ describe("PATCH /coach/swimmers/:id/notes/:noteId", () => {
     const res = await request(app)
       .patch(`/coach/swimmers/${SWIMMER_A_ID}/notes/${NOTE_ID}`)
       .set("Authorization", "Bearer token")
-      .send({ body: "Updated note" });
+      .send({ body: "Updated note", noteType: "correction" });
 
     expect(res.status).toBe(200);
   });
@@ -523,7 +523,7 @@ describe("PATCH /coach/swimmers/:id/notes/:noteId", () => {
     const res = await request(app)
       .patch(`/coach/swimmers/${SWIMMER_A_ID}/notes/${NOTE_ID}`)
       .set("Authorization", "Bearer token")
-      .send({ body: "Updated" });
+      .send({ body: "Updated", noteType: "correction" });
 
     expect(res.status).toBe(403);
   });
@@ -549,7 +549,7 @@ describe("PATCH /coach/swimmers/:id/notes/:noteId", () => {
     const res = await request(app)
       .patch(`/coach/swimmers/${SWIMMER_A_ID}/notes/${NOTE_ID}`)
       .set("Authorization", "Bearer token")
-      .send({ body: "Updated" });
+      .send({ body: "Updated", noteType: "correction" });
 
     expect(res.status).toBe(404);
   });
@@ -558,7 +558,7 @@ describe("PATCH /coach/swimmers/:id/notes/:noteId", () => {
     mockGetUser.mockResolvedValue({ data: { user: null }, error: null });
     const res = await request(app)
       .patch(`/coach/swimmers/${SWIMMER_A_ID}/notes/${NOTE_ID}`)
-      .send({ body: "Updated" });
+      .send({ body: "Updated", noteType: "correction" });
     expect(res.status).toBe(401);
   });
 });

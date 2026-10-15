@@ -2,21 +2,42 @@
 
 import { useActionState, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { CategoriesResponse, TimelineItem, TimelineItemType, TimelineResponse } from "@swim-app/shared";
+import type {
+  CategoriesResponse,
+  CoachNoteType,
+  TimelineItem,
+  TimelineResponse,
+} from "@swim-app/shared";
 
+import ConfirmDialog from "@/components/ConfirmDialog";
 import { updateNoteAction, deleteNoteAction, type NoteActionState } from "@/lib/actions/notes";
 
 const NOTE_IDLE: NoteActionState = { status: "idle" };
 
-type FilterType = TimelineItemType | "all";
+type NoteSubFilter = CoachNoteType;
+type TimelineFilter = "all" | NoteSubFilter | "rating_note" | "coaching_priority";
 
-const FILTER_LABELS: Record<FilterType, string> = {
-  all: "All",
-  note: "Note",
-  rating_note: "Rating note",
-  coaching_priority: "Priority",
+interface FilterSpec {
+  value: TimelineFilter;
+  label: string;
+}
+
+const FILTERS: FilterSpec[] = [
+  { value: "all", label: "All" },
+  { value: "observation", label: "Observation" },
+  { value: "correction", label: "Correction" },
+  { value: "drill", label: "Drill" },
+  { value: "recommendation", label: "Recommendation" },
+  { value: "rating_note", label: "Rating note" },
+  { value: "coaching_priority", label: "Priority" },
+];
+
+const NOTE_TYPE_LABELS: Record<CoachNoteType, string> = {
+  observation: "Observation",
+  correction: "Correction",
+  drill: "Drill",
+  recommendation: "Recommendation",
 };
-const FILTERS: FilterType[] = ["all", "note", "rating_note", "coaching_priority"];
 
 function formatDate(iso: string): string {
   return new Intl.DateTimeFormat("en-US", {
@@ -36,14 +57,34 @@ function buildSkillMap(categories: CategoriesResponse): Map<string, string> {
   return map;
 }
 
+function matchesFilter(item: TimelineItem, filter: TimelineFilter): boolean {
+  if (filter === "all") return true;
+  if (filter === "rating_note" || filter === "coaching_priority") return item.type === filter;
+  // observation | correction | drill | recommendation — sub-filters for note type
+  return item.type === "note" && item.noteType === filter;
+}
+
+const NOTE_TYPES: { value: CoachNoteType; label: string }[] = [
+  { value: "observation", label: "Observation" },
+  { value: "correction", label: "Correction" },
+  { value: "drill", label: "Drill" },
+  { value: "recommendation", label: "Recommendation" },
+];
+
+const selectClass =
+  "rounded-lg border border-border bg-background text-text text-sm px-2 py-1 focus:outline-none focus:ring-2 focus:ring-[var(--color-focus-ring)] disabled:opacity-50";
+
+// ── EditRow ───────────────────────────────────────────────────────────────────
+
 interface EditRowProps {
   item: TimelineItem;
   swimmerId: string;
+  categories: CategoriesResponse;
   onCancel: () => void;
   onSuccess: () => void;
 }
 
-function EditRow({ item, swimmerId, onCancel, onSuccess }: EditRowProps) {
+function EditRow({ item, swimmerId, categories, onCancel, onSuccess }: EditRowProps) {
   const boundUpdate = updateNoteAction.bind(null, swimmerId, item.id);
   const [state, formAction, isPending] = useActionState<NoteActionState, FormData>(boundUpdate, NOTE_IDLE);
 
@@ -51,8 +92,41 @@ function EditRow({ item, swimmerId, onCancel, onSuccess }: EditRowProps) {
     if (state.status === "success") onSuccess();
   }, [state.status, onSuccess]);
 
+  const allSkills = categories.flatMap((cat) =>
+    cat.skills.map((skill) => ({ id: skill.id, name: skill.name })),
+  );
+  const currentSkillId = item.tiedTo?.skillId ?? "";
+
   return (
     <form action={formAction} className="flex flex-col gap-2">
+      <div className="flex gap-2 flex-wrap">
+        <select
+          name="noteType"
+          defaultValue={item.noteType ?? "observation"}
+          disabled={isPending}
+          className={selectClass}
+        >
+          {NOTE_TYPES.map(({ value, label }) => (
+            <option key={value} value={value}>{label}</option>
+          ))}
+        </select>
+
+        {allSkills.length > 0 && (
+          <select
+            name="skillId"
+            defaultValue={currentSkillId}
+            disabled={isPending}
+            className={selectClass}
+            aria-label="Tie to skill (optional)"
+          >
+            <option value="">No skill</option>
+            {allSkills.map((skill) => (
+              <option key={skill.id} value={skill.id}>{skill.name}</option>
+            ))}
+          </select>
+        )}
+      </div>
+
       <textarea
         name="body"
         defaultValue={item.body}
@@ -87,14 +161,17 @@ function EditRow({ item, swimmerId, onCancel, onSuccess }: EditRowProps) {
   );
 }
 
-interface DeleteButtonProps {
+// ── DeleteRow ─────────────────────────────────────────────────────────────────
+
+interface DeleteRowProps {
   item: TimelineItem;
   swimmerId: string;
   onSuccess: () => void;
 }
 
-function DeleteButton({ item, swimmerId, onSuccess }: DeleteButtonProps) {
-  const [confirming, setConfirming] = useState(false);
+function DeleteRow({ item, swimmerId, onSuccess }: DeleteRowProps) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const formId = `delete-note-${item.id}`;
   const boundDelete = deleteNoteAction.bind(null, swimmerId, item.id);
   const [state, formAction, isPending] = useActionState<NoteActionState, FormData>(boundDelete, NOTE_IDLE);
 
@@ -102,42 +179,34 @@ function DeleteButton({ item, swimmerId, onSuccess }: DeleteButtonProps) {
     if (state.status === "success") onSuccess();
   }, [state.status, onSuccess]);
 
-  if (!confirming) {
-    return (
+  return (
+    <>
       <button
         type="button"
-        onClick={() => setConfirming(true)}
+        onClick={() => dialogRef.current?.showModal()}
         className="text-xs text-text-secondary hover:text-danger transition-colors duration-150 min-h-[32px] px-2"
       >
         Delete
       </button>
-    );
-  }
 
-  return (
-    <form action={formAction} className="flex items-center gap-2">
-      <span className="text-xs text-text-secondary">Delete this note?</span>
-      {state.status === "error" && (
-        <span className="text-xs text-danger">{state.message}</span>
-      )}
-      <button
-        type="submit"
-        disabled={isPending}
-        className="text-xs font-semibold text-danger min-h-[32px] px-2 disabled:opacity-50"
-      >
-        {isPending ? "Deleting…" : "Confirm"}
-      </button>
-      <button
-        type="button"
-        onClick={() => setConfirming(false)}
-        disabled={isPending}
-        className="text-xs text-text-secondary min-h-[32px] px-2 disabled:opacity-50"
-      >
-        Cancel
-      </button>
-    </form>
+      <form id={formId} action={formAction} />
+
+      <ConfirmDialog
+        dialogRef={dialogRef}
+        title="Delete note?"
+        description="This note will be permanently removed."
+        formId={formId}
+        confirmLabel="Delete"
+        confirmDanger
+        isPending={isPending}
+        {...(state.status === "error" && { errorMessage: state.message })}
+        onCancel={() => dialogRef.current?.close()}
+      />
+    </>
   );
 }
+
+// ── SwimmerTimeline ───────────────────────────────────────────────────────────
 
 interface SwimmerTimelineProps {
   swimmerId: string;
@@ -147,14 +216,14 @@ interface SwimmerTimelineProps {
 
 export default function SwimmerTimeline({ swimmerId, items, categories }: SwimmerTimelineProps) {
   const router = useRouter();
-  const [typeFilter, setTypeFilter] = useState<FilterType>("all");
+  const [activeFilter, setActiveFilter] = useState<TimelineFilter>("all");
   const [skillFilter, setSkillFilter] = useState<string>("all");
   const [editingId, setEditingId] = useState<string | null>(null);
   const onMutated = useRef(() => { router.refresh(); });
 
   const skillMap = buildSkillMap(categories);
 
-  const skillsWithRatings = Array.from(
+  const skillsInTimeline = Array.from(
     new Map(
       items
         .filter((item) => item.tiedTo?.skillId !== undefined)
@@ -163,7 +232,7 @@ export default function SwimmerTimeline({ swimmerId, items, categories }: Swimme
   );
 
   const filtered = items.filter((item) => {
-    if (typeFilter !== "all" && item.type !== typeFilter) return false;
+    if (!matchesFilter(item, activeFilter)) return false;
     if (skillFilter !== "all" && item.tiedTo?.skillId !== skillFilter) return false;
     return true;
   });
@@ -173,23 +242,23 @@ export default function SwimmerTimeline({ swimmerId, items, categories }: Swimme
       <h2 className="font-bold text-text">Timeline</h2>
 
       <div className="flex gap-2 flex-wrap">
-        {FILTERS.map((filter) => (
+        {FILTERS.map(({ value, label }) => (
           <button
-            key={filter}
+            key={value}
             type="button"
-            onClick={() => setTypeFilter(filter)}
+            onClick={() => setActiveFilter(value)}
             className={`text-xs font-semibold rounded-full px-3 py-1 border transition-colors duration-150 min-h-[28px] ${
-              typeFilter === filter
+              activeFilter === value
                 ? "border-accent text-accent"
                 : "border-border text-text-secondary hover:border-text-secondary"
             }`}
           >
-            {FILTER_LABELS[filter]}
+            {label}
           </button>
         ))}
       </div>
 
-      {skillsWithRatings.length > 0 && (
+      {skillsInTimeline.length > 0 && (
         <select
           value={skillFilter}
           onChange={(event) => setSkillFilter(event.target.value)}
@@ -197,7 +266,7 @@ export default function SwimmerTimeline({ swimmerId, items, categories }: Swimme
           aria-label="Filter by skill"
         >
           <option value="all">All skills</option>
-          {skillsWithRatings.map(([skillId, skillName]) => (
+          {skillsInTimeline.map(([skillId, skillName]) => (
             <option key={skillId} value={skillId}>{skillName}</option>
           ))}
         </select>
@@ -220,7 +289,11 @@ export default function SwimmerTimeline({ swimmerId, items, categories }: Swimme
                       : "text-text-secondary border-border"
                   }`}
                 >
-                  {FILTER_LABELS[item.type]}
+                  {item.type === "note" && item.noteType
+                    ? NOTE_TYPE_LABELS[item.noteType]
+                    : item.type === "rating_note"
+                    ? "Rating note"
+                    : "Priority"}
                 </span>
                 <time className="text-xs text-text-secondary" dateTime={item.createdAt}>
                   {formatDate(item.createdAt)}
@@ -236,6 +309,7 @@ export default function SwimmerTimeline({ swimmerId, items, categories }: Swimme
                 <EditRow
                   item={item}
                   swimmerId={swimmerId}
+                  categories={categories}
                   onCancel={() => setEditingId(null)}
                   onSuccess={() => {
                     setEditingId(null);
@@ -255,7 +329,7 @@ export default function SwimmerTimeline({ swimmerId, items, categories }: Swimme
                   >
                     Edit
                   </button>
-                  <DeleteButton
+                  <DeleteRow
                     item={item}
                     swimmerId={swimmerId}
                     onSuccess={onMutated.current}

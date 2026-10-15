@@ -569,6 +569,13 @@ export const ratingFaultTags = pgTable(
 
 // ── Coach notes ───────────────────────────────────────────────────────────────
 
+export const coachNoteTypeEnum = pgEnum("coach_note_type", [
+  "observation",
+  "correction",
+  "drill",
+  "recommendation",
+]);
+
 export const coachNotes = pgTable(
   "coach_notes",
   {
@@ -576,6 +583,8 @@ export const coachNotes = pgTable(
     swimmerId: uuid("swimmer_id").notNull().references(() => swimmers.id, { onDelete: "restrict" }),
     sessionId: uuid("session_id").references(() => evaluationSessions.id, { onDelete: "restrict" }),
     lessonId: uuid("lesson_id").references(() => lessons.id, { onDelete: "restrict" }),
+    skillId: uuid("skill_id").references(() => skills.id, { onDelete: "restrict" }),
+    noteType: coachNoteTypeEnum("note_type").notNull().default("observation"),
     body: text("body").notNull(),
     createdBy: uuid("created_by").notNull().references(() => profiles.id, { onDelete: "restrict" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

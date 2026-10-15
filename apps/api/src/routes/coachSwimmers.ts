@@ -302,8 +302,10 @@ coachSwimmersRouter.get(
         .select({
           id: coachNotes.id,
           body: coachNotes.body,
+          noteType: coachNotes.noteType,
           sessionId: coachNotes.sessionId,
           lessonId: coachNotes.lessonId,
+          skillId: coachNotes.skillId,
           createdAt: coachNotes.createdAt,
         })
         .from(coachNotes)
@@ -339,12 +341,14 @@ coachSwimmersRouter.get(
         type: "note",
         id: note.id,
         body: note.body,
+        noteType: note.noteType,
         createdAt: toISO(note.createdAt),
         ...(
-          (note.sessionId !== null || note.lessonId !== null) && {
+          (note.sessionId !== null || note.lessonId !== null || note.skillId !== null) && {
             tiedTo: {
               ...(note.sessionId !== null && { sessionId: note.sessionId }),
               ...(note.lessonId !== null && { lessonId: note.lessonId }),
+              ...(note.skillId !== null && { skillId: note.skillId }),
             },
           }
         ),
@@ -424,9 +428,11 @@ coachSwimmersRouter.post(
       .values({
         swimmerId,
         body: body.body,
+        noteType: body.noteType,
         createdBy: req.profile.id,
         ...(body.sessionId !== undefined && { sessionId: body.sessionId }),
         ...(body.lessonId !== undefined && { lessonId: body.lessonId }),
+        ...(body.skillId !== undefined && { skillId: body.skillId }),
       })
       .returning({ id: coachNotes.id, createdAt: coachNotes.createdAt });
 
@@ -462,7 +468,11 @@ coachSwimmersRouter.patch(
 
     await db
       .update(coachNotes)
-      .set({ body: body.body })
+      .set({
+        body: body.body,
+        noteType: body.noteType,
+        ...(body.skillId !== undefined && { skillId: body.skillId }),
+      })
       .where(eq(coachNotes.id, noteId));
 
     res.status(200).json({ ok: true });

@@ -198,6 +198,7 @@ export {
 } from "./schemas/booking";
 
 export type {
+  CoachNoteType,
   TimelineItemType,
   TimelineItem,
   TimelineResponse,
@@ -206,6 +207,7 @@ export type {
   CoachNoteResponse,
 } from "./schemas/notes";
 export {
+  CoachNoteTypeSchema,
   TimelineItemTypeSchema,
   TimelineItemSchema,
   TimelineResponseSchema,
