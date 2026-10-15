@@ -70,8 +70,8 @@ afterAll(async () => {
 
 describe("GET /coach/swimmers/:id/progress — voided ratings excluded", () => {
   it("excludes a voided rating from history and uses only the non-voided rating for current level", async () => {
-    // Create session with two ratings for the same skill: grade 4 first, then grade 2.
-    const sessionRes = await request(app)
+    // Session 1: grade 4 on 2026-10-01
+    const session1Res = await request(app)
       .post(`/coach/swimmers/${swimmerId}/sessions`)
       .set("Authorization", `Bearer ${coach.accessToken}`)
       .send({
@@ -94,6 +94,22 @@ describe("GET /coach/swimmers/:id/progress — voided ratings excluded", () => {
             faultTags: [],
             ratedAt: "2026-10-01T10:00:00.000Z",
           },
+        ],
+      });
+    expect(session1Res.status).toBe(201);
+    const { ratingIds: ratingIds1 } = session1Res.body as { ratingIds: string[] };
+    expect(ratingIds1).toHaveLength(1);
+
+    // Session 2: grade 2 on 2026-10-01 (later ratedAt) — will be voided
+    const session2Res = await request(app)
+      .post(`/coach/swimmers/${swimmerId}/sessions`)
+      .set("Authorization", `Bearer ${coach.accessToken}`)
+      .send({
+        categoryId,
+        sessionDate: "2026-10-01",
+        context: "practice",
+        coachingPriority: "Head position",
+        ratings: [
           {
             skillId,
             grade: 2,
@@ -110,15 +126,13 @@ describe("GET /coach/swimmers/:id/progress — voided ratings excluded", () => {
           },
         ],
       });
-    expect(sessionRes.status).toBe(201);
+    expect(session2Res.status).toBe(201);
+    const { ratingIds: ratingIds2 } = session2Res.body as { ratingIds: string[] };
+    expect(ratingIds2).toHaveLength(1);
 
-    const { ratingIds } = sessionRes.body as { ratingIds: string[] };
-    expect(ratingIds).toHaveLength(2);
-
-    // Void the grade-2 rating (newer one, at index 1 by ratedAt order — but ratingIds order matches input order)
-    // ratingIds[0] = grade 4, ratingIds[1] = grade 2
+    // Void the grade-2 rating from session 2
     const voidRes = await request(app)
-      .patch(`/coach/ratings/${ratingIds[1]}/void`)
+      .patch(`/coach/ratings/${ratingIds2[0]}/void`)
       .set("Authorization", `Bearer ${coach.accessToken}`)
       .send({ reason: "Data entry error" });
     expect(voidRes.status).toBe(200);
@@ -137,7 +151,7 @@ describe("GET /coach/swimmers/:id/progress — voided ratings excluded", () => {
     // Only the grade-4 (non-voided) rating should appear in history
     expect(matchingSkill.history).toHaveLength(1);
     expect(matchingSkill.history[0].grade).toBe(4);
-    expect(matchingSkill.history[0].id).toBe(ratingIds[0]);
+    expect(matchingSkill.history[0].id).toBe(ratingIds1[0]);
 
     // Current level should reflect grade 4, not grade 2
     expect(matchingSkill.current.grade).toBe(4);
