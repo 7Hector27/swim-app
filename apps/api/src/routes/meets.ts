@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "../db/client";
 import { meetSwims, meets, swimmers } from "../db/schema";
 import { validate } from "../middleware/validate";
@@ -29,11 +29,27 @@ meetsRouter.get(
       .from(meets)
       .orderBy(asc(meets.meetDate));
 
+    if (rows.length === 0) {
+      res.json([]);
+      return;
+    }
+
+    const countRows = await db
+      .select({
+        meetId: meetSwims.meetId,
+        count: sql<number>`count(*)`.mapWith(Number),
+      })
+      .from(meetSwims)
+      .groupBy(meetSwims.meetId);
+
+    const countByMeet = new Map(countRows.map((r) => [r.meetId, r.count]));
+
     const body: MeetResponse[] = rows.map((row) => ({
       id: row.id,
       name: row.name,
       meetDate: row.meetDate,
       course: row.course,
+      swimCount: countByMeet.get(row.id) ?? 0,
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
     }));
@@ -67,6 +83,7 @@ meetsRouter.post(
       name: created.name,
       meetDate: created.meetDate,
       course: created.course,
+      swimCount: 0,
       createdAt: created.createdAt.toISOString(),
       updatedAt: created.updatedAt.toISOString(),
     };
@@ -140,6 +157,7 @@ meetsRouter.get(
 );
 
 // ── DELETE /meets/:id ─────────────────────────────────────────────────────────
+// Cascade-deletes all swims for the meet, then the meet itself.
 
 meetsRouter.delete(
   "/meets/:id",
@@ -147,16 +165,10 @@ meetsRouter.delete(
   asyncHandler(async (req, res) => {
     const { id: meetId } = req.params as { id: string };
 
-    const swimRows = await db
-      .select({ id: meetSwims.id })
-      .from(meetSwims)
+    const deletedSwims = await db
+      .delete(meetSwims)
       .where(eq(meetSwims.meetId, meetId))
-      .limit(1);
-
-    if (swimRows[0]) {
-      res.status(422).json({ error: "meet_has_swims" });
-      return;
-    }
+      .returning({ id: meetSwims.id });
 
     const deleted = await db
       .delete(meets)
@@ -168,6 +180,6 @@ meetsRouter.delete(
       return;
     }
 
-    res.status(200).json({ ok: true });
+    res.status(200).json({ ok: true, deletedSwims: deletedSwims.length });
   }),
 );

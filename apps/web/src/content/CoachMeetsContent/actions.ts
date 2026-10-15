@@ -70,9 +70,6 @@ export async function deleteMeet(
   });
 
   if (response.status === 401) redirect("/api/signout");
-  if (response.status === 422) {
-    return { status: "error", message: "This meet has recorded swims and cannot be deleted." };
-  }
   if (!response.ok) {
     return { status: "error", message: "Could not delete meet. Please try again." };
   }

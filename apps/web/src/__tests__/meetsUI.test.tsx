@@ -39,6 +39,7 @@ const testMeet = {
   name: "Spring Invitational",
   meetDate: "2025-03-15",
   course: "scy" as const,
+  swimCount: 1,
   createdAt: now,
   updatedAt: now,
 };
@@ -198,10 +199,63 @@ describe("CoachSwimmerDetailContent — times", () => {
     expect(screen.getByText(/personal bests/i)).toBeInTheDocument();
   });
 
-  it("renders the Add time button", () => {
+  it("renders the Add meet time and Add practice swim buttons", () => {
     render(
       <CoachSwimmerDetailContent {...baseProps} swims={[]} personalBests={[]} />,
     );
-    expect(screen.getByRole("button", { name: /add time/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /add meet time/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /add practice swim/i })).toBeInTheDocument();
+  });
+
+  it("shows Practice label on a practice swim", () => {
+    const practiceSwim = {
+      ...testSwim,
+      id: "44444444-0000-0000-0000-000000000001",
+      swimType: "practice" as const,
+      meetId: null,
+      meetName: null,
+      meetDate: null,
+    };
+    render(
+      <CoachSwimmerDetailContent {...baseProps} swims={[practiceSwim]} personalBests={[]} />,
+    );
+    expect(screen.getByText("Practice")).toBeInTheDocument();
+  });
+
+  it("does not show PB badge on a practice swim even when it matches a PB", () => {
+    const practiceSwim = {
+      ...testSwim,
+      id: "44444444-0000-0000-0000-000000000002",
+      swimType: "practice" as const,
+      meetId: null,
+      meetName: null,
+      meetDate: null,
+    };
+    const pbForPractice = { ...testPersonalBest, swimId: practiceSwim.id };
+    render(
+      <CoachSwimmerDetailContent
+        {...baseProps}
+        swims={[practiceSwim]}
+        personalBests={[pbForPractice]}
+      />,
+    );
+    expect(screen.queryByText("PB")).not.toBeInTheDocument();
+  });
+});
+
+describe("CoachMeetsContent — swim count and delete dialog", () => {
+  it("shows swim count in the meet subtitle", () => {
+    render(<CoachMeetsContent meets={[testMeet]} />);
+    expect(screen.getByText(/1 swim/)).toBeInTheDocument();
+  });
+
+  it("shows plural swims when count > 1", () => {
+    render(<CoachMeetsContent meets={[{ ...testMeet, swimCount: 3 }]} />);
+    expect(screen.getByText(/3 swims/)).toBeInTheDocument();
+  });
+
+  it("does not show swim count when 0", () => {
+    render(<CoachMeetsContent meets={[{ ...testMeet, swimCount: 0 }]} />);
+    expect(screen.queryByText(/swim/)).not.toBeInTheDocument();
   });
 });

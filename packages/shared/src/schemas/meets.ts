@@ -16,6 +16,7 @@ export const MeetResponseSchema = z.object({
   name: z.string(),
   meetDate: z.string(),
   course: CourseSchema,
+  swimCount: z.number().int().nonnegative(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });

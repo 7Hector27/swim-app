@@ -158,6 +158,7 @@ function MeetRow({ meet }: MeetRowProps) {
         </Link>
         <p className="text-xs text-text-secondary">
           {meet.meetDate} · {COURSE_LABELS[meet.course] ?? meet.course}
+          {meet.swimCount > 0 && ` · ${meet.swimCount} swim${meet.swimCount === 1 ? "" : "s"}`}
         </p>
       </div>
 
@@ -181,7 +182,11 @@ function MeetRow({ meet }: MeetRowProps) {
       <ConfirmDialog
         dialogRef={dialogRef}
         title="Delete meet?"
-        description={`"${meet.name}" will be permanently deleted. This can only be done if no swims have been recorded.`}
+        description={
+          meet.swimCount > 0
+            ? `"${meet.name}" and its ${meet.swimCount} recorded swim${meet.swimCount === 1 ? "" : "s"} will be permanently deleted.`
+            : `"${meet.name}" will be permanently deleted.`
+        }
         formId={`delete-meet-${meet.id}`}
         confirmLabel="Delete"
         confirmDanger

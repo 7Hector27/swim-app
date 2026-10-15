@@ -133,13 +133,16 @@ beforeEach(() => {
 // ── GET /coach/meets ──────────────────────────────────────────────────────────
 
 describe("GET /coach/meets", () => {
-  it("returns meets list for coach", async () => {
+  it("returns meets list with swimCount for coach", async () => {
     authAs(profileCoach);
     const orderBy = vi.fn().mockResolvedValue([baseMeetRow]);
-    const from = vi.fn().mockReturnValue({ orderBy });
+    const meetsFrom = vi.fn().mockReturnValue({ orderBy });
+    const groupBy = vi.fn().mockResolvedValue([{ meetId: MEET_ID, count: 3 }]);
+    const countsFrom = vi.fn().mockReturnValue({ groupBy });
     mockDbSelect
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachRouter requireUser (once)
-      .mockReturnValueOnce({ from });
+      .mockReturnValueOnce(requireUserSelect(profileCoach))
+      .mockReturnValueOnce({ from: meetsFrom })
+      .mockReturnValueOnce({ from: countsFrom });
 
     const res = await request(app)
       .get("/coach/meets")
@@ -147,7 +150,23 @@ describe("GET /coach/meets", () => {
 
     expect(res.status).toBe(200);
     expect(res.body).toHaveLength(1);
-    expect(res.body[0]).toMatchObject({ id: MEET_ID, name: "Summer Champs" });
+    expect(res.body[0]).toMatchObject({ id: MEET_ID, name: "Summer Champs", swimCount: 3 });
+  });
+
+  it("returns empty array and skips count query when no meets", async () => {
+    authAs(profileCoach);
+    const orderBy = vi.fn().mockResolvedValue([]);
+    const from = vi.fn().mockReturnValue({ orderBy });
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(profileCoach))
+      .mockReturnValueOnce({ from });
+
+    const res = await request(app)
+      .get("/coach/meets")
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([]);
   });
 
   it("returns 403 for parent", async () => {
@@ -198,45 +217,54 @@ describe("POST /coach/meets", () => {
 // ── DELETE /coach/meets/:id ───────────────────────────────────────────────────
 
 describe("DELETE /coach/meets/:id", () => {
-  it("returns 200 when meet has no swims", async () => {
+  it("cascade deletes swims and returns deletedSwims count", async () => {
     authAs(profileCoach);
-    const returning = vi.fn().mockResolvedValue([{ id: MEET_ID }]);
-    const deletedWhere = vi.fn().mockReturnValue({ returning });
-    mockDbSelect
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachRouter requireUser (once)
-      .mockReturnValueOnce(swimsForMeetSelect(false)); // no swims
-    mockDbDelete.mockReturnValue({ where: deletedWhere });
+    mockDbSelect.mockReturnValueOnce(requireUserSelect(profileCoach));
+    const swimsReturning = vi.fn().mockResolvedValue([{ id: SWIM_ID }]);
+    const swimsWhere = vi.fn().mockReturnValue({ returning: swimsReturning });
+    const meetReturning = vi.fn().mockResolvedValue([{ id: MEET_ID }]);
+    const meetWhere = vi.fn().mockReturnValue({ returning: meetReturning });
+    mockDbDelete
+      .mockReturnValueOnce({ where: swimsWhere })
+      .mockReturnValueOnce({ where: meetWhere });
 
     const res = await request(app)
       .delete(`/coach/meets/${MEET_ID}`)
       .set("Authorization", "Bearer token");
 
     expect(res.status).toBe(200);
-    expect(res.body.ok).toBe(true);
+    expect(res.body).toEqual({ ok: true, deletedSwims: 1 });
   });
 
-  it("returns 422 when meet has swims", async () => {
+  it("returns 200 with deletedSwims 0 when meet has no swims", async () => {
     authAs(profileCoach);
-    mockDbSelect
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachRouter requireUser (once)
-      .mockReturnValueOnce(swimsForMeetSelect(true)); // has swims
+    mockDbSelect.mockReturnValueOnce(requireUserSelect(profileCoach));
+    const swimsReturning = vi.fn().mockResolvedValue([]);
+    const swimsWhere = vi.fn().mockReturnValue({ returning: swimsReturning });
+    const meetReturning = vi.fn().mockResolvedValue([{ id: MEET_ID }]);
+    const meetWhere = vi.fn().mockReturnValue({ returning: meetReturning });
+    mockDbDelete
+      .mockReturnValueOnce({ where: swimsWhere })
+      .mockReturnValueOnce({ where: meetWhere });
 
     const res = await request(app)
       .delete(`/coach/meets/${MEET_ID}`)
       .set("Authorization", "Bearer token");
 
-    expect(res.status).toBe(422);
-    expect(res.body.error).toBe("meet_has_swims");
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true, deletedSwims: 0 });
   });
 
   it("returns 404 when meet does not exist", async () => {
     authAs(profileCoach);
-    const returning = vi.fn().mockResolvedValue([]);
-    const deletedWhere = vi.fn().mockReturnValue({ returning });
-    mockDbSelect
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachRouter requireUser (once)
-      .mockReturnValueOnce(swimsForMeetSelect(false)); // no swims
-    mockDbDelete.mockReturnValue({ where: deletedWhere });
+    mockDbSelect.mockReturnValueOnce(requireUserSelect(profileCoach));
+    const swimsReturning = vi.fn().mockResolvedValue([]);
+    const swimsWhere = vi.fn().mockReturnValue({ returning: swimsReturning });
+    const meetReturning = vi.fn().mockResolvedValue([]);
+    const meetWhere = vi.fn().mockReturnValue({ returning: meetReturning });
+    mockDbDelete
+      .mockReturnValueOnce({ where: swimsWhere })
+      .mockReturnValueOnce({ where: meetWhere });
 
     const res = await request(app)
       .delete(`/coach/meets/${MEET_ID}`)

@@ -196,6 +196,124 @@ function AddSwimForm({ swimmerId, meets, onSuccess }: AddSwimFormProps) {
   );
 }
 
+interface AddPracticeSwimFormProps {
+  swimmerId: string;
+  onSuccess: () => void;
+}
+
+function AddPracticeSwimForm({ swimmerId, onSuccess }: AddPracticeSwimFormProps) {
+  const [selectedStroke, setSelectedStroke] = useState<string>("free");
+  const [state, action, isPending] = useActionState<AddSwimState, FormData>(
+    addSwimForSwimmer.bind(null, swimmerId),
+    { status: "idle" },
+  );
+
+  if (state.status === "success") {
+    onSuccess();
+  }
+
+  const distances = VALID_EVENTS[selectedStroke as keyof typeof VALID_EVENTS] ?? [];
+
+  return (
+    <form action={action} className="flex flex-col gap-3 p-4 rounded-lg border border-border bg-surface-soft">
+      <div className="flex gap-3 flex-wrap">
+        <div className="flex flex-col gap-1 flex-1 min-w-[120px]">
+          <label htmlFor="practice-stroke" className="text-xs font-semibold text-text-secondary">Stroke</label>
+          <select
+            id="practice-stroke"
+            name="eventStroke"
+            required
+            value={selectedStroke}
+            onChange={(e) => setSelectedStroke(e.target.value)}
+            className="h-10 px-2 rounded-lg border border-border bg-background text-text text-sm focus:outline focus:outline-2 focus:outline-focus-ring"
+          >
+            {Object.entries(STROKE_SHORT).map(([value, label]) => (
+              <option key={value} value={value}>{label}</option>
+            ))}
+          </select>
+        </div>
+
+        <div className="flex flex-col gap-1 flex-1 min-w-[100px]">
+          <label htmlFor="practice-distance" className="text-xs font-semibold text-text-secondary">Distance</label>
+          <select
+            id="practice-distance"
+            name="eventDistance"
+            required
+            className="h-10 px-2 rounded-lg border border-border bg-background text-text text-sm focus:outline focus:outline-2 focus:outline-focus-ring"
+          >
+            {distances.map((dist) => (
+              <option key={dist} value={dist}>{dist}</option>
+            ))}
+          </select>
+        </div>
+
+        <div className="flex flex-col gap-1 flex-1 min-w-[100px]">
+          <label htmlFor="practice-course" className="text-xs font-semibold text-text-secondary">Course</label>
+          <select
+            id="practice-course"
+            name="course"
+            required
+            className="h-10 px-2 rounded-lg border border-border bg-background text-text text-sm focus:outline focus:outline-2 focus:outline-focus-ring"
+          >
+            <option value="scy">SCY</option>
+            <option value="scm">SCM</option>
+            <option value="lcm">LCM</option>
+          </select>
+        </div>
+      </div>
+
+      <div className="flex gap-3 flex-wrap">
+        <div className="flex flex-col gap-1 flex-1 min-w-[120px]">
+          <label htmlFor="practice-time" className="text-xs font-semibold text-text-secondary">Time</label>
+          <input
+            id="practice-time"
+            name="timeString"
+            type="text"
+            required
+            placeholder="e.g. 1:02.34"
+            inputMode="decimal"
+            className="h-10 px-2 rounded-lg border border-border bg-background text-text text-sm tabular-nums focus:outline focus:outline-2 focus:outline-focus-ring"
+          />
+        </div>
+
+        <div className="flex flex-col gap-1 flex-1 min-w-[140px]">
+          <label htmlFor="practice-date" className="text-xs font-semibold text-text-secondary">Date</label>
+          <input
+            id="practice-date"
+            name="swumOn"
+            type="date"
+            required
+            className="h-10 px-2 rounded-lg border border-border bg-background text-text text-sm focus:outline focus:outline-2 focus:outline-focus-ring"
+          />
+        </div>
+      </div>
+
+      {state.status === "error" && (
+        <p role="alert" className="text-xs text-danger">{state.message}</p>
+      )}
+
+      <div className="flex gap-2">
+        <button
+          type="submit"
+          disabled={isPending}
+          className="inline-flex items-center justify-center px-4 h-9 font-bold text-xs rounded-button disabled:opacity-60"
+          style={{ backgroundColor: "var(--color-button-primary-background)", color: "var(--color-button-primary-text)" }}
+        >
+          {isPending ? "Saving…" : "Save practice time"}
+        </button>
+        <button
+          type="button"
+          onClick={onSuccess}
+          className="inline-flex items-center justify-center px-4 h-9 font-semibold text-xs rounded-button border"
+          style={{ borderColor: "var(--color-button-outline)", color: "var(--color-button-outline)" }}
+        >
+          Cancel
+        </button>
+      </div>
+    </form>
+  );
+}
+
 interface SwimRowProps {
   swim: MeetSwimResponse;
   swimmerId: string;
@@ -229,7 +347,12 @@ function SwimRow({ swim, swimmerId, isPB }: SwimRowProps) {
             <span className="tabular-nums font-semibold text-text" style={{ fontVariantNumeric: "tabular-nums" }}>
               {swim.timeString}
             </span>
-            {isPB && (
+            {swim.swimType === "practice" && (
+              <span className="text-xs font-semibold text-text-secondary border border-border px-1.5 py-0.5 rounded">
+                Practice
+              </span>
+            )}
+            {isPB && swim.swimType !== "practice" && (
               <span className="text-xs font-semibold text-accent-on-section bg-section px-1.5 py-0.5 rounded">
                 PB
               </span>
@@ -334,26 +457,40 @@ interface SwimmerTimesSectionProps {
 }
 
 function SwimmerTimesSection({ swimmerId, swims, personalBests, meets }: SwimmerTimesSectionProps) {
-  const [showForm, setShowForm] = useState(false);
+  const [showMeetForm, setShowMeetForm] = useState(false);
+  const [showPracticeForm, setShowPracticeForm] = useState(false);
   const pbSet = new Set(personalBests.map((pb) => pb.swimId));
 
   return (
     <section className="flex flex-col gap-4">
       <div className="flex items-center justify-between gap-3">
         <h2 className="font-bold text-text">Times</h2>
-        {!showForm && (
-          <button
-            type="button"
-            onClick={() => setShowForm(true)}
-            className="text-xs font-semibold text-accent hover:opacity-80 min-h-[44px] px-2"
-          >
-            + Add time
-          </button>
+        {!showMeetForm && !showPracticeForm && (
+          <div className="flex gap-1">
+            <button
+              type="button"
+              onClick={() => setShowMeetForm(true)}
+              className="text-xs font-semibold text-accent hover:opacity-80 min-h-[44px] px-2"
+            >
+              + Add meet time
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowPracticeForm(true)}
+              className="text-xs font-semibold text-text-secondary hover:text-text min-h-[44px] px-2"
+            >
+              + Add practice swim
+            </button>
+          </div>
         )}
       </div>
 
-      {showForm && (
-        <AddSwimForm swimmerId={swimmerId} meets={meets} onSuccess={() => setShowForm(false)} />
+      {showMeetForm && (
+        <AddSwimForm swimmerId={swimmerId} meets={meets} onSuccess={() => setShowMeetForm(false)} />
+      )}
+
+      {showPracticeForm && (
+        <AddPracticeSwimForm swimmerId={swimmerId} onSuccess={() => setShowPracticeForm(false)} />
       )}
 
       {personalBests.length > 0 && (
@@ -389,7 +526,7 @@ function SwimmerTimesSection({ swimmerId, swims, personalBests, meets }: Swimmer
       )}
 
       {swims.length === 0 ? (
-        !showForm && <p className="text-sm text-text-secondary">No times recorded yet.</p>
+        !showMeetForm && !showPracticeForm && <p className="text-sm text-text-secondary">No times recorded yet.</p>
       ) : (
         <ul className="flex flex-col">
           {swims.map((swim) => (
