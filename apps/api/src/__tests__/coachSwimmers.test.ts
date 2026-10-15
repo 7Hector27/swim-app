@@ -158,7 +158,7 @@ describe("unauthenticated", () => {
 describe("parent role restrictions", () => {
   beforeEach(() => {
     authAs(profileParent);
-    mockDbSelect.mockReturnValue(requireUserSelect(profileParent));
+    mockDbSelect.mockReturnValueOnce(requireUserSelect(profileParent));
   });
 
   it("GET /coach/swimmers → 403 for parent", async () => {
@@ -189,7 +189,7 @@ describe("parent role restrictions", () => {
 describe("input validation", () => {
   beforeEach(() => {
     authAs(profileCoach);
-    mockDbSelect.mockReturnValue(requireUserSelect(profileCoach));
+    mockDbSelect.mockReturnValueOnce(requireUserSelect(profileCoach));
   });
 
   it("GET /coach/swimmers/not-a-uuid → 422", async () => {
