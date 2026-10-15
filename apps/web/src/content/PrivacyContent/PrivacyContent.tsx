@@ -1,10 +1,8 @@
 import SiteFooter from "@/components/SiteFooter";
-import SiteNav from "@/components/SiteNav";
 
 export default function PrivacyContent() {
   return (
     <div className="flex flex-col min-h-screen">
-      <SiteNav />
       <main className="flex-1 px-page py-16">
         <div className="mx-auto max-w-content">
           <div className="max-w-2xl">

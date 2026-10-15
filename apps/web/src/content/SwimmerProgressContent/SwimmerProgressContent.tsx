@@ -1,5 +1,4 @@
 import type { CoachSwimmerDetail, CategoriesResponse, SwimmerProgressResponse, StartGradeResult } from "@swim-app/shared";
-import SiteNav from "@/components/SiteNav";
 import SiteFooter from "@/components/SiteFooter";
 import SkillProgressRow from "./SkillProgressRow";
 import { formatStartGradeDisplay, currentLevelDisplay, currentLevelIsDanger } from "./helpers";
@@ -89,7 +88,6 @@ export default function SwimmerProgressContent({
 
   return (
     <div className="flex flex-col min-h-screen">
-      <SiteNav />
       <main className="flex-1 px-page py-8">
         <div className="mx-auto max-w-content flex flex-col gap-6">
           <div className="flex flex-col gap-2">

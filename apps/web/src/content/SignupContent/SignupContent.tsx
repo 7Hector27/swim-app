@@ -6,7 +6,6 @@ import { calculateAge, todayLA } from "@swim-app/shared";
 
 import Button from "@/components/Button";
 import SiteFooter from "@/components/SiteFooter";
-import SiteNav from "@/components/SiteNav";
 
 import { signup } from "./actions";
 import AgeBlockedScreen from "./AgeBlockedScreen";
@@ -47,7 +46,6 @@ export default function SignupContent({ returnTo }: SignupContentProps) {
 
   return (
     <div className="flex flex-col min-h-screen">
-      <SiteNav />
       <main className="flex-1 flex items-center justify-center px-page py-16">
         <div className="w-full max-w-md">
           <h1 className="text-heading mb-2">Create account</h1>

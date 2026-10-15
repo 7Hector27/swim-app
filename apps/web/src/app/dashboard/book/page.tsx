@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
 import BookCalendarContent from "@/content/BookCalendarContent";
-import ParentNav from "@/components/ParentNav";
 import SiteFooter from "@/components/SiteFooter";
 import { requireAuth } from "@/lib/requireAuth";
 import { fetchHousehold } from "@/lib/api/households";
@@ -29,7 +28,6 @@ export default async function BookPage() {
 
   return (
     <div className="flex flex-col min-h-screen bg-background">
-      <ParentNav />
       <main id="main-content" className="flex-1">
         <div className="mx-auto max-w-content px-page pt-10 pb-tab-safe tablet:pt-14 tablet:pb-32">
           <BookCalendarContent

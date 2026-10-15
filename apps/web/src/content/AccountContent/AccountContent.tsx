@@ -2,7 +2,6 @@ import type { MeResponse } from "@swim-app/shared";
 
 import Button from "@/components/Button";
 import SiteFooter from "@/components/SiteFooter";
-import SiteNav from "@/components/SiteNav";
 
 import EditProfileForm from "./EditProfileForm";
 import { logout } from "./actions";
@@ -14,7 +13,6 @@ interface AccountContentProps {
 export default function AccountContent({ profile }: AccountContentProps) {
   return (
     <div className="flex flex-col min-h-screen">
-      <SiteNav />
       <main className="flex-1 px-page py-16">
         <div className="mx-auto max-w-sm flex flex-col gap-8">
           <h1 className="text-heading">Account</h1>

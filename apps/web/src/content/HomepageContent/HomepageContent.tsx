@@ -1,5 +1,4 @@
 import SiteFooter from "@/components/SiteFooter";
-import SiteNav from "@/components/SiteNav";
 import WaveDivider from "@/components/WaveDivider";
 
 import CoachBioSection from "./CoachBioSection";
@@ -16,7 +15,6 @@ interface Props {
 export default function HomepageContent({ isAuthenticatedParent }: Props) {
   return (
     <>
-      <SiteNav />
       <main id="main">
         <HeroSection isAuthenticatedParent={isAuthenticatedParent} />
         <WaveDivider from="background" to="section" />

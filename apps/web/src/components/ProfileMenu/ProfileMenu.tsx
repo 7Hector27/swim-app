@@ -8,6 +8,7 @@ import { logout } from "@/lib/logout";
 import styles from "./ProfileMenu.module.css";
 
 const PARENT_MENU_ITEMS = [
+  { label: "Dashboard", href: "/dashboard" },
   { label: "Household", href: "/household" },
   { label: "Account settings", href: "/account" },
 ] as const;

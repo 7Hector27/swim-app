@@ -1,5 +1,4 @@
 import type { ParentSwimmer, ParentSwimmerProgressResponse, CategoriesResponse, StartGradeResult } from "@swim-app/shared";
-import ParentNav from "@/components/ParentNav";
 import SiteFooter from "@/components/SiteFooter";
 import ParentSkillProgressRow from "./ParentSkillProgressRow";
 import { formatStartGradeDisplay, currentLevelDisplay, currentLevelIsDanger } from "./helpers";
@@ -81,7 +80,6 @@ export default function ParentSwimmerProgressContent({
 
   return (
     <div className="flex flex-col min-h-screen">
-      <ParentNav />
       <main className="flex-1 px-page pt-8 pb-tab-safe tablet:pb-8">
         <div className="mx-auto max-w-content flex flex-col gap-6">
           <div className="flex flex-col gap-2">

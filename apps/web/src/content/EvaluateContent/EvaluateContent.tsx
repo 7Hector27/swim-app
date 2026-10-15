@@ -5,7 +5,6 @@ import type {
   CoachSwimmerDetail,
   CategoriesResponse,
 } from "@swim-app/shared";
-import SiteNav from "@/components/SiteNav";
 import SiteFooter from "@/components/SiteFooter";
 import { submitEvaluation } from "./actions";
 import type { EvaluateState, SessionDraft, SkillDraft } from "./helpers";
@@ -189,7 +188,6 @@ export default function EvaluateContent({ swimmer, categories, accessToken }: Ev
   if (state.status === "saved") {
     return (
       <div className="flex flex-col min-h-screen">
-        <SiteNav />
         <main className="flex-1 px-page py-8">
           <div className="mx-auto max-w-content flex flex-col gap-6">
             <h1 className="text-heading" style={{ color: "var(--color-text)" }}>
@@ -221,7 +219,6 @@ export default function EvaluateContent({ swimmer, categories, accessToken }: Ev
 
   return (
     <div className="flex flex-col min-h-screen">
-      <SiteNav />
       <main className="flex-1 px-page py-8">
         <div className="mx-auto max-w-content flex flex-col gap-6">
           <div className="flex flex-col gap-2">

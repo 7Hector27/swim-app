@@ -4,7 +4,6 @@ import { todayLA } from "@swim-app/shared";
 import type { ScheduleItem } from "@swim-app/shared";
 
 import SiteFooter from "@/components/SiteFooter";
-import SiteNav from "@/components/SiteNav";
 import { fetchCoachSchedule } from "@/lib/api/lessons";
 
 interface Props {
@@ -25,7 +24,6 @@ export default async function CoachScheduleContent({ accessToken, date }: Props)
 
   return (
     <div className="flex flex-col min-h-screen bg-background">
-      <SiteNav />
 
       <main id="main-content" className="flex-1">
         <div className="mx-auto max-w-content px-page pt-10 pb-20 tablet:pt-14 tablet:pb-32">

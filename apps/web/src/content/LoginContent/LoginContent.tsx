@@ -4,7 +4,6 @@ import { useActionState } from "react";
 
 import Button from "@/components/Button";
 import SiteFooter from "@/components/SiteFooter";
-import SiteNav from "@/components/SiteNav";
 
 import { login } from "./actions";
 
@@ -18,7 +17,6 @@ export default function LoginContent({ notice, returnTo }: LoginContentProps) {
 
   return (
     <div className="flex flex-col min-h-screen">
-      <SiteNav />
       <main className="flex-1 flex items-center justify-center px-page py-16">
         <div className="w-full max-w-sm">
           <h1 className="text-heading mb-2">Sign in</h1>

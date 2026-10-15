@@ -41,13 +41,13 @@ describe("ProfileMenu — parent", () => {
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
 
-  it("opens and shows Household + Account settings for a parent", () => {
+  it("opens and shows Dashboard + Household + Account settings for a parent", () => {
     render(<ProfileMenu />);
     fireEvent.click(screen.getByRole("button", { name: /my account/i }));
+    expect(screen.getByRole("menuitem", { name: "Dashboard" })).toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: "Household" })).toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: "Account settings" })).toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: "Log out" })).toBeInTheDocument();
-    expect(screen.queryByRole("menuitem", { name: "Dashboard" })).not.toBeInTheDocument();
   });
 
   it("closes menu on second trigger click", () => {
