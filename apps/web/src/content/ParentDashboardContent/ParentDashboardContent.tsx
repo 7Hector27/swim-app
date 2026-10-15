@@ -6,24 +6,27 @@ import Placeholder from "@/components/Placeholder";
 import SiteFooter from "@/components/SiteFooter";
 import SiteNav from "@/components/SiteNav";
 import { fetchHousehold } from "@/lib/api/households";
-import { fetchUpcomingLessons } from "@/lib/api/lessons";
+import { fetchLesson, fetchUpcomingLessons } from "@/lib/api/lessons";
 import { fetchSwimmers } from "@/lib/api/swimmers";
 import { removeSwimmer } from "./actions";
+import BookingConfirmDialog from "./BookingConfirmDialog";
 import SwimmerCard from "./SwimmerCard";
 import UpcomingLessonsCard from "./UpcomingLessonsCard";
 
 interface Props {
   profile: MeResponse;
   accessToken: string;
+  bookedLessonId?: string;
 }
 
-export default async function ParentDashboardContent({ profile, accessToken }: Props) {
+export default async function ParentDashboardContent({ profile, accessToken, bookedLessonId }: Props) {
   const firstName = profile.fullName?.trim().split(/\s+/)[0] ?? "there";
   const hasPhone = !!(profile.phone && profile.phone.length > 0);
-  const [swimmers, upcomingLessons, household] = await Promise.all([
+  const [swimmers, upcomingLessons, household, bookedLesson] = await Promise.all([
     fetchSwimmers(accessToken),
     fetchUpcomingLessons(accessToken),
     fetchHousehold(accessToken),
+    bookedLessonId ? fetchLesson(accessToken, bookedLessonId) : Promise.resolve(null),
   ]);
   const today = todayLA();
   const showFinishSetup = !hasPhone;
@@ -34,6 +37,8 @@ export default async function ParentDashboardContent({ profile, accessToken }: P
   return (
     <div className="flex flex-col min-h-screen bg-background">
       <SiteNav />
+
+      {bookedLesson && <BookingConfirmDialog lesson={bookedLesson} />}
 
       <main id="main-content" className="flex-1">
         <div className="mx-auto max-w-content px-page pt-10 pb-20 tablet:pt-14 tablet:pb-32">

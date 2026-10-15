@@ -3,7 +3,7 @@ import { isApiBody } from "@/lib/mapZodErrors";
 export type BookLessonState =
   | { status: "idle" }
   | { status: "error"; message: string }
-  | { status: "success"; autoApproved: boolean };
+  | { status: "success"; lessonId: string; autoApproved: boolean };
 
 const ERROR_CODE_MESSAGES: Record<string, string> = {
   not_a_lesson_day: "That day isn't available for lessons.",

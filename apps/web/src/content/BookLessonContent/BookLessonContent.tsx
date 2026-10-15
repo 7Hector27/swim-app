@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useTransition, useActionState } from "react";
+import { useState, useTransition, useActionState, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 import type { AvailableSlot } from "@swim-app/shared";
 import type { ParentSwimmer } from "@swim-app/shared";
@@ -30,6 +31,7 @@ interface Props {
 }
 
 export default function BookLessonContent({ locations, swimmers, isViewer, householdFailed = false }: Props) {
+  const router = useRouter();
   const [step, setStep] = useState<Step>("location");
   const [locationId, setLocationId] = useState<string | null>(null);
   const [date, setDate] = useState("");
@@ -46,6 +48,11 @@ export default function BookLessonContent({ locations, swimmers, isViewer, house
     createLessonAction,
     { status: "idle" } as BookLessonState,
   );
+
+  useEffect(() => {
+    if (bookingState.status !== "success") return;
+    router.push(`/dashboard?booked=${bookingState.lessonId}`);
+  }, [bookingState, router]);
 
   const todayLA = new Date().toLocaleDateString("sv", {
     timeZone: "America/Los_Angeles",
@@ -122,21 +129,6 @@ export default function BookLessonContent({ locations, swimmers, isViewer, house
           </p>
           <p className="text-text-secondary text-sm mt-1">
             Ask the household owner for booking access.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  if (bookingState.status === "success") {
-    return (
-      <div>
-        <h1 className="text-3xl tablet:text-4xl text-heading mb-6">Book a lesson</h1>
-        <div className="rounded-card border border-border p-5 tablet:p-6 max-w-lg mx-auto text-center">
-          <p className="text-xl font-semibold text-heading">
-            {bookingState.autoApproved
-              ? "Confirmed — you're all set!"
-              : "Request sent — Jason will confirm shortly."}
           </p>
         </div>
       </div>

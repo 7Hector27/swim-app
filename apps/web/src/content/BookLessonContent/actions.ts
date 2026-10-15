@@ -74,7 +74,8 @@ export async function createLessonAction(
   if (responseStatus === 201) {
     const result = LessonResponseSchema.safeParse(responseBody);
     const autoApproved = result.success ? result.data.status === "approved" : false;
-    return { status: "success", autoApproved };
+    const lessonId = result.success ? result.data.id : "";
+    return { status: "success", lessonId, autoApproved };
   }
 
   return mapBookingApiResponse(responseStatus, responseBody);
