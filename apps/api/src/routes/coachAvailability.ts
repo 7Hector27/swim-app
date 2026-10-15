@@ -29,15 +29,11 @@ import {
   travelBufferOverrides,
   seasonSummerEndDates,
 } from "../db/schema";
-import { requireUser } from "../middleware/requireUser";
-import { requireCoach } from "../middleware/requireCoach";
 import { validate } from "../middleware/validate";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { z } from "zod";
 
 export const coachAvailabilityRouter = Router();
-
-coachAvailabilityRouter.use(requireUser, requireCoach);
 
 // ── Locations ─────────────────────────────────────────────────────────────────
 

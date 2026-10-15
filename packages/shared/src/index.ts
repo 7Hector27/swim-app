@@ -107,6 +107,7 @@ export {
 export { calculateAge } from "./lib/calculateAge";
 export { todayLA } from "./lib/todayLA";
 export { isSafeReturnTo } from "./lib/isSafeReturnTo";
+export { parseSwimTime, formatSwimTime } from "./lib/swimTime";
 
 export type {
   LessonLocation,
@@ -215,6 +216,37 @@ export {
   UpdateCoachNoteBodySchema,
   CoachNoteResponseSchema,
 } from "./schemas/notes";
+
+export { isValidEvent, VALID_EVENTS } from "./lib/events";
+export type { ValidEventStroke } from "./lib/events";
+
+export type {
+  SwimStroke,
+  Course,
+  SwimType,
+  MeetResponse,
+  CreateMeetBody,
+  MeetSwimResponse,
+  MeetDetailSwimResponse,
+  CreateMeetSwimBody,
+  PatchMeetSwimBody,
+  MeetWithSwimsResponse,
+  PersonalBest,
+  MeetSwimsResponse,
+} from "./schemas/meets";
+export {
+  SwimStrokeSchema,
+  CourseSchema,
+  SwimTypeSchema,
+  MeetResponseSchema,
+  CreateMeetBodySchema,
+  MeetSwimResponseSchema,
+  CreateMeetSwimBodySchema,
+  PatchMeetSwimBodySchema,
+  MeetWithSwimsResponseSchema,
+  PersonalBestSchema,
+  MeetSwimsResponseSchema,
+} from "./schemas/meets";
 
 export { calculateStartGrade, StartGradeResultSchema } from "./lib/startGrade";
 export type { StartGradeResult } from "./lib/startGrade";

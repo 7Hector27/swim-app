@@ -11,8 +11,6 @@ import {
   skills,
   swimmers,
 } from "../db/schema";
-import { requireUser } from "../middleware/requireUser";
-import { requireCoach } from "../middleware/requireCoach";
 import { validate } from "../middleware/validate";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { isActiveSwimmer } from "../db/queries";
@@ -70,8 +68,6 @@ export const evaluationsRouter = Router();
 
 evaluationsRouter.post(
   "/:id/sessions",
-  requireUser,
-  requireCoach,
   validate({ params: SwimmerIdParamsSchema, body: CreateSessionBodySchema }),
   asyncHandler(async (req, res) => {
     const { id: swimmerId } = req.params as unknown as SwimmerIdParams;
@@ -294,8 +290,6 @@ evaluationsRouter.post(
 
 evaluationsRouter.get(
   "/:id/skills",
-  requireUser,
-  requireCoach,
   validate({ params: SwimmerIdParamsSchema }),
   asyncHandler(async (req, res) => {
     const { id: swimmerId } = req.params as unknown as SwimmerIdParams;
@@ -463,8 +457,6 @@ evaluationsRouter.get(
 
 evaluationsRouter.get(
   "/:id/skills/:skillId/ratings",
-  requireUser,
-  requireCoach,
   validate({ params: SwimmerSkillParamsSchema }),
   asyncHandler(async (req, res) => {
     const { id: swimmerId, skillId } = req.params as unknown as SwimmerSkillParams;
@@ -535,8 +527,6 @@ evaluationsRouter.get(
 
 evaluationsRouter.get(
   "/:id/sessions/dependency-map",
-  requireUser,
-  requireCoach,
   validate({ params: SwimmerIdParamsSchema, query: DependencyMapQuerySchema }),
   asyncHandler(async (req, res) => {
     const { id: swimmerId } = req.params as unknown as SwimmerIdParams;
@@ -641,8 +631,6 @@ evaluationsRouter.get(
 
 evaluationsRouter.get(
   "/:id/progress",
-  requireUser,
-  requireCoach,
   validate({ params: SwimmerIdParamsSchema }),
   asyncHandler(async (req, res) => {
     const { id: swimmerId } = req.params as unknown as SwimmerIdParams;
@@ -668,8 +656,6 @@ type SessionIdParams = z.infer<typeof SessionIdParamsSchema>;
 
 sessionsRouter.delete(
   "/:id",
-  requireUser,
-  requireCoach,
   validate({ params: SessionIdParamsSchema }),
   asyncHandler(async (req, res) => {
     const { id: sessionId } = req.params as unknown as SessionIdParams;
@@ -714,8 +700,6 @@ export const coachCategoriesRouter = Router();
 
 coachCategoriesRouter.get(
   "/categories",
-  requireUser,
-  requireCoach,
   validate({}),
   asyncHandler(async (req, res) => {
     const categoryRows = await db
@@ -784,8 +768,6 @@ export const ratingsRouter = Router();
 
 ratingsRouter.delete(
   "/:id",
-  requireUser,
-  requireCoach,
   validate({ params: RatingIdParamsSchema }),
   asyncHandler(async (req, res) => {
     const { id: ratingId } = req.params as unknown as RatingIdParams;
@@ -833,8 +815,6 @@ ratingsRouter.delete(
 
 ratingsRouter.patch(
   "/:id/void",
-  requireUser,
-  requireCoach,
   validate({ params: RatingIdParamsSchema, body: VoidRatingBodySchema }),
   asyncHandler(async (req, res) => {
     const { id: ratingId } = req.params as unknown as RatingIdParams;

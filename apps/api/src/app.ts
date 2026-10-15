@@ -16,16 +16,13 @@ import { requireCoach } from "./middleware/requireCoach";
 import { supabase } from "./lib/supabase";
 import { clubsRouter } from "./routes/clubs";
 import { swimmersRouter } from "./routes/swimmers";
-import { coachSwimmersRouter } from "./routes/coachSwimmers";
 import { householdsRouter } from "./routes/households";
 import { invitesRouter } from "./routes/invites";
 import { locationsRouter } from "./routes/locations";
-import { coachAvailabilityRouter } from "./routes/coachAvailability";
 import { lessonsRouter } from "./routes/lessons";
-import { coachLessonsRouter } from "./routes/coachLessons";
 import { internalRouter } from "./routes/internal";
-import { evaluationsRouter, ratingsRouter, coachCategoriesRouter, sessionsRouter } from "./routes/evaluations";
 import { parentProgressRouter } from "./routes/parentProgress";
+import { coachRouter } from "./routes/coach";
 import {
   calculateAge,
   HealthQuerySchema,
@@ -172,18 +169,12 @@ export function createApp(logger: Logger) {
   app.use("/clubs", clubsRouter);
   app.use("/swimmers", swimmersRouter);
   app.use("/swimmers", parentProgressRouter);
-  app.use("/coach/swimmers", coachSwimmersRouter);
   app.use("/households", householdsRouter);
   app.use("/invites", invitesRouter);
   app.use("/locations", locationsRouter);
-  app.use("/coach", coachAvailabilityRouter);
   app.use("/lessons", lessonsRouter);
-  app.use("/coach", coachLessonsRouter);
   app.use("/internal", internalRouter);
-  app.use("/coach/swimmers", evaluationsRouter);
-  app.use("/coach/ratings", ratingsRouter);
-  app.use("/coach/sessions", sessionsRouter);
-  app.use("/coach", coachCategoriesRouter);
+  app.use("/coach", coachRouter);
 
   app.use(errorHandler);
 

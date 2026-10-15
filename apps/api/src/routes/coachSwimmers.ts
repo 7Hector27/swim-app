@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { and, asc, eq, inArray, isNotNull, isNull, or } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import type { IdParams } from "@swim-app/shared";
 import { db } from "../db/client";
 import {
@@ -9,13 +9,13 @@ import {
   leagueRegistrations,
   lessonLocations,
   lessonSwimmers,
+  meetSwims,
+  meets,
   profiles,
   skillRatings,
   swimmers,
   swimmerClubs,
 } from "../db/schema";
-import { requireUser } from "../middleware/requireUser";
-import { requireCoach } from "../middleware/requireCoach";
 import { validate } from "../middleware/validate";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { isActiveSwimmer } from "../db/queries";
@@ -25,6 +25,8 @@ import {
   CoachVisibilityBodySchema,
   CreateCoachNoteBodySchema,
   UpdateCoachNoteBodySchema,
+  CreateMeetSwimBodySchema,
+  PatchMeetSwimBodySchema,
   calculateAge,
   currentSeasonStartYear,
   todayLA,
@@ -34,10 +36,20 @@ import {
   type CreateCoachNoteBody,
   type UpdateCoachNoteBody,
   type TimelineItem,
+  type CreateMeetSwimBody,
+  type PatchMeetSwimBody,
+  type MeetSwimResponse,
+  type PersonalBest,
+  type MeetSwimsResponse,
 } from "@swim-app/shared";
+import { isValidEvent } from "@swim-app/shared";
+import { parseSwimTime, formatSwimTime } from "../lib/swimTime";
 
 const NoteIdParamsSchema = z.object({ id: z.string().uuid(), noteId: z.string().uuid() });
 type NoteIdParams = z.infer<typeof NoteIdParamsSchema>;
+
+const SwimIdParamsSchema = z.object({ id: z.string().uuid(), swimId: z.string().uuid() });
+type SwimIdParams = z.infer<typeof SwimIdParamsSchema>;
 
 export const coachSwimmersRouter = Router();
 
@@ -110,8 +122,6 @@ function activeRegsWhere(swimmerIds: string[]) {
 
 coachSwimmersRouter.get(
   "/",
-  requireUser,
-  requireCoach,
   validate({}),
   asyncHandler(async (_req, res) => {
     const swimmerRows = await db
@@ -183,8 +193,6 @@ coachSwimmersRouter.get(
 
 coachSwimmersRouter.get(
   "/:id",
-  requireUser,
-  requireCoach,
   validate({ params: IdParamsSchema }),
   asyncHandler(async (req, res) => {
     const { id: swimmerId } = req.params as unknown as IdParams;
@@ -256,8 +264,6 @@ coachSwimmersRouter.get(
 
 coachSwimmersRouter.patch(
   "/:id/visibility",
-  requireUser,
-  requireCoach,
   validate({ params: IdParamsSchema, body: CoachVisibilityBodySchema }),
   asyncHandler(async (req, res) => {
     const { id: swimmerId } = req.params as unknown as IdParams;
@@ -280,8 +286,6 @@ coachSwimmersRouter.patch(
 
 coachSwimmersRouter.get(
   "/:id/timeline",
-  requireUser,
-  requireCoach,
   validate({ params: IdParamsSchema }),
   asyncHandler(async (req, res) => {
     const { id: swimmerId } = req.params as unknown as IdParams;
@@ -382,8 +386,6 @@ coachSwimmersRouter.get(
 
 coachSwimmersRouter.post(
   "/:id/notes",
-  requireUser,
-  requireCoach,
   validate({ params: IdParamsSchema, body: CreateCoachNoteBodySchema }),
   asyncHandler(async (req, res) => {
     const { id: swimmerId } = req.params as unknown as IdParams;
@@ -444,8 +446,6 @@ coachSwimmersRouter.post(
 
 coachSwimmersRouter.patch(
   "/:id/notes/:noteId",
-  requireUser,
-  requireCoach,
   validate({ params: NoteIdParamsSchema, body: UpdateCoachNoteBodySchema }),
   asyncHandler(async (req, res) => {
     const { id: swimmerId, noteId } = req.params as unknown as NoteIdParams;
@@ -494,8 +494,6 @@ coachSwimmersRouter.patch(
 
 coachSwimmersRouter.delete(
   "/:id/notes/:noteId",
-  requireUser,
-  requireCoach,
   validate({ params: NoteIdParamsSchema }),
   asyncHandler(async (req, res) => {
     const { id: swimmerId, noteId } = req.params as unknown as NoteIdParams;
@@ -531,5 +529,341 @@ coachSwimmersRouter.delete(
     await db.delete(coachNotes).where(eq(coachNotes.id, noteId));
 
     res.status(204).end();
+  }),
+);
+
+// ── Meet swims ────────────────────────────────────────────────────────────────
+
+function toSwimResponse(
+  swim: {
+    id: string;
+    swimmerId: string;
+    swimType: "meet" | "practice";
+    meetId: string | null;
+    eventDistance: number;
+    eventStroke: "free" | "back" | "breast" | "fly" | "im";
+    course: "scy" | "scm" | "lcm";
+    timeHundredths: number;
+    swumOn: string;
+    createdAt: Date;
+  },
+  meetName: string | null,
+  meetDate: string | null,
+): MeetSwimResponse {
+  return {
+    id: swim.id,
+    swimmerId: swim.swimmerId,
+    swimType: swim.swimType,
+    ...(swim.meetId !== null && { meetId: swim.meetId }),
+    ...(meetName !== null && { meetName }),
+    ...(meetDate !== null && { meetDate }),
+    eventDistance: swim.eventDistance,
+    eventStroke: swim.eventStroke,
+    course: swim.course,
+    timeHundredths: swim.timeHundredths,
+    timeString: formatSwimTime(swim.timeHundredths),
+    swumOn: swim.swumOn,
+    createdAt: swim.createdAt.toISOString(),
+  };
+}
+
+// GET /coach/swimmers/:id/meet-swims
+coachSwimmersRouter.get(
+  "/:id/meet-swims",
+  validate({ params: IdParamsSchema }),
+  asyncHandler(async (req, res) => {
+    const { id: swimmerId } = req.params as unknown as IdParams;
+
+    const swimmerRows = await db
+      .select({ id: swimmers.id })
+      .from(swimmers)
+      .where(and(isActiveSwimmer, eq(swimmers.id, swimmerId)))
+      .limit(1);
+
+    if (!swimmerRows[0]) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+
+    const swimRows = await db
+      .select({
+        id: meetSwims.id,
+        swimmerId: meetSwims.swimmerId,
+        swimType: meetSwims.swimType,
+        meetId: meetSwims.meetId,
+        eventDistance: meetSwims.eventDistance,
+        eventStroke: meetSwims.eventStroke,
+        course: meetSwims.course,
+        timeHundredths: meetSwims.timeHundredths,
+        swumOn: meetSwims.swumOn,
+        createdAt: meetSwims.createdAt,
+        meetName: meets.name,
+        meetDate: meets.meetDate,
+      })
+      .from(meetSwims)
+      .leftJoin(meets, eq(meets.id, meetSwims.meetId))
+      .where(eq(meetSwims.swimmerId, swimmerId))
+      .orderBy(desc(meetSwims.swumOn));
+
+    const swims: MeetSwimResponse[] = swimRows.map((row) =>
+      toSwimResponse(row, row.meetName ?? null, row.meetDate ?? null),
+    );
+
+    // Personal bests: fastest time per event+course for meet swims only, computed in SQL
+    const pbRows = await db
+      .select({
+        eventDistance: meetSwims.eventDistance,
+        eventStroke: meetSwims.eventStroke,
+        course: meetSwims.course,
+        timeHundredths: sql<number>`MIN(${meetSwims.timeHundredths})`.as("time_hundredths"),
+      })
+      .from(meetSwims)
+      .where(and(eq(meetSwims.swimmerId, swimmerId), eq(meetSwims.swimType, "meet")))
+      .groupBy(meetSwims.eventDistance, meetSwims.eventStroke, meetSwims.course);
+
+    const personalBests: PersonalBest[] = pbRows.flatMap((pb) => {
+      const match = swimRows.find(
+        (row) =>
+          row.swimType === "meet" &&
+          row.eventDistance === pb.eventDistance &&
+          row.eventStroke === pb.eventStroke &&
+          row.course === pb.course &&
+          row.timeHundredths === pb.timeHundredths,
+      );
+      if (!match) return [];
+      return [
+        {
+          eventDistance: pb.eventDistance,
+          eventStroke: pb.eventStroke,
+          course: pb.course,
+          timeHundredths: pb.timeHundredths,
+          timeString: formatSwimTime(pb.timeHundredths),
+          swimId: match.id,
+        },
+      ];
+    });
+
+    const body: MeetSwimsResponse = { swims, personalBests };
+    res.json(body);
+  }),
+);
+
+// POST /coach/swimmers/:id/meet-swims
+coachSwimmersRouter.post(
+  "/:id/meet-swims",
+  validate({ params: IdParamsSchema, body: CreateMeetSwimBodySchema }),
+  asyncHandler(async (req, res) => {
+    const { id: swimmerId } = req.params as unknown as IdParams;
+    const body = req.body as CreateMeetSwimBody;
+
+    const swimmerRows = await db
+      .select({ id: swimmers.id })
+      .from(swimmers)
+      .where(and(isActiveSwimmer, eq(swimmers.id, swimmerId)))
+      .limit(1);
+
+    if (!swimmerRows[0]) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+
+    if (!isValidEvent(body.eventDistance, body.eventStroke)) {
+      res.status(422).json({ error: "invalid_event" });
+      return;
+    }
+
+    const timeHundredths = parseSwimTime(body.timeString);
+    if (timeHundredths === null) {
+      res.status(422).json({ error: "invalid_time" });
+      return;
+    }
+
+    let meetName: string | null = null;
+    let meetDate: string | null = null;
+
+    if (body.swimType === "meet" && body.meetId !== undefined) {
+      const meetRows = await db
+        .select({ id: meets.id, name: meets.name, meetDate: meets.meetDate })
+        .from(meets)
+        .where(eq(meets.id, body.meetId))
+        .limit(1);
+
+      const meet = meetRows[0];
+      if (!meet) {
+        res.status(422).json({ error: "meet_not_found" });
+        return;
+      }
+
+      if (body.swumOn < meet.meetDate) {
+        res.status(422).json({ error: "swum_on_before_meet" });
+        return;
+      }
+
+      meetName = meet.name;
+      meetDate = meet.meetDate;
+    }
+
+    const rows = await db
+      .insert(meetSwims)
+      .values({
+        swimmerId,
+        swimType: body.swimType,
+        ...(body.meetId !== undefined && { meetId: body.meetId }),
+        eventDistance: body.eventDistance,
+        eventStroke: body.eventStroke,
+        course: body.course,
+        timeHundredths,
+        swumOn: body.swumOn,
+        createdBy: req.profile.id,
+      })
+      .returning();
+
+    const created = rows[0]!;
+
+    res.status(201).json(toSwimResponse(created, meetName, meetDate));
+  }),
+);
+
+// PATCH /coach/swimmers/:id/meet-swims/:swimId
+coachSwimmersRouter.patch(
+  "/:id/meet-swims/:swimId",
+  validate({ params: SwimIdParamsSchema, body: PatchMeetSwimBodySchema }),
+  asyncHandler(async (req, res) => {
+    const { id: swimmerId, swimId } = req.params as unknown as SwimIdParams;
+    const body = req.body as PatchMeetSwimBody;
+
+    const swimmerRows = await db
+      .select({ id: swimmers.id })
+      .from(swimmers)
+      .where(and(isActiveSwimmer, eq(swimmers.id, swimmerId)))
+      .limit(1);
+
+    if (!swimmerRows[0]) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+
+    const swimRows = await db
+      .select({
+        id: meetSwims.id,
+        swimmerId: meetSwims.swimmerId,
+        swimType: meetSwims.swimType,
+        meetId: meetSwims.meetId,
+        eventDistance: meetSwims.eventDistance,
+        eventStroke: meetSwims.eventStroke,
+        course: meetSwims.course,
+        timeHundredths: meetSwims.timeHundredths,
+        swumOn: meetSwims.swumOn,
+        createdAt: meetSwims.createdAt,
+      })
+      .from(meetSwims)
+      .where(eq(meetSwims.id, swimId))
+      .limit(1);
+
+    const swim = swimRows[0];
+    if (!swim || swim.swimmerId !== swimmerId) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+
+    const newDistance = body.eventDistance ?? swim.eventDistance;
+    const newStroke = body.eventStroke ?? swim.eventStroke;
+
+    if ((body.eventDistance !== undefined || body.eventStroke !== undefined) && !isValidEvent(newDistance, newStroke)) {
+      res.status(422).json({ error: "invalid_event" });
+      return;
+    }
+
+    let newTimeHundredths: number | undefined;
+    if (body.timeString !== undefined) {
+      const parsedHundredths = parseSwimTime(body.timeString);
+      if (parsedHundredths === null) {
+        res.status(422).json({ error: "invalid_time" });
+        return;
+      }
+      newTimeHundredths = parsedHundredths;
+    }
+
+    const newSwumOn = body.swumOn ?? swim.swumOn;
+
+    if (body.swumOn !== undefined && swim.swimType === "meet" && swim.meetId !== null) {
+      const meetRows = await db
+        .select({ meetDate: meets.meetDate })
+        .from(meets)
+        .where(eq(meets.id, swim.meetId))
+        .limit(1);
+
+      const meet = meetRows[0];
+      if (meet && newSwumOn < meet.meetDate) {
+        res.status(422).json({ error: "swum_on_before_meet" });
+        return;
+      }
+    }
+
+    const updatedRows = await db
+      .update(meetSwims)
+      .set({
+        ...(body.eventDistance !== undefined && { eventDistance: body.eventDistance }),
+        ...(body.eventStroke !== undefined && { eventStroke: body.eventStroke }),
+        ...(newTimeHundredths !== undefined && { timeHundredths: newTimeHundredths }),
+        ...(body.swumOn !== undefined && { swumOn: body.swumOn }),
+      })
+      .where(eq(meetSwims.id, swimId))
+      .returning();
+
+    const updated = updatedRows[0]!;
+
+    let meetName: string | null = null;
+    let meetDate: string | null = null;
+    if (updated.meetId !== null) {
+      const meetRows = await db
+        .select({ name: meets.name, meetDate: meets.meetDate })
+        .from(meets)
+        .where(eq(meets.id, updated.meetId))
+        .limit(1);
+      const meet = meetRows[0];
+      if (meet) {
+        meetName = meet.name;
+        meetDate = meet.meetDate;
+      }
+    }
+
+    res.json(toSwimResponse(updated, meetName, meetDate));
+  }),
+);
+
+// DELETE /coach/swimmers/:id/meet-swims/:swimId
+coachSwimmersRouter.delete(
+  "/:id/meet-swims/:swimId",
+  validate({ params: SwimIdParamsSchema }),
+  asyncHandler(async (req, res) => {
+    const { id: swimmerId, swimId } = req.params as unknown as SwimIdParams;
+
+    const swimmerRows = await db
+      .select({ id: swimmers.id })
+      .from(swimmers)
+      .where(and(isActiveSwimmer, eq(swimmers.id, swimmerId)))
+      .limit(1);
+
+    if (!swimmerRows[0]) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+
+    const swimRows = await db
+      .select({ id: meetSwims.id, swimmerId: meetSwims.swimmerId })
+      .from(meetSwims)
+      .where(eq(meetSwims.id, swimId))
+      .limit(1);
+
+    const swim = swimRows[0];
+    if (!swim || swim.swimmerId !== swimmerId) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+
+    await db.delete(meetSwims).where(eq(meetSwims.id, swimId));
+
+    res.status(204).send();
   }),
 );

@@ -137,9 +137,7 @@ function setupProgressMocks() {
   ];
 
   mockDbSelect
-    .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachAvailabilityRouter requireUser
-    .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachLessonsRouter requireUser
-    .mockReturnValueOnce(requireUserSelect(profileCoach)) // evaluationsRouter requireUser
+    .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachRouter requireUser (once)
     .mockReturnValueOnce(swimmerSelect(activeSwimmerRow)) // findActiveSwimmer
     .mockReturnValueOnce({                               // allRatingRows
       from: vi.fn().mockReturnValue({
@@ -196,9 +194,7 @@ describe("GET /coach/swimmers/:id/progress", () => {
   it("returns 404 when swimmer not found", async () => {
     authAs(profileCoach);
     mockDbSelect
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachAvailabilityRouter requireUser
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachLessonsRouter requireUser
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // evaluationsRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachRouter requireUser (once)
       .mockReturnValueOnce(swimmerSelect(null));
     const res = await request(app)
       .get(`/coach/swimmers/${SWIMMER_ID}/progress`)
@@ -301,9 +297,7 @@ describe("GET /coach/swimmers/:id/progress", () => {
     ];
 
     mockDbSelect
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachAvailabilityRouter requireUser
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachLessonsRouter requireUser
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // evaluationsRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachRouter requireUser (once)
       .mockReturnValueOnce(swimmerSelect(activeSwimmerRow))
       .mockReturnValueOnce({
         from: vi.fn().mockReturnValue({
@@ -363,9 +357,7 @@ describe("GET /coach/swimmers/:id/progress", () => {
     ];
 
     mockDbSelect
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachAvailabilityRouter requireUser
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachLessonsRouter requireUser
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // evaluationsRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachRouter requireUser (once)
       .mockReturnValueOnce(swimmerSelect(activeSwimmerRow))
       .mockReturnValueOnce({
         from: vi.fn().mockReturnValue({
@@ -460,9 +452,7 @@ describe("GET /coach/swimmers/:id/progress", () => {
     ];
 
     mockDbSelect
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachAvailabilityRouter requireUser
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachLessonsRouter requireUser
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // evaluationsRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachRouter requireUser (once)
       .mockReturnValueOnce(swimmerSelect(activeSwimmerRow))
       .mockReturnValueOnce({
         from: vi.fn().mockReturnValue({
@@ -547,9 +537,7 @@ describe("GET /coach/swimmers/:id/progress", () => {
     ];
 
     mockDbSelect
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachAvailabilityRouter requireUser
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachLessonsRouter requireUser
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // evaluationsRouter requireUser
+      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachRouter requireUser (once)
       .mockReturnValueOnce(swimmerSelect(activeSwimmerRow))
       .mockReturnValueOnce({                               // allRatingRows
         from: vi.fn().mockReturnValue({
