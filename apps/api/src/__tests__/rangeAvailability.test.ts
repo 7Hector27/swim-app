@@ -1,4 +1,4 @@
-import { vi, describe, it, expect, beforeEach } from "vitest";
+import { vi, describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
 import request from "supertest";
 import pino from "pino";
 
@@ -14,18 +14,19 @@ const LOCATION_HOME_B_ID = "cc000001-0000-0000-0000-000000000003";
 const OWN_LESSON_ID      = "dd000001-0000-0000-0000-000000000001";
 const OTHER_LESSON_ID    = "dd000001-0000-0000-0000-000000000002";
 
-const now = new Date();
+// Frozen clock: Mon 2026-11-02 at noon PST = 20:00 UTC.
+const ANCHOR_NOW = new Date("2026-11-02T20:00:00.000Z");
 
-// ── Computed test dates ───────────────────────────────────────────────────────
-// These are computed at import time so they remain valid regardless of when the
-// test suite runs.
+const now = ANCHOR_NOW;
 
-// A Tuesday ~3 weeks from now — within the 10-week booking window.
+// ── Fixed test dates relative to ANCHOR_NOW ───────────────────────────────────
+
+// Mon 2026-11-23 — 3 weeks from ANCHOR, within the 10-week booking window.
 const THREE_WEEKS_MS = 21 * 24 * 60 * 60 * 1000;
-const TEST_DATE = new Date(Date.now() + THREE_WEEKS_MS).toISOString().slice(0, 10);
+const TEST_DATE = new Date(ANCHOR_NOW.getTime() + THREE_WEEKS_MS).toISOString().slice(0, 10);
 
-// A date ~20 weeks from now — definitely beyond the 10-week max advance.
-const FAR_FUTURE_DATE = new Date(Date.now() + 140 * 24 * 60 * 60 * 1000)
+// Mon 2027-03-22 — ~20 weeks from ANCHOR, beyond the 10-week max advance.
+const FAR_FUTURE_DATE = new Date(ANCHOR_NOW.getTime() + 140 * 24 * 60 * 60 * 1000)
   .toISOString()
   .slice(0, 10);
 
@@ -265,6 +266,14 @@ function monthQuery(extra: Record<string, string> = {}): string {
   });
   return `/lessons/available-range?${p.toString()}`;
 }
+
+beforeAll(() => {
+  vi.useFakeTimers({ now: ANCHOR_NOW });
+});
+
+afterAll(() => {
+  vi.useRealTimers();
+});
 
 beforeEach(() => {
   vi.resetAllMocks();

@@ -1,4 +1,4 @@
-import { vi, describe, it, expect, beforeEach } from "vitest";
+import { vi, describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
 import request from "supertest";
 import pino from "pino";
 
@@ -14,10 +14,24 @@ const LOCATION_NAMED_ID = "cccccccc-0000-0000-0000-000000000001";
 const LOCATION_HOME_B_ID = "cccccccc-0000-0000-0000-000000000002";
 const LESSON_ID = "dddddddd-0000-0000-0000-000000000001";
 
-const now = new Date("2025-09-15T00:00:00.000Z");
+// Frozen clock: Mon 2026-11-02 at noon PST = 20:00 UTC.
+// At 20:00 UTC the UTC weekday equals the LA calendar day (both PST and PDT).
+const ANCHOR_NOW = new Date("2026-11-02T20:00:00.000Z");
 
-// A slot 48 h in the future — comfortably inside the 16 h min and 10-week max.
-const futureStart = new Date(Date.now() + 48 * 60 * 60 * 1000);
+const now = ANCHOR_NOW;
+
+// Returns the first weekday (UTC day 1–5, Mon–Fri) that is ≥ minHours after
+// `from`, preserving the time-of-day component.
+function nextLessonDay(from: Date, minHours: number): Date {
+  const candidate = new Date(from.getTime() + minHours * 60 * 60 * 1000);
+  while (candidate.getUTCDay() === 0 || candidate.getUTCDay() === 6) {
+    candidate.setUTCDate(candidate.getUTCDate() + 1);
+  }
+  return candidate;
+}
+
+// A slot at least 48 h out that always lands on a lesson day (Mon–Fri).
+const futureStart = nextLessonDay(ANCHOR_NOW, 48);
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
 
@@ -275,6 +289,14 @@ function swimmerResponseSelect() {
   const innerJoin = vi.fn().mockReturnValue({ where });
   return { from: vi.fn().mockReturnValue({ innerJoin }) };
 }
+
+beforeAll(() => {
+  vi.useFakeTimers({ now: ANCHOR_NOW });
+});
+
+afterAll(() => {
+  vi.useRealTimers();
+});
 
 beforeEach(() => {
   vi.resetAllMocks();
@@ -955,7 +977,7 @@ function swimmerResponseSelectForLesson() {
 }
 
 describe("PATCH /lessons/:id", () => {
-  const validNewStartsAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+  const validNewStartsAt = nextLessonDay(ANCHOR_NOW, 48).toISOString();
   const updatedLessonRow = { ...baseLessonRow, startsAt: new Date(validNewStartsAt) };
 
   it("reschedules lesson with new time ≥ 16h and returns 200 with updated lesson", async () => {

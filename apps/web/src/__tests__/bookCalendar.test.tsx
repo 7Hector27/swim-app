@@ -1,5 +1,5 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, act } from "@testing-library/react";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn() }),
@@ -499,27 +499,31 @@ describe("BookCalendarContent", () => {
     vi.mocked(actions.fetchRangeAction).mockResolvedValue(null);
   });
 
-  it("calls fetchRangeAction without swimmers when rendered with no swimmerIds", () => {
-    render(
-      <BookCalendarContent
-        locations={LOCATIONS}
-        swimmers={[]}
-        isViewer={false}
-      />,
-    );
+  it("calls fetchRangeAction without swimmers when rendered with no swimmerIds", async () => {
+    await act(async () => {
+      render(
+        <BookCalendarContent
+          locations={LOCATIONS}
+          swimmers={[]}
+          isViewer={false}
+        />,
+      );
+    });
     expect(actions.fetchRangeAction).toHaveBeenCalledWith(
       expect.objectContaining({ locationId: "loc-1" }),
     );
   });
 
-  it("shows viewer message when isViewer=true", () => {
-    render(
-      <BookCalendarContent
-        locations={LOCATIONS}
-        swimmers={SWIMMERS}
-        isViewer={true}
-      />,
-    );
+  it("shows viewer message when isViewer=true", async () => {
+    await act(async () => {
+      render(
+        <BookCalendarContent
+          locations={LOCATIONS}
+          swimmers={SWIMMERS}
+          isViewer={true}
+        />,
+      );
+    });
     expect(
       screen.getByText(/Booking is for household owners and managers/),
     ).toBeInTheDocument();
