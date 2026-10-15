@@ -7,16 +7,13 @@ import { useSession } from "@/components/Providers";
 import { logout } from "@/lib/logout";
 import styles from "./ProfileMenu.module.css";
 
-const BASE_MENU_ITEMS = [
-  { label: "Dashboard", href: "/dashboard" },
-] as const;
-
 const PARENT_MENU_ITEMS = [
   { label: "Household", href: "/household" },
   { label: "Account settings", href: "/account" },
 ] as const;
 
 const COACH_MENU_ITEMS = [
+  { label: "Dashboard", href: "/dashboard" },
   { label: "Account settings", href: "/account" },
 ] as const;
 
@@ -43,10 +40,7 @@ function ChevronDown({ open }: { open: boolean }) {
 
 export default function ProfileMenu() {
   const { role } = useSession();
-  const menuItems = [
-    ...BASE_MENU_ITEMS,
-    ...(role === "parent" ? PARENT_MENU_ITEMS : COACH_MENU_ITEMS),
-  ];
+  const menuItems = role === "coach" ? COACH_MENU_ITEMS : PARENT_MENU_ITEMS;
   const [isOpen, setIsOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);

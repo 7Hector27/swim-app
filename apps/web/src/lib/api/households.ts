@@ -1,6 +1,8 @@
+import { cache } from "react";
+
 import { HouseholdResponseSchema, ListInviteResponseSchema, type HouseholdResponse, type PendingInvite } from "@swim-app/shared";
 
-export async function fetchHousehold(accessToken: string): Promise<HouseholdResponse | null> {
+export const fetchHousehold = cache(async function fetchHousehold(accessToken: string): Promise<HouseholdResponse | null> {
   try {
     const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/households/mine`, {
       headers: { Authorization: `Bearer ${accessToken}` },
@@ -12,7 +14,7 @@ export async function fetchHousehold(accessToken: string): Promise<HouseholdResp
   } catch {
     return null;
   }
-}
+});
 
 export async function fetchPendingInvite(accessToken: string): Promise<PendingInvite | null> {
   try {

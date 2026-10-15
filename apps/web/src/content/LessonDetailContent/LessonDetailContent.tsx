@@ -7,7 +7,7 @@ import type { AvailableSlot, LessonLocation, UpcomingLesson } from "@swim-app/sh
 
 import ConfirmDialog from "@/components/ConfirmDialog";
 import SiteFooter from "@/components/SiteFooter";
-import SiteNav from "@/components/SiteNav";
+import ParentNav from "@/components/ParentNav";
 import { fetchSlotsDirectAction } from "@/content/BookLessonContent/actions";
 import { cancelLessonAction, rescheduleLessonAction, type LessonDetailState } from "./actions";
 
@@ -77,10 +77,10 @@ export default function LessonDetailContent({ lesson, locations, isViewer }: Pro
 
   return (
     <div className="flex flex-col min-h-screen bg-background">
-      <SiteNav />
+      <ParentNav />
 
       <main id="main-content" className="flex-1">
-        <div className="mx-auto max-w-content px-page pt-10 pb-20 tablet:pt-14 tablet:pb-32">
+        <div className="mx-auto max-w-content px-page pt-10 pb-tab-safe tablet:pt-14 tablet:pb-32">
           <Link
             href="/dashboard"
             className="inline-flex items-center gap-1.5 text-sm font-semibold text-link hover:text-link-hover transition-colors duration-150 mb-6"
