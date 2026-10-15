@@ -1,13 +1,14 @@
 import { Router } from "express";
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 import { db } from "../db/client";
-import { meetSwims, meets } from "../db/schema";
+import { meetSwims, meets, swimmers } from "../db/schema";
 import { validate } from "../middleware/validate";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { formatSwimTime } from "../lib/swimTime";
 import { z } from "zod";
 import type {
   CreateMeetBody,
+  MeetDetailSwimResponse,
   MeetResponse,
   MeetWithSwimsResponse,
 } from "@swim-app/shared";
@@ -55,6 +56,7 @@ meetsRouter.post(
         name: body.name,
         meetDate: body.meetDate,
         course: body.course,
+        createdBy: req.profile.id,
       })
       .returning();
 
@@ -94,9 +96,21 @@ meetsRouter.get(
     }
 
     const swimRows = await db
-      .select()
+      .select({
+        id: meetSwims.id,
+        swimType: meetSwims.swimType,
+        meetId: meetSwims.meetId,
+        eventDistance: meetSwims.eventDistance,
+        eventStroke: meetSwims.eventStroke,
+        course: meetSwims.course,
+        swumOn: meetSwims.swumOn,
+        timeHundredths: meetSwims.timeHundredths,
+        createdAt: meetSwims.createdAt,
+      })
       .from(meetSwims)
-      .where(eq(meetSwims.meetId, meetId));
+      .innerJoin(swimmers, eq(swimmers.id, meetSwims.swimmerId))
+      .where(and(eq(meetSwims.meetId, meetId), isNull(swimmers.archivedAt)))
+      .orderBy(asc(meetSwims.swumOn), asc(meetSwims.eventDistance), asc(meetSwims.eventStroke));
 
     const responseBody: MeetWithSwimsResponse = {
       id: meet.id,
@@ -105,9 +119,8 @@ meetsRouter.get(
       course: meet.course,
       createdAt: meet.createdAt.toISOString(),
       updatedAt: meet.updatedAt.toISOString(),
-      swims: swimRows.map((swim) => ({
+      swims: swimRows.map((swim): MeetDetailSwimResponse => ({
         id: swim.id,
-        swimmerId: swim.swimmerId,
         swimType: swim.swimType,
         meetId: swim.meetId,
         meetName: meet.name,
@@ -145,9 +158,15 @@ meetsRouter.delete(
       return;
     }
 
-    await db
+    const deleted = await db
       .delete(meets)
-      .where(eq(meets.id, meetId));
+      .where(eq(meets.id, meetId))
+      .returning({ id: meets.id });
+
+    if (deleted.length === 0) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
 
     res.status(200).json({ ok: true });
   }),

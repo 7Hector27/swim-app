@@ -227,6 +227,7 @@ export type {
   MeetResponse,
   CreateMeetBody,
   MeetSwimResponse,
+  MeetDetailSwimResponse,
   CreateMeetSwimBody,
   PatchMeetSwimBody,
   MeetWithSwimsResponse,

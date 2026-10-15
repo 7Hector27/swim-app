@@ -581,6 +581,7 @@ export const meets = pgTable("meets", {
   name: text("name").notNull(),
   meetDate: date("meet_date").notNull(),
   course: courseEnum("course").notNull(),
+  createdBy: uuid("created_by").notNull().references(() => profiles.id, { onDelete: "restrict" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdateFn(() => new Date()),
 }).enableRLS();

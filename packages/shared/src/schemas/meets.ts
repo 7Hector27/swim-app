@@ -82,6 +82,24 @@ export type PatchMeetSwimBody = z.infer<typeof PatchMeetSwimBodySchema>;
 
 // ── Meet with swims (GET /coach/meets/:id) ────────────────────────────────────
 
+// Swim shape for the meet-detail endpoint. Excludes swimmerId — it is an
+// internal UUID that has no benefit to API consumers viewing a meet's swims.
+export const MeetDetailSwimResponseSchema = z.object({
+  id: z.string().uuid(),
+  swimType: SwimTypeSchema,
+  meetId: z.string().uuid().nullable().optional(),
+  meetName: z.string().nullable().optional(),
+  meetDate: z.string().nullable().optional(),
+  eventDistance: z.number().int().positive(),
+  eventStroke: SwimStrokeSchema,
+  course: CourseSchema,
+  timeHundredths: z.number().int(),
+  timeString: z.string(),
+  swumOn: z.string(),
+  createdAt: z.string(),
+});
+export type MeetDetailSwimResponse = z.infer<typeof MeetDetailSwimResponseSchema>;
+
 export const MeetWithSwimsResponseSchema = z.object({
   id: z.string().uuid(),
   name: z.string(),
@@ -89,7 +107,7 @@ export const MeetWithSwimsResponseSchema = z.object({
   course: CourseSchema,
   createdAt: z.string(),
   updatedAt: z.string(),
-  swims: z.array(MeetSwimResponseSchema),
+  swims: z.array(MeetDetailSwimResponseSchema),
 });
 export type MeetWithSwimsResponse = z.infer<typeof MeetWithSwimsResponseSchema>;
 

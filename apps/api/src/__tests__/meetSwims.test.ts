@@ -200,7 +200,8 @@ describe("POST /coach/meets", () => {
 describe("DELETE /coach/meets/:id", () => {
   it("returns 200 when meet has no swims", async () => {
     authAs(profileCoach);
-    const deletedWhere = vi.fn().mockResolvedValue([]);
+    const returning = vi.fn().mockResolvedValue([{ id: MEET_ID }]);
+    const deletedWhere = vi.fn().mockReturnValue({ returning });
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachRouter requireUser (once)
       .mockReturnValueOnce(swimsForMeetSelect(false)); // no swims
@@ -232,8 +233,10 @@ describe("DELETE /coach/meets/:id", () => {
 // ── GET /coach/meets/:id ──────────────────────────────────────────────────────
 
 function swimsWhereSelect(rows: typeof baseSwimRow[]) {
-  const where = vi.fn().mockResolvedValue(rows);
-  return { from: vi.fn().mockReturnValue({ where }) };
+  const orderBy = vi.fn().mockResolvedValue(rows);
+  const where = vi.fn().mockReturnValue({ orderBy });
+  const innerJoin = vi.fn().mockReturnValue({ where });
+  return { from: vi.fn().mockReturnValue({ innerJoin }) };
 }
 
 describe("GET /coach/meets/:id", () => {
