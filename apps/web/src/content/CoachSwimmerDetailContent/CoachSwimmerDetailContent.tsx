@@ -90,7 +90,7 @@ function AddSwimForm({ swimmerId, meets, onSuccess }: AddSwimFormProps) {
             name="eventStroke"
             required
             value={selectedStroke}
-            onChange={(e) => setSelectedStroke(e.target.value)}
+            onChange={(event) => setSelectedStroke(event.target.value)}
             className="h-10 px-2 rounded-lg border border-border bg-background text-text text-sm focus:outline focus:outline-2 focus:outline-focus-ring"
           >
             {Object.entries(STROKE_SHORT).map(([value, label]) => (
@@ -224,7 +224,7 @@ function AddPracticeSwimForm({ swimmerId, onSuccess }: AddPracticeSwimFormProps)
             name="eventStroke"
             required
             value={selectedStroke}
-            onChange={(e) => setSelectedStroke(e.target.value)}
+            onChange={(event) => setSelectedStroke(event.target.value)}
             className="h-10 px-2 rounded-lg border border-border bg-background text-text text-sm focus:outline focus:outline-2 focus:outline-focus-ring"
           >
             {Object.entries(STROKE_SHORT).map(([value, label]) => (

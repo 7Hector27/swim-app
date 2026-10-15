@@ -20,6 +20,7 @@ coachRouter.get("/ping", validate({}), (_req, res) => {
 coachRouter.use(coachAvailabilityRouter);
 coachRouter.use(coachLessonsRouter);
 coachRouter.use(coachCategoriesRouter);
+// meetsRouter has no inline auth guard; it relies on the requireCoach applied above.
 coachRouter.use(meetsRouter);
 coachRouter.use("/swimmers", coachSwimmersRouter);
 coachRouter.use("/swimmers", evaluationsRouter);

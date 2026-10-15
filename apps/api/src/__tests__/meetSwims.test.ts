@@ -99,11 +99,6 @@ function meetSelect(row: {
   return { from: vi.fn().mockReturnValue({ where }) };
 }
 
-function swimsForMeetSelect(hasSwims: boolean) {
-  const limit = vi.fn().mockResolvedValue(hasSwims ? [{ id: SWIM_ID }] : []);
-  const where = vi.fn().mockReturnValue({ limit });
-  return { from: vi.fn().mockReturnValue({ where }) };
-}
 
 const baseMeetRow = {
   id: MEET_ID,
@@ -140,7 +135,9 @@ describe("GET /coach/meets", () => {
     const orderBy = vi.fn().mockResolvedValue([baseMeetRow]);
     const meetsFrom = vi.fn().mockReturnValue({ orderBy });
     const groupBy = vi.fn().mockResolvedValue([{ meetId: MEET_ID, count: 3 }]);
-    const countsFrom = vi.fn().mockReturnValue({ groupBy });
+    const countsWhere = vi.fn().mockReturnValue({ groupBy });
+    const countsInnerJoin = vi.fn().mockReturnValue({ where: countsWhere });
+    const countsFrom = vi.fn().mockReturnValue({ innerJoin: countsInnerJoin });
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(profileCoach))
       .mockReturnValueOnce({ from: meetsFrom })

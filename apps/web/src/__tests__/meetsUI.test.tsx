@@ -1,5 +1,14 @@
-import { vi, describe, it, expect } from "vitest";
+import { vi, describe, it, expect, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+
+// mockUseActionState lets individual tests inject a specific action state.
+// All other tests get the idle default set in beforeEach.
+const { mockUseActionState } = vi.hoisted(() => ({ mockUseActionState: vi.fn() }));
+vi.mock("react", async () => {
+  const actual = await vi.importActual<typeof import("react")>("react");
+  return { ...actual, useActionState: mockUseActionState };
+});
 
 vi.mock("@/components/SiteFooter", () => ({ default: () => <footer /> }));
 vi.mock("@/components/ConfirmDialog", () => ({
@@ -243,6 +252,11 @@ describe("CoachSwimmerDetailContent — times", () => {
   });
 });
 
+// Default idle state for all useActionState calls throughout the test suite.
+beforeEach(() => {
+  mockUseActionState.mockReturnValue([{ status: "idle" }, vi.fn(), false]);
+});
+
 describe("CoachMeetsContent — swim count and delete dialog", () => {
   it("shows swim count in the meet subtitle", () => {
     render(<CoachMeetsContent meets={[testMeet]} />);
@@ -257,5 +271,83 @@ describe("CoachMeetsContent — swim count and delete dialog", () => {
   it("does not show swim count when 0", () => {
     render(<CoachMeetsContent meets={[{ ...testMeet, swimCount: 0 }]} />);
     expect(screen.queryByText(/swim/)).not.toBeInTheDocument();
+  });
+});
+
+// ── Form close on success ─────────────────────────────────────────────────────
+
+// Helper to stage exactly N idle calls then one success, then fall back to default idle.
+// useActionState is called once per render per component that uses it.
+// meets=[] → only CreateMeetForm calls useActionState (1 call/render).
+// meets=[x] → CreateMeetForm + MeetRow each call it (2 calls/render).
+// emptyMeet/meetWithSwims → only AddSwimForm calls it (1 call/render).
+function mockIdleThenSuccess(idleCallCount: number) {
+  for (let index = 0; index < idleCallCount; index++) {
+    mockUseActionState.mockReturnValueOnce([{ status: "idle" as const }, vi.fn(), false]);
+  }
+  mockUseActionState.mockReturnValueOnce([{ status: "success" as const }, vi.fn(), false]);
+  // Remaining calls fall back to the beforeEach default (idle).
+}
+
+describe("CreateMeetForm — closes and shows list after successful save", () => {
+  it("collapses the form and shows the Create meet button again", async () => {
+    const user = userEvent.setup();
+    // meets=[] → 1 useActionState call on initial render, then 1 on click render.
+    mockIdleThenSuccess(1);
+
+    render(<CoachMeetsContent meets={[]} />);
+    await user.click(screen.getByRole("button", { name: /create meet/i }));
+
+    expect(screen.getByRole("button", { name: /create meet/i })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /new meet/i })).not.toBeInTheDocument();
+  });
+
+  it("still renders existing meets after form closes", async () => {
+    const user = userEvent.setup();
+    // meets=[testMeet] → CreateMeetForm + MeetRow = 2 calls on initial render, then 2 on click render.
+    mockIdleThenSuccess(3); // 2 initial + CreateMeetForm on click = 3rd call is success; MeetRow gets idle from default.
+
+    render(<CoachMeetsContent meets={[testMeet]} />);
+    await user.click(screen.getByRole("button", { name: /create meet/i }));
+
+    expect(screen.getByText("Spring Invitational")).toBeInTheDocument();
+  });
+});
+
+describe("CoachMeetDetailContent AddSwimForm — opens and closes", () => {
+  it("shows the form when Add swim is clicked", async () => {
+    const user = userEvent.setup();
+
+    const emptyMeet = { ...testMeet, swims: [] };
+    render(<CoachMeetDetailContent meet={emptyMeet} swimmers={[]} />);
+
+    await user.click(screen.getByRole("button", { name: /add swim/i }));
+
+    expect(screen.getByRole("heading", { name: /add swim/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /save swim/i })).toBeInTheDocument();
+  });
+
+  it("collapses the form when Cancel is clicked", async () => {
+    const user = userEvent.setup();
+
+    const emptyMeet = { ...testMeet, swims: [] };
+    render(<CoachMeetDetailContent meet={emptyMeet} swimmers={[]} />);
+
+    await user.click(screen.getByRole("button", { name: /add swim/i }));
+    await user.click(screen.getByRole("button", { name: /cancel/i }));
+
+    expect(screen.getByRole("button", { name: /add swim/i })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /add swim/i })).not.toBeInTheDocument();
+  });
+
+  it("still renders existing swims while form is open", async () => {
+    const user = userEvent.setup();
+
+    const meetWithSwims = { ...testMeet, swims: [testSwim] };
+    render(<CoachMeetDetailContent meet={meetWithSwims} swimmers={[]} />);
+
+    await user.click(screen.getByRole("button", { name: /add swim/i }));
+
+    expect(screen.getByText("58.30")).toBeInTheDocument();
   });
 });

@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { and, asc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "../db/client";
 import { meetSwims, meets, swimmers } from "../db/schema";
 import { validate } from "../middleware/validate";
@@ -40,9 +40,11 @@ meetsRouter.get(
         count: sql<number>`count(*)`.mapWith(Number),
       })
       .from(meetSwims)
+      .innerJoin(swimmers, eq(swimmers.id, meetSwims.swimmerId))
+      .where(and(inArray(meetSwims.meetId, rows.map((row) => row.id)), isNull(swimmers.archivedAt)))
       .groupBy(meetSwims.meetId);
 
-    const countByMeet = new Map(countRows.map((r) => [r.meetId, r.count]));
+    const countByMeet = new Map(countRows.map((countRow) => [countRow.meetId, countRow.count]));
 
     const body: MeetResponse[] = rows.map((row) => ({
       id: row.id,

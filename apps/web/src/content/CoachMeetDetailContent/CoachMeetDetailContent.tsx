@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useState } from "react";
 import Link from "next/link";
 import type { MeetWithSwimsResponse, CoachSwimmer } from "@swim-app/shared";
 import { VALID_EVENTS } from "@swim-app/shared";
@@ -35,6 +35,12 @@ function AddSwimForm({ meet, swimmers }: AddSwimFormProps) {
     addSwim.bind(null, meet.id),
     { status: "idle" },
   );
+
+  useEffect(() => {
+    if (state.status === "success") {
+      setOpen(false);
+    }
+  }, [state.status]);
 
   const distances = VALID_EVENTS[selectedStroke as keyof typeof VALID_EVENTS] ?? [];
 

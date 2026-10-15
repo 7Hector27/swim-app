@@ -15,6 +15,8 @@ export async function createMeet(
   formData: FormData,
 ): Promise<CreateMeetState> {
   const supabase = await createClient();
+  // getSession() here only to extract the raw access token.
+  // The API's requireUser middleware performs the actual token verification.
   const {
     data: { session },
   } = await supabase.auth.getSession();
@@ -59,6 +61,8 @@ export async function deleteMeet(
   _prev: DeleteMeetState,
 ): Promise<DeleteMeetState> {
   const supabase = await createClient();
+  // getSession() here only to extract the raw access token.
+  // The API's requireUser middleware performs the actual token verification.
   const {
     data: { session },
   } = await supabase.auth.getSession();

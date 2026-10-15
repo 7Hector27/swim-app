@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useRef, useState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import type { MeetResponse } from "@swim-app/shared";
 
@@ -24,6 +24,12 @@ function CreateMeetForm() {
     status: "idle",
   });
   const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (state.status === "success") {
+      setOpen(false);
+    }
+  }, [state.status]);
 
   if (!open) {
     return (
