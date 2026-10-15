@@ -6,7 +6,7 @@ import { createClient } from "@supabase/supabase-js";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import { householdAuditLog, householdMembers, households, profiles, swimmerClubs, swimmers } from "../../db/schema";
+import { householdAuditLog, householdMembers, households, meetSwims, profiles, swimmerClubs, swimmers } from "../../db/schema";
 
 // All env vars are validated in setup.ts before any test code runs.
 // These getters use non-null assertions since setup.ts guarantees presence.
@@ -58,6 +58,7 @@ export async function closeAdminDb(): Promise<void> {
  * in test cleanup so the FK chain is respected.
  */
 export async function hardDeleteSwimmer(swimmerId: string): Promise<void> {
+  await adminDb().delete(meetSwims).where(eq(meetSwims.swimmerId, swimmerId));
   await adminDb().delete(householdAuditLog).where(eq(householdAuditLog.targetSwimmerId, swimmerId));
   await adminDb().delete(swimmerClubs).where(eq(swimmerClubs.swimmerId, swimmerId));
   await adminDb().delete(swimmers).where(eq(swimmers.id, swimmerId));

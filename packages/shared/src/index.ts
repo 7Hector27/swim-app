@@ -248,6 +248,34 @@ export {
   MeetSwimsResponseSchema,
 } from "./schemas/meets";
 
+export type { AgeGroup } from "./lib/ageGroup";
+export { AgeGroupSchema, ageToGroup } from "./lib/ageGroup";
+
+export type {
+  MotivationalStandardName,
+  LeaderboardQuery,
+  PublicBoardRow,
+  PublicMasterRow,
+  PublicBoardResponse,
+  PublicMasterResponse,
+  CoachBoardRow,
+  CoachMasterRow,
+  CoachBoardResponse,
+  CoachMasterResponse,
+} from "./schemas/leaderboard";
+export {
+  MotivationalStandardNameSchema,
+  LeaderboardQuerySchema,
+  PublicBoardRowSchema,
+  PublicMasterRowSchema,
+  PublicBoardResponseSchema,
+  PublicMasterResponseSchema,
+  CoachBoardRowSchema,
+  CoachMasterRowSchema,
+  CoachBoardResponseSchema,
+  CoachMasterResponseSchema,
+} from "./schemas/leaderboard";
+
 export { calculateStartGrade, StartGradeResultSchema } from "./lib/startGrade";
 export type { StartGradeResult } from "./lib/startGrade";
 

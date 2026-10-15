@@ -625,6 +625,29 @@ RLS is enabled. Policies TBD.
 
 ---
 
+### `motivational_standards`
+
+Reference data table for USA Swimming-style motivational time standards. Seeded empty; standards are loaded separately.
+
+| Column | Type | Nullable | Default | Notes |
+|---|---|---|---|---|
+| `id` | `uuid` | no | `gen_random_uuid()` | Primary key |
+| `standard_name` | `standard_name` | no | — | Enum: `B`, `BB`, `A`, `AA`, `AAA`, `AAAA` (ascending speed) |
+| `event_distance` | `integer` | no | — | Distance in yards/meters |
+| `event_stroke` | `swim_stroke` | no | — | Enum: `free`, `back`, `breast`, `fly`, `im` |
+| `course` | `course` | no | — | Enum: `scy`, `scm`, `lcm` |
+| `sex` | `sex` | no | — | Enum: `female`, `male` |
+| `age_group` | `text` | no | — | One of: `6-under`, `7-8`, `9-10`, `11-12`, `13-14`, `15-18` |
+| `cut_time_hundredths` | `integer` | no | — | Maximum qualifying time in hundredths of a second (≤ this value passes) |
+| `created_at` | `timestamptz` | no | `now()` | |
+| `updated_at` | `timestamptz` | no | `now()` | Auto-updated |
+
+Constraints: `UNIQUE (standard_name, event_distance, event_stroke, course, sex, age_group)`.
+
+RLS is enabled. Policies TBD.
+
+---
+
 ## Conventions
 
 - All tables use `id` as a UUID primary key (`gen_random_uuid()`), except `household_members` (composite PK `(household_id, profile_id)`), `skill_level_descriptors` (composite PK `(skill_id, level)`), `skill_dependencies` (composite PK `(skill_id, depends_on_skill_id)`), and `rating_scale_levels` (integer PK `level`)

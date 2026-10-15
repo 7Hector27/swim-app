@@ -6,6 +6,7 @@ import { coachLessonsRouter } from "./coachLessons";
 import { coachSwimmersRouter } from "./coachSwimmers";
 import { evaluationsRouter, ratingsRouter, coachCategoriesRouter, sessionsRouter } from "./evaluations";
 import { meetsRouter } from "./meets";
+import { coachLeaderboardRouter } from "./coachLeaderboard";
 import { validate } from "../middleware/validate";
 
 export const coachRouter = Router();
@@ -20,8 +21,9 @@ coachRouter.get("/ping", validate({}), (_req, res) => {
 coachRouter.use(coachAvailabilityRouter);
 coachRouter.use(coachLessonsRouter);
 coachRouter.use(coachCategoriesRouter);
-// meetsRouter has no inline auth guard; it relies on the requireCoach applied above.
+// meetsRouter and coachLeaderboardRouter have no inline auth guards; they rely on the requireCoach applied above.
 coachRouter.use(meetsRouter);
+coachRouter.use(coachLeaderboardRouter);
 coachRouter.use("/swimmers", coachSwimmersRouter);
 coachRouter.use("/swimmers", evaluationsRouter);
 coachRouter.use("/ratings", ratingsRouter);
