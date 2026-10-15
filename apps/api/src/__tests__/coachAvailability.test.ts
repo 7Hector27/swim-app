@@ -153,6 +153,24 @@ beforeEach(() => {
   vi.resetAllMocks();
 });
 
+// ── Auth fires exactly once per /coach/* request ──────────────────────────────
+
+describe("auth fires exactly once per /coach/* request", () => {
+  it("GET /coach/locations calls db.select exactly twice — once for profile lookup, once for data", async () => {
+    authAs(coachProfile);
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(coachProfile))
+      .mockReturnValueOnce(simpleSelect([namedLocationRow]));
+
+    const res = await request(app)
+      .get("/coach/locations")
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(200);
+    expect(mockDbSelect).toHaveBeenCalledTimes(2);
+  });
+});
+
 // ── GET /coach/locations ──────────────────────────────────────────────────────
 
 describe("GET /coach/locations", () => {
