@@ -799,7 +799,7 @@ evaluationsRouter.get(
           isNull(skillRatings.voidedAt),
         ),
       )
-      .orderBy(desc(skillRatings.ratedAt));
+      .orderBy(desc(skillRatings.ratedAt), desc(skillRatings.createdAt));
 
     // Fetch fault tags for displayed ratings
     const displayRatingIds = displayRatingRows.map((r) => r.ratingId);
