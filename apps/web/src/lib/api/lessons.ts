@@ -168,6 +168,25 @@ export async function fetchLesson(accessToken: string, lessonId: string): Promis
   }
 }
 
+export async function fetchPastLessons(accessToken: string): Promise<UpcomingLesson[]> {
+  try {
+    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/lessons?filter=past`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      cache: "no-store",
+    });
+    if (!response.ok) return [];
+    const body: unknown = await response.json();
+    const parsed = UpcomingLessonSchema.array().safeParse(body);
+    if (!parsed.success) {
+      console.warn("fetchPastLessons: response did not match UpcomingLessonSchema.array()");
+      return [];
+    }
+    return parsed.data;
+  } catch {
+    return [];
+  }
+}
+
 export async function cancelLesson(accessToken: string, lessonId: string): Promise<{ ok: boolean; error?: string }> {
   try {
     const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/lessons/${lessonId}`, {

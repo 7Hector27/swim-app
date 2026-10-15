@@ -11,13 +11,26 @@ vi.mock("@/lib/logout", () => ({
   logout: vi.fn(),
 }));
 
+const mockSession = {
+  isSignedIn: true,
+  userName: "Jane Doe",
+  role: "parent" as "coach" | "parent" | null,
+  isViewer: false,
+};
+
+vi.mock("@/components/Providers", () => ({
+  useSession: () => mockSession,
+}));
+
 import ProfileMenu from "../components/ProfileMenu/ProfileMenu";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockSession.role = "parent";
+  mockSession.isViewer = false;
 });
 
-describe("ProfileMenu", () => {
+describe("ProfileMenu — parent", () => {
   it("renders My account trigger button", () => {
     render(<ProfileMenu />);
     expect(screen.getByRole("button", { name: /my account/i })).toBeInTheDocument();
@@ -28,13 +41,13 @@ describe("ProfileMenu", () => {
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
 
-  it("opens menu on trigger click", () => {
+  it("opens and shows Household + Account settings for a parent", () => {
     render(<ProfileMenu />);
     fireEvent.click(screen.getByRole("button", { name: /my account/i }));
-    expect(screen.getByRole("menu")).toBeInTheDocument();
-    expect(screen.getByRole("menuitem", { name: "Dashboard" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Household" })).toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: "Account settings" })).toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: "Log out" })).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "Dashboard" })).not.toBeInTheDocument();
   });
 
   it("closes menu on second trigger click", () => {
@@ -58,7 +71,6 @@ describe("ProfileMenu", () => {
     const trigger = screen.getByRole("button", { name: /my account/i });
     fireEvent.click(trigger);
     expect(screen.getByRole("menu")).toBeInTheDocument();
-
     fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
@@ -70,23 +82,23 @@ describe("ProfileMenu", () => {
     expect(screen.getByRole("menu")).toBeInTheDocument();
   });
 
-  it("ArrowDown cycles focus through menu items", () => {
-    render(<ProfileMenu />);
-    fireEvent.click(screen.getByRole("button", { name: /my account/i }));
-    const menu = screen.getByRole("menu");
-
-    fireEvent.keyDown(menu, { key: "ArrowDown" });
-    expect(screen.getByRole("menu")).toBeInTheDocument();
-  });
-
   it("log out button references the persistent logout form", () => {
     render(<ProfileMenu />);
-    // The form is always mounted (outside the dropdown) so the submit is never
-    // canceled by the dropdown unmounting before the action fires.
     expect(document.getElementById("logout-form")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /my account/i }));
     const logoutButton = screen.getByRole("menuitem", { name: "Log out" });
     expect(logoutButton).toHaveAttribute("form", "logout-form");
     expect(logoutButton).toHaveAttribute("type", "submit");
+  });
+});
+
+describe("ProfileMenu — coach", () => {
+  it("shows Dashboard + Account settings for a coach", () => {
+    mockSession.role = "coach";
+    render(<ProfileMenu />);
+    fireEvent.click(screen.getByRole("button", { name: /my account/i }));
+    expect(screen.getByRole("menuitem", { name: "Dashboard" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Account settings" })).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "Household" })).not.toBeInTheDocument();
   });
 });

@@ -194,6 +194,7 @@ export const UpcomingLessonsQuerySchema = z.object({
     .transform((value) => parseInt(value, 10))
     .pipe(z.number().int().min(1).max(50))
     .optional(),
+  filter: z.enum(["upcoming", "past"]).optional(),
 });
 export type UpcomingLessonsQuery = z.infer<typeof UpcomingLessonsQuerySchema>;
 

@@ -1,5 +1,5 @@
 import { type RequestHandler, Router } from "express";
-import { and, asc, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import type {
   AvailableSlot,
   AvailableSlotsQuery,
@@ -59,39 +59,50 @@ lessonsRouter.get(
     const query = req.query as unknown as UpcomingLessonsQuery;
     const { householdId } = req;
     const now = new Date();
-
-    const afterDate = query.after
-      ? new Date(Math.max(new Date(query.after).getTime(), now.getTime()))
-      : now;
-
+    const filter = query.filter ?? "upcoming";
     const limit = query.limit ?? 20;
 
-    const lessonRows = await db
-      .select({
-        id: lessons.id,
-        locationId: lessons.locationId,
-        locationName: lessonLocations.name,
-        startsAt: lessons.startsAt,
-        durationMinutes: lessons.durationMinutes,
-        type: lessons.type,
-        status: lessons.status,
-        expiresAt: lessons.expiresAt,
-        approvedAt: lessons.approvedAt,
-        declinedAt: lessons.declinedAt,
-        declineReason: lessons.declineReason,
-        createdAt: lessons.createdAt,
-      })
-      .from(lessons)
-      .innerJoin(lessonLocations, eq(lessons.locationId, lessonLocations.id))
-      .where(
-        and(
-          eq(lessons.householdId, householdId),
-          inArray(lessons.status, ["pending", "approved"]),
-          sql`${lessons.startsAt} >= ${afterDate.toISOString()}`,
-        ),
-      )
-      .orderBy(asc(lessons.startsAt))
-      .limit(limit);
+    const selectShape = {
+      id: lessons.id,
+      locationId: lessons.locationId,
+      locationName: lessonLocations.name,
+      startsAt: lessons.startsAt,
+      durationMinutes: lessons.durationMinutes,
+      type: lessons.type,
+      status: lessons.status,
+      expiresAt: lessons.expiresAt,
+      approvedAt: lessons.approvedAt,
+      declinedAt: lessons.declinedAt,
+      declineReason: lessons.declineReason,
+      createdAt: lessons.createdAt,
+    };
+
+    const lessonRows = filter === "past"
+      ? await db
+          .select(selectShape)
+          .from(lessons)
+          .innerJoin(lessonLocations, eq(lessons.locationId, lessonLocations.id))
+          .where(
+            and(
+              eq(lessons.householdId, householdId),
+              sql`${lessons.startsAt} < ${now.toISOString()}`,
+            ),
+          )
+          .orderBy(desc(lessons.startsAt))
+          .limit(limit)
+      : await db
+          .select(selectShape)
+          .from(lessons)
+          .innerJoin(lessonLocations, eq(lessons.locationId, lessonLocations.id))
+          .where(
+            and(
+              eq(lessons.householdId, householdId),
+              inArray(lessons.status, ["pending", "approved"]),
+              sql`${lessons.startsAt} >= ${now.toISOString()}`,
+            ),
+          )
+          .orderBy(asc(lessons.startsAt))
+          .limit(limit);
 
     const lessonIds = lessonRows.map((row) => row.id);
 
