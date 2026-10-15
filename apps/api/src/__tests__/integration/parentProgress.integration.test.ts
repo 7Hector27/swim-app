@@ -121,7 +121,7 @@ describe("GET /swimmers/:id/progress", () => {
             measurementValue: null,
             measurementUnit: null,
             note: null,
-            faultTags: ["flat-kick", "crossover"],
+            faultTags: [],
             ratedAt: "2026-10-10T10:00:00.000Z",
           },
         ],
@@ -143,6 +143,18 @@ describe("GET /swimmers/:id/progress", () => {
     // Cleanup
     await adminDb().delete(skillRatings).where(eq(skillRatings.swimmerId, swimmerId));
     await adminDb().delete(evaluationSessions).where(eq(evaluationSessions.swimmerId, swimmerId));
+    await coach.cleanup();
+  });
+
+  it("coach token gets 403 on GET /swimmers/:id/progress", async () => {
+    const coach = await createTestUser("parent-progress-coach-role");
+    await adminDb().update(profiles).set({ role: "coach" }).where(eq(profiles.id, coach.userId));
+
+    const res = await request(app)
+      .get(`/swimmers/${swimmerId}/progress`)
+      .set("Authorization", `Bearer ${coach.accessToken}`);
+    expect(res.status).toBe(403);
+
     await coach.cleanup();
   });
 

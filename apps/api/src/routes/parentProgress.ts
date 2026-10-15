@@ -11,6 +11,7 @@ import { requireHouseholdSwimmer } from "../middleware/requireHouseholdSwimmer";
 import { computeSwimmerProgress } from "../lib/progressCalculation";
 import {
   IdParamsSchema,
+  ParentSwimmerProgressResponseSchema,
   type IdParams,
   type ParentCoachingNote,
   type ParentSwimmerProgressResponse,
@@ -23,14 +24,14 @@ parentProgressRouter.get(
   "/:id/progress",
   requireUser,
   requireParent,
+  validate({ params: IdParamsSchema }),
   requireHouseholdMember,
   requireHouseholdSwimmer,
-  validate({ params: IdParamsSchema }),
   asyncHandler(async (req, res) => {
     const { id: swimmerId } = req.params as unknown as IdParams;
-    const full = await computeSwimmerProgress(swimmerId);
+    const full = await computeSwimmerProgress(swimmerId, { audience: "parent" });
 
-    const displayedSkillIds = full.skills.map((s) => s.skillId);
+    const displayedSkillIds = full.skills.map((skill) => skill.skillId);
 
     // Fetch level descriptors and latest coaching notes in parallel
     const [descriptorRows, sessionRows] = await Promise.all([
@@ -75,20 +76,19 @@ parentProgressRouter.get(
       });
     }
 
-    // Strip faultTags from every history point, attach level descriptors
+    // Attach level descriptors per skill
     const parentSkills = full.skills.map((skill) => ({
       ...skill,
-      history: skill.history.map(({ faultTags: _faultTags, ...point }) => point),
       ...(descriptorMap.has(skill.skillId) && { levelDescriptors: descriptorMap.get(skill.skillId) }),
     }));
 
-    const response: ParentSwimmerProgressResponse = {
+    const response: ParentSwimmerProgressResponse = ParentSwimmerProgressResponseSchema.parse({
       skills: parentSkills,
       startProgress: full.startProgress,
       headPositionOverall: full.headPositionOverall,
       coachingPriorities: full.coachingPriorities,
       latestCoachingNotes,
-    };
+    });
 
     req.log.info({ swimmerId, skillCount: parentSkills.length }, "parent swimmer progress fetched");
     res.json(response);

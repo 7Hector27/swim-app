@@ -12,9 +12,12 @@ interface CoachingPriorityFieldProps {
 export default function CoachingPriorityField({ value, onChange, suggestion, slugToName }: CoachingPriorityFieldProps) {
   return (
     <fieldset className="flex flex-col gap-2">
-      <legend className="font-bold text-sm" style={{ color: "var(--color-text)" }}>
-        Coaching priority
-      </legend>
+      <div className="flex items-baseline gap-2">
+        <legend className="font-bold text-sm" style={{ color: "var(--color-text)" }}>
+          Coaching priority
+        </legend>
+        <span className="text-xs text-text-secondary">Parents can see this</span>
+      </div>
       {suggestion.status === "loading" && (
         <p className="text-xs" style={{ color: "var(--color-text-secondary)" }}>Loading suggestion…</p>
       )}

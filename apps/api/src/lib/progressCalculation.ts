@@ -52,7 +52,11 @@ type SkillBucket = {
   }>;
 };
 
-export async function computeSwimmerProgress(swimmerId: string): Promise<SwimmerProgressResponse> {
+export async function computeSwimmerProgress(
+  swimmerId: string,
+  options: { audience?: "coach" | "parent" } = {},
+): Promise<SwimmerProgressResponse> {
+  const audience = options.audience ?? "coach";
   // Query A: all ratings (including voided) for computation
   const allRatingRows = await db
     .select({
@@ -229,21 +233,23 @@ export async function computeSwimmerProgress(swimmerId: string): Promise<Swimmer
     )
     .orderBy(desc(skillRatings.ratedAt), desc(skillRatings.createdAt), asc(skillRatings.id));
 
-  // Fetch fault tags for displayed ratings
-  const displayRatingIds = displayRatingRows.map((row) => row.ratingId);
+  // Fetch fault tags for displayed ratings — skipped for parent audience
   const faultTagsMap = new Map<string, string[]>();
-  if (displayRatingIds.length > 0) {
-    const tagRows = await db
-      .select({
-        ratingId: ratingFaultTags.ratingId,
-        faultTag: ratingFaultTags.faultTag,
-      })
-      .from(ratingFaultTags)
-      .where(inArray(ratingFaultTags.ratingId, displayRatingIds));
-    for (const tag of tagRows) {
-      const existing = faultTagsMap.get(tag.ratingId) ?? [];
-      existing.push(tag.faultTag);
-      faultTagsMap.set(tag.ratingId, existing);
+  if (audience === "coach") {
+    const displayRatingIds = displayRatingRows.map((row) => row.ratingId);
+    if (displayRatingIds.length > 0) {
+      const tagRows = await db
+        .select({
+          ratingId: ratingFaultTags.ratingId,
+          faultTag: ratingFaultTags.faultTag,
+        })
+        .from(ratingFaultTags)
+        .where(inArray(ratingFaultTags.ratingId, displayRatingIds));
+      for (const tag of tagRows) {
+        const existing = faultTagsMap.get(tag.ratingId) ?? [];
+        existing.push(tag.faultTag);
+        faultTagsMap.set(tag.ratingId, existing);
+      }
     }
   }
 

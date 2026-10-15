@@ -37,16 +37,16 @@ export default function ParentSwimmerProgressContent({
 
   const getSlugName = (slug: string): string => slugToName.get(slug) ?? slug;
 
-  const startParentSlugs = new Set(progress.startProgress.map((s) => s.slug));
+  const startParentSlugs = new Set(progress.startProgress.map((start) => start.slug));
   const startComponentSlugs = new Set(
-    progress.startProgress.flatMap((s) => s.components.map((c) => c.slug)),
+    progress.startProgress.flatMap((start) => start.components.map((component) => component.slug)),
   );
 
   const displaySkills = progress.skills.filter(
     (skill) => !startParentSlugs.has(skill.slug) && !startComponentSlugs.has(skill.slug),
   );
 
-  const categoryOrder = categories.map((c) => c.id);
+  const categoryOrder = categories.map((category) => category.id);
   const skillsByCategory = new Map<string, { categoryName: string; skills: typeof displaySkills }>();
 
   for (const skill of displaySkills) {
@@ -76,7 +76,7 @@ export default function ParentSwimmerProgressContent({
   const hasAnyData =
     progress.skills.length > 0 ||
     progress.startProgress.some(
-      (s) => s.grade.status !== "in_progress" || s.components.some((c) => c.current !== null),
+      (start) => start.grade.status !== "in_progress" || start.components.some((component) => component.current !== null),
     );
 
   return (
@@ -87,12 +87,11 @@ export default function ParentSwimmerProgressContent({
           <div className="flex flex-col gap-2">
             <a
               href="/dashboard"
-              className="text-sm underline"
-              style={{ color: "var(--color-link)" }}
+              className="text-sm underline text-link"
             >
               ← Dashboard
             </a>
-            <h1 className="text-heading" style={{ color: "var(--color-text)" }}>
+            <h1 className="text-heading text-text">
               {swimmer.firstName}&apos;s Progress
             </h1>
           </div>
@@ -106,14 +105,14 @@ export default function ParentSwimmerProgressContent({
           {/* What to work on next */}
           {progress.coachingPriorities.length > 0 && (
             <section className="flex flex-col gap-3">
-              <h2 className="font-bold text-sm" style={{ color: "var(--color-text)" }}>
+              <h2 className="font-bold text-sm text-text">
                 What to work on next
               </h2>
               <ul className="flex flex-col gap-2">
                 {progress.coachingPriorities.slice(0, 3).map((priority) => {
                   const deepest = priority.chain[priority.chain.length - 1];
                   return (
-                    <li key={priority.targetSlug} className="text-sm" style={{ color: "var(--color-text)" }}>
+                    <li key={priority.targetSlug} className="text-sm text-text">
                       <span className="font-semibold">{priority.targetName}</span>
                       {deepest && deepest.slug !== priority.targetSlug && (
                         <>
@@ -141,10 +140,10 @@ export default function ParentSwimmerProgressContent({
           {/* Head position overall */}
           {progress.headPositionOverall !== null && (
             <section className="flex flex-col gap-1">
-              <h2 className="font-bold text-sm" style={{ color: "var(--color-text)" }}>
+              <h2 className="font-bold text-sm text-text">
                 Head Position Overall
               </h2>
-              <p className="text-2xl font-bold" style={{ color: "var(--color-accent)" }}>
+              <p className="text-2xl font-bold text-accent">
                 {progress.headPositionOverall}
               </p>
             </section>
@@ -153,7 +152,7 @@ export default function ParentSwimmerProgressContent({
           {/* Starts */}
           {progress.startProgress.length > 0 && (
             <section className="flex flex-col gap-3">
-              <h2 className="font-bold text-sm" style={{ color: "var(--color-text)" }}>
+              <h2 className="font-bold text-sm text-text">
                 Starts
               </h2>
               <ul className="flex flex-col gap-3">
@@ -163,7 +162,7 @@ export default function ParentSwimmerProgressContent({
                   return (
                     <li key={start.slug} className="flex flex-col gap-1">
                       <div className="flex items-center gap-2">
-                        <span className="text-sm font-semibold" style={{ color: "var(--color-text)" }}>
+                        <span className="text-sm font-semibold text-text">
                           {start.name}
                         </span>
                         <span
@@ -209,21 +208,21 @@ export default function ParentSwimmerProgressContent({
 
           {/* Category skill cards */}
           {orderedCategories.map(({ id, categoryName, skills: catSkills }) => {
-            const assessedIds = new Set(catSkills.map((s) => s.skillId));
-            const catFromCategories = categories.find((c) => c.id === id);
+            const assessedIds = new Set(catSkills.map((skill) => skill.skillId));
+            const catFromCategories = categories.find((category) => category.id === id);
 
             const notAssessedSkills = catFromCategories
               ? catFromCategories.skills.filter(
-                  (s) =>
-                    !assessedIds.has(s.id) &&
-                    !startParentSlugs.has(s.slug) &&
-                    !startComponentSlugs.has(s.slug),
+                  (skill) =>
+                    !assessedIds.has(skill.id) &&
+                    !startParentSlugs.has(skill.slug) &&
+                    !startComponentSlugs.has(skill.slug),
                 )
               : [];
 
             return (
               <section key={id} className="flex flex-col gap-2">
-                <h2 className="font-bold text-sm" style={{ color: "var(--color-text)" }}>
+                <h2 className="font-bold text-sm text-text">
                   {categoryName}
                 </h2>
                 <ul className="flex flex-col gap-0">

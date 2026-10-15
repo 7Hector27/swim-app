@@ -262,14 +262,15 @@ Routes (all under `/api/v1`):
 
 ### PR E-5: Web — swimmer progress view ⛔ BLOCKED
 
-**Blocked on Jason's answers to questions 20–25:**
+**Blocked on Jason's answers to questions 20–23 and 25:**
 
 20. Measured skills grading — how are tempo, stroke count, reaction seconds, and start distance graded alongside the 1–5 scale?
 21. Evaluation frequency — how often should evaluations happen, and does the app enforce or suggest a cadence?
 22. Drill vs. race on charts — are drill and race context ratings shown together or separated on the progress chart?
 23. Capacity on charts — is capacity (yards/reps) displayed on progress charts or used only for context?
-24. What parents see — which skills, grades, or summaries are visible to parents, and in what form?
 25. Example chart — what does a useful progress chart actually look like for a swimmer?
+
+*(Question 24 — what parents see — is decided; see open questions below.)*
 
 **Intended scope (design only, implementation after answers):**
 
@@ -284,7 +285,7 @@ Routes (all under `/api/v1`):
 
 - `skill_ratings.note` is never returned to parents. It is a coach observation field.
 - `skill_ratings.void_reason` and `void_by` are never returned to parents.
-- `evaluation_sessions.coaching_priority` visibility is **pending Jason's answer to question 24**. Until that answer is received, treat it as coach-only and omit it from all parent-facing responses.
+- `evaluation_sessions.coaching_priority` is visible to parents (levels, descriptions, trends, not-legal markers, and coaching priority). Parents do not see notes, void reasons, or fault tags. Pending Jason's confirmation.
 - Parent-facing schemas must be defined as separate Zod schemas (e.g. `SkillRatingParentSchema`) that omit coach-only fields, not by filtering at serialisation time.
 
 ---
@@ -304,5 +305,5 @@ Routes (all under `/api/v1`):
 21. **Evaluation frequency** — How often should evaluations happen? Does the app enforce or suggest a cadence? *(Blocks E-5.)*
 22. **Drill vs. race on charts** — Are drill and race context ratings shown together or separated on progress charts? *(Blocks E-5.)*
 23. **Capacity on charts** — Is capacity (yards/reps) shown on progress charts or used only for session context? *(Blocks E-5.)*
-24. **What parents see** — Which skills, grades, or summaries are visible to parents, and in what form? *(Blocks E-5.)*
+24. **What parents see** — ✅ **Decided:** Parents see levels, descriptions, trends, not-legal markers, and the coaching priority. They do not see notes, void reasons, or fault tags. Pending Jason's confirmation.
 25. **Example chart** — What does a useful progress chart actually look like for a swimmer? *(Blocks E-5.)*
