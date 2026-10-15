@@ -174,6 +174,28 @@ export {
   CoachStatsSchema,
   UpdateLessonBodySchema,
 } from "./schemas/booking";
+export type {
+  SlotState,
+  DayState,
+  SlotWithState,
+  TeachingWindow,
+  DayAvailability,
+  WeekDayAvailability,
+  RangeAvailabilityQuery,
+  MonthAvailabilityResponse,
+  WeekAvailabilityResponse,
+} from "./schemas/booking";
+export {
+  SlotStateSchema,
+  DayStateSchema,
+  SlotWithStateSchema,
+  TeachingWindowSchema,
+  DayAvailabilitySchema,
+  WeekDayAvailabilitySchema,
+  RangeAvailabilityQuerySchema,
+  MonthAvailabilityResponseSchema,
+  WeekAvailabilityResponseSchema,
+} from "./schemas/booking";
 
 export { calculateStartGrade, StartGradeResultSchema } from "./lib/startGrade";
 export type { StartGradeResult } from "./lib/startGrade";

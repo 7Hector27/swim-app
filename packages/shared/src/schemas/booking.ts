@@ -272,3 +272,72 @@ export const UpdateLessonBodySchema = z.object({
   locationId: z.string().uuid().optional(),
 });
 export type UpdateLessonBody = z.infer<typeof UpdateLessonBodySchema>;
+
+// ── Booking calendar availability ─────────────────────────────────────────────
+
+export const SlotStateSchema = z.enum([
+  "available",
+  "unavailable",
+  "too_soon",
+  "past",
+  "not_open_yet",
+]);
+export type SlotState = z.infer<typeof SlotStateSchema>;
+
+export const DayStateSchema = z.enum([
+  "open",
+  "closed",
+  "past",
+  "not_open_yet",
+]);
+export type DayState = z.infer<typeof DayStateSchema>;
+
+export const SlotWithStateSchema = z.object({
+  startsAt: z.string().datetime({ offset: true }),
+  state: SlotStateSchema,
+});
+export type SlotWithState = z.infer<typeof SlotWithStateSchema>;
+
+export const TeachingWindowSchema = z.object({
+  start: z.string().regex(/^\d{2}:\d{2}$/),
+  end:   z.string().regex(/^\d{2}:\d{2}$/),
+});
+export type TeachingWindow = z.infer<typeof TeachingWindowSchema>;
+
+export const DayAvailabilitySchema = z.object({
+  date:            z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  dayState:        DayStateSchema,
+  openCount:       z.number().int(),
+  totalCount:      z.number().int(),
+  teachingWindows: z.array(TeachingWindowSchema),
+});
+export type DayAvailability = z.infer<typeof DayAvailabilitySchema>;
+
+export const WeekDayAvailabilitySchema = DayAvailabilitySchema.extend({
+  slots: z.array(SlotWithStateSchema),
+});
+export type WeekDayAvailability = z.infer<typeof WeekDayAvailabilitySchema>;
+
+export const RangeAvailabilityQuerySchema = z.object({
+  view:            z.enum(["week", "month"]),
+  date:            z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  durationMinutes: z
+    .string()
+    .transform((value) => parseInt(value, 10))
+    .pipe(z.union([z.literal(30), z.literal(45), z.literal(60)])),
+  locationId:      z.string().uuid(),
+  excludeLessonId: z.string().uuid().optional(),
+});
+export type RangeAvailabilityQuery = z.infer<typeof RangeAvailabilityQuerySchema>;
+
+export const MonthAvailabilityResponseSchema = z.object({
+  needsApproval: z.boolean(),
+  days:          z.array(DayAvailabilitySchema),
+});
+export type MonthAvailabilityResponse = z.infer<typeof MonthAvailabilityResponseSchema>;
+
+export const WeekAvailabilityResponseSchema = z.object({
+  needsApproval: z.boolean(),
+  days:          z.array(WeekDayAvailabilitySchema),
+});
+export type WeekAvailabilityResponse = z.infer<typeof WeekAvailabilityResponseSchema>;
