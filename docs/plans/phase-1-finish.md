@@ -18,7 +18,7 @@ Adds standalone coach notes (free-form text not tied to a rating), validates ses
 |---|---|
 | **Note types.** Three item types appear in the timeline: standalone coach notes, skill rating notes (ratings where `note` is non-null), and coaching priorities from evaluation sessions. They are not stored as a single type — they are merged at query time from `coach_notes`, `skill_ratings`, and `evaluation_sessions`. | Inferred; confirm with Jason. |
 | **Note ties.** A coach note can be tied to a session, a lesson, both, or neither (standalone). It cannot be tied to an individual skill rating — `session_id` on `coach_notes` is the finest granularity. | Inferred; confirm with Jason. |
-| **Editing notes.** Coach notes are not editable after creation. To correct a note, delete it and create a new one. This is consistent with the append-only / void pattern used for ratings. | Inferred; confirm with Jason. |
+| **Editing notes.** Coach notes are editable and deletable by their author at any time. Unlike ratings (which are append-only and use a void pattern), notes have no audit significance beyond their current text. `PATCH` updates `body`; `DELETE` hard-deletes the row. Only the original `created_by` coach may edit or delete a note. | Inferred; confirm with Jason. |
 | **Note visibility to parents.** Parents cannot see standalone coach notes or rating notes via any household-facing route. Parents can see coaching priorities through their existing access to evaluation session data (the coaching priority is shown on the swimmer progress page). The `/coach/swimmers/:id/timeline` endpoint is coach-only. | Inferred; confirm with Jason. |
 | **Timeline sort key.** All three sources are sorted by `created_at` descending. For `coaching_priority` items the key is `evaluation_sessions.created_at`; for rating notes it is `skill_ratings.created_at` (not `rated_at`). | Inferred; confirm with Jason. |
 
@@ -48,9 +48,9 @@ Constraints:
 apps/api/src/db/schema.ts
 apps/api/src/db/migrations/<ts>_add_coach_notes.sql           (drizzle-kit generate)
 apps/api/src/db/queries.ts                                     add coach note helpers
-apps/api/src/routes/coachSwimmers.ts                          add POST /coach/swimmers/:id/notes, GET /coach/swimmers/:id/timeline
+apps/api/src/routes/coachSwimmers.ts                          add POST /coach/swimmers/:id/notes, PATCH and DELETE /coach/swimmers/:id/notes/:noteId, GET /coach/swimmers/:id/timeline
 apps/api/src/app.ts                                            no new router mount needed (uses coachSwimmers)
-packages/shared/src/schemas/notes.ts                          new — CoachNoteBody, TimelineItem, TimelineResponse
+packages/shared/src/schemas/notes.ts                          new — CoachNoteBody, UpdateCoachNoteBody, TimelineItem, TimelineResponse
 packages/shared/src/index.ts
 apps/api/src/__tests__/coachNotes.test.ts                     new
 ```
@@ -60,12 +60,17 @@ apps/api/src/__tests__/coachNotes.test.ts                     new
 | Method | Path | Auth | Description |
 |---|---|---|---|
 | POST | /coach/swimmers/:id/notes | requireCoach | Create a standalone or session/lesson-tied note. |
+| PATCH | /coach/swimmers/:id/notes/:noteId | requireCoach | Update `body`. Author-only: 403 if the caller is not `created_by`. |
+| DELETE | /coach/swimmers/:id/notes/:noteId | requireCoach | Hard-delete a note. Author-only: 403 if the caller is not `created_by`. |
 | GET | /coach/swimmers/:id/timeline | requireCoach | Merged timeline: standalone notes + non-voided rating notes + coaching priorities, newest first. |
 
 ### Validation (422 on failure)
 
 - `POST /coach/swimmers/:id/notes` with a `sessionId` whose `swimmer_id` ≠ `:id` → 422 `session_swimmer_mismatch`.
 - `POST /coach/swimmers/:id/notes` with a `lessonId` that has no `lesson_swimmers` row for `:id` → 422 `lesson_swimmer_mismatch`.
+- `PATCH /coach/swimmers/:id/notes/:noteId` called by a different coach → 403.
+- `DELETE /coach/swimmers/:id/notes/:noteId` called by a different coach → 403.
+- `PATCH` or `DELETE` on a note where `:id` does not match the note's `swimmer_id` → 404.
 
 ### Timeline response shape
 
@@ -94,10 +99,20 @@ The timeline UI (`SwimmerTimelineCard` or equivalent) calls only this endpoint �
 - `POST /coach/swimmers/:id/notes` with `lessonId` that does not include `:id` → 422 `lesson_swimmer_mismatch`.
 - `POST /coach/swimmers/:id/notes` with `sessionId` belonging to `:id` → 201.
 - `POST /coach/swimmers/:id/notes` with `lessonId` that includes `:id` → 201.
+- `POST /coach/swimmers/:id/notes` where `:id` is an archived swimmer → 404.
+- `POST /coach/swimmers/:id/notes` where `:id` does not exist → 404.
+- `PATCH /coach/swimmers/:id/notes/:noteId` by the note's author → 200, `body` updated, `updated_at` advances.
+- `PATCH /coach/swimmers/:id/notes/:noteId` by a different coach → 403.
+- `PATCH /coach/swimmers/:id/notes/:noteId` with a blank `body` → 422.
+- `DELETE /coach/swimmers/:id/notes/:noteId` by the note's author → 200, row removed.
+- `DELETE /coach/swimmers/:id/notes/:noteId` by a different coach → 403.
+- `PATCH` or `DELETE` where `:id` does not match the note's `swimmer_id` → 404.
 - `GET /coach/swimmers/:id/timeline` returns items from all three sources sorted newest first.
 - `GET /coach/swimmers/:id/timeline` excludes voided skill ratings.
 - `GET /coach/swimmers/:id/timeline` includes non-voided skill ratings that have a non-null note.
 - `GET /coach/swimmers/:id/timeline` excludes skill ratings whose note is null (no `rating_note` entry emitted).
+- `GET /coach/swimmers/:id/timeline` where `:id` is an archived swimmer → 404.
+- `GET /coach/swimmers/:id/timeline` where `:id` does not exist → 404.
 - Parent calling `POST /coach/swimmers/:id/notes` → 403.
 - Parent calling `GET /coach/swimmers/:id/timeline` → 403.
 
@@ -224,7 +239,7 @@ apps/api/src/__tests__/meetSwims.test.ts                        new
 - `formatSwimTime(6532)` → `"1:05.32"`
 - `formatSwimTime(3840)` → `"38.40"`
 - `formatSwimTime(12000)` → `"2:00.00"`
-- `formatSwimTime(59)` → `"0.59"`
+- `formatSwimTime(5900)` → `"59.00"`
 
 **Route tests (`meetSwims.test.ts`)**
 
@@ -235,7 +250,9 @@ apps/api/src/__tests__/meetSwims.test.ts                        new
 - `POST /coach/swimmers/:id/meet-swims` with `swum_on` equal to `meet_date` → 201 (boundary allowed).
 - `POST /coach/swimmers/:id/meet-swims` with unparseable time string → 422 `invalid_time`.
 - `DELETE /coach/meet-swims/:id` removes the swim.
-- `DELETE /coach/meet-swims/:id` for a swim belonging to a different swimmer → 404.
+- `DELETE /coach/meet-swims/:id` for a swim belonging to a different swimmer (URL `:id` is a valid swim but its `swimmer_id` ≠ the path swimmer) → 404.
+- `GET /coach/swimmers/:id/meet-swims` where `:id` does not exist → 404.
+- `POST /coach/swimmers/:id/meet-swims` where `:id` is an archived swimmer → 404.
 - `DELETE /coach/meets/:id` with no swims → 200.
 - `DELETE /coach/meets/:id` with existing swims → 422 `meet_has_swims`.
 - Parent calling any `/coach/` meet or meet-swim route → 403.
@@ -259,11 +276,19 @@ apps/api/src/app.ts                       apply leaderboardLimiter before leader
 - Applied to all routes under `/leaderboard` (or whichever router serves the public leaderboard). Does not apply to authenticated routes.
 - Store: in-memory (MemoryStore is fine; Railway restarts are acceptable reset points). No Redis dependency.
 
+### Rules
+
+- Leaderboard query must filter `WHERE is_public = true AND archived_at IS NULL`. No swimmer with `is_public = false` or a non-null `archived_at` may appear in any response, including cached or aggregated output.
+- Each swimmer entry in the public JSON exposes only: first name, last initial (one character, no full last name), time, event, course, age group, sex, club name, and ISL affiliation. No birth date, `public_consent_at`, `public_consent_by`, `household_id`, contact info, or any other PII.
+
 ### Tests
 
 - 61 sequential requests from the same IP → the 61st returns 429.
 - A different IP is not affected by the first IP's count.
 - Authenticated routes are not affected by this limiter.
+- A swimmer with `is_public = false` does not appear in the leaderboard response, even if they have recorded times.
+- An archived swimmer (`archived_at` is non-null) does not appear in the leaderboard response.
+- Each swimmer entry in the response contains `firstName` and `lastInitial` but no `lastName`, `birthDate`, `householdId`, `publicConsentAt`, or `publicConsentBy` fields.
 
 ---
 
