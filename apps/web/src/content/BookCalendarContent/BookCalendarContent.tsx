@@ -6,7 +6,7 @@ import { todayLA } from "@swim-app/shared";
 import type { ParentSwimmer, WeekAvailabilityResponse } from "@swim-app/shared";
 
 import { fetchRangeAction, createBookingAction } from "./actions";
-import { getMondayOfWeek, addDaysToDateStr, getSlotHHMM } from "./helpers";
+import { getMondayOfWeek, addDaysToDateStr, getSlotHHMM, formatDayLabel } from "./helpers";
 import type { BookingState } from "./helpers";
 import CalendarConfigRow from "./CalendarConfigRow";
 import WeekNav from "./WeekNav";
@@ -47,6 +47,7 @@ export default function BookCalendarContent({
   const [tooSoon, setTooSoon] = useState(false);
   const [weekData, setWeekData] = useState<WeekAvailabilityResponse | null>(null);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
   const [selectedPhoneDay, setSelectedPhoneDay] = useState<string | null>(null);
 
   const [isFetching, startFetching] = useTransition();
@@ -74,7 +75,7 @@ export default function BookCalendarContent({
       }
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [locationId, durationMinutes, mondayStr]);
+  }, [locationId, durationMinutes, mondayStr, retryCount]);
 
   useEffect(() => {
     if (bookingState.status !== "success") return;
@@ -232,6 +233,26 @@ export default function BookCalendarContent({
             <path d="M21 12a9 9 0 1 1-6.219-8.56" />
           </svg>
           <span className="text-sm">Loading availability…</span>
+        </div>
+      )}
+
+      {!isFetching && fetchError !== null && (
+        <div className="rounded-card border border-border p-6 flex flex-col items-center gap-4">
+          <div className="hidden tablet:grid grid-cols-7 gap-1 w-full">
+            {Array.from({ length: 7 }, (_, index) => (
+              <div key={index} className="text-center text-xs text-text-secondary py-2">
+                {formatDayLabel(addDaysToDateStr(mondayStr, index))}
+              </div>
+            ))}
+          </div>
+          <p className="text-sm text-text-secondary">{fetchError}</p>
+          <button
+            type="button"
+            onClick={() => setRetryCount((count) => count + 1)}
+            className="min-h-[44px] px-5 rounded-button border-2 border-button-outline text-button-outline text-sm font-semibold transition-opacity hover:opacity-70 active:scale-[0.97]"
+          >
+            Retry
+          </button>
         </div>
       )}
 

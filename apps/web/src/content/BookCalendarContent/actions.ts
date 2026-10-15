@@ -36,13 +36,10 @@ export async function fetchRangeAction(params: {
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
   if (!token) return null;
-
-  const result = await fetchRangeAvailability(token, { ...params, view: "week" });
+  const result = await fetchRangeAvailability(token, params);
   if (result === null) return null;
-
   const parsed = WeekAvailabilityResponseSchema.safeParse(result);
-  if (!parsed.success) return null;
-  return parsed.data;
+  return parsed.success ? parsed.data : null;
 }
 
 export async function createBookingAction(

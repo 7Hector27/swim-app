@@ -1047,6 +1047,10 @@ export async function loadLessonWithSwimmers(
 
 // ── Range availability helpers ────────────────────────────────────────────────
 
+function toHHMM(timeStr: string): string {
+  return timeStr.slice(0, 5);
+}
+
 function addDaysToDate(dateStr: string, days: number): string {
   const year = Number(dateStr.slice(0, 4));
   const month = Number(dateStr.slice(5, 7));
@@ -1097,9 +1101,9 @@ function getTeachingWindowsForDay(
   const summerEnd = summerEndDate ?? `${year}-08-31`;
   if (date >= summerStart && date <= summerEnd) {
     return [
-      { start: config.summerMorningStartTime, end: config.summerMorningEndTime },
-      { start: config.summerEveningStartTime, end: config.summerEveningEndTime },
+      { start: toHHMM(config.summerMorningStartTime), end: toHHMM(config.summerMorningEndTime) },
+      { start: toHHMM(config.summerEveningStartTime), end: toHHMM(config.summerEveningEndTime) },
     ];
   }
-  return [{ start: config.schoolYearStartTime, end: config.schoolYearEndTime }];
+  return [{ start: toHHMM(config.schoolYearStartTime), end: toHHMM(config.schoolYearEndTime) }];
 }

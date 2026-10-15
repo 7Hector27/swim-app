@@ -1,4 +1,4 @@
-import { vi, describe, it, expect } from "vitest";
+import { vi, describe, it, expect, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 
 vi.mock("next/navigation", () => ({
@@ -9,6 +9,8 @@ vi.mock("../content/BookCalendarContent/actions", () => ({
   fetchRangeAction: vi.fn().mockResolvedValue(null),
   createBookingAction: vi.fn(),
 }));
+
+import * as actions from "../content/BookCalendarContent/actions";
 
 import {
   getMondayOfWeek,
@@ -449,6 +451,23 @@ describe("CalendarConfigRow", () => {
 import BookCalendarContent from "../content/BookCalendarContent/BookCalendarContent";
 
 describe("BookCalendarContent", () => {
+  beforeEach(() => {
+    vi.mocked(actions.fetchRangeAction).mockResolvedValue(null);
+  });
+
+  it("calls fetchRangeAction without swimmers when rendered with no swimmerIds", () => {
+    render(
+      <BookCalendarContent
+        locations={LOCATIONS}
+        swimmers={[]}
+        isViewer={false}
+      />,
+    );
+    expect(actions.fetchRangeAction).toHaveBeenCalledWith(
+      expect.objectContaining({ locationId: "loc-1" }),
+    );
+  });
+
   it("shows viewer message when isViewer=true", () => {
     render(
       <BookCalendarContent
