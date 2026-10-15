@@ -38,6 +38,12 @@ import {
 export function createApp(logger: Logger) {
   const app = express();
 
+  // Trust n proxy hops so req.ip reflects the real client IP behind reverse
+  // proxies (e.g. Railway = 1 hop). Defaults to 0 (disabled) in local dev.
+  // Controls the rate-limiter key. See ADR 023.
+  const trustProxyHops = Number(process.env.TRUST_PROXY ?? "0");
+  if (trustProxyHops > 0) app.set("trust proxy", trustProxyHops);
+
   app.use(helmet());
 
   const corsOrigins = (process.env.CORS_ORIGINS ?? "")

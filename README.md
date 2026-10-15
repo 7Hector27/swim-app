@@ -50,6 +50,7 @@ pnpm dev
 | `CORS_ORIGINS` | — | Comma-separated allowed origins. Example: `http://localhost:3000` |
 | `SUPABASE_URL` | `http://127.0.0.1:54321` | Supabase local stack API URL |
 | `SUPABASE_PUBLISHABLE_KEY` | — | Anon/publishable key — copy from `pnpm db:status` |
+| `TRUST_PROXY` | `0` | Number of reverse-proxy hops in front of the API. Leave `0` locally. Set to `1` on Railway or any single-proxy host so the rate limiter keys on the real client IP. |
 
 ### `apps/web/.env.local`
 
@@ -119,6 +120,16 @@ If any variable is missing, the test runner will fail immediately with a message
 Every response includes an `x-request-id` header. Pass your own `x-request-id` request header to propagate a trace ID into server logs.
 
 ## Deploying
+
+### API environment variables for hosted deployments
+
+| Variable | Production value | Notes |
+|---|---|---|
+| `NODE_ENV` | `production` | Switches logs to JSON format |
+| `TRUST_PROXY` | `1` | Set to the number of proxy hops in front of the API (Railway = 1). Required for the public-leaderboard rate limiter to key on the real client IP rather than the proxy address. |
+| `CORS_ORIGINS` | `https://yourdomain.com` | Comma-separate if multiple origins |
+| `SITE_URL` | `https://yourdomain.com` | Used to build invite and email-confirm links |
+| `CRON_SECRET` | random hex string | `openssl rand -hex 32` |
 
 ### Supabase project configuration
 

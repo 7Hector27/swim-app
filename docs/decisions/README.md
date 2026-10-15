@@ -20,3 +20,6 @@
 | [016](016-swimmer-birth-date-and-public-consent.md) | Swimmer birth dates stored; public display requires explicit consent |
 | [017](017-households-replace-guardians.md) | Replace guardians table with household model |
 | [019](019-skill-catalog-slugs-and-sync.md) | Permanent slugs and catalog sync for the skills rubric |
+| [021](021-lesson-approval-rules.md) | Lesson approval rules |
+| [022](022-evaluation-sessions-append-only-ratings-void.md) | Evaluation sessions: append-only ratings with void |
+| [023](023-leaderboard-eligibility-and-scoring-rules.md) | Leaderboard eligibility and scoring rules (draft — confirm with Jason) |
