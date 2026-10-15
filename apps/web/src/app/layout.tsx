@@ -3,6 +3,7 @@ import type { Metadata, Viewport } from "next";
 import { Fraunces, Figtree } from "next/font/google";
 
 import Providers from "@/components/Providers";
+import NavController from "@/components/NavController";
 import { fetchMe } from "@/lib/api/me";
 import { fetchHousehold } from "@/lib/api/households";
 
@@ -69,6 +70,7 @@ export default async function RootLayout({
     <html lang="en" className={`${fraunces.variable} ${figtree.variable}`} suppressHydrationWarning>
       <body className="min-h-screen bg-background text-text antialiased">
         <Providers isSignedIn={isSignedIn} userName={userName} role={role} isViewer={isViewer}>
+          <NavController />
           {children}
         </Providers>
       </body>

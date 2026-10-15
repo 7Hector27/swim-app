@@ -100,15 +100,14 @@ async function getConfig() {
   return rows[0]!;
 }
 
-// Ensure today's day is in lessonDays for the integration test by temporarily
-// patching the config, then restore after the test.
-// We just add all weekdays [1,2,3,4,5] to make sure the slot date works.
-async function withAllWeekdaysEnabled<T>(fn: () => Promise<T>): Promise<T> {
+// Temporarily opens all seven days so a slot always exists regardless of the
+// day the test runs, then restores the original lessonDays.
+async function withAllDaysEnabled<T>(fn: () => Promise<T>): Promise<T> {
   const config = await getConfig();
   const original = config.lessonDays;
   await adminDb()
     .update(availabilityConfig)
-    .set({ lessonDays: [1, 2, 3, 4, 5] })
+    .set({ lessonDays: [0, 1, 2, 3, 4, 5, 6] })
     .where(eq(availabilityConfig.id, config.id));
   try {
     return await fn();
@@ -118,6 +117,32 @@ async function withAllWeekdaysEnabled<T>(fn: () => Promise<T>): Promise<T> {
       .set({ lessonDays: original })
       .where(eq(availabilityConfig.id, config.id));
   }
+}
+
+// Queries the available-range endpoint week by week until it finds the first
+// slot with state "available". Must be called while allDays is enabled.
+async function findFirstAvailableSlot(
+  token: string,
+  locId: string,
+  durationMinutes: number,
+): Promise<string> {
+  for (let weekOffset = 0; weekOffset < 10; weekOffset++) {
+    const weekDate = new Date(Date.now() + weekOffset * 7 * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .slice(0, 10);
+    const res = await request(app)
+      .get("/lessons/available-range")
+      .set("Authorization", `Bearer ${token}`)
+      .query({ view: "week", date: weekDate, durationMinutes: String(durationMinutes), locationId: locId });
+    if (res.status !== 200) continue;
+    const body = res.body as { days: Array<{ slots: Array<{ startsAt: string; state: string }> }> };
+    for (const day of body.days) {
+      for (const slot of day.slots) {
+        if (slot.state === "available") return slot.startsAt;
+      }
+    }
+  }
+  throw new Error("No available slot found within 10 weeks — check lessonDays / teaching-window config");
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -143,7 +168,7 @@ describe("POST /lessons (integration)", () => {
       return;
     }
 
-    await withAllWeekdaysEnabled(async () => {
+    await withAllDaysEnabled(async () => {
       // First, create a second test user so we have two separate households
       // trying to book the same slot simultaneously.
       const owner2 = await createTestUser("lessons-concurrent");
@@ -161,7 +186,7 @@ describe("POST /lessons (integration)", () => {
       const swimmerId2 = swimmerRows2[0]?.id ?? "";
 
       try {
-        const slot = futureSlot();
+        const slot = await findFirstAvailableSlot(owner.accessToken, locationId, 30);
 
         const [res1, res2] = await Promise.all([
           request(app)
@@ -175,9 +200,12 @@ describe("POST /lessons (integration)", () => {
         ]);
 
         const statuses = [res1.status, res2.status].sort();
-        expect(statuses).toEqual([201, 422]);
-
         const failBody = res1.status === 422 ? res1.body : res2.body;
+        expect(
+          statuses,
+          `expected [201,422] for slot ${slot} — res1 ${res1.status}: ${JSON.stringify(res1.body)}, res2 ${res2.status}: ${JSON.stringify(res2.body)}`,
+        ).toEqual([201, 422]);
+
         expect(failBody.error).toBe("slot_unavailable");
 
         // Clean up lessons created in this test.

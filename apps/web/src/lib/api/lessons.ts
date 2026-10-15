@@ -3,14 +3,18 @@ import {
   CoachStatsSchema,
   LessonLocationSchema,
   LessonResponseSchema,
+  MonthAvailabilityResponseSchema,
   ScheduleItemSchema,
   UpcomingLessonSchema,
+  WeekAvailabilityResponseSchema,
   type AvailableSlot,
   type CoachStats,
   type LessonLocation,
   type LessonResponse,
+  type MonthAvailabilityResponse,
   type ScheduleItem,
   type UpcomingLesson,
+  type WeekAvailabilityResponse,
 } from "@swim-app/shared";
 
 export async function fetchLocations(accessToken: string): Promise<LessonLocation[]> {
@@ -232,5 +236,50 @@ export async function updateLesson(
     return { error: code ?? "Something went wrong.", ...(code !== undefined ? { code } : {}) };
   } catch {
     return { error: "Could not reach the server." };
+  }
+}
+
+export async function fetchRangeAvailability(
+  accessToken: string,
+  params: {
+    view: "week" | "month";
+    date: string;
+    durationMinutes: 30 | 45 | 60;
+    locationId: string;
+    excludeLessonId?: string;
+  },
+): Promise<WeekAvailabilityResponse | MonthAvailabilityResponse | null> {
+  try {
+    const searchParams = new URLSearchParams({
+      view: params.view,
+      date: params.date,
+      durationMinutes: String(params.durationMinutes),
+      locationId: params.locationId,
+    });
+    if (params.excludeLessonId !== undefined) {
+      searchParams.set("excludeLessonId", params.excludeLessonId);
+    }
+    const response = await fetch(
+      `${process.env.NEXT_PUBLIC_API_URL}/lessons/available-range?${searchParams.toString()}`,
+      { headers: { Authorization: `Bearer ${accessToken}` } },
+    );
+    if (!response.ok) return null;
+    const body: unknown = await response.json();
+    if (params.view === "week") {
+      const parsed = WeekAvailabilityResponseSchema.safeParse(body);
+      if (!parsed.success) {
+        console.warn("fetchRangeAvailability: week response did not match WeekAvailabilityResponseSchema");
+        return null;
+      }
+      return parsed.data;
+    }
+    const parsed = MonthAvailabilityResponseSchema.safeParse(body);
+    if (!parsed.success) {
+      console.warn("fetchRangeAvailability: month response did not match MonthAvailabilityResponseSchema");
+      return null;
+    }
+    return parsed.data;
+  } catch {
+    return null;
   }
 }

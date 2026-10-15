@@ -1,11 +1,10 @@
 "use client";
 
-import { useActionState, useEffect, useMemo, useRef, useState } from "react";
+import { useActionState, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   CoachSwimmerDetail,
   CategoriesResponse,
 } from "@swim-app/shared";
-import SiteNav from "@/components/SiteNav";
 import SiteFooter from "@/components/SiteFooter";
 import { submitEvaluation } from "./actions";
 import type { EvaluateState, SessionDraft, SkillDraft } from "./helpers";
@@ -31,8 +30,8 @@ interface EvaluateContentProps {
 }
 
 export default function EvaluateContent({ swimmer, categories, accessToken }: EvaluateContentProps) {
-  const metaKey = `evaluate-draft-meta-${swimmer.id}`;
-  const skillsKey = (catId: string) => `evaluate-draft-skills-${swimmer.id}-${catId}`;
+  const metaKey = useMemo(() => `evaluate-draft-meta-${swimmer.id}`, [swimmer.id]);
+  const skillsKey = useCallback((catId: string) => `evaluate-draft-skills-${swimmer.id}-${catId}`, [swimmer.id]);
 
   const [draft, setDraft] = useState<SessionDraft>(() => initialSessionDraft());
   const [depSuggestion, setDepSuggestion] = useState<
@@ -72,7 +71,7 @@ export default function EvaluateContent({ swimmer, categories, accessToken }: Ev
     } catch {
       // ignore
     }
-  }, [swimmer.id]); // mount-only: intentionally omits metaKey/skillsKey (stable derivations of swimmer.id)
+  }, [swimmer.id, metaKey, skillsKey]);
 
   // Persist draft to localStorage on every change (Fix 6)
   useEffect(() => {
@@ -89,7 +88,7 @@ export default function EvaluateContent({ swimmer, categories, accessToken }: Ev
     } catch {
       // ignore
     }
-  }, [draft, swimmer.id]); // metaKey/skillsKey are stable derivations of swimmer.id
+  }, [draft, swimmer.id, metaKey, skillsKey]);
 
   // Fetch dep suggestion when categoryId changes
   useEffect(() => {
@@ -142,7 +141,7 @@ export default function EvaluateContent({ swimmer, categories, accessToken }: Ev
         // ignore
       }
     }
-  }, [state.status]); // savedAtRef/savedCategoryIdRef captured at submit; metaKey/skillsKey stable
+  }, [state.status, metaKey, skillsKey]);
 
   function handleCategoryChange(newCategoryId: string) {
     let skills: Record<string, SkillDraft> = {};
@@ -189,7 +188,6 @@ export default function EvaluateContent({ swimmer, categories, accessToken }: Ev
   if (state.status === "saved") {
     return (
       <div className="flex flex-col min-h-screen">
-        <SiteNav />
         <main className="flex-1 px-page py-8">
           <div className="mx-auto max-w-content flex flex-col gap-6">
             <h1 className="text-heading" style={{ color: "var(--color-text)" }}>
@@ -221,7 +219,6 @@ export default function EvaluateContent({ swimmer, categories, accessToken }: Ev
 
   return (
     <div className="flex flex-col min-h-screen">
-      <SiteNav />
       <main className="flex-1 px-page py-8">
         <div className="mx-auto max-w-content flex flex-col gap-6">
           <div className="flex flex-col gap-2">

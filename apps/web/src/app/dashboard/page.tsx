@@ -9,7 +9,11 @@ export const metadata: Metadata = {
   title: "Dashboard · Axiom Aquatics",
 };
 
-export default async function DashboardPage() {
+interface Props {
+  searchParams: Promise<{ booked?: string }>;
+}
+
+export default async function DashboardPage({ searchParams }: Props) {
   const auth = await requireAuth();
   if (!auth) redirect("/login");
 
@@ -19,5 +23,13 @@ export default async function DashboardPage() {
     return <CoachDashboardContent accessToken={accessToken} />;
   }
 
-  return <ParentDashboardContent profile={profile} accessToken={accessToken} />;
+  const { booked } = await searchParams;
+
+  return (
+    <ParentDashboardContent
+      profile={profile}
+      accessToken={accessToken}
+      {...(booked !== undefined && { bookedLessonId: booked })}
+    />
+  );
 }

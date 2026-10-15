@@ -1,4 +1,4 @@
-import { vi, describe, it, expect, beforeEach } from "vitest";
+import { vi, describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
 import request from "supertest";
 import pino from "pino";
 
@@ -13,8 +13,22 @@ const SWIMMER_ID = "cccccccc-0000-0000-0000-000000000001";
 const LOCATION_ID = "eeeeeeee-0000-0000-0000-000000000001";
 const LOCATION_ID_B = "eeeeeeee-0000-0000-0000-000000000002";
 
-const now = new Date();
-const futureStart = new Date(Date.now() + 48 * 60 * 60 * 1000);
+// Frozen clock: Mon 2026-11-02 at noon PST = 20:00 UTC.
+// At 20:00 UTC the UTC weekday equals the LA calendar day (both PST and PDT).
+const ANCHOR_NOW = new Date("2026-11-02T20:00:00.000Z");
+
+const now = ANCHOR_NOW;
+
+// Returns the first weekday (UTC day 1–5) that is ≥ minHours after `from`.
+function nextLessonDay(from: Date, minHours: number): Date {
+  const candidate = new Date(from.getTime() + minHours * 60 * 60 * 1000);
+  while (candidate.getUTCDay() === 0 || candidate.getUTCDay() === 6) {
+    candidate.setUTCDate(candidate.getUTCDate() + 1);
+  }
+  return candidate;
+}
+
+const futureStart = nextLessonDay(ANCHOR_NOW, 48);
 const expiresAt = new Date(futureStart.getTime() - 16 * 60 * 60 * 1000);
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
@@ -160,6 +174,14 @@ function authAsCoach() {
     .mockReturnValueOnce(requireUserSelect(coachProfile)); // coachLessonsRouter requireUser
 }
 
+
+beforeAll(() => {
+  vi.useFakeTimers({ now: ANCHOR_NOW });
+});
+
+afterAll(() => {
+  vi.useRealTimers();
+});
 
 beforeEach(() => {
   vi.resetAllMocks();

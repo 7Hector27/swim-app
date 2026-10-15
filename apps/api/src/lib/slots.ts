@@ -1,4 +1,4 @@
-import type { AvailabilityConfig } from "@swim-app/shared";
+import type { AvailabilityConfig, SlotState, SlotWithState } from "@swim-app/shared";
 
 export interface SlotParams {
   date: string; // YYYY-MM-DD in America/Los_Angeles
@@ -70,7 +70,7 @@ function laToUtc(dateStr: string, timeStr: string): Date {
 }
 
 // Returns the YYYY-MM-DD date for a UTC instant as seen in LA.
-function getDateInLA(date: Date): string {
+export function getDateInLA(date: Date): string {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: LA_TZ,
     year: "numeric",
@@ -82,7 +82,7 @@ function getDateInLA(date: Date): string {
 }
 
 // Returns ISO day-of-week (1=Mon … 7=Sun) for a YYYY-MM-DD date string.
-function getISODayOfWeek(dateStr: string): number {
+export function getISODayOfWeek(dateStr: string): number {
   const year = Number(dateStr.slice(0, 4));
   const month = Number(dateStr.slice(5, 7));
   const day = Number(dateStr.slice(8, 10));
@@ -260,4 +260,102 @@ export function computeAvailableSlots(params: SlotParams): Slot[] {
   return slots
     .filter((s) => s.startsAt.getTime() >= minStartMs && s.startsAt.getTime() <= maxStartMs)
     .sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
+}
+
+export function classifyDaySlots(params: SlotParams): SlotWithState[] {
+  const {
+    date,
+    durationMinutes,
+    locationId,
+    existingLessons,
+    blockedTimes,
+    travelBufferOverrides,
+    config,
+    summerEndDate,
+    gcalBusyTimes,
+    nowUtc,
+  } = params;
+
+  if (!config.lessonDays.includes(getISODayOfWeek(date))) return [];
+
+  const year = date.slice(0, 4);
+  const summerStart = `${year}-06-01`;
+  const summerEnd = summerEndDate ?? `${year}-08-31`;
+  const isSummer = date >= summerStart && date <= summerEnd;
+
+  const windows: Interval[] = isSummer
+    ? [
+        [
+          laToUtc(date, config.summerMorningStartTime).getTime(),
+          laToUtc(date, config.summerMorningEndTime).getTime(),
+        ],
+        [
+          laToUtc(date, config.summerEveningStartTime).getTime(),
+          laToUtc(date, config.summerEveningEndTime).getTime(),
+        ],
+      ]
+    : [
+        [
+          laToUtc(date, config.schoolYearStartTime).getTime(),
+          laToUtc(date, config.schoolYearEndTime).getTime(),
+        ],
+      ];
+
+  const forbidden: Interval[] = [];
+
+  for (const lesson of existingLessons) {
+    const lessonStart = lesson.startsAt.getTime();
+    const lessonEnd = lessonStart + lesson.durationMinutes * MIN_MS;
+    forbidden.push([lessonStart, lessonEnd]);
+    if (lesson.locationId !== locationId) {
+      const bufAfterMs = getTravelBufferMs(lesson.locationId, locationId, travelBufferOverrides);
+      if (bufAfterMs > 0) forbidden.push([lessonEnd, lessonEnd + bufAfterMs]);
+      const bufBeforeMs = getTravelBufferMs(locationId, lesson.locationId, travelBufferOverrides);
+      if (bufBeforeMs > 0) forbidden.push([lessonStart - bufBeforeMs, lessonStart]);
+    }
+  }
+
+  for (const bt of blockedTimes) forbidden.push([bt.startsAt.getTime(), bt.endsAt.getTime()]);
+  for (const gbt of gcalBusyTimes) forbidden.push([gbt.startsAt.getTime(), gbt.endsAt.getTime()]);
+
+  const mergedForbidden = mergeIntervals(forbidden);
+
+  const committedMinutes = existingLessons
+    .filter((lesson) => getDateInLA(lesson.startsAt) === date)
+    .reduce((sum, lesson) => sum + lesson.durationMinutes, 0);
+  const capExceeded = committedMinutes + durationMinutes > config.maxDailyLessonMinutes;
+
+  const durationMs = durationMinutes * MIN_MS;
+  const nowMs = nowUtc.getTime();
+  const minMs = nowMs + config.bookingMinAdvanceHours * 60 * MIN_MS;
+  const maxMs = nowMs + config.bookingMaxAdvanceWeeks * 7 * 24 * 60 * MIN_MS;
+
+  const result: SlotWithState[] = [];
+
+  for (const [windowStart, windowEnd] of windows) {
+    const firstStart = Math.ceil(windowStart / FIFTEEN_MS) * FIFTEEN_MS;
+    for (let t = firstStart; t + durationMs <= windowEnd; t += FIFTEEN_MS) {
+      const slotEnd = t + durationMs;
+      let state: SlotState;
+
+      if (t < nowMs) {
+        state = "past";
+      } else if (t < minMs) {
+        state = "too_soon";
+      } else if (
+        capExceeded ||
+        mergedForbidden.some(([fStart, fEnd]) => t < fEnd && slotEnd > fStart)
+      ) {
+        state = "unavailable";
+      } else if (t > maxMs) {
+        state = "not_open_yet";
+      } else {
+        state = "available";
+      }
+
+      result.push({ startsAt: new Date(t).toISOString(), state });
+    }
+  }
+
+  return result;
 }

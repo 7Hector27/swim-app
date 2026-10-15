@@ -5,7 +5,6 @@ import { useActionState } from "react";
 import type { Club } from "@swim-app/shared";
 
 import SiteFooter from "@/components/SiteFooter";
-import SiteNav from "@/components/SiteNav";
 import SwimmerForm from "@/components/SwimmerForm";
 
 import { addSwimmer } from "./actions";
@@ -22,7 +21,6 @@ export default function AddSwimmerContent({ clubs }: AddSwimmerContentProps) {
 
   return (
     <div className="flex flex-col min-h-screen">
-      <SiteNav />
       <main className="flex-1 px-page py-12 tablet:py-16">
         <div className="mx-auto max-w-md">
           <a

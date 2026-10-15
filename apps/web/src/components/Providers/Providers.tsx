@@ -34,6 +34,8 @@ export default function Providers({
   role: "coach" | "parent" | null;
   isViewer: boolean;
 }) {
+  const showsTabBar = isSignedIn && (role === "parent" || role === "coach");
+
   return (
     <ThemeProvider
       attribute="data-theme"
@@ -43,6 +45,9 @@ export default function Providers({
     >
       <SessionContext.Provider value={{ isSignedIn, userName, role, isViewer }}>
         {children}
+        {showsTabBar && (
+          <div className="pb-tab-safe tablet:hidden" aria-hidden="true" />
+        )}
       </SessionContext.Provider>
     </ThemeProvider>
   );

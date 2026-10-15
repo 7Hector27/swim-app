@@ -3,7 +3,6 @@ import { todayLA } from "@swim-app/shared";
 
 import Placeholder from "@/components/Placeholder";
 import SiteFooter from "@/components/SiteFooter";
-import SiteNav from "@/components/SiteNav";
 import { fetchCoachSwimmers } from "@/lib/api/coachSwimmers";
 import { coachGetPendingLessons, fetchCoachSchedule, fetchCoachStats } from "@/lib/api/lessons";
 import BookingRequestsCard from "./BookingRequestsCard";
@@ -32,7 +31,6 @@ export default async function CoachDashboardContent({ accessToken }: Props) {
 
   return (
     <div className="flex flex-col min-h-screen bg-background">
-      <SiteNav />
 
       <main id="main-content" className="flex-1">
         <div className="mx-auto max-w-content px-page pt-10 pb-20 tablet:pt-14 tablet:pb-32">

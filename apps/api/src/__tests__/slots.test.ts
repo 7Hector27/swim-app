@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computeAvailableSlots } from "../lib/slots";
+import { computeAvailableSlots, classifyDaySlots } from "../lib/slots";
 import type { SlotParams } from "../lib/slots";
 import type { AvailabilityConfig } from "@swim-app/shared";
 
@@ -493,3 +493,174 @@ describe("computeAvailableSlots", () => {
   });
 });
 
+describe("classifyDaySlots", () => {
+  // ── Closed day ──────────────────────────────────────────────────────────────
+
+  it("returns [] for a day not in lessonDays", () => {
+    // Saturday = ISO 6, not in [1,2,3,5]
+    const result = classifyDaySlots(
+      makeBaseParams({ date: "2025-09-20", nowUtc: new Date("2025-09-19T00:00:00.000Z") }),
+    );
+    expect(result).toHaveLength(0);
+  });
+
+  // ── Returns all slots (not just available) ──────────────────────────────────
+
+  it("returns all teaching-window slots, not only available ones", () => {
+    // Block the first slot to produce at least one unavailable; everything else available.
+    const blockedTimes = [
+      { startsAt: new Date(pdt("16:30")), endsAt: new Date(pdt("17:00")) },
+    ];
+    const result = classifyDaySlots(makeBaseParams({ blockedTimes }));
+
+    // Without any lesson at all, computeAvailableSlots gives all 7 slots (16:30–19:30, 30 min).
+    // The total teaching window is 3 h = 6 × 30-min slots. With 30-min block at 16:30, there are
+    // still 5 available + at minimum 1 unavailable = more than the 5 available-only count.
+    const availableCount = result.filter((s) => s.state === "available").length;
+    const unavailableCount = result.filter((s) => s.state === "unavailable").length;
+    expect(unavailableCount).toBeGreaterThan(0);
+    expect(availableCount).toBeGreaterThan(0);
+    expect(result.length).toBeGreaterThan(availableCount);
+  });
+
+  // ── Slot states ─────────────────────────────────────────────────────────────
+
+  it("a blocked slot is 'unavailable'", () => {
+    // Block exactly 16:30–17:00 PDT. The 30-min slot starting at 16:30 is blocked.
+    const blocked = [{ startsAt: new Date(pdt("16:30")), endsAt: new Date(pdt("17:00")) }];
+    const result = classifyDaySlots(makeBaseParams({ blockedTimes: blocked }));
+    const slot = result.find((s) => s.startsAt === new Date(pdt("16:30")).toISOString());
+    expect(slot?.state).toBe("unavailable");
+  });
+
+  it("slot exactly at nowUtc + bookingMinAdvanceHours is 'available'", () => {
+    // First slot starts at pdt("16:30"). nowUtc = exactly 16 h before that.
+    const firstSlotMs = pdt("16:30");
+    const nowUtc = new Date(firstSlotMs - 16 * 60 * 60 * 1000);
+    const result = classifyDaySlots(makeBaseParams({ nowUtc }));
+    const slot = result.find((s) => s.startsAt === new Date(firstSlotMs).toISOString());
+    expect(slot?.state).toBe("available");
+  });
+
+  it("slot one second short of bookingMinAdvanceHours is 'too_soon'", () => {
+    const firstSlotMs = pdt("16:30");
+    const nowUtc = new Date(firstSlotMs - 16 * 60 * 60 * 1000 + 1_000);
+    const result = classifyDaySlots(makeBaseParams({ nowUtc }));
+    const slot = result.find((s) => s.startsAt === new Date(firstSlotMs).toISOString());
+    expect(slot?.state).toBe("too_soon");
+  });
+
+  it("slot in the past is 'past'", () => {
+    // nowUtc is AFTER the first slot: set nowUtc to an hour after the teaching window starts.
+    const nowUtc = new Date(pdt("17:30")); // inside the teaching window
+    const result = classifyDaySlots(makeBaseParams({ nowUtc }));
+    const pastSlots = result.filter((s) => s.state === "past");
+    expect(pastSlots.length).toBeGreaterThan(0);
+    // 16:30 slot is before nowUtc (17:30) → past
+    const firstSlot = result.find((s) => s.startsAt === new Date(pdt("16:30")).toISOString());
+    expect(firstSlot?.state).toBe("past");
+  });
+
+  it("slot beyond bookingMaxAdvanceWeeks is 'not_open_yet'", () => {
+    // Place nowUtc 11 weeks before the teaching window — first slot would be at 11 weeks away.
+    const firstSlotMs = pdt("16:30");
+    const nowUtc = new Date(firstSlotMs - 11 * 7 * 24 * 60 * 60 * 1000);
+    const result = classifyDaySlots(makeBaseParams({ nowUtc }));
+    expect(result.length).toBeGreaterThan(0);
+    expect(result.every((s) => s.state === "not_open_yet")).toBe(true);
+  });
+
+  // ── Daily cap ───────────────────────────────────────────────────────────────
+
+  it("when daily cap is reached, non-past/non-too_soon slots become 'unavailable'", () => {
+    // Fill up 240 min of daily cap with 4 × 60-min lessons on BASE_DATE.
+    const base = pdt("16:30");
+    const hourMs = 60 * 60 * 1000;
+    const existingLessons = [0, 1, 2, 3].map((index) => ({
+      startsAt: new Date(base + index * hourMs),
+      durationMinutes: 60,
+      locationId: "pool-A",
+    }));
+    const result = classifyDaySlots(makeBaseParams({ existingLessons, durationMinutes: 30 }));
+    // All slots must be unavailable (cap exceeded overrides available/not_open_yet)
+    expect(result.length).toBeGreaterThan(0);
+    for (const slot of result) {
+      expect(["unavailable", "past", "too_soon"]).toContain(slot.state);
+    }
+  });
+
+  // ── excludeLessonId behavior ────────────────────────────────────────────────
+
+  it("passing existingLessons without the excluded lesson frees its slot", () => {
+    // A lesson at 16:30 blocks that slot. When the caller removes it from existingLessons,
+    // the slot becomes available — verifying classifyDaySlots does not fetch its own lessons.
+    const lessonStart = new Date(pdt("16:30"));
+    const withLesson = classifyDaySlots(
+      makeBaseParams({ existingLessons: [{ startsAt: lessonStart, durationMinutes: 30, locationId: "pool-A" }] }),
+    );
+    const withoutLesson = classifyDaySlots(makeBaseParams({ existingLessons: [] }));
+
+    const slotWithLesson = withLesson.find((s) => s.startsAt === lessonStart.toISOString());
+    const slotWithoutLesson = withoutLesson.find((s) => s.startsAt === lessonStart.toISOString());
+
+    expect(slotWithLesson?.state).toBe("unavailable");
+    expect(slotWithoutLesson?.state).toBe("available");
+  });
+
+  // ── Summer / Seahawks gap ───────────────────────────────────────────────────
+
+  it("summer day: no slots appear in the Seahawks gap (11:00–19:00 PDT)", () => {
+    // July 15 2025 = Tuesday (ISO 2). Morning 07:00–11:00, evening 19:00–21:00 PDT.
+    const morningEndMs = new Date("2025-07-15T18:00:00.000Z").getTime(); // 11:00 PDT = 18:00 UTC
+    const eveningStartMs = new Date("2025-07-16T02:00:00.000Z").getTime(); // 19:00 PDT = 02:00 UTC next day
+
+    const result = classifyDaySlots(
+      makeBaseParams({ date: "2025-07-15", nowUtc: new Date("2025-07-14T00:00:00.000Z") }),
+    );
+
+    for (const slot of result) {
+      const t = new Date(slot.startsAt).getTime();
+      // No slot starts inside the gap [morningEnd, eveningStart)
+      expect(t < morningEndMs || t >= eveningStartMs).toBe(true);
+    }
+    expect(result.some((s) => new Date(s.startsAt).getTime() < morningEndMs)).toBe(true);
+    expect(result.some((s) => new Date(s.startsAt).getTime() >= eveningStartMs)).toBe(true);
+  });
+
+  // ── DST — spring forward (2025-03-09) ──────────────────────────────────────
+
+  it("spring-forward week: classifyDaySlots on 2025-03-09 returns 11 slots with correct UTC starts", () => {
+    const config = makeConfig({ lessonDays: [1, 2, 3, 5, 7] });
+    const nowUtc = new Date("2025-03-08T00:00:00.000Z");
+    const result = classifyDaySlots(makeBaseParams({ date: "2025-03-09", config, nowUtc }));
+    // 16:30–19:30 PDT = 11 × 30-min slots
+    expect(result).toHaveLength(11);
+    expect(result[0]?.startsAt).toBe("2025-03-09T23:30:00.000Z"); // 16:30 PDT
+    expect(result[10]?.startsAt).toBe("2025-03-10T02:00:00.000Z"); // 19:00 PDT
+    const starts = result.map((s) => s.startsAt);
+    expect(new Set(starts).size).toBe(starts.length); // no duplicate slots
+  });
+
+  // ── DST — fall back (2025-11-02) ───────────────────────────────────────────
+
+  it("fall-back week: classifyDaySlots on 2025-11-02 returns 11 slots with no duplicates", () => {
+    const config = makeConfig({ lessonDays: [1, 2, 3, 5, 7] });
+    const nowUtc = new Date("2025-11-01T00:00:00.000Z");
+    const result = classifyDaySlots(makeBaseParams({ date: "2025-11-02", config, nowUtc }));
+    // 16:30–19:30 PST = 11 × 30-min slots
+    expect(result).toHaveLength(11);
+    expect(result[0]?.startsAt).toBe("2025-11-03T00:30:00.000Z"); // 16:30 PST
+    expect(result[10]?.startsAt).toBe("2025-11-03T03:00:00.000Z"); // 19:00 PST
+    const starts = result.map((s) => s.startsAt);
+    expect(new Set(starts).size).toBe(starts.length);
+  });
+
+  // ── State ordering ──────────────────────────────────────────────────────────
+
+  it("result is sorted in ascending startsAt order", () => {
+    const result = classifyDaySlots(makeBaseParams());
+    for (let index = 1; index < result.length; index++) {
+      expect(result[index]!.startsAt >= result[index - 1]!.startsAt).toBe(true);
+    }
+  });
+});

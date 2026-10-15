@@ -1,5 +1,4 @@
 import SiteFooter from "@/components/SiteFooter";
-import SiteNav from "@/components/SiteNav";
 
 const lessonTypes = [
   {
@@ -22,7 +21,6 @@ const lessonTypes = [
 export default function LessonsContent() {
   return (
     <div className="flex flex-col min-h-screen">
-      <SiteNav />
       <main className="flex-1">
         <section className="bg-background">
           <div className="mx-auto max-w-content px-page py-16 tablet:py-24">

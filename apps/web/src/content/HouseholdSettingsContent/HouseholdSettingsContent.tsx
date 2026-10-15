@@ -1,7 +1,6 @@
 import type { HouseholdResponse, PendingInvite } from "@swim-app/shared";
 
 import SiteFooter from "@/components/SiteFooter";
-import SiteNav from "@/components/SiteNav";
 import InvitePanel from "./InvitePanel";
 import MemberList from "./MemberList";
 import RenameForm from "./RenameForm";
@@ -17,7 +16,6 @@ export default function HouseholdSettingsContent({ household, pendingInvite }: P
 
   return (
     <div className="flex flex-col min-h-screen bg-background">
-      <SiteNav />
 
       <main id="main-content" className="flex-1">
         <div className="mx-auto max-w-content px-page pt-10 pb-20 tablet:pt-14 tablet:pb-32">
