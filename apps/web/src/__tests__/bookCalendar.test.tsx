@@ -228,6 +228,24 @@ describe("BottomBar", () => {
     expect(screen.getByText(/Jason will confirm/)).toBeInTheDocument();
   });
 
+  it("button is disabled and shows pending label while isConfirming=true", () => {
+    render(
+      <BottomBar
+        selectedStartsAt="2026-10-14T23:15:00.000Z"
+        tooSoon={false}
+        durationMinutes={30}
+        swimmerIds={["s-1"]}
+        needsApproval={false}
+        onConfirm={noop}
+        isConfirming={true}
+        errorMessage={null}
+      />,
+    );
+    const btn = screen.getByRole("button", { name: /booking/i });
+    expect(btn).toBeDisabled();
+    expect(btn).toHaveTextContent("Booking…");
+  });
+
   it("does not show 'Jason will confirm' when needsApproval=false", () => {
     render(
       <BottomBar

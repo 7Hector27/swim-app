@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, useActionState, useEffect } from "react";
+import { useState, useTransition, useActionState, useEffect, startTransition } from "react";
 import { useRouter } from "next/navigation";
 import { todayLA } from "@swim-app/shared";
 import type { ParentSwimmer, WeekAvailabilityResponse } from "@swim-app/shared";
@@ -131,7 +131,9 @@ export default function BookCalendarContent({
     for (const id of swimmerIds) {
       form.append("swimmerIds", id);
     }
-    bookingFormAction(form);
+    startTransition(() => {
+      bookingFormAction(form);
+    });
   }
 
   const errorMessage =
