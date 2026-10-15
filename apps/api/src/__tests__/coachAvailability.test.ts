@@ -156,7 +156,7 @@ beforeEach(() => {
 // ── Auth fires exactly once per /coach/* request ──────────────────────────────
 
 describe("auth fires exactly once per /coach/* request", () => {
-  it("GET /coach/locations calls db.select exactly twice — once for profile lookup, once for data", async () => {
+  it("GET /coach/locations verifies the token exactly once", async () => {
     authAs(coachProfile);
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(coachProfile))
@@ -167,7 +167,7 @@ describe("auth fires exactly once per /coach/* request", () => {
       .set("Authorization", "Bearer token");
 
     expect(res.status).toBe(200);
-    expect(mockDbSelect).toHaveBeenCalledTimes(2);
+    expect(mockGetUser).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -161,7 +161,6 @@ export function createApp(logger: Logger) {
     res.json(body);
   }));
 
-
   app.use("/clubs", clubsRouter);
   app.use("/swimmers", swimmersRouter);
   app.use("/swimmers", parentProgressRouter);
