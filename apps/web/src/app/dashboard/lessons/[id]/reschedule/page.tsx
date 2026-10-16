@@ -29,5 +29,13 @@ export default async function ReschedulePage({ params }: { params: Promise<{ id:
 
   if (isViewer || lessonHasStarted) redirect(`/dashboard/lessons/${id}`);
 
-  return <RescheduleContent lesson={lesson} locations={locations} />;
+  return (
+    <div className="flex flex-col flex-1 bg-background">
+      <main id="main-content" className="flex-1">
+        <div className="mx-auto max-w-content px-page pt-10 pb-tab-safe tablet:pt-14 tablet:pb-32">
+          <RescheduleContent lesson={lesson} locations={locations} />
+        </div>
+      </main>
+    </div>
+  );
 }
