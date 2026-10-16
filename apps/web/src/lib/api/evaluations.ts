@@ -9,6 +9,8 @@ import {
   type SwimmerSkillsResponse,
   SwimmerProgressResponseSchema,
   type SwimmerProgressResponse,
+  GolfScoreTrendsResponseSchema,
+  type GolfScoreTrendsResponse,
 } from "@swim-app/shared";
 
 export type FetchCategoriesResult =
@@ -121,6 +123,25 @@ export async function fetchSwimmerProgress(
   } catch {
     return { ok: false, status: 500 };
   }
+}
+
+export type FetchGolfScoreTrendsResult =
+  | { ok: true; data: GolfScoreTrendsResponse }
+  | { ok: false; status: number };
+
+export async function fetchGolfScoreTrends(
+  swimmerId: string,
+  accessToken: string,
+): Promise<FetchGolfScoreTrendsResult> {
+  const res = await fetch(
+    `${process.env.NEXT_PUBLIC_API_URL}/coach/swimmers/${swimmerId}/golf-score-trends`,
+    { headers: { Authorization: `Bearer ${accessToken}` }, cache: "no-store" },
+  );
+  if (!res.ok) return { ok: false, status: res.status };
+  const body: unknown = await res.json();
+  const parsed = GolfScoreTrendsResponseSchema.safeParse(body);
+  if (!parsed.success) return { ok: false, status: 200 };
+  return { ok: true, data: parsed.data };
 }
 
 export type VoidRatingResult = { ok: true } | { ok: false; status: number };

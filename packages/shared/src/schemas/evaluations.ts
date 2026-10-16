@@ -380,6 +380,43 @@ export const DraftsListResponseSchema = z.object({
 });
 export type DraftsListResponse = z.infer<typeof DraftsListResponseSchema>;
 
+// ── Golf score trends schemas ──────────────────────────────────────────────
+
+export const GolfScoreTrendPointSchema = z.object({
+  ratedAt: z.string().datetime({ offset: true }),
+  sessionDate: z.string().date(),
+  grade: z.number().int().min(1).max(5).nullable(),
+  measurementValue: z.string().nullable(),
+});
+export type GolfScoreTrendPoint = z.infer<typeof GolfScoreTrendPointSchema>;
+
+export const GolfScoreAgeBandsSchema = z.object({
+  bandCount: z.number().int(),
+  p25: z.number().nullable(),
+  p50: z.number().nullable(),
+  p75: z.number().nullable(),
+});
+export type GolfScoreAgeBands = z.infer<typeof GolfScoreAgeBandsSchema>;
+
+export const GolfScoreCategoryTrendSchema = z.object({
+  category: GolfScoreCategorySchema,
+  points: z.array(GolfScoreTrendPointSchema),
+  ageBands: GolfScoreAgeBandsSchema.nullable(),
+});
+export type GolfScoreCategoryTrend = z.infer<typeof GolfScoreCategoryTrendSchema>;
+
+export const GolfScoreTrendSchema = z.object({
+  skillSlug: z.string(),
+  skillName: z.string(),
+  byCategory: z.array(GolfScoreCategoryTrendSchema),
+});
+export type GolfScoreTrend = z.infer<typeof GolfScoreTrendSchema>;
+
+export const GolfScoreTrendsResponseSchema = z.object({
+  trends: z.array(GolfScoreTrendSchema),
+});
+export type GolfScoreTrendsResponse = z.infer<typeof GolfScoreTrendsResponseSchema>;
+
 // Parent-facing progress schemas — no fault tags
 export const ParentProgressRatingPointSchema = ProgressRatingPointSchema.omit({ faultTags: true });
 export type ParentProgressRatingPoint = z.infer<typeof ParentProgressRatingPointSchema>;

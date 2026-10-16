@@ -6,7 +6,7 @@ import AccountInactiveScreen from "@/components/AccountInactiveScreen";
 import CoachSwimmerDetailContent from "@/content/CoachSwimmerDetailContent";
 import { requireAuth } from "@/lib/requireAuth";
 import { fetchCoachSwimmerDetail, fetchSwimmerTimeline } from "@/lib/api/coachSwimmers";
-import { fetchSwimmerSkills, fetchSkillCategories } from "@/lib/api/evaluations";
+import { fetchSwimmerSkills, fetchSkillCategories, fetchGolfScoreTrends } from "@/lib/api/evaluations";
 import { fetchSwimmerMeetSwims, fetchMeets } from "@/lib/api/meets";
 
 export const metadata: Metadata = {
@@ -21,7 +21,7 @@ export default async function CoachSwimmerPage({ params }: CoachSwimmerPageProps
   const [auth, { id }] = await Promise.all([requireAuth(), params]);
   if (!auth) return <AccountInactiveScreen />;
 
-  const [swimmerResult, skillsResult, categoriesResult, timelineResult, swimsResult, meetsResult, draftsRes] =
+  const [swimmerResult, skillsResult, categoriesResult, timelineResult, swimsResult, meetsResult, draftsRes, golfScoreTrendsResult] =
     await Promise.all([
       fetchCoachSwimmerDetail(id, auth.accessToken),
       fetchSwimmerSkills(id, auth.accessToken),
@@ -33,6 +33,7 @@ export default async function CoachSwimmerPage({ params }: CoachSwimmerPageProps
         headers: { Authorization: `Bearer ${auth.accessToken}` },
         cache: "no-store",
       }),
+      fetchGolfScoreTrends(id, auth.accessToken),
     ]);
 
   if (!swimmerResult.ok) {
@@ -51,6 +52,7 @@ export default async function CoachSwimmerPage({ params }: CoachSwimmerPageProps
   const meets = meetsResult.ok ? meetsResult.meets : [];
   const draftsData = draftsRes.ok ? await draftsRes.json().catch(() => ({ drafts: [] })) : { drafts: [] };
   const swimmerDrafts: EvaluationDraft[] = Array.isArray(draftsData.drafts) ? draftsData.drafts : [];
+  const golfScoreTrends = golfScoreTrendsResult.ok ? golfScoreTrendsResult.data.trends : [];
 
   return (
     <CoachSwimmerDetailContent
@@ -65,6 +67,7 @@ export default async function CoachSwimmerPage({ params }: CoachSwimmerPageProps
       personalBests={personalBests}
       meets={meets}
       drafts={swimmerDrafts}
+      golfScoreTrends={golfScoreTrends}
     />
   );
 }

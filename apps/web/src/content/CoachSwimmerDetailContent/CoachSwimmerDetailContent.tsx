@@ -1,10 +1,11 @@
 "use client";
 
 import { useActionState, useRef, useState } from "react";
-import { type CoachSwimmerDetail, type EvaluationDraft, type League, type CategoriesResponse, type SwimmerSkillsResponse, type StartGradeResult, type TimelineResponse, type MeetSwimResponse, type PersonalBest, type MeetResponse, VALID_EVENTS, SCREEN_NAMES } from "@swim-app/shared";
+import { type CoachSwimmerDetail, type EvaluationDraft, type GolfScoreTrend, type League, type CategoriesResponse, type SwimmerSkillsResponse, type StartGradeResult, type TimelineResponse, type MeetSwimResponse, type PersonalBest, type MeetResponse, VALID_EVENTS, SCREEN_NAMES } from "@swim-app/shared";
 
 import AddNoteForm from "@/components/AddNoteForm";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import GolfScoreTrends from "./GolfScoreTrends";
 import HidePublicButton from "./HidePublicButton";
 import SwimmerSkillsHistory from "./SwimmerSkillsHistory";
 import SwimmerTimeline from "./SwimmerTimeline";
@@ -23,6 +24,7 @@ interface CoachSwimmerDetailContentProps {
   personalBests: PersonalBest[];
   meets: MeetResponse[];
   drafts: EvaluationDraft[];
+  golfScoreTrends: GolfScoreTrend[];
 }
 
 const LEAGUE_LABELS: Record<League, string> = {
@@ -557,6 +559,7 @@ export default function CoachSwimmerDetailContent({
   personalBests,
   meets,
   drafts,
+  golfScoreTrends,
 }: CoachSwimmerDetailContentProps) {
 
   return (
@@ -773,6 +776,8 @@ export default function CoachSwimmerDetailContent({
             personalBests={personalBests}
             meets={meets}
           />
+
+          <GolfScoreTrends trends={golfScoreTrends} />
 
           <SwimmerSkillsHistory
             swimmerId={swimmer.id}

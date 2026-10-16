@@ -87,6 +87,8 @@ describe("CoachSwimmerDetailContent", () => {
         swims={[]}
         personalBests={[]}
         meets={[]}
+        drafts={[]}
+        golfScoreTrends={[]}
       />,
     );
     const link = screen.getByRole("link", { name: /evaluate alex/i });
@@ -109,6 +111,8 @@ describe("CoachSwimmerDetailContent", () => {
         swims={[]}
         personalBests={[]}
         meets={[]}
+        drafts={[]}
+        golfScoreTrends={[]}
       />,
     );
     // Grade "3" should appear inside Current Levels
@@ -128,6 +132,8 @@ describe("CoachSwimmerDetailContent", () => {
         swims={[]}
         personalBests={[]}
         meets={[]}
+        drafts={[]}
+        golfScoreTrends={[]}
       />,
     );
     expect(
@@ -149,6 +155,8 @@ describe("CoachSwimmerDetailContent", () => {
         swims={[]}
         personalBests={[]}
         meets={[]}
+        drafts={[]}
+        golfScoreTrends={[]}
       />,
     );
     const history = screen.getByTestId("skills-history");

@@ -240,3 +240,38 @@ Commits: ba8513d (PR 1), 25aff41 (PR 2), 55cd0a9 (PR 3 partial), 0e73a58 (DB mig
 | Swimmer profile: recommended breathing pattern field | **Done** — 1c1793a |
 | Tests (POST /sessions, GET /screens, golf score category, water-confidence context, search) | **Done** — 1c1793a, 10676c0 |
 | Golf score trend: age-group bands at threshold 10 (confirm with Jason); trend-only below threshold | **Not done** — separate PR |
+
+### PR 4 — Evaluation drafts ✓ (done, commit e440999)
+
+| Item | Status |
+|---|---|
+| `evaluation_drafts` DB table (one per coach+swimmer+screen; upserted on save, deleted on finalize) | **Done** |
+| `EvaluationDraftSchema`, `DraftSkillPayloadSchema`, `SaveDraftBodySchema`, `DraftsListResponseSchema` in shared | **Done** |
+| GET/POST/DELETE /coach/swimmers/:id/drafts | **Done** |
+| EvaluateContent: auto-save draft on every change; resume draft on entry | **Done** |
+| Tests | **Done** |
+
+---
+
+## PR 5 — Golf score trend on swimmer profile ✓ (done)
+
+### What was built
+
+- **Shared schema** (`packages/shared/src/schemas/evaluations.ts`): `GolfScoreTrendPointSchema`, `GolfScoreAgeBandsSchema`, `GolfScoreCategoryTrendSchema`, `GolfScoreTrendSchema`, `GolfScoreTrendsResponseSchema` — all exported from `packages/shared/src/index.ts`.
+- **API route** `GET /coach/swimmers/:id/golf-score-trends`: queries non-voided score-type ratings with a non-null `golfScoreCategory`, groups by skill then by category, computes age-group percentile bands (P25/P50/P75) when ≥ 10 cohort swimmers have a value, returns `GolfScoreTrendsResponse`.
+- **Web API function** `fetchGolfScoreTrends` in `apps/web/src/lib/api/evaluations.ts`.
+- **`GolfScoreTrends` component** in `apps/web/src/content/CoachSwimmerDetailContent/GolfScoreTrends.tsx`: lists points newest-first per category; shows age-group bands when present; renders nothing when `trends` is empty.
+- **page.tsx** (`apps/web/src/app/coach/swimmers/[id]/page.tsx`): added `fetchGolfScoreTrends` to the parallel `Promise.all`; passes `golfScoreTrends` to `CoachSwimmerDetailContent`.
+- **`CoachSwimmerDetailContent`**: added `golfScoreTrends: GolfScoreTrend[]` prop; renders `<GolfScoreTrends>` before `SwimmerSkillsHistory`.
+- **Tests** (`apps/api/src/__tests__/golfScoreTrends.test.ts`): 6 tests — 401, 403, 404, empty trends, trends with data, null age bands below threshold.
+
+| Item | Status |
+|---|---|
+| Shared schemas (5 new schemas + types) | **Done** |
+| API route GET /coach/swimmers/:id/golf-score-trends | **Done** |
+| Age-group band calculation (P25/P50/P75, threshold 10) | **Done** |
+| fetchGolfScoreTrends web API function | **Done** |
+| GolfScoreTrends component | **Done** |
+| page.tsx integration | **Done** |
+| CoachSwimmerDetailContent props update | **Done** |
+| 6 API unit tests | **Done** |

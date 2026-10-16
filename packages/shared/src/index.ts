@@ -310,6 +310,11 @@ export type {
   SaveDraftBody,
   EvaluationDraft,
   DraftsListResponse,
+  GolfScoreTrendPoint,
+  GolfScoreAgeBands,
+  GolfScoreCategoryTrend,
+  GolfScoreTrend,
+  GolfScoreTrendsResponse,
 } from "./schemas/evaluations";
 export {
   EvaluationContextSchema,
@@ -338,6 +343,11 @@ export {
   SaveDraftBodySchema,
   EvaluationDraftSchema,
   DraftsListResponseSchema,
+  GolfScoreTrendPointSchema,
+  GolfScoreAgeBandsSchema,
+  GolfScoreCategoryTrendSchema,
+  GolfScoreTrendSchema,
+  GolfScoreTrendsResponseSchema,
 } from "./schemas/evaluations";
 export type {
   SkillCurrentLevel,
