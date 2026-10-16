@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useRef } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { CategoriesResponse, CoachNoteType } from "@swim-app/shared";
 
@@ -35,15 +35,29 @@ export default function AddNoteForm({
 }: AddNoteFormProps) {
   const router = useRouter();
   const formRef = useRef<HTMLFormElement>(null);
+  const errorRef = useRef<HTMLParagraphElement>(null);
   const boundAction = createNoteAction.bind(null, swimmerId, sessionId ?? null, lessonId ?? null);
   const [state, formAction, isPending] = useActionState<NoteActionState, FormData>(boundAction, INITIAL);
+
+  const [noteType, setNoteType] = useState<string>("observation");
+  const [skillId, setSkillId] = useState<string>("");
+  const [body, setBody] = useState<string>("");
 
   useEffect(() => {
     if (state.status === "success") {
       formRef.current?.reset();
+      setBody("");
+      setNoteType("observation");
+      setSkillId("");
       router.refresh();
     }
   }, [state.status, router]);
+
+  useEffect(() => {
+    if (state.status === "error") {
+      errorRef.current?.focus();
+    }
+  }, [state]);
 
   const allSkills = categories.flatMap((cat) =>
     cat.skills.map((skill) => ({ id: skill.id, name: skill.name, category: cat.name })),
@@ -54,14 +68,27 @@ export default function AddNoteForm({
       <span className="text-xs font-semibold text-text-secondary">{label}</span>
 
       <div className="flex gap-2 flex-wrap">
-        <select name="noteType" defaultValue="observation" disabled={isPending} className={selectClass}>
+        <select
+          name="noteType"
+          value={noteType}
+          onChange={(e) => setNoteType(e.target.value)}
+          disabled={isPending}
+          className={selectClass}
+        >
           {NOTE_TYPES.map(({ value, label: optLabel }) => (
             <option key={value} value={value}>{optLabel}</option>
           ))}
         </select>
 
         {allSkills.length > 0 && (
-          <select name="skillId" defaultValue="" disabled={isPending} className={selectClass} aria-label="Tie to skill (optional)">
+          <select
+            name="skillId"
+            value={skillId}
+            onChange={(e) => setSkillId(e.target.value)}
+            disabled={isPending}
+            className={selectClass}
+            aria-label="Tie to skill (optional)"
+          >
             <option value="">No skill</option>
             {allSkills.map((skill) => (
               <option key={skill.id} value={skill.id}>{skill.name}</option>
@@ -76,11 +103,22 @@ export default function AddNoteForm({
         required
         disabled={isPending}
         placeholder="Write a note…"
+        value={body}
+        onChange={(e) => setBody(e.target.value)}
         className="w-full rounded-lg border border-border bg-background text-text text-sm px-3 py-2 resize-none placeholder:text-text-secondary focus:outline-none focus:ring-2 focus:ring-[var(--color-focus-ring)] disabled:opacity-50"
       />
 
       {state.status === "error" && (
-        <p className="text-sm text-danger" role="alert">{state.message}</p>
+        <p
+          ref={errorRef}
+          role="alert"
+          aria-live="assertive"
+          tabIndex={-1}
+          style={{ outline: "none" }}
+          className="text-sm text-danger"
+        >
+          {state.message}
+        </p>
       )}
       {state.status === "success" && (
         <p className="text-sm text-success" role="status">Note saved.</p>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useState } from "react";
 
 import type { Club, SwimmerClubInput } from "@swim-app/shared";
 
@@ -11,8 +11,6 @@ type SwimmerFormState =
   | { status: "idle" }
   | { status: "error"; message: string }
   | { status: "field_errors"; errors: Record<string, string> };
-
-type OtherClub = { id: number; value: string };
 
 interface SwimmerFormInitialValues {
   firstName?: string;
@@ -45,18 +43,6 @@ export default function SwimmerForm({
   swimmerId,
   initialValues,
 }: SwimmerFormProps) {
-  const initClubIds = initialValues?.clubs
-    ?.filter((c): c is { clubId: string } => "clubId" in c)
-    .map((c) => c.clubId) ?? [];
-  const initOtherClubs: OtherClub[] = initialValues?.clubs
-    ?.filter((c): c is { otherClubName: string } => "otherClubName" in c)
-    .map((c, index) => ({ id: index + 1, value: c.otherClubName })) ?? [];
-
-  const otherIdRef = useRef(initOtherClubs.length);
-  const [selectedClubIds, setSelectedClubIds] = useState<Set<string>>(
-    () => new Set(initClubIds),
-  );
-  const [otherClubs, setOtherClubs] = useState<OtherClub[]>(() => initOtherClubs);
   const [isPublicValue, setIsPublicValue] = useState<"yes" | "no" | null>(
     () =>
       initialValues?.isPublic === true
@@ -66,59 +52,78 @@ export default function SwimmerForm({
           : null,
   );
 
+  // "yes" / "no" / null (null = not yet chosen, only possible in add mode)
+  const [onTeam, setOnTeam] = useState<"yes" | "no" | null>(() => {
+    if (initialValues === undefined) return null;
+    return (initialValues.clubs?.length ?? 0) > 0 ? "yes" : "no";
+  });
+
+  // "" = not yet picked, "other" = other, or a club UUID
+  const [clubSelection, setClubSelection] = useState<string>(() => {
+    const first = initialValues?.clubs?.[0];
+    if (!first) return "";
+    return "clubId" in first ? first.clubId : "other";
+  });
+
+  const [otherClubName, setOtherClubName] = useState<string>(() => {
+    const first = initialValues?.clubs?.[0];
+    if (!first || "clubId" in first) return "";
+    return first.otherClubName;
+  });
+
   const fieldErrors = state.status === "field_errors" ? state.errors : {};
   const topError = state.status === "error" ? state.message : null;
 
   const showPublicToPrivateNote =
     mode === "edit" && initialValues?.isPublic === true && isPublicValue === "no";
 
-  function toggleClub(clubId: string) {
-    setSelectedClubIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(clubId)) {
-        next.delete(clubId);
-      } else {
-        next.add(clubId);
-      }
-      return next;
-    });
-  }
+  // Build the clubs payload for the hidden input
+  const clubsJson = (() => {
+    if (onTeam !== "yes" || clubSelection === "") return "[]";
 
-  function toggleOther(checked: boolean) {
-    if (checked) {
-      otherIdRef.current += 1;
-      setOtherClubs([{ id: otherIdRef.current, value: "" }]);
+    let current: SwimmerClubInput;
+    if (clubSelection === "other") {
+      const trimmed = otherClubName.trim();
+      if (!trimmed) return "[]";
+      current = { otherClubName: trimmed };
     } else {
-      setOtherClubs([]);
+      current = { clubId: clubSelection };
     }
-  }
 
-  function updateOtherValue(entryId: number, value: string) {
-    setOtherClubs((prev) =>
-      prev.map((entry) => (entry.id === entryId ? { ...entry, value } : entry)),
-    );
-  }
+    // In edit mode, preserve extra clubs when the first club hasn't changed
+    if (mode === "edit") {
+      const initialFirst = initialValues?.clubs?.[0];
+      const extras = initialValues?.clubs?.slice(1) ?? [];
+      const unchanged =
+        !!initialFirst &&
+        (("clubId" in current &&
+          "clubId" in initialFirst &&
+          current.clubId === initialFirst.clubId) ||
+          ("otherClubName" in current &&
+            "otherClubName" in initialFirst &&
+            current.otherClubName === initialFirst.otherClubName));
+      if (unchanged && extras.length > 0) {
+        return JSON.stringify([current, ...extras]);
+      }
+    }
 
-  function removeOtherEntry(entryId: number) {
-    setOtherClubs((prev) => prev.filter((entry) => entry.id !== entryId));
-  }
-
-  function addOtherEntry() {
-    otherIdRef.current += 1;
-    setOtherClubs((prev) => [...prev, { id: otherIdRef.current, value: "" }]);
-  }
-
-  const clubsJson = JSON.stringify([
-    ...[...selectedClubIds].map((id) => ({ clubId: id })),
-    ...otherClubs
-      .filter((entry) => entry.value.trim().length > 0)
-      .map((entry) => ({ otherClubName: entry.value.trim() })),
-  ]);
+    return JSON.stringify([current]);
+  })();
 
   const initialJson =
     mode === "edit" && initialValues ? JSON.stringify(initialValues) : null;
 
-  const isSubmitDisabled = (mode === "add" && isPublicValue === null) || isPending;
+  const clubSelectionComplete =
+    onTeam !== "yes" ||
+    (clubSelection !== "" && clubSelection !== "other") ||
+    (clubSelection === "other" && otherClubName.trim() !== "");
+
+  const isSubmitDisabled =
+    onTeam === null ||
+    !clubSelectionComplete ||
+    (mode === "add" && isPublicValue === null) ||
+    isPending;
+
   const submitLabel = mode === "add" ? "Add swimmer" : "Save changes";
   const pendingLabel = mode === "add" ? "Adding swimmer…" : "Saving…";
 
@@ -216,70 +221,90 @@ export default function SwimmerForm({
       </fieldset>
 
       {/* Clubs */}
-      <fieldset className="flex flex-col gap-2">
+      <fieldset className="flex flex-col gap-3">
         <legend className="text-sm font-semibold text-text">
-          Clubs <span className="font-normal text-text-secondary">(optional)</span>
+          Is your swimmer on a swim club or team?
         </legend>
-        <div className="flex flex-col gap-2 mt-1">
-          {clubs.map((club) => (
-            <label
-              key={club.id}
-              className="flex items-center gap-2.5 cursor-pointer text-sm text-text min-h-[44px]"
-            >
-              <input
-                type="checkbox"
-                checked={selectedClubIds.has(club.id)}
-                onChange={() => toggleClub(club.id)}
-                className="w-4 h-4 shrink-0 accent-button-primary-background"
-              />
-              {club.name}
-            </label>
-          ))}
-
-          {/* Other */}
-          <label className="flex items-center gap-2.5 cursor-pointer text-sm text-text min-h-[44px]">
+        <div className="flex gap-6">
+          <label className="flex items-center gap-2 cursor-pointer text-sm text-text min-h-[44px]">
             <input
-              type="checkbox"
-              checked={otherClubs.length > 0}
-              onChange={(event) => toggleOther(event.target.checked)}
-              className="w-4 h-4 shrink-0 accent-button-primary-background"
+              type="radio"
+              name="onTeam"
+              value="yes"
+              checked={onTeam === "yes"}
+              onChange={() => setOnTeam("yes")}
+              className="accent-button-primary-background"
+              aria-describedby={fieldErrors["clubs"] ? "clubs-error" : undefined}
             />
-            Other
+            Yes
           </label>
-
-          {otherClubs.length > 0 && (
-            <div className="ml-[26px] flex flex-col gap-2">
-              {otherClubs.map((entry) => (
-                <div key={entry.id} className="flex gap-2 items-center">
-                  <input
-                    type="text"
-                    value={entry.value}
-                    onChange={(event) => updateOtherValue(entry.id, event.target.value)}
-                    placeholder="Club name"
-                    className="flex-1 h-10 px-3 rounded-lg border border-border bg-background text-text placeholder:text-text-secondary text-sm focus:outline-none focus:border-accent"
-                  />
-                  {otherClubs.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => removeOtherEntry(entry.id)}
-                      aria-label="Remove this club"
-                      className="text-sm text-text-secondary hover:text-danger px-2 min-h-[44px]"
-                    >
-                      Remove
-                    </button>
-                  )}
-                </div>
-              ))}
-              <button
-                type="button"
-                onClick={addOtherEntry}
-                className="text-sm text-link hover:text-link-hover self-start min-h-[44px]"
-              >
-                + Add another club
-              </button>
-            </div>
-          )}
+          <label className="flex items-center gap-2 cursor-pointer text-sm text-text min-h-[44px]">
+            <input
+              type="radio"
+              name="onTeam"
+              value="no"
+              checked={onTeam === "no"}
+              onChange={() => {
+                setOnTeam("no");
+                setClubSelection("");
+                setOtherClubName("");
+              }}
+              className="accent-button-primary-background"
+            />
+            No
+          </label>
         </div>
+
+        {onTeam === "yes" && (
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="clubSelect" className="sr-only">
+                Club or team
+              </label>
+              <select
+                id="clubSelect"
+                value={clubSelection}
+                onChange={(event) => {
+                  setClubSelection(event.target.value);
+                  if (event.target.value !== "other") setOtherClubName("");
+                }}
+                className="h-11 rounded-[8px] border border-border bg-background text-text px-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
+                aria-describedby={fieldErrors["clubs"] ? "clubs-error" : undefined}
+              >
+                <option value="" disabled>
+                  Select a club…
+                </option>
+                {clubs.map((club) => (
+                  <option key={club.id} value={club.id}>
+                    {club.name}
+                  </option>
+                ))}
+                <option value="other">Other (not listed)</option>
+              </select>
+            </div>
+
+            {clubSelection === "other" && (
+              <div className="flex flex-col gap-1.5">
+                <label htmlFor="otherClubName" className="text-sm font-semibold text-text">
+                  Club name
+                </label>
+                <input
+                  id="otherClubName"
+                  type="text"
+                  value={otherClubName}
+                  onChange={(event) => setOtherClubName(event.target.value)}
+                  placeholder="Enter club or team name"
+                  className={inputClass}
+                />
+              </div>
+            )}
+          </div>
+        )}
+
+        {onTeam === null && mode === "add" && (
+          <p className="text-text-secondary text-xs">Please select Yes or No to continue.</p>
+        )}
+
         <FieldError id="clubs-error" message={fieldErrors["clubs"]} />
       </fieldset>
 

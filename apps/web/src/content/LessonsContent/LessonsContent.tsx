@@ -1,5 +1,3 @@
-import SiteFooter from "@/components/SiteFooter";
-
 const lessonTypes = [
   {
     title: "[Lesson type]",
@@ -20,7 +18,7 @@ const lessonTypes = [
 
 export default function LessonsContent() {
   return (
-    <div className="flex flex-col min-h-screen">
+    <div className="flex flex-col flex-1">
       <main className="flex-1">
         <section className="bg-background">
           <div className="mx-auto max-w-content px-page py-16 tablet:py-24">
@@ -52,7 +50,6 @@ export default function LessonsContent() {
           </div>
         </section>
       </main>
-      <SiteFooter />
     </div>
   );
 }

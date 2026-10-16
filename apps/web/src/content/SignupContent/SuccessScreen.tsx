@@ -1,8 +1,6 @@
-import SiteFooter from "@/components/SiteFooter";
-
 export default function SuccessScreen() {
   return (
-    <div className="flex flex-col min-h-screen">
+    <div className="flex flex-col flex-1">
       <main className="flex-1 flex items-center justify-center px-page py-16">
         <div className="w-full max-w-sm text-center">
           <h1 className="text-heading mb-4">Check your email</h1>
@@ -12,7 +10,6 @@ export default function SuccessScreen() {
           </p>
         </div>
       </main>
-      <SiteFooter />
     </div>
   );
 }

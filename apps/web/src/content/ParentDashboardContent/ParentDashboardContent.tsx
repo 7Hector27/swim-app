@@ -3,7 +3,6 @@ import Link from "next/link";
 import { calculateAge, todayLA, type MeResponse } from "@swim-app/shared";
 
 import Placeholder from "@/components/Placeholder";
-import SiteFooter from "@/components/SiteFooter";
 import { fetchHousehold } from "@/lib/api/households";
 import { fetchLesson, fetchUpcomingLessons } from "@/lib/api/lessons";
 import { fetchSwimmers } from "@/lib/api/swimmers";
@@ -34,7 +33,7 @@ export default async function ParentDashboardContent({ profile, accessToken, boo
   const isViewer = householdRole === "viewer";
 
   return (
-    <div className="flex flex-col min-h-screen bg-background">
+    <div className="flex flex-col flex-1 bg-background">
 
       {bookedLesson && <BookingConfirmDialog lesson={bookedLesson} />}
 
@@ -102,8 +101,6 @@ export default async function ParentDashboardContent({ profile, accessToken, boo
           </div>
         </div>
       </main>
-
-      <SiteFooter />
     </div>
   );
 }

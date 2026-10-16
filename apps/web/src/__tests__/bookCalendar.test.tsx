@@ -7,6 +7,7 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("../content/BookCalendarContent/actions", () => ({
   fetchRangeAction: vi.fn().mockResolvedValue(null),
+  findFirstAvailableDayAction: vi.fn().mockResolvedValue(null),
   createBookingAction: vi.fn(),
 }));
 
@@ -18,6 +19,7 @@ import {
   isHourMark,
   buildGridRows,
   isInSelectionSpan,
+  firstAvailableDayInWeek,
 } from "../content/BookCalendarContent/helpers";
 import { lessonPrice, PRICING_ROWS } from "../lib/pricing";
 import type { WeekDayAvailability } from "@swim-app/shared";
@@ -115,6 +117,41 @@ describe("isInSelectionSpan", () => {
 
   it("before span is not included", () => {
     expect(isInSelectionSpan("16:00", "16:15", 30)).toBe(false);
+  });
+});
+
+describe("firstAvailableDayInWeek", () => {
+  function makeAvailDay(date: string, dayState: WeekDayAvailability["dayState"], openCount: number): WeekDayAvailability {
+    return { date, dayState, openCount, totalCount: openCount, teachingWindows: [], slots: [] };
+  }
+
+  it("returns today when today is open with available slots", () => {
+    const days = [makeAvailDay("2026-10-15", "open", 3)];
+    expect(firstAvailableDayInWeek(days, "2026-10-15")).toBe("2026-10-15");
+  });
+
+  it("skips today and returns next open day when today is closed", () => {
+    const days = [
+      makeAvailDay("2026-10-15", "closed", 0),
+      makeAvailDay("2026-10-16", "open", 2),
+    ];
+    expect(firstAvailableDayInWeek(days, "2026-10-15")).toBe("2026-10-16");
+  });
+
+  it("skips today and returns next open day when today is fully booked", () => {
+    const days = [
+      makeAvailDay("2026-10-15", "open", 0),
+      makeAvailDay("2026-10-16", "open", 1),
+    ];
+    expect(firstAvailableDayInWeek(days, "2026-10-15")).toBe("2026-10-16");
+  });
+
+  it("returns null when no open days with available slots", () => {
+    const days = [
+      makeAvailDay("2026-10-15", "closed", 0),
+      makeAvailDay("2026-10-16", "closed", 0),
+    ];
+    expect(firstAvailableDayInWeek(days, "2026-10-15")).toBeNull();
   });
 });
 
@@ -515,9 +552,10 @@ import BookCalendarContent from "../content/BookCalendarContent/BookCalendarCont
 describe("BookCalendarContent", () => {
   beforeEach(() => {
     vi.mocked(actions.fetchRangeAction).mockResolvedValue(null);
+    vi.mocked(actions.findFirstAvailableDayAction).mockResolvedValue(null);
   });
 
-  it("calls fetchRangeAction without swimmers when rendered with no swimmerIds", async () => {
+  it("calls findFirstAvailableDayAction on initial render", async () => {
     await act(async () => {
       render(
         <BookCalendarContent
@@ -527,7 +565,7 @@ describe("BookCalendarContent", () => {
         />,
       );
     });
-    expect(actions.fetchRangeAction).toHaveBeenCalledWith(
+    expect(actions.findFirstAvailableDayAction).toHaveBeenCalledWith(
       expect.objectContaining({ locationId: "loc-1" }),
     );
   });

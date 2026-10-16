@@ -1,11 +1,10 @@
 "use client";
 
-import { useActionState, useRef, useState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 
 import { calculateAge, todayLA } from "@swim-app/shared";
 
 import Button from "@/components/Button";
-import SiteFooter from "@/components/SiteFooter";
 
 import { signup } from "./actions";
 import AgeBlockedScreen from "./AgeBlockedScreen";
@@ -23,8 +22,19 @@ export default function SignupContent({ returnTo }: SignupContentProps) {
   const [state, formAction, isPending] = useActionState(signup, initialState);
   const [clientAgeBlocked, setClientAgeBlocked] = useState(false);
   const [confirmPasswordError, setConfirmPasswordError] = useState("");
+  const [fullName, setFullName] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [birthDate, setBirthDate] = useState("");
   const passwordRef = useRef<HTMLInputElement>(null);
   const confirmPasswordRef = useRef<HTMLInputElement>(null);
+  const errorRef = useRef<HTMLParagraphElement>(null);
+
+  useEffect(() => {
+    if (state.status === "error" || state.status === "field_errors") {
+      errorRef.current?.focus();
+    }
+  }, [state]);
 
   if (clientAgeBlocked || state.status === "age_blocked") return <AgeBlockedScreen />;
   if (state.status === "success") return <SuccessScreen />;
@@ -45,7 +55,7 @@ export default function SignupContent({ returnTo }: SignupContentProps) {
   }
 
   return (
-    <div className="flex flex-col min-h-screen">
+    <div className="flex flex-col flex-1">
       <main className="flex-1 flex items-center justify-center px-page py-16">
         <div className="w-full max-w-md">
           <h1 className="text-heading mb-2">Create account</h1>
@@ -55,7 +65,14 @@ export default function SignupContent({ returnTo }: SignupContentProps) {
             {returnTo !== undefined && (
               <input type="hidden" name="returnTo" value={returnTo} />
             )}
-            <p aria-live="polite" className="text-danger text-sm min-h-5">
+            <p
+              ref={errorRef}
+              role="alert"
+              aria-live="assertive"
+              tabIndex={-1}
+              style={{ outline: "none" }}
+              className="text-danger text-sm min-h-5"
+            >
               {topError}
             </p>
 
@@ -69,6 +86,8 @@ export default function SignupContent({ returnTo }: SignupContentProps) {
                 type="text"
                 autoComplete="name"
                 required
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
                 className="h-12 px-4 rounded-lg border border-border bg-background text-text placeholder:text-text-secondary"
               />
               <FieldError message={fieldErrors["fullName"]} />
@@ -84,6 +103,8 @@ export default function SignupContent({ returnTo }: SignupContentProps) {
                 type="email"
                 autoComplete="email"
                 required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 className="h-12 px-4 rounded-lg border border-border bg-background text-text placeholder:text-text-secondary"
               />
               <FieldError message={fieldErrors["email"]} />
@@ -99,6 +120,8 @@ export default function SignupContent({ returnTo }: SignupContentProps) {
                 name="phone"
                 type="tel"
                 autoComplete="tel"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
                 className="h-12 px-4 rounded-lg border border-border bg-background text-text placeholder:text-text-secondary"
               />
               <FieldError message={fieldErrors["phone"]} />
@@ -150,7 +173,9 @@ export default function SignupContent({ returnTo }: SignupContentProps) {
                 type="date"
                 autoComplete="bday"
                 required
+                value={birthDate}
                 onChange={(event) => {
+                  setBirthDate(event.target.value);
                   if (event.target.value) {
                     setClientAgeBlocked(calculateAge(event.target.value, todayLA()) < 18);
                   }
@@ -197,7 +222,6 @@ export default function SignupContent({ returnTo }: SignupContentProps) {
           </p>
         </div>
       </main>
-      <SiteFooter />
     </div>
   );
 }

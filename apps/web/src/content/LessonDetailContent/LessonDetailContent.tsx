@@ -1,14 +1,13 @@
 "use client";
 
-import { useRef, useActionState, useTransition, useState } from "react";
+import { useRef, useActionState, useTransition, useState, useEffect } from "react";
 import Link from "next/link";
 
 import type { AvailableSlot, LessonLocation, UpcomingLesson } from "@swim-app/shared";
 
 import AddNoteForm from "@/components/AddNoteForm";
 import ConfirmDialog from "@/components/ConfirmDialog";
-import SiteFooter from "@/components/SiteFooter";
-import { fetchSlotsDirectAction } from "@/content/BookCalendarContent/actions";
+import { fetchSlotsDirectAction, findFirstAvailableDayAction } from "@/content/BookCalendarContent/actions";
 import { cancelLessonAction, rescheduleLessonAction, type LessonDetailState } from "./actions";
 
 interface Props {
@@ -39,7 +38,49 @@ export default function LessonDetailContent({ lesson, locations, isViewer, isCoa
   const [rescheduleSlot, setRescheduleSlot] = useState<string | null>(null);
   const [availableSlots, setAvailableSlots] = useState<AvailableSlot[]>([]);
   const [slotsError, setSlotsError] = useState<string | null>(null);
+  const [noRescheduleAvailability, setNoRescheduleAvailability] = useState(false);
   const [isFetchingSlots, startFetchingSlots] = useTransition();
+
+  const todayLAStr = new Date().toLocaleDateString("sv", { timeZone: "America/Los_Angeles" });
+
+  const lessonHasStarted = new Date() >= new Date(lesson.startsAt);
+
+  useEffect(() => {
+    if (lessonHasStarted) return;
+    setNoRescheduleAvailability(false);
+    setRescheduleDate("");
+    setAvailableSlots([]);
+    setRescheduleSlot(null);
+    setSlotsError(null);
+    startFetchingSlots(async () => {
+      const result = await findFirstAvailableDayAction({
+        fromDate: todayLAStr,
+        durationMinutes: rescheduleDuration,
+        locationId: rescheduleLocationId,
+        excludeLessonId: lesson.id,
+      });
+      if (result === null) {
+        setSlotsError("Could not load availability. Try again.");
+        return;
+      }
+      if (result.firstAvailableDate === null) {
+        setNoRescheduleAvailability(true);
+        return;
+      }
+      setRescheduleDate(result.firstAvailableDate);
+      const slotsResult = await fetchSlotsDirectAction(
+        result.firstAvailableDate,
+        rescheduleDuration,
+        rescheduleLocationId,
+      );
+      if ("error" in slotsResult) {
+        setSlotsError(slotsResult.error);
+      } else {
+        setAvailableSlots(slotsResult.slots);
+      }
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rescheduleLocationId, rescheduleDuration]);
 
   const canFindSlots = rescheduleLocationId && rescheduleDate;
 
@@ -71,16 +112,15 @@ export default function LessonDetailContent({ lesson, locations, isViewer, isCoa
   const lessonType = lesson.type === "private" ? "Private lesson" : "Family lesson";
   const swimmerNames = lesson.swimmers.map((swimmer) => swimmer.firstName).join(", ");
 
-  const todayLA = new Date().toLocaleDateString("sv", { timeZone: "America/Los_Angeles" });
   const maxDateLA = new Date(Date.now() + 70 * 24 * 60 * 60 * 1000).toLocaleDateString("sv", {
     timeZone: "America/Los_Angeles",
   });
 
   return (
-    <div className="flex flex-col min-h-screen bg-background">
+    <div className="flex flex-col flex-1 bg-background">
 
       <main id="main-content" className="flex-1">
-        <div className="mx-auto max-w-content px-page pt-10 pb-tab-safe tablet:pt-14 tablet:pb-32">
+        <div className="mx-auto max-w-content px-page pt-10 pb-20 tablet:pt-14 tablet:pb-32">
           <Link
             href="/dashboard"
             className="inline-flex items-center gap-1.5 text-sm font-semibold text-link hover:text-link-hover transition-colors duration-150 mb-6"
@@ -118,7 +158,7 @@ export default function LessonDetailContent({ lesson, locations, isViewer, isCoa
               </dl>
             </div>
 
-            {!isViewer && (
+            {!isViewer && !lessonHasStarted && (
               <>
                 {/* Reschedule */}
                 <div className="rounded-card border border-border p-5 tablet:p-6">
@@ -162,7 +202,7 @@ export default function LessonDetailContent({ lesson, locations, isViewer, isCoa
                       <input
                         id="reschedule-date"
                         type="date"
-                        min={todayLA}
+                        min={todayLAStr}
                         max={maxDateLA}
                         value={rescheduleDate}
                         onChange={(event) => {
@@ -205,6 +245,10 @@ export default function LessonDetailContent({ lesson, locations, isViewer, isCoa
 
                     {slotsError && (
                       <p role="alert" className="text-sm text-danger">{slotsError}</p>
+                    )}
+
+                    {!isFetchingSlots && noRescheduleAvailability && (
+                      <p className="text-sm text-text-secondary">No open times in the next 10 weeks.</p>
                     )}
 
                     {!isFetchingSlots && availableSlots.length === 0 && rescheduleDate && !slotsError && (
@@ -284,8 +328,6 @@ export default function LessonDetailContent({ lesson, locations, isViewer, isCoa
           )}
         </div>
       </main>
-
-      <SiteFooter />
 
       <ConfirmDialog
         dialogRef={cancelDialogRef}

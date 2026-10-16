@@ -1,6 +1,5 @@
 import type { HouseholdResponse, PendingInvite } from "@swim-app/shared";
 
-import SiteFooter from "@/components/SiteFooter";
 import InvitePanel from "./InvitePanel";
 import MemberList from "./MemberList";
 import RenameForm from "./RenameForm";
@@ -15,7 +14,7 @@ export default function HouseholdSettingsContent({ household, pendingInvite }: P
   const isOwner = household.myRole === "owner";
 
   return (
-    <div className="flex flex-col min-h-screen bg-background">
+    <div className="flex flex-col flex-1 bg-background">
 
       <main id="main-content" className="flex-1">
         <div className="mx-auto max-w-content px-page pt-10 pb-20 tablet:pt-14 tablet:pb-32">
@@ -54,8 +53,6 @@ export default function HouseholdSettingsContent({ household, pendingInvite }: P
           </div>
         </div>
       </main>
-
-      <SiteFooter />
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { CreateMeetSwimBodySchema } from "@swim-app/shared";
 import { createClient } from "@/lib/supabase/server";
+import { apiErrorMessage } from "@/lib/apiErrorMessage";
 
 export type AddSwimState =
   | { status: "idle" }
@@ -56,16 +57,10 @@ export async function addSwim(
   if (response.status === 401) redirect("/api/signout");
   if (response.status === 422) {
     const body = await response.json().catch(() => ({})) as { error?: string };
-    if (body.error === "invalid_event") {
-      return { status: "error", message: "That distance and stroke combination is not a valid event." };
-    }
-    if (body.error === "invalid_time") {
-      return { status: "error", message: "Invalid time format. Use M:SS.HH or SS.HH (e.g. 1:02.34 or 58.30)." };
-    }
-    return { status: "error", message: "Invalid swim data. Please check your entries." };
+    return { status: "error", message: apiErrorMessage(body.error) };
   }
   if (!response.ok) {
-    return { status: "error", message: "Could not record swim. Please try again." };
+    return { status: "error", message: apiErrorMessage(undefined) };
   }
 
   revalidatePath(`/coach/meets/${meetId}`);

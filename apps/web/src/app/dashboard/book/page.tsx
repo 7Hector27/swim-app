@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
 import BookCalendarContent from "@/content/BookCalendarContent";
-import SiteFooter from "@/components/SiteFooter";
 import { requireAuth } from "@/lib/requireAuth";
 import { fetchHousehold } from "@/lib/api/households";
 import { fetchLocations } from "@/lib/api/lessons";
@@ -27,7 +26,7 @@ export default async function BookPage() {
   const locations = rawLocations.map(({ id, name, isHomePool }) => ({ id, name, isHomePool }));
 
   return (
-    <div className="flex flex-col min-h-screen bg-background">
+    <div className="flex flex-col flex-1 bg-background">
       <main id="main-content" className="flex-1">
         <div className="mx-auto max-w-content px-page pt-10 pb-tab-safe tablet:pt-14 tablet:pb-32">
           <BookCalendarContent
@@ -38,7 +37,6 @@ export default async function BookPage() {
           />
         </div>
       </main>
-      <SiteFooter />
     </div>
   );
 }

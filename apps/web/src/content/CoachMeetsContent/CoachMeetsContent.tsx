@@ -5,7 +5,6 @@ import Link from "next/link";
 import type { MeetResponse } from "@swim-app/shared";
 
 import ConfirmDialog from "@/components/ConfirmDialog";
-import SiteFooter from "@/components/SiteFooter";
 import { createMeet, deleteMeet } from "./actions";
 import type { CreateMeetState, DeleteMeetState } from "./actions";
 
@@ -24,12 +23,30 @@ function CreateMeetForm() {
     status: "idle",
   });
   const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [meetDate, setMeetDate] = useState("");
+  const [course, setCourse] = useState("scy");
+  const errorRef = useRef<HTMLParagraphElement>(null);
 
   useEffect(() => {
     if (state.status === "success") {
       setOpen(false);
     }
   }, [state.status]);
+
+  useEffect(() => {
+    if (open) {
+      setName("");
+      setMeetDate("");
+      setCourse("scy");
+    }
+  }, [open]);
+
+  useEffect(() => {
+    if (state.status === "error") {
+      errorRef.current?.focus();
+    }
+  }, [state]);
 
   if (!open) {
     return (
@@ -66,6 +83,8 @@ function CreateMeetForm() {
           type="text"
           required
           placeholder="e.g. Spring Invitational"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
           className="h-11 px-3 rounded-lg border border-border bg-background text-text text-sm focus:outline focus:outline-2 focus:outline-focus-ring"
         />
       </div>
@@ -79,6 +98,8 @@ function CreateMeetForm() {
           name="meetDate"
           type="date"
           required
+          value={meetDate}
+          onChange={(e) => setMeetDate(e.target.value)}
           className="h-11 px-3 rounded-lg border border-border bg-background text-text text-sm focus:outline focus:outline-2 focus:outline-focus-ring"
         />
       </div>
@@ -91,6 +112,8 @@ function CreateMeetForm() {
           id="meet-course"
           name="course"
           required
+          value={course}
+          onChange={(e) => setCourse(e.target.value)}
           className="h-11 px-3 rounded-lg border border-border bg-background text-text text-sm focus:outline focus:outline-2 focus:outline-focus-ring"
         >
           <option value="scy">SCY — Short Course Yards</option>
@@ -100,7 +123,14 @@ function CreateMeetForm() {
       </div>
 
       {state.status === "error" && (
-        <p role="alert" className="text-sm text-danger">
+        <p
+          ref={errorRef}
+          role="alert"
+          aria-live="assertive"
+          tabIndex={-1}
+          style={{ outline: "none" }}
+          className="text-sm text-danger"
+        >
           {state.message}
         </p>
       )}
@@ -206,7 +236,7 @@ function MeetRow({ meet }: MeetRowProps) {
 
 export default function CoachMeetsContent({ meets }: CoachMeetsContentProps) {
   return (
-    <div className="flex flex-col min-h-screen">
+    <div className="flex flex-col flex-1">
       <main className="flex-1 px-page py-16">
         <div className="mx-auto max-w-content flex flex-col gap-8">
           <h1 className="text-heading font-heading font-semibold" style={{ fontVariationSettings: '"SOFT" 100, "WONK" 0' }}>
@@ -226,7 +256,6 @@ export default function CoachMeetsContent({ meets }: CoachMeetsContentProps) {
           )}
         </div>
       </main>
-      <SiteFooter />
     </div>
   );
 }

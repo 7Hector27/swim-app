@@ -3,7 +3,6 @@ import { render, screen } from "@testing-library/react";
 import type { ParentSwimmer, ParentSwimmerProgressResponse, CategoriesResponse } from "@swim-app/shared";
 
 vi.mock("@/components/SiteNav", () => ({ default: () => <nav /> }));
-vi.mock("@/components/SiteFooter", () => ({ default: () => <footer /> }));
 vi.mock("@/components/TrendLine", () => ({ default: () => null }));
 vi.mock("@/components/SkillChart", () => ({ default: () => null }));
 

@@ -1,8 +1,6 @@
-import SiteFooter from "@/components/SiteFooter";
-
 export default function PrivacyContent() {
   return (
-    <div className="flex flex-col min-h-screen">
+    <div className="flex flex-col flex-1">
       <main className="flex-1 px-page py-16">
         <div className="mx-auto max-w-content">
           <div className="max-w-2xl">
@@ -89,7 +87,6 @@ export default function PrivacyContent() {
           </div>
         </div>
       </main>
-      <SiteFooter />
     </div>
   );
 }

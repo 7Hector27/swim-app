@@ -11,7 +11,8 @@ Items that require human sign-off before the app goes live. Engineering items go
 - [ ] Production environment is provisioned after dev, following the same steps in sequence.
 - [ ] Production migration process is documented; migrations are never run automatically — always manual, with a backup taken first.
 - [ ] A real transactional email provider (e.g., Resend) is configured for both auth emails (Supabase SMTP settings) and notification emails. Supabase's built-in rate-limited relay is not used in production.
-- [ ] Supabase email templates (confirmation, magic link, invite, password reset) are copied and customized in every hosted Supabase project (dev and production). Supabase resets templates on project recreation.
+- [ ] Supabase email templates (confirmation, magic link, invite, password reset, email change) are copied into every hosted Supabase project (dev and production) via the Auth → Email Templates UI. Supabase resets templates on project recreation.
+- [ ] In each hosted Supabase project, confirm the **Site URL** setting matches the deployed site origin so that `{{ .SiteURL }}/logos/axiom-aquatics-lockup.png` in the email templates resolves to the correct logo. Local dev uses `http://localhost:3000`; production must use the live domain.
 - [ ] Production Supabase redirect URLs include `/auth/confirm` with the correct query-param shape (`token_hash`, `type`, `next`). Every signup and invite path passes `emailRedirectTo` pointing to the correct origin.
 
 ---
@@ -26,6 +27,12 @@ Items that require human sign-off before the app goes live. Engineering items go
 - [ ] Jason has reviewed and approved the final hero copy, coach bio, and FAQ text.
 - [ ] Jason's actual summer teaching hours are entered in `availability_config` (morning and evening windows are currently placeholder values).
 - [ ] This season's summer end date is set in `season_summer_end_dates` for the current year.
+
+---
+
+## Clubs
+
+- [ ] Replace the placeholder clubs (`[Club 1]`, `[Club 2]`) with Jason's list of local clubs. Run `pnpm db:sync-catalog` (or a migration) to update the `clubs` table in each environment.
 
 ---
 

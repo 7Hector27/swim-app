@@ -9,7 +9,7 @@ import {
   WeekAvailabilityResponseSchema,
   type WeekAvailabilityResponse,
 } from "@swim-app/shared";
-import { mapBookingApiResponse, type BookingState } from "./helpers";
+import { mapBookingApiResponse, getMondayOfWeek, addDaysToDateStr, firstAvailableDayInWeek, type BookingState } from "./helpers";
 
 export async function fetchSlotsDirectAction(
   date: string,
@@ -40,6 +40,57 @@ export async function fetchRangeAction(params: {
   if (result === null) return null;
   const parsed = WeekAvailabilityResponseSchema.safeParse(result);
   return parsed.success ? parsed.data : null;
+}
+
+export async function findFirstAvailableDayAction(params: {
+  fromDate: string;
+  durationMinutes: 30 | 45 | 60;
+  locationId: string;
+  excludeLessonId?: string;
+}): Promise<{
+  firstAvailableDate: string | null;
+  weekData: WeekAvailabilityResponse;
+} | null> {
+  const supabase = await createClient();
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) return null;
+
+  let searchFrom = params.fromDate;
+  let firstWeekData: WeekAvailabilityResponse | null = null;
+
+  for (let week = 0; week < 11; week++) {
+    const monday = getMondayOfWeek(searchFrom);
+    const result = await fetchRangeAvailability(token, {
+      view: "week",
+      date: monday,
+      durationMinutes: params.durationMinutes,
+      locationId: params.locationId,
+      ...(params.excludeLessonId ? { excludeLessonId: params.excludeLessonId } : {}),
+    });
+    if (result === null) return null;
+    const parsed = WeekAvailabilityResponseSchema.safeParse(result);
+    if (!parsed.success) return null;
+    const weekData = parsed.data;
+
+    if (week === 0) {
+      firstWeekData = weekData;
+    }
+
+    const fromDate = week === 0 ? params.fromDate : monday;
+    const firstAvailableDate = firstAvailableDayInWeek(weekData.days, fromDate);
+    if (firstAvailableDate !== null) {
+      return { firstAvailableDate, weekData };
+    }
+
+    const hasNotOpenYet = weekData.days.some((day) => day.dayState === "not_open_yet");
+    if (hasNotOpenYet) break;
+
+    searchFrom = addDaysToDateStr(monday, 7);
+  }
+
+  if (firstWeekData === null) return null;
+  return { firstAvailableDate: null, weekData: firstWeekData };
 }
 
 export async function createBookingAction(

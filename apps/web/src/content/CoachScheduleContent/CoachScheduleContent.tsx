@@ -3,7 +3,6 @@ import Link from "next/link";
 import { todayLA } from "@swim-app/shared";
 import type { ScheduleItem } from "@swim-app/shared";
 
-import SiteFooter from "@/components/SiteFooter";
 import { fetchCoachSchedule } from "@/lib/api/lessons";
 
 interface Props {
@@ -23,7 +22,7 @@ export default async function CoachScheduleContent({ accessToken, date }: Props)
   }).format(new Date(`${scheduleDate}T12:00:00`));
 
   return (
-    <div className="flex flex-col min-h-screen bg-background">
+    <div className="flex flex-col flex-1 bg-background">
 
       <main id="main-content" className="flex-1">
         <div className="mx-auto max-w-content px-page pt-10 pb-20 tablet:pt-14 tablet:pb-32">
@@ -55,8 +54,6 @@ export default async function CoachScheduleContent({ accessToken, date }: Props)
           </div>
         </div>
       </main>
-
-      <SiteFooter />
     </div>
   );
 }

@@ -51,10 +51,10 @@ function LessonRow({ item }: { item: Extract<ScheduleItem, { type: "lesson" }> }
   const swimmerNames = item.lesson.swimmers.map((swimmer) => swimmer.firstName).join(", ");
 
   return (
-    <div className="flex items-center gap-4 py-4">
-      <div className="flex-shrink-0 w-[68px]">
-        <p className="text-xs font-semibold text-text-secondary tabular-nums">{time}</p>
-      </div>
+    <div className="py-4 flex flex-col gap-1.5 tablet:flex-row tablet:items-center tablet:gap-4">
+      <p className="text-xs font-semibold text-text-secondary tabular-nums tablet:w-[68px] tablet:flex-shrink-0">
+        {time}
+      </p>
       <div className="flex-1 min-w-0">
         <p className="text-sm font-semibold text-text">
           {swimmerNames || "No swimmers"}, {item.lesson.durationMinutes} min
@@ -65,7 +65,7 @@ function LessonRow({ item }: { item: Extract<ScheduleItem, { type: "lesson" }> }
       </div>
       <button
         type="button"
-        className="flex-shrink-0 text-sm font-semibold text-link hover:text-link-hover transition-colors duration-150 min-h-[44px] flex items-center"
+        className="self-start tablet:flex-shrink-0 min-h-[44px] flex items-center text-sm font-semibold text-link hover:text-link-hover transition-colors duration-150"
       >
         Open swimmer
       </button>
@@ -79,10 +79,10 @@ function TravelBufferRow({ item }: { item: Extract<ScheduleItem, { type: "travel
   const durationMin = Math.round(durationMs / 60_000);
 
   return (
-    <div className="flex items-center gap-4 py-4">
-      <div className="flex-shrink-0 w-[68px]">
-        <p className="text-xs font-semibold text-text-secondary tabular-nums">{time}</p>
-      </div>
+    <div className="py-4 flex flex-col gap-1.5 tablet:flex-row tablet:items-center tablet:gap-4">
+      <p className="text-xs font-semibold text-text-secondary tabular-nums tablet:w-[68px] tablet:flex-shrink-0">
+        {time}
+      </p>
       <div className="flex-1 min-w-0 flex items-center gap-2">
         <svg
           width="14"
@@ -119,10 +119,10 @@ function OpenSlotRow({ item }: { item: Extract<ScheduleItem, { type: "open_slot"
   const until = formatTime(item.endsAt);
 
   return (
-    <div className="flex items-center gap-4 py-4">
-      <div className="flex-shrink-0 w-[68px]">
-        <p className="text-xs font-semibold text-text-secondary tabular-nums">{time}</p>
-      </div>
+    <div className="py-4 flex flex-col gap-1.5 tablet:flex-row tablet:items-center tablet:gap-4">
+      <p className="text-xs font-semibold text-text-secondary tabular-nums tablet:w-[68px] tablet:flex-shrink-0">
+        {time}
+      </p>
       <div className="flex-1 min-w-0">
         <p className="text-sm font-semibold text-text-secondary">
           Open until {until}

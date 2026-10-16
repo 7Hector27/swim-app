@@ -5,7 +5,6 @@ import type {
   CoachSwimmerDetail,
   CategoriesResponse,
 } from "@swim-app/shared";
-import SiteFooter from "@/components/SiteFooter";
 import AddNoteForm from "@/components/AddNoteForm";
 import { submitEvaluation } from "./actions";
 import type { EvaluateState, SessionDraft, SkillDraft } from "./helpers";
@@ -189,7 +188,7 @@ export default function EvaluateContent({ swimmer, categories, accessToken }: Ev
 
   if (state.status === "saved") {
     return (
-      <div className="flex flex-col min-h-screen">
+      <div className="flex flex-col flex-1">
         <main className="flex-1 px-page py-8">
           <div className="mx-auto max-w-content flex flex-col gap-6">
             <h1 className="text-heading" style={{ color: "var(--color-text)" }}>
@@ -222,7 +221,6 @@ export default function EvaluateContent({ swimmer, categories, accessToken }: Ev
             </a>
           </div>
         </main>
-        <SiteFooter />
       </div>
     );
   }
@@ -230,7 +228,7 @@ export default function EvaluateContent({ swimmer, categories, accessToken }: Ev
   // ── Main form ─────────────────────────────────────────────────────────────────
 
   return (
-    <div className="flex flex-col min-h-screen">
+    <div className="flex flex-col flex-1">
       <main className="flex-1 px-page py-8">
         <div className="mx-auto max-w-content flex flex-col gap-6">
           <div className="flex flex-col gap-2">
@@ -346,7 +344,6 @@ export default function EvaluateContent({ swimmer, categories, accessToken }: Ev
           </form>
         </div>
       </main>
-      <SiteFooter />
     </div>
   );
 }

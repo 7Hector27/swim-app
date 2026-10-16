@@ -1,5 +1,6 @@
 "use client";
 
+import { useRef, useEffect } from "react";
 import type { WeekDayAvailability } from "@swim-app/shared";
 
 interface Props {
@@ -29,8 +30,16 @@ function openLabel(day: WeekDayAvailability): string {
 }
 
 export default function PhoneDayStrip({ days, selectedDayDate, todayStr, onDaySelect }: Props) {
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!selectedDayDate || !containerRef.current) return;
+    const btn = containerRef.current.querySelector<HTMLElement>(`[data-date="${selectedDayDate}"]`);
+    btn?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+  }, [selectedDayDate]);
+
   return (
-    <div className="flex overflow-x-auto gap-2 pb-1">
+    <div ref={containerRef} className="flex overflow-x-auto gap-2 pb-1">
       {days.map((day) => {
         const isSelected = day.date === selectedDayDate;
         const isToday = day.date === todayStr;
@@ -39,6 +48,7 @@ export default function PhoneDayStrip({ days, selectedDayDate, todayStr, onDaySe
           <button
             key={day.date}
             type="button"
+            data-date={day.date}
             onClick={() => onDaySelect(day.date)}
             aria-current={isToday ? "date" : undefined}
             aria-pressed={isSelected}

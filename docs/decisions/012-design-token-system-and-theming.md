@@ -5,7 +5,7 @@
 
 ## Context
 
-The JG Swim site needs to support light and dark mode. The design derives from a specific brand (navy, mid blue, cyan) that requires consistent color, type, and spacing values across every component. We needed a way to store those values once and swap them for dark mode without touching every component.
+The Axiom Aquatics site needs to support light and dark mode. The design derives from a specific brand (navy, mid blue, cyan) that requires consistent color, type, and spacing values across every component. We needed a way to store those values once and swap them for dark mode without touching every component.
 
 ## Decision
 

@@ -201,6 +201,18 @@ const ERROR_CODE_MESSAGES: Record<string, string> = {
   slot_unavailable: "That slot was just taken. Please pick another time.",
 };
 
+export function firstAvailableDayInWeek(
+  days: WeekDayAvailability[],
+  fromDate: string,
+): string | null {
+  for (const day of days) {
+    if (day.date < fromDate) continue;
+    if (day.dayState !== "open") continue;
+    if (day.openCount > 0) return day.date;
+  }
+  return null;
+}
+
 export function mapBookingApiResponse(
   status: number,
   body: unknown,

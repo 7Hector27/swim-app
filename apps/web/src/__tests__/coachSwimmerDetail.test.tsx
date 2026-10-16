@@ -2,7 +2,6 @@ import { vi, describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 
 vi.mock("@/components/SiteNav", () => ({ default: () => <nav /> }));
-vi.mock("@/components/SiteFooter", () => ({ default: () => <footer /> }));
 vi.mock("@/components/AddNoteForm", () => ({ default: () => <div data-testid="add-note-form" /> }));
 vi.mock("@/content/CoachSwimmerDetailContent/HidePublicButton", () => ({
   default: () => <button>Hide</button>,

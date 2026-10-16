@@ -4,7 +4,6 @@ import { useActionState } from "react";
 
 import type { Club } from "@swim-app/shared";
 
-import SiteFooter from "@/components/SiteFooter";
 import SwimmerForm from "@/components/SwimmerForm";
 
 import { addSwimmer } from "./actions";
@@ -20,7 +19,7 @@ export default function AddSwimmerContent({ clubs }: AddSwimmerContentProps) {
   const [state, formAction, isPending] = useActionState(addSwimmer, initialState);
 
   return (
-    <div className="flex flex-col min-h-screen">
+    <div className="flex flex-col flex-1">
       <main className="flex-1 px-page py-12 tablet:py-16">
         <div className="mx-auto max-w-md">
           <a
@@ -42,7 +41,6 @@ export default function AddSwimmerContent({ clubs }: AddSwimmerContentProps) {
           />
         </div>
       </main>
-      <SiteFooter />
     </div>
   );
 }

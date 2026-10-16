@@ -3,7 +3,6 @@ import { render, screen } from "@testing-library/react";
 import type { CoachSwimmerDetail, SwimmerProgressResponse, CategoriesResponse } from "@swim-app/shared";
 
 vi.mock("@/components/SiteNav", () => ({ default: () => <nav /> }));
-vi.mock("@/components/SiteFooter", () => ({ default: () => <footer /> }));
 
 import SwimmerProgressContent from "../content/SwimmerProgressContent/SwimmerProgressContent";
 

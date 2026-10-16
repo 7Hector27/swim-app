@@ -966,6 +966,40 @@ describe("DELETE /lessons/:id", () => {
 
     expect(res.status).toBe(403);
   });
+
+  it("returns 422 lesson_in_past when parent cancels a lesson that has already started", async () => {
+    authAs(parentProfile);
+    const pastLesson = { ...baseLessonRow, status: "approved" as typeof baseLessonRow.status, startsAt: new Date(ANCHOR_NOW.getTime() - 60 * 60 * 1000) };
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(parentProfile))
+      .mockReturnValueOnce(requireHouseholdMemberSelect(HOUSEHOLD_ID, "owner"))
+      .mockReturnValueOnce(limitSelect([pastLesson]));
+
+    const res = await request(app)
+      .delete(`/lessons/${LESSON_ID}`)
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(422);
+    expect(res.body.error).toBe("lesson_in_past");
+  });
+
+  it("coach can still cancel a lesson that has already started (204)", async () => {
+    authAs(coachProfile);
+    const pastLesson = { ...baseLessonRow, status: "approved" as typeof baseLessonRow.status, startsAt: new Date(ANCHOR_NOW.getTime() - 60 * 60 * 1000) };
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(coachProfile))
+      .mockReturnValueOnce(limitSelect([pastLesson]));
+
+    mockDbUpdate.mockReturnValueOnce({
+      set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) }),
+    });
+
+    const res = await request(app)
+      .delete(`/lessons/${LESSON_ID}`)
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(204);
+  });
 });
 
 // ── PATCH /lessons/:id ────────────────────────────────────────────────────────
@@ -1149,6 +1183,23 @@ describe("PATCH /lessons/:id", () => {
       .send({ durationMinutes: 45 });
 
     expect(res.status).toBe(403);
+  });
+
+  it("returns 422 lesson_in_past when parent reschedules a lesson that has already started", async () => {
+    authAs(parentProfile);
+    const pastLesson = { ...baseLessonRow, status: "approved" as typeof baseLessonRow.status, startsAt: new Date(ANCHOR_NOW.getTime() - 60 * 60 * 1000) };
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(parentProfile))
+      .mockReturnValueOnce(requireHouseholdMemberSelect(HOUSEHOLD_ID, "owner"))
+      .mockReturnValueOnce(limitSelect([pastLesson]));
+
+    const res = await request(app)
+      .patch(`/lessons/${LESSON_ID}`)
+      .set("Authorization", "Bearer token")
+      .send({ startsAt: validNewStartsAt });
+
+    expect(res.status).toBe(422);
+    expect(res.body.error).toBe("lesson_in_past");
   });
 
   it("duration-only PATCH extending into next lesson returns 422 slot_unavailable", async () => {

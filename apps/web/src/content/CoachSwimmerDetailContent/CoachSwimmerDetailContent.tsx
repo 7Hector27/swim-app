@@ -3,7 +3,6 @@
 import { useActionState, useRef, useState } from "react";
 import { type CoachSwimmerDetail, type League, type CategoriesResponse, type SwimmerSkillsResponse, type StartGradeResult, type TimelineResponse, type MeetSwimResponse, type PersonalBest, type MeetResponse, VALID_EVENTS } from "@swim-app/shared";
 
-import SiteFooter from "@/components/SiteFooter";
 import AddNoteForm from "@/components/AddNoteForm";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import HidePublicButton from "./HidePublicButton";
@@ -559,7 +558,7 @@ export default function CoachSwimmerDetailContent({
 }: CoachSwimmerDetailContentProps) {
 
   return (
-    <div className="flex flex-col min-h-screen">
+    <div className="flex flex-col flex-1">
       <main className="flex-1 px-page py-16">
         <div className="mx-auto max-w-content flex flex-col gap-8">
           <div>
@@ -805,7 +804,6 @@ export default function CoachSwimmerDetailContent({
           )}
         </div>
       </main>
-      <SiteFooter />
     </div>
   );
 }

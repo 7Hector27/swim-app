@@ -18,11 +18,11 @@ const boardCards = [
 
 export default function LeaderboardLandingContent() {
   return (
-    <div className="bg-section min-h-screen">
+    <div className="bg-background">
       <div className="mx-auto max-w-content px-page py-16 tablet:py-24">
         <div className="flex flex-col gap-3 mb-10 tablet:mb-14">
-          <h1 className="text-text-on-section">Leaderboards</h1>
-          <p className="text-text-secondary-on-section text-base max-w-xl">
+          <h1 className="text-heading">Leaderboards</h1>
+          <p className="text-text-secondary text-base max-w-xl">
             See where swimmers stand in each league, or across everyone Jason coaches.
           </p>
         </div>
@@ -32,11 +32,11 @@ export default function LeaderboardLandingContent() {
             <a
               key={card.href}
               href={card.href}
-              className="rounded-card bg-card border border-divider-section p-6 flex flex-col gap-3 hover:border-accent-on-section transition-colors duration-150"
+              className="rounded-card border border-border p-6 flex flex-col gap-3 hover:border-accent transition-colors duration-150"
             >
-              <p className="text-text-on-section font-bold text-base">{card.title}</p>
-              <p className="text-text-secondary-on-section text-sm">{card.description}</p>
-              <span className="text-accent-on-section text-sm font-semibold mt-auto">
+              <p className="text-text font-bold text-base">{card.title}</p>
+              <p className="text-text-secondary text-sm">{card.description}</p>
+              <span className="text-accent text-sm font-semibold mt-auto">
                 View board →
               </span>
             </a>

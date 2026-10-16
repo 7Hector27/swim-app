@@ -1,4 +1,3 @@
-import SiteFooter from "@/components/SiteFooter";
 import WaveDivider from "@/components/WaveDivider";
 
 import CoachBioSection from "./CoachBioSection";
@@ -26,7 +25,6 @@ export default function HomepageContent({ isAuthenticatedParent }: Props) {
         <WaveDivider from="background" to="section" />
         <CtaBandSection />
       </main>
-      <SiteFooter />
     </>
   );
 }
