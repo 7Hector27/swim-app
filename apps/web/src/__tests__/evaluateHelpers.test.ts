@@ -73,6 +73,7 @@ function makeSkill(overrides: Partial<SkillForRating> & { id: string }): SkillFo
     parentSkillId: null,
     sortOrder: 0,
     faultTags: [],
+    descriptors: [],
     ...overrides,
     notLegalAllowed: overrides.notLegalAllowed ?? false,
   };

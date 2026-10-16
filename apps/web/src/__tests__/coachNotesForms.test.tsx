@@ -59,6 +59,7 @@ const CATEGORIES_WITH_SKILL: import("@swim-app/shared").CategoriesResponse = [
         parentSkillId: null,
         sortOrder: 1,
         faultTags: [],
+        descriptors: [],
       },
     ],
   },

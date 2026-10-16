@@ -44,6 +44,15 @@ export default function SkillGradeRow({ skill, draftKey, label, draft, onChange 
         labelPrefix={label}
       />
 
+      {skill.descriptors.length > 0 && draft.grade !== null && (() => {
+        const descriptor = skill.descriptors.find((d) => d.level === draft.grade);
+        return descriptor ? (
+          <p className="text-xs" style={{ color: "var(--color-text-secondary)" }}>
+            {descriptor.text}
+          </p>
+        ) : null;
+      })()}
+
       <div className="flex gap-2 flex-wrap">
         <button
           type="button"

@@ -275,6 +275,49 @@ describe("SKILLS_CATALOG", () => {
     expect(skill?.appliesTo).toContain("breast");
     expect(skill?.appliesTo).toContain("fly");
   });
+
+  it("the 5 skills with new descriptors each have exactly 5 descriptors", () => {
+    const slugsWithDescriptors = [
+      "breathing-timing-free",
+      "stroke-breath-coordination-free",
+      "breathing-timing-fly",
+      "breathing-timing-breast",
+      "exhalation",
+    ];
+    for (const slug of slugsWithDescriptors) {
+      const skill = allSkills.find((skillItem) => skillItem.slug === slug);
+      expect(skill, `${slug} should be in the catalog`).toBeDefined();
+      expect(skill?.descriptors?.length, `${slug} should have exactly 5 descriptors`).toBe(5);
+    }
+  });
+
+  it("the 3 skills with new fault tags have the correct tags", () => {
+    const exhalation = allSkills.find((skillItem) => skillItem.slug === "exhalation");
+    expect(exhalation?.faultTags).toEqual(["holds breath", "exhales above water", "empties too early"]);
+
+    const strokeBreathCoordFree = allSkills.find(
+      (skillItem) => skillItem.slug === "stroke-breath-coordination-free",
+    );
+    expect(strokeBreathCoordFree?.faultTags).toEqual([
+      "lead arm drops",
+      "kick stops",
+      "stroke pauses",
+      "hips sink",
+      "over-rotates",
+    ]);
+
+    const breathingTimingBreast = allSkills.find(
+      (skillItem) => skillItem.slug === "breathing-timing-breast",
+    );
+    expect(breathingTimingBreast?.faultTags).toEqual([
+      "lifts early",
+      "lifts late",
+      "surfaces late",
+      "returns too slow",
+      "returns too fast",
+      "stays up through the kick",
+    ]);
+  });
 });
 
 describe("RATING_SCALE", () => {

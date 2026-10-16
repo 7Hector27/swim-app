@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/client";
 import {
@@ -7,6 +7,7 @@ import {
   ratingFaultTags,
   skillCategories,
   skillDependencies,
+  skillLevelDescriptors,
   skillRatings,
   skills,
   swimmers,
@@ -730,6 +731,27 @@ coachCategoriesRouter.get(
       .where(isNull(skills.archivedAt))
       .orderBy(skills.sortOrder);
 
+    const skillIds = skillRows.map((skill) => skill.id);
+
+    const descriptorRows = skillIds.length > 0
+      ? await db
+          .select({
+            skillId: skillLevelDescriptors.skillId,
+            level: skillLevelDescriptors.level,
+            text: skillLevelDescriptors.text,
+          })
+          .from(skillLevelDescriptors)
+          .where(inArray(skillLevelDescriptors.skillId, skillIds))
+          .orderBy(asc(skillLevelDescriptors.level))
+      : [];
+
+    const descriptorsBySkill = new Map<string, Array<{ level: number; text: string }>>();
+    for (const descriptor of descriptorRows) {
+      const list = descriptorsBySkill.get(descriptor.skillId) ?? [];
+      list.push({ level: descriptor.level, text: descriptor.text });
+      descriptorsBySkill.set(descriptor.skillId, list);
+    }
+
     const skillsByCategory = new Map<string, typeof skillRows>();
     for (const skill of skillRows) {
       const list = skillsByCategory.get(skill.categoryId) ?? [];
@@ -753,6 +775,7 @@ coachCategoriesRouter.get(
         parentSkillId: skill.parentSkillId ?? null,
         sortOrder: skill.sortOrder,
         faultTags: skill.faultTags ?? [],
+        descriptors: descriptorsBySkill.get(skill.id) ?? [],
       })),
     }));
 

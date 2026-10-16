@@ -35,6 +35,7 @@ const SKILL: SkillForRating = {
   parentSkillId: null,
   sortOrder: 1,
   faultTags: ["Bent knees", "Stiff ankles"],
+  descriptors: [],
 };
 
 const SIDED_SKILL: SkillForRating = {
@@ -48,6 +49,7 @@ const SIDED_SKILL: SkillForRating = {
   parentSkillId: null,
   sortOrder: 2,
   faultTags: [],
+  descriptors: [],
 };
 
 const START_PARENT: SkillForRating = {
@@ -61,6 +63,7 @@ const START_PARENT: SkillForRating = {
   parentSkillId: null,
   sortOrder: 10,
   faultTags: [],
+  descriptors: [],
 };
 
 function makeComponent(index: number): SkillForRating {
@@ -75,6 +78,7 @@ function makeComponent(index: number): SkillForRating {
     parentSkillId: "parent-1",
     sortOrder: index,
     faultTags: [],
+    descriptors: [],
   };
 }
 const COMPONENTS = [1, 2, 3, 4, 5, 6].map(makeComponent);
@@ -212,6 +216,7 @@ describe("CalculatedSkillRow", () => {
     parentSkillId: null,
     sortOrder: 5,
     faultTags: [],
+    descriptors: [],
   };
 
   it("renders the skill label", () => {
@@ -324,7 +329,7 @@ const TEST_CATEGORIES: CategoriesResponse = [
     skills: [{
       id: SKILL_A_ID, slug: "free-kick", name: "Freestyle Kick",
       type: "rubric", unit: null, ratedPerSide: false, notLegalAllowed: false,
-      parentSkillId: null, sortOrder: 1, faultTags: [],
+      parentSkillId: null, sortOrder: 1, faultTags: [], descriptors: [],
     }],
   },
   {
@@ -335,7 +340,7 @@ const TEST_CATEGORIES: CategoriesResponse = [
     skills: [{
       id: SKILL_B_ID, slug: "back-kick", name: "Backstroke Kick",
       type: "rubric", unit: null, ratedPerSide: false, notLegalAllowed: false,
-      parentSkillId: null, sortOrder: 1, faultTags: [],
+      parentSkillId: null, sortOrder: 1, faultTags: [], descriptors: [],
     }],
   },
 ];

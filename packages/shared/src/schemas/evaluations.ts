@@ -198,6 +198,7 @@ export const SkillForRatingSchema = z.object({
   parentSkillId: z.string().uuid().nullable(),
   sortOrder: z.number().int(),
   faultTags: z.array(z.string()),
+  descriptors: z.array(z.object({ level: z.number().int().min(1).max(5), text: z.string() })),
 });
 export type SkillForRating = z.infer<typeof SkillForRatingSchema>;
 

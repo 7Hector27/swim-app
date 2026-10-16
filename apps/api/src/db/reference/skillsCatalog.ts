@@ -168,6 +168,14 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         name: "Exhalation",
         type: "rubric",
         sortOrder: 1,
+        faultTags: ["holds breath", "exhales above water", "empties too early"],
+        descriptors: [
+          { level: 1, text: "holds breath underwater; exhales and inhales all after the mouth clears; may come up gasping." },
+          { level: 2, text: "exhales underwater when cued, but often holds it, then blows out after the mouth clears." },
+          { level: 3, text: "starts exhaling a moment before the mouth breaks the surface on most breaths at practice pace." },
+          { level: 4, text: "correct exhale timing at race pace; ready to inhale the instant the mouth clears." },
+          { level: 5, text: "correct on every breath through the full race distance and under fatigue." },
+        ],
       },
       {
         slug: "breath-control",
@@ -194,6 +202,13 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         sortOrder: 3,
         ratedPerSide: true,
         builtOnSlugs: ["free-head-position", "free-stroke-timing"],
+        descriptors: [
+          { level: 1, text: "lifts the head forward or turns late; stops the stroke to breathe; lead arm drops." },
+          { level: 2, text: "turns with the rotation when cued; often late, holding the head out through the recovery." },
+          { level: 3, text: "head turns as the breathing-side arm starts its pull and is back to neutral before that hand enters, at practice pace; occasionally late." },
+          { level: 4, text: "correct timing at race pace on most breaths." },
+          { level: 5, text: "correct timing on every breath through the full race distance, under fatigue." },
+        ],
       },
       // breathing-timing-back archived per Jason A5.
       {
@@ -203,6 +218,14 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         stroke: "breast",
         sortOrder: 4,
         builtOnSlugs: ["breast-head-position", "breast-timing"],
+        faultTags: ["lifts early", "lifts late", "surfaces late", "returns too slow", "returns too fast", "stays up through the kick"],
+        descriptors: [
+          { level: 1, text: "head lifts before the pull or after the hands come together, or stays up through the kick." },
+          { level: 2, text: "head rises with the pull when cued, but often surfaces after the widest part of the pull or is still up as the arms reach forward." },
+          { level: 3, text: "head starts rising as the hands separate, is out by the widest part of the pull, and is back under as the elbows open into the reach, at practice pace; occasionally late." },
+          { level: 4, text: "correct timing at race pace on most strokes." },
+          { level: 5, text: "correct timing on every stroke through the full race distance, under fatigue." },
+        ],
       },
       {
         slug: "breathing-timing-fly",
@@ -212,6 +235,13 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         sortOrder: 5,
         // Per Jason A7: fly breathing timing builds on fly-head-position and fly-two-kick-rhythm.
         builtOnSlugs: ["fly-head-position", "fly-two-kick-rhythm"],
+        descriptors: [
+          { level: 1, text: "head lifts late or high; still up when the arms enter the water." },
+          { level: 2, text: "head rises with the pull when cued, but is often still up at the catch." },
+          { level: 3, text: "head rises with the pull, stays up until mid-recovery and is down before the catch at practice pace; sometimes late." },
+          { level: 4, text: "correct timing at race pace on most breaths." },
+          { level: 5, text: "correct timing on every breath through the full race distance, including under fatigue." },
+        ],
       },
       // Per-stroke instances of Stroke-breath coordination
       {
@@ -223,6 +253,14 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         ratedPerSide: true,
         // Per Jason A15: links to free-rotation, not shared body-rotation.
         builtOnSlugs: ["breathing-timing-free", "free-rotation"],
+        faultTags: ["lead arm drops", "kick stops", "stroke pauses", "hips sink", "over-rotates"],
+        descriptors: [
+          { level: 1, text: "stroke stops or falls apart on every breath; lead arm drops, kick stops." },
+          { level: 2, text: "stroke pauses or the lead arm sinks on most breaths; better when cued." },
+          { level: 3, text: "stroke and kick keep going through the breath at practice pace; minor breakdown." },
+          { level: 4, text: "breathing strokes look like non-breathing strokes at race pace." },
+          { level: 5, text: "no breakdown on any breath through the full race distance, under fatigue." },
+        ],
       },
       // stroke-breath-coordination-back archived per Jason A5.
       {

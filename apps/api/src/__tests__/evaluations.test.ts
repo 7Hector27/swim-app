@@ -677,6 +677,11 @@ describe("GET /categories", () => {
       faultTags: ["flat-kick"],
       categoryId: CATEGORY_ID,
     };
+    const descriptorRow = {
+      skillId: SKILL_ID,
+      level: 1,
+      text: "Some descriptor text",
+    };
 
     // requireUser runs once in the unified coachRouter parent
     mockDbSelect
@@ -691,6 +696,14 @@ describe("GET /categories", () => {
       .mockReturnValueOnce(
         (() => {
           const orderBy = vi.fn().mockResolvedValue([skillRow]);
+          const where = vi.fn().mockReturnValue({ orderBy });
+          const from = vi.fn().mockReturnValue({ where });
+          return { from };
+        })(),
+      )
+      .mockReturnValueOnce(
+        (() => {
+          const orderBy = vi.fn().mockResolvedValue([descriptorRow]);
           const where = vi.fn().mockReturnValue({ orderBy });
           const from = vi.fn().mockReturnValue({ where });
           return { from };
@@ -712,6 +725,12 @@ describe("GET /categories", () => {
         expect.objectContaining({ id: SKILL_ID, slug: "freestyle-kick" }),
       ]),
     });
+    // Each skill should have a descriptors array
+    const skill = res.body[0].skills[0];
+    expect(Array.isArray(skill.descriptors)).toBe(true);
+    expect(skill.descriptors).toEqual(
+      expect.arrayContaining([expect.objectContaining({ level: expect.any(Number), text: expect.any(String) })]),
+    );
   });
 });
 

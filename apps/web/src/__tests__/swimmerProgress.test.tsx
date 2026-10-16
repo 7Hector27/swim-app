@@ -146,6 +146,7 @@ describe("SwimmerProgressContent", () => {
             parentSkillId: null,
             sortOrder: 1,
             faultTags: [],
+            descriptors: [],
           },
         ],
       },
