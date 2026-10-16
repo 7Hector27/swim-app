@@ -184,7 +184,7 @@ On the swimmer profile progress view, golf score is displayed as:
 
 ## Status on this branch
 
-Commits: ba8513d (PR 1), 25aff41 (PR 2), 55cd0a9 (PR 3 partial), 0e73a58 (DB migration), 1c1793a (PR 3 complete).
+Commits: ba8513d (PR 1), 25aff41 (PR 2), 55cd0a9 (PR 3 partial), 0e73a58 (DB migration), 1c1793a (PR 3 complete), 10676c0 + 3a9a675 (remaining items).
 
 ### PR 1
 
@@ -203,7 +203,7 @@ Commits: ba8513d (PR 1), 25aff41 (PR 2), 55cd0a9 (PR 3 partial), 0e73a58 (DB mig
 | Item | Status |
 |---|---|
 | Descriptors (5 levels) for exhalation, breathing-timing-free, stroke-breath-coordination-free, breathing-timing-fly, breathing-timing-breast | **Done** — 25aff41 |
-| Fault tags for exhalation, stroke-breath-coordination-free, breathing-timing-breast | **Done** — 25aff41 |
+| Fault tags for exhalation, stroke-breath-coordination-free, breathing-timing-breast | **Done** — 25aff41, extended 3a9a675 |
 | `SkillForRatingSchema`: `descriptors` field | **Done** — 25aff41 |
 | GET /categories: includes descriptors per skill | **Done** — 25aff41 |
 | SkillGradeRow: inline descriptor text for selected grade | **Done** — 25aff41 |
@@ -216,23 +216,27 @@ Commits: ba8513d (PR 1), 25aff41 (PR 2), 55cd0a9 (PR 3 partial), 0e73a58 (DB mig
 |---|---|
 | `SkillForRatingSchema`: `stroke` field | **Done** — 55cd0a9 |
 | GET /categories: includes `stroke` per skill | **Done** — 55cd0a9 |
-| `EvalSectionHeader` component (collapsible, token styling) | **Done** — 55cd0a9 |
-| `buildSectionGroups` in helpers.ts (now takes flat skill list) | **Done** — 1c1793a |
+| `EvalSectionHeader` component (collapsible; external open/toggle props added) | **Done** — 55cd0a9, extended 10676c0 |
+| `buildSectionGroups` — flat skill list; allows same skill in multiple sections | **Done** — 1c1793a, fixed 10676c0 |
 | SessionSetup: today-date warning | **Done** — 55cd0a9 |
 | `screenSections.ts`: screen-slug keys, cross-category skills, start sections include components + push-off + streamline-in-motion | **Done** — 1c1793a |
-| `skillDisplayLabel`: returns `skill.name` only (section heading carries stroke context) | **Done** — 1c1793a |
-| EvaluateContent: calls GET /screens, uses screenSlug, cross-category skills, collapsible sections | **Done** — 1c1793a |
+| `skillDisplayLabel`: returns `skill.name` only | **Done** — 1c1793a |
+| EvaluateContent: GET /screens, screenSlug, collapsible sections, skill search box, coaching priority at bottom | **Done** — 1c1793a, 10676c0 |
 | `BreathingPatternSchema` enum | **Done** — 1c1793a |
-| DB migration: `screenSlug` on `evaluationSessions` | **Done** — 0e73a58 (not applied locally yet) |
-| DB migration: `breathingPattern` on `evaluationSessions` | **Done** — 0e73a58 (not applied locally yet) |
+| DB migration: `screenSlug` + `breathingPattern` on `evaluationSessions`; `golfScoreCategory` on `skillRatings` | **Done** — 0e73a58, 10676c0 (not applied locally yet) |
 | DB migration: `recommendedBreathingPattern` on `swimmers` | **Done** — 0e73a58 (not applied locally yet) |
-| `SCREEN_SKILLS` map in shared (authoritative per-screen skill list) | **Done** — 1c1793a |
-| `CreateSessionBodySchema`: `screenSlug` replaces `categoryId`; `breathingPattern` field | **Done** — 1c1793a |
-| POST /sessions: validates `screenSlug`; validates skills against screen list | **Done** — 1c1793a |
-| GET /coach/screens (new route, alongside GET /categories) | **Done** — 1c1793a |
+| `SCREEN_SKILLS` map in shared | **Done** — 1c1793a |
+| `GolfScoreCategorySchema` + `golfScoreCategory` on ratings (required for score skills, rejected on others) | **Done** — 10676c0 |
+| `CreateSessionBodySchema`: `screenSlug`, `breathingPattern`, `golfScoreCategory` on ratings | **Done** — 1c1793a, 10676c0 |
+| POST /sessions: validates `screenSlug`; validates skills; rejects race on water-confidence | **Done** — 1c1793a, 10676c0 |
+| GET /coach/screens (alongside GET /categories) | **Done** — 1c1793a |
 | PATCH /coach/swimmers/:id: `recommendedBreathingPattern` field | **Done** — 1c1793a |
-| SessionSetup: screen picker replacing category picker | **Done** — 1c1793a |
-| SessionSetup: breathing pattern selector for free/fly screens | **Done** — 1c1793a |
+| SessionSetup: screen picker; breathing pattern selector; hides Race on water-confidence | **Done** — 1c1793a, 10676c0 |
+| SkillGradeRow: golf score category selector for score-type skills | **Done** — 10676c0 |
+| CalculatedSkillRow: shows computed bilateral grade | **Done** — 10676c0 |
+| Bilateral breathing `builtOnSlugs` fixed to `["breathing-timing-free"]` | **Done** — 10676c0 |
+| `notLegalAllowed: true` on `breathing-timing-breast` | **Done** — 3a9a675 |
+| "breaks down 2nd length" fault tag on all underwaters/breakout/swim skills | **Done** — 10676c0, 3a9a675 |
 | Swimmer profile: recommended breathing pattern field | **Done** — 1c1793a |
-| Tests (POST /sessions with screenSlug, GET /screens, breathing pattern, screen skill validation) | **Done** — 1c1793a |
+| Tests (POST /sessions, GET /screens, golf score category, water-confidence context, search) | **Done** — 1c1793a, 10676c0 |
 | Golf score trend: age-group bands at threshold 10 (confirm with Jason); trend-only below threshold | **Not done** — separate PR |
