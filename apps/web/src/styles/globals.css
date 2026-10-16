@@ -66,7 +66,7 @@
 
   /* Spacer height that exactly matches the mobile tab bar so the bar covers it flush. */
   .pb-tab-safe {
-    padding-bottom: calc(3.5rem + env(safe-area-inset-bottom, 0px));
+    padding-bottom: calc(3.35rem + env(safe-area-inset-bottom, 0px));
   }
 }
 
@@ -113,7 +113,9 @@ details[open]::details-content {
     font-family: var(--font-heading);
     font-weight: 600;
     line-height: 1.1;
-    font-variation-settings: "SOFT" 100, "WONK" 0;
+    font-variation-settings:
+      "SOFT" 100,
+      "WONK" 0;
     font-optical-sizing: auto;
   }
 
