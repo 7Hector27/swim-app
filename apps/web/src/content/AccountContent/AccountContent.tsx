@@ -2,7 +2,7 @@ import type { MeResponse } from "@swim-app/shared";
 
 import Button from "@/components/Button";
 import SiteFooter from "@/components/SiteFooter";
-import { formatRole } from "@/lib/formatRole";
+import { capitalizeFirst } from "@/lib/capitalizeFirst";
 
 import EditProfileForm from "./EditProfileForm";
 import { logout } from "./actions";
@@ -21,11 +21,11 @@ export default function AccountContent({ profile }: AccountContentProps) {
           <div className="flex flex-col gap-3">
             <div>
               <p className="text-sm font-semibold text-text-secondary mb-0.5">Email</p>
-              <p className="text-text">{profile.email}</p>
+              <p className="text-text">{capitalizeFirst(profile.email)}</p>
             </div>
             <div>
               <p className="text-sm font-semibold text-text-secondary mb-0.5">Role</p>
-              <p className="text-text">{formatRole(profile.role)}</p>
+              <p className="text-text">{capitalizeFirst(profile.role)}</p>
             </div>
           </div>
 
