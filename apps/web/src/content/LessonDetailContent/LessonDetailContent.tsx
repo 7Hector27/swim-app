@@ -158,10 +158,6 @@ export default function LessonDetailContent({ lesson, locations, isViewer, isCoa
               </dl>
             </div>
 
-            {!isViewer && lessonHasStarted && (
-              <p className="text-sm text-text-secondary">This lesson has already started.</p>
-            )}
-
             {!isViewer && !lessonHasStarted && (
               <>
                 {/* Reschedule */}

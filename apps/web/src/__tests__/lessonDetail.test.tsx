@@ -61,13 +61,12 @@ describe("LessonDetailContent — started lesson guard", () => {
     expect(screen.getByText("Cancel lesson")).toBeInTheDocument();
   });
 
-  it("hides Reschedule and Cancel and shows a note for a started lesson", () => {
+  it("hides Reschedule and Cancel for a started lesson", () => {
     render(
       <LessonDetailContent lesson={lesson} locations={locations} isViewer={false} isCoach={false} />,
     );
     expect(screen.queryByText("Reschedule")).toBeNull();
     expect(screen.queryByText("Cancel lesson")).toBeNull();
-    expect(screen.getByText("This lesson has already started.")).toBeInTheDocument();
   });
 });
 
