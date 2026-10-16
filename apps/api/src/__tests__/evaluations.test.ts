@@ -199,7 +199,7 @@ describe("unauthenticated", () => {
   it("GET /swimmers/:id/sessions/dependency-map → 401", async () => {
     const res = await request(app)
       .get(`/coach/swimmers/${SWIMMER_ID}/sessions/dependency-map`)
-      .query({ categoryId: CATEGORY_ID });
+      .query({ screenSlug: "freestyle" });
     expect(res.status).toBe(401);
   });
 });
@@ -253,7 +253,7 @@ describe("parent role restrictions", () => {
     const res = await request(app)
       .get(`/coach/swimmers/${SWIMMER_ID}/sessions/dependency-map`)
       .set("Authorization", "Bearer token")
-      .query({ categoryId: CATEGORY_ID });
+      .query({ screenSlug: "freestyle" });
     expect(res.status).toBe(403);
   });
 });
@@ -896,3 +896,55 @@ describe("PATCH /ratings/:id/void", () => {
   });
 });
 
+
+// ── GET /swimmers/:id/sessions/dependency-map ─────────────────────────────────
+
+describe("GET /swimmers/:id/sessions/dependency-map", () => {
+  it("returns 200 with suggestion for a skill with a low rating on screenSlug=freestyle", async () => {
+    authAs(profileCoach);
+
+    // findActiveSwimmer
+    const swimmerLimit = vi.fn().mockResolvedValue([activeSwimmerRow]);
+    const swimmerWhere = vi.fn().mockReturnValue({ limit: swimmerLimit });
+
+    // ratingRows (innerJoin: mocked as one select returning a flat row)
+    const ratingWhere = vi.fn().mockResolvedValue([
+      {
+        slug: "free-kick",
+        grade: 1,
+        notLegal: false,
+        noConcept: false,
+        side: null,
+        ratedAt: new Date("2025-06-01T10:00:00.000Z"),
+        voidedAt: null,
+        sortOrder: 1,
+      },
+    ]);
+    const ratingInnerJoin = vi.fn().mockReturnValue({ where: ratingWhere });
+    const ratingFrom = vi.fn().mockReturnValue({ innerJoin: ratingInnerJoin });
+
+    // allSkillRows
+    const allSkillsWhere = vi.fn().mockResolvedValue([
+      { id: SKILL_ID, slug: "free-kick", sortOrder: 1 },
+    ]);
+    const allSkillsFrom = vi.fn().mockReturnValue({ where: allSkillsWhere });
+
+    // depRows
+    const depFrom = vi.fn().mockResolvedValue([]);
+
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(profileCoach))
+      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: swimmerWhere }) })
+      .mockReturnValueOnce({ from: ratingFrom })
+      .mockReturnValueOnce({ from: allSkillsFrom })
+      .mockReturnValueOnce({ from: depFrom });
+
+    const res = await request(app)
+      .get(`/coach/swimmers/${SWIMMER_ID}/sessions/dependency-map`)
+      .set("Authorization", "Bearer token")
+      .query({ screenSlug: "freestyle" });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty("suggestion");
+  });
+});

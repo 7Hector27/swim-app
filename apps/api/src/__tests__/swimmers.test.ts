@@ -1141,3 +1141,57 @@ describe("DELETE /swimmers/:id archive", () => {
     expect(mockDbUpdate).not.toHaveBeenCalled();
   });
 });
+
+// ── PATCH /coach/swimmers/:id ─────────────────────────────────────────────────
+
+describe("PATCH /coach/swimmers/:id — recommendedBreathingPattern", () => {
+  beforeEach(() => {
+    authAs(profileCoach);
+    vi.resetAllMocks();
+    authAs(profileCoach);
+  });
+
+  it("returns 200 and updates recommendedBreathingPattern", async () => {
+    mockDbSelect.mockReturnValueOnce(requireUserSelect(profileCoach));
+
+    const returningMock = vi.fn().mockResolvedValue([{ id: SWIMMER_A_ID }]);
+    const whereMock = vi.fn().mockReturnValue({ returning: returningMock });
+    const setMock = vi.fn().mockReturnValue({ where: whereMock });
+    mockDbUpdate.mockReturnValueOnce({ set: setMock });
+
+    const res = await request(app)
+      .patch(`/coach/swimmers/${SWIMMER_A_ID}`)
+      .set("Authorization", "Bearer token")
+      .send({ recommendedBreathingPattern: "every_3" });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true });
+  });
+
+  it("returns 404 for unknown or archived swimmer", async () => {
+    mockDbSelect.mockReturnValueOnce(requireUserSelect(profileCoach));
+
+    const returningMock = vi.fn().mockResolvedValue([]);
+    const whereMock = vi.fn().mockReturnValue({ returning: returningMock });
+    const setMock = vi.fn().mockReturnValue({ where: whereMock });
+    mockDbUpdate.mockReturnValueOnce({ set: setMock });
+
+    const res = await request(app)
+      .patch(`/coach/swimmers/${SWIMMER_A_ID}`)
+      .set("Authorization", "Bearer token")
+      .send({ recommendedBreathingPattern: "every_3" });
+
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 422 for invalid recommendedBreathingPattern value", async () => {
+    mockDbSelect.mockReturnValueOnce(requireUserSelect(profileCoach));
+
+    const res = await request(app)
+      .patch(`/coach/swimmers/${SWIMMER_A_ID}`)
+      .set("Authorization", "Bearer token")
+      .send({ recommendedBreathingPattern: "not_valid" });
+
+    expect(res.status).toBe(422);
+  });
+});

@@ -192,7 +192,7 @@ export const VoidRatingBodySchema = z.object({
 export type VoidRatingBody = z.infer<typeof VoidRatingBodySchema>;
 
 export const DependencyMapQuerySchema = z.object({
-  categoryId: z.string().uuid(),
+  screenSlug: z.string(),
 });
 export type DependencyMapQuery = z.infer<typeof DependencyMapQuerySchema>;
 
@@ -363,7 +363,6 @@ export type SaveDraftBody = z.infer<typeof SaveDraftBodySchema>;
 export const EvaluationDraftSchema = z.object({
   id: z.string().uuid(),
   swimmerId: z.string().uuid(),
-  coachId: z.string().uuid(),
   screenSlug: z.string(),
   sessionDate: z.string().nullable(),
   context: z.enum(["drill", "practice", "race"]).nullable(),

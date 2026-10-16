@@ -18,7 +18,6 @@ import {
   canSubmit,
   buildRatingsArray,
   buildSectionGroups,
-  skillDisplayLabel,
 } from "./helpers";
 import { SCREEN_SECTIONS } from "./screenSections";
 import SessionSetup from "./SessionSetup";
@@ -150,17 +149,26 @@ export default function EvaluateContent({ swimmer, screens, accessToken, resumeD
     }
   }, [draft, swimmer.id, metaKey, skillsKey]);
 
-  // Fetch dep suggestion when screenSlug changes — use the screen's first category-like slug
-  // The dependency map endpoint still accepts categoryId; we skip it for now (no category on screens)
+  // Fetch dep suggestion when screenSlug changes
   useEffect(() => {
     if (!draft.screenSlug) {
       setDepSuggestion({ status: "idle" });
       return;
     }
-    // Dependency map requires a categoryId; screens are not category-scoped.
-    // Set to idle until the dependency-map endpoint is updated to accept screenSlug.
-    setDepSuggestion({ status: "idle" });
-  }, [draft.screenSlug]);
+    setDepSuggestion({ status: "loading" });
+    fetch(
+      `${process.env.NEXT_PUBLIC_API_URL}/coach/swimmers/${swimmer.id}/sessions/dependency-map?screenSlug=${encodeURIComponent(draft.screenSlug)}`,
+      { headers: { Authorization: `Bearer ${accessToken}` } },
+    )
+      .then((response) => (response.ok ? response.json() : Promise.reject(response.status)))
+      .then((data: unknown) => {
+        const suggestion = (data as { suggestion?: Array<{ slug: string; grade: unknown; sortOrder: number }> | null } | null)?.suggestion ?? null;
+        setDepSuggestion({ status: "loaded", chain: suggestion });
+      })
+      .catch(() => {
+        setDepSuggestion({ status: "error" });
+      });
+  }, [draft.screenSlug, swimmer.id, accessToken]);
 
   const boundAction = useMemo(() => submitEvaluation.bind(null, swimmer.id), [swimmer.id]);
   const [state, formAction, isPending] = useActionState<EvaluateState, FormData>(
@@ -546,7 +554,7 @@ export default function EvaluateContent({ swimmer, screens, accessToken, resumeD
             {selectedScreen !== null && (() => {
               const screen = selectedScreen;
               function renderSkill(skill: SkillForRating, sectionName: string) {
-                const label = skillDisplayLabel(skill, sectionName);
+                const label = skill.name;
                 if (skill.type === "rollup") {
                   let calculatedGrade: 1 | 2 | 3 | 4 | 5 | null = null;
                   if (skill.slug === "free-bilateral-breathing") {

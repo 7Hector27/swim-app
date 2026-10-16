@@ -146,15 +146,6 @@ export function buildSectionGroups(
   return result;
 }
 
-// The section name is the sole source of stroke context — the stroke name
-// appears once in the section heading, not repeated per-skill row.
-export function skillDisplayLabel(
-  skill: import("@swim-app/shared").SkillForRating,
-  _sectionName: string,
-): string {
-  return skill.name;
-}
-
 export function buildRatingsArray(
   skills: import("@swim-app/shared").SkillForRating[],
   draftSkills: Record<string, SkillDraft>,

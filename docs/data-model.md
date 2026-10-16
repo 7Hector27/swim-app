@@ -499,7 +499,7 @@ Constraints:
 - `CHECK (draft_screen_slug_valid)` — screen_slug must be one of the nine valid slugs
 - `CHECK (draft_breathing_pattern_valid)` — breathing_pattern must be null or a valid enum value
 
-RLS enabled. Policies TBD.
+RLS is enabled with no policies (deny-all by design; the API is the sole access path).
 
 ---
 

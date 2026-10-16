@@ -1,4 +1,17 @@
-export const SCREEN_SKILLS: Record<string, string[]> = {
+export const SCREEN_SLUGS = [
+  "fundamentals",
+  "water-confidence",
+  "freestyle",
+  "backstroke",
+  "breaststroke",
+  "butterfly",
+  "starts",
+  "im-turns",
+  "racing",
+] as const;
+export type ScreenSlug = (typeof SCREEN_SLUGS)[number];
+
+export const SCREEN_SKILLS: Record<ScreenSlug, string[]> = {
   fundamentals: [
     "buoyancy-balance","core-stability","static-streamline","finger-spacing","sculling",
     "exhalation","breath-control",
@@ -70,8 +83,6 @@ export const SCREEN_SKILLS: Record<string, string[]> = {
   ],
   racing: ["pacing","speed-endurance","race-strategy","race-awareness","adaptability"],
 };
-
-export const SCREEN_SLUGS = Object.keys(SCREEN_SKILLS) as readonly string[];
 
 export const SCREEN_NAMES: Record<string, string> = {
   fundamentals: "Fundamentals",

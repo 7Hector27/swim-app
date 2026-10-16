@@ -186,6 +186,19 @@ describe("PUT /coach/swimmers/:id/drafts/:screenSlug", () => {
 // ── GET /coach/swimmers/:id/drafts ────────────────────────────────────────────
 
 describe("GET /coach/swimmers/:id/drafts", () => {
+  it("returns 404 when swimmer is archived", async () => {
+    authAs(profileCoach);
+
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(profileCoach))
+      .mockReturnValueOnce(swimmerSelect(null));
+
+    const res = await request(app)
+      .get(`/coach/swimmers/${SWIMMER_ID}/drafts`)
+      .set("Authorization", "Bearer token");
+    expect(res.status).toBe(404);
+  });
+
   it("returns 200 with empty array when no drafts", async () => {
     authAs(profileCoach);
 
@@ -195,6 +208,7 @@ describe("GET /coach/swimmers/:id/drafts", () => {
 
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(profileCoach))
+      .mockReturnValueOnce(swimmerSelect(activeSwimmerRow))
       .mockReturnValueOnce({ from: fromMock });
 
     const res = await request(app)
@@ -213,6 +227,7 @@ describe("GET /coach/swimmers/:id/drafts", () => {
 
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(profileCoach))
+      .mockReturnValueOnce(swimmerSelect(activeSwimmerRow))
       .mockReturnValueOnce({ from: fromMock });
 
     const res = await request(app)
@@ -279,6 +294,24 @@ describe("GET /coach/drafts/:draftId", () => {
     expect(res.status).toBe(404);
   });
 
+  it("returns 404 when swimmer is archived", async () => {
+    authAs(profileCoach);
+
+    const limitMock = vi.fn().mockResolvedValue([storedDraft]);
+    const whereMock = vi.fn().mockReturnValue({ limit: limitMock });
+    const fromMock = vi.fn().mockReturnValue({ where: whereMock });
+
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(profileCoach))
+      .mockReturnValueOnce({ from: fromMock })
+      .mockReturnValueOnce(swimmerSelect(null));
+
+    const res = await request(app)
+      .get(`/coach/drafts/${DRAFT_ID}`)
+      .set("Authorization", "Bearer token");
+    expect(res.status).toBe(404);
+  });
+
   it("returns 200 with draft", async () => {
     authAs(profileCoach);
 
@@ -288,7 +321,8 @@ describe("GET /coach/drafts/:draftId", () => {
 
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(profileCoach))
-      .mockReturnValueOnce({ from: fromMock });
+      .mockReturnValueOnce({ from: fromMock })
+      .mockReturnValueOnce(swimmerSelect(activeSwimmerRow));
 
     const res = await request(app)
       .get(`/coach/drafts/${DRAFT_ID}`)
@@ -339,6 +373,30 @@ describe("DELETE /coach/drafts/:draftId", () => {
   });
 });
 
+// ── DELETE /coach/drafts/:draftId — archived swimmer ─────────────────────────
+
+describe("DELETE /coach/drafts/:draftId — archived swimmer allowed", () => {
+  it("returns 204 even when swimmer is archived", async () => {
+    authAs(profileCoach);
+
+    const limitMock = vi.fn().mockResolvedValue([{ id: DRAFT_ID, coachId: COACH_ID }]);
+    const whereMock = vi.fn().mockReturnValue({ limit: limitMock });
+    const fromMock = vi.fn().mockReturnValue({ where: whereMock });
+
+    const deleteWhereMock = vi.fn().mockResolvedValue([]);
+    mockDbDelete.mockReturnValue({ where: deleteWhereMock });
+
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(profileCoach))
+      .mockReturnValueOnce({ from: fromMock });
+
+    const res = await request(app)
+      .delete(`/coach/drafts/${DRAFT_ID}`)
+      .set("Authorization", "Bearer token");
+    expect(res.status).toBe(204);
+  });
+});
+
 // ── POST /coach/drafts/:draftId/finalize ──────────────────────────────────────
 
 describe("POST /coach/drafts/:draftId/finalize", () => {
@@ -350,6 +408,25 @@ describe("POST /coach/drafts/:draftId/finalize", () => {
       .post(`/coach/drafts/${DRAFT_ID}/finalize`)
       .set("Authorization", "Bearer token");
     expect(res.status).toBe(403);
+  });
+
+  it("returns 404 when swimmer is archived", async () => {
+    authAs(profileCoach);
+
+    const limitMock = vi.fn().mockResolvedValue([storedDraft]);
+    const whereMock = vi.fn().mockReturnValue({ limit: limitMock });
+    const fromMock = vi.fn().mockReturnValue({ where: whereMock });
+
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(profileCoach))
+      .mockReturnValueOnce({ from: fromMock })
+      .mockReturnValueOnce(swimmerSelect(null));
+
+    const res = await request(app)
+      .post(`/coach/drafts/${DRAFT_ID}/finalize`)
+      .set("Authorization", "Bearer token");
+    expect(res.status).toBe(404);
+    expect(mockDbTransaction).not.toHaveBeenCalled();
   });
 
   it("returns 422 with sessionDate error when sessionDate is null", async () => {

@@ -27,6 +27,7 @@ import {
   UpdateCoachNoteBodySchema,
   CreateMeetSwimBodySchema,
   PatchMeetSwimBodySchema,
+  PatchCoachSwimmerBodySchema,
   calculateAge,
   currentSeasonStartYear,
   todayLA,
@@ -41,6 +42,7 @@ import {
   type MeetSwimResponse,
   type PersonalBest,
   type MeetSwimsResponse,
+  type PatchCoachSwimmerBody,
 } from "@swim-app/shared";
 import { isValidEvent } from "@swim-app/shared";
 import { parseSwimTime, formatSwimTime } from "../lib/swimTime";
@@ -259,6 +261,32 @@ coachSwimmersRouter.get(
     };
 
     res.json(result);
+  }),
+);
+
+coachSwimmersRouter.patch(
+  "/:id",
+  validate({ params: IdParamsSchema, body: PatchCoachSwimmerBodySchema }),
+  asyncHandler(async (req, res) => {
+    const { id: swimmerId } = req.params as unknown as IdParams;
+    const body = req.body as PatchCoachSwimmerBody;
+
+    const rows = await db
+      .update(swimmers)
+      .set({
+        ...(body.recommendedBreathingPattern !== undefined && {
+          recommendedBreathingPattern: body.recommendedBreathingPattern,
+        }),
+      })
+      .where(and(isActiveSwimmer, eq(swimmers.id, swimmerId)))
+      .returning({ id: swimmers.id });
+
+    if (rows.length === 0) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+
+    res.status(200).json({ ok: true });
   }),
 );
 

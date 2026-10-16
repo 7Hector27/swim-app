@@ -46,6 +46,7 @@ import {
   SCREEN_SKILLS,
   SCREEN_SLUGS,
   SCREEN_NAMES,
+  type ScreenSlug,
 } from "@swim-app/shared";
 
 const RatingIdParamsSchema = z.object({ id: z.string().uuid() });
@@ -116,7 +117,7 @@ evaluationsRouter.post(
       return;
     }
 
-    const screenSkillSlugs = new Set(SCREEN_SKILLS[body.screenSlug] ?? []);
+    const screenSkillSlugs = new Set(SCREEN_SKILLS[body.screenSlug as ScreenSlug] ?? []);
 
     // Load the full non-archived skill catalog for validation.
     const allSkillRows = await db
@@ -569,7 +570,7 @@ evaluationsRouter.get(
   validate({ params: SwimmerIdParamsSchema, query: DependencyMapQuerySchema }),
   asyncHandler(async (req, res) => {
     const { id: swimmerId } = req.params as unknown as SwimmerIdParams;
-    const { categoryId } = req.query as unknown as DependencyMapQuery;
+    const { screenSlug } = req.query as unknown as DependencyMapQuery;
 
     const swimmer = await findActiveSwimmer(swimmerId);
     if (!swimmer) {
@@ -587,7 +588,6 @@ evaluationsRouter.get(
         side: skillRatings.side,
         ratedAt: skillRatings.ratedAt,
         voidedAt: skillRatings.voidedAt,
-        skillCategoryId: skills.categoryId,
         sortOrder: skills.sortOrder,
       })
       .from(skillRatings)
@@ -606,12 +606,9 @@ evaluationsRouter.get(
 
     const grades: GradeMap = latestEffectiveRatings(ratingRecords);
 
-    // Restrict to skills in the requested category
-    const categorySkillSlugs = new Set(
-      ratingRows
-        .filter((row) => row.skillCategoryId === categoryId)
-        .map((row) => row.slug),
-    );
+    // Restrict to skills whose slug is in the requested screen
+    const skillSlugs = SCREEN_SKILLS[screenSlug as ScreenSlug] ?? [];
+    const screenSkillSlugs = new Set(skillSlugs);
 
     // Build full sortOrder and dependency graph
     const allSkillRows = await db
@@ -647,11 +644,11 @@ evaluationsRouter.get(
       fullSortOrder[skill.slug] = skill.sortOrder;
     }
 
-    // Find deepest low foundation across category skills
+    // Find deepest low foundation across screen skills
     let bestChain: ChainEntry[] | null = null;
     let bestDepth = -1;
 
-    for (const slug of categorySkillSlugs) {
+    for (const slug of screenSkillSlugs) {
       if (!(slug in grades)) continue;
       const chain = findDeepestLowFoundation(slug, grades, graph, fullSortOrder);
       if (chain !== null && chain.length > bestDepth) {
@@ -660,7 +657,7 @@ evaluationsRouter.get(
       }
     }
 
-    req.log.info({ swimmerId, categoryId }, "dependency map suggestion computed");
+    req.log.info({ swimmerId, screenSlug }, "dependency map suggestion computed");
 
     res.json({ suggestion: bestChain });
   }),
@@ -767,6 +764,24 @@ evaluationsRouter.get(
 
     const trends: GolfScoreTrend[] = [];
 
+    // Fetch cohort swimmer IDs once, before any skill/category loops, to avoid N+1 queries.
+    let cohortIds: string[] = [];
+    if (ageGroup !== null) {
+      const cohortSwimmerRows = await db
+        .select({ id: swimmers.id, birthDate: swimmers.birthDate })
+        .from(swimmers)
+        .where(isActiveSwimmer);
+
+      const today = todayLA();
+      cohortIds = cohortSwimmerRows
+        .filter((cohortSwimmer) => {
+          if (cohortSwimmer.id === swimmerId) return false;
+          const swimmerAgeGroup = ageToGroup(calculateAge(cohortSwimmer.birthDate, today));
+          return swimmerAgeGroup === ageGroup;
+        })
+        .map((cohortSwimmer) => cohortSwimmer.id);
+    }
+
     for (const [, skillEntry] of skillMap) {
       const byCategory: GolfScoreCategoryTrend[] = [];
 
@@ -777,19 +792,6 @@ evaluationsRouter.get(
         let ageBands: GolfScoreAgeBands | null = null;
 
         if (ageGroup !== null) {
-          const cohortSwimmerRows = await db
-            .select({ id: swimmers.id, birthDate: swimmers.birthDate })
-            .from(swimmers)
-            .where(isActiveSwimmer);
-
-          const today = todayLA();
-          const cohortIds = cohortSwimmerRows
-            .filter((cohortSwimmer) => {
-              if (cohortSwimmer.id === swimmerId) return false;
-              const swimmerAgeGroup = ageToGroup(calculateAge(cohortSwimmer.birthDate, today));
-              return swimmerAgeGroup === ageGroup;
-            })
-            .map((cohortSwimmer) => cohortSwimmer.id);
 
           if (cohortIds.length > 0) {
             const cohortRows = await db

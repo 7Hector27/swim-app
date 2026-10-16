@@ -42,6 +42,7 @@ export type {
   CoachSwimmer,
   CoachSwimmerDetail,
   CoachVisibilityBody,
+  PatchCoachSwimmerBody,
 } from "./schemas/swimmer";
 export {
   SexSchema,
@@ -58,6 +59,7 @@ export {
   CoachSwimmerSchema,
   CoachSwimmerDetailSchema,
   CoachVisibilityBodySchema,
+  PatchCoachSwimmerBodySchema,
 } from "./schemas/swimmer";
 
 export type {
@@ -282,6 +284,7 @@ export type { StartGradeResult } from "./lib/startGrade";
 export { calculateBilateralBreathingGrade } from "./lib/bilateralBreathingGrade";
 
 export { SCREEN_SKILLS, SCREEN_SLUGS, SCREEN_NAMES } from "./lib/screenSkills";
+export type { ScreenSlug } from "./lib/screenSkills";
 
 export type {
   EvaluationContext,

@@ -19,6 +19,7 @@ import {
   EvaluationDraftSchema,
   SaveDraftBodySchema,
   SCREEN_SKILLS,
+  type ScreenSlug,
 } from "@swim-app/shared";
 
 const SwimmerScreenParamsSchema = z.object({
@@ -46,7 +47,6 @@ async function findActiveSwimmer(swimmerId: string) {
 function serializeDraft(row: {
   id: string;
   swimmerId: string;
-  coachId: string;
   screenSlug: string;
   sessionDate: string | null;
   context: "drill" | "practice" | "race" | null;
@@ -59,7 +59,6 @@ function serializeDraft(row: {
   return EvaluationDraftSchema.parse({
     id: row.id,
     swimmerId: row.swimmerId,
-    coachId: row.coachId,
     screenSlug: row.screenSlug,
     sessionDate: row.sessionDate,
     context: row.context,
@@ -145,6 +144,12 @@ coachDraftsRouter.get(
     const { id: swimmerId } = req.params as { id: string };
     const coachId = req.profile.id;
 
+    const swimmer = await findActiveSwimmer(swimmerId);
+    if (!swimmer) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+
     const rows = await db
       .select({
         id: evaluationDrafts.id,
@@ -203,6 +208,12 @@ draftsRouter.get(
 
     const row = rows[0] ?? null;
     if (!row || row.coachId !== coachId) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+
+    const swimmerForGet = await findActiveSwimmer(row.swimmerId);
+    if (!swimmerForGet) {
       res.status(404).json({ error: "Not found" });
       return;
     }
@@ -304,7 +315,7 @@ draftsRouter.post(
       return;
     }
 
-    const screenSkillSlugs = new Set(SCREEN_SKILLS[screenSlug] ?? []);
+    const screenSkillSlugs = new Set(SCREEN_SKILLS[screenSlug as ScreenSlug] ?? []);
 
     const allSkillRows = await db
       .select({

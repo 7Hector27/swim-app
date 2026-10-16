@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { mapSubmitResponse, buildSkillGroups, buildSectionGroups, skillDisplayLabel, canSubmit } from "../content/EvaluateContent/helpers";
+import { mapSubmitResponse, buildSkillGroups, buildSectionGroups, canSubmit } from "../content/EvaluateContent/helpers";
 import type { SkillForRating } from "@swim-app/shared";
 
 describe("mapSubmitResponse", () => {
@@ -230,20 +230,3 @@ describe("SCREEN_SECTIONS", () => {
   });
 });
 
-// ── skillDisplayLabel ─────────────────────────────────────────────────────────
-
-describe("skillDisplayLabel", () => {
-  const skillUnique = makeSkill({ id: "s1", name: "Head Position", slug: "head-pos", stroke: null });
-  const skillFree = makeSkill({ id: "s2", name: "Kick", slug: "free-kick", stroke: "free" as const });
-  const skillBack = makeSkill({ id: "s3", name: "Kick", slug: "back-kick", stroke: "back" as const });
-
-  it("returns just the skill name regardless of stroke or section", () => {
-    expect(skillDisplayLabel(skillUnique, "")).toBe("Head Position");
-    expect(skillDisplayLabel(skillFree, "The swim")).toBe("Kick");
-    expect(skillDisplayLabel(skillBack, "Backstroke")).toBe("Kick");
-  });
-
-  it("returns just the name when section name is empty", () => {
-    expect(skillDisplayLabel(skillFree, "")).toBe("Kick");
-  });
-});

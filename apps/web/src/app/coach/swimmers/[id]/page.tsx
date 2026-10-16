@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
-import type { EvaluationDraft, SwimmerSkillsResponse } from "@swim-app/shared";
+import type { SwimmerSkillsResponse } from "@swim-app/shared";
+import { DraftsListResponseSchema } from "@swim-app/shared";
 
 import AccountInactiveScreen from "@/components/AccountInactiveScreen";
 import CoachSwimmerDetailContent from "@/content/CoachSwimmerDetailContent";
@@ -50,8 +51,8 @@ export default async function CoachSwimmerPage({ params }: CoachSwimmerPageProps
   const swims = swimsResult.ok ? swimsResult.data.swims : [];
   const personalBests = swimsResult.ok ? swimsResult.data.personalBests : [];
   const meets = meetsResult.ok ? meetsResult.meets : [];
-  const draftsData = draftsRes.ok ? await draftsRes.json().catch(() => ({ drafts: [] })) : { drafts: [] };
-  const swimmerDrafts: EvaluationDraft[] = Array.isArray(draftsData.drafts) ? draftsData.drafts : [];
+  const parsed = DraftsListResponseSchema.safeParse(draftsRes.ok ? await draftsRes.json().catch(() => null) : null);
+  const swimmerDrafts = parsed.success ? parsed.data.drafts : [];
   const golfScoreTrends = golfScoreTrendsResult.ok ? golfScoreTrendsResult.data.trends : [];
 
   return (

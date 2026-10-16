@@ -50,8 +50,8 @@ export default function GolfScoreTrends({ trends }: GolfScoreTrendsProps) {
                 <p className="text-xs text-text-secondary italic">Your trend only</p>
               )}
               <ul className="flex flex-col gap-0">
-                {catTrend.points.slice().reverse().map((point, index) => (
-                  <li key={index} className="flex gap-3 text-xs py-1 border-b border-border items-center">
+                {catTrend.points.slice().reverse().map((point) => (
+                  <li key={point.sessionDate + point.ratedAt} className="flex gap-3 text-xs py-1 border-b border-border items-center">
                     <span className="text-text-secondary w-24 shrink-0">{formatDate(point.sessionDate)}</span>
                     {point.measurementValue !== null && (
                       <span className="font-semibold text-text">{point.measurementValue}</span>
