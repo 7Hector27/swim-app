@@ -12,7 +12,8 @@ interface Props {
   onSlotClick: (slot: { startsAt: string; state: string }) => void;
 }
 
-const BASE_CLASSES = "min-h-[44px] w-full flex items-center px-4 text-sm rounded-button border transition-colors duration-150";
+const BASE_CLASSES =
+  "min-h-[44px] w-full flex items-center px-4 text-sm rounded-button border transition-colors duration-100 motion-reduce:transition-none";
 
 function SlotRow({
   slot,
@@ -27,7 +28,7 @@ function SlotRow({
 
   if (slot.state === "past" || slot.state === "not_open_yet") {
     return (
-      <div className={`${BASE_CLASSES} border-border text-text-secondary opacity-50`}>
+      <div className={`${BASE_CLASSES} border-border text-text-secondary opacity-40`}>
         {time}
       </div>
     );
@@ -35,7 +36,7 @@ function SlotRow({
 
   if (slot.state === "unavailable") {
     return (
-      <div className={`${BASE_CLASSES} border-border text-text-secondary line-through`}>
+      <div className={`${BASE_CLASSES} border-border text-text-secondary line-through opacity-60`}>
         {time}
       </div>
     );
@@ -45,7 +46,7 @@ function SlotRow({
     return (
       <button
         type="button"
-        className={`${BASE_CLASSES} border-border text-text-secondary line-through`}
+        className={`${BASE_CLASSES} border-border text-text-secondary line-through opacity-60 active:scale-[0.97] motion-reduce:transform-none`}
         onClick={() => onSlotClick(slot)}
       >
         {time}
@@ -57,7 +58,7 @@ function SlotRow({
     return (
       <button
         type="button"
-        className={`${BASE_CLASSES} border-accent bg-button-primary-background text-button-primary-text font-semibold`}
+        className={`${BASE_CLASSES} border-transparent bg-heading text-background font-semibold active:scale-[0.97] motion-reduce:transform-none`}
         aria-pressed={true}
         onClick={() => onSlotClick(slot)}
       >
@@ -69,7 +70,7 @@ function SlotRow({
   return (
     <button
       type="button"
-      className={`${BASE_CLASSES} border-border bg-surface-soft hover:bg-accent/10`}
+      className={`${BASE_CLASSES} border-border bg-surface-soft hover:bg-accent/10 active:scale-[0.97] motion-reduce:transform-none`}
       aria-pressed={false}
       onClick={() => onSlotClick(slot)}
     >
@@ -78,10 +79,17 @@ function SlotRow({
   );
 }
 
-export default function PhoneTimeList({ day, durationMinutes, selectedStartsAt, onSlotClick }: Props) {
+export default function PhoneTimeList({
+  day,
+  durationMinutes,
+  selectedStartsAt,
+  onSlotClick,
+}: Props) {
   if (day === null || day.slots.length === 0) {
     return (
-      <p className="text-sm text-text-secondary py-6 text-center">No slots for this day.</p>
+      <p className="text-sm text-text-secondary py-6 text-center">
+        No slots for this day.
+      </p>
     );
   }
 

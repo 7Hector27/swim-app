@@ -9,7 +9,16 @@ import { fetchSwimmers } from "@/lib/api/swimmers";
 
 export const metadata: Metadata = { title: "Book a lesson · Axiom Aquatics" };
 
-export default async function BookPage() {
+export default async function BookPage(props: {
+  searchParams: Promise<Record<string, string>>;
+}) {
+  const searchParams = await props.searchParams;
+  const initialView =
+    searchParams["view"] === "month" ? ("month" as const) : ("week" as const);
+  const initialDate = /^\d{4}-\d{2}-\d{2}$/.test(searchParams["date"] ?? "")
+    ? searchParams["date"]
+    : undefined;
+
   const auth = await requireAuth();
   if (!auth) redirect("/login");
   const { profile, accessToken } = auth;
@@ -34,6 +43,8 @@ export default async function BookPage() {
             swimmers={swimmers}
             isViewer={isViewer}
             householdFailed={householdFailed}
+            initialView={initialView}
+            {...(initialDate !== undefined && { initialDate })}
           />
         </div>
       </main>

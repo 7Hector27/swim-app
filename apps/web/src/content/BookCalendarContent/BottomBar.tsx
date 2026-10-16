@@ -51,34 +51,42 @@ export default function BottomBar({
     <div
       role="region"
       aria-label="Booking selection"
-      className="sticky bottom-0 z-10 bg-background border-t border-border px-page py-3 flex items-center gap-4"
+      className="sticky bottom-4 z-10 mx-4 tablet:mx-0"
     >
-      <div className="flex-1 min-w-0">
-        <p className={`text-sm font-semibold truncate ${hasSelection && !tooSoon ? "text-heading" : "text-text-secondary"}`}>
-          {timeLabel}
-        </p>
-        {subLabel !== null && (
-          <p className="text-xs text-text-secondary mt-0.5">{subLabel}</p>
-        )}
-        {priceLabel !== null && (
-          <p className="text-xs text-text-secondary">{priceLabel}</p>
-        )}
-        {needsApproval && hasSelection && !tooSoon && (
-          <p className="text-xs text-text-secondary mt-0.5">Jason will confirm this one.</p>
-        )}
-        {errorMessage !== null && (
-          <p role="alert" className="text-xs text-danger mt-1">{errorMessage}</p>
-        )}
-      </div>
+      <div className="bg-heading text-background rounded-[16px] px-5 py-4 flex items-center gap-4 transition-colors duration-200 motion-reduce:transition-none shadow-lg">
+        <div className="flex-1 min-w-0">
+          <p
+            className={`text-sm font-semibold truncate ${
+              hasSelection && !tooSoon ? "text-background" : "opacity-60"
+            }`}
+          >
+            {timeLabel}
+          </p>
+          {subLabel !== null && (
+            <p className="text-xs opacity-70 mt-0.5">{subLabel}</p>
+          )}
+          {priceLabel !== null && (
+            <p className="text-xs opacity-70">{priceLabel}</p>
+          )}
+          {needsApproval && hasSelection && !tooSoon && (
+            <p className="text-xs opacity-70 mt-0.5">Jason will confirm this one.</p>
+          )}
+          {errorMessage !== null && (
+            <p role="alert" className="text-xs text-danger mt-1">
+              {errorMessage}
+            </p>
+          )}
+        </div>
 
-      <button
-        type="button"
-        onClick={onConfirm}
-        disabled={!confirmEnabled}
-        className="min-h-[44px] px-5 rounded-button bg-button-primary-background text-button-primary-text text-sm font-semibold transition-opacity hover:opacity-90 active:scale-[0.97] disabled:opacity-40 disabled:cursor-default flex-shrink-0"
-      >
-        {isConfirming ? "Booking…" : "Book lesson"}
-      </button>
+        <button
+          type="button"
+          onClick={onConfirm}
+          disabled={!confirmEnabled}
+          className="min-h-[44px] px-5 rounded-button bg-button-primary-background text-button-primary-text text-sm font-semibold transition-opacity hover:opacity-90 active:scale-[0.97] transition-[opacity,transform] motion-reduce:transform-none disabled:opacity-40 disabled:cursor-default flex-shrink-0"
+        >
+          {isConfirming ? "Booking…" : "Confirm booking"}
+        </button>
+      </div>
     </div>
   );
 }

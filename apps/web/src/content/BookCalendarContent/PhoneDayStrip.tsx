@@ -29,12 +29,19 @@ function openLabel(day: WeekDayAvailability): string {
   return `${day.openCount} open`;
 }
 
-export default function PhoneDayStrip({ days, selectedDayDate, todayStr, onDaySelect }: Props) {
+export default function PhoneDayStrip({
+  days,
+  selectedDayDate,
+  todayStr,
+  onDaySelect,
+}: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!selectedDayDate || !containerRef.current) return;
-    const btn = containerRef.current.querySelector<HTMLElement>(`[data-date="${selectedDayDate}"]`);
+    const btn = containerRef.current.querySelector<HTMLElement>(
+      `[data-date="${selectedDayDate}"]`,
+    );
     btn?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
   }, [selectedDayDate]);
 
@@ -52,12 +59,16 @@ export default function PhoneDayStrip({ days, selectedDayDate, todayStr, onDaySe
             onClick={() => onDaySelect(day.date)}
             aria-current={isToday ? "date" : undefined}
             aria-pressed={isSelected}
-            className={`min-h-[44px] min-w-[60px] flex flex-col items-center justify-center rounded-button border px-2 py-1 text-xs flex-shrink-0 transition-colors duration-150 ${
-              isSelected ? "border-accent text-accent" : "border-border text-text-secondary hover:bg-surface-soft"
+            className={`min-h-[44px] min-w-[60px] flex flex-col items-center justify-center rounded-button border px-2 py-1 text-xs flex-shrink-0 transition-colors duration-100 motion-reduce:transition-none ${
+              isSelected
+                ? "border-accent text-accent bg-accent/10"
+                : "border-border text-text-secondary hover:bg-surface-soft"
             }`}
           >
             <span className="font-semibold">{getDowAbbr(day.date)}</span>
-            <span className={`text-base font-bold ${isSelected ? "text-accent" : "text-heading"}`}>
+            <span
+              className={`text-base font-bold ${isSelected ? "text-accent" : "text-heading"}`}
+            >
               {getDayNumber(day.date)}
             </span>
             <span className="text-[10px]">{openLabel(day)}</span>

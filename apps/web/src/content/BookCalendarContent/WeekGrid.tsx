@@ -32,12 +32,17 @@ export default function WeekGrid({
   return (
     <div className="overflow-x-auto">
       <div className="flex min-w-[480px]">
+        {/* Time column */}
         <div className="flex flex-col w-16 flex-shrink-0">
           <div className="h-[72px] border-b border-border" />
           {gridRows.map((rowHHMM) => (
             <div
               key={rowHHMM}
-              className={`min-h-[44px] flex items-center justify-end pr-2 text-xs ${isHourMark(rowHHMM) ? "font-semibold text-text" : "text-text-secondary"}`}
+              className={`min-h-[40px] flex items-center justify-end pr-2 text-xs ${
+                isHourMark(rowHHMM)
+                  ? "font-bold text-text"
+                  : "text-text-secondary"
+              }`}
             >
               {isHourMark(rowHHMM) ? formatHHMM(rowHHMM) : rowHHMM.slice(3)}
             </div>

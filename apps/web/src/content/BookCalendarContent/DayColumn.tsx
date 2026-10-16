@@ -46,7 +46,9 @@ export default function DayColumn({
   const isToday = day.date === todayStr;
   const label = dayStateLabel(day.dayState, day.openCount);
   const isInactive =
-    day.dayState === "closed" || day.dayState === "past" || day.dayState === "not_open_yet";
+    day.dayState === "closed" ||
+    day.dayState === "past" ||
+    day.dayState === "not_open_yet";
 
   const slotsByHHMM = new Map<string, WeekDayAvailability["slots"][number]>();
   for (const slot of day.slots) {
@@ -60,7 +62,9 @@ export default function DayColumn({
         aria-current={isToday ? "date" : undefined}
       >
         <span>{getDowAbbr(day.date)}</span>
-        <span className="text-base font-bold text-heading">{getDayNumber(day.date)}</span>
+        <span className={`text-base font-bold ${isToday ? "text-accent" : "text-heading"}`}>
+          {getDayNumber(day.date)}
+        </span>
         {label !== null && (
           <span className="text-[10px] text-text-secondary mt-0.5">{label}</span>
         )}
@@ -68,10 +72,10 @@ export default function DayColumn({
 
       {isInactive ? (
         <div className="flex-1 flex items-center justify-center text-xs text-text-secondary opacity-50 min-h-[44px]">
-          {day.dayState === "closed" ? "Closed" : day.dayState === "not_open_yet" ? "" : ""}
+          {day.dayState === "closed" ? "Closed" : ""}
         </div>
       ) : (
-        <div className="flex flex-col">
+        <div className="flex flex-col gap-[2px] pt-[2px]">
           {gridRows.map((rowHHMM) => {
             const slot = slotsByHHMM.get(rowHHMM) ?? null;
             const isYourPick =

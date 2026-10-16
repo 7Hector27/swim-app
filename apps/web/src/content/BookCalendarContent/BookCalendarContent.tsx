@@ -6,12 +6,13 @@ import { todayLA } from "@swim-app/shared";
 import type { ParentSwimmer, WeekAvailabilityResponse } from "@swim-app/shared";
 
 import { fetchRangeAction, createBookingAction, findFirstAvailableDayAction } from "./actions";
-import { getMondayOfWeek, addDaysToDateStr, formatDayLabel } from "./helpers";
+import { getMondayOfWeek, addDaysToDateStr, formatDayLabel, formatWeekLabel } from "./helpers";
 import type { BookingState } from "./helpers";
 import CalendarConfigRow from "./CalendarConfigRow";
 import WeekNav from "./WeekNav";
 import Legend from "./Legend";
 import WeekGrid from "./WeekGrid";
+import MonthGrid from "./MonthGrid";
 import PhoneDayStrip from "./PhoneDayStrip";
 import PhoneTimeList from "./PhoneTimeList";
 import BottomBar from "./BottomBar";
@@ -27,6 +28,19 @@ interface Props {
   swimmers: ParentSwimmer[];
   isViewer: boolean;
   householdFailed?: boolean;
+  initialView?: "week" | "month";
+  initialDate?: string;
+}
+
+type CalendarView = "week" | "month";
+
+function formatMonthLabel(dateStr: string): string {
+  const date = new Date(`${dateStr}T12:00:00`);
+  return new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric" }).format(date);
+}
+
+function getMonthStr(dateStr: string): string {
+  return dateStr.slice(0, 7);
 }
 
 export default function BookCalendarContent({
@@ -34,25 +48,30 @@ export default function BookCalendarContent({
   swimmers,
   isViewer,
   householdFailed = false,
+  initialView = "week",
+  initialDate,
 }: Props) {
   const router = useRouter();
 
   const today = todayLA();
 
-  const [currentDate, setCurrentDate] = useState<string>(today);
+  const [calendarView, setCalendarView] = useState<CalendarView>(initialView);
+  const [currentDate, setCurrentDate] = useState<string>(initialDate ?? today);
   const [locationId, setLocationId] = useState<string | null>(locations[0]?.id ?? null);
   const [durationMinutes, setDurationMinutes] = useState<30 | 45 | 60>(30);
   const [swimmerIds, setSwimmerIds] = useState<string[]>([]);
   const [selectedStartsAt, setSelectedStartsAt] = useState<string | null>(null);
   const [tooSoon, setTooSoon] = useState(false);
   const [weekData, setWeekData] = useState<WeekAvailabilityResponse | null>(null);
+  const [monthData, setMonthData] = useState<WeekAvailabilityResponse | null>(null);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [selectedPhoneDay, setSelectedPhoneDay] = useState<string | null>(null);
   const [noAvailability, setNoAvailability] = useState(false);
 
   type FetchSpec =
     | { mode: "search"; key: number }
-    | { mode: "week"; monday: string; key: number };
+    | { mode: "week"; monday: string; key: number }
+    | { mode: "month"; monthStr: string; key: number };
 
   const [fetchSpec, setFetchSpec] = useState<FetchSpec>({ mode: "search", key: 0 });
 
@@ -63,12 +82,29 @@ export default function BookCalendarContent({
   );
 
   const mondayStr = getMondayOfWeek(currentDate);
+  const monthStr = getMonthStr(currentDate);
 
+  // Fetch data whenever spec, view, location, or duration changes
   useEffect(() => {
     if (!locationId) return;
     setNoAvailability(false);
     setFetchError(null);
     startFetching(async () => {
+      if (calendarView === "month") {
+        const result = await fetchRangeAction({
+          view: "month",
+          date: currentDate,
+          durationMinutes,
+          locationId,
+        });
+        if (result !== null) {
+          setMonthData(result);
+        } else {
+          setFetchError("Could not load availability. Try again.");
+        }
+        return;
+      }
+
       if (fetchSpec.mode === "search") {
         const result = await findFirstAvailableDayAction({
           fromDate: today,
@@ -88,7 +124,7 @@ export default function BookCalendarContent({
           setSelectedPhoneDay(null);
           setNoAvailability(true);
         }
-      } else {
+      } else if (fetchSpec.mode === "week") {
         const result = await fetchRangeAction({
           view: "week",
           date: fetchSpec.monday,
@@ -102,7 +138,8 @@ export default function BookCalendarContent({
         }
       }
     });
-  }, [fetchSpec, locationId, durationMinutes, today]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetchSpec, locationId, durationMinutes, calendarView]);
 
   useEffect(() => {
     if (bookingState.status !== "success") return;
@@ -139,6 +176,38 @@ export default function BookCalendarContent({
     setFetchSpec((prev) => ({ mode: "week", monday: newMonday, key: prev.key + 1 }));
   }
 
+  function prevMonth() {
+    const [yearStr, monthIndexStr] = monthStr.split("-").map(Number);
+    const year = yearStr ?? 2026;
+    const monthIndex = monthIndexStr ?? 10;
+    const prevDate = new Date(year, monthIndex - 2, 1);
+    const newDate = prevDate.toISOString().slice(0, 10);
+    setCurrentDate(newDate);
+    setSelectedStartsAt(null);
+    setTooSoon(false);
+    setFetchSpec((prev) => ({
+      mode: "month",
+      monthStr: getMonthStr(newDate),
+      key: prev.key + 1,
+    }));
+  }
+
+  function nextMonth() {
+    const [yearStr, monthIndexStr] = monthStr.split("-").map(Number);
+    const year = yearStr ?? 2026;
+    const monthIndex = monthIndexStr ?? 10;
+    const nextDate = new Date(year, monthIndex, 1);
+    const newDate = nextDate.toISOString().slice(0, 10);
+    setCurrentDate(newDate);
+    setSelectedStartsAt(null);
+    setTooSoon(false);
+    setFetchSpec((prev) => ({
+      mode: "month",
+      monthStr: getMonthStr(newDate),
+      key: prev.key + 1,
+    }));
+  }
+
   function goToday() {
     setCurrentDate(today);
     setSelectedStartsAt(null);
@@ -154,6 +223,19 @@ export default function BookCalendarContent({
       setSelectedStartsAt(null);
       setTooSoon(true);
     }
+  }
+
+  function handleMonthDayClick(date: string) {
+    // Switch to week view for the clicked date
+    setCurrentDate(date);
+    setCalendarView("week");
+    setSelectedStartsAt(null);
+    setTooSoon(false);
+    setFetchSpec((prev) => ({
+      mode: "week",
+      monday: getMondayOfWeek(date),
+      key: prev.key + 1,
+    }));
   }
 
   function handleConfirm() {
@@ -177,10 +259,17 @@ export default function BookCalendarContent({
   const selectedPhoneDayData =
     weekData?.days.find((day) => day.date === selectedPhoneDay) ?? null;
 
+  const VIEW_TOGGLE_BASE =
+    "min-h-[36px] px-4 rounded-full border text-sm font-semibold transition-colors duration-150 motion-reduce:transition-none";
+  const VIEW_TOGGLE_ACTIVE = "bg-heading text-background border-heading";
+  const VIEW_TOGGLE_INACTIVE = "border-border text-text hover:bg-surface-soft";
+
   if (householdFailed) {
     return (
       <div>
-        <h1 className="text-3xl tablet:text-4xl text-heading mb-6">Book a lesson</h1>
+        <h1 className="font-heading text-3xl tablet:text-4xl text-heading mb-6">
+          Book a lesson
+        </h1>
         <div className="rounded-card border border-border p-5 text-center max-w-lg mx-auto">
           <p className="font-semibold text-text">Unable to load your account data.</p>
           <p className="text-text-secondary text-sm mt-1">Please refresh the page.</p>
@@ -192,7 +281,9 @@ export default function BookCalendarContent({
   if (isViewer) {
     return (
       <div>
-        <h1 className="text-3xl tablet:text-4xl text-heading mb-6">Book a lesson</h1>
+        <h1 className="font-heading text-3xl tablet:text-4xl text-heading mb-6">
+          Book a lesson
+        </h1>
         <div className="rounded-card border border-border p-5 text-center max-w-lg mx-auto">
           <p className="font-semibold text-text">
             Booking is for household owners and managers.
@@ -208,7 +299,9 @@ export default function BookCalendarContent({
   if (locations.length === 0) {
     return (
       <div>
-        <h1 className="text-3xl tablet:text-4xl text-heading mb-6">Book a lesson</h1>
+        <h1 className="font-heading text-3xl tablet:text-4xl text-heading mb-6">
+          Book a lesson
+        </h1>
         <div className="rounded-card border border-border p-5 text-center max-w-lg mx-auto">
           <p className="font-semibold text-text">No pools configured.</p>
           <p className="text-text-secondary text-sm mt-1">
@@ -221,7 +314,38 @@ export default function BookCalendarContent({
 
   return (
     <div className="flex flex-col gap-5 pb-32">
-      <h1 className="text-3xl tablet:text-4xl text-heading">Book a lesson</h1>
+      {/* Heading + view toggle */}
+      <div className="flex items-center gap-4 flex-wrap">
+        <h1 className="font-heading text-3xl tablet:text-4xl text-heading flex-1">
+          Book a lesson
+        </h1>
+        <div className="flex gap-1">
+          <button
+            type="button"
+            onClick={() => {
+              setCalendarView("week");
+              setFetchSpec((prev) => ({ mode: "search", key: prev.key + 1 }));
+            }}
+            className={`${VIEW_TOGGLE_BASE} ${calendarView === "week" ? VIEW_TOGGLE_ACTIVE : VIEW_TOGGLE_INACTIVE}`}
+          >
+            Week
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setCalendarView("month");
+              setFetchSpec((prev) => ({
+                mode: "month",
+                monthStr: getMonthStr(currentDate),
+                key: prev.key + 1,
+              }));
+            }}
+            className={`${VIEW_TOGGLE_BASE} ${calendarView === "month" ? VIEW_TOGGLE_ACTIVE : VIEW_TOGGLE_INACTIVE}`}
+          >
+            Month
+          </button>
+        </div>
+      </div>
 
       {swimmers.length === 0 && (
         <p className="text-sm text-text-secondary">
@@ -241,15 +365,47 @@ export default function BookCalendarContent({
         onSwimmersChange={setSwimmerIds}
       />
 
-      <WeekNav
-        mondayStr={mondayStr}
-        onPrev={prevWeek}
-        onNext={nextWeek}
-        onToday={goToday}
-        todayStr={today}
-      />
+      {/* Nav row */}
+      {calendarView === "week" ? (
+        <WeekNav
+          mondayStr={mondayStr}
+          onPrev={prevWeek}
+          onNext={nextWeek}
+          onToday={goToday}
+          todayStr={today}
+        />
+      ) : (
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            type="button"
+            onClick={prevMonth}
+            aria-label="Previous month"
+            className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-button border border-border text-text hover:bg-surface-soft transition-colors duration-150"
+          >
+            ‹
+          </button>
+          <button
+            type="button"
+            onClick={nextMonth}
+            aria-label="Next month"
+            className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-button border border-border text-text hover:bg-surface-soft transition-colors duration-150"
+          >
+            ›
+          </button>
+          <span className="text-sm font-semibold text-heading flex-1 text-center tablet:text-left">
+            {formatMonthLabel(currentDate)}
+          </span>
+          <button
+            type="button"
+            onClick={goToday}
+            className="min-h-[44px] px-4 rounded-button border border-border text-sm text-text hover:bg-surface-soft transition-colors duration-150"
+          >
+            Today
+          </button>
+        </div>
+      )}
 
-      <Legend />
+      {calendarView === "week" && <Legend />}
 
       {isFetching && (
         <div className="flex items-center gap-3 text-text-secondary py-8 justify-center">
@@ -271,13 +427,15 @@ export default function BookCalendarContent({
 
       {!isFetching && fetchError !== null && (
         <div className="rounded-card border border-border p-6 flex flex-col items-center gap-4">
-          <div className="hidden tablet:grid grid-cols-7 gap-1 w-full">
-            {Array.from({ length: 7 }, (_, index) => (
-              <div key={index} className="text-center text-xs text-text-secondary py-2">
-                {formatDayLabel(addDaysToDateStr(mondayStr, index))}
-              </div>
-            ))}
-          </div>
+          {calendarView === "week" && (
+            <div className="hidden tablet:grid grid-cols-7 gap-1 w-full">
+              {Array.from({ length: 7 }, (_, index) => (
+                <div key={index} className="text-center text-xs text-text-secondary py-2">
+                  {formatDayLabel(addDaysToDateStr(mondayStr, index))}
+                </div>
+              ))}
+            </div>
+          )}
           <p className="text-sm text-text-secondary">{fetchError}</p>
           <button
             type="button"
@@ -289,13 +447,29 @@ export default function BookCalendarContent({
         </div>
       )}
 
-      {!isFetching && noAvailability && (
+      {!isFetching && noAvailability && calendarView === "week" && (
         <p className="text-sm text-text-secondary py-4 text-center">
           No open times in the next 10 weeks. Check back later or contact Jason directly.
         </p>
       )}
 
-      {!isFetching && weekData !== null && !noAvailability && (
+      {/* Month view */}
+      {calendarView === "month" && !isFetching && monthData !== null && (
+        <MonthGrid
+          monthStr={monthStr}
+          days={monthData.days.map((day) => ({
+            date: day.date,
+            dayState: day.dayState,
+            openCount: day.openCount,
+            totalCount: day.totalCount,
+          }))}
+          todayStr={today}
+          onDayClick={handleMonthDayClick}
+        />
+      )}
+
+      {/* Week view */}
+      {calendarView === "week" && !isFetching && weekData !== null && !noAvailability && (
         <>
           <div className="hidden tablet:block">
             <WeekGrid
