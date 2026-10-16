@@ -52,16 +52,18 @@ const selectClass =
   "rounded-button bg-card text-text-on-section text-sm px-3 h-10 border border-divider-section focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring)] appearance-none pr-8 cursor-pointer";
 
 interface FilterSelectProps {
+  label: string;
   paramKey: string;
   options: { value: string; label: string }[];
   currentValue: string;
   onChangeParam: (key: string, value: string) => void;
 }
 
-function FilterSelect({ paramKey, options, currentValue, onChangeParam }: FilterSelectProps) {
+function FilterSelect({ label, paramKey, options, currentValue, onChangeParam }: FilterSelectProps) {
   return (
     <div className="relative">
       <select
+        aria-label={label}
         value={currentValue}
         onChange={(event) => onChangeParam(paramKey, event.target.value)}
         className={selectClass}
@@ -111,30 +113,35 @@ export default function BoardFilters() {
   return (
     <div className="flex flex-wrap gap-2 tablet:gap-3">
       <FilterSelect
+        label="Distance"
         paramKey="eventDistance"
         options={distanceOptions}
         currentValue={searchParams.get("eventDistance") ?? ""}
         onChangeParam={handleParamChange}
       />
       <FilterSelect
+        label="Stroke"
         paramKey="eventStroke"
         options={strokeOptions}
         currentValue={searchParams.get("eventStroke") ?? ""}
         onChangeParam={handleParamChange}
       />
       <FilterSelect
+        label="Course"
         paramKey="course"
         options={courseOptions}
         currentValue={searchParams.get("course") ?? ""}
         onChangeParam={handleParamChange}
       />
       <FilterSelect
+        label="Age group"
         paramKey="ageGroup"
         options={ageGroupOptions}
         currentValue={searchParams.get("ageGroup") ?? ""}
         onChangeParam={handleParamChange}
       />
       <FilterSelect
+        label="Sex"
         paramKey="sex"
         options={sexOptions}
         currentValue={searchParams.get("sex") ?? ""}

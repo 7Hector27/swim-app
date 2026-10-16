@@ -52,7 +52,8 @@ All signed-in routes are guarded by `requireAuth()` (`apps/web/src/lib/requireAu
 
 | Segment | Who can access | Purpose |
 |---|---|---|
-| `/` `/lessons` `/leaderboard` `/about` `/privacy` `/terms` | Public | Marketing and informational pages |
+| `/` `/lessons` `/privacy` `/terms` | Public | Marketing and informational pages |
+| `/leaderboard` `/leaderboard/club` `/leaderboard/isl` `/leaderboard/master` | Public | Leaderboard landing and per-board pages |
 | `/login` `/signup` | Unauthenticated only | Auth entry points (redirect to `/dashboard` if already signed in) |
 | `/dashboard` | Any authenticated, active user | Role-based hub: `CoachDashboardContent` for coaches, `ParentDashboardContent` for parents |
 | `/account` | Any authenticated, active user | Settings: email/role display, edit name/phone, log out |

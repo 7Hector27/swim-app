@@ -12,6 +12,7 @@ vi.mock("next/navigation", () => ({
 import BoardTable from "@/components/BoardTable";
 import BoardFilters from "@/components/BoardFilters";
 import ClubBoardContent from "@/content/ClubBoardContent";
+import MasterBoardContent from "@/content/MasterBoardContent";
 import type { PublicBoardRow, PublicMasterRow } from "@swim-app/shared";
 
 const baseRow: PublicBoardRow = {
@@ -149,6 +150,29 @@ describe("BoardFilters — URL updates", () => {
   });
 });
 
+describe("MasterBoardContent", () => {
+  it("shows the Standards coming soon banner when standardsAvailable is false", () => {
+    render(<MasterBoardContent standardsAvailable={false} rows={[masterRow]} />);
+    expect(screen.getByText("Standards coming soon")).toBeTruthy();
+    expect(screen.queryByText("Standard")).toBeNull();
+  });
+
+  it("shows the Standard column and no banner when standardsAvailable is true", () => {
+    render(<MasterBoardContent standardsAvailable={true} rows={[masterRow]} />);
+    expect(screen.queryByText("Standards coming soon")).toBeNull();
+    expect(screen.getByText("Standard")).toBeTruthy();
+  });
+
+  it("shows the load-failed message and hides the banner when loadFailed is true", () => {
+    render(<MasterBoardContent standardsAvailable={false} rows={[]} loadFailed={true} />);
+    expect(screen.getByText("Couldn't load the leaderboard. Try again.")).toBeTruthy();
+    expect(screen.queryByText("Standards coming soon")).toBeNull();
+    expect(
+      screen.queryByText("No times match those filters — try adjusting your selection."),
+    ).toBeNull();
+  });
+});
+
 describe("ClubBoardContent — rows shown", () => {
   it("renders swimmer rows received as props from the server fetch", () => {
     render(<ClubBoardContent rows={[baseRow, secondRow]} />);
@@ -161,5 +185,13 @@ describe("ClubBoardContent — rows shown", () => {
     expect(
       screen.getByText("No times match those filters — try adjusting your selection."),
     ).toBeTruthy();
+  });
+
+  it("shows the load-failed message instead of the empty state when loadFailed is true", () => {
+    render(<ClubBoardContent rows={[]} loadFailed={true} />);
+    expect(screen.getByText("Couldn't load the leaderboard. Try again.")).toBeTruthy();
+    expect(
+      screen.queryByText("No times match those filters — try adjusting your selection."),
+    ).toBeNull();
   });
 });

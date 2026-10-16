@@ -316,6 +316,9 @@ export default function SwimmerForm({
             No
           </label>
         </div>
+        <p className="text-text-secondary text-xs">
+          Changes can take up to a minute to show on public leaderboards.
+        </p>
         {mode === "add" && isPublicValue === null && (
           <p className="text-text-secondary text-xs">Please select Yes or No to continue.</p>
         )}

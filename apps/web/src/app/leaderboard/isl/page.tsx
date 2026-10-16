@@ -15,5 +15,5 @@ export default async function ISLBoardPage({
     Object.entries(rawParams).map(([key, value]) => [key, Array.isArray(value) ? value[0] : value]),
   );
   const data = await fetchISLBoard(params);
-  return <ISLBoardContent rows={data?.rows ?? []} />;
+  return <ISLBoardContent rows={data?.rows ?? []} loadFailed={data === null} />;
 }

@@ -15,5 +15,5 @@ export default async function ClubBoardPage({
     Object.entries(rawParams).map(([key, value]) => [key, Array.isArray(value) ? value[0] : value]),
   );
   const data = await fetchClubBoard(params);
-  return <ClubBoardContent rows={data?.rows ?? []} />;
+  return <ClubBoardContent rows={data?.rows ?? []} loadFailed={data === null} />;
 }

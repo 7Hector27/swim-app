@@ -19,6 +19,7 @@ export default async function MasterBoardPage({
     <MasterBoardContent
       standardsAvailable={data?.standardsAvailable ?? false}
       rows={data?.rows ?? []}
+      loadFailed={data === null}
     />
   );
 }

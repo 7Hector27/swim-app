@@ -6,9 +6,10 @@ import type { PublicBoardRow } from "@swim-app/shared";
 
 interface ClubBoardContentProps {
   rows: PublicBoardRow[];
+  loadFailed?: boolean;
 }
 
-export default function ClubBoardContent({ rows }: ClubBoardContentProps) {
+export default function ClubBoardContent({ rows, loadFailed = false }: ClubBoardContentProps) {
   return (
     <div className="bg-section min-h-screen">
       <div className="mx-auto max-w-content px-page py-12 tablet:py-16">
@@ -34,7 +35,13 @@ export default function ClubBoardContent({ rows }: ClubBoardContentProps) {
           </Suspense>
         </div>
 
-        <BoardTable rows={rows} />
+        {loadFailed ? (
+          <p className="text-text-secondary-on-section text-sm py-16 text-center">
+            Couldn&apos;t load the leaderboard. Try again.
+          </p>
+        ) : (
+          <BoardTable rows={rows} />
+        )}
       </div>
     </div>
   );
