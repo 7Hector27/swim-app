@@ -6,7 +6,9 @@ import {
   type AvailableSlot,
   CreateLessonBodySchema,
   LessonResponseSchema,
+  MonthAvailabilityResponseSchema,
   WeekAvailabilityResponseSchema,
+  type MonthAvailabilityResponse,
   type WeekAvailabilityResponse,
 } from "@swim-app/shared";
 import { mapBookingApiResponse, getMondayOfWeek, addDaysToDateStr, firstAvailableDayInWeek, type BookingState } from "./helpers";
@@ -26,7 +28,7 @@ export async function fetchSlotsDirectAction(
 }
 
 export async function fetchRangeAction(params: {
-  view: "week" | "month";
+  view: "week";
   date: string;
   durationMinutes: 30 | 45 | 60;
   locationId: string;
@@ -39,6 +41,22 @@ export async function fetchRangeAction(params: {
   const result = await fetchRangeAvailability(token, params);
   if (result === null) return null;
   const parsed = WeekAvailabilityResponseSchema.safeParse(result);
+  return parsed.success ? parsed.data : null;
+}
+
+export async function fetchMonthRangeAction(params: {
+  date: string;
+  durationMinutes: 30 | 45 | 60;
+  locationId: string;
+  excludeLessonId?: string;
+}): Promise<MonthAvailabilityResponse | null> {
+  const supabase = await createClient();
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) return null;
+  const result = await fetchRangeAvailability(token, { view: "month", ...params });
+  if (result === null) return null;
+  const parsed = MonthAvailabilityResponseSchema.safeParse(result);
   return parsed.success ? parsed.data : null;
 }
 

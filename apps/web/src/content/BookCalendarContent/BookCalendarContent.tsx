@@ -3,9 +3,9 @@
 import { useState, useTransition, useActionState, useEffect, startTransition } from "react";
 import { useRouter } from "next/navigation";
 import { todayLA } from "@swim-app/shared";
-import type { ParentSwimmer, WeekAvailabilityResponse } from "@swim-app/shared";
+import type { ParentSwimmer, WeekAvailabilityResponse, MonthAvailabilityResponse } from "@swim-app/shared";
 
-import { fetchRangeAction, createBookingAction, findFirstAvailableDayAction } from "./actions";
+import { fetchRangeAction, fetchMonthRangeAction, createBookingAction, findFirstAvailableDayAction } from "./actions";
 import { getMondayOfWeek, addDaysToDateStr, formatDayLabel, formatWeekLabel } from "./helpers";
 import type { BookingState } from "./helpers";
 import CalendarConfigRow from "./CalendarConfigRow";
@@ -63,7 +63,7 @@ export default function BookCalendarContent({
   const [selectedStartsAt, setSelectedStartsAt] = useState<string | null>(null);
   const [tooSoon, setTooSoon] = useState(false);
   const [weekData, setWeekData] = useState<WeekAvailabilityResponse | null>(null);
-  const [monthData, setMonthData] = useState<WeekAvailabilityResponse | null>(null);
+  const [monthData, setMonthData] = useState<MonthAvailabilityResponse | null>(null);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [selectedPhoneDay, setSelectedPhoneDay] = useState<string | null>(null);
   const [noAvailability, setNoAvailability] = useState(false);
@@ -91,8 +91,7 @@ export default function BookCalendarContent({
     setFetchError(null);
     startFetching(async () => {
       if (calendarView === "month") {
-        const result = await fetchRangeAction({
-          view: "month",
+        const result = await fetchMonthRangeAction({
           date: currentDate,
           durationMinutes,
           locationId,
@@ -498,16 +497,24 @@ export default function BookCalendarContent({
         </>
       )}
 
-      <BottomBar
-        selectedStartsAt={selectedStartsAt}
-        tooSoon={tooSoon}
-        durationMinutes={durationMinutes}
-        swimmerIds={swimmerIds}
-        needsApproval={weekData?.needsApproval ?? false}
-        onConfirm={handleConfirm}
-        isConfirming={isBooking}
-        errorMessage={errorMessage}
-      />
+      {calendarView === "week" && (
+        <>
+          {errorMessage !== null && (
+            <p role="alert" className="text-sm text-danger text-center">
+              {errorMessage}
+            </p>
+          )}
+          <BottomBar
+            selectedStartsAt={selectedStartsAt}
+            tooSoon={tooSoon}
+            durationMinutes={durationMinutes}
+            swimmerIds={swimmerIds}
+            needsApproval={weekData?.needsApproval ?? false}
+            onConfirm={handleConfirm}
+            isConfirming={isBooking}
+          />
+        </>
+      )}
 
       <form
         action={bookingFormAction}

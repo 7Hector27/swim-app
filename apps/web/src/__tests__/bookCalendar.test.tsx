@@ -174,7 +174,6 @@ describe("BottomBar", () => {
         needsApproval={false}
         onConfirm={noop}
         isConfirming={false}
-        errorMessage={null}
       />,
     );
     expect(screen.getByText("No time picked yet")).toBeInTheDocument();
@@ -191,7 +190,6 @@ describe("BottomBar", () => {
         needsApproval={false}
         onConfirm={noop}
         isConfirming={false}
-        errorMessage={null}
       />,
     );
     expect(screen.getByText(/Less than 16 hours away/)).toBeInTheDocument();
@@ -208,7 +206,6 @@ describe("BottomBar", () => {
         needsApproval={false}
         onConfirm={noop}
         isConfirming={false}
-        errorMessage={null}
       />,
     );
     expect(screen.getByRole("button", { name: /confirm booking/i })).toBeDisabled();
@@ -224,7 +221,6 @@ describe("BottomBar", () => {
         needsApproval={false}
         onConfirm={noop}
         isConfirming={false}
-        errorMessage={null}
       />,
     );
     expect(screen.getByText("$60")).toBeInTheDocument();
@@ -242,7 +238,6 @@ describe("BottomBar", () => {
         needsApproval={false}
         onConfirm={noop}
         isConfirming={false}
-        errorMessage={null}
       />,
     );
     expect(screen.getByText(/Mon/)).toBeInTheDocument();
@@ -259,7 +254,6 @@ describe("BottomBar", () => {
         needsApproval={true}
         onConfirm={noop}
         isConfirming={false}
-        errorMessage={null}
       />,
     );
     expect(screen.getByText(/Jason will confirm/)).toBeInTheDocument();
@@ -275,7 +269,6 @@ describe("BottomBar", () => {
         needsApproval={false}
         onConfirm={noop}
         isConfirming={true}
-        errorMessage={null}
       />,
     );
     const btn = screen.getByRole("button", { name: /booking/i });
@@ -293,7 +286,6 @@ describe("BottomBar", () => {
         needsApproval={false}
         onConfirm={noop}
         isConfirming={false}
-        errorMessage={null}
       />,
     );
     expect(screen.queryByText(/Jason will confirm/)).not.toBeInTheDocument();

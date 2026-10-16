@@ -42,6 +42,7 @@ const {
   mockDbUpdate,
   mockDbTransaction,
   mockComputeSlots,
+  mockClassifyDaySlots,
   mockNeedsApproval,
 } = vi.hoisted(() => ({
   mockGetUser: vi.fn(),
@@ -50,6 +51,7 @@ const {
   mockDbUpdate: vi.fn(),
   mockDbTransaction: vi.fn(),
   mockComputeSlots: vi.fn(),
+  mockClassifyDaySlots: vi.fn(),
   mockNeedsApproval: vi.fn(),
 }));
 
@@ -66,9 +68,10 @@ vi.mock("../db/client", () => ({
   },
 }));
 
-vi.mock("../lib/slots", () => ({
-  computeAvailableSlots: mockComputeSlots,
-}));
+vi.mock("../lib/slots", async (importActual) => {
+  const actual = await importActual<typeof import("../lib/slots")>();
+  return { ...actual, computeAvailableSlots: mockComputeSlots, classifyDaySlots: mockClassifyDaySlots };
+});
 
 vi.mock("../lib/lessonApproval", () => ({
   needsApproval: mockNeedsApproval,
@@ -439,6 +442,106 @@ describe("GET /lessons/available-slots", () => {
     const res = await request(app)
       .get("/lessons/available-slots")
       .query({ date: "2025-09-17", durationMinutes: "30", locationId: LOCATION_NAMED_ID });
+    expect(res.status).toBe(401);
+  });
+});
+
+// ── GET /lessons/available-range ─────────────────────────────────────────────
+
+function setupRangeSelects(
+  configRows: unknown[],
+  blockedRows: unknown[],
+  bufferRows: unknown[],
+  lessonRows: unknown[],
+  endDateRows: unknown[],
+) {
+  function makeFromLimit(rows: unknown[]) {
+    const limit = vi.fn().mockResolvedValue(rows);
+    return { from: vi.fn().mockReturnValue({ limit }) };
+  }
+  function makeFromDirect(rows: unknown[]) {
+    return { from: vi.fn().mockResolvedValue(rows) };
+  }
+  function makeFromWhere(rows: unknown[]) {
+    const where = vi.fn().mockResolvedValue(rows);
+    return { from: vi.fn().mockReturnValue({ where }) };
+  }
+  function makeFromWhereLimit(rows: unknown[]) {
+    const limit = vi.fn().mockResolvedValue(rows);
+    const where = vi.fn().mockReturnValue({ limit });
+    return { from: vi.fn().mockReturnValue({ where }) };
+  }
+  mockDbSelect
+    .mockReturnValueOnce(makeFromLimit(configRows))
+    .mockReturnValueOnce(makeFromDirect(blockedRows))
+    .mockReturnValueOnce(makeFromDirect(bufferRows))
+    .mockReturnValueOnce(makeFromWhere(lessonRows))
+    .mockReturnValueOnce(makeFromWhereLimit(endDateRows));
+}
+
+function memberCheckSelect(householdId: string = HOUSEHOLD_ID) {
+  const limit = vi.fn().mockResolvedValue([{ householdId }]);
+  const where = vi.fn().mockReturnValue({ limit });
+  return { from: vi.fn().mockReturnValue({ where }) };
+}
+
+describe("GET /lessons/available-range", () => {
+  it("returns month availability with days that have no slots field", async () => {
+    authAs(parentProfile);
+    mockClassifyDaySlots.mockReturnValue([]);
+    mockNeedsApproval.mockResolvedValueOnce(false);
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(parentProfile))
+      .mockReturnValueOnce(limitSelect([namedLocationRow]))
+      .mockReturnValueOnce(memberCheckSelect());
+    setupRangeSelects([configRow], [], [], [], []);
+
+    const res = await request(app)
+      .get("/lessons/available-range")
+      .set("Authorization", "Bearer token")
+      .query({ view: "month", date: "2026-11-01", durationMinutes: "30", locationId: LOCATION_NAMED_ID });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty("needsApproval", false);
+    expect(Array.isArray(res.body.days)).toBe(true);
+    expect(res.body.days.length).toBeGreaterThan(0);
+    for (const day of res.body.days as unknown[]) {
+      expect(day).toHaveProperty("date");
+      expect(day).toHaveProperty("dayState");
+      expect(day).toHaveProperty("openCount");
+      expect(day).toHaveProperty("totalCount");
+      expect(day).not.toHaveProperty("slots");
+    }
+  });
+
+  it("returns week availability with a slots field on each day", async () => {
+    authAs(parentProfile);
+    mockClassifyDaySlots.mockReturnValue([]);
+    mockNeedsApproval.mockResolvedValueOnce(false);
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(parentProfile))
+      .mockReturnValueOnce(limitSelect([namedLocationRow]))
+      .mockReturnValueOnce(memberCheckSelect());
+    setupRangeSelects([configRow], [], [], [], []);
+
+    const res = await request(app)
+      .get("/lessons/available-range")
+      .set("Authorization", "Bearer token")
+      .query({ view: "week", date: "2026-11-02", durationMinutes: "30", locationId: LOCATION_NAMED_ID });
+
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.days)).toBe(true);
+    expect(res.body.days).toHaveLength(7);
+    for (const day of res.body.days as unknown[]) {
+      expect(day).toHaveProperty("slots");
+    }
+  });
+
+  it("returns 401 when unauthenticated", async () => {
+    mockGetUser.mockResolvedValue({ data: { user: null }, error: null });
+    const res = await request(app)
+      .get("/lessons/available-range")
+      .query({ view: "month", date: "2026-11-01", durationMinutes: "30", locationId: LOCATION_NAMED_ID });
     expect(res.status).toBe(401);
   });
 });

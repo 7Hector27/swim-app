@@ -11,7 +11,6 @@ interface Props {
   needsApproval: boolean;
   onConfirm: () => void;
   isConfirming: boolean;
-  errorMessage: string | null;
 }
 
 export default function BottomBar({
@@ -22,7 +21,6 @@ export default function BottomBar({
   needsApproval,
   onConfirm,
   isConfirming,
-  errorMessage,
 }: Props) {
   const hasSelection = selectedStartsAt !== null;
   const hasSwimmers = swimmerIds.length > 0;
@@ -70,11 +68,6 @@ export default function BottomBar({
           )}
           {needsApproval && hasSelection && !tooSoon && (
             <p className="text-xs opacity-70 mt-0.5">Jason will confirm this one.</p>
-          )}
-          {errorMessage !== null && (
-            <p role="alert" className="text-xs text-danger mt-1">
-              {errorMessage}
-            </p>
           )}
         </div>
 
