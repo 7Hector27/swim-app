@@ -35,7 +35,10 @@ export default function GolfScoreTrends({ trends }: GolfScoreTrendsProps) {
 
   return (
     <section className="flex flex-col gap-4">
-      <h2 className="font-bold text-sm text-text">Golf Score</h2>
+      <div>
+        <h2 className="font-bold text-sm text-text">Golf Score</h2>
+        <p className="text-xs text-text-secondary">Lower is better</p>
+      </div>
       {trends.map((trend) => (
         <div key={trend.skillSlug} className="flex flex-col gap-3">
           <p className="text-xs font-semibold text-text-secondary">{trend.skillName}</p>
@@ -43,6 +46,9 @@ export default function GolfScoreTrends({ trends }: GolfScoreTrendsProps) {
             <div key={catTrend.category} className="flex flex-col gap-1">
               <p className="text-xs text-text-secondary">{CATEGORY_LABELS[catTrend.category] ?? catTrend.category}</p>
               {catTrend.ageBands && <AgeBandRow bands={catTrend.ageBands} />}
+              {!catTrend.ageBands && (
+                <p className="text-xs text-text-secondary italic">Your trend only</p>
+              )}
               <ul className="flex flex-col gap-0">
                 {catTrend.points.slice().reverse().map((point, index) => (
                   <li key={index} className="flex gap-3 text-xs py-1 border-b border-border items-center">

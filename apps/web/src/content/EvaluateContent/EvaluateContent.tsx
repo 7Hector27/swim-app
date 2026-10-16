@@ -84,6 +84,18 @@ export default function EvaluateContent({ swimmer, screens, accessToken, resumeD
   const [serverDraftId, setServerDraftId] = useState<string | null>(resumeDraft?.id ?? null);
   const [draftSaveState, setDraftSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
+  // Server draft detection
+  const [serverDraftsBySlug, setServerDraftsBySlug] = useState<Map<string, import("@swim-app/shared").EvaluationDraft>>(new Map());
+  const [bannerDraft, setBannerDraft] = useState<import("@swim-app/shared").EvaluationDraft | null>(null);
+  const [showBannerConfirm, setShowBannerConfirm] = useState(false);
+  const serverDraftsFetchedRef = useRef(false);
+  // Debounced server save
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const draftChangedRef = useRef(false);
+  const isFirstDraftRenderRef = useRef(true);
+  // Always-current draft ref for save-on-hide
+  const pendingDraftRef = useRef(draft);
+
   // Restore draft from localStorage on mount (skip if resumeDraft was provided)
   useEffect(() => {
     if (mountedRef.current) return;
@@ -177,16 +189,81 @@ export default function EvaluateContent({ swimmer, screens, accessToken, resumeD
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.status, metaKey, skillsKey]);
 
-  async function handleSaveDraft() {
+  // Keep pendingDraftRef in sync with latest draft
+  useEffect(() => {
+    pendingDraftRef.current = draft;
+  }, [draft]);
+
+  // Fetch server drafts once on mount
+  useEffect(() => {
+    if (serverDraftsFetchedRef.current) return;
+    serverDraftsFetchedRef.current = true;
+    fetch(`${process.env.NEXT_PUBLIC_API_URL}/coach/swimmers/${swimmer.id}/drafts`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: unknown) => {
+        const drafts = (data as { drafts: import("@swim-app/shared").EvaluationDraft[] } | null)?.drafts ?? [];
+        const map = new Map<string, import("@swim-app/shared").EvaluationDraft>();
+        for (const serverDraft of drafts) {
+          map.set(serverDraft.screenSlug, serverDraft);
+        }
+        setServerDraftsBySlug(map);
+      })
+      .catch(() => null);
+  }, [swimmer.id, accessToken]);
+
+  // Show banner when current screen has a server draft (not already loaded)
+  useEffect(() => {
+    if (!draft.screenSlug || serverDraftsBySlug.size === 0) return;
+    const found = serverDraftsBySlug.get(draft.screenSlug);
+    if (found && found.id !== serverDraftId) {
+      setBannerDraft(found);
+    } else {
+      setBannerDraft(null);
+      setShowBannerConfirm(false);
+    }
+    // serverDraftId intentionally omitted — only re-evaluate when slug or server list changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft.screenSlug, serverDraftsBySlug]);
+
+  // Debounced server autosave — fires ~20s after last draft change
+  useEffect(() => {
+    if (isFirstDraftRenderRef.current) {
+      isFirstDraftRenderRef.current = false;
+      return;
+    }
     if (!draft.screenSlug) return;
+    draftChangedRef.current = true;
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    debounceTimerRef.current = setTimeout(() => {
+      void saveDraftNow(pendingDraftRef.current);
+    }, 20_000);
+  }, [draft]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Save on page hide (tab close, navigate away) — clears debounce timer
+  useEffect(() => {
+    function onHide() {
+      if (!pendingDraftRef.current.screenSlug || !draftChangedRef.current) return;
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+      void saveDraftNow(pendingDraftRef.current);
+    }
+    document.addEventListener("visibilitychange", onHide);
+    return () => {
+      document.removeEventListener("visibilitychange", onHide);
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function saveDraftNow(draftToSave: SessionDraft): Promise<void> {
+    if (!draftToSave.screenSlug) return;
     setDraftSaveState("saving");
     const payload: Record<string, import("@swim-app/shared").DraftSkillPayload> = {};
-    for (const [key, skillDraft] of Object.entries(draft.skills)) {
+    for (const [key, skillDraft] of Object.entries(draftToSave.skills)) {
       payload[key] = {
         grade: skillDraft.grade,
         notLegal: skillDraft.notLegal,
         noConcept: skillDraft.noConcept,
-        ...(skillDraft.grade !== null || skillDraft.noConcept ? {} : {}),
         faultTags: skillDraft.faultTags,
         capacityValue: skillDraft.capacityValue,
         capacityUnit: skillDraft.capacityUnit,
@@ -196,19 +273,24 @@ export default function EvaluateContent({ swimmer, screens, accessToken, resumeD
         note: skillDraft.note,
       };
     }
-    const result = await saveDraft(swimmer.id, draft.screenSlug, {
-      sessionDate: draft.sessionDate || null,
-      context: draft.context,
-      coachingPriority: draft.coachingPriority || null,
-      breathingPattern: draft.breathingPattern,
+    const result = await saveDraft(swimmer.id, draftToSave.screenSlug, {
+      sessionDate: draftToSave.sessionDate || null,
+      context: draftToSave.context,
+      coachingPriority: draftToSave.coachingPriority || null,
+      breathingPattern: draftToSave.breathingPattern,
       payload,
     });
     if (result.status === "saved") {
       setServerDraftId(result.id);
       setDraftSaveState("saved");
+      draftChangedRef.current = false;
     } else {
       setDraftSaveState("error");
     }
+  }
+
+  function handleSaveDraft(): void {
+    void saveDraftNow(pendingDraftRef.current);
   }
 
   function handleScreenChange(newScreenSlug: string) {
@@ -226,6 +308,44 @@ export default function EvaluateContent({ swimmer, screens, accessToken, resumeD
       breathingPattern: needsBreathing ? prev.breathingPattern : null,
       skills,
     }));
+  }
+
+  function handleResumeBannerDraft() {
+    if (!bannerDraft) return;
+    const skills: Record<string, SkillDraft> = {};
+    for (const [key, entry] of Object.entries(bannerDraft.payload)) {
+      skills[key] = {
+        grade: entry.grade,
+        notLegal: entry.notLegal,
+        noConcept: entry.noConcept,
+        capacityValue: entry.capacityValue,
+        capacityUnit: entry.capacityUnit,
+        measurementValue: entry.measurementValue,
+        measurementUnit: entry.measurementUnit,
+        note: entry.note,
+        faultTags: entry.faultTags,
+        detailsOpen: false,
+        golfScoreCategory: entry.golfScoreCategory,
+      };
+    }
+    setDraft({
+      screenSlug: bannerDraft.screenSlug,
+      sessionDate: bannerDraft.sessionDate ?? todayLA(),
+      context: bannerDraft.context,
+      coachingPriority: bannerDraft.coachingPriority ?? "",
+      breathingPattern: bannerDraft.breathingPattern,
+      skills,
+    });
+    setServerDraftId(bannerDraft.id);
+    setBannerDraft(null);
+    setShowBannerConfirm(false);
+  }
+
+  function handleStartFreshConfirmed() {
+    if (!bannerDraft) return;
+    void Promise.resolve(deleteDraft(bannerDraft.id)).catch(() => null);
+    setBannerDraft(null);
+    setShowBannerConfirm(false);
   }
 
   function patchSkill(key: string, patch: Partial<SkillDraft>) {
@@ -355,6 +475,56 @@ export default function EvaluateContent({ swimmer, screens, accessToken, resumeD
             <p role="alert" className="text-sm" style={{ color: "var(--color-danger)" }}>
               {state.message}
             </p>
+          )}
+
+          {bannerDraft !== null && (
+            <div
+              role="alert"
+              className="flex flex-col gap-2 p-3 rounded border border-border text-sm text-text"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <span>
+                  You have a saved draft from {new Date(bannerDraft.updatedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "America/Los_Angeles" })}. Resume it?
+                </span>
+                <div className="flex gap-3 shrink-0">
+                  <button
+                    type="button"
+                    onClick={handleResumeBannerDraft}
+                    className="font-semibold underline text-link min-h-[44px] px-1"
+                  >
+                    Resume
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowBannerConfirm(true)}
+                    className="underline text-text-secondary min-h-[44px] px-1"
+                  >
+                    Start fresh
+                  </button>
+                </div>
+              </div>
+              {showBannerConfirm && (
+                <div className="flex items-center justify-between gap-3 pt-1 border-t border-border">
+                  <span className="text-text-secondary">Delete this draft and start fresh?</span>
+                  <div className="flex gap-3">
+                    <button
+                      type="button"
+                      onClick={handleStartFreshConfirmed}
+                      className="font-semibold text-danger underline min-h-[44px] px-1"
+                    >
+                      Delete draft
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowBannerConfirm(false)}
+                      className="underline text-text-secondary min-h-[44px] px-1"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           )}
 
           <form

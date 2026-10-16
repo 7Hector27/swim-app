@@ -6,6 +6,8 @@ vi.mock("@/components/SiteNav", () => ({ default: () => null }));
 vi.mock("@/components/AddNoteForm", () => ({ default: () => null }));
 vi.mock("@/content/EvaluateContent/actions", () => ({
   submitEvaluation: vi.fn(),
+  saveDraft: vi.fn(),
+  deleteDraft: vi.fn(),
 }));
 
 // Mock fetch
@@ -630,5 +632,146 @@ describe("UndoToast", () => {
         expect.objectContaining({ method: "DELETE" }),
       );
     });
+  });
+});
+
+describe("EvaluateContent — server draft banner", () => {
+  const DRAFT_ID = "draft-0000-0000-0000-000000000001";
+  const DRAFT_SCREEN = "freestyle";
+  const DRAFT_DATE = "2026-10-14T10:00:00.000Z";
+
+  const serverDraft: import("@swim-app/shared").EvaluationDraft = {
+    id: DRAFT_ID,
+    swimmerId: SWIMMER_ID,
+    coachId: "coach-00000000-0000-0000-0000-000000000001",
+    screenSlug: DRAFT_SCREEN,
+    sessionDate: "2026-10-14",
+    context: "practice",
+    coachingPriority: "Kick",
+    breathingPattern: "every_3",
+    payload: {},
+    createdAt: DRAFT_DATE,
+    updatedAt: DRAFT_DATE,
+  };
+
+  beforeEach(() => {
+    localStorage.clear();
+    vi.mocked(submitEvaluation).mockResolvedValue({ status: "idle" });
+    mockFetch.mockImplementation((url: string) => {
+      if (typeof url === "string" && url.includes("/drafts") && !url.includes("/draft-")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ drafts: [serverDraft] }),
+        });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({ suggestion: null }) });
+    });
+  });
+
+  afterEach(() => {
+    localStorage.clear();
+    vi.clearAllMocks();
+  });
+
+  it("shows the resume banner when a server draft exists for the selected screen", async () => {
+    render(<EvaluateContent swimmer={SWIMMER_DETAIL} screens={TEST_SCREENS} accessToken="tok" />);
+
+    const select = screen.getByRole("combobox");
+    fireEvent.change(select, { target: { value: DRAFT_SCREEN } });
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toBeInTheDocument();
+      expect(screen.getByText(/resume it\?/i)).toBeInTheDocument();
+    });
+  });
+
+  it("does not show the banner when no server draft exists for the selected screen", async () => {
+    mockFetch.mockImplementation((url: string) => {
+      if (typeof url === "string" && url.includes("/drafts") && !url.includes("/draft-")) {
+        return Promise.resolve({ ok: true, json: async () => ({ drafts: [] }) });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({ suggestion: null }) });
+    });
+
+    render(<EvaluateContent swimmer={SWIMMER_DETAIL} screens={TEST_SCREENS} accessToken="tok" />);
+    const select = screen.getByRole("combobox");
+    fireEvent.change(select, { target: { value: DRAFT_SCREEN } });
+
+    await act(async () => {});
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("clicking Start fresh shows a confirm prompt", async () => {
+    render(<EvaluateContent swimmer={SWIMMER_DETAIL} screens={TEST_SCREENS} accessToken="tok" />);
+    const select = screen.getByRole("combobox");
+    fireEvent.change(select, { target: { value: DRAFT_SCREEN } });
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /start fresh/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/delete this draft/i)).toBeInTheDocument();
+    });
+  });
+
+  it("clicking Delete draft calls DELETE on the draft and dismisses the banner", async () => {
+    mockFetch.mockImplementation((url: string) => {
+      if (typeof url === "string" && url.includes("/drafts") && !url.includes("/draft-")) {
+        return Promise.resolve({ ok: true, json: async () => ({ drafts: [serverDraft] }) });
+      }
+      return Promise.resolve({ ok: true, status: 204, json: async () => null });
+    });
+
+    render(<EvaluateContent swimmer={SWIMMER_DETAIL} screens={TEST_SCREENS} accessToken="tok" />);
+    const select = screen.getByRole("combobox");
+    fireEvent.change(select, { target: { value: DRAFT_SCREEN } });
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /start fresh/i }));
+    await waitFor(() => {
+      expect(screen.getByText(/delete this draft/i)).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /delete draft/i }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("alert")).toBeNull();
+    });
+  });
+
+  it("debounced server save is scheduled after draft changes", async () => {
+    vi.useFakeTimers();
+
+    const { saveDraft: mockSaveDraft, deleteDraft: mockDeleteDraft } = await import("../content/EvaluateContent/actions");
+    vi.mocked(mockSaveDraft).mockResolvedValue({ status: "saved", id: "new-draft-id" });
+    vi.mocked(mockDeleteDraft).mockResolvedValue(undefined);
+
+    mockFetch.mockImplementation((url: string) => {
+      if (typeof url === "string" && url.includes("/drafts")) {
+        return Promise.resolve({ ok: true, json: async () => ({ drafts: [] }) });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({ suggestion: null }) });
+    });
+
+    render(<EvaluateContent swimmer={SWIMMER_DETAIL} screens={TEST_SCREENS} accessToken="tok" />);
+
+    const select = screen.getByRole("combobox");
+    fireEvent.change(select, { target: { value: DRAFT_SCREEN } });
+
+    await act(async () => {});
+
+    await act(async () => {
+      vi.advanceTimersByTime(21_000);
+    });
+
+    expect(mockSaveDraft).toHaveBeenCalled();
+
+    vi.useRealTimers();
   });
 });
