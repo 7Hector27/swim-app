@@ -174,11 +174,10 @@ describe("BottomBar", () => {
         needsApproval={false}
         onConfirm={noop}
         isConfirming={false}
-        errorMessage={null}
       />,
     );
     expect(screen.getByText("No time picked yet")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /book lesson/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /confirm booking/i })).toBeDisabled();
   });
 
   it("shows too-soon message and disabled button when tooSoon=true", () => {
@@ -191,11 +190,10 @@ describe("BottomBar", () => {
         needsApproval={false}
         onConfirm={noop}
         isConfirming={false}
-        errorMessage={null}
       />,
     );
     expect(screen.getByText(/Less than 16 hours away/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /book lesson/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /confirm booking/i })).toBeDisabled();
   });
 
   it("shows formatted time but disabled button when selection + no swimmers", () => {
@@ -208,10 +206,9 @@ describe("BottomBar", () => {
         needsApproval={false}
         onConfirm={noop}
         isConfirming={false}
-        errorMessage={null}
       />,
     );
-    expect(screen.getByRole("button", { name: /book lesson/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /confirm booking/i })).toBeDisabled();
   });
 
   it("shows price and enabled button when selection + swimmers", () => {
@@ -224,11 +221,10 @@ describe("BottomBar", () => {
         needsApproval={false}
         onConfirm={noop}
         isConfirming={false}
-        errorMessage={null}
       />,
     );
     expect(screen.getByText("$60")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /book lesson/i })).not.toBeDisabled();
+    expect(screen.getByRole("button", { name: /confirm booking/i })).not.toBeDisabled();
   });
 
   it("shows day and date in time label when selection present", () => {
@@ -242,7 +238,6 @@ describe("BottomBar", () => {
         needsApproval={false}
         onConfirm={noop}
         isConfirming={false}
-        errorMessage={null}
       />,
     );
     expect(screen.getByText(/Mon/)).toBeInTheDocument();
@@ -259,7 +254,6 @@ describe("BottomBar", () => {
         needsApproval={true}
         onConfirm={noop}
         isConfirming={false}
-        errorMessage={null}
       />,
     );
     expect(screen.getByText(/Jason will confirm/)).toBeInTheDocument();
@@ -275,7 +269,6 @@ describe("BottomBar", () => {
         needsApproval={false}
         onConfirm={noop}
         isConfirming={true}
-        errorMessage={null}
       />,
     );
     const btn = screen.getByRole("button", { name: /booking/i });
@@ -293,7 +286,6 @@ describe("BottomBar", () => {
         needsApproval={false}
         onConfirm={noop}
         isConfirming={false}
-        errorMessage={null}
       />,
     );
     expect(screen.queryByText(/Jason will confirm/)).not.toBeInTheDocument();

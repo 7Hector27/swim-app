@@ -26,6 +26,12 @@ interface Props {
 
 const DURATIONS: Array<30 | 45 | 60> = [30, 45, 60];
 
+const CHIP_BASE =
+  "min-h-[36px] px-3 rounded-full border text-sm transition-colors duration-150 motion-reduce:transition-none disabled:opacity-40 disabled:cursor-default";
+
+const CHIP_ACTIVE = "border-accent text-accent bg-accent/10";
+const CHIP_INACTIVE = "border-border text-text hover:bg-surface-soft";
+
 export default function CalendarConfigRow({
   locations,
   swimmers,
@@ -46,76 +52,58 @@ export default function CalendarConfigRow({
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-wrap items-center gap-2">
       {locations.length > 1 && (
-        <fieldset disabled={isLoading}>
-          <legend className="text-sm font-semibold text-text mb-2">Pool</legend>
-          <div className="flex flex-wrap gap-2">
+        <>
+          <select
+            value={locationId ?? ""}
+            onChange={(event) => onLocationChange(event.target.value)}
+            disabled={isLoading}
+            className={`${CHIP_BASE} appearance-none bg-background pr-7 cursor-pointer`}
+            aria-label="Pool location"
+          >
             {locations.map((location) => (
-              <button
-                key={location.id}
-                type="button"
-                onClick={() => onLocationChange(location.id)}
-                disabled={isLoading}
-                className={`min-h-[44px] px-4 rounded-button border text-sm transition-colors duration-150 ${
-                  locationId === location.id
-                    ? "border-accent text-accent bg-accent/10"
-                    : "border-border text-text hover:bg-surface-soft"
-                }`}
-              >
+              <option key={location.id} value={location.id}>
                 {location.name}
-                {location.isHomePool && (
-                  <span className="ml-1.5 text-xs text-text-secondary">(home)</span>
-                )}
-              </button>
+              </option>
             ))}
-          </div>
-        </fieldset>
+          </select>
+          <span className="w-px h-5 bg-border flex-shrink-0" aria-hidden="true" />
+        </>
       )}
 
-      <fieldset disabled={isLoading}>
-        <legend className="text-sm font-semibold text-text mb-2">Duration</legend>
-        <div className="flex gap-2">
-          {DURATIONS.map((minutes) => (
-            <button
-              key={minutes}
-              type="button"
-              onClick={() => onDurationChange(minutes)}
-              disabled={isLoading}
-              className={`min-h-[44px] px-4 rounded-button border text-sm transition-colors duration-150 ${
-                durationMinutes === minutes
-                  ? "border-accent text-accent bg-accent/10"
-                  : "border-border text-text hover:bg-surface-soft"
-              }`}
-            >
-              {minutes} min
-            </button>
-          ))}
-        </div>
-      </fieldset>
+      {DURATIONS.map((minutes) => (
+        <button
+          key={minutes}
+          type="button"
+          onClick={() => onDurationChange(minutes)}
+          disabled={isLoading}
+          className={`${CHIP_BASE} ${durationMinutes === minutes ? CHIP_ACTIVE : CHIP_INACTIVE}`}
+        >
+          {minutes} min
+        </button>
+      ))}
 
-      <fieldset disabled={isLoading}>
-        <legend className="text-sm font-semibold text-text mb-2">Swimmers</legend>
-        <div className="flex flex-col gap-2">
-          {swimmers.map((swimmer) => (
-            <label
-              key={swimmer.id}
-              className="flex items-center gap-3 cursor-pointer min-h-[44px]"
-            >
-              <input
-                type="checkbox"
-                checked={swimmerIds.includes(swimmer.id)}
-                onChange={() => toggleSwimmer(swimmer.id)}
+      {swimmers.length > 0 && (
+        <>
+          <span className="w-px h-5 bg-border flex-shrink-0" aria-hidden="true" />
+          {swimmers.map((swimmer) => {
+            const isActive = swimmerIds.includes(swimmer.id);
+            return (
+              <button
+                key={swimmer.id}
+                type="button"
+                onClick={() => toggleSwimmer(swimmer.id)}
                 disabled={isLoading}
-                className="accent-accent w-4 h-4"
-              />
-              <span className="text-sm text-text">
+                aria-pressed={isActive}
+                className={`${CHIP_BASE} ${isActive ? CHIP_ACTIVE : CHIP_INACTIVE}`}
+              >
                 {swimmer.firstName} {swimmer.lastName}
-              </span>
-            </label>
-          ))}
-        </div>
-      </fieldset>
+              </button>
+            );
+          })}
+        </>
+      )}
     </div>
   );
 }
