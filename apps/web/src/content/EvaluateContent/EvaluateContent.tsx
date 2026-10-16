@@ -15,13 +15,17 @@ import {
   canSubmit,
   buildRatingsArray,
   buildSkillGroups,
+  buildSectionGroups,
+  skillDisplayLabel,
 } from "./helpers";
+import { SCREEN_SECTIONS } from "./screenSections";
 import SessionSetup from "./SessionSetup";
 import CoachingPriorityField from "./CoachingPriorityField";
 import StartGroupSection from "./StartGroupSection";
 import SkillGradeRow from "./SkillGradeRow";
 import SideRatedRowPair from "./SideRatedRowPair";
 import CalculatedSkillRow from "./CalculatedSkillRow";
+import EvalSectionHeader from "./EvalSectionHeader";
 import UndoToast from "./UndoToast";
 
 interface EvaluateContentProps {
@@ -274,6 +278,88 @@ export default function EvaluateContent({ swimmer, categories, accessToken }: Ev
 
             {/* Skills */}
             {selectedCategory !== null && (() => {
+              const screenSections = SCREEN_SECTIONS[selectedCategory.slug];
+
+              function renderSkill(skill: import("@swim-app/shared").SkillForRating) {
+                const label = skillDisplayLabel(skill, selectedCategory!.skills);
+                if (skill.type === "rollup") {
+                  return (
+                    <CalculatedSkillRow
+                      key={skill.id}
+                      skill={skill}
+                      label={label}
+                    />
+                  );
+                }
+                if (skill.ratedPerSide) {
+                  return (
+                    <SideRatedRowPair
+                      key={skill.id}
+                      skill={skill}
+                      label={label}
+                      leftDraft={draft.skills[`${skill.id}:left`] ?? defaultSkillDraft()}
+                      rightDraft={draft.skills[`${skill.id}:right`] ?? defaultSkillDraft()}
+                      onChange={patchSkill}
+                    />
+                  );
+                }
+                return (
+                  <SkillGradeRow
+                    key={skill.id}
+                    skill={skill}
+                    draftKey={skill.id}
+                    label={label}
+                    draft={draft.skills[skill.id] ?? defaultSkillDraft()}
+                    onChange={patchSkill}
+                  />
+                );
+              }
+
+              if (screenSections !== undefined) {
+                const sectionGroups = buildSectionGroups(selectedCategory, screenSections);
+                const startParentIds = new Set(
+                  selectedCategory.skills
+                    .filter(
+                      (skill) =>
+                        skill.parentSkillId === null &&
+                        selectedCategory.skills.some((other) => other.parentSkillId === skill.id),
+                    )
+                    .map((skill) => skill.id),
+                );
+                return (
+                  <div className="flex flex-col gap-4">
+                    <h2 className="font-bold text-sm" style={{ color: "var(--color-text)" }}>
+                      Skills — {selectedCategory.name}
+                    </h2>
+                    {sectionGroups.map((section) => (
+                      <EvalSectionHeader
+                        key={section.name}
+                        name={section.name}
+                        skillCount={section.skills.length}
+                      >
+                        {section.skills.map((skill) => {
+                          if (startParentIds.has(skill.id)) {
+                            const components = selectedCategory.skills.filter(
+                              (other) => other.parentSkillId === skill.id,
+                            );
+                            return (
+                              <StartGroupSection
+                                key={skill.id}
+                                parent={skill}
+                                components={components}
+                                draftSkills={draft.skills}
+                                onChange={patchSkill}
+                              />
+                            );
+                          }
+                          return renderSkill(skill);
+                        })}
+                      </EvalSectionHeader>
+                    ))}
+                  </div>
+                );
+              }
+
               const { startParents, standaloneSkills, componentSkillsOf } = buildSkillGroups(selectedCategory);
               return (
                 <div className="flex flex-col gap-4">
@@ -291,38 +377,7 @@ export default function EvaluateContent({ swimmer, categories, accessToken }: Ev
                     />
                   ))}
 
-                  {standaloneSkills.map((skill) => {
-                    if (skill.type === "rollup") {
-                      return (
-                        <CalculatedSkillRow
-                          key={skill.id}
-                          skill={skill}
-                          label={skill.name}
-                        />
-                      );
-                    }
-                    if (skill.ratedPerSide) {
-                      return (
-                        <SideRatedRowPair
-                          key={skill.id}
-                          skill={skill}
-                          leftDraft={draft.skills[`${skill.id}:left`] ?? defaultSkillDraft()}
-                          rightDraft={draft.skills[`${skill.id}:right`] ?? defaultSkillDraft()}
-                          onChange={patchSkill}
-                        />
-                      );
-                    }
-                    return (
-                      <SkillGradeRow
-                        key={skill.id}
-                        skill={skill}
-                        draftKey={skill.id}
-                        label={skill.name}
-                        draft={draft.skills[skill.id] ?? defaultSkillDraft()}
-                        onChange={patchSkill}
-                      />
-                    );
-                  })}
+                  {standaloneSkills.map((skill) => renderSkill(skill))}
                 </div>
               );
             })()}

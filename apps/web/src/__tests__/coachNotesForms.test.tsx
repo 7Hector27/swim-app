@@ -54,6 +54,7 @@ const CATEGORIES_WITH_SKILL: import("@swim-app/shared").CategoriesResponse = [
         name: "Flutter Kick",
         type: "rubric" as const,
         unit: null,
+        stroke: null,
         ratedPerSide: false,
         notLegalAllowed: false,
         parentSkillId: null,

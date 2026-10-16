@@ -30,6 +30,7 @@ const SKILL: SkillForRating = {
   name: "Kick",
   type: "rubric",
   unit: null,
+  stroke: null,
   ratedPerSide: false,
   notLegalAllowed: true,
   parentSkillId: null,
@@ -44,6 +45,7 @@ const SIDED_SKILL: SkillForRating = {
   name: "Bilateral breathing",
   type: "rubric",
   unit: null,
+  stroke: null,
   ratedPerSide: true,
   notLegalAllowed: false,
   parentSkillId: null,
@@ -58,6 +60,7 @@ const START_PARENT: SkillForRating = {
   name: "Track start",
   type: "composite",
   unit: null,
+  stroke: null,
   ratedPerSide: false,
   notLegalAllowed: false,
   parentSkillId: null,
@@ -73,6 +76,7 @@ function makeComponent(index: number): SkillForRating {
     name: `Component ${index}`,
     type: "rubric",
     unit: null,
+    stroke: null,
     ratedPerSide: false,
     notLegalAllowed: true,
     parentSkillId: "parent-1",
@@ -211,6 +215,7 @@ describe("CalculatedSkillRow", () => {
     name: "Bilateral Breathing",
     type: "rollup",
     unit: null,
+    stroke: null,
     ratedPerSide: false,
     notLegalAllowed: false,
     parentSkillId: null,
@@ -328,7 +333,7 @@ const TEST_CATEGORIES: CategoriesResponse = [
     sortOrder: 1,
     skills: [{
       id: SKILL_A_ID, slug: "free-kick", name: "Freestyle Kick",
-      type: "rubric", unit: null, ratedPerSide: false, notLegalAllowed: false,
+      type: "rubric", unit: null, stroke: null, ratedPerSide: false, notLegalAllowed: false,
       parentSkillId: null, sortOrder: 1, faultTags: [], descriptors: [],
     }],
   },
@@ -339,7 +344,7 @@ const TEST_CATEGORIES: CategoriesResponse = [
     sortOrder: 2,
     skills: [{
       id: SKILL_B_ID, slug: "back-kick", name: "Backstroke Kick",
-      type: "rubric", unit: null, ratedPerSide: false, notLegalAllowed: false,
+      type: "rubric", unit: null, stroke: null, ratedPerSide: false, notLegalAllowed: false,
       parentSkillId: null, sortOrder: 1, faultTags: [], descriptors: [],
     }],
   },
@@ -456,6 +461,66 @@ describe("draft persistence — full component", () => {
 
     expect(localStorage.getItem(metaKey(SWIMMER_ID))).toBeNull();
     expect(localStorage.getItem(skillsKey(SWIMMER_ID, CAT_A_ID))).toBeNull();
+  });
+});
+
+// ── Section header rendering ──────────────────────────────────────────────────
+
+describe("EvaluateContent — section headers for screen-sectioned categories", () => {
+  const FREESTYLE_CAT_ID = "00000000-0000-0000-eeee-000000000001";
+  const FREESTYLE_SKILL_ID = "00000000-0000-0000-ffff-000000000001";
+
+  const freestyleCategories: CategoriesResponse = [
+    {
+      id: FREESTYLE_CAT_ID,
+      slug: "freestyle",
+      name: "Freestyle",
+      sortOrder: 1,
+      skills: [
+        {
+          id: FREESTYLE_SKILL_ID,
+          slug: "free-head-position",
+          name: "Head Position",
+          type: "rubric",
+          unit: null,
+          stroke: "free" as const,
+          ratedPerSide: false,
+          notLegalAllowed: false,
+          parentSkillId: null,
+          sortOrder: 1,
+          faultTags: [],
+          descriptors: [],
+        },
+      ],
+    },
+  ];
+
+  beforeEach(() => {
+    localStorage.clear();
+    vi.mocked(submitEvaluation).mockResolvedValue({ status: "idle" });
+    mockFetch.mockResolvedValue({ ok: true, json: async () => ({ suggestion: null }) });
+  });
+
+  afterEach(() => {
+    localStorage.clear();
+    vi.clearAllMocks();
+  });
+
+  it("renders The swim section header when freestyle category is selected", async () => {
+    render(
+      <EvaluateContent
+        swimmer={SWIMMER_DETAIL}
+        categories={freestyleCategories}
+        accessToken="tok"
+      />,
+    );
+
+    const select = screen.getByRole("combobox");
+    fireEvent.change(select, { target: { value: FREESTYLE_CAT_ID } });
+
+    await waitFor(() => {
+      expect(screen.getByText("The swim")).toBeInTheDocument();
+    });
   });
 });
 

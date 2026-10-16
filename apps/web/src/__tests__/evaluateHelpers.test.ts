@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { mapSubmitResponse, buildSkillGroups } from "../content/EvaluateContent/helpers";
+import { mapSubmitResponse, buildSkillGroups, buildSectionGroups, skillDisplayLabel } from "../content/EvaluateContent/helpers";
 import type { SkillForRating } from "@swim-app/shared";
 
 describe("mapSubmitResponse", () => {
@@ -69,6 +69,7 @@ function makeSkill(overrides: Partial<SkillForRating> & { id: string }): SkillFo
     name: overrides.id,
     type: "rubric",
     unit: null,
+    stroke: null,
     ratedPerSide: false,
     parentSkillId: null,
     sortOrder: 0,
@@ -116,5 +117,81 @@ describe("buildSkillGroups", () => {
     const { startParents, standaloneSkills } = buildSkillGroups(flat);
     expect(startParents).toHaveLength(0);
     expect(standaloneSkills).toHaveLength(1);
+  });
+});
+
+// ── buildSectionGroups ────────────────────────────────────────────────────────
+
+describe("buildSectionGroups", () => {
+  const skillA = makeSkill({ id: "skill-a", slug: "slug-a", name: "Skill A" });
+  const skillB = makeSkill({ id: "skill-b", slug: "slug-b", name: "Skill B" });
+  const skillC = makeSkill({ id: "skill-c", slug: "slug-c", name: "Skill C" });
+  const skillD = makeSkill({ id: "skill-d", slug: "slug-d", name: "Skill D" });
+
+  const category = {
+    id: "cat-1",
+    slug: "freestyle",
+    name: "Freestyle",
+    sortOrder: 1,
+    skills: [skillA, skillB, skillC, skillD],
+  };
+
+  const sections = [
+    { name: "Section 1", slugs: ["slug-a", "slug-b"] },
+    { name: "Section 2", slugs: ["slug-c", "slug-d"] },
+  ];
+
+  it("produces 2 sections when all skills are assigned", () => {
+    const result = buildSectionGroups(category, sections);
+    expect(result).toHaveLength(2);
+    expect(result[0]?.name).toBe("Section 1");
+    expect(result[0]?.skills.map((s) => s.id)).toEqual(["skill-a", "skill-b"]);
+    expect(result[1]?.name).toBe("Section 2");
+    expect(result[1]?.skills.map((s) => s.id)).toEqual(["skill-c", "skill-d"]);
+  });
+
+  it("adds an Other section for unassigned skills", () => {
+    const skillE = makeSkill({ id: "skill-e", slug: "slug-e", name: "Skill E" });
+    const catWithExtra = { ...category, skills: [...category.skills, skillE] };
+    const result = buildSectionGroups(catWithExtra, sections);
+    expect(result).toHaveLength(3);
+    const other = result[2];
+    expect(other?.name).toBe("Other");
+    expect(other?.skills.map((s) => s.id)).toEqual(["skill-e"]);
+  });
+
+  it("skips empty sections (slugs not matched)", () => {
+    const partialSections = [
+      { name: "Section 1", slugs: ["slug-a", "slug-b"] },
+      { name: "Empty Section", slugs: ["not-a-slug"] },
+    ];
+    const result = buildSectionGroups(category, partialSections);
+    // Empty Section yields no skills, so it is not included
+    const sectionNames = result.map((s) => s.name);
+    expect(sectionNames).not.toContain("Empty Section");
+  });
+});
+
+// ── skillDisplayLabel ─────────────────────────────────────────────────────────
+
+describe("skillDisplayLabel", () => {
+  const skillUnique = makeSkill({ id: "s1", name: "Head Position", slug: "head-pos", stroke: null });
+  const skillFree = makeSkill({ id: "s2", name: "Kick", slug: "free-kick", stroke: "free" as const });
+  const skillBack = makeSkill({ id: "s3", name: "Kick", slug: "back-kick", stroke: "back" as const });
+  const skillNullStroke = makeSkill({ id: "s4", name: "Kick", slug: "other-kick", stroke: null });
+
+  it("returns just the name when no duplicate exists", () => {
+    expect(skillDisplayLabel(skillUnique, [skillUnique, skillFree])).toBe("Head Position");
+  });
+
+  it("returns name with stroke label when duplicate name and stroke is set", () => {
+    const all = [skillFree, skillBack];
+    expect(skillDisplayLabel(skillFree, all)).toBe("Kick · Free");
+    expect(skillDisplayLabel(skillBack, all)).toBe("Kick · Back");
+  });
+
+  it("returns just the name when duplicate exists but stroke is null", () => {
+    const all = [skillFree, skillNullStroke];
+    expect(skillDisplayLabel(skillNullStroke, all)).toBe("Kick");
   });
 });

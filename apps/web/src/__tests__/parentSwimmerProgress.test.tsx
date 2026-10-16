@@ -142,6 +142,7 @@ describe("ParentSwimmerProgressContent", () => {
             name: "Freestyle Kick",
             type: "rubric",
             unit: null,
+            stroke: null,
             ratedPerSide: false,
             notLegalAllowed: false,
             parentSkillId: null,

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { StartGradeResultSchema } from "../lib/startGrade";
+import { StrokeSchema } from "./skills";
 
 export const EvaluationContextSchema = z.enum(["drill", "practice", "race"]);
 export type EvaluationContext = z.infer<typeof EvaluationContextSchema>;
@@ -193,6 +194,7 @@ export const SkillForRatingSchema = z.object({
   name: z.string(),
   type: z.enum(["rubric", "measured", "score", "composite", "rollup"]),
   unit: z.string().nullable(),
+  stroke: StrokeSchema.nullable(),
   ratedPerSide: z.boolean(),
   notLegalAllowed: z.boolean(),
   parentSkillId: z.string().uuid().nullable(),

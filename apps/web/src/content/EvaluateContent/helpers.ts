@@ -106,6 +106,47 @@ export function buildSkillGroups(category: import("@swim-app/shared").SkillCateg
   return { startParents, standaloneSkills, componentSkillsOf };
 }
 
+export function buildSectionGroups(
+  category: import("@swim-app/shared").SkillCategoryWithSkills,
+  sections: Array<{ name: string; slugs: string[] }>,
+): Array<{ name: string; skills: import("@swim-app/shared").SkillForRating[] }> {
+  const slugToSkill = new Map(category.skills.map((skill) => [skill.slug, skill]));
+  const assigned = new Set<string>();
+  const result: Array<{ name: string; skills: import("@swim-app/shared").SkillForRating[] }> = [];
+
+  for (const section of sections) {
+    const sectionSkills: import("@swim-app/shared").SkillForRating[] = [];
+    for (const slug of section.slugs) {
+      const skill = slugToSkill.get(slug);
+      if (skill) {
+        sectionSkills.push(skill);
+        assigned.add(skill.id);
+      }
+    }
+    if (sectionSkills.length > 0) {
+      result.push({ name: section.name, skills: sectionSkills });
+    }
+  }
+
+  const other = category.skills.filter((skill) => !assigned.has(skill.id));
+  if (other.length > 0) {
+    result.push({ name: "Other", skills: other });
+  }
+
+  return result;
+}
+
+export function skillDisplayLabel(
+  skill: import("@swim-app/shared").SkillForRating,
+  allSkills: import("@swim-app/shared").SkillForRating[],
+): string {
+  const hasDuplicate = allSkills.some((other) => other.id !== skill.id && other.name === skill.name);
+  if (!hasDuplicate || skill.stroke === null) return skill.name;
+  const strokeLabel: Record<string, string> = { free: "Free", back: "Back", breast: "Breast", fly: "Fly" };
+  const label = strokeLabel[skill.stroke];
+  return label ? `${skill.name} · ${label}` : skill.name;
+}
+
 export function buildRatingsArray(
   skills: import("@swim-app/shared").SkillForRating[],
   draftSkills: Record<string, SkillDraft>,

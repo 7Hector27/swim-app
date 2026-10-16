@@ -38,6 +38,7 @@ const TEST_CATEGORIES = [
         name: "Flutter Kick",
         type: "rubric" as const,
         unit: null,
+        stroke: null,
         ratedPerSide: false,
         notLegalAllowed: false,
         parentSkillId: null,

@@ -671,6 +671,7 @@ describe("GET /categories", () => {
       name: "Freestyle Kick",
       type: "rubric" as const,
       unit: null,
+      stroke: null,
       ratedPerSide: false,
       parentSkillId: null,
       sortOrder: 1,
@@ -731,6 +732,8 @@ describe("GET /categories", () => {
     expect(skill.descriptors).toEqual(
       expect.arrayContaining([expect.objectContaining({ level: expect.any(Number), text: expect.any(String) })]),
     );
+    // Each skill should have a stroke field (nullable)
+    expect("stroke" in skill).toBe(true);
   });
 });
 

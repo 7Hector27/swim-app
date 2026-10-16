@@ -2,6 +2,7 @@
 
 import type { CategoriesResponse } from "@swim-app/shared";
 import type { SessionDraft } from "./helpers";
+import { todayLA } from "./helpers";
 
 interface SessionSetupProps {
   draft: SessionDraft;
@@ -43,6 +44,11 @@ export default function SessionSetup({ draft, categories, onCategoryChange, onCh
           className="border rounded px-3 py-2 text-sm min-h-[44px] max-w-xs"
           style={{ borderColor: "var(--color-border)", color: "var(--color-text)", backgroundColor: "transparent" }}
         />
+        {draft.sessionDate === todayLA() && (
+          <p className="text-xs" style={{ color: "var(--color-text-secondary)" }}>
+            Session date is today — change it if rating from memory.
+          </p>
+        )}
       </fieldset>
 
       {/* Context */}
