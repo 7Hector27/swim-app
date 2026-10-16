@@ -3,12 +3,13 @@
 import { useActionState, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   CoachSwimmerDetail,
+  EvaluationDraft,
   ScreensResponse,
   SkillForRating,
 } from "@swim-app/shared";
 import { calculateBilateralBreathingGrade } from "@swim-app/shared";
 import AddNoteForm from "@/components/AddNoteForm";
-import { submitEvaluation } from "./actions";
+import { deleteDraft, saveDraft, submitEvaluation } from "./actions";
 import type { EvaluateState, SessionDraft, SkillDraft } from "./helpers";
 import {
   defaultSkillDraft,
@@ -33,13 +34,42 @@ interface EvaluateContentProps {
   swimmer: CoachSwimmerDetail;
   screens: ScreensResponse;
   accessToken: string;
+  resumeDraft?: EvaluationDraft;
 }
 
-export default function EvaluateContent({ swimmer, screens, accessToken }: EvaluateContentProps) {
+export default function EvaluateContent({ swimmer, screens, accessToken, resumeDraft }: EvaluateContentProps) {
   const metaKey = useMemo(() => `evaluate-draft-meta-${swimmer.id}`, [swimmer.id]);
   const skillsKey = useCallback((slug: string) => `evaluate-draft-skills-${swimmer.id}-${slug}`, [swimmer.id]);
 
-  const [draft, setDraft] = useState<SessionDraft>(() => initialSessionDraft());
+  const [draft, setDraft] = useState<SessionDraft>(() => {
+    if (resumeDraft) {
+      const skills: Record<string, SkillDraft> = {};
+      for (const [key, entry] of Object.entries(resumeDraft.payload)) {
+        skills[key] = {
+          grade: entry.grade,
+          notLegal: entry.notLegal,
+          noConcept: entry.noConcept,
+          capacityValue: entry.capacityValue,
+          capacityUnit: entry.capacityUnit,
+          measurementValue: entry.measurementValue,
+          measurementUnit: entry.measurementUnit,
+          note: entry.note,
+          faultTags: entry.faultTags,
+          detailsOpen: false,
+          golfScoreCategory: entry.golfScoreCategory,
+        };
+      }
+      return {
+        screenSlug: resumeDraft.screenSlug,
+        sessionDate: resumeDraft.sessionDate ?? todayLA(),
+        context: resumeDraft.context,
+        coachingPriority: resumeDraft.coachingPriority ?? "",
+        breathingPattern: resumeDraft.breathingPattern,
+        skills,
+      };
+    }
+    return initialSessionDraft();
+  });
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
   const [skillSearch, setSkillSearch] = useState("");
   const [depSuggestion, setDepSuggestion] = useState<
@@ -51,11 +81,14 @@ export default function EvaluateContent({ swimmer, screens, accessToken }: Evalu
   const mountedRef = useRef(false);
   const savedAtRef = useRef<number>(0);
   const savedScreenSlugRef = useRef<string>("");
+  const [serverDraftId, setServerDraftId] = useState<string | null>(resumeDraft?.id ?? null);
+  const [draftSaveState, setDraftSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
-  // Restore draft from localStorage on mount
+  // Restore draft from localStorage on mount (skip if resumeDraft was provided)
   useEffect(() => {
     if (mountedRef.current) return;
     mountedRef.current = true;
+    if (resumeDraft) return;
     try {
       const meta = JSON.parse(localStorage.getItem(metaKey) ?? "null");
       if (meta && typeof meta === "object") {
@@ -85,7 +118,7 @@ export default function EvaluateContent({ swimmer, screens, accessToken }: Evalu
     } catch {
       // ignore
     }
-  }, [swimmer.id, metaKey, skillsKey]);
+  }, [swimmer.id, metaKey, skillsKey, resumeDraft]);
 
   // Persist draft to localStorage on every change
   useEffect(() => {
@@ -123,7 +156,7 @@ export default function EvaluateContent({ swimmer, screens, accessToken }: Evalu
     { status: "idle" },
   );
 
-  // Capture savedAt and clear localStorage on success.
+  // Capture savedAt, clear localStorage, and clean up server draft on success.
   useEffect(() => {
     if (state.status === "saved") {
       savedAtRef.current = Date.now();
@@ -136,8 +169,47 @@ export default function EvaluateContent({ swimmer, screens, accessToken }: Evalu
       } catch {
         // ignore
       }
+      if (serverDraftId) {
+        deleteDraft(serverDraftId).catch(() => null);
+      }
     }
+  // serverDraftId intentionally excluded — we only want to delete once on the saved event
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.status, metaKey, skillsKey]);
+
+  async function handleSaveDraft() {
+    if (!draft.screenSlug) return;
+    setDraftSaveState("saving");
+    const payload: Record<string, import("@swim-app/shared").DraftSkillPayload> = {};
+    for (const [key, skillDraft] of Object.entries(draft.skills)) {
+      payload[key] = {
+        grade: skillDraft.grade,
+        notLegal: skillDraft.notLegal,
+        noConcept: skillDraft.noConcept,
+        ...(skillDraft.grade !== null || skillDraft.noConcept ? {} : {}),
+        faultTags: skillDraft.faultTags,
+        capacityValue: skillDraft.capacityValue,
+        capacityUnit: skillDraft.capacityUnit,
+        measurementValue: skillDraft.measurementValue,
+        measurementUnit: skillDraft.measurementUnit,
+        golfScoreCategory: skillDraft.golfScoreCategory,
+        note: skillDraft.note,
+      };
+    }
+    const result = await saveDraft(swimmer.id, draft.screenSlug, {
+      sessionDate: draft.sessionDate || null,
+      context: draft.context,
+      coachingPriority: draft.coachingPriority || null,
+      breathingPattern: draft.breathingPattern,
+      payload,
+    });
+    if (result.status === "saved") {
+      setServerDraftId(result.id);
+      setDraftSaveState("saved");
+    } else {
+      setDraftSaveState("error");
+    }
+  }
 
   function handleScreenChange(newScreenSlug: string) {
     let skills: Record<string, SkillDraft> = {};
@@ -475,20 +547,30 @@ export default function EvaluateContent({ swimmer, screens, accessToken }: Evalu
               slugToName={slugToName}
             />
 
-            <button
-              type="submit"
-              disabled={!submitEnabled}
-              className="inline-flex items-center justify-center px-5 min-h-[44px] font-bold text-sm rounded"
-              style={{
-                borderRadius: "var(--radius-button)",
-                backgroundColor: "var(--color-button-primary-background)",
-                color: "var(--color-button-primary-text)",
-                opacity: submitEnabled ? 1 : 0.5,
-                cursor: submitEnabled ? "pointer" : "not-allowed",
-              }}
-            >
-              {isPending ? "Saving…" : "Save evaluation"}
-            </button>
+            <div className="flex gap-3 flex-wrap">
+              <button
+                type="submit"
+                disabled={!submitEnabled}
+                className="inline-flex items-center justify-center px-5 min-h-[44px] font-bold text-sm rounded"
+                style={{
+                  borderRadius: "var(--radius-button)",
+                  backgroundColor: "var(--color-button-primary-background)",
+                  color: "var(--color-button-primary-text)",
+                  opacity: submitEnabled ? 1 : 0.5,
+                  cursor: submitEnabled ? "pointer" : "not-allowed",
+                }}
+              >
+                {isPending ? "Saving…" : "Save evaluation"}
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveDraft}
+                disabled={draft.screenSlug === "" || draftSaveState === "saving"}
+                className="inline-flex items-center justify-center px-5 min-h-[44px] font-semibold text-sm rounded-[var(--radius-button)] border border-border text-text"
+              >
+                {draftSaveState === "saving" ? "Saving…" : draftSaveState === "saved" ? "Draft saved" : draftSaveState === "error" ? "Save failed" : "Save as draft"}
+              </button>
+            </div>
           </form>
         </div>
       </main>

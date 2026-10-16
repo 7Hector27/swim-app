@@ -218,6 +218,13 @@
       "when": 1792185025476,
       "tag": "0030_pale_blacklash",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1792185834327,
+      "tag": "0031_kind_doctor_doom",
+      "breakpoints": true
     }
   ]
 }

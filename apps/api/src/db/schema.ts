@@ -6,6 +6,7 @@ import {
   check,
   date,
   integer,
+  jsonb,
   numeric,
   pgEnum,
   pgTable,
@@ -13,6 +14,7 @@ import {
   text,
   time,
   timestamp,
+  unique,
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
@@ -559,6 +561,30 @@ export const skillRatings = pgTable(
       sql`(${table.voidedAt} IS NULL AND ${table.voidReason} IS NULL AND ${table.voidBy} IS NULL)
           OR (${table.voidedAt} IS NOT NULL AND ${table.voidReason} IS NOT NULL AND ${table.voidBy} IS NOT NULL)`,
     ),
+  ],
+).enableRLS();
+
+// Server-side draft for an in-progress evaluation. One draft per
+// (coachId, swimmerId, screenSlug) — upserted on save, deleted on finalize.
+export const evaluationDrafts = pgTable(
+  "evaluation_drafts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    swimmerId: uuid("swimmer_id").notNull().references(() => swimmers.id, { onDelete: "restrict" }),
+    coachId: uuid("coach_id").notNull().references(() => profiles.id, { onDelete: "restrict" }),
+    screenSlug: text("screen_slug").notNull(),
+    sessionDate: date("session_date"),
+    context: evaluationContextEnum("context"),
+    coachingPriority: text("coaching_priority"),
+    breathingPattern: text("breathing_pattern"),
+    payload: jsonb("payload").notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdateFn(() => new Date()),
+  },
+  (table) => [
+    unique("drafts_coach_swimmer_screen_unique").on(table.coachId, table.swimmerId, table.screenSlug),
+    check("draft_screen_slug_valid", sql`${table.screenSlug} IN ('fundamentals','water-confidence','freestyle','backstroke','breaststroke','butterfly','starts','im-turns','racing')`),
+    check("draft_breathing_pattern_valid", sql`${table.breathingPattern} IS NULL OR ${table.breathingPattern} IN ('every_1','every_2','every_3','every_4','every_5','other')`),
   ],
 ).enableRLS();
 

@@ -476,6 +476,33 @@ RLS enabled. Policies TBD.
 
 ---
 
+### `evaluation_drafts`
+
+One row per in-progress evaluation. Holds one draft per (coach, swimmer, screen) — upserted on save, deleted when finalized. When a coach finalizes, the draft creates an `evaluation_sessions` row plus `skill_ratings` rows atomically; the draft row is deleted inside the same transaction.
+
+| Column | Type | Nullable | Default | Notes |
+|---|---|---|---|---|
+| `id` | `uuid` | no | `gen_random_uuid()` | Primary key |
+| `swimmer_id` | `uuid` | no | — | FK → `swimmers.id` (restrict on delete) |
+| `coach_id` | `uuid` | no | — | FK → `profiles.id` (restrict on delete) |
+| `screen_slug` | `text` | no | — | One of the nine evaluation screen slugs |
+| `session_date` | `date` | yes | — | Nullable until the coach fills it in |
+| `context` | `evaluation_context` | yes | — | `drill`, `practice`, or `race`; nullable until filled in |
+| `coaching_priority` | `text` | yes | — | Freeform text; nullable until filled in |
+| `breathing_pattern` | `text` | yes | — | Required for freestyle/butterfly at finalize time |
+| `payload` | `jsonb` | no | `'{}'` | `Record<skillId \| "skillId:side", DraftSkillPayload>` — per-skill grades, fault tags, capacity/measurement, and note matching the SkillDraft shape from the web form |
+| `created_at` | `timestamptz` | no | `now()` | |
+| `updated_at` | `timestamptz` | no | `now()` | Auto-updated on upsert |
+
+Constraints:
+- `UNIQUE (coach_id, swimmer_id, screen_slug)` — at most one draft per coach/swimmer/screen
+- `CHECK (draft_screen_slug_valid)` — screen_slug must be one of the nine valid slugs
+- `CHECK (draft_breathing_pattern_valid)` — breathing_pattern must be null or a valid enum value
+
+RLS enabled. Policies TBD.
+
+---
+
 ### `skill_ratings`
 
 One row per skill observation. Append-only: after insert, only the three void fields (`voided_at`, `void_reason`, `void_by`) may change. See ADR 022.

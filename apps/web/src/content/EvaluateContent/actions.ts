@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { CreateSessionBodySchema } from "@swim-app/shared";
+import type { SaveDraftBody } from "@swim-app/shared";
 import { createClient } from "@/lib/supabase/server";
 import type { EvaluateState } from "./helpers";
 import { mapSubmitResponse } from "./helpers";
@@ -51,4 +52,47 @@ export async function submitEvaluation(
   if (response.status === 401) redirect("/api/signout");
   const body: unknown = await response.json().catch(() => null);
   return mapSubmitResponse(response.status, body);
+}
+
+export async function saveDraft(
+  swimmerId: string,
+  screenSlug: string,
+  draftBody: SaveDraftBody,
+): Promise<{ status: "saved"; id: string } | { status: "error"; message: string }> {
+  const supabase = await createClient();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session) redirect("/login");
+
+  const response = await fetch(
+    `${process.env.NEXT_PUBLIC_API_URL}/coach/swimmers/${swimmerId}/drafts/${screenSlug}`,
+    {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(draftBody),
+    },
+  );
+
+  if (response.status === 401) redirect("/api/signout");
+  if (response.status === 200) {
+    const data = await response.json().catch(() => null) as { id?: string } | null;
+    if (data?.id) return { status: "saved", id: data.id };
+  }
+  return { status: "error", message: "Could not save draft." };
+}
+
+export async function deleteDraft(draftId: string): Promise<void> {
+  const supabase = await createClient();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session) return;
+  await fetch(`${process.env.NEXT_PUBLIC_API_URL}/coach/drafts/${draftId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${session.access_token}` },
+  }).catch(() => null);
 }

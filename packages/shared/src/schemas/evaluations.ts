@@ -334,6 +334,52 @@ export const SwimmerProgressResponseSchema = z.object({
 });
 export type SwimmerProgressResponse = z.infer<typeof SwimmerProgressResponseSchema>;
 
+// ── Draft schemas ─────────────────────────────────────────────────────────────
+
+export const DraftSkillPayloadSchema = z.object({
+  grade: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)]).nullable(),
+  notLegal: z.boolean(),
+  noConcept: z.boolean(),
+  side: z.enum(["left", "right"]).nullable().optional(),
+  faultTags: z.array(z.string()),
+  capacityValue: z.string(),
+  capacityUnit: z.enum(["yards", "reps"]).nullable(),
+  measurementValue: z.string(),
+  measurementUnit: z.string().nullable(),
+  golfScoreCategory: GolfScoreCategorySchema.nullable(),
+  note: z.string(),
+});
+export type DraftSkillPayload = z.infer<typeof DraftSkillPayloadSchema>;
+
+export const SaveDraftBodySchema = z.object({
+  sessionDate: z.string().nullable(),
+  context: z.enum(["drill", "practice", "race"]).nullable(),
+  coachingPriority: z.string().nullable(),
+  breathingPattern: BreathingPatternSchema.nullable(),
+  payload: z.record(z.string(), DraftSkillPayloadSchema),
+});
+export type SaveDraftBody = z.infer<typeof SaveDraftBodySchema>;
+
+export const EvaluationDraftSchema = z.object({
+  id: z.string().uuid(),
+  swimmerId: z.string().uuid(),
+  coachId: z.string().uuid(),
+  screenSlug: z.string(),
+  sessionDate: z.string().nullable(),
+  context: z.enum(["drill", "practice", "race"]).nullable(),
+  coachingPriority: z.string().nullable(),
+  breathingPattern: BreathingPatternSchema.nullable(),
+  payload: z.record(z.string(), DraftSkillPayloadSchema),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+export type EvaluationDraft = z.infer<typeof EvaluationDraftSchema>;
+
+export const DraftsListResponseSchema = z.object({
+  drafts: z.array(EvaluationDraftSchema),
+});
+export type DraftsListResponse = z.infer<typeof DraftsListResponseSchema>;
+
 // Parent-facing progress schemas — no fault tags
 export const ParentProgressRatingPointSchema = ProgressRatingPointSchema.omit({ faultTags: true });
 export type ParentProgressRatingPoint = z.infer<typeof ParentProgressRatingPointSchema>;

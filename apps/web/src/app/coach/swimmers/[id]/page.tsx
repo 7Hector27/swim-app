@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
-import type { SwimmerSkillsResponse } from "@swim-app/shared";
+import type { EvaluationDraft, SwimmerSkillsResponse } from "@swim-app/shared";
 
 import AccountInactiveScreen from "@/components/AccountInactiveScreen";
 import CoachSwimmerDetailContent from "@/content/CoachSwimmerDetailContent";
@@ -21,7 +21,7 @@ export default async function CoachSwimmerPage({ params }: CoachSwimmerPageProps
   const [auth, { id }] = await Promise.all([requireAuth(), params]);
   if (!auth) return <AccountInactiveScreen />;
 
-  const [swimmerResult, skillsResult, categoriesResult, timelineResult, swimsResult, meetsResult] =
+  const [swimmerResult, skillsResult, categoriesResult, timelineResult, swimsResult, meetsResult, draftsRes] =
     await Promise.all([
       fetchCoachSwimmerDetail(id, auth.accessToken),
       fetchSwimmerSkills(id, auth.accessToken),
@@ -29,6 +29,10 @@ export default async function CoachSwimmerPage({ params }: CoachSwimmerPageProps
       fetchSwimmerTimeline(id, auth.accessToken),
       fetchSwimmerMeetSwims(id, auth.accessToken),
       fetchMeets(auth.accessToken),
+      fetch(`${process.env.NEXT_PUBLIC_API_URL}/coach/swimmers/${id}/drafts`, {
+        headers: { Authorization: `Bearer ${auth.accessToken}` },
+        cache: "no-store",
+      }),
     ]);
 
   if (!swimmerResult.ok) {
@@ -45,6 +49,8 @@ export default async function CoachSwimmerPage({ params }: CoachSwimmerPageProps
   const swims = swimsResult.ok ? swimsResult.data.swims : [];
   const personalBests = swimsResult.ok ? swimsResult.data.personalBests : [];
   const meets = meetsResult.ok ? meetsResult.meets : [];
+  const draftsData = draftsRes.ok ? await draftsRes.json().catch(() => ({ drafts: [] })) : { drafts: [] };
+  const swimmerDrafts: EvaluationDraft[] = Array.isArray(draftsData.drafts) ? draftsData.drafts : [];
 
   return (
     <CoachSwimmerDetailContent
@@ -58,6 +64,7 @@ export default async function CoachSwimmerPage({ params }: CoachSwimmerPageProps
       swims={swims}
       personalBests={personalBests}
       meets={meets}
+      drafts={swimmerDrafts}
     />
   );
 }
