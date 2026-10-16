@@ -2,6 +2,7 @@ import type { MeResponse } from "@swim-app/shared";
 
 import Button from "@/components/Button";
 import SiteFooter from "@/components/SiteFooter";
+import { formatRole } from "@/lib/formatRole";
 
 import EditProfileForm from "./EditProfileForm";
 import { logout } from "./actions";
@@ -24,7 +25,7 @@ export default function AccountContent({ profile }: AccountContentProps) {
             </div>
             <div>
               <p className="text-sm font-semibold text-text-secondary mb-0.5">Role</p>
-              <p className="text-text">{profile.role}</p>
+              <p className="text-text">{formatRole(profile.role)}</p>
             </div>
           </div>
 
