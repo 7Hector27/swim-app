@@ -516,6 +516,7 @@ export const skillRatings = pgTable(
     capacityUnit: capacityUnitEnum("capacity_unit"),
     measurementValue: numeric("measurement_value"),
     measurementUnit: measurementUnitEnum("measurement_unit"),
+    golfScoreCategory: text("golf_score_category"),
     note: text("note"),
     // Void fields: all three are set atomically or all are null.
     voidedAt: timestamp("voided_at", { withTimezone: true }),

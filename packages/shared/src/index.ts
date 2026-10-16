@@ -286,6 +286,7 @@ export { SCREEN_SKILLS, SCREEN_SLUGS, SCREEN_NAMES } from "./lib/screenSkills";
 export type {
   EvaluationContext,
   BreathingPattern,
+  GolfScoreCategory,
   RatingSide,
   CapacityUnit,
   MeasurementUnit,
@@ -309,6 +310,7 @@ export type {
 export {
   EvaluationContextSchema,
   BreathingPatternSchema,
+  GolfScoreCategorySchema,
   RatingSideSchema,
   CapacityUnitSchema,
   MeasurementUnitSchema,

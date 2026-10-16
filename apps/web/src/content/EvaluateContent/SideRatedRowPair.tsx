@@ -15,7 +15,7 @@ interface SideRatedRowPairProps {
 export default function SideRatedRowPair({ skill, leftDraft, rightDraft, onChange, label }: SideRatedRowPairProps) {
   const displayName = label ?? skill.name;
   return (
-    <div className="flex flex-col gap-2">
+    <div id={`skill-${skill.id}`} className="flex flex-col gap-2">
       <SkillGradeRow
         skill={skill}
         draftKey={`${skill.id}:left`}

@@ -4,7 +4,9 @@ import { useActionState, useCallback, useEffect, useMemo, useRef, useState } fro
 import type {
   CoachSwimmerDetail,
   ScreensResponse,
+  SkillForRating,
 } from "@swim-app/shared";
+import { calculateBilateralBreathingGrade } from "@swim-app/shared";
 import AddNoteForm from "@/components/AddNoteForm";
 import { submitEvaluation } from "./actions";
 import type { EvaluateState, SessionDraft, SkillDraft } from "./helpers";
@@ -38,6 +40,8 @@ export default function EvaluateContent({ swimmer, screens, accessToken }: Evalu
   const skillsKey = useCallback((slug: string) => `evaluate-draft-skills-${swimmer.id}-${slug}`, [swimmer.id]);
 
   const [draft, setDraft] = useState<SessionDraft>(() => initialSessionDraft());
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
+  const [skillSearch, setSkillSearch] = useState("");
   const [depSuggestion, setDepSuggestion] = useState<
     | { status: "idle" }
     | { status: "loading" }
@@ -182,6 +186,38 @@ export default function EvaluateContent({ swimmer, screens, accessToken }: Evalu
     ratings: ratingsArray,
   });
 
+  const screenSections = selectedScreen !== null
+    ? (SCREEN_SECTIONS[selectedScreen.screenSlug] ?? null)
+    : null;
+
+  const sectionGroups = selectedScreen !== null && screenSections !== null
+    ? buildSectionGroups(selectedScreen, screenSections)
+    : null;
+
+  const searchResults = useMemo(() => {
+    if (!skillSearch.trim() || !sectionGroups) return [];
+    const query = skillSearch.toLowerCase();
+    const seen = new Set<string>();
+    const results: Array<{ skill: SkillForRating; sectionName: string }> = [];
+    for (const section of sectionGroups) {
+      for (const skill of section.skills) {
+        if (skill.name.toLowerCase().includes(query) && !seen.has(skill.id)) {
+          results.push({ skill, sectionName: section.name });
+          seen.add(skill.id);
+        }
+      }
+    }
+    return results.slice(0, 8);
+  }, [skillSearch, sectionGroups]);
+
+  function jumpToSkill(skill: SkillForRating, sectionName: string) {
+    setOpenSections((prev) => ({ ...prev, [sectionName]: true }));
+    setSkillSearch("");
+    requestAnimationFrame(() => {
+      document.getElementById(`skill-${skill.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  }
+
   // ── Success screen ────────────────────────────────────────────────────────────
 
   if (state.status === "saved") {
@@ -263,25 +299,27 @@ export default function EvaluateContent({ swimmer, screens, accessToken }: Evalu
               onChange={(patch) => setDraft((prev) => ({ ...prev, ...patch }))}
             />
 
-            <CoachingPriorityField
-              value={draft.coachingPriority}
-              onChange={(value) => setDraft((prev) => ({ ...prev, coachingPriority: value }))}
-              suggestion={depSuggestion}
-              slugToName={slugToName}
-            />
-
             {/* Skills */}
             {selectedScreen !== null && (() => {
-              const screenSections = SCREEN_SECTIONS[selectedScreen.screenSlug];
-
-              function renderSkill(skill: import("@swim-app/shared").SkillForRating, sectionName: string) {
+              const screen = selectedScreen;
+              function renderSkill(skill: SkillForRating, sectionName: string) {
                 const label = skillDisplayLabel(skill, sectionName);
                 if (skill.type === "rollup") {
+                  let calculatedGrade: 1 | 2 | 3 | 4 | 5 | null = null;
+                  if (skill.slug === "free-bilateral-breathing") {
+                    const breathingSkill = screen.skills.find((s) => s.slug === "breathing-timing-free");
+                    if (breathingSkill) {
+                      const leftGrade = draft.skills[`${breathingSkill.id}:left`]?.grade ?? null;
+                      const rightGrade = draft.skills[`${breathingSkill.id}:right`]?.grade ?? null;
+                      calculatedGrade = calculateBilateralBreathingGrade(leftGrade, rightGrade);
+                    }
+                  }
                   return (
                     <CalculatedSkillRow
                       key={skill.id}
                       skill={skill}
                       label={label}
+                      calculatedGrade={calculatedGrade}
                     />
                   );
                 }
@@ -309,8 +347,7 @@ export default function EvaluateContent({ swimmer, screens, accessToken }: Evalu
                 );
               }
 
-              if (screenSections !== undefined) {
-                const sectionGroups = buildSectionGroups(selectedScreen, screenSections);
+              if (sectionGroups !== null) {
                 const startParentIds = new Set(
                   selectedScreen.skills
                     .filter(
@@ -325,11 +362,56 @@ export default function EvaluateContent({ swimmer, screens, accessToken }: Evalu
                     <h2 className="font-bold text-sm" style={{ color: "var(--color-text)" }}>
                       Skills — {selectedScreen.name}
                     </h2>
+                    <div className="relative">
+                      <input
+                        type="search"
+                        placeholder="Search skills…"
+                        value={skillSearch}
+                        onChange={(event) => setSkillSearch(event.target.value)}
+                        className="w-full border rounded px-3 py-2 text-sm min-h-[44px]"
+                        style={{
+                          borderColor: "var(--color-border)",
+                          color: "var(--color-text)",
+                          backgroundColor: "transparent",
+                        }}
+                      />
+                      {searchResults.length > 0 && (
+                        <ul
+                          className="absolute z-10 w-full mt-1 rounded border overflow-auto"
+                          style={{
+                            borderColor: "var(--color-border)",
+                            backgroundColor: "var(--color-surface)",
+                            maxHeight: "240px",
+                          }}
+                        >
+                          {searchResults.map(({ skill, sectionName }) => (
+                            <li key={`${skill.id}:${sectionName}`}>
+                              <button
+                                type="button"
+                                onClick={() => jumpToSkill(skill, sectionName)}
+                                className="w-full text-left px-3 py-2 text-sm"
+                                style={{ color: "var(--color-text)" }}
+                              >
+                                {skill.name}
+                                <span className="ml-2 text-xs" style={{ color: "var(--color-text-secondary)" }}>
+                                  {sectionName}
+                                </span>
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
                     {sectionGroups.map((section) => (
                       <EvalSectionHeader
                         key={section.name}
                         name={section.name}
                         skillCount={section.skills.length}
+                        isOpen={openSections[section.name] ?? true}
+                        onToggle={() => setOpenSections((prev) => ({
+                          ...prev,
+                          [section.name]: !(prev[section.name] ?? true),
+                        }))}
                       >
                         {section.skills.map((skill) => {
                           if (startParentIds.has(skill.id)) {
@@ -390,6 +472,13 @@ export default function EvaluateContent({ swimmer, screens, accessToken }: Evalu
                 </div>
               );
             })()}
+
+            <CoachingPriorityField
+              value={draft.coachingPriority}
+              onChange={(value) => setDraft((prev) => ({ ...prev, coachingPriority: value }))}
+              suggestion={depSuggestion}
+              slugToName={slugToName}
+            />
 
             <button
               type="submit"

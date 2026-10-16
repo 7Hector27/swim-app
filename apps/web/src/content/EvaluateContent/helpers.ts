@@ -33,6 +33,7 @@ export type SkillDraft = {
   note: string;
   faultTags: string[];
   detailsOpen: boolean;
+  golfScoreCategory: "push_off_in_water" | "deck_dive" | "block_dive" | null;
 };
 
 export type SessionDraft = {
@@ -62,6 +63,7 @@ export function defaultSkillDraft(): SkillDraft {
     note: "",
     faultTags: [],
     detailsOpen: false,
+    golfScoreCategory: null,
   };
 }
 
@@ -117,7 +119,7 @@ export function buildSectionGroups(
   sections: Array<{ name: string; slugs: string[] }>,
 ): Array<{ name: string; skills: import("@swim-app/shared").SkillForRating[] }> {
   const slugToSkill = new Map(container.skills.map((skill) => [skill.slug, skill]));
-  const assigned = new Set<string>();
+  const everAssigned = new Set<string>();
   const result: Array<{ name: string; skills: import("@swim-app/shared").SkillForRating[] }> = [];
 
   for (const section of sections) {
@@ -126,7 +128,7 @@ export function buildSectionGroups(
       const skill = slugToSkill.get(slug);
       if (skill) {
         sectionSkills.push(skill);
-        assigned.add(skill.id);
+        everAssigned.add(skill.id);
       }
     }
     if (sectionSkills.length > 0) {
@@ -134,7 +136,7 @@ export function buildSectionGroups(
     }
   }
 
-  const other = container.skills.filter((skill) => !assigned.has(skill.id));
+  const other = container.skills.filter((skill) => !everAssigned.has(skill.id));
   if (other.length > 0) {
     result.push({ name: "Other", skills: other });
   }
@@ -167,6 +169,7 @@ export function buildRatingsArray(
   note: string | null;
   faultTags: string[];
   ratedAt: string;
+  golfScoreCategory: "push_off_in_water" | "deck_dive" | "block_dive" | null;
 }> {
   const ratings = [];
   const now = new Date().toISOString();
@@ -193,6 +196,7 @@ export function buildRatingsArray(
         note: d.note !== "" ? d.note : null,
         faultTags: d.faultTags,
         ratedAt: now,
+        golfScoreCategory: d.golfScoreCategory,
       });
     }
   }

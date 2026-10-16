@@ -91,6 +91,14 @@ evaluationsRouter.post(
       return;
     }
 
+    if (body.screenSlug === "water-confidence" && body.context === "race") {
+      res.status(422).json({
+        error: "Validation error",
+        issues: [{ message: "Water confidence sessions do not support race context" }],
+      });
+      return;
+    }
+
     // Breathing pattern required for freestyle and butterfly, must be null otherwise
     if ((body.screenSlug === "freestyle" || body.screenSlug === "butterfly") && body.breathingPattern === null) {
       res.status(422).json({ error: "Validation error", issues: [{ path: ["breathingPattern"], message: "breathingPattern is required for freestyle and butterfly screens" }] });
@@ -138,6 +146,22 @@ evaluationsRouter.post(
         res.status(422).json({
           error: "Validation error",
           issues: [{ path: [`ratings[${index}].skillId`], message: "Rollup skills are calculated and cannot be rated directly" }],
+        });
+        return;
+      }
+
+      // golfScoreCategory: required for score-type skills, null for others
+      if (skill.type === "score" && ratingInput.golfScoreCategory === null && !ratingInput.noConcept) {
+        res.status(422).json({
+          error: "Validation error",
+          issues: [{ path: [`ratings[${index}].golfScoreCategory`], message: "Golf score category is required for score skills" }],
+        });
+        return;
+      }
+      if (skill.type !== "score" && ratingInput.golfScoreCategory !== null) {
+        res.status(422).json({
+          error: "Validation error",
+          issues: [{ path: [`ratings[${index}].golfScoreCategory`], message: "Golf score category only applies to score skills" }],
         });
         return;
       }
@@ -261,6 +285,7 @@ evaluationsRouter.post(
             ...(ratingInput.capacityUnit !== null && { capacityUnit: ratingInput.capacityUnit }),
             ...(ratingInput.measurementValue !== null && { measurementValue: ratingInput.measurementValue }),
             ...(ratingInput.measurementUnit !== null && { measurementUnit: ratingInput.measurementUnit }),
+            ...(ratingInput.golfScoreCategory !== null && { golfScoreCategory: ratingInput.golfScoreCategory }),
             ...(ratingInput.note !== null && { note: ratingInput.note }),
             ratedAt: new Date(ratingInput.ratedAt),
           })

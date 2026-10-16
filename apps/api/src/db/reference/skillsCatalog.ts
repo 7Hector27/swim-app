@@ -202,6 +202,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         sortOrder: 3,
         ratedPerSide: true,
         builtOnSlugs: ["free-head-position", "free-stroke-timing"],
+        faultTags: ["breaks down 2nd length"],
         descriptors: [
           { level: 1, text: "lifts the head forward or turns late; stops the stroke to breathe; lead arm drops." },
           { level: 2, text: "turns with the rotation when cued; often late, holding the head out through the recovery." },
@@ -235,6 +236,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         sortOrder: 5,
         // Per Jason A7: fly breathing timing builds on fly-head-position and fly-two-kick-rhythm.
         builtOnSlugs: ["fly-head-position", "fly-two-kick-rhythm"],
+        faultTags: ["breaks down 2nd length"],
         descriptors: [
           { level: 1, text: "head lifts late or high; still up when the arms enter the water." },
           { level: 2, text: "head rises with the pull when cued, but is often still up at the catch." },
@@ -271,6 +273,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         sortOrder: 7,
         // Per Jason A10: body-rotation removed from breaststroke. Depends only on breathing-timing-breast.
         builtOnSlugs: ["breathing-timing-breast"],
+        faultTags: ["breaks down 2nd length"],
       },
       {
         slug: "stroke-breath-coordination-fly",
@@ -280,6 +283,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         sortOrder: 8,
         // Per Jason A10: body-rotation removed from fly coordination.
         builtOnSlugs: ["breathing-timing-fly"],
+        faultTags: ["breaks down 2nd length"],
       },
       // New per-stroke rhythmic breathing skills (replacing archived shared rhythmic-breathing).
       {
@@ -289,6 +293,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         stroke: "free",
         sortOrder: 9,
         builtOnSlugs: ["exhalation", "free-head-position"],
+        faultTags: ["breaks down 2nd length"],
       },
       {
         slug: "fly-rhythmic-breathing",
@@ -297,6 +302,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         stroke: "fly",
         sortOrder: 10,
         builtOnSlugs: ["exhalation", "fly-head-position"],
+        faultTags: ["breaks down 2nd length"],
       },
       {
         slug: "back-rhythmic-breathing",
@@ -305,6 +311,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         stroke: "back",
         sortOrder: 11,
         builtOnSlugs: ["exhalation", "back-head-position-stability"],
+        faultTags: ["breaks down 2nd length"],
       },
       // Rollup: grade = weaker of left/right breathing-timing-free grades. confirm with Jason: which grades and how
       {
@@ -313,7 +320,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         type: "rollup",
         stroke: "free",
         sortOrder: 12,
-        builtOnSlugs: ["free-rhythmic-breathing", "free-rotation"],
+        builtOnSlugs: ["breathing-timing-free"],
       },
     ],
   },
@@ -331,6 +338,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         stroke: "free",
         sortOrder: 1,
         // Per Jason: per-stroke head positions have no explicit builds-on; they are the inputs to the rollup.
+        faultTags: ["breaks down 2nd length"],
         descriptors: HEAD_POSITION_DESCRIPTORS,
       },
       {
@@ -341,6 +349,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         sortOrder: 2,
         // Per Jason: body-rotation archived; use free-rotation instead.
         builtOnSlugs: ["free-rotation"],
+        faultTags: ["breaks down 2nd length"],
       },
       {
         slug: "free-catch",
@@ -349,6 +358,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         stroke: "free",
         sortOrder: 3,
         builtOnSlugs: ["free-reach-before-entry", "finger-spacing"],
+        faultTags: ["breaks down 2nd length"],
         descriptors: [
           { level: 1, text: "Hand slaps or pushes down; elbow drops first; no feel for the water." },
           { level: 2, text: "Fingertips point down when cued; elbow still drops on most strokes." },
@@ -364,6 +374,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         stroke: "free",
         sortOrder: 4,
         builtOnSlugs: ["free-catch", "core-stability"],
+        faultTags: ["breaks down 2nd length"],
       },
       {
         slug: "free-recovery",
@@ -373,6 +384,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         sortOrder: 5,
         // Per Jason: body-rotation archived; use free-rotation instead.
         builtOnSlugs: ["free-rotation"],
+        faultTags: ["breaks down 2nd length"],
       },
       {
         slug: "free-kick",
@@ -382,6 +394,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         sortOrder: 6,
         builtOnSlugs: ["free-horizontal-alignment"],
         notLegalAllowed: true,
+        faultTags: ["breaks down 2nd length"],
       },
       {
         slug: "free-rotation",
@@ -390,6 +403,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         stroke: "free",
         sortOrder: 7,
         builtOnSlugs: ["core-stability", "free-horizontal-alignment"],
+        faultTags: ["breaks down 2nd length"],
       },
       {
         slug: "free-kick-rate",
@@ -417,6 +431,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         stroke: "free",
         sortOrder: 10,
         builtOnSlugs: ["free-catch", "free-kick"],
+        faultTags: ["breaks down 2nd length"],
       },
       // free-distance-per-stroke archived — merged into free-stroke-count.
       {
@@ -451,6 +466,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         type: "rubric",
         stroke: "free",
         sortOrder: 14,
+        faultTags: ["breaks down 2nd length"],
       },
       {
         slug: "free-hip-position",
@@ -458,6 +474,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         type: "rubric",
         stroke: "free",
         sortOrder: 15,
+        faultTags: ["breaks down 2nd length"],
       },
       {
         slug: "free-golf-score",
@@ -483,6 +500,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         type: "rubric",
         stroke: "back",
         sortOrder: 1,
+        faultTags: ["breaks down 2nd length"],
       },
       {
         slug: "back-head-position-stability",
@@ -491,6 +509,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         stroke: "back",
         sortOrder: 2,
         // Per Jason: per-stroke head positions have no explicit builds-on.
+        faultTags: ["breaks down 2nd length"],
         descriptors: HEAD_POSITION_DESCRIPTORS,
       },
       {
@@ -500,6 +519,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         stroke: "back",
         sortOrder: 3,
         builtOnSlugs: ["core-stability", "back-body-alignment"],
+        faultTags: ["breaks down 2nd length"],
       },
       {
         slug: "back-reach-before-entry",
@@ -508,6 +528,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         stroke: "back",
         sortOrder: 4,
         builtOnSlugs: ["back-rotation"],
+        faultTags: ["breaks down 2nd length"],
       },
       {
         slug: "back-catch",
@@ -516,6 +537,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         stroke: "back",
         sortOrder: 5,
         builtOnSlugs: ["back-reach-before-entry", "back-rotation"],
+        faultTags: ["breaks down 2nd length"],
       },
       {
         slug: "back-pull",
@@ -524,6 +546,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         stroke: "back",
         sortOrder: 6,
         builtOnSlugs: ["back-catch"],
+        faultTags: ["breaks down 2nd length"],
       },
       {
         slug: "back-arm-recovery",
@@ -532,6 +555,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         stroke: "back",
         sortOrder: 7,
         builtOnSlugs: ["back-rotation"],
+        faultTags: ["breaks down 2nd length"],
       },
       {
         slug: "back-kick",
@@ -541,6 +565,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         sortOrder: 8,
         builtOnSlugs: ["back-body-alignment"],
         notLegalAllowed: true,
+        faultTags: ["breaks down 2nd length"],
       },
       {
         slug: "back-kick-rate",
@@ -558,6 +583,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         stroke: "back",
         sortOrder: 10,
         builtOnSlugs: ["back-head-position-stability", "back-stroke-timing"],
+        faultTags: ["breaks down 2nd length"],
         descriptors: [
           { level: 1, text: "Zig-zags or hits the lane line within a few strokes." },
           { level: 2, text: "Drifts but corrects; touches the lane line once or twice per length." },
@@ -573,6 +599,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         stroke: "back",
         sortOrder: 11,
         builtOnSlugs: ["back-rotation", "back-catch"],
+        faultTags: ["breaks down 2nd length"],
       },
       {
         slug: "back-stroke-count",
@@ -606,6 +633,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         type: "rubric",
         stroke: "back",
         sortOrder: 15,
+        faultTags: ["breaks down 2nd length"],
       },
       {
         slug: "back-golf-score",
@@ -633,6 +661,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         sortOrder: 1,
         builtOnSlugs: ["breast-hip-position"],
         notLegalAllowed: true,
+        faultTags: ["breaks down 2nd length"],
         descriptors: [
           { level: 1, text: "Scissor or flutter kick; feet not turned out." },
           { level: 2, text: "Whip kick shape when cued; feet turn out on some kicks; knees too wide." },
@@ -648,6 +677,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         stroke: "breast",
         sortOrder: 2,
         builtOnSlugs: ["finger-spacing"],
+        faultTags: ["breaks down 2nd length"],
       },
       {
         slug: "breast-head-position",
@@ -656,6 +686,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         stroke: "breast",
         sortOrder: 3,
         // Per Jason: per-stroke head positions have no explicit builds-on.
+        faultTags: ["breaks down 2nd length"],
         descriptors: HEAD_POSITION_DESCRIPTORS,
       },
       {
@@ -674,6 +705,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         stroke: "breast",
         sortOrder: 5,
         builtOnSlugs: ["breast-kick-mechanics", "breast-arm-pull"],
+        faultTags: ["breaks down 2nd length"],
       },
       {
         slug: "breast-glide",
@@ -682,6 +714,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         stroke: "breast",
         sortOrder: 6,
         builtOnSlugs: ["static-streamline", "breast-timing"],
+        faultTags: ["breaks down 2nd length"],
       },
       {
         slug: "breast-streamline-recovery",
@@ -690,6 +723,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         stroke: "breast",
         sortOrder: 7,
         builtOnSlugs: ["static-streamline"],
+        faultTags: ["breaks down 2nd length"],
       },
       // breast-stroke-rate archived (duplicate of breast-tempo below).
       {
@@ -733,6 +767,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         type: "rubric",
         stroke: "breast",
         sortOrder: 12,
+        faultTags: ["breaks down 2nd length"],
       },
       {
         slug: "breast-hip-position",
@@ -740,6 +775,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         type: "rubric",
         stroke: "breast",
         sortOrder: 13,
+        faultTags: ["breaks down 2nd length"],
       },
     ],
   },
@@ -758,6 +794,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         stroke: "fly",
         sortOrder: 1,
         builtOnSlugs: ["core-stability", "head-position-overall"],
+        faultTags: ["breaks down 2nd length"],
         descriptors: [
           { level: 1, text: "Bends at the knees or waist; chest stays flat; no wave." },
           { level: 2, text: "Chest press visible on some strokes; movement starts at the hips." },
@@ -774,6 +811,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         sortOrder: 2,
         builtOnSlugs: ["fly-body-undulation"],
         notLegalAllowed: true,
+        faultTags: ["breaks down 2nd length"],
       },
       {
         slug: "fly-kick-rate",
@@ -791,6 +829,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         stroke: "fly",
         sortOrder: 4,
         // Per Jason: per-stroke head positions have no explicit builds-on.
+        faultTags: ["breaks down 2nd length"],
         descriptors: HEAD_POSITION_DESCRIPTORS,
       },
       {
@@ -800,6 +839,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         stroke: "fly",
         sortOrder: 5,
         builtOnSlugs: ["fly-body-undulation"],
+        faultTags: ["breaks down 2nd length"],
       },
       {
         slug: "fly-catch",
@@ -808,6 +848,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         stroke: "fly",
         sortOrder: 6,
         builtOnSlugs: ["fly-reach-before-entry", "finger-spacing"],
+        faultTags: ["breaks down 2nd length"],
       },
       {
         slug: "fly-pull",
@@ -816,6 +857,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         stroke: "fly",
         sortOrder: 7,
         builtOnSlugs: ["fly-catch"],
+        faultTags: ["breaks down 2nd length"],
       },
       {
         slug: "fly-arm-recovery",
@@ -824,6 +866,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         stroke: "fly",
         sortOrder: 8,
         builtOnSlugs: ["fly-body-undulation"],
+        faultTags: ["breaks down 2nd length"],
       },
       {
         slug: "fly-two-kick-rhythm",
@@ -832,6 +875,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         stroke: "fly",
         sortOrder: 9,
         builtOnSlugs: ["fly-dolphin-kick", "fly-pull"],
+        faultTags: ["breaks down 2nd length"],
       },
       {
         slug: "fly-stroke-count",
@@ -865,6 +909,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         type: "rubric",
         stroke: "fly",
         sortOrder: 13,
+        faultTags: ["breaks down 2nd length"],
       },
       {
         slug: "fly-hip-position",
@@ -872,6 +917,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         type: "rubric",
         stroke: "fly",
         sortOrder: 14,
+        faultTags: ["breaks down 2nd length"],
       },
       {
         slug: "fly-golf-score",
@@ -900,6 +946,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         stroke: "free",
         sortOrder: 1,
         builtOnSlugs: ["static-streamline", "fly-dolphin-kick"],
+        faultTags: ["breaks down 2nd length"],
         descriptors: UDK_DESCRIPTORS,
       },
       {
@@ -909,6 +956,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         stroke: "fly",
         sortOrder: 2,
         builtOnSlugs: ["static-streamline", "fly-dolphin-kick"],
+        faultTags: ["breaks down 2nd length"],
         descriptors: UDK_DESCRIPTORS,
       },
       {
@@ -918,6 +966,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         stroke: "back",
         sortOrder: 3,
         builtOnSlugs: ["static-streamline", "fly-dolphin-kick"],
+        faultTags: ["breaks down 2nd length"],
         descriptors: UDK_DESCRIPTORS,
       },
       {
@@ -927,6 +976,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         appliesTo: ["breast"],
         sortOrder: 3,
         builtOnSlugs: ["static-streamline", "breast-kick-mechanics"],
+        faultTags: ["breaks down 2nd length"],
       },
       {
         slug: "push-off",
@@ -944,6 +994,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         sortOrder: 5,
         builtOnSlugs: ["udk-free", "free-stroke-timing"],
         notLegalAllowed: true,
+        faultTags: ["breaks down 2nd length"],
       },
       {
         slug: "breakout-back",
@@ -953,6 +1004,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         sortOrder: 6,
         builtOnSlugs: ["udk-back", "back-stroke-timing"],
         notLegalAllowed: true,
+        faultTags: ["breaks down 2nd length"],
       },
       {
         slug: "breakout-breast",
@@ -963,6 +1015,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         // "Stroke timing" → breast-timing (closest equivalent). See ADR 019, question 4.
         builtOnSlugs: ["pullout", "breast-timing"],
         notLegalAllowed: true,
+        faultTags: ["breaks down 2nd length"],
       },
       // Per Jason A9: builds on udk-fly (confirmed). fly-two-kick-rhythm kept — confirm with Jason.
       {
@@ -974,6 +1027,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         // Per Jason A9: fly breakout builds on fly UDK and two-kick rhythm.
         builtOnSlugs: ["udk-fly", "fly-two-kick-rhythm"],
         notLegalAllowed: true,
+        faultTags: ["breaks down 2nd length"],
       },
 
       // Track start (composite) + 6 components

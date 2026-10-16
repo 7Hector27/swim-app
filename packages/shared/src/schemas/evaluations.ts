@@ -8,6 +8,9 @@ export type EvaluationContext = z.infer<typeof EvaluationContextSchema>;
 export const BreathingPatternSchema = z.enum(["every_1","every_2","every_3","every_4","every_5","other"]);
 export type BreathingPattern = z.infer<typeof BreathingPatternSchema>;
 
+export const GolfScoreCategorySchema = z.enum(["push_off_in_water", "deck_dive", "block_dive"]);
+export type GolfScoreCategory = z.infer<typeof GolfScoreCategorySchema>;
+
 export const RatingSideSchema = z.enum(["left", "right"]);
 export type RatingSide = z.infer<typeof RatingSideSchema>;
 
@@ -125,6 +128,7 @@ const RatingInputSchema = z
     note: z.string().nullable(),
     faultTags: z.array(z.string()),
     ratedAt: z.string().datetime({ offset: true }),
+    golfScoreCategory: GolfScoreCategorySchema.nullable().optional().default(null),
   })
   .superRefine((val, ctx) => {
     const gradeValid =

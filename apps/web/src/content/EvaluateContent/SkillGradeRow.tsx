@@ -16,6 +16,7 @@ interface SkillGradeRowProps {
 export default function SkillGradeRow({ skill, draftKey, label, draft, onChange }: SkillGradeRowProps) {
   return (
     <fieldset
+      id={`skill-${draftKey}`}
       className={`flex flex-col gap-3 p-3 rounded border ${draft.notLegal ? "border-l-[3px]" : ""}`}
       style={{
         borderColor: draft.notLegal ? "var(--color-danger)" : "var(--color-border)",
@@ -32,6 +33,35 @@ export default function SkillGradeRow({ skill, draftKey, label, draft, onChange 
           </span>
         )}
       </legend>
+
+      {skill.type === "score" && (
+        <div className="flex flex-col gap-1">
+          <span className="text-xs font-semibold" style={{ color: "var(--color-text-secondary)" }}>
+            Test category
+          </span>
+          <div className="flex gap-2 flex-wrap">
+            {([
+              { value: "push_off_in_water", label: "Push-off in water" },
+              { value: "deck_dive", label: "Deck dive" },
+              { value: "block_dive", label: "Block dive" },
+            ] as const).map(({ value, label: catLabel }) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => onChange(draftKey, { golfScoreCategory: value })}
+                className="min-h-[44px] px-3 rounded border text-xs font-semibold transition-colors"
+                style={{
+                  borderColor: draft.golfScoreCategory === value ? "var(--color-accent)" : "var(--color-border)",
+                  color: draft.golfScoreCategory === value ? "var(--color-accent)" : "var(--color-text-secondary)",
+                  backgroundColor: "transparent",
+                }}
+              >
+                {catLabel}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <GradeSelector
         value={draft.grade}

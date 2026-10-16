@@ -94,7 +94,9 @@ export default function SessionSetup({ draft, screens, onScreenChange, onChange 
           Context
         </legend>
         <div className="flex gap-2 flex-wrap">
-          {(["drill", "practice", "race"] as const).map((ctx) => (
+          {(["drill", "practice", "race"] as const)
+            .filter((ctx) => !(draft.screenSlug === "water-confidence" && ctx === "race"))
+            .map((ctx) => (
             <button
               key={ctx}
               type="button"
