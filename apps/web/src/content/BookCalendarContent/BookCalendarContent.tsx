@@ -6,7 +6,7 @@ import { todayLA } from "@swim-app/shared";
 import type { ParentSwimmer, WeekAvailabilityResponse, MonthAvailabilityResponse } from "@swim-app/shared";
 
 import { fetchRangeAction, fetchMonthRangeAction, createBookingAction, findFirstAvailableDayAction } from "./actions";
-import { getMondayOfWeek, addDaysToDateStr, formatDayLabel, formatWeekLabel } from "./helpers";
+import { getMondayOfWeek, addDaysToDateStr, formatDayLabel } from "./helpers";
 import type { BookingState } from "./helpers";
 import CalendarConfigRow from "./CalendarConfigRow";
 import WeekNav from "./WeekNav";
