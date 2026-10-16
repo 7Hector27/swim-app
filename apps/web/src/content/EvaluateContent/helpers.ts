@@ -79,10 +79,12 @@ export function initialSessionDraft(): SessionDraft {
 }
 
 export function canSubmit(draft: SessionDraft, ratingsCount: number, isPending: boolean): boolean {
+  const needsBreathingPattern = draft.screenSlug === "freestyle" || draft.screenSlug === "butterfly";
   return (
     draft.screenSlug !== "" &&
     draft.sessionDate !== "" &&
     draft.context !== null &&
+    (!needsBreathingPattern || draft.breathingPattern !== null) &&
     draft.coachingPriority.trim().length > 0 &&
     ratingsCount > 0 &&
     !isPending

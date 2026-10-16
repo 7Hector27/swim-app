@@ -1,0 +1,5 @@
+ALTER TABLE "evaluation_sessions" ALTER COLUMN "screen_slug" SET NOT NULL;--> statement-breakpoint
+ALTER TABLE "skill_ratings" ADD COLUMN "golf_score_category" text;--> statement-breakpoint
+ALTER TABLE "evaluation_sessions" ADD CONSTRAINT "screen_slug_valid" CHECK ("evaluation_sessions"."screen_slug" IN ('fundamentals','water-confidence','freestyle','backstroke','breaststroke','butterfly','starts','im-turns','racing','breathing'));--> statement-breakpoint
+ALTER TABLE "evaluation_sessions" ADD CONSTRAINT "breathing_pattern_valid" CHECK ("evaluation_sessions"."breathing_pattern" IS NULL OR "evaluation_sessions"."breathing_pattern" IN ('every_1','every_2','every_3','every_4','every_5','other'));--> statement-breakpoint
+ALTER TABLE "swimmers" ADD CONSTRAINT "recommended_breathing_pattern_valid" CHECK ("swimmers"."recommended_breathing_pattern" IS NULL OR "swimmers"."recommended_breathing_pattern" IN ('every_1','every_2','every_3','every_4','every_5','other'));

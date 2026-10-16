@@ -172,6 +172,7 @@ export const swimmers = pgTable(
       "public_consent_required",
       sql`NOT ${table.isPublic} OR (${table.publicConsentAt} IS NOT NULL AND ${table.publicConsentBy} IS NOT NULL)`,
     ),
+    check("recommended_breathing_pattern_valid", sql`${table.recommendedBreathingPattern} IS NULL OR ${table.recommendedBreathingPattern} IN ('every_1','every_2','every_3','every_4','every_5','other')`),
   ],
 ).enableRLS();
 
@@ -481,7 +482,7 @@ export const evaluationSessions = pgTable(
     swimmerId: uuid("swimmer_id").notNull().references(() => swimmers.id, { onDelete: "restrict" }),
     coachId: uuid("coach_id").notNull().references(() => profiles.id, { onDelete: "restrict" }),
     categoryId: uuid("category_id").references(() => skillCategories.id, { onDelete: "restrict" }),
-    screenSlug: text("screen_slug"),
+    screenSlug: text("screen_slug").notNull(),
     breathingPattern: text("breathing_pattern"),
     sessionDate: date("session_date").notNull(),
     context: evaluationContextEnum("context").notNull(),
@@ -491,6 +492,8 @@ export const evaluationSessions = pgTable(
   },
   (table) => [
     check("coaching_priority_not_blank", sql`${table.coachingPriority} <> ''`),
+    check("screen_slug_valid", sql`${table.screenSlug} IN ('fundamentals','water-confidence','freestyle','backstroke','breaststroke','butterfly','starts','im-turns','racing','breathing')`),
+    check("breathing_pattern_valid", sql`${table.breathingPattern} IS NULL OR ${table.breathingPattern} IN ('every_1','every_2','every_3','every_4','every_5','other')`),
   ],
 ).enableRLS();
 

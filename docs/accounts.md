@@ -59,10 +59,21 @@ All write actions produce an audit log entry.
 | Swimmer list (roster)             | All active swimmers | Only their own household's swimmers | No |
 | Swimmer detail + member contact   | All swimmers | Only their own household's swimmers | No |
 | Swimmer ratings, times, progress  | All swimmers | Only their own household's swimmers | Opted-in swimmers, limited fields |
+| Coaching priority (per evaluation) | Yes         | Yes — visible by design (see note below) | No                          |
 | Coach notes                       | Yes          | No                              | No                                |
+| Rating notes (per-skill free-text) | Yes         | No                              | No                                |
+| Fault tags                        | Yes          | No                              | No                                |
+| Void reasons                      | Yes          | No                              | No                                |
 | Edit ratings, times, notes        | Yes          | No                              | No                                |
 | Set is_public to true             | No           | Household owner only            | No                                |
 | Set is_public to false            | Yes          | Any household member            | No                                |
+
+**Coaching priority (per evaluation):** Visible to parents by design — this is the focus the coach sets for that session, intended for parent awareness. Pending confirmation from Jason.
+
+The following fields remain coach-only:
+- **Rating notes** (per-skill free-text): never shown to parents.
+- **Fault tags**: never shown to parents.
+- **Void reasons**: never shown to parents.
 
 ## Coach permissions
 

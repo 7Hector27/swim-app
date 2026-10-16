@@ -75,7 +75,8 @@ describe("GET /coach/swimmers/:id/progress — voided ratings excluded", () => {
       .post(`/coach/swimmers/${swimmerId}/sessions`)
       .set("Authorization", `Bearer ${coach.accessToken}`)
       .send({
-        categoryId,
+        screenSlug: "freestyle",
+        breathingPattern: "every_3",
         sessionDate: "2026-10-01",
         context: "practice",
         coachingPriority: "Head position",
@@ -105,7 +106,8 @@ describe("GET /coach/swimmers/:id/progress — voided ratings excluded", () => {
       .post(`/coach/swimmers/${swimmerId}/sessions`)
       .set("Authorization", `Bearer ${coach.accessToken}`)
       .send({
-        categoryId,
+        screenSlug: "freestyle",
+        breathingPattern: "every_3",
         sessionDate: "2026-10-01",
         context: "practice",
         coachingPriority: "Head position",
@@ -163,7 +165,8 @@ describe("GET /coach/swimmers/:id/progress — voided ratings excluded", () => {
       .post(`/coach/swimmers/${swimmerId}/sessions`)
       .set("Authorization", `Bearer ${coach.accessToken}`)
       .send({
-        categoryId: startComponentCategoryId,
+        screenSlug: "starts",
+        breathingPattern: null,
         sessionDate: "2026-10-02",
         context: "practice",
         coachingPriority: "Reaction time",
@@ -191,7 +194,8 @@ describe("GET /coach/swimmers/:id/progress — voided ratings excluded", () => {
       .post(`/coach/swimmers/${swimmerId}/sessions`)
       .set("Authorization", `Bearer ${coach.accessToken}`)
       .send({
-        categoryId: startComponentCategoryId,
+        screenSlug: "starts",
+        breathingPattern: null,
         sessionDate: "2026-10-03",
         context: "practice",
         coachingPriority: "Reaction time",

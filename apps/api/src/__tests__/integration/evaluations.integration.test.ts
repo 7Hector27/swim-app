@@ -77,6 +77,7 @@ beforeAll(async () => {
       swimmerId,
       coachId,
       categoryId,
+      screenSlug: "fundamentals",
       sessionDate: "2026-10-01",
       context: "practice",
       coachingPriority: "Focus on core stability",
@@ -119,6 +120,7 @@ describe("evaluation_sessions CHECK constraints", () => {
         swimmerId,
         coachId,
         categoryId,
+        screenSlug: "fundamentals",
         sessionDate: "2026-10-02",
         context: "drill",
         coachingPriority: "Bilateral breathing",
@@ -134,6 +136,7 @@ describe("evaluation_sessions CHECK constraints", () => {
         swimmerId,
         coachId,
         categoryId,
+        screenSlug: "fundamentals",
         sessionDate: "2026-10-03",
         context: "practice",
         coachingPriority: "",
@@ -407,7 +410,8 @@ describe("API integration tests — evaluations routes", () => {
         .post(`/coach/swimmers/${swimmerId}/sessions`)
         .set("Authorization", `Bearer ${coachToken}`)
         .send({
-          categoryId,
+          screenSlug: "freestyle",
+          breathingPattern: "every_3",
           sessionDate: "2026-10-15",
           context: "practice",
           coachingPriority: "Test rollback",
@@ -696,6 +700,7 @@ describe("API integration tests — evaluations routes", () => {
           swimmerId,
           coachId,
           categoryId,
+          screenSlug: "fundamentals",
           sessionDate: "2026-10-01",
           context: "practice",
           coachingPriority: "Delete test session",

@@ -722,6 +722,82 @@ describe("GET /categories", () => {
   });
 });
 
+// ── GET /coach/screens ────────────────────────────────────────────────────────
+
+describe("GET /coach/screens", () => {
+  it("returns 401 when unauthenticated", async () => {
+    mockGetUser.mockResolvedValue({ data: { user: null }, error: null });
+    await request(app)
+      .get("/coach/screens")
+      .set("Authorization", "Bearer token")
+      .expect(401);
+  });
+
+  it("returns 403 for parent role", async () => {
+    authAs(profileParent);
+    mockDbSelect.mockReturnValueOnce(requireUserSelect(profileParent));
+    await request(app)
+      .get("/coach/screens")
+      .set("Authorization", "Bearer token")
+      .expect(403);
+  });
+
+  it("returns 200 with an array of screen objects each having screenSlug, name, skills", async () => {
+    authAs(profileCoach);
+
+    const skillRow = {
+      id: SKILL_ID,
+      slug: "buoyancy-balance",
+      name: "Buoyancy Balance",
+      type: "rubric" as const,
+      unit: null,
+      stroke: null,
+      ratedPerSide: false,
+      notLegalAllowed: false,
+      parentSkillId: null,
+      sortOrder: 1,
+      faultTags: [],
+      categoryId: CATEGORY_ID,
+    };
+
+    // coachRouter requireUser, then skills query, then descriptors query
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(profileCoach))
+      .mockReturnValueOnce(
+        (() => {
+          const orderBy = vi.fn().mockResolvedValue([skillRow]);
+          const where = vi.fn().mockReturnValue({ orderBy });
+          return { from: vi.fn().mockReturnValue({ where }) };
+        })(),
+      )
+      .mockReturnValueOnce(
+        (() => {
+          const orderBy = vi.fn().mockResolvedValue([]);
+          const where = vi.fn().mockReturnValue({ orderBy });
+          return { from: vi.fn().mockReturnValue({ where }) };
+        })(),
+      );
+
+    const res = await request(app)
+      .get("/coach/screens")
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body)).toBe(true);
+    expect(res.body.length).toBeGreaterThan(0);
+    const first = res.body[0];
+    expect(first).toHaveProperty("screenSlug");
+    expect(first).toHaveProperty("name");
+    expect(first).toHaveProperty("skills");
+    expect(Array.isArray(first.skills)).toBe(true);
+
+    // The fundamentals screen should include buoyancy-balance
+    const fundamentals = res.body.find((s: { screenSlug: string }) => s.screenSlug === "fundamentals");
+    expect(fundamentals).toBeDefined();
+    expect(fundamentals.skills.some((sk: { slug: string }) => sk.slug === "buoyancy-balance")).toBe(true);
+  });
+});
+
 // ── PATCH /ratings/:id/void ───────────────────────────────────────────────────
 
 describe("PATCH /ratings/:id/void", () => {

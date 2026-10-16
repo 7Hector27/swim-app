@@ -66,6 +66,11 @@ export default function SessionSetup({ draft, screens, onScreenChange, onChange 
               </button>
             ))}
           </div>
+          {draft.breathingPattern === null && (
+            <p role="alert" className="text-xs text-danger">
+              Required before submitting
+            </p>
+          )}
         </fieldset>
       )}
 

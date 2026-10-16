@@ -106,7 +106,7 @@ describe("canSubmit", () => {
   });
 
   it("returns true when all fields present", () => {
-    const draft = { ...initialSessionDraft(), screenSlug: "freestyle", sessionDate: "2026-10-14", context: "practice" as const, coachingPriority: "Fix kick" };
+    const draft = { ...initialSessionDraft(), screenSlug: "freestyle", sessionDate: "2026-10-14", context: "practice" as const, coachingPriority: "Fix kick", breathingPattern: "every_3" as const };
     expect(canSubmit(draft, 1, false)).toBe(true);
   });
 });

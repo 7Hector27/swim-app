@@ -105,7 +105,8 @@ describe("GET /swimmers/:id/progress", () => {
       .post(`/coach/swimmers/${swimmerId}/sessions`)
       .set("Authorization", `Bearer ${coach.accessToken}`)
       .send({
-        categoryId,
+        screenSlug: "freestyle",
+        breathingPattern: "every_3",
         sessionDate: "2026-10-10",
         context: "practice",
         coachingPriority: "Work on kick",
@@ -166,7 +167,8 @@ describe("GET /swimmers/:id/progress", () => {
       .post(`/coach/swimmers/${swimmerId}/sessions`)
       .set("Authorization", `Bearer ${coach.accessToken}`)
       .send({
-        categoryId,
+        screenSlug: "freestyle",
+        breathingPattern: "every_3",
         sessionDate: "2026-10-11",
         context: "practice",
         coachingPriority: "Kick",
@@ -193,7 +195,8 @@ describe("GET /swimmers/:id/progress", () => {
       .post(`/coach/swimmers/${swimmerId}/sessions`)
       .set("Authorization", `Bearer ${coach.accessToken}`)
       .send({
-        categoryId,
+        screenSlug: "freestyle",
+        breathingPattern: "every_3",
         sessionDate: "2026-10-11",
         context: "practice",
         coachingPriority: "Kick",

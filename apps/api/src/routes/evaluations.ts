@@ -85,8 +85,8 @@ evaluationsRouter.post(
     }
 
     // Validate screenSlug
-    const screenSlugs = body.screenSlug as string;
-    if (!(screenSlugs in SCREEN_SKILLS)) {
+    const screenSlug = body.screenSlug;
+    if (!(screenSlug in SCREEN_SKILLS)) {
       res.status(422).json({ error: "Validation error", issues: [{ message: "screenSlug not valid" }] });
       return;
     }

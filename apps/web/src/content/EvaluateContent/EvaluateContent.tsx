@@ -201,6 +201,7 @@ export default function EvaluateContent({ swimmer, screens, accessToken }: Evalu
     const results: Array<{ skill: SkillForRating; sectionName: string }> = [];
     for (const section of sectionGroups) {
       for (const skill of section.skills) {
+        if (skill.type === "rollup") continue;
         if (skill.name.toLowerCase().includes(query) && !seen.has(skill.id)) {
           results.push({ skill, sectionName: section.name });
           seen.add(skill.id);
@@ -368,18 +369,13 @@ export default function EvaluateContent({ swimmer, screens, accessToken }: Evalu
                         placeholder="Search skills…"
                         value={skillSearch}
                         onChange={(event) => setSkillSearch(event.target.value)}
-                        className="w-full border rounded px-3 py-2 text-sm min-h-[44px]"
-                        style={{
-                          borderColor: "var(--color-border)",
-                          color: "var(--color-text)",
-                          backgroundColor: "transparent",
-                        }}
+                        className="w-full border border-border rounded px-3 py-2 text-sm min-h-[44px] text-text"
+                        style={{ backgroundColor: "transparent" }}
                       />
                       {searchResults.length > 0 && (
                         <ul
-                          className="absolute z-10 w-full mt-1 rounded border overflow-auto"
+                          className="absolute z-10 w-full mt-1 rounded border border-border overflow-auto"
                           style={{
-                            borderColor: "var(--color-border)",
                             backgroundColor: "var(--color-surface)",
                             maxHeight: "240px",
                           }}
@@ -389,11 +385,10 @@ export default function EvaluateContent({ swimmer, screens, accessToken }: Evalu
                               <button
                                 type="button"
                                 onClick={() => jumpToSkill(skill, sectionName)}
-                                className="w-full text-left px-3 py-2 text-sm"
-                                style={{ color: "var(--color-text)" }}
+                                className="w-full text-left px-3 py-2 text-sm text-text"
                               >
                                 {skill.name}
-                                <span className="ml-2 text-xs" style={{ color: "var(--color-text-secondary)" }}>
+                                <span className="ml-2 text-xs text-text-secondary">
                                   {sectionName}
                                 </span>
                               </button>

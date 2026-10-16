@@ -345,8 +345,8 @@ export const ParentSkillProgressSchema = SkillProgressSchema.extend({
 export type ParentSkillProgress = z.infer<typeof ParentSkillProgressSchema>;
 
 export const ParentCoachingNoteSchema = z.object({
-  categoryId: z.string().uuid(),
-  categoryName: z.string(),
+  screenSlug: z.string(),
+  screenName: z.string(),
   text: z.string(),
   sessionDate: z.string(),
 });
