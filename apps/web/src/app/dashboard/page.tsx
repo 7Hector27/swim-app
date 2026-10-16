@@ -10,7 +10,7 @@ export const metadata: Metadata = {
 };
 
 interface Props {
-  searchParams: Promise<{ booked?: string }>;
+  searchParams: Promise<{ booked?: string; rescheduled?: string; from?: string }>;
 }
 
 export default async function DashboardPage({ searchParams }: Props) {
@@ -23,13 +23,14 @@ export default async function DashboardPage({ searchParams }: Props) {
     return <CoachDashboardContent accessToken={accessToken} />;
   }
 
-  const { booked } = await searchParams;
+  const { booked, rescheduled, from: rescheduledFrom } = await searchParams;
 
   return (
     <ParentDashboardContent
       profile={profile}
       accessToken={accessToken}
       {...(booked !== undefined && { bookedLessonId: booked })}
+      {...(rescheduled !== undefined && { rescheduledLessonId: rescheduled, rescheduledFrom })}
     />
   );
 }

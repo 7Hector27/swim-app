@@ -1,14 +1,13 @@
 "use client";
 
-import { useRef, useActionState, useTransition, useState, useEffect } from "react";
+import { useRef, useActionState } from "react";
 import Link from "next/link";
 
-import type { AvailableSlot, LessonLocation, UpcomingLesson } from "@swim-app/shared";
+import type { LessonLocation, UpcomingLesson } from "@swim-app/shared";
 
 import AddNoteForm from "@/components/AddNoteForm";
 import ConfirmDialog from "@/components/ConfirmDialog";
-import { fetchSlotsDirectAction, findFirstAvailableDayAction } from "@/content/BookCalendarContent/actions";
-import { cancelLessonAction, rescheduleLessonAction, type LessonDetailState } from "./actions";
+import { cancelLessonAction, type LessonDetailState } from "./actions";
 
 interface Props {
   lesson: UpcomingLesson;
@@ -17,104 +16,19 @@ interface Props {
   isCoach: boolean;
 }
 
-export default function LessonDetailContent({ lesson, locations, isViewer, isCoach }: Props) {
+export default function LessonDetailContent({ lesson, locations: _locations, isViewer, isCoach }: Props) {
   const cancelDialogRef = useRef<HTMLDialogElement>(null);
-  const rescheduleDialogRef = useRef<HTMLDialogElement>(null);
 
   const [cancelState, cancelFormAction, isCanceling] = useActionState<LessonDetailState, FormData>(
     cancelLessonAction,
     { status: "idle" },
   );
-  const [rescheduleState, rescheduleFormAction, isRescheduling] = useActionState<LessonDetailState, FormData>(
-    rescheduleLessonAction,
-    { status: "idle" },
-  );
-
-  const [rescheduleLocationId, setRescheduleLocationId] = useState(lesson.locationId);
-  const [rescheduleDate, setRescheduleDate] = useState("");
-  const [rescheduleDuration, setRescheduleDuration] = useState<30 | 45 | 60>(
-    lesson.durationMinutes,
-  );
-  const [rescheduleSlot, setRescheduleSlot] = useState<string | null>(null);
-  const [availableSlots, setAvailableSlots] = useState<AvailableSlot[]>([]);
-  const [slotsError, setSlotsError] = useState<string | null>(null);
-  const [noRescheduleAvailability, setNoRescheduleAvailability] = useState(false);
-  const [isFetchingSlots, startFetchingSlots] = useTransition();
-
-  const todayLAStr = new Date().toLocaleDateString("sv", { timeZone: "America/Los_Angeles" });
-
-  const lessonHasStarted = new Date() >= new Date(lesson.startsAt);
-
-  useEffect(() => {
-    if (lessonHasStarted) return;
-    setNoRescheduleAvailability(false);
-    setRescheduleDate("");
-    setAvailableSlots([]);
-    setRescheduleSlot(null);
-    setSlotsError(null);
-    startFetchingSlots(async () => {
-      const result = await findFirstAvailableDayAction({
-        fromDate: todayLAStr,
-        durationMinutes: rescheduleDuration,
-        locationId: rescheduleLocationId,
-        excludeLessonId: lesson.id,
-      });
-      if (result === null) {
-        setSlotsError("Could not load availability. Try again.");
-        return;
-      }
-      if (result.firstAvailableDate === null) {
-        setNoRescheduleAvailability(true);
-        return;
-      }
-      setRescheduleDate(result.firstAvailableDate);
-      const slotsResult = await fetchSlotsDirectAction(
-        result.firstAvailableDate,
-        rescheduleDuration,
-        rescheduleLocationId,
-      );
-      if ("error" in slotsResult) {
-        setSlotsError(slotsResult.error);
-      } else {
-        setAvailableSlots(slotsResult.slots);
-      }
-    });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rescheduleLocationId, rescheduleDuration]);
-
-  const canFindSlots = rescheduleLocationId && rescheduleDate;
-
-  function handleFindSlots() {
-    setSlotsError(null);
-    setAvailableSlots([]);
-    setRescheduleSlot(null);
-    startFetchingSlots(async () => {
-      const result = await fetchSlotsDirectAction(
-        rescheduleDate,
-        rescheduleDuration,
-        rescheduleLocationId,
-      );
-      if ("error" in result) {
-        setSlotsError(result.error);
-      } else {
-        setAvailableSlots(result.slots);
-      }
-    });
-  }
-
-  const rescheduleLocation = locations.find((loc) => loc.id === rescheduleLocationId);
-  const rescheduleConfirmDescription = rescheduleSlot
-    ? `Move to ${formatDateLabel(rescheduleSlot)} at ${formatTime(new Date(rescheduleSlot))} at ${rescheduleLocation?.name ?? "selected pool"}.`
-    : "Confirm the new lesson time.";
 
   const startsAt = new Date(lesson.startsAt);
   const endsAt = new Date(startsAt.getTime() + lesson.durationMinutes * 60 * 1000);
   const lessonType = lesson.type === "private" ? "Private lesson" : "Family lesson";
   const swimmerNames = lesson.swimmers.map((swimmer) => swimmer.firstName).join(", ");
-
-  const maxDateLA = new Date(Date.now() + 70 * 24 * 60 * 60 * 1000).toLocaleDateString("sv", {
-    timeZone: "America/Los_Angeles",
-  });
+  const lessonHasStarted = new Date() >= new Date(lesson.startsAt);
 
   return (
     <div className="flex flex-col flex-1 bg-background">
@@ -161,132 +75,12 @@ export default function LessonDetailContent({ lesson, locations, isViewer, isCoa
             {!isViewer && !lessonHasStarted && (
               <>
                 {/* Reschedule */}
-                <div className="rounded-card border border-border p-5 tablet:p-6">
-                  <h2 className="text-xl text-heading mb-1">Reschedule</h2>
-                  <p className="text-sm text-text-secondary mb-5">
-                    Pick a new location, date, and time. The new slot must be at least 16 hours from now.
-                  </p>
-
-                  <form id="reschedule-form" action={rescheduleFormAction} className="flex flex-col gap-4">
-                    <input type="hidden" name="lessonId" value={lesson.id} />
-                    <input type="hidden" name="startsAt" value={rescheduleSlot ?? ""} />
-                    <input type="hidden" name="durationMinutes" value={rescheduleDuration} />
-                    <input type="hidden" name="locationId" value={rescheduleLocationId} />
-
-                    <div className="flex flex-col gap-1.5">
-                      <label htmlFor="reschedule-location" className="text-sm font-semibold text-text">
-                        Location
-                      </label>
-                      <select
-                        id="reschedule-location"
-                        value={rescheduleLocationId}
-                        onChange={(event) => {
-                          setRescheduleLocationId(event.target.value);
-                          setAvailableSlots([]);
-                          setRescheduleSlot(null);
-                        }}
-                        className="h-11 rounded-[8px] border border-border bg-background text-text px-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
-                      >
-                        {locations.map((loc) => (
-                          <option key={loc.id} value={loc.id}>
-                            {loc.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="flex flex-col gap-1.5">
-                      <label htmlFor="reschedule-date" className="text-sm font-semibold text-text">
-                        Date
-                      </label>
-                      <input
-                        id="reschedule-date"
-                        type="date"
-                        min={todayLAStr}
-                        max={maxDateLA}
-                        value={rescheduleDate}
-                        onChange={(event) => {
-                          setRescheduleDate(event.target.value);
-                          setAvailableSlots([]);
-                          setRescheduleSlot(null);
-                        }}
-                        className="h-11 rounded-[8px] border border-border bg-background text-text px-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
-                      />
-                    </div>
-
-                    <div className="flex flex-col gap-1.5">
-                      <label htmlFor="reschedule-duration" className="text-sm font-semibold text-text">
-                        Duration
-                      </label>
-                      <select
-                        id="reschedule-duration"
-                        value={rescheduleDuration}
-                        onChange={(event) => {
-                          setRescheduleDuration(Number(event.target.value) as 30 | 45 | 60);
-                          setAvailableSlots([]);
-                          setRescheduleSlot(null);
-                        }}
-                        className="h-11 rounded-[8px] border border-border bg-background text-text px-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
-                      >
-                        <option value={30}>30 min</option>
-                        <option value={45}>45 min</option>
-                        <option value={60}>60 min</option>
-                      </select>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={handleFindSlots}
-                      disabled={!canFindSlots || isFetchingSlots}
-                      className="self-start inline-flex items-center justify-center rounded-button border-2 border-button-outline text-button-outline font-bold text-sm px-5 h-11 transition-colors duration-150 hover:opacity-80 disabled:opacity-50"
-                    >
-                      {isFetchingSlots ? "Finding times…" : "Find times"}
-                    </button>
-
-                    {slotsError && (
-                      <p role="alert" className="text-sm text-danger">{slotsError}</p>
-                    )}
-
-                    {!isFetchingSlots && noRescheduleAvailability && (
-                      <p className="text-sm text-text-secondary">No open times in the next 10 weeks.</p>
-                    )}
-
-                    {!isFetchingSlots && availableSlots.length === 0 && rescheduleDate && !slotsError && (
-                      <p className="text-sm text-text-secondary">No available slots for that date.</p>
-                    )}
-
-                    {availableSlots.length > 0 && (
-                      <div className="flex flex-col gap-1.5">
-                        <p className="text-sm font-semibold text-text">Available times</p>
-                        <div className="flex flex-wrap gap-2">
-                          {availableSlots.map((slot) => (
-                            <button
-                              key={slot.startsAt}
-                              type="button"
-                              onClick={() => setRescheduleSlot(slot.startsAt)}
-                              className={`inline-flex items-center justify-center rounded-button text-sm font-semibold px-4 h-10 border transition-colors duration-150 ${
-                                rescheduleSlot === slot.startsAt
-                                  ? "bg-button-primary-background text-button-primary-text border-transparent"
-                                  : "bg-background text-text border-border hover:border-accent"
-                              }`}
-                            >
-                              {formatTime(new Date(slot.startsAt))}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </form>
-
-                  <button
-                    type="button"
-                    disabled={!rescheduleSlot}
-                    onClick={() => rescheduleDialogRef.current?.showModal()}
-                    className="mt-5 inline-flex items-center justify-center rounded-button bg-button-primary-background text-button-primary-text font-bold text-sm px-5 h-11 transition-opacity hover:opacity-90 disabled:opacity-40"
-                  >
-                    Review reschedule
-                  </button>
-                </div>
+                <Link
+                  href={`/dashboard/lessons/${lesson.id}/reschedule`}
+                  className="inline-flex items-center justify-center rounded-button bg-button-primary-background text-button-primary-text font-bold text-sm px-5 h-11 transition-opacity hover:opacity-90 active:scale-[0.97] motion-reduce:transform-none self-start"
+                >
+                  Reschedule
+                </Link>
 
                 {/* Cancel */}
                 <div className="rounded-card border border-border p-5 tablet:p-6">
@@ -340,17 +134,6 @@ export default function LessonDetailContent({ lesson, locations, isViewer, isCoa
         isPending={isCanceling}
         {...(cancelState.status === "error" ? { errorMessage: cancelState.message } : {})}
         onCancel={() => cancelDialogRef.current?.close()}
-      />
-
-      <ConfirmDialog
-        dialogRef={rescheduleDialogRef}
-        title="Confirm reschedule?"
-        description={rescheduleConfirmDescription}
-        formId="reschedule-form"
-        confirmLabel="Reschedule"
-        isPending={isRescheduling}
-        {...(rescheduleState.status === "error" ? { errorMessage: rescheduleState.message } : {})}
-        onCancel={() => rescheduleDialogRef.current?.close()}
       />
     </div>
   );
