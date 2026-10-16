@@ -93,6 +93,8 @@ All signed-in routes are guarded by `requireAuth()` (`apps/web/src/lib/requireAu
 
 **Leaderboard notes (inferred — confirm with Jason):** Board eligibility (club = active club registration; ISL = active summer_league registration; master = all active swimmers). Sex split and age-group partitioning applied on all three boards. Rate limit: 60 req/min per IP (in-memory, resets on restart).
 
+**Public board caching:** `web` fetches the three public board endpoints with `{ next: { revalidate: 60 } }`, so each board page is cached server-side for up to 60 seconds. A swimmer whose `is_public` flag is set to `false` (via the coach visibility toggle) can remain visible on the public boards for up to one minute after the change.
+
 ## Progress endpoint data loading
 
 `GET /coach/swimmers/:id/progress` uses two DB queries to separate computation from display:
