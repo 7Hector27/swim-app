@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useActionState, useTransition, useState } from "react";
+import { useRef, useActionState, useTransition, useState, useEffect } from "react";
 import Link from "next/link";
 
 import type { AvailableSlot, LessonLocation, UpcomingLesson } from "@swim-app/shared";
@@ -8,7 +8,7 @@ import type { AvailableSlot, LessonLocation, UpcomingLesson } from "@swim-app/sh
 import AddNoteForm from "@/components/AddNoteForm";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import SiteFooter from "@/components/SiteFooter";
-import { fetchSlotsDirectAction } from "@/content/BookCalendarContent/actions";
+import { fetchSlotsDirectAction, findFirstAvailableDayAction } from "@/content/BookCalendarContent/actions";
 import { cancelLessonAction, rescheduleLessonAction, type LessonDetailState } from "./actions";
 
 interface Props {
@@ -39,7 +39,46 @@ export default function LessonDetailContent({ lesson, locations, isViewer, isCoa
   const [rescheduleSlot, setRescheduleSlot] = useState<string | null>(null);
   const [availableSlots, setAvailableSlots] = useState<AvailableSlot[]>([]);
   const [slotsError, setSlotsError] = useState<string | null>(null);
+  const [noRescheduleAvailability, setNoRescheduleAvailability] = useState(false);
   const [isFetchingSlots, startFetchingSlots] = useTransition();
+
+  const todayLAStr = new Date().toLocaleDateString("sv", { timeZone: "America/Los_Angeles" });
+
+  useEffect(() => {
+    setNoRescheduleAvailability(false);
+    setRescheduleDate("");
+    setAvailableSlots([]);
+    setRescheduleSlot(null);
+    setSlotsError(null);
+    startFetchingSlots(async () => {
+      const result = await findFirstAvailableDayAction({
+        fromDate: todayLAStr,
+        durationMinutes: rescheduleDuration,
+        locationId: rescheduleLocationId,
+        excludeLessonId: lesson.id,
+      });
+      if (result === null) {
+        setSlotsError("Could not load availability. Try again.");
+        return;
+      }
+      if (result.firstAvailableDate === null) {
+        setNoRescheduleAvailability(true);
+        return;
+      }
+      setRescheduleDate(result.firstAvailableDate);
+      const slotsResult = await fetchSlotsDirectAction(
+        result.firstAvailableDate,
+        rescheduleDuration,
+        rescheduleLocationId,
+      );
+      if ("error" in slotsResult) {
+        setSlotsError(slotsResult.error);
+      } else {
+        setAvailableSlots(slotsResult.slots);
+      }
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rescheduleLocationId, rescheduleDuration]);
 
   const canFindSlots = rescheduleLocationId && rescheduleDate;
 
@@ -71,7 +110,6 @@ export default function LessonDetailContent({ lesson, locations, isViewer, isCoa
   const lessonType = lesson.type === "private" ? "Private lesson" : "Family lesson";
   const swimmerNames = lesson.swimmers.map((swimmer) => swimmer.firstName).join(", ");
 
-  const todayLA = new Date().toLocaleDateString("sv", { timeZone: "America/Los_Angeles" });
   const maxDateLA = new Date(Date.now() + 70 * 24 * 60 * 60 * 1000).toLocaleDateString("sv", {
     timeZone: "America/Los_Angeles",
   });
@@ -162,7 +200,7 @@ export default function LessonDetailContent({ lesson, locations, isViewer, isCoa
                       <input
                         id="reschedule-date"
                         type="date"
-                        min={todayLA}
+                        min={todayLAStr}
                         max={maxDateLA}
                         value={rescheduleDate}
                         onChange={(event) => {
@@ -205,6 +243,10 @@ export default function LessonDetailContent({ lesson, locations, isViewer, isCoa
 
                     {slotsError && (
                       <p role="alert" className="text-sm text-danger">{slotsError}</p>
+                    )}
+
+                    {!isFetchingSlots && noRescheduleAvailability && (
+                      <p className="text-sm text-text-secondary">No open times in the next 10 weeks.</p>
                     )}
 
                     {!isFetchingSlots && availableSlots.length === 0 && rescheduleDate && !slotsError && (

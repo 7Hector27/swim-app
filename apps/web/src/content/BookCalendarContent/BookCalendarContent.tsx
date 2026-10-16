@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { todayLA } from "@swim-app/shared";
 import type { ParentSwimmer, WeekAvailabilityResponse } from "@swim-app/shared";
 
-import { fetchRangeAction, createBookingAction } from "./actions";
+import { fetchRangeAction, createBookingAction, findFirstAvailableDayAction } from "./actions";
 import { getMondayOfWeek, addDaysToDateStr, formatDayLabel } from "./helpers";
 import type { BookingState } from "./helpers";
 import CalendarConfigRow from "./CalendarConfigRow";
@@ -47,8 +47,14 @@ export default function BookCalendarContent({
   const [tooSoon, setTooSoon] = useState(false);
   const [weekData, setWeekData] = useState<WeekAvailabilityResponse | null>(null);
   const [fetchError, setFetchError] = useState<string | null>(null);
-  const [retryCount, setRetryCount] = useState(0);
   const [selectedPhoneDay, setSelectedPhoneDay] = useState<string | null>(null);
+  const [noAvailability, setNoAvailability] = useState(false);
+
+  type FetchSpec =
+    | { mode: "search"; key: number }
+    | { mode: "week"; monday: string; key: number };
+
+  const [fetchSpec, setFetchSpec] = useState<FetchSpec>({ mode: "search", key: 0 });
 
   const [isFetching, startFetching] = useTransition();
   const [bookingState, bookingFormAction, isBooking] = useActionState(
@@ -60,21 +66,43 @@ export default function BookCalendarContent({
 
   useEffect(() => {
     if (!locationId) return;
+    setNoAvailability(false);
+    setFetchError(null);
     startFetching(async () => {
-      const result = await fetchRangeAction({
-        view: "week",
-        date: mondayStr,
-        durationMinutes,
-        locationId,
-      });
-      if (result !== null) {
-        setWeekData(result);
-        setFetchError(null);
+      if (fetchSpec.mode === "search") {
+        const result = await findFirstAvailableDayAction({
+          fromDate: today,
+          durationMinutes,
+          locationId,
+        });
+        if (result === null) {
+          setFetchError("Could not load availability. Try again.");
+          return;
+        }
+        setWeekData(result.weekData);
+        if (result.firstAvailableDate !== null) {
+          setCurrentDate(result.firstAvailableDate);
+          setSelectedPhoneDay(result.firstAvailableDate);
+        } else {
+          setCurrentDate(today);
+          setSelectedPhoneDay(null);
+          setNoAvailability(true);
+        }
       } else {
-        setFetchError("Could not load availability. Try again.");
+        const result = await fetchRangeAction({
+          view: "week",
+          date: fetchSpec.monday,
+          durationMinutes,
+          locationId,
+        });
+        if (result !== null) {
+          setWeekData(result);
+        } else {
+          setFetchError("Could not load availability. Try again.");
+        }
       }
     });
-  }, [locationId, durationMinutes, mondayStr, retryCount]);
+  }, [fetchSpec, locationId, durationMinutes, today]);
 
   useEffect(() => {
     if (bookingState.status !== "success") return;
@@ -85,30 +113,37 @@ export default function BookCalendarContent({
     setLocationId(id);
     setSelectedStartsAt(null);
     setTooSoon(false);
+    setFetchSpec((prev) => ({ mode: "search", key: prev.key + 1 }));
   }
 
   function handleDurationChange(d: 30 | 45 | 60) {
     setDurationMinutes(d);
     setSelectedStartsAt(null);
     setTooSoon(false);
+    setFetchSpec((prev) => ({ mode: "search", key: prev.key + 1 }));
   }
 
   function prevWeek() {
-    setCurrentDate(addDaysToDateStr(mondayStr, -7));
+    const newMonday = addDaysToDateStr(mondayStr, -7);
+    setCurrentDate(newMonday);
     setSelectedStartsAt(null);
     setTooSoon(false);
+    setFetchSpec((prev) => ({ mode: "week", monday: newMonday, key: prev.key + 1 }));
   }
 
   function nextWeek() {
-    setCurrentDate(addDaysToDateStr(mondayStr, 7));
+    const newMonday = addDaysToDateStr(mondayStr, 7);
+    setCurrentDate(newMonday);
     setSelectedStartsAt(null);
     setTooSoon(false);
+    setFetchSpec((prev) => ({ mode: "week", monday: newMonday, key: prev.key + 1 }));
   }
 
   function goToday() {
     setCurrentDate(today);
     setSelectedStartsAt(null);
     setTooSoon(false);
+    setFetchSpec((prev) => ({ mode: "search", key: prev.key + 1 }));
   }
 
   function handleSlotClick(slot: { startsAt: string; state: string }) {
@@ -246,7 +281,7 @@ export default function BookCalendarContent({
           <p className="text-sm text-text-secondary">{fetchError}</p>
           <button
             type="button"
-            onClick={() => setRetryCount((count) => count + 1)}
+            onClick={() => setFetchSpec((spec) => ({ ...spec, key: spec.key + 1 }))}
             className="min-h-[44px] px-5 rounded-button border-2 border-button-outline text-button-outline text-sm font-semibold transition-opacity hover:opacity-70 active:scale-[0.97]"
           >
             Retry
@@ -254,7 +289,13 @@ export default function BookCalendarContent({
         </div>
       )}
 
-      {!isFetching && weekData !== null && (
+      {!isFetching && noAvailability && (
+        <p className="text-sm text-text-secondary py-4 text-center">
+          No open times in the next 10 weeks. Check back later or contact Jason directly.
+        </p>
+      )}
+
+      {!isFetching && weekData !== null && !noAvailability && (
         <>
           <div className="hidden tablet:block">
             <WeekGrid
