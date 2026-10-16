@@ -10,6 +10,21 @@ interface SwimmersTableProps {
   swimmers: CoachSwimmer[];
 }
 
+function VisibilityBadge({ isPublic }: { isPublic: boolean }) {
+  if (isPublic) {
+    return (
+      <span className="inline-flex items-center rounded-full text-xs font-semibold px-2.5 py-1 bg-success/10 text-success">
+        Public
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center rounded-full text-xs font-semibold px-2.5 py-1 bg-surface-soft text-text-secondary border border-border">
+      Private
+    </span>
+  );
+}
+
 export default function SwimmersTable({ swimmers }: SwimmersTableProps) {
   const [query, setQuery] = useState("");
 
@@ -34,11 +49,46 @@ export default function SwimmersTable({ swimmers }: SwimmersTableProps) {
           placeholder="Search by swimmer or parent name"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          className="w-full max-w-xs h-9 px-3 rounded-button border border-border bg-background text-sm text-text placeholder:text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring)]"
+          className="w-full tablet:max-w-xs h-9 px-3 rounded-button border border-border bg-background text-sm text-text placeholder:text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring)]"
         />
       </div>
 
-      <div className="overflow-x-auto">
+      {/* Phone layout — compact rows */}
+      <ul className="divide-y divide-border tablet:hidden">
+        {filtered.length === 0 ? (
+          <li className="px-5 py-8 text-center text-sm text-text-secondary">
+            No swimmers match your search.
+          </li>
+        ) : (
+          filtered.map((swimmer) => (
+            <li key={swimmer.id} className="flex items-center gap-3 px-5 py-3">
+              <div className="flex-1 min-w-0">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <span className="text-sm font-semibold text-text">
+                    {swimmer.firstName} {swimmer.lastName}
+                  </span>
+                  <span className="text-xs text-text-secondary">Age {swimmer.age}</span>
+                  <VisibilityBadge isPublic={swimmer.isPublic} />
+                </div>
+                {swimmer.memberNames.length > 0 && (
+                  <p className="text-xs text-text-secondary mt-0.5 truncate">
+                    {swimmer.memberNames.join(", ")}
+                  </p>
+                )}
+              </div>
+              <a
+                href={`/coach/swimmers/${swimmer.id}`}
+                className="flex-shrink-0 min-h-[44px] flex items-center text-sm font-semibold text-link hover:text-link-hover transition-colors duration-150"
+              >
+                Open
+              </a>
+            </li>
+          ))
+        )}
+      </ul>
+
+      {/* Tablet+ layout — table */}
+      <div className="hidden tablet:block overflow-x-auto">
         <table className="min-w-full text-sm text-text border-collapse">
           <thead>
             <tr className="border-b border-border bg-surface-soft">
@@ -110,15 +160,7 @@ export default function SwimmersTable({ swimmers }: SwimmersTableProps) {
                     </Placeholder>
                   </td>
                   <td className="px-5 py-3 whitespace-nowrap">
-                    {swimmer.isPublic ? (
-                      <span className="inline-flex items-center rounded-full text-xs font-semibold px-2.5 py-1 bg-success/10 text-success">
-                        Public
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center rounded-full text-xs font-semibold px-2.5 py-1 bg-surface-soft text-text-secondary border border-border">
-                        Private
-                      </span>
-                    )}
+                    <VisibilityBadge isPublic={swimmer.isPublic} />
                   </td>
                   <td className="px-5 py-3 whitespace-nowrap">
                     <a
