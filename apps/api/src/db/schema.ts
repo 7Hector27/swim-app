@@ -156,6 +156,7 @@ export const swimmers = pgTable(
       onDelete: "restrict",
     }),
     archivedAt: timestamp("archived_at", { withTimezone: true }),
+    recommendedBreathingPattern: text("recommended_breathing_pattern"),
     householdId: uuid("household_id").notNull().references(() => households.id, { onDelete: "restrict" }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
@@ -479,7 +480,9 @@ export const evaluationSessions = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     swimmerId: uuid("swimmer_id").notNull().references(() => swimmers.id, { onDelete: "restrict" }),
     coachId: uuid("coach_id").notNull().references(() => profiles.id, { onDelete: "restrict" }),
-    categoryId: uuid("category_id").notNull().references(() => skillCategories.id, { onDelete: "restrict" }),
+    categoryId: uuid("category_id").references(() => skillCategories.id, { onDelete: "restrict" }),
+    screenSlug: text("screen_slug"),
+    breathingPattern: text("breathing_pattern"),
     sessionDate: date("session_date").notNull(),
     context: evaluationContextEnum("context").notNull(),
     coachingPriority: text("coaching_priority").notNull(),

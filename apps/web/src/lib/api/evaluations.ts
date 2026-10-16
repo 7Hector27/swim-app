@@ -1,6 +1,8 @@
 import {
   CategoriesResponseSchema,
   type CategoriesResponse,
+  ScreensResponseSchema,
+  type ScreensResponse,
   CoachSkillRatingSchema,
   type CoachSkillRating,
   SwimmerSkillsResponseSchema,
@@ -25,6 +27,27 @@ export async function fetchSkillCategories(
     const parsed = CategoriesResponseSchema.safeParse(body);
     if (!parsed.success) return { ok: false, status: 500 };
     return { ok: true, categories: parsed.data };
+  } catch {
+    return { ok: false, status: 500 };
+  }
+}
+
+export type FetchScreensResult =
+  | { ok: true; screens: ScreensResponse }
+  | { ok: false; status: number };
+
+export async function fetchScreens(
+  accessToken: string,
+): Promise<FetchScreensResult> {
+  try {
+    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/coach/screens`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!response.ok) return { ok: false, status: response.status };
+    const body: unknown = await response.json();
+    const parsed = ScreensResponseSchema.safeParse(body);
+    if (!parsed.success) return { ok: false, status: 500 };
+    return { ok: true, screens: parsed.data };
   } catch {
     return { ok: false, status: 500 };
   }

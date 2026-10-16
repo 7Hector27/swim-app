@@ -94,7 +94,7 @@ type SkillRow = {
 
 const validSkillRow: SkillRow = {
   id: SKILL_ID,
-  slug: "freestyle-kick",
+  slug: "buoyancy-balance",
   categoryId: CATEGORY_ID,
   parentSkillId: null,
   type: "rubric",
@@ -126,10 +126,11 @@ const validRatingInput = {
 };
 
 const validSessionBody = {
-  categoryId: CATEGORY_ID,
+  screenSlug: "fundamentals",
   sessionDate: "2025-06-01",
   context: "practice",
   coachingPriority: "Work on kick mechanics",
+  breathingPattern: null,
   ratings: [validRatingInput],
 };
 
@@ -153,11 +154,6 @@ function swimmerSelect(row: typeof activeSwimmerRow | null) {
   return { from: vi.fn().mockReturnValue({ where }) };
 }
 
-function categorySelect(found: boolean) {
-  const limit = vi.fn().mockResolvedValue(found ? [{ id: CATEGORY_ID }] : []);
-  const where = vi.fn().mockReturnValue({ limit });
-  return { from: vi.fn().mockReturnValue({ where }) };
-}
 
 function skillsSelect(rows: typeof validSkillRow[]) {
   const where = vi.fn().mockResolvedValue(rows);
@@ -299,7 +295,6 @@ describe("POST /swimmers/:id/sessions — validation", () => {
     // A skill that is archived is simply absent from the catalog — return empty.
     mockDbSelect
       .mockReturnValueOnce(swimmerSelect(activeSwimmerRow))
-      .mockReturnValueOnce(categorySelect(true))
       .mockReturnValueOnce(skillsSelect([])); // archived skill absent from non-archived catalog
 
     const res = await request(app)
@@ -310,31 +305,28 @@ describe("POST /swimmers/:id/sessions — validation", () => {
     expect(res.body.issues[0].message).toContain("archived");
   });
 
-  it("skill wrong category → 422", async () => {
-    const wrongCategorySkill = {
+  it("skill not in screen → 422", async () => {
+    const wrongScreenSkill = {
       ...validSkillRow,
-      categoryId: "99999999-0000-0000-0000-000000000099",
-      parentSkillId: null,
+      // "free-kick" belongs to freestyle, not fundamentals
+      slug: "free-kick",
     };
-    // The route loads all non-archived skills at once — wrongCategorySkill is returned
-    // with its wrong categoryId; parentSkillId is null, so categoryMatch is false.
+    // The route validates slug against SCREEN_SKILLS[screenSlug] in-memory.
     mockDbSelect
       .mockReturnValueOnce(swimmerSelect(activeSwimmerRow))
-      .mockReturnValueOnce(categorySelect(true))
-      .mockReturnValueOnce(skillsSelect([wrongCategorySkill]));
+      .mockReturnValueOnce(skillsSelect([wrongScreenSkill]));
 
     const res = await request(app)
       .post(`/coach/swimmers/${SWIMMER_ID}/sessions`)
       .set("Authorization", "Bearer token")
       .send(validSessionBody);
     expect(res.status).toBe(422);
-    expect(res.body.issues[0].message).toContain("category");
+    expect(res.body.issues[0].message).toContain("screen");
   });
 
   it("side missing when ratedPerSide=true → 422", async () => {
     mockDbSelect
       .mockReturnValueOnce(swimmerSelect(activeSwimmerRow))
-      .mockReturnValueOnce(categorySelect(true))
       .mockReturnValueOnce(skillsSelect([ratedPerSideSkillRow]));
 
     const res = await request(app)
@@ -351,7 +343,6 @@ describe("POST /swimmers/:id/sessions — validation", () => {
   it("side present when ratedPerSide=false → 422", async () => {
     mockDbSelect
       .mockReturnValueOnce(swimmerSelect(activeSwimmerRow))
-      .mockReturnValueOnce(categorySelect(true))
       .mockReturnValueOnce(skillsSelect([validSkillRow]));
 
     const res = await request(app)
@@ -368,7 +359,6 @@ describe("POST /swimmers/:id/sessions — validation", () => {
   it("invalid faultTag → 422", async () => {
     mockDbSelect
       .mockReturnValueOnce(swimmerSelect(activeSwimmerRow))
-      .mockReturnValueOnce(categorySelect(true))
       .mockReturnValueOnce(skillsSelect([validSkillRow]));
 
     const res = await request(app)
@@ -385,7 +375,6 @@ describe("POST /swimmers/:id/sessions — validation", () => {
   it("measurement on non-measured skill → 422", async () => {
     mockDbSelect
       .mockReturnValueOnce(swimmerSelect(activeSwimmerRow))
-      .mockReturnValueOnce(categorySelect(true))
       .mockReturnValueOnce(skillsSelect([validSkillRow])); // rubric type, not measured
 
     const res = await request(app)
@@ -408,7 +397,6 @@ describe("POST /swimmers/:id/sessions — validation", () => {
   it("duplicate skill+side in same session → 422", async () => {
     mockDbSelect
       .mockReturnValueOnce(swimmerSelect(activeSwimmerRow))
-      .mockReturnValueOnce(categorySelect(true))
       .mockReturnValueOnce(skillsSelect([validSkillRow]));
 
     const res = await request(app)
@@ -425,7 +413,6 @@ describe("POST /swimmers/:id/sessions — validation", () => {
   it("rejects notLegal=true on a skill that does not allow it", async () => {
     mockDbSelect
       .mockReturnValueOnce(swimmerSelect(activeSwimmerRow))
-      .mockReturnValueOnce(categorySelect(true))
       .mockReturnValueOnce(skillsSelect([{ ...validSkillRow, notLegalAllowed: false }]));
 
     const res = await request(app)
@@ -447,7 +434,6 @@ describe("POST /swimmers/:id/sessions — validation", () => {
   it("rejects direct rating of a rollup skill", async () => {
     mockDbSelect
       .mockReturnValueOnce(swimmerSelect(activeSwimmerRow))
-      .mockReturnValueOnce(categorySelect(true))
       .mockReturnValueOnce(skillsSelect([{ ...validSkillRow, type: "rollup" as const }]));
 
     const res = await request(app)
@@ -466,7 +452,6 @@ describe("POST /swimmers/:id/sessions — validation", () => {
   it("same skill rated on different sides is allowed → not 422", async () => {
     mockDbSelect
       .mockReturnValueOnce(swimmerSelect(activeSwimmerRow))
-      .mockReturnValueOnce(categorySelect(true))
       .mockReturnValueOnce(skillsSelect([ratedPerSideSkillRow]));
 
     mockDbTransaction.mockResolvedValue({ sessionId: SESSION_ID, ratingIds: [] });

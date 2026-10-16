@@ -36,10 +36,11 @@ export type SkillDraft = {
 };
 
 export type SessionDraft = {
-  categoryId: string;
+  screenSlug: string;
   sessionDate: string;
   context: "drill" | "practice" | "race" | null;
   coachingPriority: string;
+  breathingPattern: "every_1" | "every_2" | "every_3" | "every_4" | "every_5" | "other" | null;
   skills: Record<string, SkillDraft>;
 };
 
@@ -66,17 +67,18 @@ export function defaultSkillDraft(): SkillDraft {
 
 export function initialSessionDraft(): SessionDraft {
   return {
-    categoryId: "",
+    screenSlug: "",
     sessionDate: todayLA(),
     context: null,
     coachingPriority: "",
+    breathingPattern: null,
     skills: {},
   };
 }
 
 export function canSubmit(draft: SessionDraft, ratingsCount: number, isPending: boolean): boolean {
   return (
-    draft.categoryId !== "" &&
+    draft.screenSlug !== "" &&
     draft.sessionDate !== "" &&
     draft.context !== null &&
     draft.coachingPriority.trim().length > 0 &&
@@ -85,32 +87,36 @@ export function canSubmit(draft: SessionDraft, ratingsCount: number, isPending: 
   );
 }
 
-export function buildSkillGroups(category: import("@swim-app/shared").SkillCategoryWithSkills): {
+// Accepts any object that has a skills array of SkillForRating — works for both
+// SkillCategoryWithSkills (legacy) and ScreenWithSkills.
+type SkillContainer = { skills: import("@swim-app/shared").SkillForRating[] };
+
+export function buildSkillGroups(container: SkillContainer): {
   startParents: import("@swim-app/shared").SkillForRating[];
   standaloneSkills: import("@swim-app/shared").SkillForRating[];
   componentSkillsOf: (parentId: string) => import("@swim-app/shared").SkillForRating[];
 } {
-  const startParents = category.skills.filter(
+  const startParents = container.skills.filter(
     (skill) =>
       skill.parentSkillId === null &&
-      category.skills.some((other) => other.parentSkillId === skill.id),
+      container.skills.some((other) => other.parentSkillId === skill.id),
   );
   const startParentIds = new Set(startParents.map((skill) => skill.id));
-  const standaloneSkills = category.skills.filter(
+  const standaloneSkills = container.skills.filter(
     (skill) =>
       !startParentIds.has(skill.id) &&
-      (skill.parentSkillId === null || !startParentIds.has(skill.parentSkillId)),
+      (skill.parentSkillId === null || !startParentIds.has(skill.parentSkillId ?? "")),
   );
   const componentSkillsOf = (parentId: string): import("@swim-app/shared").SkillForRating[] =>
-    category.skills.filter((skill) => skill.parentSkillId === parentId);
+    container.skills.filter((skill) => skill.parentSkillId === parentId);
   return { startParents, standaloneSkills, componentSkillsOf };
 }
 
 export function buildSectionGroups(
-  category: import("@swim-app/shared").SkillCategoryWithSkills,
+  container: SkillContainer,
   sections: Array<{ name: string; slugs: string[] }>,
 ): Array<{ name: string; skills: import("@swim-app/shared").SkillForRating[] }> {
-  const slugToSkill = new Map(category.skills.map((skill) => [skill.slug, skill]));
+  const slugToSkill = new Map(container.skills.map((skill) => [skill.slug, skill]));
   const assigned = new Set<string>();
   const result: Array<{ name: string; skills: import("@swim-app/shared").SkillForRating[] }> = [];
 
@@ -128,7 +134,7 @@ export function buildSectionGroups(
     }
   }
 
-  const other = category.skills.filter((skill) => !assigned.has(skill.id));
+  const other = container.skills.filter((skill) => !assigned.has(skill.id));
   if (other.length > 0) {
     result.push({ name: "Other", skills: other });
   }
@@ -136,15 +142,13 @@ export function buildSectionGroups(
   return result;
 }
 
+// The section name is the sole source of stroke context — the stroke name
+// appears once in the section heading, not repeated per-skill row.
 export function skillDisplayLabel(
   skill: import("@swim-app/shared").SkillForRating,
-  allSkills: import("@swim-app/shared").SkillForRating[],
+  _sectionName: string,
 ): string {
-  const hasDuplicate = allSkills.some((other) => other.id !== skill.id && other.name === skill.name);
-  if (!hasDuplicate || skill.stroke === null) return skill.name;
-  const strokeLabel: Record<string, string> = { free: "Free", back: "Back", breast: "Breast", fly: "Fly" };
-  const label = strokeLabel[skill.stroke];
-  return label ? `${skill.name} · ${label}` : skill.name;
+  return skill.name;
 }
 
 export function buildRatingsArray(

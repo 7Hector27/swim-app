@@ -36,6 +36,9 @@ import {
   type SortOrderMap,
   type PerStrokeGrades,
   type ChainEntry,
+  SCREEN_SKILLS,
+  SCREEN_SLUGS,
+  SCREEN_NAMES,
 } from "@swim-app/shared";
 
 const RatingIdParamsSchema = z.object({ id: z.string().uuid() });
@@ -81,23 +84,30 @@ evaluationsRouter.post(
       return;
     }
 
-    // Verify category exists
-    const categoryRows = await db
-      .select({ id: skillCategories.id })
-      .from(skillCategories)
-      .where(eq(skillCategories.id, body.categoryId))
-      .limit(1);
-    if (!categoryRows[0]) {
-      res.status(422).json({ error: "Validation error", issues: [{ message: "categoryId not found" }] });
+    // Validate screenSlug
+    const screenSlugs = body.screenSlug as string;
+    if (!(screenSlugs in SCREEN_SKILLS)) {
+      res.status(422).json({ error: "Validation error", issues: [{ message: "screenSlug not valid" }] });
       return;
     }
+
+    // Breathing pattern required for freestyle and butterfly, must be null otherwise
+    if ((body.screenSlug === "freestyle" || body.screenSlug === "butterfly") && body.breathingPattern === null) {
+      res.status(422).json({ error: "Validation error", issues: [{ path: ["breathingPattern"], message: "breathingPattern is required for freestyle and butterfly screens" }] });
+      return;
+    }
+    if (body.screenSlug !== "freestyle" && body.screenSlug !== "butterfly" && body.breathingPattern !== null) {
+      res.status(422).json({ error: "Validation error", issues: [{ path: ["breathingPattern"], message: "breathingPattern must be null for this screen" }] });
+      return;
+    }
+
+    const screenSkillSlugs = new Set(SCREEN_SKILLS[body.screenSlug] ?? []);
 
     // Load the full non-archived skill catalog for validation.
     const allSkillRows = await db
       .select({
         id: skills.id,
         slug: skills.slug,
-        categoryId: skills.categoryId,
         parentSkillId: skills.parentSkillId,
         type: skills.type,
         unit: skills.unit,
@@ -132,16 +142,11 @@ evaluationsRouter.post(
         return;
       }
 
-      // Skill must belong to the session category directly, or via parent_skill_id
-      const categoryMatch =
-        skill.categoryId === body.categoryId ||
-        (skill.parentSkillId !== null &&
-          (skillMap.get(skill.parentSkillId)?.categoryId === body.categoryId));
-
-      if (!categoryMatch) {
+      // Skill must be in the screen's skill list (by slug)
+      if (!screenSkillSlugs.has(skill.slug)) {
         res.status(422).json({
           error: "Validation error",
-          issues: [{ path: [`ratings[${index}].skillId`], message: "Skill does not belong to the session category" }],
+          issues: [{ path: [`ratings[${index}].skillId`], message: "Skill does not belong to the session screen" }],
         });
         return;
       }
@@ -229,7 +234,8 @@ evaluationsRouter.post(
         .values({
           swimmerId,
           coachId,
-          categoryId: body.categoryId,
+          screenSlug: body.screenSlug,
+          ...(body.breathingPattern !== null && { breathingPattern: body.breathingPattern }),
           sessionDate: body.sessionDate,
           context: body.context,
           coachingPriority: body.coachingPriority,
@@ -782,6 +788,89 @@ coachCategoriesRouter.get(
     }));
 
     req.log.info({ count: categoryRows.length }, "skill categories fetched");
+    res.json(result);
+  }),
+);
+
+// ── GET /screens ─────────────────────────────────────────────────────────────
+
+export const coachScreensRouter = Router();
+
+coachScreensRouter.get(
+  "/screens",
+  validate({}),
+  asyncHandler(async (req, res) => {
+    const skillRows = await db
+      .select({
+        id: skills.id,
+        slug: skills.slug,
+        name: skills.name,
+        type: skills.type,
+        unit: skills.unit,
+        stroke: skills.stroke,
+        ratedPerSide: skills.ratedPerSide,
+        notLegalAllowed: skills.notLegalAllowed,
+        parentSkillId: skills.parentSkillId,
+        sortOrder: skills.sortOrder,
+        faultTags: skills.faultTags,
+        categoryId: skills.categoryId,
+      })
+      .from(skills)
+      .where(isNull(skills.archivedAt))
+      .orderBy(skills.sortOrder);
+
+    const skillIds = skillRows.map((skill) => skill.id);
+
+    const descriptorRows = skillIds.length > 0
+      ? await db
+          .select({
+            skillId: skillLevelDescriptors.skillId,
+            level: skillLevelDescriptors.level,
+            text: skillLevelDescriptors.text,
+          })
+          .from(skillLevelDescriptors)
+          .where(inArray(skillLevelDescriptors.skillId, skillIds))
+          .orderBy(asc(skillLevelDescriptors.level))
+      : [];
+
+    const descriptorsBySkill = new Map<string, Array<{ level: number; text: string }>>();
+    for (const descriptor of descriptorRows) {
+      const list = descriptorsBySkill.get(descriptor.skillId) ?? [];
+      list.push({ level: descriptor.level, text: descriptor.text });
+      descriptorsBySkill.set(descriptor.skillId, list);
+    }
+
+    // Index skills by slug for fast lookup
+    const skillBySlug = new Map(skillRows.map((skill) => [skill.slug, skill]));
+
+    const result = SCREEN_SLUGS.map((screenSlug) => {
+      const slugList = SCREEN_SKILLS[screenSlug] ?? [];
+      const screenSkills = slugList
+        .map((slug) => skillBySlug.get(slug))
+        .filter((skill): skill is NonNullable<typeof skill> => skill !== undefined)
+        .map((skill) => ({
+          id: skill.id,
+          slug: skill.slug,
+          name: skill.name,
+          type: skill.type,
+          unit: skill.unit ?? null,
+          stroke: skill.stroke ?? null,
+          ratedPerSide: skill.ratedPerSide,
+          notLegalAllowed: skill.notLegalAllowed,
+          parentSkillId: skill.parentSkillId ?? null,
+          sortOrder: skill.sortOrder,
+          faultTags: skill.faultTags ?? [],
+          descriptors: descriptorsBySkill.get(skill.id) ?? [],
+        }));
+
+      return {
+        screenSlug,
+        name: SCREEN_NAMES[screenSlug] ?? screenSlug,
+        skills: screenSkills,
+      };
+    });
+
+    req.log.info({ count: result.length }, "screens fetched");
     res.json(result);
   }),
 );

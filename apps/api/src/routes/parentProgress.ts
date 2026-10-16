@@ -66,6 +66,7 @@ parentProgressRouter.get(
     const seenCategories = new Set<string>();
     const latestCoachingNotes: ParentCoachingNote[] = [];
     for (const row of sessionRows) {
+      if (row.categoryId === null) continue;
       if (seenCategories.has(row.categoryId)) continue;
       seenCategories.add(row.categoryId);
       latestCoachingNotes.push({

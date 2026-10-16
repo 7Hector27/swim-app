@@ -3,7 +3,7 @@
 import { useActionState, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   CoachSwimmerDetail,
-  CategoriesResponse,
+  ScreensResponse,
 } from "@swim-app/shared";
 import AddNoteForm from "@/components/AddNoteForm";
 import { submitEvaluation } from "./actions";
@@ -14,7 +14,6 @@ import {
   todayLA,
   canSubmit,
   buildRatingsArray,
-  buildSkillGroups,
   buildSectionGroups,
   skillDisplayLabel,
 } from "./helpers";
@@ -30,13 +29,13 @@ import UndoToast from "./UndoToast";
 
 interface EvaluateContentProps {
   swimmer: CoachSwimmerDetail;
-  categories: CategoriesResponse;
+  screens: ScreensResponse;
   accessToken: string;
 }
 
-export default function EvaluateContent({ swimmer, categories, accessToken }: EvaluateContentProps) {
+export default function EvaluateContent({ swimmer, screens, accessToken }: EvaluateContentProps) {
   const metaKey = useMemo(() => `evaluate-draft-meta-${swimmer.id}`, [swimmer.id]);
-  const skillsKey = useCallback((catId: string) => `evaluate-draft-skills-${swimmer.id}-${catId}`, [swimmer.id]);
+  const skillsKey = useCallback((slug: string) => `evaluate-draft-skills-${swimmer.id}-${slug}`, [swimmer.id]);
 
   const [draft, setDraft] = useState<SessionDraft>(() => initialSessionDraft());
   const [depSuggestion, setDepSuggestion] = useState<
@@ -47,29 +46,35 @@ export default function EvaluateContent({ swimmer, categories, accessToken }: Ev
   >({ status: "idle" });
   const mountedRef = useRef(false);
   const savedAtRef = useRef<number>(0);
-  const savedCategoryIdRef = useRef<string>("");
+  const savedScreenSlugRef = useRef<string>("");
 
-  // Restore draft from localStorage on mount (Fix 6: keyed by swimmer AND category)
+  // Restore draft from localStorage on mount
   useEffect(() => {
     if (mountedRef.current) return;
     mountedRef.current = true;
     try {
       const meta = JSON.parse(localStorage.getItem(metaKey) ?? "null");
       if (meta && typeof meta === "object") {
-        const { categoryId, sessionDate, context, coachingPriority } = meta as Partial<SessionDraft>;
-        const storedCategoryId = typeof categoryId === "string" ? categoryId : "";
+        const { screenSlug, sessionDate, context, coachingPriority, breathingPattern } = meta as Partial<SessionDraft>;
+        const storedScreenSlug = typeof screenSlug === "string" ? screenSlug : "";
         let skills: Record<string, SkillDraft> = {};
-        if (storedCategoryId) {
-          const skillsStored = JSON.parse(localStorage.getItem(skillsKey(storedCategoryId)) ?? "null");
+        if (storedScreenSlug) {
+          const skillsStored = JSON.parse(localStorage.getItem(skillsKey(storedScreenSlug)) ?? "null");
           if (skillsStored && typeof skillsStored === "object" && "skills" in skillsStored) {
             skills = skillsStored.skills as Record<string, SkillDraft>;
           }
         }
         setDraft({
-          categoryId: storedCategoryId,
+          screenSlug: storedScreenSlug,
           sessionDate: typeof sessionDate === "string" ? sessionDate : todayLA(),
           context: context === "drill" || context === "practice" || context === "race" ? context : null,
           coachingPriority: typeof coachingPriority === "string" ? coachingPriority : "",
+          breathingPattern:
+            breathingPattern === "every_1" || breathingPattern === "every_2" ||
+            breathingPattern === "every_3" || breathingPattern === "every_4" ||
+            breathingPattern === "every_5" || breathingPattern === "other"
+              ? breathingPattern
+              : null,
           skills,
         });
       }
@@ -78,51 +83,35 @@ export default function EvaluateContent({ swimmer, categories, accessToken }: Ev
     }
   }, [swimmer.id, metaKey, skillsKey]);
 
-  // Persist draft to localStorage on every change (Fix 6)
+  // Persist draft to localStorage on every change
   useEffect(() => {
     try {
       localStorage.setItem(metaKey, JSON.stringify({
-        categoryId: draft.categoryId,
+        screenSlug: draft.screenSlug,
         sessionDate: draft.sessionDate,
         context: draft.context,
         coachingPriority: draft.coachingPriority,
+        breathingPattern: draft.breathingPattern,
       }));
-      if (draft.categoryId) {
-        localStorage.setItem(skillsKey(draft.categoryId), JSON.stringify({ skills: draft.skills }));
+      if (draft.screenSlug) {
+        localStorage.setItem(skillsKey(draft.screenSlug), JSON.stringify({ skills: draft.skills }));
       }
     } catch {
       // ignore
     }
   }, [draft, swimmer.id, metaKey, skillsKey]);
 
-  // Fetch dep suggestion when categoryId changes
+  // Fetch dep suggestion when screenSlug changes — use the screen's first category-like slug
+  // The dependency map endpoint still accepts categoryId; we skip it for now (no category on screens)
   useEffect(() => {
-    if (!draft.categoryId) {
+    if (!draft.screenSlug) {
       setDepSuggestion({ status: "idle" });
       return;
     }
-    setDepSuggestion({ status: "loading" });
-    let cancelled = false;
-    fetch(
-      `${process.env.NEXT_PUBLIC_API_URL}/coach/swimmers/${swimmer.id}/sessions/dependency-map?categoryId=${draft.categoryId}`,
-      { headers: { Authorization: `Bearer ${accessToken}` } },
-    )
-      .then(async (response) => {
-        if (cancelled) return;
-        if (!response.ok) {
-          setDepSuggestion({ status: "error" });
-          return;
-        }
-        const body = await response.json() as { suggestion: Array<{ slug: string; grade: unknown; sortOrder: number }> | null };
-        if (!cancelled) {
-          setDepSuggestion({ status: "loaded", chain: body.suggestion });
-        }
-      })
-      .catch(() => {
-        if (!cancelled) setDepSuggestion({ status: "error" });
-      });
-    return () => { cancelled = true; };
-  }, [draft.categoryId, swimmer.id, accessToken]);
+    // Dependency map requires a categoryId; screens are not category-scoped.
+    // Set to idle until the dependency-map endpoint is updated to accept screenSlug.
+    setDepSuggestion({ status: "idle" });
+  }, [draft.screenSlug]);
 
   const boundAction = useMemo(() => submitEvaluation.bind(null, swimmer.id), [swimmer.id]);
   const [state, formAction, isPending] = useActionState<EvaluateState, FormData>(
@@ -131,16 +120,14 @@ export default function EvaluateContent({ swimmer, categories, accessToken }: Ev
   );
 
   // Capture savedAt and clear localStorage on success.
-  // savedCategoryIdRef is written at submit time (onSubmit handler on the form) so
-  // it holds the correct categoryId even after draft has been reset by the router.
   useEffect(() => {
     if (state.status === "saved") {
       savedAtRef.current = Date.now();
       try {
         localStorage.removeItem(metaKey);
-        const catId = savedCategoryIdRef.current;
-        if (catId) {
-          localStorage.removeItem(skillsKey(catId));
+        const slug = savedScreenSlugRef.current;
+        if (slug) {
+          localStorage.removeItem(skillsKey(slug));
         }
       } catch {
         // ignore
@@ -148,15 +135,21 @@ export default function EvaluateContent({ swimmer, categories, accessToken }: Ev
     }
   }, [state.status, metaKey, skillsKey]);
 
-  function handleCategoryChange(newCategoryId: string) {
+  function handleScreenChange(newScreenSlug: string) {
     let skills: Record<string, SkillDraft> = {};
     try {
-      const stored = JSON.parse(localStorage.getItem(skillsKey(newCategoryId)) ?? "null");
+      const stored = JSON.parse(localStorage.getItem(skillsKey(newScreenSlug)) ?? "null");
       if (stored && typeof stored === "object" && "skills" in stored) {
         skills = stored.skills as Record<string, SkillDraft>;
       }
     } catch { /* ignore */ }
-    setDraft((prev) => ({ ...prev, categoryId: newCategoryId, skills }));
+    const needsBreathing = newScreenSlug === "freestyle" || newScreenSlug === "butterfly";
+    setDraft((prev) => ({
+      ...prev,
+      screenSlug: newScreenSlug,
+      breathingPattern: needsBreathing ? prev.breathingPattern : null,
+      skills,
+    }));
   }
 
   function patchSkill(key: string, patch: Partial<SkillDraft>) {
@@ -169,22 +162,23 @@ export default function EvaluateContent({ swimmer, categories, accessToken }: Ev
     }));
   }
 
-  const selectedCategory = categories.find((cat) => cat.id === draft.categoryId) ?? null;
+  const selectedScreen = screens.find((screen) => screen.screenSlug === draft.screenSlug) ?? null;
 
   const slugToName = Object.fromEntries(
-    categories.flatMap((cat) => cat.skills.map((skill) => [skill.slug, skill.name])),
+    screens.flatMap((screen) => screen.skills.map((skill) => [skill.slug, skill.name])),
   );
 
-  const ratingsArray = selectedCategory
-    ? buildRatingsArray(selectedCategory.skills, draft.skills)
+  const ratingsArray = selectedScreen
+    ? buildRatingsArray(selectedScreen.skills, draft.skills)
     : [];
   const submitEnabled = canSubmit(draft, ratingsArray.length, isPending);
 
   const bodyJson = JSON.stringify({
-    categoryId: draft.categoryId,
+    screenSlug: draft.screenSlug,
     sessionDate: draft.sessionDate,
     context: draft.context,
     coachingPriority: draft.coachingPriority,
+    breathingPattern: draft.breathingPattern,
     ratings: ratingsArray,
   });
 
@@ -258,14 +252,14 @@ export default function EvaluateContent({ swimmer, categories, accessToken }: Ev
             action={formAction}
             noValidate
             className="flex flex-col gap-6"
-            onSubmit={() => { savedCategoryIdRef.current = draft.categoryId; }}
+            onSubmit={() => { savedScreenSlugRef.current = draft.screenSlug; }}
           >
             <input type="hidden" name="bodyJson" value={bodyJson} />
 
             <SessionSetup
               draft={draft}
-              categories={categories}
-              onCategoryChange={handleCategoryChange}
+              screens={screens}
+              onScreenChange={handleScreenChange}
               onChange={(patch) => setDraft((prev) => ({ ...prev, ...patch }))}
             />
 
@@ -277,11 +271,11 @@ export default function EvaluateContent({ swimmer, categories, accessToken }: Ev
             />
 
             {/* Skills */}
-            {selectedCategory !== null && (() => {
-              const screenSections = SCREEN_SECTIONS[selectedCategory.slug];
+            {selectedScreen !== null && (() => {
+              const screenSections = SCREEN_SECTIONS[selectedScreen.screenSlug];
 
-              function renderSkill(skill: import("@swim-app/shared").SkillForRating) {
-                const label = skillDisplayLabel(skill, selectedCategory!.skills);
+              function renderSkill(skill: import("@swim-app/shared").SkillForRating, sectionName: string) {
+                const label = skillDisplayLabel(skill, sectionName);
                 if (skill.type === "rollup") {
                   return (
                     <CalculatedSkillRow
@@ -316,20 +310,20 @@ export default function EvaluateContent({ swimmer, categories, accessToken }: Ev
               }
 
               if (screenSections !== undefined) {
-                const sectionGroups = buildSectionGroups(selectedCategory, screenSections);
+                const sectionGroups = buildSectionGroups(selectedScreen, screenSections);
                 const startParentIds = new Set(
-                  selectedCategory.skills
+                  selectedScreen.skills
                     .filter(
                       (skill) =>
                         skill.parentSkillId === null &&
-                        selectedCategory.skills.some((other) => other.parentSkillId === skill.id),
+                        selectedScreen.skills.some((other) => other.parentSkillId === skill.id),
                     )
                     .map((skill) => skill.id),
                 );
                 return (
                   <div className="flex flex-col gap-4">
                     <h2 className="font-bold text-sm" style={{ color: "var(--color-text)" }}>
-                      Skills — {selectedCategory.name}
+                      Skills — {selectedScreen.name}
                     </h2>
                     {sectionGroups.map((section) => (
                       <EvalSectionHeader
@@ -339,7 +333,7 @@ export default function EvaluateContent({ swimmer, categories, accessToken }: Ev
                       >
                         {section.skills.map((skill) => {
                           if (startParentIds.has(skill.id)) {
-                            const components = selectedCategory.skills.filter(
+                            const components = selectedScreen.skills.filter(
                               (other) => other.parentSkillId === skill.id,
                             );
                             return (
@@ -352,7 +346,7 @@ export default function EvaluateContent({ swimmer, categories, accessToken }: Ev
                               />
                             );
                           }
-                          return renderSkill(skill);
+                          return renderSkill(skill, section.name);
                         })}
                       </EvalSectionHeader>
                     ))}
@@ -360,24 +354,39 @@ export default function EvaluateContent({ swimmer, categories, accessToken }: Ev
                 );
               }
 
-              const { startParents, standaloneSkills, componentSkillsOf } = buildSkillGroups(selectedCategory);
+              // Fallback: flat list when no section config exists for this screen
+              const startParentIds = new Set(
+                selectedScreen.skills
+                  .filter(
+                    (skill) =>
+                      skill.parentSkillId === null &&
+                      selectedScreen.skills.some((other) => other.parentSkillId === skill.id),
+                  )
+                  .map((skill) => skill.id),
+              );
+              const startParents = selectedScreen.skills.filter((skill) => startParentIds.has(skill.id));
+              const standaloneSkills = selectedScreen.skills.filter(
+                (skill) =>
+                  !startParentIds.has(skill.id) &&
+                  (skill.parentSkillId === null || !startParentIds.has(skill.parentSkillId ?? "")),
+              );
               return (
                 <div className="flex flex-col gap-4">
                   <h2 className="font-bold text-sm" style={{ color: "var(--color-text)" }}>
-                    Skills — {selectedCategory.name}
+                    Skills — {selectedScreen.name}
                   </h2>
 
                   {startParents.map((parent) => (
                     <StartGroupSection
                       key={parent.id}
                       parent={parent}
-                      components={componentSkillsOf(parent.id)}
+                      components={selectedScreen.skills.filter((other) => other.parentSkillId === parent.id)}
                       draftSkills={draft.skills}
                       onChange={patchSkill}
                     />
                   ))}
 
-                  {standaloneSkills.map((skill) => renderSkill(skill))}
+                  {standaloneSkills.map((skill) => renderSkill(skill, ""))}
                 </div>
               );
             })()}

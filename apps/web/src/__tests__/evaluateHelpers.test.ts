@@ -86,34 +86,32 @@ describe("buildSkillGroups", () => {
   const child2 = makeSkill({ id: "child-2", parentSkillId: "start-parent" });
   const standalone = makeSkill({ id: "standalone" });
 
-  const category = {
-    id: "cat-1",
-    slug: "freestyle",
+  const screen = {
+    screenSlug: "freestyle",
     name: "Freestyle",
-    sortOrder: 1,
     skills: [parent, child1, child2, standalone],
   };
 
   it("identifies the start parent (has children)", () => {
-    const { startParents } = buildSkillGroups(category);
+    const { startParents } = buildSkillGroups(screen);
     expect(startParents).toHaveLength(1);
     expect(startParents[0]?.id).toBe("start-parent");
   });
 
   it("excludes start parent and its children from standalone skills", () => {
-    const { standaloneSkills } = buildSkillGroups(category);
+    const { standaloneSkills } = buildSkillGroups(screen);
     expect(standaloneSkills).toHaveLength(1);
     expect(standaloneSkills[0]?.id).toBe("standalone");
   });
 
   it("componentSkillsOf returns children of the given parent", () => {
-    const { componentSkillsOf } = buildSkillGroups(category);
+    const { componentSkillsOf } = buildSkillGroups(screen);
     const children = componentSkillsOf("start-parent");
     expect(children.map((s) => s.id)).toEqual(["child-1", "child-2"]);
   });
 
   it("returns empty startParents when no skill has children", () => {
-    const flat = { ...category, skills: [standalone] };
+    const flat = { ...screen, skills: [standalone] };
     const { startParents, standaloneSkills } = buildSkillGroups(flat);
     expect(startParents).toHaveLength(0);
     expect(standaloneSkills).toHaveLength(1);
@@ -128,11 +126,9 @@ describe("buildSectionGroups", () => {
   const skillC = makeSkill({ id: "skill-c", slug: "slug-c", name: "Skill C" });
   const skillD = makeSkill({ id: "skill-d", slug: "slug-d", name: "Skill D" });
 
-  const category = {
-    id: "cat-1",
-    slug: "freestyle",
+  const screen = {
+    screenSlug: "freestyle",
     name: "Freestyle",
-    sortOrder: 1,
     skills: [skillA, skillB, skillC, skillD],
   };
 
@@ -142,7 +138,7 @@ describe("buildSectionGroups", () => {
   ];
 
   it("produces 2 sections when all skills are assigned", () => {
-    const result = buildSectionGroups(category, sections);
+    const result = buildSectionGroups(screen, sections);
     expect(result).toHaveLength(2);
     expect(result[0]?.name).toBe("Section 1");
     expect(result[0]?.skills.map((s) => s.id)).toEqual(["skill-a", "skill-b"]);
@@ -152,8 +148,8 @@ describe("buildSectionGroups", () => {
 
   it("adds an Other section for unassigned skills", () => {
     const skillE = makeSkill({ id: "skill-e", slug: "slug-e", name: "Skill E" });
-    const catWithExtra = { ...category, skills: [...category.skills, skillE] };
-    const result = buildSectionGroups(catWithExtra, sections);
+    const screenWithExtra = { ...screen, skills: [...screen.skills, skillE] };
+    const result = buildSectionGroups(screenWithExtra, sections);
     expect(result).toHaveLength(3);
     const other = result[2];
     expect(other?.name).toBe("Other");
@@ -165,8 +161,7 @@ describe("buildSectionGroups", () => {
       { name: "Section 1", slugs: ["slug-a", "slug-b"] },
       { name: "Empty Section", slugs: ["not-a-slug"] },
     ];
-    const result = buildSectionGroups(category, partialSections);
-    // Empty Section yields no skills, so it is not included
+    const result = buildSectionGroups(screen, partialSections);
     const sectionNames = result.map((s) => s.name);
     expect(sectionNames).not.toContain("Empty Section");
   });
@@ -178,20 +173,14 @@ describe("skillDisplayLabel", () => {
   const skillUnique = makeSkill({ id: "s1", name: "Head Position", slug: "head-pos", stroke: null });
   const skillFree = makeSkill({ id: "s2", name: "Kick", slug: "free-kick", stroke: "free" as const });
   const skillBack = makeSkill({ id: "s3", name: "Kick", slug: "back-kick", stroke: "back" as const });
-  const skillNullStroke = makeSkill({ id: "s4", name: "Kick", slug: "other-kick", stroke: null });
 
-  it("returns just the name when no duplicate exists", () => {
-    expect(skillDisplayLabel(skillUnique, [skillUnique, skillFree])).toBe("Head Position");
+  it("returns just the skill name regardless of stroke or section", () => {
+    expect(skillDisplayLabel(skillUnique, "")).toBe("Head Position");
+    expect(skillDisplayLabel(skillFree, "The swim")).toBe("Kick");
+    expect(skillDisplayLabel(skillBack, "Backstroke")).toBe("Kick");
   });
 
-  it("returns name with stroke label when duplicate name and stroke is set", () => {
-    const all = [skillFree, skillBack];
-    expect(skillDisplayLabel(skillFree, all)).toBe("Kick · Free");
-    expect(skillDisplayLabel(skillBack, all)).toBe("Kick · Back");
-  });
-
-  it("returns just the name when duplicate exists but stroke is null", () => {
-    const all = [skillFree, skillNullStroke];
-    expect(skillDisplayLabel(skillNullStroke, all)).toBe("Kick");
+  it("returns just the name when section name is empty", () => {
+    expect(skillDisplayLabel(skillFree, "")).toBe("Kick");
   });
 });

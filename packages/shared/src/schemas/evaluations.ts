@@ -5,6 +5,9 @@ import { StrokeSchema } from "./skills";
 export const EvaluationContextSchema = z.enum(["drill", "practice", "race"]);
 export type EvaluationContext = z.infer<typeof EvaluationContextSchema>;
 
+export const BreathingPatternSchema = z.enum(["every_1","every_2","every_3","every_4","every_5","other"]);
+export type BreathingPattern = z.infer<typeof BreathingPatternSchema>;
+
 export const RatingSideSchema = z.enum(["left", "right"]);
 export type RatingSide = z.infer<typeof RatingSideSchema>;
 
@@ -163,10 +166,11 @@ const RatingInputSchema = z
 export type RatingInput = z.infer<typeof RatingInputSchema>;
 
 export const CreateSessionBodySchema = z.object({
-  categoryId: z.string().uuid(),
+  screenSlug: z.string(),
   sessionDate: z.string().date(),
   context: EvaluationContextSchema,
   coachingPriority: z.string().min(1),
+  breathingPattern: BreathingPatternSchema.nullable(),
   ratings: z.array(RatingInputSchema).min(1),
 });
 export type CreateSessionBody = z.infer<typeof CreateSessionBodySchema>;
@@ -215,6 +219,18 @@ export type SkillCategoryWithSkills = z.infer<typeof SkillCategoryWithSkillsSche
 
 export const CategoriesResponseSchema = z.array(SkillCategoryWithSkillsSchema);
 export type CategoriesResponse = z.infer<typeof CategoriesResponseSchema>;
+
+// ── Screen-based response (replaces /categories for the evaluation form) ───────
+
+export const ScreenWithSkillsSchema = z.object({
+  screenSlug: z.string(),
+  name: z.string(),
+  skills: z.array(SkillForRatingSchema),
+});
+export type ScreenWithSkills = z.infer<typeof ScreenWithSkillsSchema>;
+
+export const ScreensResponseSchema = z.array(ScreenWithSkillsSchema);
+export type ScreensResponse = z.infer<typeof ScreensResponseSchema>;
 
 export const SwimmerSkillsResponseSchema = z.object({
   grades: z.record(

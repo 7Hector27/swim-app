@@ -281,8 +281,11 @@ export type { StartGradeResult } from "./lib/startGrade";
 
 export { calculateBilateralBreathingGrade } from "./lib/bilateralBreathingGrade";
 
+export { SCREEN_SKILLS, SCREEN_SLUGS, SCREEN_NAMES } from "./lib/screenSkills";
+
 export type {
   EvaluationContext,
+  BreathingPattern,
   RatingSide,
   CapacityUnit,
   MeasurementUnit,
@@ -299,10 +302,13 @@ export type {
   SkillForRating,
   SkillCategoryWithSkills,
   CategoriesResponse,
+  ScreenWithSkills,
+  ScreensResponse,
   SwimmerSkillsResponse,
 } from "./schemas/evaluations";
 export {
   EvaluationContextSchema,
+  BreathingPatternSchema,
   RatingSideSchema,
   CapacityUnitSchema,
   MeasurementUnitSchema,
@@ -319,6 +325,8 @@ export {
   SkillForRatingSchema,
   SkillCategoryWithSkillsSchema,
   CategoriesResponseSchema,
+  ScreenWithSkillsSchema,
+  ScreensResponseSchema,
   SwimmerSkillsResponseSchema,
 } from "./schemas/evaluations";
 export type {
