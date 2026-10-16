@@ -40,11 +40,20 @@ function validateCatalog(categories: CatalogCategory[]): void {
     }
   }
 
+  const archivedSlugs = new Set<string>(
+    allSkills.filter((skill) => skill.archived === true).map((skill) => skill.slug),
+  );
+
   for (const skill of allSkills) {
     for (const dep of skill.builtOnSlugs ?? []) {
       if (!allSlugs.has(dep)) {
         throw new Error(
           `Skill ${skill.slug} references unknown dependency slug: ${dep}`,
+        );
+      }
+      if (!skill.archived && archivedSlugs.has(dep)) {
+        throw new Error(
+          `Active skill ${skill.slug} depends on archived skill ${dep}`,
         );
       }
     }
@@ -163,6 +172,7 @@ export default async function syncCatalogFn(db: Db): Promise<void> {
             appliesTo: skill.appliesTo ?? null,
             parentSkillId: null,
             sortOrder: skill.sortOrder,
+            archivedAt: skill.archived ? new Date() : null,
             faultTags: skill.faultTags ?? null,
             ratedPerSide: skill.ratedPerSide ?? false,
             notLegalAllowed: skill.notLegalAllowed ?? false,
@@ -178,7 +188,7 @@ export default async function syncCatalogFn(db: Db): Promise<void> {
               appliesTo: skill.appliesTo ?? null,
               parentSkillId: null,
               sortOrder: skill.sortOrder,
-              archivedAt: null,
+              archivedAt: skill.archived ? new Date() : null,
               faultTags: skill.faultTags ?? null,
               ratedPerSide: skill.ratedPerSide ?? false,
               notLegalAllowed: skill.notLegalAllowed ?? false,
@@ -258,6 +268,7 @@ export default async function syncCatalogFn(db: Db): Promise<void> {
 
     for (const category of SKILLS_CATALOG) {
       for (const skill of category.skills) {
+        if (skill.archived) continue;
         if (!skill.builtOnSlugs?.length) continue;
         const skillId = skillSlugToId.get(skill.slug);
         if (!skillId) throw new Error(`No id for skill ${skill.slug}`);

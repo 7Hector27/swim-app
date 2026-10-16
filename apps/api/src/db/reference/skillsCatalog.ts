@@ -24,6 +24,7 @@ export type CatalogSkill = {
   faultTags?: string[];
   ratedPerSide?: boolean;
   notLegalAllowed?: boolean;
+  archived?: true;
 };
 
 export type CatalogCategory = {
@@ -117,6 +118,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         type: "rubric",
         sortOrder: 3,
         builtOnSlugs: ["head-position-overall"],
+        archived: true,
       },
       {
         slug: "hip-position",
@@ -124,6 +126,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         type: "rubric",
         sortOrder: 4,
         builtOnSlugs: ["head-position-overall", "core-stability"],
+        archived: true,
       },
       {
         slug: "core-stability",
@@ -185,7 +188,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
       // Per-stroke instances of Breathing timing
       {
         slug: "breathing-timing-free",
-        name: "Breathing timing",
+        name: "Breath timing",
         type: "rubric",
         stroke: "free",
         sortOrder: 3,
@@ -195,7 +198,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
       // breathing-timing-back archived per Jason A5.
       {
         slug: "breathing-timing-breast",
-        name: "Breathing timing",
+        name: "Breath timing",
         type: "rubric",
         stroke: "breast",
         sortOrder: 4,
@@ -203,7 +206,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
       },
       {
         slug: "breathing-timing-fly",
-        name: "Breathing timing",
+        name: "Breath timing",
         type: "rubric",
         stroke: "fly",
         sortOrder: 5,
@@ -213,7 +216,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
       // Per-stroke instances of Stroke-breath coordination
       {
         slug: "stroke-breath-coordination-free",
-        name: "Stroke hold on breath",
+        name: "Stroke integrity on breath",
         type: "rubric",
         stroke: "free",
         sortOrder: 6,
@@ -224,7 +227,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
       // stroke-breath-coordination-back archived per Jason A5.
       {
         slug: "stroke-breath-coordination-breast",
-        name: "Stroke hold on breath",
+        name: "Stroke integrity on breath",
         type: "rubric",
         stroke: "breast",
         sortOrder: 7,
@@ -233,7 +236,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
       },
       {
         slug: "stroke-breath-coordination-fly",
-        name: "Stroke hold on breath",
+        name: "Stroke integrity on breath",
         type: "rubric",
         stroke: "fly",
         sortOrder: 8,
@@ -339,7 +342,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         type: "rubric",
         stroke: "free",
         sortOrder: 6,
-        builtOnSlugs: ["horizontal-alignment"],
+        builtOnSlugs: ["free-horizontal-alignment"],
         notLegalAllowed: true,
       },
       {
@@ -348,7 +351,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         type: "rubric",
         stroke: "free",
         sortOrder: 7,
-        builtOnSlugs: ["core-stability", "horizontal-alignment"],
+        builtOnSlugs: ["core-stability", "free-horizontal-alignment"],
       },
       {
         slug: "free-kick-rate",
@@ -367,6 +370,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         sortOrder: 9,
         // Per Jason: body-rotation archived; use free-rotation instead.
         builtOnSlugs: ["free-head-position", "free-rotation", "breath-control"],
+        archived: true,
       },
       {
         slug: "free-stroke-timing",
@@ -384,7 +388,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         unit: "strokes/length",
         stroke: "free",
         sortOrder: 11,
-        builtOnSlugs: ["free-catch", "free-pull", "horizontal-alignment"],
+        builtOnSlugs: ["free-catch", "free-pull", "free-horizontal-alignment"],
       },
       {
         slug: "free-finishing",
@@ -403,6 +407,29 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         sortOrder: 13,
         builtOnSlugs: ["free-stroke-timing"],
       },
+      {
+        slug: "free-horizontal-alignment",
+        name: "Horizontal alignment",
+        type: "rubric",
+        stroke: "free",
+        sortOrder: 14,
+      },
+      {
+        slug: "free-hip-position",
+        name: "Hip position",
+        type: "rubric",
+        stroke: "free",
+        sortOrder: 15,
+      },
+      {
+        slug: "free-golf-score",
+        name: "Golf score",
+        type: "score",
+        unit: "time_s + stroke_count",
+        stroke: "free",
+        sortOrder: 16,
+        builtOnSlugs: ["free-stroke-count"],
+      },
     ],
   },
 
@@ -418,7 +445,6 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         type: "rubric",
         stroke: "back",
         sortOrder: 1,
-        builtOnSlugs: ["horizontal-alignment", "hip-position"],
       },
       {
         slug: "back-head-position-stability",
@@ -435,8 +461,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         type: "rubric",
         stroke: "back",
         sortOrder: 3,
-        // Per Jason: body-rotation archived; use horizontal-alignment (what body-rotation depended on).
-        builtOnSlugs: ["core-stability", "horizontal-alignment"],
+        builtOnSlugs: ["core-stability", "back-body-alignment"],
       },
       {
         slug: "back-reach-before-entry",
@@ -518,7 +543,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         unit: "strokes/length",
         stroke: "back",
         sortOrder: 12,
-        builtOnSlugs: ["back-catch", "back-pull", "horizontal-alignment"],
+        builtOnSlugs: ["back-catch", "back-pull", "back-body-alignment"],
       },
       {
         slug: "back-finishing",
@@ -537,6 +562,22 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         sortOrder: 14,
         builtOnSlugs: ["back-stroke-timing"],
       },
+      {
+        slug: "back-hip-position",
+        name: "Hip position",
+        type: "rubric",
+        stroke: "back",
+        sortOrder: 15,
+      },
+      {
+        slug: "back-golf-score",
+        name: "Golf score",
+        type: "score",
+        unit: "time_s + stroke_count",
+        stroke: "back",
+        sortOrder: 16,
+        builtOnSlugs: ["back-stroke-count"],
+      },
     ],
   },
 
@@ -552,7 +593,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         type: "rubric",
         stroke: "breast",
         sortOrder: 1,
-        builtOnSlugs: ["hip-position"],
+        builtOnSlugs: ["breast-hip-position"],
         notLegalAllowed: true,
         descriptors: [
           { level: 1, text: "Scissor or flutter kick; feet not turned out." },
@@ -586,6 +627,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         stroke: "breast",
         sortOrder: 4,
         builtOnSlugs: ["breast-head-position", "breast-arm-pull"],
+        archived: true,
       },
       {
         slug: "breast-timing",
@@ -614,7 +656,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
       // breast-stroke-rate archived (duplicate of breast-tempo below).
       {
         slug: "breast-propulsion-efficiency",
-        name: "Propulsion efficiency (golf score)",
+        name: "Golf score",
         type: "score",
         unit: "time_s + stroke_count",
         stroke: "breast",
@@ -646,6 +688,20 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         stroke: "breast",
         sortOrder: 11,
         builtOnSlugs: ["breast-timing"],
+      },
+      {
+        slug: "breast-horizontal-alignment",
+        name: "Horizontal alignment",
+        type: "rubric",
+        stroke: "breast",
+        sortOrder: 12,
+      },
+      {
+        slug: "breast-hip-position",
+        name: "Hip position",
+        type: "rubric",
+        stroke: "breast",
+        sortOrder: 13,
       },
     ],
   },
@@ -764,6 +820,29 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         stroke: "fly",
         sortOrder: 12,
         builtOnSlugs: ["fly-two-kick-rhythm"],
+      },
+      {
+        slug: "fly-horizontal-alignment",
+        name: "Horizontal alignment",
+        type: "rubric",
+        stroke: "fly",
+        sortOrder: 13,
+      },
+      {
+        slug: "fly-hip-position",
+        name: "Hip position",
+        type: "rubric",
+        stroke: "fly",
+        sortOrder: 14,
+      },
+      {
+        slug: "fly-golf-score",
+        name: "Golf score",
+        type: "score",
+        unit: "time_s + stroke_count",
+        stroke: "fly",
+        sortOrder: 15,
+        builtOnSlugs: ["fly-stroke-count"],
       },
     ],
   },
@@ -1121,6 +1200,15 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         parentSlug: "back-start",
         sortOrder: 39,
         notLegalAllowed: true,
+        archived: true,
+      },
+      {
+        slug: "streamline-in-motion",
+        name: "Streamline (in motion)",
+        type: "rubric",
+        appliesTo: ["free", "back", "breast", "fly"],
+        sortOrder: 40,
+        builtOnSlugs: ["static-streamline"],
       },
     ],
   },
