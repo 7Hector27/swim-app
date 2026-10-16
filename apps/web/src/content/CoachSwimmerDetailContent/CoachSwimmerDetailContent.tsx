@@ -1,10 +1,11 @@
 "use client";
 
 import { useActionState, useRef, useState } from "react";
-import { type CoachSwimmerDetail, type League, type CategoriesResponse, type SwimmerSkillsResponse, type StartGradeResult, type TimelineResponse, type MeetSwimResponse, type PersonalBest, type MeetResponse, VALID_EVENTS } from "@swim-app/shared";
+import { type CoachSwimmerDetail, type EvaluationDraft, type GolfScoreTrend, type League, type CategoriesResponse, type SwimmerSkillsResponse, type StartGradeResult, type TimelineResponse, type MeetSwimResponse, type PersonalBest, type MeetResponse, VALID_EVENTS, SCREEN_NAMES } from "@swim-app/shared";
 
 import AddNoteForm from "@/components/AddNoteForm";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import GolfScoreTrends from "./GolfScoreTrends";
 import HidePublicButton from "./HidePublicButton";
 import SwimmerSkillsHistory from "./SwimmerSkillsHistory";
 import SwimmerTimeline from "./SwimmerTimeline";
@@ -22,6 +23,8 @@ interface CoachSwimmerDetailContentProps {
   swims: MeetSwimResponse[];
   personalBests: PersonalBest[];
   meets: MeetResponse[];
+  drafts: EvaluationDraft[];
+  golfScoreTrends: GolfScoreTrend[];
 }
 
 const LEAGUE_LABELS: Record<League, string> = {
@@ -555,6 +558,8 @@ export default function CoachSwimmerDetailContent({
   swims,
   personalBests,
   meets,
+  drafts,
+  golfScoreTrends,
 }: CoachSwimmerDetailContentProps) {
 
   return (
@@ -603,6 +608,20 @@ export default function CoachSwimmerDetailContent({
               View progress
             </a>
           </div>
+
+          {drafts.length > 0 && (
+            <div className="flex flex-col gap-2 w-full">
+              {drafts.map((draft) => (
+                <a
+                  key={draft.id}
+                  href={`/coach/swimmers/${swimmer.id}/evaluate?resumeDraft=${draft.id}`}
+                  className="inline-flex items-center justify-center px-5 min-h-[44px] font-semibold text-sm rounded-[var(--radius-button)] border border-border text-text"
+                >
+                  Resume draft — {SCREEN_NAMES[draft.screenSlug] ?? draft.screenSlug}
+                </a>
+              ))}
+            </div>
+          )}
 
           <section className="flex flex-col gap-2">
             <h2 className="font-bold text-text">Details</h2>
@@ -757,6 +776,8 @@ export default function CoachSwimmerDetailContent({
             personalBests={personalBests}
             meets={meets}
           />
+
+          <GolfScoreTrends trends={golfScoreTrends} />
 
           <SwimmerSkillsHistory
             swimmerId={swimmer.id}

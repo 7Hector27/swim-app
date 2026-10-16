@@ -89,7 +89,7 @@ export default function StartGroupSection({ parent, components, draftSkills, onC
   const startResult = calculateStartGrade(componentSlugs, ratingRecords);
 
   return (
-    <div className="flex flex-col gap-3">
+    <div id={`skill-${parent.id}`} className="flex flex-col gap-3">
       <div className="flex items-center gap-2">
         <h3 className="font-semibold text-sm" style={{ color: "var(--color-text)" }}>
           {parent.name}

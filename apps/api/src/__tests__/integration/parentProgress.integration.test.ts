@@ -24,7 +24,6 @@ let viewer: TestUser;
 let otherHousehold: TestUser;
 let swimmerId: string;
 let skillId: string;
-let categoryId: string;
 
 beforeAll(async () => {
   await syncCatalogFn(adminDb());
@@ -33,13 +32,12 @@ beforeAll(async () => {
 
   // Lookup a real skill
   const skillRows = await adminDb()
-    .select({ id: skills.id, categoryId: skills.categoryId })
+    .select({ id: skills.id })
     .from(skills)
     .where(eq(skills.slug, "free-kick"))
     .limit(1);
   if (!skillRows[0]) throw new Error("free-kick skill not found");
   skillId = skillRows[0].id;
-  categoryId = skillRows[0].categoryId;
 
   // Create swimmer in owner's household
   const swimmerRows = await adminDb()
@@ -105,7 +103,8 @@ describe("GET /swimmers/:id/progress", () => {
       .post(`/coach/swimmers/${swimmerId}/sessions`)
       .set("Authorization", `Bearer ${coach.accessToken}`)
       .send({
-        categoryId,
+        screenSlug: "freestyle",
+        breathingPattern: "every_3",
         sessionDate: "2026-10-10",
         context: "practice",
         coachingPriority: "Work on kick",
@@ -166,7 +165,8 @@ describe("GET /swimmers/:id/progress", () => {
       .post(`/coach/swimmers/${swimmerId}/sessions`)
       .set("Authorization", `Bearer ${coach.accessToken}`)
       .send({
-        categoryId,
+        screenSlug: "freestyle",
+        breathingPattern: "every_3",
         sessionDate: "2026-10-11",
         context: "practice",
         coachingPriority: "Kick",
@@ -193,7 +193,8 @@ describe("GET /swimmers/:id/progress", () => {
       .post(`/coach/swimmers/${swimmerId}/sessions`)
       .set("Authorization", `Bearer ${coach.accessToken}`)
       .send({
-        categoryId,
+        screenSlug: "freestyle",
+        breathingPattern: "every_3",
         sessionDate: "2026-10-11",
         context: "practice",
         coachingPriority: "Kick",

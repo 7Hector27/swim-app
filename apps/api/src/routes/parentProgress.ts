@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { desc, eq, inArray } from "drizzle-orm";
 import { db } from "../db/client";
-import { evaluationSessions, skillCategories, skillLevelDescriptors } from "../db/schema";
+import { evaluationSessions, skillLevelDescriptors } from "../db/schema";
 import { validate } from "../middleware/validate";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { requireUser } from "../middleware/requireUser";
@@ -12,6 +12,7 @@ import { computeSwimmerProgress } from "../lib/progressCalculation";
 import {
   IdParamsSchema,
   ParentSwimmerProgressResponseSchema,
+  SCREEN_NAMES,
   type IdParams,
   type ParentCoachingNote,
   type ParentSwimmerProgressResponse,
@@ -43,13 +44,11 @@ parentProgressRouter.get(
         : Promise.resolve([]),
       db
         .select({
-          categoryId: evaluationSessions.categoryId,
-          categoryName: skillCategories.name,
+          screenSlug: evaluationSessions.screenSlug,
           sessionDate: evaluationSessions.sessionDate,
           coachingPriority: evaluationSessions.coachingPriority,
         })
         .from(evaluationSessions)
-        .innerJoin(skillCategories, eq(skillCategories.id, evaluationSessions.categoryId))
         .where(eq(evaluationSessions.swimmerId, swimmerId))
         .orderBy(desc(evaluationSessions.sessionDate)),
     ]);
@@ -62,15 +61,16 @@ parentProgressRouter.get(
       descriptorMap.set(row.skillId, existing);
     }
 
-    // Latest coaching note per category (first seen wins since ordered by date DESC)
-    const seenCategories = new Set<string>();
+    // Latest coaching note per screen (first seen wins since ordered by date DESC)
+    const seenScreens = new Set<string>();
     const latestCoachingNotes: ParentCoachingNote[] = [];
     for (const row of sessionRows) {
-      if (seenCategories.has(row.categoryId)) continue;
-      seenCategories.add(row.categoryId);
+      if (row.screenSlug === null) continue;
+      if (seenScreens.has(row.screenSlug)) continue;
+      seenScreens.add(row.screenSlug);
       latestCoachingNotes.push({
-        categoryId: row.categoryId,
-        categoryName: row.categoryName,
+        screenSlug: row.screenSlug,
+        screenName: SCREEN_NAMES[row.screenSlug] ?? row.screenSlug,
         text: row.coachingPriority,
         sessionDate: row.sessionDate,
       });

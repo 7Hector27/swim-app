@@ -1,6 +1,6 @@
 {
-  "id": "2394bf4e-10f6-4f55-b2c2-9ee51f601e6f",
-  "prevId": "feda8e59-e553-47e8-89a4-d038b0d505c6",
+  "id": "7140a5dd-e450-4657-9b06-d34ea5369ea0",
+  "prevId": "2394bf4e-10f6-4f55-b2c2-9ee51f601e6f",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -390,7 +390,19 @@
           "name": "category_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
+        },
+        "screen_slug": {
+          "name": "screen_slug",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "breathing_pattern": {
+          "name": "breathing_pattern",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "session_date": {
           "name": "session_date",
@@ -2711,6 +2723,12 @@
         "archived_at": {
           "name": "archived_at",
           "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "recommended_breathing_pattern": {
+          "name": "recommended_breathing_pattern",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         },

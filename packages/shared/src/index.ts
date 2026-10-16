@@ -42,6 +42,7 @@ export type {
   CoachSwimmer,
   CoachSwimmerDetail,
   CoachVisibilityBody,
+  PatchCoachSwimmerBody,
 } from "./schemas/swimmer";
 export {
   SexSchema,
@@ -58,6 +59,7 @@ export {
   CoachSwimmerSchema,
   CoachSwimmerDetailSchema,
   CoachVisibilityBodySchema,
+  PatchCoachSwimmerBodySchema,
 } from "./schemas/swimmer";
 
 export type {
@@ -281,8 +283,13 @@ export type { StartGradeResult } from "./lib/startGrade";
 
 export { calculateBilateralBreathingGrade } from "./lib/bilateralBreathingGrade";
 
+export { SCREEN_SKILLS, SCREEN_SLUGS, SCREEN_NAMES } from "./lib/screenSkills";
+export type { ScreenSlug } from "./lib/screenSkills";
+
 export type {
   EvaluationContext,
+  BreathingPattern,
+  GolfScoreCategory,
   RatingSide,
   CapacityUnit,
   MeasurementUnit,
@@ -299,10 +306,23 @@ export type {
   SkillForRating,
   SkillCategoryWithSkills,
   CategoriesResponse,
+  ScreenWithSkills,
+  ScreensResponse,
   SwimmerSkillsResponse,
+  DraftSkillPayload,
+  SaveDraftBody,
+  EvaluationDraft,
+  DraftsListResponse,
+  GolfScoreTrendPoint,
+  GolfScoreAgeBands,
+  GolfScoreCategoryTrend,
+  GolfScoreTrend,
+  GolfScoreTrendsResponse,
 } from "./schemas/evaluations";
 export {
   EvaluationContextSchema,
+  BreathingPatternSchema,
+  GolfScoreCategorySchema,
   RatingSideSchema,
   CapacityUnitSchema,
   MeasurementUnitSchema,
@@ -319,7 +339,18 @@ export {
   SkillForRatingSchema,
   SkillCategoryWithSkillsSchema,
   CategoriesResponseSchema,
+  ScreenWithSkillsSchema,
+  ScreensResponseSchema,
   SwimmerSkillsResponseSchema,
+  DraftSkillPayloadSchema,
+  SaveDraftBodySchema,
+  EvaluationDraftSchema,
+  DraftsListResponseSchema,
+  GolfScoreTrendPointSchema,
+  GolfScoreAgeBandsSchema,
+  GolfScoreCategoryTrendSchema,
+  GolfScoreTrendSchema,
+  GolfScoreTrendsResponseSchema,
 } from "./schemas/evaluations";
 export type {
   SkillCurrentLevel,

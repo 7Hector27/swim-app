@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { todayLA } from "../lib/todayLA";
 import { LeagueSchema } from "./registration";
+import { BreathingPatternSchema } from "./evaluations";
 
 // ── Enums ─────────────────────────────────────────────────────────────────────
 
@@ -190,3 +191,8 @@ export const CoachVisibilityBodySchema = z.object({
 });
 
 export type CoachVisibilityBody = z.infer<typeof CoachVisibilityBodySchema>;
+
+export const PatchCoachSwimmerBodySchema = z.object({
+  recommendedBreathingPattern: BreathingPatternSchema.nullable().optional(),
+});
+export type PatchCoachSwimmerBody = z.infer<typeof PatchCoachSwimmerBodySchema>;

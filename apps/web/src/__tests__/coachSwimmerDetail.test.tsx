@@ -38,11 +38,13 @@ const TEST_CATEGORIES = [
         name: "Flutter Kick",
         type: "rubric" as const,
         unit: null,
+        stroke: null,
         ratedPerSide: false,
         notLegalAllowed: false,
         parentSkillId: null,
         sortOrder: 1,
         faultTags: [],
+        descriptors: [],
       },
     ],
   },
@@ -85,6 +87,8 @@ describe("CoachSwimmerDetailContent", () => {
         swims={[]}
         personalBests={[]}
         meets={[]}
+        drafts={[]}
+        golfScoreTrends={[]}
       />,
     );
     const link = screen.getByRole("link", { name: /evaluate alex/i });
@@ -107,6 +111,8 @@ describe("CoachSwimmerDetailContent", () => {
         swims={[]}
         personalBests={[]}
         meets={[]}
+        drafts={[]}
+        golfScoreTrends={[]}
       />,
     );
     // Grade "3" should appear inside Current Levels
@@ -126,6 +132,8 @@ describe("CoachSwimmerDetailContent", () => {
         swims={[]}
         personalBests={[]}
         meets={[]}
+        drafts={[]}
+        golfScoreTrends={[]}
       />,
     );
     expect(
@@ -147,6 +155,8 @@ describe("CoachSwimmerDetailContent", () => {
         swims={[]}
         personalBests={[]}
         meets={[]}
+        drafts={[]}
+        golfScoreTrends={[]}
       />,
     );
     const history = screen.getByTestId("skills-history");

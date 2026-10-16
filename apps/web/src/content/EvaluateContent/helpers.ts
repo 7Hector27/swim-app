@@ -33,13 +33,15 @@ export type SkillDraft = {
   note: string;
   faultTags: string[];
   detailsOpen: boolean;
+  golfScoreCategory: "push_off_in_water" | "deck_dive" | "block_dive" | null;
 };
 
 export type SessionDraft = {
-  categoryId: string;
+  screenSlug: string;
   sessionDate: string;
   context: "drill" | "practice" | "race" | null;
   coachingPriority: string;
+  breathingPattern: "every_1" | "every_2" | "every_3" | "every_4" | "every_5" | "other" | null;
   skills: Record<string, SkillDraft>;
 };
 
@@ -61,49 +63,87 @@ export function defaultSkillDraft(): SkillDraft {
     note: "",
     faultTags: [],
     detailsOpen: false,
+    golfScoreCategory: null,
   };
 }
 
 export function initialSessionDraft(): SessionDraft {
   return {
-    categoryId: "",
+    screenSlug: "",
     sessionDate: todayLA(),
     context: null,
     coachingPriority: "",
+    breathingPattern: null,
     skills: {},
   };
 }
 
 export function canSubmit(draft: SessionDraft, ratingsCount: number, isPending: boolean): boolean {
+  const needsBreathingPattern = draft.screenSlug === "freestyle" || draft.screenSlug === "butterfly";
   return (
-    draft.categoryId !== "" &&
+    draft.screenSlug !== "" &&
     draft.sessionDate !== "" &&
     draft.context !== null &&
+    (!needsBreathingPattern || draft.breathingPattern !== null) &&
     draft.coachingPriority.trim().length > 0 &&
     ratingsCount > 0 &&
     !isPending
   );
 }
 
-export function buildSkillGroups(category: import("@swim-app/shared").SkillCategoryWithSkills): {
+// Accepts any object that has a skills array of SkillForRating — works for both
+// SkillCategoryWithSkills (legacy) and ScreenWithSkills.
+type SkillContainer = { skills: import("@swim-app/shared").SkillForRating[] };
+
+export function buildSkillGroups(container: SkillContainer): {
   startParents: import("@swim-app/shared").SkillForRating[];
   standaloneSkills: import("@swim-app/shared").SkillForRating[];
   componentSkillsOf: (parentId: string) => import("@swim-app/shared").SkillForRating[];
 } {
-  const startParents = category.skills.filter(
+  const startParents = container.skills.filter(
     (skill) =>
       skill.parentSkillId === null &&
-      category.skills.some((other) => other.parentSkillId === skill.id),
+      container.skills.some((other) => other.parentSkillId === skill.id),
   );
   const startParentIds = new Set(startParents.map((skill) => skill.id));
-  const standaloneSkills = category.skills.filter(
+  const standaloneSkills = container.skills.filter(
     (skill) =>
       !startParentIds.has(skill.id) &&
-      (skill.parentSkillId === null || !startParentIds.has(skill.parentSkillId)),
+      (skill.parentSkillId === null || !startParentIds.has(skill.parentSkillId ?? "")),
   );
   const componentSkillsOf = (parentId: string): import("@swim-app/shared").SkillForRating[] =>
-    category.skills.filter((skill) => skill.parentSkillId === parentId);
+    container.skills.filter((skill) => skill.parentSkillId === parentId);
   return { startParents, standaloneSkills, componentSkillsOf };
+}
+
+export function buildSectionGroups(
+  container: SkillContainer,
+  sections: Array<{ name: string; slugs: string[] }>,
+): Array<{ name: string; skills: import("@swim-app/shared").SkillForRating[] }> {
+  const slugToSkill = new Map(container.skills.map((skill) => [skill.slug, skill]));
+  const everAssigned = new Set<string>();
+  const result: Array<{ name: string; skills: import("@swim-app/shared").SkillForRating[] }> = [];
+
+  for (const section of sections) {
+    const sectionSkills: import("@swim-app/shared").SkillForRating[] = [];
+    for (const slug of section.slugs) {
+      const skill = slugToSkill.get(slug);
+      if (skill) {
+        sectionSkills.push(skill);
+        everAssigned.add(skill.id);
+      }
+    }
+    if (sectionSkills.length > 0) {
+      result.push({ name: section.name, skills: sectionSkills });
+    }
+  }
+
+  const other = container.skills.filter((skill) => !everAssigned.has(skill.id));
+  if (other.length > 0) {
+    result.push({ name: "Other", skills: other });
+  }
+
+  return result;
 }
 
 export function buildRatingsArray(
@@ -122,6 +162,7 @@ export function buildRatingsArray(
   note: string | null;
   faultTags: string[];
   ratedAt: string;
+  golfScoreCategory: "push_off_in_water" | "deck_dive" | "block_dive" | null;
 }> {
   const ratings = [];
   const now = new Date().toISOString();
@@ -148,6 +189,7 @@ export function buildRatingsArray(
         note: d.note !== "" ? d.note : null,
         faultTags: d.faultTags,
         ratedAt: now,
+        golfScoreCategory: d.golfScoreCategory,
       });
     }
   }

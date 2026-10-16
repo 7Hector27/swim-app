@@ -94,7 +94,7 @@ type SkillRow = {
 
 const validSkillRow: SkillRow = {
   id: SKILL_ID,
-  slug: "freestyle-kick",
+  slug: "buoyancy-balance",
   categoryId: CATEGORY_ID,
   parentSkillId: null,
   type: "rubric",
@@ -126,10 +126,11 @@ const validRatingInput = {
 };
 
 const validSessionBody = {
-  categoryId: CATEGORY_ID,
+  screenSlug: "fundamentals",
   sessionDate: "2025-06-01",
   context: "practice",
   coachingPriority: "Work on kick mechanics",
+  breathingPattern: null,
   ratings: [validRatingInput],
 };
 
@@ -153,11 +154,6 @@ function swimmerSelect(row: typeof activeSwimmerRow | null) {
   return { from: vi.fn().mockReturnValue({ where }) };
 }
 
-function categorySelect(found: boolean) {
-  const limit = vi.fn().mockResolvedValue(found ? [{ id: CATEGORY_ID }] : []);
-  const where = vi.fn().mockReturnValue({ limit });
-  return { from: vi.fn().mockReturnValue({ where }) };
-}
 
 function skillsSelect(rows: typeof validSkillRow[]) {
   const where = vi.fn().mockResolvedValue(rows);
@@ -203,7 +199,7 @@ describe("unauthenticated", () => {
   it("GET /swimmers/:id/sessions/dependency-map → 401", async () => {
     const res = await request(app)
       .get(`/coach/swimmers/${SWIMMER_ID}/sessions/dependency-map`)
-      .query({ categoryId: CATEGORY_ID });
+      .query({ screenSlug: "freestyle" });
     expect(res.status).toBe(401);
   });
 });
@@ -257,7 +253,7 @@ describe("parent role restrictions", () => {
     const res = await request(app)
       .get(`/coach/swimmers/${SWIMMER_ID}/sessions/dependency-map`)
       .set("Authorization", "Bearer token")
-      .query({ categoryId: CATEGORY_ID });
+      .query({ screenSlug: "freestyle" });
     expect(res.status).toBe(403);
   });
 });
@@ -299,7 +295,6 @@ describe("POST /swimmers/:id/sessions — validation", () => {
     // A skill that is archived is simply absent from the catalog — return empty.
     mockDbSelect
       .mockReturnValueOnce(swimmerSelect(activeSwimmerRow))
-      .mockReturnValueOnce(categorySelect(true))
       .mockReturnValueOnce(skillsSelect([])); // archived skill absent from non-archived catalog
 
     const res = await request(app)
@@ -310,31 +305,28 @@ describe("POST /swimmers/:id/sessions — validation", () => {
     expect(res.body.issues[0].message).toContain("archived");
   });
 
-  it("skill wrong category → 422", async () => {
-    const wrongCategorySkill = {
+  it("skill not in screen → 422", async () => {
+    const wrongScreenSkill = {
       ...validSkillRow,
-      categoryId: "99999999-0000-0000-0000-000000000099",
-      parentSkillId: null,
+      // "free-kick" belongs to freestyle, not fundamentals
+      slug: "free-kick",
     };
-    // The route loads all non-archived skills at once — wrongCategorySkill is returned
-    // with its wrong categoryId; parentSkillId is null, so categoryMatch is false.
+    // The route validates slug against SCREEN_SKILLS[screenSlug] in-memory.
     mockDbSelect
       .mockReturnValueOnce(swimmerSelect(activeSwimmerRow))
-      .mockReturnValueOnce(categorySelect(true))
-      .mockReturnValueOnce(skillsSelect([wrongCategorySkill]));
+      .mockReturnValueOnce(skillsSelect([wrongScreenSkill]));
 
     const res = await request(app)
       .post(`/coach/swimmers/${SWIMMER_ID}/sessions`)
       .set("Authorization", "Bearer token")
       .send(validSessionBody);
     expect(res.status).toBe(422);
-    expect(res.body.issues[0].message).toContain("category");
+    expect(res.body.issues[0].message).toContain("screen");
   });
 
   it("side missing when ratedPerSide=true → 422", async () => {
     mockDbSelect
       .mockReturnValueOnce(swimmerSelect(activeSwimmerRow))
-      .mockReturnValueOnce(categorySelect(true))
       .mockReturnValueOnce(skillsSelect([ratedPerSideSkillRow]));
 
     const res = await request(app)
@@ -351,7 +343,6 @@ describe("POST /swimmers/:id/sessions — validation", () => {
   it("side present when ratedPerSide=false → 422", async () => {
     mockDbSelect
       .mockReturnValueOnce(swimmerSelect(activeSwimmerRow))
-      .mockReturnValueOnce(categorySelect(true))
       .mockReturnValueOnce(skillsSelect([validSkillRow]));
 
     const res = await request(app)
@@ -368,7 +359,6 @@ describe("POST /swimmers/:id/sessions — validation", () => {
   it("invalid faultTag → 422", async () => {
     mockDbSelect
       .mockReturnValueOnce(swimmerSelect(activeSwimmerRow))
-      .mockReturnValueOnce(categorySelect(true))
       .mockReturnValueOnce(skillsSelect([validSkillRow]));
 
     const res = await request(app)
@@ -385,7 +375,6 @@ describe("POST /swimmers/:id/sessions — validation", () => {
   it("measurement on non-measured skill → 422", async () => {
     mockDbSelect
       .mockReturnValueOnce(swimmerSelect(activeSwimmerRow))
-      .mockReturnValueOnce(categorySelect(true))
       .mockReturnValueOnce(skillsSelect([validSkillRow])); // rubric type, not measured
 
     const res = await request(app)
@@ -408,7 +397,6 @@ describe("POST /swimmers/:id/sessions — validation", () => {
   it("duplicate skill+side in same session → 422", async () => {
     mockDbSelect
       .mockReturnValueOnce(swimmerSelect(activeSwimmerRow))
-      .mockReturnValueOnce(categorySelect(true))
       .mockReturnValueOnce(skillsSelect([validSkillRow]));
 
     const res = await request(app)
@@ -425,7 +413,6 @@ describe("POST /swimmers/:id/sessions — validation", () => {
   it("rejects notLegal=true on a skill that does not allow it", async () => {
     mockDbSelect
       .mockReturnValueOnce(swimmerSelect(activeSwimmerRow))
-      .mockReturnValueOnce(categorySelect(true))
       .mockReturnValueOnce(skillsSelect([{ ...validSkillRow, notLegalAllowed: false }]));
 
     const res = await request(app)
@@ -447,7 +434,6 @@ describe("POST /swimmers/:id/sessions — validation", () => {
   it("rejects direct rating of a rollup skill", async () => {
     mockDbSelect
       .mockReturnValueOnce(swimmerSelect(activeSwimmerRow))
-      .mockReturnValueOnce(categorySelect(true))
       .mockReturnValueOnce(skillsSelect([{ ...validSkillRow, type: "rollup" as const }]));
 
     const res = await request(app)
@@ -466,7 +452,6 @@ describe("POST /swimmers/:id/sessions — validation", () => {
   it("same skill rated on different sides is allowed → not 422", async () => {
     mockDbSelect
       .mockReturnValueOnce(swimmerSelect(activeSwimmerRow))
-      .mockReturnValueOnce(categorySelect(true))
       .mockReturnValueOnce(skillsSelect([ratedPerSideSkillRow]));
 
     mockDbTransaction.mockResolvedValue({ sessionId: SESSION_ID, ratingIds: [] });
@@ -671,11 +656,17 @@ describe("GET /categories", () => {
       name: "Freestyle Kick",
       type: "rubric" as const,
       unit: null,
+      stroke: null,
       ratedPerSide: false,
       parentSkillId: null,
       sortOrder: 1,
       faultTags: ["flat-kick"],
       categoryId: CATEGORY_ID,
+    };
+    const descriptorRow = {
+      skillId: SKILL_ID,
+      level: 1,
+      text: "Some descriptor text",
     };
 
     // requireUser runs once in the unified coachRouter parent
@@ -691,6 +682,14 @@ describe("GET /categories", () => {
       .mockReturnValueOnce(
         (() => {
           const orderBy = vi.fn().mockResolvedValue([skillRow]);
+          const where = vi.fn().mockReturnValue({ orderBy });
+          const from = vi.fn().mockReturnValue({ where });
+          return { from };
+        })(),
+      )
+      .mockReturnValueOnce(
+        (() => {
+          const orderBy = vi.fn().mockResolvedValue([descriptorRow]);
           const where = vi.fn().mockReturnValue({ orderBy });
           const from = vi.fn().mockReturnValue({ where });
           return { from };
@@ -712,6 +711,90 @@ describe("GET /categories", () => {
         expect.objectContaining({ id: SKILL_ID, slug: "freestyle-kick" }),
       ]),
     });
+    // Each skill should have a descriptors array
+    const skill = res.body[0].skills[0];
+    expect(Array.isArray(skill.descriptors)).toBe(true);
+    expect(skill.descriptors).toEqual(
+      expect.arrayContaining([expect.objectContaining({ level: expect.any(Number), text: expect.any(String) })]),
+    );
+    // Each skill should have a stroke field (nullable)
+    expect("stroke" in skill).toBe(true);
+  });
+});
+
+// ── GET /coach/screens ────────────────────────────────────────────────────────
+
+describe("GET /coach/screens", () => {
+  it("returns 401 when unauthenticated", async () => {
+    mockGetUser.mockResolvedValue({ data: { user: null }, error: null });
+    await request(app)
+      .get("/coach/screens")
+      .set("Authorization", "Bearer token")
+      .expect(401);
+  });
+
+  it("returns 403 for parent role", async () => {
+    authAs(profileParent);
+    mockDbSelect.mockReturnValueOnce(requireUserSelect(profileParent));
+    await request(app)
+      .get("/coach/screens")
+      .set("Authorization", "Bearer token")
+      .expect(403);
+  });
+
+  it("returns 200 with an array of screen objects each having screenSlug, name, skills", async () => {
+    authAs(profileCoach);
+
+    const skillRow = {
+      id: SKILL_ID,
+      slug: "buoyancy-balance",
+      name: "Buoyancy Balance",
+      type: "rubric" as const,
+      unit: null,
+      stroke: null,
+      ratedPerSide: false,
+      notLegalAllowed: false,
+      parentSkillId: null,
+      sortOrder: 1,
+      faultTags: [],
+      categoryId: CATEGORY_ID,
+    };
+
+    // coachRouter requireUser, then skills query, then descriptors query
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(profileCoach))
+      .mockReturnValueOnce(
+        (() => {
+          const orderBy = vi.fn().mockResolvedValue([skillRow]);
+          const where = vi.fn().mockReturnValue({ orderBy });
+          return { from: vi.fn().mockReturnValue({ where }) };
+        })(),
+      )
+      .mockReturnValueOnce(
+        (() => {
+          const orderBy = vi.fn().mockResolvedValue([]);
+          const where = vi.fn().mockReturnValue({ orderBy });
+          return { from: vi.fn().mockReturnValue({ where }) };
+        })(),
+      );
+
+    const res = await request(app)
+      .get("/coach/screens")
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body)).toBe(true);
+    expect(res.body.length).toBeGreaterThan(0);
+    const first = res.body[0];
+    expect(first).toHaveProperty("screenSlug");
+    expect(first).toHaveProperty("name");
+    expect(first).toHaveProperty("skills");
+    expect(Array.isArray(first.skills)).toBe(true);
+
+    // The fundamentals screen should include buoyancy-balance
+    const fundamentals = res.body.find((s: { screenSlug: string }) => s.screenSlug === "fundamentals");
+    expect(fundamentals).toBeDefined();
+    expect(fundamentals.skills.some((sk: { slug: string }) => sk.slug === "buoyancy-balance")).toBe(true);
   });
 });
 
@@ -813,3 +896,55 @@ describe("PATCH /ratings/:id/void", () => {
   });
 });
 
+
+// ── GET /swimmers/:id/sessions/dependency-map ─────────────────────────────────
+
+describe("GET /swimmers/:id/sessions/dependency-map", () => {
+  it("returns 200 with suggestion for a skill with a low rating on screenSlug=freestyle", async () => {
+    authAs(profileCoach);
+
+    // findActiveSwimmer
+    const swimmerLimit = vi.fn().mockResolvedValue([activeSwimmerRow]);
+    const swimmerWhere = vi.fn().mockReturnValue({ limit: swimmerLimit });
+
+    // ratingRows (innerJoin: mocked as one select returning a flat row)
+    const ratingWhere = vi.fn().mockResolvedValue([
+      {
+        slug: "free-kick",
+        grade: 1,
+        notLegal: false,
+        noConcept: false,
+        side: null,
+        ratedAt: new Date("2025-06-01T10:00:00.000Z"),
+        voidedAt: null,
+        sortOrder: 1,
+      },
+    ]);
+    const ratingInnerJoin = vi.fn().mockReturnValue({ where: ratingWhere });
+    const ratingFrom = vi.fn().mockReturnValue({ innerJoin: ratingInnerJoin });
+
+    // allSkillRows
+    const allSkillsWhere = vi.fn().mockResolvedValue([
+      { id: SKILL_ID, slug: "free-kick", sortOrder: 1 },
+    ]);
+    const allSkillsFrom = vi.fn().mockReturnValue({ where: allSkillsWhere });
+
+    // depRows
+    const depFrom = vi.fn().mockResolvedValue([]);
+
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(profileCoach))
+      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: swimmerWhere }) })
+      .mockReturnValueOnce({ from: ratingFrom })
+      .mockReturnValueOnce({ from: allSkillsFrom })
+      .mockReturnValueOnce({ from: depFrom });
+
+    const res = await request(app)
+      .get(`/coach/swimmers/${SWIMMER_ID}/sessions/dependency-map`)
+      .set("Authorization", "Bearer token")
+      .query({ screenSlug: "freestyle" });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty("suggestion");
+  });
+});

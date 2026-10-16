@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/client";
 import {
@@ -7,6 +7,7 @@ import {
   ratingFaultTags,
   skillCategories,
   skillDependencies,
+  skillLevelDescriptors,
   skillRatings,
   skills,
   swimmers,
@@ -20,21 +21,32 @@ import {
   type CreateSessionResponse,
   type VoidRatingBody,
   type DependencyMapQuery,
+  type GolfScoreTrend,
+  type GolfScoreCategoryTrend,
+  type GolfScoreAgeBands,
   CreateSessionBodySchema,
   VoidRatingBodySchema,
   DependencyMapQuerySchema,
   CoachSkillRatingSchema,
+  GolfScoreCategorySchema,
   findDeepestLowFoundation,
   headPositionOverall,
   latestEffectiveRatings,
   calculateStartGrade,
   weakerSideGrade,
+  ageToGroup,
+  calculateAge,
+  todayLA,
   type RatingRecord,
   type GradeMap,
   type BuiltOnGraph,
   type SortOrderMap,
   type PerStrokeGrades,
   type ChainEntry,
+  SCREEN_SKILLS,
+  SCREEN_SLUGS,
+  SCREEN_NAMES,
+  type ScreenSlug,
 } from "@swim-app/shared";
 
 const RatingIdParamsSchema = z.object({ id: z.string().uuid() });
@@ -80,23 +92,38 @@ evaluationsRouter.post(
       return;
     }
 
-    // Verify category exists
-    const categoryRows = await db
-      .select({ id: skillCategories.id })
-      .from(skillCategories)
-      .where(eq(skillCategories.id, body.categoryId))
-      .limit(1);
-    if (!categoryRows[0]) {
-      res.status(422).json({ error: "Validation error", issues: [{ message: "categoryId not found" }] });
+    // Validate screenSlug
+    const screenSlug = body.screenSlug;
+    if (!(screenSlug in SCREEN_SKILLS)) {
+      res.status(422).json({ error: "Validation error", issues: [{ message: "screenSlug not valid" }] });
       return;
     }
+
+    if (body.screenSlug === "water-confidence" && body.context === "race") {
+      res.status(422).json({
+        error: "Validation error",
+        issues: [{ message: "Water confidence sessions do not support race context" }],
+      });
+      return;
+    }
+
+    // Breathing pattern required for freestyle and butterfly, must be null otherwise
+    if ((body.screenSlug === "freestyle" || body.screenSlug === "butterfly") && body.breathingPattern === null) {
+      res.status(422).json({ error: "Validation error", issues: [{ path: ["breathingPattern"], message: "breathingPattern is required for freestyle and butterfly screens" }] });
+      return;
+    }
+    if (body.screenSlug !== "freestyle" && body.screenSlug !== "butterfly" && body.breathingPattern !== null) {
+      res.status(422).json({ error: "Validation error", issues: [{ path: ["breathingPattern"], message: "breathingPattern must be null for this screen" }] });
+      return;
+    }
+
+    const screenSkillSlugs = new Set(SCREEN_SKILLS[body.screenSlug as ScreenSlug] ?? []);
 
     // Load the full non-archived skill catalog for validation.
     const allSkillRows = await db
       .select({
         id: skills.id,
         slug: skills.slug,
-        categoryId: skills.categoryId,
         parentSkillId: skills.parentSkillId,
         type: skills.type,
         unit: skills.unit,
@@ -131,16 +158,27 @@ evaluationsRouter.post(
         return;
       }
 
-      // Skill must belong to the session category directly, or via parent_skill_id
-      const categoryMatch =
-        skill.categoryId === body.categoryId ||
-        (skill.parentSkillId !== null &&
-          (skillMap.get(skill.parentSkillId)?.categoryId === body.categoryId));
-
-      if (!categoryMatch) {
+      // golfScoreCategory: required for score-type skills, null for others
+      if (skill.type === "score" && ratingInput.golfScoreCategory === null && !ratingInput.noConcept) {
         res.status(422).json({
           error: "Validation error",
-          issues: [{ path: [`ratings[${index}].skillId`], message: "Skill does not belong to the session category" }],
+          issues: [{ path: [`ratings[${index}].golfScoreCategory`], message: "Golf score category is required for score skills" }],
+        });
+        return;
+      }
+      if (skill.type !== "score" && ratingInput.golfScoreCategory !== null) {
+        res.status(422).json({
+          error: "Validation error",
+          issues: [{ path: [`ratings[${index}].golfScoreCategory`], message: "Golf score category only applies to score skills" }],
+        });
+        return;
+      }
+
+      // Skill must be in the screen's skill list (by slug)
+      if (!screenSkillSlugs.has(skill.slug)) {
+        res.status(422).json({
+          error: "Validation error",
+          issues: [{ path: [`ratings[${index}].skillId`], message: "Skill does not belong to the session screen" }],
         });
         return;
       }
@@ -228,7 +266,8 @@ evaluationsRouter.post(
         .values({
           swimmerId,
           coachId,
-          categoryId: body.categoryId,
+          screenSlug: body.screenSlug,
+          ...(body.breathingPattern !== null && { breathingPattern: body.breathingPattern }),
           sessionDate: body.sessionDate,
           context: body.context,
           coachingPriority: body.coachingPriority,
@@ -254,6 +293,7 @@ evaluationsRouter.post(
             ...(ratingInput.capacityUnit !== null && { capacityUnit: ratingInput.capacityUnit }),
             ...(ratingInput.measurementValue !== null && { measurementValue: ratingInput.measurementValue }),
             ...(ratingInput.measurementUnit !== null && { measurementUnit: ratingInput.measurementUnit }),
+            ...(ratingInput.golfScoreCategory !== null && { golfScoreCategory: ratingInput.golfScoreCategory }),
             ...(ratingInput.note !== null && { note: ratingInput.note }),
             ratedAt: new Date(ratingInput.ratedAt),
           })
@@ -530,7 +570,7 @@ evaluationsRouter.get(
   validate({ params: SwimmerIdParamsSchema, query: DependencyMapQuerySchema }),
   asyncHandler(async (req, res) => {
     const { id: swimmerId } = req.params as unknown as SwimmerIdParams;
-    const { categoryId } = req.query as unknown as DependencyMapQuery;
+    const { screenSlug } = req.query as unknown as DependencyMapQuery;
 
     const swimmer = await findActiveSwimmer(swimmerId);
     if (!swimmer) {
@@ -548,7 +588,6 @@ evaluationsRouter.get(
         side: skillRatings.side,
         ratedAt: skillRatings.ratedAt,
         voidedAt: skillRatings.voidedAt,
-        skillCategoryId: skills.categoryId,
         sortOrder: skills.sortOrder,
       })
       .from(skillRatings)
@@ -567,12 +606,9 @@ evaluationsRouter.get(
 
     const grades: GradeMap = latestEffectiveRatings(ratingRecords);
 
-    // Restrict to skills in the requested category
-    const categorySkillSlugs = new Set(
-      ratingRows
-        .filter((row) => row.skillCategoryId === categoryId)
-        .map((row) => row.slug),
-    );
+    // Restrict to skills whose slug is in the requested screen
+    const skillSlugs = SCREEN_SKILLS[screenSlug as ScreenSlug] ?? [];
+    const screenSkillSlugs = new Set(skillSlugs);
 
     // Build full sortOrder and dependency graph
     const allSkillRows = await db
@@ -608,11 +644,11 @@ evaluationsRouter.get(
       fullSortOrder[skill.slug] = skill.sortOrder;
     }
 
-    // Find deepest low foundation across category skills
+    // Find deepest low foundation across screen skills
     let bestChain: ChainEntry[] | null = null;
     let bestDepth = -1;
 
-    for (const slug of categorySkillSlugs) {
+    for (const slug of screenSkillSlugs) {
       if (!(slug in grades)) continue;
       const chain = findDeepestLowFoundation(slug, grades, graph, fullSortOrder);
       if (chain !== null && chain.length > bestDepth) {
@@ -621,7 +657,7 @@ evaluationsRouter.get(
       }
     }
 
-    req.log.info({ swimmerId, categoryId }, "dependency map suggestion computed");
+    req.log.info({ swimmerId, screenSlug }, "dependency map suggestion computed");
 
     res.json({ suggestion: bestChain });
   }),
@@ -644,6 +680,185 @@ evaluationsRouter.get(
     const result = await computeSwimmerProgress(swimmerId);
     req.log.info({ swimmerId, skillCount: result.skills.length }, "swimmer progress fetched");
     res.json(result);
+  }),
+);
+
+// ── GET /swimmers/:id/golf-score-trends ───────────────────────────────────────
+
+function computePercentile(sorted: number[], p: number): number {
+  const index = (p / 100) * (sorted.length - 1);
+  const lower = Math.floor(index);
+  const upper = Math.ceil(index);
+  if (lower === upper) return sorted[lower]!;
+  return sorted[lower]! + (index - lower) * (sorted[upper]! - sorted[lower]!);
+}
+
+evaluationsRouter.get(
+  "/:id/golf-score-trends",
+  validate({ params: SwimmerIdParamsSchema }),
+  asyncHandler(async (req, res) => {
+    const { id: swimmerId } = req.params as unknown as SwimmerIdParams;
+
+    const swimmer = await findActiveSwimmer(swimmerId);
+    if (!swimmer) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+
+    const ratingRows = await db
+      .select({
+        grade: skillRatings.grade,
+        measurementValue: skillRatings.measurementValue,
+        golfScoreCategory: skillRatings.golfScoreCategory,
+        ratedAt: skillRatings.ratedAt,
+        sessionDate: evaluationSessions.sessionDate,
+        skillId: skills.id,
+        slug: skills.slug,
+        name: skills.name,
+      })
+      .from(skillRatings)
+      .innerJoin(skills, eq(skills.id, skillRatings.skillId))
+      .innerJoin(evaluationSessions, eq(evaluationSessions.id, skillRatings.sessionId))
+      .where(
+        and(
+          eq(skillRatings.swimmerId, swimmerId),
+          isNull(skillRatings.voidedAt),
+          eq(skills.type, "score"),
+          isNotNull(skillRatings.golfScoreCategory),
+        ),
+      )
+      .orderBy(asc(skillRatings.ratedAt));
+
+    const swimmerRows = await db
+      .select({ birthDate: swimmers.birthDate })
+      .from(swimmers)
+      .where(eq(swimmers.id, swimmerId))
+      .limit(1);
+
+    const birthDate = swimmerRows[0]?.birthDate ?? null;
+    const ageGroup = birthDate !== null ? ageToGroup(calculateAge(birthDate, todayLA())) : null;
+
+    type SkillKey = string;
+    type CategoryKey = string;
+
+    const skillMap = new Map<SkillKey, { slug: string; name: string; categories: Map<CategoryKey, Array<typeof ratingRows[number]>> }>();
+
+    for (const row of ratingRows) {
+      const category = row.golfScoreCategory;
+      if (category === null) continue;
+
+      let skillEntry = skillMap.get(row.skillId);
+      if (!skillEntry) {
+        skillEntry = { slug: row.slug, name: row.name, categories: new Map() };
+        skillMap.set(row.skillId, skillEntry);
+      }
+
+      let categoryPoints = skillEntry.categories.get(category);
+      if (!categoryPoints) {
+        categoryPoints = [];
+        skillEntry.categories.set(category, categoryPoints);
+      }
+
+      categoryPoints.push(row);
+    }
+
+    const trends: GolfScoreTrend[] = [];
+
+    // Fetch cohort swimmer IDs once, before any skill/category loops, to avoid N+1 queries.
+    let cohortIds: string[] = [];
+    if (ageGroup !== null) {
+      const cohortSwimmerRows = await db
+        .select({ id: swimmers.id, birthDate: swimmers.birthDate })
+        .from(swimmers)
+        .where(isActiveSwimmer);
+
+      const today = todayLA();
+      cohortIds = cohortSwimmerRows
+        .filter((cohortSwimmer) => {
+          if (cohortSwimmer.id === swimmerId) return false;
+          const swimmerAgeGroup = ageToGroup(calculateAge(cohortSwimmer.birthDate, today));
+          return swimmerAgeGroup === ageGroup;
+        })
+        .map((cohortSwimmer) => cohortSwimmer.id);
+    }
+
+    for (const [, skillEntry] of skillMap) {
+      const byCategory: GolfScoreCategoryTrend[] = [];
+
+      for (const [category, points] of skillEntry.categories) {
+        const parsedCategory = GolfScoreCategorySchema.safeParse(category);
+        if (!parsedCategory.success) continue;
+
+        let ageBands: GolfScoreAgeBands | null = null;
+
+        if (ageGroup !== null) {
+
+          if (cohortIds.length > 0) {
+            const cohortRows = await db
+              .select({
+                swimmerId: skillRatings.swimmerId,
+                measurementValue: skillRatings.measurementValue,
+                ratedAt: skillRatings.ratedAt,
+              })
+              .from(skillRatings)
+              .innerJoin(skills, eq(skills.id, skillRatings.skillId))
+              .where(
+                and(
+                  eq(skills.slug, skillEntry.slug),
+                  eq(skillRatings.golfScoreCategory, category),
+                  isNull(skillRatings.voidedAt),
+                  isNotNull(skillRatings.measurementValue),
+                  inArray(skillRatings.swimmerId, cohortIds),
+                  eq(skills.type, "score"),
+                ),
+              )
+              .orderBy(skillRatings.swimmerId, desc(skillRatings.ratedAt));
+
+            const seenSwimmerIds = new Set<string>();
+            const latestValues: number[] = [];
+            for (const cohortRow of cohortRows) {
+              if (seenSwimmerIds.has(cohortRow.swimmerId)) continue;
+              seenSwimmerIds.add(cohortRow.swimmerId);
+              const value = parseFloat(cohortRow.measurementValue ?? "");
+              if (!isNaN(value)) latestValues.push(value);
+            }
+
+            latestValues.sort((first, second) => first - second);
+
+            if (latestValues.length >= 10) {
+              ageBands = {
+                bandCount: latestValues.length,
+                p25: computePercentile(latestValues, 25),
+                p50: computePercentile(latestValues, 50),
+                p75: computePercentile(latestValues, 75),
+              };
+            }
+          }
+        }
+
+        byCategory.push({
+          category: parsedCategory.data,
+          points: points.map((point) => ({
+            ratedAt: point.ratedAt.toISOString(),
+            sessionDate: point.sessionDate,
+            grade: point.grade,
+            measurementValue: point.measurementValue ?? null,
+          })),
+          ageBands,
+        });
+      }
+
+      if (byCategory.length > 0) {
+        trends.push({
+          skillSlug: skillEntry.slug,
+          skillName: skillEntry.name,
+          byCategory,
+        });
+      }
+    }
+
+    req.log.info({ swimmerId, trendCount: trends.length }, "golf score trends fetched");
+    res.json({ trends });
   }),
 );
 
@@ -719,6 +934,7 @@ coachCategoriesRouter.get(
         name: skills.name,
         type: skills.type,
         unit: skills.unit,
+        stroke: skills.stroke,
         ratedPerSide: skills.ratedPerSide,
         notLegalAllowed: skills.notLegalAllowed,
         parentSkillId: skills.parentSkillId,
@@ -729,6 +945,27 @@ coachCategoriesRouter.get(
       .from(skills)
       .where(isNull(skills.archivedAt))
       .orderBy(skills.sortOrder);
+
+    const skillIds = skillRows.map((skill) => skill.id);
+
+    const descriptorRows = skillIds.length > 0
+      ? await db
+          .select({
+            skillId: skillLevelDescriptors.skillId,
+            level: skillLevelDescriptors.level,
+            text: skillLevelDescriptors.text,
+          })
+          .from(skillLevelDescriptors)
+          .where(inArray(skillLevelDescriptors.skillId, skillIds))
+          .orderBy(asc(skillLevelDescriptors.level))
+      : [];
+
+    const descriptorsBySkill = new Map<string, Array<{ level: number; text: string }>>();
+    for (const descriptor of descriptorRows) {
+      const list = descriptorsBySkill.get(descriptor.skillId) ?? [];
+      list.push({ level: descriptor.level, text: descriptor.text });
+      descriptorsBySkill.set(descriptor.skillId, list);
+    }
 
     const skillsByCategory = new Map<string, typeof skillRows>();
     for (const skill of skillRows) {
@@ -748,15 +985,100 @@ coachCategoriesRouter.get(
         name: skill.name,
         type: skill.type,
         unit: skill.unit ?? null,
+        stroke: skill.stroke ?? null,
         ratedPerSide: skill.ratedPerSide,
         notLegalAllowed: skill.notLegalAllowed,
         parentSkillId: skill.parentSkillId ?? null,
         sortOrder: skill.sortOrder,
         faultTags: skill.faultTags ?? [],
+        descriptors: descriptorsBySkill.get(skill.id) ?? [],
       })),
     }));
 
     req.log.info({ count: categoryRows.length }, "skill categories fetched");
+    res.json(result);
+  }),
+);
+
+// ── GET /screens ─────────────────────────────────────────────────────────────
+
+export const coachScreensRouter = Router();
+
+coachScreensRouter.get(
+  "/screens",
+  validate({}),
+  asyncHandler(async (req, res) => {
+    const skillRows = await db
+      .select({
+        id: skills.id,
+        slug: skills.slug,
+        name: skills.name,
+        type: skills.type,
+        unit: skills.unit,
+        stroke: skills.stroke,
+        ratedPerSide: skills.ratedPerSide,
+        notLegalAllowed: skills.notLegalAllowed,
+        parentSkillId: skills.parentSkillId,
+        sortOrder: skills.sortOrder,
+        faultTags: skills.faultTags,
+        categoryId: skills.categoryId,
+      })
+      .from(skills)
+      .where(isNull(skills.archivedAt))
+      .orderBy(skills.sortOrder);
+
+    const skillIds = skillRows.map((skill) => skill.id);
+
+    const descriptorRows = skillIds.length > 0
+      ? await db
+          .select({
+            skillId: skillLevelDescriptors.skillId,
+            level: skillLevelDescriptors.level,
+            text: skillLevelDescriptors.text,
+          })
+          .from(skillLevelDescriptors)
+          .where(inArray(skillLevelDescriptors.skillId, skillIds))
+          .orderBy(asc(skillLevelDescriptors.level))
+      : [];
+
+    const descriptorsBySkill = new Map<string, Array<{ level: number; text: string }>>();
+    for (const descriptor of descriptorRows) {
+      const list = descriptorsBySkill.get(descriptor.skillId) ?? [];
+      list.push({ level: descriptor.level, text: descriptor.text });
+      descriptorsBySkill.set(descriptor.skillId, list);
+    }
+
+    // Index skills by slug for fast lookup
+    const skillBySlug = new Map(skillRows.map((skill) => [skill.slug, skill]));
+
+    const result = SCREEN_SLUGS.map((screenSlug) => {
+      const slugList = SCREEN_SKILLS[screenSlug] ?? [];
+      const screenSkills = slugList
+        .map((slug) => skillBySlug.get(slug))
+        .filter((skill): skill is NonNullable<typeof skill> => skill !== undefined)
+        .map((skill) => ({
+          id: skill.id,
+          slug: skill.slug,
+          name: skill.name,
+          type: skill.type,
+          unit: skill.unit ?? null,
+          stroke: skill.stroke ?? null,
+          ratedPerSide: skill.ratedPerSide,
+          notLegalAllowed: skill.notLegalAllowed,
+          parentSkillId: skill.parentSkillId ?? null,
+          sortOrder: skill.sortOrder,
+          faultTags: skill.faultTags ?? [],
+          descriptors: descriptorsBySkill.get(skill.id) ?? [],
+        }));
+
+      return {
+        screenSlug,
+        name: SCREEN_NAMES[screenSlug] ?? screenSlug,
+        skills: screenSkills,
+      };
+    });
+
+    req.log.info({ count: result.length }, "screens fetched");
     res.json(result);
   }),
 );

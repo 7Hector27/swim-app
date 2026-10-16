@@ -112,11 +112,11 @@ describe("SKILLS_CATALOG", () => {
     expect(counts).toEqual({
       "body-position-balance": 8,
       "breathing-coordination": 12,
-      freestyle: 13,
-      backstroke: 14,
-      breaststroke: 11,
-      butterfly: 12,
-      "starts-turns-underwaters": 40,
+      freestyle: 16,
+      backstroke: 16,
+      breaststroke: 13,
+      butterfly: 15,
+      "starts-turns-underwaters": 41,
       "racing-performance": 5,
       "water-confidence": 5,
     });
@@ -169,6 +169,8 @@ describe("SKILLS_CATALOG", () => {
       "breakout-free", "breakout-back", "breakout-breast", "breakout-fly",
       // stroke kicks
       "free-kick", "back-kick", "breast-kick-mechanics", "fly-dolphin-kick",
+      // breath timing with not-legal option (head must break surface every cycle)
+      "breathing-timing-breast",
     ]);
     const allSkills = SKILLS_CATALOG.flatMap((c) => c.skills);
     const actualAllowed = allSkills
@@ -198,6 +200,128 @@ describe("SKILLS_CATALOG", () => {
     ];
     const present = archivedSlugs.filter((slug) => slugSet.has(slug));
     expect(present).toEqual([]);
+  });
+
+  it("skills from this PR that are archived have archived: true", () => {
+    const expectedArchived = [
+      "horizontal-alignment",
+      "hip-position",
+      "free-breathing-mechanics",
+      "breast-breathing",
+      "back-start-streamline",
+    ];
+    for (const slug of expectedArchived) {
+      expect(slugSet.has(slug), `${slug} should be in the catalog`).toBe(true);
+      const skill = allSkills.find((skillItem) => skillItem.slug === slug);
+      expect(skill?.archived, `${slug} should have archived: true`).toBe(true);
+    }
+  });
+
+  it("breathing-timing and stroke-breath-coordination skills have updated names", () => {
+    const breathTimingSlugs = [
+      "breathing-timing-free",
+      "breathing-timing-breast",
+      "breathing-timing-fly",
+    ];
+    for (const slug of breathTimingSlugs) {
+      const skill = allSkills.find((skillItem) => skillItem.slug === slug);
+      expect(skill?.name, `${slug} should have name "Breath timing"`).toBe("Breath timing");
+    }
+
+    const strokeIntegritySlugs = [
+      "stroke-breath-coordination-free",
+      "stroke-breath-coordination-breast",
+      "stroke-breath-coordination-fly",
+    ];
+    for (const slug of strokeIntegritySlugs) {
+      const skill = allSkills.find((skillItem) => skillItem.slug === slug);
+      expect(
+        skill?.name,
+        `${slug} should have name "Stroke integrity on breath"`,
+      ).toBe("Stroke integrity on breath");
+    }
+  });
+
+  it("per-stroke alignment and hip-position skills are present for free, breast, fly and back", () => {
+    const expectedSlugs = [
+      "free-horizontal-alignment",
+      "free-hip-position",
+      "breast-horizontal-alignment",
+      "breast-hip-position",
+      "fly-horizontal-alignment",
+      "fly-hip-position",
+      "back-hip-position",
+    ];
+    for (const slug of expectedSlugs) {
+      expect(slugSet.has(slug), `${slug} should be in the catalog`).toBe(true);
+    }
+  });
+
+  it("golf scores are present for all four strokes", () => {
+    const golfScoreSlugs = ["free-golf-score", "back-golf-score", "fly-golf-score"];
+    for (const slug of golfScoreSlugs) {
+      expect(slugSet.has(slug), `${slug} should be in the catalog`).toBe(true);
+    }
+    const breastEfficiency = allSkills.find(
+      (skillItem) => skillItem.slug === "breast-propulsion-efficiency",
+    );
+    expect(breastEfficiency?.name).toBe("Golf score");
+    expect(breastEfficiency?.type).toBe("score");
+  });
+
+  it("streamline-in-motion is present and shared across all strokes", () => {
+    const skill = allSkills.find((skillItem) => skillItem.slug === "streamline-in-motion");
+    expect(skill).toBeDefined();
+    expect(skill?.appliesTo).toContain("free");
+    expect(skill?.appliesTo).toContain("back");
+    expect(skill?.appliesTo).toContain("breast");
+    expect(skill?.appliesTo).toContain("fly");
+  });
+
+  it("the 5 skills with new descriptors each have exactly 5 descriptors", () => {
+    const slugsWithDescriptors = [
+      "breathing-timing-free",
+      "stroke-breath-coordination-free",
+      "breathing-timing-fly",
+      "breathing-timing-breast",
+      "exhalation",
+    ];
+    for (const slug of slugsWithDescriptors) {
+      const skill = allSkills.find((skillItem) => skillItem.slug === slug);
+      expect(skill, `${slug} should be in the catalog`).toBeDefined();
+      expect(skill?.descriptors?.length, `${slug} should have exactly 5 descriptors`).toBe(5);
+    }
+  });
+
+  it("the 3 skills with new fault tags have the correct tags", () => {
+    const exhalation = allSkills.find((skillItem) => skillItem.slug === "exhalation");
+    expect(exhalation?.faultTags).toEqual(["holds breath", "exhales above water", "empties too early"]);
+
+    const strokeBreathCoordFree = allSkills.find(
+      (skillItem) => skillItem.slug === "stroke-breath-coordination-free",
+    );
+    expect(strokeBreathCoordFree?.faultTags).toEqual([
+      "lead arm drops",
+      "kick stops",
+      "stroke pauses",
+      "hips sink",
+      "over-rotates",
+      "breaks down 2nd length",
+    ]);
+
+    const breathingTimingBreast = allSkills.find(
+      (skillItem) => skillItem.slug === "breathing-timing-breast",
+    );
+    expect(breathingTimingBreast?.faultTags).toEqual([
+      "lifts early",
+      "lifts late",
+      "surfaces late",
+      "returns too slow",
+      "returns too fast",
+      "stays up through the kick",
+      "breaks down 2nd length",
+    ]);
+    expect(breathingTimingBreast?.notLegalAllowed).toBe(true);
   });
 });
 

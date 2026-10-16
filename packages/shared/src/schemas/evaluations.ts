@@ -1,8 +1,15 @@
 import { z } from "zod";
 import { StartGradeResultSchema } from "../lib/startGrade";
+import { StrokeSchema } from "./skills";
 
 export const EvaluationContextSchema = z.enum(["drill", "practice", "race"]);
 export type EvaluationContext = z.infer<typeof EvaluationContextSchema>;
+
+export const BreathingPatternSchema = z.enum(["every_1","every_2","every_3","every_4","every_5","other"]);
+export type BreathingPattern = z.infer<typeof BreathingPatternSchema>;
+
+export const GolfScoreCategorySchema = z.enum(["push_off_in_water", "deck_dive", "block_dive"]);
+export type GolfScoreCategory = z.infer<typeof GolfScoreCategorySchema>;
 
 export const RatingSideSchema = z.enum(["left", "right"]);
 export type RatingSide = z.infer<typeof RatingSideSchema>;
@@ -121,6 +128,7 @@ const RatingInputSchema = z
     note: z.string().nullable(),
     faultTags: z.array(z.string()),
     ratedAt: z.string().datetime({ offset: true }),
+    golfScoreCategory: GolfScoreCategorySchema.nullable().optional().default(null),
   })
   .superRefine((val, ctx) => {
     const gradeValid =
@@ -162,10 +170,11 @@ const RatingInputSchema = z
 export type RatingInput = z.infer<typeof RatingInputSchema>;
 
 export const CreateSessionBodySchema = z.object({
-  categoryId: z.string().uuid(),
+  screenSlug: z.string(),
   sessionDate: z.string().date(),
   context: EvaluationContextSchema,
   coachingPriority: z.string().min(1),
+  breathingPattern: BreathingPatternSchema.nullable(),
   ratings: z.array(RatingInputSchema).min(1),
 });
 export type CreateSessionBody = z.infer<typeof CreateSessionBodySchema>;
@@ -183,7 +192,7 @@ export const VoidRatingBodySchema = z.object({
 export type VoidRatingBody = z.infer<typeof VoidRatingBodySchema>;
 
 export const DependencyMapQuerySchema = z.object({
-  categoryId: z.string().uuid(),
+  screenSlug: z.string(),
 });
 export type DependencyMapQuery = z.infer<typeof DependencyMapQuerySchema>;
 
@@ -193,11 +202,13 @@ export const SkillForRatingSchema = z.object({
   name: z.string(),
   type: z.enum(["rubric", "measured", "score", "composite", "rollup"]),
   unit: z.string().nullable(),
+  stroke: StrokeSchema.nullable(),
   ratedPerSide: z.boolean(),
   notLegalAllowed: z.boolean(),
   parentSkillId: z.string().uuid().nullable(),
   sortOrder: z.number().int(),
   faultTags: z.array(z.string()),
+  descriptors: z.array(z.object({ level: z.number().int().min(1).max(5), text: z.string() })),
 });
 export type SkillForRating = z.infer<typeof SkillForRatingSchema>;
 
@@ -212,6 +223,18 @@ export type SkillCategoryWithSkills = z.infer<typeof SkillCategoryWithSkillsSche
 
 export const CategoriesResponseSchema = z.array(SkillCategoryWithSkillsSchema);
 export type CategoriesResponse = z.infer<typeof CategoriesResponseSchema>;
+
+// ── Screen-based response (replaces /categories for the evaluation form) ───────
+
+export const ScreenWithSkillsSchema = z.object({
+  screenSlug: z.string(),
+  name: z.string(),
+  skills: z.array(SkillForRatingSchema),
+});
+export type ScreenWithSkills = z.infer<typeof ScreenWithSkillsSchema>;
+
+export const ScreensResponseSchema = z.array(ScreenWithSkillsSchema);
+export type ScreensResponse = z.infer<typeof ScreensResponseSchema>;
 
 export const SwimmerSkillsResponseSchema = z.object({
   grades: z.record(
@@ -311,6 +334,88 @@ export const SwimmerProgressResponseSchema = z.object({
 });
 export type SwimmerProgressResponse = z.infer<typeof SwimmerProgressResponseSchema>;
 
+// ── Draft schemas ─────────────────────────────────────────────────────────────
+
+export const DraftSkillPayloadSchema = z.object({
+  grade: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)]).nullable(),
+  notLegal: z.boolean(),
+  noConcept: z.boolean(),
+  side: z.enum(["left", "right"]).nullable().optional(),
+  faultTags: z.array(z.string()),
+  capacityValue: z.string(),
+  capacityUnit: z.enum(["yards", "reps"]).nullable(),
+  measurementValue: z.string(),
+  measurementUnit: z.string().nullable(),
+  golfScoreCategory: GolfScoreCategorySchema.nullable(),
+  note: z.string(),
+});
+export type DraftSkillPayload = z.infer<typeof DraftSkillPayloadSchema>;
+
+export const SaveDraftBodySchema = z.object({
+  sessionDate: z.string().nullable(),
+  context: z.enum(["drill", "practice", "race"]).nullable(),
+  coachingPriority: z.string().nullable(),
+  breathingPattern: BreathingPatternSchema.nullable(),
+  payload: z.record(z.string(), DraftSkillPayloadSchema),
+});
+export type SaveDraftBody = z.infer<typeof SaveDraftBodySchema>;
+
+export const EvaluationDraftSchema = z.object({
+  id: z.string().uuid(),
+  swimmerId: z.string().uuid(),
+  screenSlug: z.string(),
+  sessionDate: z.string().nullable(),
+  context: z.enum(["drill", "practice", "race"]).nullable(),
+  coachingPriority: z.string().nullable(),
+  breathingPattern: BreathingPatternSchema.nullable(),
+  payload: z.record(z.string(), DraftSkillPayloadSchema),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+export type EvaluationDraft = z.infer<typeof EvaluationDraftSchema>;
+
+export const DraftsListResponseSchema = z.object({
+  drafts: z.array(EvaluationDraftSchema),
+});
+export type DraftsListResponse = z.infer<typeof DraftsListResponseSchema>;
+
+// ── Golf score trends schemas ──────────────────────────────────────────────
+
+export const GolfScoreTrendPointSchema = z.object({
+  ratedAt: z.string().datetime({ offset: true }),
+  sessionDate: z.string().date(),
+  grade: z.number().int().min(1).max(5).nullable(),
+  measurementValue: z.string().nullable(),
+});
+export type GolfScoreTrendPoint = z.infer<typeof GolfScoreTrendPointSchema>;
+
+export const GolfScoreAgeBandsSchema = z.object({
+  bandCount: z.number().int(),
+  p25: z.number().nullable(),
+  p50: z.number().nullable(),
+  p75: z.number().nullable(),
+});
+export type GolfScoreAgeBands = z.infer<typeof GolfScoreAgeBandsSchema>;
+
+export const GolfScoreCategoryTrendSchema = z.object({
+  category: GolfScoreCategorySchema,
+  points: z.array(GolfScoreTrendPointSchema),
+  ageBands: GolfScoreAgeBandsSchema.nullable(),
+});
+export type GolfScoreCategoryTrend = z.infer<typeof GolfScoreCategoryTrendSchema>;
+
+export const GolfScoreTrendSchema = z.object({
+  skillSlug: z.string(),
+  skillName: z.string(),
+  byCategory: z.array(GolfScoreCategoryTrendSchema),
+});
+export type GolfScoreTrend = z.infer<typeof GolfScoreTrendSchema>;
+
+export const GolfScoreTrendsResponseSchema = z.object({
+  trends: z.array(GolfScoreTrendSchema),
+});
+export type GolfScoreTrendsResponse = z.infer<typeof GolfScoreTrendsResponseSchema>;
+
 // Parent-facing progress schemas — no fault tags
 export const ParentProgressRatingPointSchema = ProgressRatingPointSchema.omit({ faultTags: true });
 export type ParentProgressRatingPoint = z.infer<typeof ParentProgressRatingPointSchema>;
@@ -322,8 +427,8 @@ export const ParentSkillProgressSchema = SkillProgressSchema.extend({
 export type ParentSkillProgress = z.infer<typeof ParentSkillProgressSchema>;
 
 export const ParentCoachingNoteSchema = z.object({
-  categoryId: z.string().uuid(),
-  categoryName: z.string(),
+  screenSlug: z.string(),
+  screenName: z.string(),
   text: z.string(),
   sessionDate: z.string(),
 });

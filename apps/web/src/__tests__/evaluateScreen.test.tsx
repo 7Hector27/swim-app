@@ -6,6 +6,8 @@ vi.mock("@/components/SiteNav", () => ({ default: () => null }));
 vi.mock("@/components/AddNoteForm", () => ({ default: () => null }));
 vi.mock("@/content/EvaluateContent/actions", () => ({
   submitEvaluation: vi.fn(),
+  saveDraft: vi.fn(),
+  deleteDraft: vi.fn(),
 }));
 
 // Mock fetch
@@ -20,7 +22,7 @@ import UndoToast from "../content/EvaluateContent/UndoToast";
 import EvaluateContent from "../content/EvaluateContent/EvaluateContent";
 import { canSubmit, buildRatingsArray, defaultSkillDraft, initialSessionDraft } from "../content/EvaluateContent/helpers";
 import { submitEvaluation } from "../content/EvaluateContent/actions";
-import type { SkillForRating, CategoriesResponse, CoachSwimmerDetail } from "@swim-app/shared";
+import type { SkillForRating, ScreensResponse, CoachSwimmerDetail } from "@swim-app/shared";
 
 // ── Test data ─────────────────────────────────────────────────────────────────
 
@@ -30,11 +32,13 @@ const SKILL: SkillForRating = {
   name: "Kick",
   type: "rubric",
   unit: null,
+  stroke: null,
   ratedPerSide: false,
   notLegalAllowed: true,
   parentSkillId: null,
   sortOrder: 1,
   faultTags: ["Bent knees", "Stiff ankles"],
+  descriptors: [],
 };
 
 const SIDED_SKILL: SkillForRating = {
@@ -43,11 +47,13 @@ const SIDED_SKILL: SkillForRating = {
   name: "Bilateral breathing",
   type: "rubric",
   unit: null,
+  stroke: null,
   ratedPerSide: true,
   notLegalAllowed: false,
   parentSkillId: null,
   sortOrder: 2,
   faultTags: [],
+  descriptors: [],
 };
 
 const START_PARENT: SkillForRating = {
@@ -56,11 +62,13 @@ const START_PARENT: SkillForRating = {
   name: "Track start",
   type: "composite",
   unit: null,
+  stroke: null,
   ratedPerSide: false,
   notLegalAllowed: false,
   parentSkillId: null,
   sortOrder: 10,
   faultTags: [],
+  descriptors: [],
 };
 
 function makeComponent(index: number): SkillForRating {
@@ -70,11 +78,13 @@ function makeComponent(index: number): SkillForRating {
     name: `Component ${index}`,
     type: "rubric",
     unit: null,
+    stroke: null,
     ratedPerSide: false,
     notLegalAllowed: true,
     parentSkillId: "parent-1",
     sortOrder: index,
     faultTags: [],
+    descriptors: [],
   };
 }
 const COMPONENTS = [1, 2, 3, 4, 5, 6].map(makeComponent);
@@ -83,22 +93,22 @@ const COMPONENTS = [1, 2, 3, 4, 5, 6].map(makeComponent);
 
 describe("canSubmit", () => {
   it("returns false when coachingPriority is empty", () => {
-    const draft = { ...initialSessionDraft(), categoryId: "cat-1", sessionDate: "2026-10-14", context: "practice" as const };
+    const draft = { ...initialSessionDraft(), screenSlug: "freestyle", sessionDate: "2026-10-14", context: "practice" as const };
     expect(canSubmit(draft, 1, false)).toBe(false);
   });
 
   it("returns false when no ratings", () => {
-    const draft = { ...initialSessionDraft(), categoryId: "cat-1", sessionDate: "2026-10-14", context: "practice" as const, coachingPriority: "Fix kick" };
+    const draft = { ...initialSessionDraft(), screenSlug: "freestyle", sessionDate: "2026-10-14", context: "practice" as const, coachingPriority: "Fix kick" };
     expect(canSubmit(draft, 0, false)).toBe(false);
   });
 
   it("returns false when isPending", () => {
-    const draft = { ...initialSessionDraft(), categoryId: "cat-1", sessionDate: "2026-10-14", context: "practice" as const, coachingPriority: "Fix kick" };
+    const draft = { ...initialSessionDraft(), screenSlug: "freestyle", sessionDate: "2026-10-14", context: "practice" as const, coachingPriority: "Fix kick" };
     expect(canSubmit(draft, 1, true)).toBe(false);
   });
 
   it("returns true when all fields present", () => {
-    const draft = { ...initialSessionDraft(), categoryId: "cat-1", sessionDate: "2026-10-14", context: "practice" as const, coachingPriority: "Fix kick" };
+    const draft = { ...initialSessionDraft(), screenSlug: "freestyle", sessionDate: "2026-10-14", context: "practice" as const, coachingPriority: "Fix kick", breathingPattern: "every_3" as const };
     expect(canSubmit(draft, 1, false)).toBe(true);
   });
 });
@@ -170,12 +180,9 @@ describe("SkillGradeRow — Not legal", () => {
     const onChange = vi.fn();
     const draft = { ...defaultSkillDraft(), grade: 2 as const };
     render(<SkillGradeRow skill={SKILL} draftKey="skill-1" label="Kick" draft={draft} onChange={onChange} />);
-    // Grade 2 is shown as selected
     const grade2Button = screen.getByRole("radio", { name: "2" });
     expect(grade2Button).toHaveAttribute("aria-checked", "true");
-    // Click Not legal
     fireEvent.click(screen.getByRole("button", { name: /not legal/i }));
-    // onChange called with notLegal: true
     expect(onChange).toHaveBeenCalledWith("skill-1", { notLegal: true });
   });
 
@@ -207,11 +214,13 @@ describe("CalculatedSkillRow", () => {
     name: "Bilateral Breathing",
     type: "rollup",
     unit: null,
+    stroke: null,
     ratedPerSide: false,
     notLegalAllowed: false,
     parentSkillId: null,
     sortOrder: 5,
     faultTags: [],
+    descriptors: [],
   };
 
   it("renders the skill label", () => {
@@ -284,7 +293,6 @@ describe("StartGroupSection", () => {
         onChange={vi.fn()}
       />,
     );
-    // At least one DQ element must be present (pill and/or legend badge)
     expect(screen.getAllByText("DQ").length).toBeGreaterThanOrEqual(1);
   });
 });
@@ -293,8 +301,8 @@ describe("StartGroupSection", () => {
 
 const SWIMMER_ID = "00000000-0000-0000-aaaa-000000000001";
 const OTHER_SWIMMER_ID = "00000000-0000-0000-aaaa-000000000002";
-const CAT_A_ID = "00000000-0000-0000-bbbb-000000000001";
-const CAT_B_ID = "00000000-0000-0000-bbbb-000000000002";
+const SCREEN_A_SLUG = "freestyle";
+const SCREEN_B_SLUG = "backstroke";
 const SKILL_A_ID = "00000000-0000-0000-cccc-000000000001";
 const SKILL_B_ID = "00000000-0000-0000-cccc-000000000002";
 
@@ -315,33 +323,29 @@ const SWIMMER_DETAIL: CoachSwimmerDetail = {
   homePool: null,
 };
 
-const TEST_CATEGORIES: CategoriesResponse = [
+const TEST_SCREENS: ScreensResponse = [
   {
-    id: CAT_A_ID,
-    slug: "freestyle",
+    screenSlug: SCREEN_A_SLUG,
     name: "Freestyle",
-    sortOrder: 1,
     skills: [{
       id: SKILL_A_ID, slug: "free-kick", name: "Freestyle Kick",
-      type: "rubric", unit: null, ratedPerSide: false, notLegalAllowed: false,
-      parentSkillId: null, sortOrder: 1, faultTags: [],
+      type: "rubric", unit: null, stroke: null, ratedPerSide: false, notLegalAllowed: false,
+      parentSkillId: null, sortOrder: 1, faultTags: [], descriptors: [],
     }],
   },
   {
-    id: CAT_B_ID,
-    slug: "backstroke",
+    screenSlug: SCREEN_B_SLUG,
     name: "Backstroke",
-    sortOrder: 2,
     skills: [{
       id: SKILL_B_ID, slug: "back-kick", name: "Backstroke Kick",
-      type: "rubric", unit: null, ratedPerSide: false, notLegalAllowed: false,
-      parentSkillId: null, sortOrder: 1, faultTags: [],
+      type: "rubric", unit: null, stroke: null, ratedPerSide: false, notLegalAllowed: false,
+      parentSkillId: null, sortOrder: 1, faultTags: [], descriptors: [],
     }],
   },
 ];
 
 const metaKey = (swimId: string) => `evaluate-draft-meta-${swimId}`;
-const skillsKey = (swimId: string, catId: string) => `evaluate-draft-skills-${swimId}-${catId}`;
+const skillsKey = (swimId: string, slug: string) => `evaluate-draft-skills-${swimId}-${slug}`;
 
 describe("draft persistence — full component", () => {
   beforeEach(() => {
@@ -355,16 +359,17 @@ describe("draft persistence — full component", () => {
     vi.clearAllMocks();
   });
 
-  it("restores coaching priority and category from a saved draft on mount", async () => {
+  it("restores coaching priority and screen from a saved draft on mount", async () => {
     localStorage.setItem(metaKey(SWIMMER_ID), JSON.stringify({
-      categoryId: CAT_A_ID,
+      screenSlug: SCREEN_A_SLUG,
       sessionDate: "2026-10-14",
       context: "practice",
       coachingPriority: "Fix the kick technique",
+      breathingPattern: null,
     }));
-    localStorage.setItem(skillsKey(SWIMMER_ID, CAT_A_ID), JSON.stringify({ skills: {} }));
+    localStorage.setItem(skillsKey(SWIMMER_ID, SCREEN_A_SLUG), JSON.stringify({ skills: {} }));
 
-    render(<EvaluateContent swimmer={SWIMMER_DETAIL} categories={TEST_CATEGORIES} accessToken="tok" />);
+    render(<EvaluateContent swimmer={SWIMMER_DETAIL} screens={TEST_SCREENS} accessToken="tok" />);
 
     await waitFor(() => {
       expect(
@@ -375,42 +380,42 @@ describe("draft persistence — full component", () => {
 
   it("does not restore a different swimmer's draft", async () => {
     localStorage.setItem(metaKey(OTHER_SWIMMER_ID), JSON.stringify({
-      categoryId: CAT_A_ID,
+      screenSlug: SCREEN_A_SLUG,
       sessionDate: "2026-10-14",
       context: "practice",
       coachingPriority: "Wrong swimmer priority",
+      breathingPattern: null,
     }));
 
-    render(<EvaluateContent swimmer={SWIMMER_DETAIL} categories={TEST_CATEGORIES} accessToken="tok" />);
+    render(<EvaluateContent swimmer={SWIMMER_DETAIL} screens={TEST_SCREENS} accessToken="tok" />);
 
     await act(async () => {});
 
     expect(screen.getByPlaceholderText(/main focus/i)).toHaveValue("");
   });
 
-  it("loads the correct skill draft per category and does not bleed across categories", async () => {
-    localStorage.setItem(skillsKey(SWIMMER_ID, CAT_A_ID), JSON.stringify({
+  it("loads the correct skill draft per screen and does not bleed across screens", async () => {
+    localStorage.setItem(skillsKey(SWIMMER_ID, SCREEN_A_SLUG), JSON.stringify({
       skills: { [SKILL_A_ID]: { ...defaultSkillDraft(), grade: 3 } },
     }));
-    localStorage.setItem(skillsKey(SWIMMER_ID, CAT_B_ID), JSON.stringify({
+    localStorage.setItem(skillsKey(SWIMMER_ID, SCREEN_B_SLUG), JSON.stringify({
       skills: { [SKILL_B_ID]: { ...defaultSkillDraft(), grade: 5 } },
     }));
 
-    render(<EvaluateContent swimmer={SWIMMER_DETAIL} categories={TEST_CATEGORIES} accessToken="tok" />);
+    render(<EvaluateContent swimmer={SWIMMER_DETAIL} screens={TEST_SCREENS} accessToken="tok" />);
 
     const select = screen.getByRole("combobox");
 
-    fireEvent.change(select, { target: { value: CAT_A_ID } });
+    fireEvent.change(select, { target: { value: SCREEN_A_SLUG } });
     await waitFor(() => {
       const grade3 = screen.getAllByRole("radio", { name: "3" });
       expect(grade3.some((btn) => btn.getAttribute("aria-checked") === "true")).toBe(true);
     });
 
-    fireEvent.change(select, { target: { value: CAT_B_ID } });
+    fireEvent.change(select, { target: { value: SCREEN_B_SLUG } });
     await waitFor(() => {
       const grade5 = screen.getAllByRole("radio", { name: "5" });
       expect(grade5.some((btn) => btn.getAttribute("aria-checked") === "true")).toBe(true);
-      // cat A's grade 3 must not be selected in cat B's skill list
       const grade3 = screen.getAllByRole("radio", { name: "3" });
       expect(grade3.every((btn) => btn.getAttribute("aria-checked") === "false")).toBe(true);
     });
@@ -418,12 +423,13 @@ describe("draft persistence — full component", () => {
 
   it("clears both localStorage keys after a successful save", async () => {
     localStorage.setItem(metaKey(SWIMMER_ID), JSON.stringify({
-      categoryId: CAT_A_ID,
+      screenSlug: SCREEN_A_SLUG,
       sessionDate: "2026-10-14",
       context: "practice",
       coachingPriority: "Fix kick",
+      breathingPattern: null,
     }));
-    localStorage.setItem(skillsKey(SWIMMER_ID, CAT_A_ID), JSON.stringify({
+    localStorage.setItem(skillsKey(SWIMMER_ID, SCREEN_A_SLUG), JSON.stringify({
       skills: { [SKILL_A_ID]: { ...defaultSkillDraft(), grade: 3 } },
     }));
     vi.mocked(submitEvaluation).mockResolvedValue({
@@ -433,10 +439,9 @@ describe("draft persistence — full component", () => {
     });
 
     const { container } = render(
-      <EvaluateContent swimmer={SWIMMER_DETAIL} categories={TEST_CATEGORIES} accessToken="tok" />,
+      <EvaluateContent swimmer={SWIMMER_DETAIL} screens={TEST_SCREENS} accessToken="tok" />,
     );
 
-    // Wait for draft to be restored (priority textarea populated)
     await waitFor(() => {
       expect(screen.getByPlaceholderText(/main focus/i)).toHaveValue("Fix kick");
     });
@@ -450,7 +455,136 @@ describe("draft persistence — full component", () => {
     });
 
     expect(localStorage.getItem(metaKey(SWIMMER_ID))).toBeNull();
-    expect(localStorage.getItem(skillsKey(SWIMMER_ID, CAT_A_ID))).toBeNull();
+    expect(localStorage.getItem(skillsKey(SWIMMER_ID, SCREEN_A_SLUG))).toBeNull();
+  });
+});
+
+// ── Section header rendering ──────────────────────────────────────────────────
+
+describe("EvaluateContent — section headers for screen-sectioned screens", () => {
+  const FREESTYLE_SKILL_ID = "00000000-0000-0000-ffff-000000000001";
+
+  const freestyleScreens: ScreensResponse = [
+    {
+      screenSlug: "freestyle",
+      name: "Freestyle",
+      skills: [
+        {
+          id: FREESTYLE_SKILL_ID,
+          slug: "free-head-position",
+          name: "Head Position",
+          type: "rubric",
+          unit: null,
+          stroke: "free" as const,
+          ratedPerSide: false,
+          notLegalAllowed: false,
+          parentSkillId: null,
+          sortOrder: 1,
+          faultTags: [],
+          descriptors: [],
+        },
+      ],
+    },
+  ];
+
+  beforeEach(() => {
+    localStorage.clear();
+    vi.mocked(submitEvaluation).mockResolvedValue({ status: "idle" });
+    mockFetch.mockResolvedValue({ ok: true, json: async () => ({ suggestion: null }) });
+  });
+
+  afterEach(() => {
+    localStorage.clear();
+    vi.clearAllMocks();
+  });
+
+  it("renders The swim section header when freestyle screen is selected", async () => {
+    render(
+      <EvaluateContent
+        swimmer={SWIMMER_DETAIL}
+        screens={freestyleScreens}
+        accessToken="tok"
+      />,
+    );
+
+    const select = screen.getByRole("combobox");
+    fireEvent.change(select, { target: { value: "freestyle" } });
+
+    await waitFor(() => {
+      expect(screen.getByText("The swim")).toBeInTheDocument();
+    });
+  });
+});
+
+// ── Breathing pattern selector ────────────────────────────────────────────────
+
+describe("EvaluateContent — breathing pattern selector", () => {
+  const freestyleScreens: ScreensResponse = [
+    {
+      screenSlug: "freestyle",
+      name: "Freestyle",
+      skills: [{
+        id: "skill-fp-1", slug: "free-kick", name: "Kick",
+        type: "rubric", unit: null, stroke: "free" as const, ratedPerSide: false,
+        notLegalAllowed: false, parentSkillId: null, sortOrder: 1, faultTags: [], descriptors: [],
+      }],
+    },
+    {
+      screenSlug: "backstroke",
+      name: "Backstroke",
+      skills: [{
+        id: "skill-bp-1", slug: "back-kick", name: "Kick",
+        type: "rubric", unit: null, stroke: "back" as const, ratedPerSide: false,
+        notLegalAllowed: false, parentSkillId: null, sortOrder: 1, faultTags: [], descriptors: [],
+      }],
+    },
+    {
+      screenSlug: "butterfly",
+      name: "Butterfly",
+      skills: [{
+        id: "skill-fp-2", slug: "fly-kick", name: "Kick",
+        type: "rubric", unit: null, stroke: "fly" as const, ratedPerSide: false,
+        notLegalAllowed: false, parentSkillId: null, sortOrder: 1, faultTags: [], descriptors: [],
+      }],
+    },
+  ];
+
+  beforeEach(() => {
+    localStorage.clear();
+    vi.mocked(submitEvaluation).mockResolvedValue({ status: "idle" });
+    mockFetch.mockResolvedValue({ ok: true, json: async () => ({ suggestion: null }) });
+  });
+
+  afterEach(() => {
+    localStorage.clear();
+    vi.clearAllMocks();
+  });
+
+  it("shows breathing pattern selector for freestyle screen", async () => {
+    render(<EvaluateContent swimmer={SWIMMER_DETAIL} screens={freestyleScreens} accessToken="tok" />);
+    const select = screen.getByRole("combobox");
+    fireEvent.change(select, { target: { value: "freestyle" } });
+    await waitFor(() => {
+      expect(screen.getByText("Breathing pattern")).toBeInTheDocument();
+    });
+  });
+
+  it("shows breathing pattern selector for butterfly screen", async () => {
+    render(<EvaluateContent swimmer={SWIMMER_DETAIL} screens={freestyleScreens} accessToken="tok" />);
+    const select = screen.getByRole("combobox");
+    fireEvent.change(select, { target: { value: "butterfly" } });
+    await waitFor(() => {
+      expect(screen.getByText("Breathing pattern")).toBeInTheDocument();
+    });
+  });
+
+  it("does not show breathing pattern selector for backstroke screen", async () => {
+    render(<EvaluateContent swimmer={SWIMMER_DETAIL} screens={freestyleScreens} accessToken="tok" />);
+    const select = screen.getByRole("combobox");
+    fireEvent.change(select, { target: { value: "backstroke" } });
+    await waitFor(() => {
+      expect(screen.queryByText("Breathing pattern")).toBeNull();
+    });
   });
 });
 
@@ -460,7 +594,6 @@ describe("UndoToast", () => {
 
   beforeEach(() => {
     mockFetch.mockResolvedValue({ ok: true, status: 204 });
-    // Mock window.location.href setter
     Object.defineProperty(window, "location", {
       writable: true,
       value: { href: "" },
@@ -499,5 +632,145 @@ describe("UndoToast", () => {
         expect.objectContaining({ method: "DELETE" }),
       );
     });
+  });
+});
+
+describe("EvaluateContent — server draft banner", () => {
+  const DRAFT_ID = "draft-0000-0000-0000-000000000001";
+  const DRAFT_SCREEN = "freestyle";
+  const DRAFT_DATE = "2026-10-14T10:00:00.000Z";
+
+  const serverDraft: import("@swim-app/shared").EvaluationDraft = {
+    id: DRAFT_ID,
+    swimmerId: SWIMMER_ID,
+    screenSlug: DRAFT_SCREEN,
+    sessionDate: "2026-10-14",
+    context: "practice",
+    coachingPriority: "Kick",
+    breathingPattern: "every_3",
+    payload: {},
+    createdAt: DRAFT_DATE,
+    updatedAt: DRAFT_DATE,
+  };
+
+  beforeEach(() => {
+    localStorage.clear();
+    vi.mocked(submitEvaluation).mockResolvedValue({ status: "idle" });
+    mockFetch.mockImplementation((url: string) => {
+      if (typeof url === "string" && url.includes("/drafts") && !url.includes("/draft-")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ drafts: [serverDraft] }),
+        });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({ suggestion: null }) });
+    });
+  });
+
+  afterEach(() => {
+    localStorage.clear();
+    vi.clearAllMocks();
+  });
+
+  it("shows the resume banner when a server draft exists for the selected screen", async () => {
+    render(<EvaluateContent swimmer={SWIMMER_DETAIL} screens={TEST_SCREENS} accessToken="tok" />);
+
+    const select = screen.getByRole("combobox");
+    fireEvent.change(select, { target: { value: DRAFT_SCREEN } });
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toBeInTheDocument();
+      expect(screen.getByText(/resume it\?/i)).toBeInTheDocument();
+    });
+  });
+
+  it("does not show the banner when no server draft exists for the selected screen", async () => {
+    mockFetch.mockImplementation((url: string) => {
+      if (typeof url === "string" && url.includes("/drafts") && !url.includes("/draft-")) {
+        return Promise.resolve({ ok: true, json: async () => ({ drafts: [] }) });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({ suggestion: null }) });
+    });
+
+    render(<EvaluateContent swimmer={SWIMMER_DETAIL} screens={TEST_SCREENS} accessToken="tok" />);
+    const select = screen.getByRole("combobox");
+    fireEvent.change(select, { target: { value: DRAFT_SCREEN } });
+
+    await act(async () => {});
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("clicking Start fresh shows a confirm prompt", async () => {
+    render(<EvaluateContent swimmer={SWIMMER_DETAIL} screens={TEST_SCREENS} accessToken="tok" />);
+    const select = screen.getByRole("combobox");
+    fireEvent.change(select, { target: { value: DRAFT_SCREEN } });
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /start fresh/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/delete this draft/i)).toBeInTheDocument();
+    });
+  });
+
+  it("clicking Delete draft calls DELETE on the draft and dismisses the banner", async () => {
+    mockFetch.mockImplementation((url: string) => {
+      if (typeof url === "string" && url.includes("/drafts") && !url.includes("/draft-")) {
+        return Promise.resolve({ ok: true, json: async () => ({ drafts: [serverDraft] }) });
+      }
+      return Promise.resolve({ ok: true, status: 204, json: async () => null });
+    });
+
+    render(<EvaluateContent swimmer={SWIMMER_DETAIL} screens={TEST_SCREENS} accessToken="tok" />);
+    const select = screen.getByRole("combobox");
+    fireEvent.change(select, { target: { value: DRAFT_SCREEN } });
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /start fresh/i }));
+    await waitFor(() => {
+      expect(screen.getByText(/delete this draft/i)).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /delete draft/i }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("alert")).toBeNull();
+    });
+  });
+
+  it("debounced server save is scheduled after draft changes", async () => {
+    vi.useFakeTimers();
+
+    const { saveDraft: mockSaveDraft, deleteDraft: mockDeleteDraft } = await import("../content/EvaluateContent/actions");
+    vi.mocked(mockSaveDraft).mockResolvedValue({ status: "saved", id: "new-draft-id" });
+    vi.mocked(mockDeleteDraft).mockResolvedValue(undefined);
+
+    mockFetch.mockImplementation((url: string) => {
+      if (typeof url === "string" && url.includes("/drafts")) {
+        return Promise.resolve({ ok: true, json: async () => ({ drafts: [] }) });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({ suggestion: null }) });
+    });
+
+    render(<EvaluateContent swimmer={SWIMMER_DETAIL} screens={TEST_SCREENS} accessToken="tok" />);
+
+    const select = screen.getByRole("combobox");
+    fireEvent.change(select, { target: { value: DRAFT_SCREEN } });
+
+    await act(async () => {});
+
+    await act(async () => {
+      vi.advanceTimersByTime(21_000);
+    });
+
+    expect(mockSaveDraft).toHaveBeenCalled();
+
+    vi.useRealTimers();
   });
 });

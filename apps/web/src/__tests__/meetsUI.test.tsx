@@ -162,6 +162,8 @@ describe("CoachSwimmerDetailContent — times", () => {
     categories: [],
     timelineItems: [],
     meets: [],
+    drafts: [],
+    golfScoreTrends: [],
   };
 
   it("renders Times heading", () => {

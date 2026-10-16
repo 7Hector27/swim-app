@@ -1,12 +1,13 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import type { SwimmerSkillsResponse } from "@swim-app/shared";
+import { DraftsListResponseSchema } from "@swim-app/shared";
 
 import AccountInactiveScreen from "@/components/AccountInactiveScreen";
 import CoachSwimmerDetailContent from "@/content/CoachSwimmerDetailContent";
 import { requireAuth } from "@/lib/requireAuth";
 import { fetchCoachSwimmerDetail, fetchSwimmerTimeline } from "@/lib/api/coachSwimmers";
-import { fetchSwimmerSkills, fetchSkillCategories } from "@/lib/api/evaluations";
+import { fetchSwimmerSkills, fetchSkillCategories, fetchGolfScoreTrends } from "@/lib/api/evaluations";
 import { fetchSwimmerMeetSwims, fetchMeets } from "@/lib/api/meets";
 
 export const metadata: Metadata = {
@@ -21,7 +22,7 @@ export default async function CoachSwimmerPage({ params }: CoachSwimmerPageProps
   const [auth, { id }] = await Promise.all([requireAuth(), params]);
   if (!auth) return <AccountInactiveScreen />;
 
-  const [swimmerResult, skillsResult, categoriesResult, timelineResult, swimsResult, meetsResult] =
+  const [swimmerResult, skillsResult, categoriesResult, timelineResult, swimsResult, meetsResult, draftsRes, golfScoreTrendsResult] =
     await Promise.all([
       fetchCoachSwimmerDetail(id, auth.accessToken),
       fetchSwimmerSkills(id, auth.accessToken),
@@ -29,6 +30,11 @@ export default async function CoachSwimmerPage({ params }: CoachSwimmerPageProps
       fetchSwimmerTimeline(id, auth.accessToken),
       fetchSwimmerMeetSwims(id, auth.accessToken),
       fetchMeets(auth.accessToken),
+      fetch(`${process.env.NEXT_PUBLIC_API_URL}/coach/swimmers/${id}/drafts`, {
+        headers: { Authorization: `Bearer ${auth.accessToken}` },
+        cache: "no-store",
+      }),
+      fetchGolfScoreTrends(id, auth.accessToken),
     ]);
 
   if (!swimmerResult.ok) {
@@ -45,6 +51,9 @@ export default async function CoachSwimmerPage({ params }: CoachSwimmerPageProps
   const swims = swimsResult.ok ? swimsResult.data.swims : [];
   const personalBests = swimsResult.ok ? swimsResult.data.personalBests : [];
   const meets = meetsResult.ok ? meetsResult.meets : [];
+  const parsed = DraftsListResponseSchema.safeParse(draftsRes.ok ? await draftsRes.json().catch(() => null) : null);
+  const swimmerDrafts = parsed.success ? parsed.data.drafts : [];
+  const golfScoreTrends = golfScoreTrendsResult.ok ? golfScoreTrendsResult.data.trends : [];
 
   return (
     <CoachSwimmerDetailContent
@@ -58,6 +67,8 @@ export default async function CoachSwimmerPage({ params }: CoachSwimmerPageProps
       swims={swims}
       personalBests={personalBests}
       meets={meets}
+      drafts={swimmerDrafts}
+      golfScoreTrends={golfScoreTrends}
     />
   );
 }
