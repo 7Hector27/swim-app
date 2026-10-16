@@ -169,6 +169,8 @@ describe("SKILLS_CATALOG", () => {
       "breakout-free", "breakout-back", "breakout-breast", "breakout-fly",
       // stroke kicks
       "free-kick", "back-kick", "breast-kick-mechanics", "fly-dolphin-kick",
+      // breath timing with not-legal option (head must break surface every cycle)
+      "breathing-timing-breast",
     ]);
     const allSkills = SKILLS_CATALOG.flatMap((c) => c.skills);
     const actualAllowed = allSkills
@@ -304,6 +306,7 @@ describe("SKILLS_CATALOG", () => {
       "stroke pauses",
       "hips sink",
       "over-rotates",
+      "breaks down 2nd length",
     ]);
 
     const breathingTimingBreast = allSkills.find(
@@ -316,7 +319,9 @@ describe("SKILLS_CATALOG", () => {
       "returns too slow",
       "returns too fast",
       "stays up through the kick",
+      "breaks down 2nd length",
     ]);
+    expect(breathingTimingBreast?.notLegalAllowed).toBe(true);
   });
 });
 

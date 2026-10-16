@@ -218,8 +218,9 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         type: "rubric",
         stroke: "breast",
         sortOrder: 4,
+        notLegalAllowed: true,
         builtOnSlugs: ["breast-head-position", "breast-timing"],
-        faultTags: ["lifts early", "lifts late", "surfaces late", "returns too slow", "returns too fast", "stays up through the kick"],
+        faultTags: ["lifts early", "lifts late", "surfaces late", "returns too slow", "returns too fast", "stays up through the kick", "breaks down 2nd length"],
         descriptors: [
           { level: 1, text: "head lifts before the pull or after the hands come together, or stays up through the kick." },
           { level: 2, text: "head rises with the pull when cued, but often surfaces after the widest part of the pull or is still up as the arms reach forward." },
@@ -255,7 +256,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         ratedPerSide: true,
         // Per Jason A15: links to free-rotation, not shared body-rotation.
         builtOnSlugs: ["breathing-timing-free", "free-rotation"],
-        faultTags: ["lead arm drops", "kick stops", "stroke pauses", "hips sink", "over-rotates"],
+        faultTags: ["lead arm drops", "kick stops", "stroke pauses", "hips sink", "over-rotates", "breaks down 2nd length"],
         descriptors: [
           { level: 1, text: "stroke stops or falls apart on every breath; lead arm drops, kick stops." },
           { level: 2, text: "stroke pauses or the lead arm sinks on most breaths; better when cued." },
