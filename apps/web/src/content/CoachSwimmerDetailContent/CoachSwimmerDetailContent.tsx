@@ -463,10 +463,10 @@ function SwimmerTimesSection({ swimmerId, swims, personalBests, meets }: Swimmer
 
   return (
     <section className="flex flex-col gap-4">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
         <h2 className="font-bold text-text">Times</h2>
         {!showMeetForm && !showPracticeForm && (
-          <div className="flex gap-1">
+          <div className="flex gap-1 flex-wrap">
             <button
               type="button"
               onClick={() => setShowMeetForm(true)}
@@ -656,9 +656,9 @@ export default function CoachSwimmerDetailContent({
                       <p className="text-xs font-semibold text-text-secondary">{category.name}</p>
                       <dl className="flex flex-col gap-1">
                         {startParents.map((skill) => (
-                          <div key={skill.id} className="flex gap-2 text-sm">
-                            <dt className="text-text-secondary w-48 shrink-0">{skill.name}</dt>
-                            <dd className="font-semibold text-text">
+                          <div key={skill.id} className="flex gap-2 text-sm flex-wrap">
+                            <dt className="text-text-secondary min-w-0 shrink">{skill.name}</dt>
+                            <dd className="font-semibold text-text shrink-0">
                               {formatStartGrade(startGrades[skill.slug]!, slugToNameMap)}
                             </dd>
                           </div>
@@ -666,9 +666,9 @@ export default function CoachSwimmerDetailContent({
                         {ratedSkills.map((skill) => {
                           if (skill.ratedPerSide) {
                             return (
-                              <div key={skill.id} className="flex gap-2 text-sm">
-                                <dt className="text-text-secondary w-48 shrink-0">{skill.name}</dt>
-                                <dd className="text-text flex gap-2">
+                              <div key={skill.id} className="flex gap-2 text-sm flex-wrap">
+                                <dt className="text-text-secondary min-w-0 shrink">{skill.name}</dt>
+                                <dd className="text-text flex gap-2 shrink-0">
                                   {grades[`${skill.slug}:left`] !== undefined && (
                                     <span>L: <span className="font-semibold">{gradeDisplay(grades[`${skill.slug}:left`]!)}</span></span>
                                   )}
@@ -682,9 +682,9 @@ export default function CoachSwimmerDetailContent({
                           const grade = grades[skill.slug];
                           if (grade === undefined) return null;
                           return (
-                            <div key={skill.id} className="flex gap-2 text-sm">
-                              <dt className="text-text-secondary w-48 shrink-0">{skill.name}</dt>
-                              <dd className="font-semibold text-text">{gradeDisplay(grade)}</dd>
+                            <div key={skill.id} className="flex gap-2 text-sm flex-wrap">
+                              <dt className="text-text-secondary min-w-0 shrink">{skill.name}</dt>
+                              <dd className="font-semibold text-text shrink-0">{gradeDisplay(grade)}</dd>
                             </div>
                           );
                         })}
