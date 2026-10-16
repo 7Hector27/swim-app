@@ -775,6 +775,11 @@ lessonsRouter.delete(
       return;
     }
 
+    if (!isCoach && lessonToCancel.startsAt <= new Date()) {
+      res.status(422).json({ error: "lesson_in_past" });
+      return;
+    }
+
     await db
       .update(lessons)
       .set({ status: "canceled", canceledAt: new Date(), canceledBy: profileId })
@@ -825,6 +830,11 @@ lessonsRouter.patch(
 
     if (!["pending", "approved"].includes(existingLesson.status)) {
       res.status(422).json({ error: "lesson_not_active" });
+      return;
+    }
+
+    if (!isCoach && existingLesson.startsAt <= new Date()) {
+      res.status(422).json({ error: "lesson_in_past" });
       return;
     }
 

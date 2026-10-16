@@ -43,7 +43,10 @@ export default function LessonDetailContent({ lesson, locations, isViewer, isCoa
 
   const todayLAStr = new Date().toLocaleDateString("sv", { timeZone: "America/Los_Angeles" });
 
+  const lessonHasStarted = new Date() >= new Date(lesson.startsAt);
+
   useEffect(() => {
+    if (lessonHasStarted) return;
     setNoRescheduleAvailability(false);
     setRescheduleDate("");
     setAvailableSlots([]);
@@ -155,7 +158,11 @@ export default function LessonDetailContent({ lesson, locations, isViewer, isCoa
               </dl>
             </div>
 
-            {!isViewer && (
+            {!isViewer && lessonHasStarted && (
+              <p className="text-sm text-text-secondary">This lesson has already started.</p>
+            )}
+
+            {!isViewer && !lessonHasStarted && (
               <>
                 {/* Reschedule */}
                 <div className="rounded-card border border-border p-5 tablet:p-6">

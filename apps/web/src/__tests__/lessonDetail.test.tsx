@@ -11,6 +11,7 @@ vi.mock("@/lib/actions/notes", () => ({
 
 vi.mock("@/content/BookCalendarContent/actions", () => ({
   fetchSlotsDirectAction: vi.fn(),
+  findFirstAvailableDayAction: vi.fn().mockResolvedValue({ firstAvailableDate: null }),
 }));
 
 vi.mock("../content/LessonDetailContent/actions", () => ({
@@ -49,6 +50,26 @@ const lesson: UpcomingLesson = {
 };
 
 const locations: LessonLocation[] = [];
+
+describe("LessonDetailContent — started lesson guard", () => {
+  it("shows Reschedule and Cancel headings for a future lesson", () => {
+    const futureLesson: UpcomingLesson = { ...lesson, startsAt: "2099-01-01T00:00:00.000Z" };
+    render(
+      <LessonDetailContent lesson={futureLesson} locations={locations} isViewer={false} isCoach={false} />,
+    );
+    expect(screen.getByText("Reschedule")).toBeInTheDocument();
+    expect(screen.getByText("Cancel lesson")).toBeInTheDocument();
+  });
+
+  it("hides Reschedule and Cancel and shows a note for a started lesson", () => {
+    render(
+      <LessonDetailContent lesson={lesson} locations={locations} isViewer={false} isCoach={false} />,
+    );
+    expect(screen.queryByText("Reschedule")).toBeNull();
+    expect(screen.queryByText("Cancel lesson")).toBeNull();
+    expect(screen.getByText("This lesson has already started.")).toBeInTheDocument();
+  });
+});
 
 describe("LessonDetailContent — isCoach guard", () => {
   it("does not render note forms when isCoach is false", () => {
