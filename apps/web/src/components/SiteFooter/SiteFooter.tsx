@@ -8,7 +8,7 @@ const footerColumns = [
     items: [
       { label: "Home", href: "/" },
       { label: "Lessons", href: "/#lessons" },
-      { label: "Leaderboards", href: "/#leaderboards" },
+      { label: "Leaderboards", href: "/leaderboard" },
       { label: "Coach Jason", href: "/#coach" },
       { label: "FAQ", href: "/#faq" },
     ],

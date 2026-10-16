@@ -9,6 +9,7 @@ import styles from "./ProfileMenu.module.css";
 
 const PARENT_MENU_ITEMS = [
   { label: "Dashboard", href: "/dashboard" },
+  { label: "Leaderboards", href: "/leaderboard" },
   { label: "Household", href: "/household" },
   { label: "Account settings", href: "/account" },
 ] as const;

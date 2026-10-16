@@ -30,7 +30,7 @@ const cards: LeaderboardCard[] = [
   {
     title: "Irvine Summer Swim League",
     subtitle: "Seahawks",
-    href: "/leaderboard/issl",
+    href: "/leaderboard/isl",
     rows: [
       { rank: 1, swimmer: "Liam T.",  event: "[50 Breast]", time: "[0:00.00]" },
       { rank: 2, swimmer: "Aria N.",  event: "[100 Free]",  time: "[0:00.00]" },
@@ -42,7 +42,7 @@ const cards: LeaderboardCard[] = [
   {
     title: "All swimmers",
     subtitle: "Master leaderboard",
-    href: "/leaderboard",
+    href: "/leaderboard/master",
     rows: [
       { rank:  1, swimmer: "Maya R.",   event: "[50 Free]",    time: "[0:00.00]" },
       { rank:  2, swimmer: "Liam T.",   event: "[50 Breast]",  time: "[0:00.00]" },
