@@ -211,6 +211,13 @@
       "when": 1792183416262,
       "tag": "0029_classy_maria_hill",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1792185025476,
+      "tag": "0030_pale_blacklash",
+      "breakpoints": true
     }
   ]
 }

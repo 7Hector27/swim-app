@@ -492,7 +492,7 @@ export const evaluationSessions = pgTable(
   },
   (table) => [
     check("coaching_priority_not_blank", sql`${table.coachingPriority} <> ''`),
-    check("screen_slug_valid", sql`${table.screenSlug} IN ('fundamentals','water-confidence','freestyle','backstroke','breaststroke','butterfly','starts','im-turns','racing','breathing')`),
+    check("screen_slug_valid", sql`${table.screenSlug} IN ('fundamentals','water-confidence','freestyle','backstroke','breaststroke','butterfly','starts','im-turns','racing')`),
     check("breathing_pattern_valid", sql`${table.breathingPattern} IS NULL OR ${table.breathingPattern} IN ('every_1','every_2','every_3','every_4','every_5','other')`),
   ],
 ).enableRLS();

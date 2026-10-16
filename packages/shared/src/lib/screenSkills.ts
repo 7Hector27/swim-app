@@ -69,14 +69,6 @@ export const SCREEN_SKILLS: Record<string, string[]> = {
     "im-back-to-breast-crossover","im-breast-to-free",
   ],
   racing: ["pacing","speed-endurance","race-strategy","race-awareness","adaptability"],
-  breathing: [
-    "exhalation","breath-control",
-    "breathing-timing-free","stroke-breath-coordination-free",
-    "free-rhythmic-breathing","free-bilateral-breathing",
-    "back-rhythmic-breathing",
-    "breathing-timing-breast","stroke-breath-coordination-breast",
-    "breathing-timing-fly","stroke-breath-coordination-fly","fly-rhythmic-breathing",
-  ],
 };
 
 export const SCREEN_SLUGS = Object.keys(SCREEN_SKILLS) as readonly string[];
@@ -91,5 +83,4 @@ export const SCREEN_NAMES: Record<string, string> = {
   starts: "Starts",
   "im-turns": "IM Turns",
   racing: "Racing & Performance",
-  breathing: "Breathing",
 };

@@ -1,0 +1,2 @@
+ALTER TABLE "evaluation_sessions" DROP CONSTRAINT "screen_slug_valid";--> statement-breakpoint
+ALTER TABLE "evaluation_sessions" ADD CONSTRAINT "screen_slug_valid" CHECK ("evaluation_sessions"."screen_slug" IN ('fundamentals','water-confidence','freestyle','backstroke','breaststroke','butterfly','starts','im-turns','racing'));

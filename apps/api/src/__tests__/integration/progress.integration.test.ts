@@ -16,10 +16,8 @@ const app = createApp(logger);
 
 let coach: TestUser;
 let swimmerId: string;
-let categoryId: string;
 let skillId: string;
 let startComponentSkillId: string;
-let startComponentCategoryId: string;
 
 beforeAll(async () => {
   await syncCatalogFn(adminDb());
@@ -29,22 +27,20 @@ beforeAll(async () => {
   await adminDb().update(profiles).set({ role: "coach" }).where(eq(profiles.id, coach.userId));
 
   const skillRows = await adminDb()
-    .select({ id: skills.id, categoryId: skills.categoryId })
+    .select({ id: skills.id })
     .from(skills)
     .where(eq(skills.slug, "free-kick"))
     .limit(1);
   if (!skillRows[0]) throw new Error("Catalog skill free-kick not found — run pnpm db:sync-catalog");
   skillId = skillRows[0].id;
-  categoryId = skillRows[0].categoryId;
 
   const compRows = await adminDb()
-    .select({ id: skills.id, categoryId: skills.categoryId })
+    .select({ id: skills.id })
     .from(skills)
     .where(eq(skills.slug, "track-start-reaction"))
     .limit(1);
   if (!compRows[0]) throw new Error("Catalog skill track-start-reaction not found — run pnpm db:sync-catalog");
   startComponentSkillId = compRows[0].id;
-  startComponentCategoryId = compRows[0].categoryId;
 
   const swimmerRows = await adminDb()
     .insert(swimmers)
@@ -235,5 +231,51 @@ describe("GET /coach/swimmers/:id/progress — voided ratings excluded", () => {
     // Latest rating (grade 4) must win, not the earlier one (grade 2)
     expect(reactionComp.current).not.toBeNull();
     expect(reactionComp.current.grade).toBe(4);
+  });
+});
+
+describe("GET /coach/swimmers/:id/progress — screen-based sessions", () => {
+  it("ratings from a screen-based session appear in skills and coachingPriorities", async () => {
+    const sessionRes = await request(app)
+      .post(`/coach/swimmers/${swimmerId}/sessions`)
+      .set("Authorization", `Bearer ${coach.accessToken}`)
+      .send({
+        screenSlug: "freestyle",
+        breathingPattern: "every_3",
+        sessionDate: "2026-10-10",
+        context: "practice",
+        coachingPriority: "Improve kick",
+        ratings: [
+          {
+            skillId,
+            grade: 3,
+            notLegal: false,
+            noConcept: false,
+            side: null,
+            capacityValue: null,
+            capacityUnit: null,
+            measurementValue: null,
+            measurementUnit: null,
+            note: null,
+            faultTags: [],
+            ratedAt: "2026-10-10T10:00:00.000Z",
+          },
+        ],
+      });
+    expect(sessionRes.status).toBe(201);
+
+    const progressRes = await request(app)
+      .get(`/coach/swimmers/${swimmerId}/progress`)
+      .set("Authorization", `Bearer ${coach.accessToken}`);
+    expect(progressRes.status).toBe(200);
+
+    const matchingSkill = progressRes.body.skills.find(
+      (s: { skillId: string }) => s.skillId === skillId,
+    );
+    expect(matchingSkill, "skill from screen-based session should appear in progress").toBeDefined();
+    expect(matchingSkill.current.grade).toBe(3);
+
+    const coachingPriorities = progressRes.body.coachingPriorities as Array<{ targetSlug: string }>;
+    expect(Array.isArray(coachingPriorities)).toBe(true);
   });
 });
