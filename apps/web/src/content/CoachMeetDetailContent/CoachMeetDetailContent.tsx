@@ -5,7 +5,6 @@ import Link from "next/link";
 import type { MeetWithSwimsResponse, CoachSwimmer } from "@swim-app/shared";
 import { VALID_EVENTS } from "@swim-app/shared";
 
-import SiteFooter from "@/components/SiteFooter";
 import { addSwim } from "./actions";
 import type { AddSwimState } from "./actions";
 
@@ -211,7 +210,7 @@ interface CoachMeetDetailContentProps {
 
 export default function CoachMeetDetailContent({ meet, swimmers }: CoachMeetDetailContentProps) {
   return (
-    <div className="flex flex-col min-h-screen">
+    <div className="flex flex-col flex-1">
       <main className="flex-1 px-page py-16">
         <div className="mx-auto max-w-content flex flex-col gap-8">
           <div>
@@ -268,7 +267,6 @@ export default function CoachMeetDetailContent({ meet, swimmers }: CoachMeetDeta
           )}
         </div>
       </main>
-      <SiteFooter />
     </div>
   );
 }

@@ -3,7 +3,6 @@
 import { useActionState } from "react";
 
 import Button from "@/components/Button";
-import SiteFooter from "@/components/SiteFooter";
 
 import { login } from "./actions";
 
@@ -16,7 +15,7 @@ export default function LoginContent({ notice, returnTo }: LoginContentProps) {
   const [state, formAction, isPending] = useActionState(login, { error: null });
 
   return (
-    <div className="flex flex-col min-h-screen">
+    <div className="flex flex-col flex-1">
       <main className="flex-1 flex items-center justify-center px-page py-16">
         <div className="w-full max-w-sm">
           <h1 className="text-heading mb-2">Sign in</h1>
@@ -78,7 +77,6 @@ export default function LoginContent({ notice, returnTo }: LoginContentProps) {
           </p>
         </div>
       </main>
-      <SiteFooter />
     </div>
   );
 }

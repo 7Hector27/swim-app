@@ -4,6 +4,7 @@ import { Fraunces, Figtree } from "next/font/google";
 
 import Providers from "@/components/Providers";
 import NavController from "@/components/NavController";
+import SiteFooter from "@/components/SiteFooter";
 import { fetchMe } from "@/lib/api/me";
 import { fetchHousehold } from "@/lib/api/households";
 
@@ -66,12 +67,18 @@ export default async function RootLayout({
     isViewer = household?.myRole === "viewer";
   }
 
+  const showsTabBar = isSignedIn && (role === "parent" || role === "coach");
+
   return (
     <html lang="en" className={`${fraunces.variable} ${figtree.variable}`} suppressHydrationWarning>
-      <body className="min-h-screen bg-background text-text antialiased">
+      <body className="min-h-screen flex flex-col bg-background text-text antialiased">
         <Providers isSignedIn={isSignedIn} userName={userName} role={role} isViewer={isViewer}>
           <NavController />
-          {children}
+          <div className="flex-1 flex flex-col">
+            {children}
+          </div>
+          <SiteFooter />
+          {showsTabBar && <div className="pb-tab-safe tablet:hidden" aria-hidden="true" />}
         </Providers>
       </body>
     </html>

@@ -18,7 +18,6 @@ vi.mock("../content/LessonDetailContent/actions", () => ({
   rescheduleLessonAction: vi.fn(),
 }));
 
-vi.mock("@/components/SiteFooter", () => ({ default: () => <footer /> }));
 vi.mock("@/components/ConfirmDialog", () => ({
   default: () => <div data-testid="confirm-dialog" />,
 }));

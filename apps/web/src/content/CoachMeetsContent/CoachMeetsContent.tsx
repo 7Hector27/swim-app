@@ -5,7 +5,6 @@ import Link from "next/link";
 import type { MeetResponse } from "@swim-app/shared";
 
 import ConfirmDialog from "@/components/ConfirmDialog";
-import SiteFooter from "@/components/SiteFooter";
 import { createMeet, deleteMeet } from "./actions";
 import type { CreateMeetState, DeleteMeetState } from "./actions";
 
@@ -206,7 +205,7 @@ function MeetRow({ meet }: MeetRowProps) {
 
 export default function CoachMeetsContent({ meets }: CoachMeetsContentProps) {
   return (
-    <div className="flex flex-col min-h-screen">
+    <div className="flex flex-col flex-1">
       <main className="flex-1 px-page py-16">
         <div className="mx-auto max-w-content flex flex-col gap-8">
           <h1 className="text-heading font-heading font-semibold" style={{ fontVariationSettings: '"SOFT" 100, "WONK" 0' }}>
@@ -226,7 +225,6 @@ export default function CoachMeetsContent({ meets }: CoachMeetsContentProps) {
           )}
         </div>
       </main>
-      <SiteFooter />
     </div>
   );
 }

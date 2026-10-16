@@ -16,7 +16,7 @@ export default function MasterBoardContent({
   loadFailed = false,
 }: MasterBoardContentProps) {
   return (
-    <div className="bg-background min-h-screen">
+    <div className="bg-background">
       <div className="mx-auto max-w-content px-page py-12 tablet:py-16">
         <nav aria-label="Breadcrumb" className="mb-8">
           <a

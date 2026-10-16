@@ -10,7 +10,6 @@ vi.mock("react", async () => {
   return { ...actual, useActionState: mockUseActionState };
 });
 
-vi.mock("@/components/SiteFooter", () => ({ default: () => <footer /> }));
 vi.mock("@/components/ConfirmDialog", () => ({
   default: (props: { title: string }) => <div data-testid="confirm-dialog">{props.title}</div>,
 }));

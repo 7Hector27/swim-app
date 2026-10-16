@@ -3,7 +3,6 @@
 import { useActionState, useRef, useState } from "react";
 import { type CoachSwimmerDetail, type League, type CategoriesResponse, type SwimmerSkillsResponse, type StartGradeResult, type TimelineResponse, type MeetSwimResponse, type PersonalBest, type MeetResponse, VALID_EVENTS } from "@swim-app/shared";
 
-import SiteFooter from "@/components/SiteFooter";
 import AddNoteForm from "@/components/AddNoteForm";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import HidePublicButton from "./HidePublicButton";
@@ -463,10 +462,10 @@ function SwimmerTimesSection({ swimmerId, swims, personalBests, meets }: Swimmer
 
   return (
     <section className="flex flex-col gap-4">
-      <div className="flex items-start justify-between gap-3 flex-wrap">
+      <div className="flex items-center justify-between gap-3">
         <h2 className="font-bold text-text">Times</h2>
         {!showMeetForm && !showPracticeForm && (
-          <div className="flex gap-1 flex-wrap">
+          <div className="flex gap-1">
             <button
               type="button"
               onClick={() => setShowMeetForm(true)}
@@ -559,7 +558,7 @@ export default function CoachSwimmerDetailContent({
 }: CoachSwimmerDetailContentProps) {
 
   return (
-    <div className="flex flex-col min-h-screen">
+    <div className="flex flex-col flex-1">
       <main className="flex-1 px-page py-16">
         <div className="mx-auto max-w-content flex flex-col gap-8">
           <div>
@@ -656,9 +655,9 @@ export default function CoachSwimmerDetailContent({
                       <p className="text-xs font-semibold text-text-secondary">{category.name}</p>
                       <dl className="flex flex-col gap-1">
                         {startParents.map((skill) => (
-                          <div key={skill.id} className="flex gap-2 text-sm flex-wrap">
-                            <dt className="text-text-secondary min-w-0 shrink">{skill.name}</dt>
-                            <dd className="font-semibold text-text shrink-0">
+                          <div key={skill.id} className="flex gap-2 text-sm">
+                            <dt className="text-text-secondary w-48 shrink-0">{skill.name}</dt>
+                            <dd className="font-semibold text-text">
                               {formatStartGrade(startGrades[skill.slug]!, slugToNameMap)}
                             </dd>
                           </div>
@@ -666,9 +665,9 @@ export default function CoachSwimmerDetailContent({
                         {ratedSkills.map((skill) => {
                           if (skill.ratedPerSide) {
                             return (
-                              <div key={skill.id} className="flex gap-2 text-sm flex-wrap">
-                                <dt className="text-text-secondary min-w-0 shrink">{skill.name}</dt>
-                                <dd className="text-text flex gap-2 shrink-0">
+                              <div key={skill.id} className="flex gap-2 text-sm">
+                                <dt className="text-text-secondary w-48 shrink-0">{skill.name}</dt>
+                                <dd className="text-text flex gap-2">
                                   {grades[`${skill.slug}:left`] !== undefined && (
                                     <span>L: <span className="font-semibold">{gradeDisplay(grades[`${skill.slug}:left`]!)}</span></span>
                                   )}
@@ -682,9 +681,9 @@ export default function CoachSwimmerDetailContent({
                           const grade = grades[skill.slug];
                           if (grade === undefined) return null;
                           return (
-                            <div key={skill.id} className="flex gap-2 text-sm flex-wrap">
-                              <dt className="text-text-secondary min-w-0 shrink">{skill.name}</dt>
-                              <dd className="font-semibold text-text shrink-0">{gradeDisplay(grade)}</dd>
+                            <div key={skill.id} className="flex gap-2 text-sm">
+                              <dt className="text-text-secondary w-48 shrink-0">{skill.name}</dt>
+                              <dd className="font-semibold text-text">{gradeDisplay(grade)}</dd>
                             </div>
                           );
                         })}
@@ -805,7 +804,6 @@ export default function CoachSwimmerDetailContent({
           )}
         </div>
       </main>
-      <SiteFooter />
     </div>
   );
 }

@@ -7,7 +7,6 @@ import type { AvailableSlot, LessonLocation, UpcomingLesson } from "@swim-app/sh
 
 import AddNoteForm from "@/components/AddNoteForm";
 import ConfirmDialog from "@/components/ConfirmDialog";
-import SiteFooter from "@/components/SiteFooter";
 import { fetchSlotsDirectAction, findFirstAvailableDayAction } from "@/content/BookCalendarContent/actions";
 import { cancelLessonAction, rescheduleLessonAction, type LessonDetailState } from "./actions";
 
@@ -115,7 +114,7 @@ export default function LessonDetailContent({ lesson, locations, isViewer, isCoa
   });
 
   return (
-    <div className="flex flex-col min-h-screen bg-background">
+    <div className="flex flex-col flex-1 bg-background">
 
       <main id="main-content" className="flex-1">
         <div className="mx-auto max-w-content px-page pt-10 pb-20 tablet:pt-14 tablet:pb-32">
@@ -326,8 +325,6 @@ export default function LessonDetailContent({ lesson, locations, isViewer, isCoa
           )}
         </div>
       </main>
-
-      <SiteFooter />
 
       <ConfirmDialog
         dialogRef={cancelDialogRef}

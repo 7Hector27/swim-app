@@ -2,8 +2,6 @@ import type { CoachSwimmer } from "@swim-app/shared";
 import { todayLA } from "@swim-app/shared";
 
 import Placeholder from "@/components/Placeholder";
-import SiteFooter from "@/components/SiteFooter";
-import { SHOW_PLACEHOLDERS } from "@/config/placeholders";
 import { fetchCoachSwimmers } from "@/lib/api/coachSwimmers";
 import { coachGetPendingLessons, fetchCoachSchedule, fetchCoachStats } from "@/lib/api/lessons";
 import BookingRequestsCard from "./BookingRequestsCard";
@@ -31,12 +29,12 @@ export default async function CoachDashboardContent({ accessToken }: Props) {
   }).format(new Date());
 
   return (
-    <div className="flex flex-col min-h-screen bg-background">
+    <div className="flex flex-col flex-1 bg-background">
 
       <main id="main-content" className="flex-1">
         <div className="mx-auto max-w-content px-page pt-10 pb-20 tablet:pt-14 tablet:pb-32">
           {/* Page header */}
-          <div className="flex flex-col gap-4 mb-8">
+          <div className="flex flex-col gap-4 mb-8 tablet:flex-row tablet:items-start tablet:justify-between">
             <div>
               <h1 className="text-3xl tablet:text-4xl text-heading">{dateLabel}</h1>
               <p className="mt-2 text-sm text-text-secondary">
@@ -46,33 +44,31 @@ export default async function CoachDashboardContent({ accessToken }: Props) {
               </p>
             </div>
 
-            <div className="flex flex-col gap-3 tablet:flex-row tablet:flex-wrap">
-              <a
-                href="/coach/meets"
-                className="w-full tablet:w-auto inline-flex items-center justify-center rounded-button border-2 border-button-outline text-button-outline font-bold text-sm px-5 h-11 transition-colors duration-150 hover:opacity-80"
-              >
-                Log a time
-              </a>
-              {SHOW_PLACEHOLDERS ? (
+            <div className="flex items-center gap-3 flex-wrap flex-shrink-0">
+              <Placeholder>
                 <button
                   type="button"
-                  inert
-                  aria-hidden="true"
-                  className="w-full tablet:w-auto inline-flex items-center justify-center gap-2 rounded-button border-2 border-button-outline text-button-outline font-bold text-sm px-5 h-11"
+                  className="inline-flex items-center justify-center rounded-button border-2 border-button-outline text-button-outline font-bold text-sm px-5 h-11 transition-colors duration-150 hover:opacity-80"
                 >
-                  Edit availability
-                  <span className="rounded-full bg-surface-soft border border-border text-text-secondary text-[10px] font-semibold px-1.5 leading-5 whitespace-nowrap">
-                    Coming soon
-                  </span>
+                  Log a time
                 </button>
-              ) : (
+              </Placeholder>
+              <Placeholder>
                 <button
                   type="button"
-                  className="w-full tablet:w-auto inline-flex items-center justify-center rounded-button border-2 border-button-outline text-button-outline font-bold text-sm px-5 h-11 transition-colors duration-150 hover:opacity-80"
+                  className="inline-flex items-center justify-center rounded-button border-2 border-button-outline text-button-outline font-bold text-sm px-5 h-11 transition-colors duration-150 hover:opacity-80"
                 >
                   Edit availability
                 </button>
-              )}
+              </Placeholder>
+              <Placeholder>
+                <button
+                  type="button"
+                  className="inline-flex items-center justify-center rounded-button bg-button-primary-background text-button-primary-text font-bold text-sm px-5 h-11 transition-opacity hover:opacity-90"
+                >
+                  Add swimmer
+                </button>
+              </Placeholder>
             </div>
           </div>
 
@@ -85,9 +81,9 @@ export default async function CoachDashboardContent({ accessToken }: Props) {
           </div>
 
           {/* Two-column layout */}
-          <div className="flex flex-col tablet:flex-row gap-6 desktop:gap-8 tablet:items-start">
+          <div className="flex flex-col tablet:flex-row gap-6 desktop:gap-8 items-start">
             {/* Main column */}
-            <div className="w-full tablet:flex-1 min-w-0 flex flex-col gap-6">
+            <div className="flex-1 min-w-0 flex flex-col gap-6">
               <TodayScheduleCard items={scheduleItems} />
 
               <SwimmersSection swimmers={swimmers} />
@@ -106,8 +102,6 @@ export default async function CoachDashboardContent({ accessToken }: Props) {
           </div>
         </div>
       </main>
-
-      <SiteFooter />
     </div>
   );
 }

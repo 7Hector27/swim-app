@@ -18,7 +18,7 @@ const boardCards = [
 
 export default function LeaderboardLandingContent() {
   return (
-    <div className="bg-background min-h-screen">
+    <div className="bg-background">
       <div className="mx-auto max-w-content px-page py-16 tablet:py-24">
         <div className="flex flex-col gap-3 mb-10 tablet:mb-14">
           <h1 className="text-heading">Leaderboards</h1>

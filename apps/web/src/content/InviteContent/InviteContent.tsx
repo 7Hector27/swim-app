@@ -3,7 +3,6 @@
 import { useActionState } from "react";
 
 import Button from "@/components/Button";
-import SiteFooter from "@/components/SiteFooter";
 import type { InviteStatus } from "@swim-app/shared";
 
 import { acceptInviteAction, type AcceptState } from "./actions";
@@ -29,14 +28,13 @@ export default function InviteContent({ status, householdName, token }: InviteCo
     };
 
     return (
-      <div className="flex flex-col min-h-screen">
+      <div className="flex flex-col flex-1">
         <main className="flex-1 flex items-center justify-center px-page py-16">
           <div className="w-full max-w-sm text-center">
             <h1 className="text-heading mb-4">Invite unavailable</h1>
             <p className="text-text-secondary">{messages[status] ?? "This invite link is not valid."}</p>
           </div>
         </main>
-        <SiteFooter />
       </div>
     );
   }
@@ -44,7 +42,7 @@ export default function InviteContent({ status, householdName, token }: InviteCo
   const errorMessage = state.status === "error" ? state.error : null;
 
   return (
-    <div className="flex flex-col min-h-screen">
+    <div className="flex flex-col flex-1">
       <main className="flex-1 flex items-center justify-center px-page py-16">
         <div className="w-full max-w-sm text-center">
           <h1 className="text-heading mb-2">Join the {householdName} household?</h1>
@@ -72,7 +70,6 @@ export default function InviteContent({ status, householdName, token }: InviteCo
           </a>
         </div>
       </main>
-      <SiteFooter />
     </div>
   );
 }

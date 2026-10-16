@@ -23,7 +23,6 @@ vi.mock("@/components/ConfirmDialog", () => ({
   ),
 }));
 
-vi.mock("@/components/SiteFooter", () => ({ default: () => <footer /> }));
 vi.mock("@/components/SiteNav", () => ({ default: () => <nav /> }));
 vi.mock("@/content/CoachSwimmerDetailContent/HidePublicButton", () => ({
   default: () => <button>Hide</button>,

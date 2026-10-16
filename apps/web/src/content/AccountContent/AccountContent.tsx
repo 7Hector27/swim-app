@@ -1,7 +1,6 @@
 import type { MeResponse } from "@swim-app/shared";
 
 import Button from "@/components/Button";
-import SiteFooter from "@/components/SiteFooter";
 import { capitalizeFirst } from "@/lib/capitalizeFirst";
 
 import EditProfileForm from "./EditProfileForm";
@@ -13,7 +12,7 @@ interface AccountContentProps {
 
 export default function AccountContent({ profile }: AccountContentProps) {
   return (
-    <div className="flex flex-col min-h-screen">
+    <div className="flex flex-col flex-1">
       <main className="flex-1 px-page py-16">
         <div className="mx-auto max-w-sm flex flex-col gap-8">
           <h1 className="text-heading">Account</h1>
@@ -41,7 +40,6 @@ export default function AccountContent({ profile }: AccountContentProps) {
           </form>
         </div>
       </main>
-      <SiteFooter />
     </div>
   );
 }

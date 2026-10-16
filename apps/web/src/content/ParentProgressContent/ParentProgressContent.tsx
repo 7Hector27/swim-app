@@ -2,15 +2,13 @@ import Link from "next/link";
 
 import type { ParentSwimmer } from "@swim-app/shared";
 
-import SiteFooter from "@/components/SiteFooter";
-
 interface Props {
   swimmers: ParentSwimmer[];
 }
 
 export default function ParentProgressContent({ swimmers }: Props) {
   return (
-    <div className="flex flex-col min-h-screen bg-background">
+    <div className="flex flex-col flex-1 bg-background">
       <main id="main-content" className="flex-1">
         <div className="mx-auto max-w-content px-page pt-10 pb-20 tablet:pt-14 tablet:pb-32">
           <h1 className="text-3xl tablet:text-4xl text-heading mb-3">Progress</h1>
@@ -37,7 +35,6 @@ export default function ParentProgressContent({ swimmers }: Props) {
           </ul>
         </div>
       </main>
-      <SiteFooter />
     </div>
   );
 }

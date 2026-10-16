@@ -1,9 +1,8 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 
-// Mock SiteNav and SiteFooter (server components) to avoid import errors
+// Mock SiteNav (server component) to avoid import errors
 vi.mock("@/components/SiteNav", () => ({ default: () => null }));
-vi.mock("@/components/SiteFooter", () => ({ default: () => null }));
 vi.mock("@/components/AddNoteForm", () => ({ default: () => null }));
 vi.mock("@/content/EvaluateContent/actions", () => ({
   submitEvaluation: vi.fn(),
