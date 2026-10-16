@@ -13,7 +13,7 @@ export default function ParentLessonsContent({ upcoming, past }: Props) {
   return (
     <div className="flex flex-col min-h-screen bg-background">
       <main id="main-content" className="flex-1">
-        <div className="mx-auto max-w-content px-page pt-10 pb-tab-safe tablet:pt-14 tablet:pb-32">
+        <div className="mx-auto max-w-content px-page pt-10 pb-20 tablet:pt-14 tablet:pb-32">
           <h1 className="text-3xl tablet:text-4xl text-heading mb-8">Lessons</h1>
 
           <section className="mb-10">

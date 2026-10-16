@@ -64,9 +64,9 @@
     font-size: var(--text-eyebrow);
   }
 
-  /* Bottom padding that clears the mobile tab bar (3.5rem) plus the iPhone safe area. */
+  /* Spacer height that exactly matches the mobile tab bar so the bar covers it flush. */
   .pb-tab-safe {
-    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 5rem);
+    padding-bottom: calc(3.5rem + env(safe-area-inset-bottom, 0px));
   }
 }
 
