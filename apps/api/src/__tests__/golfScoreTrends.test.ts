@@ -146,7 +146,8 @@ describe("GET /coach/swimmers/:id/golf-score-trends", () => {
       .mockReturnValueOnce(requireUserSelect(profileCoach))
       .mockReturnValueOnce(swimmerSelect(activeSwimmerRow))
       .mockReturnValueOnce(ratingRowsSelect([]))
-      .mockReturnValueOnce(swimmerBirthDateSelect("2015-03-10"));
+      .mockReturnValueOnce(swimmerBirthDateSelect("2015-03-10"))
+      .mockReturnValueOnce(cohortSwimmersSelect([]));
 
     const res = await request(app)
       .get(`/coach/swimmers/${SWIMMER_ID}/golf-score-trends`)

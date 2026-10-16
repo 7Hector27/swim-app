@@ -643,7 +643,6 @@ describe("EvaluateContent — server draft banner", () => {
   const serverDraft: import("@swim-app/shared").EvaluationDraft = {
     id: DRAFT_ID,
     swimmerId: SWIMMER_ID,
-    coachId: "coach-00000000-0000-0000-0000-000000000001",
     screenSlug: DRAFT_SCREEN,
     sessionDate: "2026-10-14",
     context: "practice",

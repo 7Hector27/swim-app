@@ -553,7 +553,7 @@ export default function EvaluateContent({ swimmer, screens, accessToken, resumeD
             {/* Skills */}
             {selectedScreen !== null && (() => {
               const screen = selectedScreen;
-              function renderSkill(skill: SkillForRating, sectionName: string) {
+              function renderSkill(skill: SkillForRating, _sectionName: string) {
                 const label = skill.name;
                 if (skill.type === "rollup") {
                   let calculatedGrade: 1 | 2 | 3 | 4 | 5 | null = null;
