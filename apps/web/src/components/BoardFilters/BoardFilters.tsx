@@ -49,7 +49,7 @@ const sexOptions = [
 ];
 
 const selectClass =
-  "rounded-button bg-card text-text-on-section text-sm px-3 h-10 border border-divider-section focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring)] appearance-none pr-8 cursor-pointer";
+  "rounded-button bg-surface-soft text-text text-sm px-3 h-10 border border-border focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring)] appearance-none pr-8 cursor-pointer";
 
 interface FilterSelectProps {
   label: string;
@@ -80,7 +80,7 @@ function FilterSelect({ label, paramKey, options, currentValue, onChangeParam }:
         viewBox="0 0 12 12"
         fill="none"
         aria-hidden="true"
-        className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-text-secondary-on-section"
+        className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-text-secondary"
       >
         <path
           d="M2 4l4 4 4-4"

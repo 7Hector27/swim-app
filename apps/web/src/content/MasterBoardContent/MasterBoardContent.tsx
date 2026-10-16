@@ -16,26 +16,26 @@ export default function MasterBoardContent({
   loadFailed = false,
 }: MasterBoardContentProps) {
   return (
-    <div className="bg-section min-h-screen">
+    <div className="bg-background min-h-screen">
       <div className="mx-auto max-w-content px-page py-12 tablet:py-16">
         <nav aria-label="Breadcrumb" className="mb-8">
           <a
             href="/leaderboard"
-            className="text-text-secondary-on-section text-sm hover:text-text-on-section transition-colors duration-150"
+            className="text-text-secondary text-sm hover:text-text transition-colors duration-150"
           >
             ← Leaderboards
           </a>
         </nav>
 
         <div className="flex flex-col gap-3 mb-8">
-          <h1 className="text-text-on-section">Master Board</h1>
-          <p className="text-text-secondary-on-section text-base">
+          <h1 className="text-heading">Master Board</h1>
+          <p className="text-text-secondary text-base">
             Personal bests from swimmers whose families opted in to public display.
           </p>
         </div>
 
         {!loadFailed && !standardsAvailable && (
-          <div className="rounded-card bg-card border border-divider-section px-5 py-4 text-text-secondary-on-section text-sm mb-6">
+          <div className="rounded-card border border-border px-5 py-4 text-text-secondary text-sm mb-6">
             Standards coming soon
           </div>
         )}
@@ -47,7 +47,7 @@ export default function MasterBoardContent({
         </div>
 
         {loadFailed ? (
-          <p className="text-text-secondary-on-section text-sm py-16 text-center">
+          <p className="text-text-secondary text-sm py-16 text-center">
             Couldn&apos;t load the leaderboard. Try again.
           </p>
         ) : (
