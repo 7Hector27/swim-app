@@ -184,7 +184,7 @@ On the swimmer profile progress view, golf score is displayed as:
 
 ## Status on this branch
 
-Commits: ba8513d (PR 1), 25aff41 (PR 2), 55cd0a9 (PR 3).
+Commits: ba8513d (PR 1), 25aff41 (PR 2), 55cd0a9 (PR 3 partial), 0e73a58 (DB migration), 1c1793a (PR 3 complete).
 
 ### PR 1
 
@@ -196,7 +196,7 @@ Commits: ba8513d (PR 1), 25aff41 (PR 2), 55cd0a9 (PR 3).
 | Renames (Breath timing ×3, Stroke integrity ×3, Golf score) | **Done** — ba8513d |
 | Replace 7 dep links that pointed at archived shared skills; no new links | **Done** — ba8513d |
 | `CatalogSkill.archived` flag; syncCatalogFn; active→archived validation | **Done** — ba8513d |
-| `pnpm db:sync-catalog` run twice (second run idempotent) | **Not done** — DB not running; run manually after `pnpm db:up` |
+| `pnpm db:sync-catalog` run twice (second run idempotent) | **Not done** — run `pnpm db:up && pnpm db:migrate && pnpm db:sync-catalog` twice |
 
 ### PR 2
 
@@ -208,7 +208,7 @@ Commits: ba8513d (PR 1), 25aff41 (PR 2), 55cd0a9 (PR 3).
 | GET /categories: includes descriptors per skill | **Done** — 25aff41 |
 | SkillGradeRow: inline descriptor text for selected grade | **Done** — 25aff41 |
 | Tests (descriptor counts, fault tags, API response) | **Done** — 25aff41 |
-| `pnpm db:sync-catalog` to push descriptors/fault tags | **Not done** — run manually |
+| `pnpm db:sync-catalog` to push descriptors/fault tags | **Not done** — run manually after `pnpm db:up` |
 
 ### PR 3
 
@@ -217,24 +217,22 @@ Commits: ba8513d (PR 1), 25aff41 (PR 2), 55cd0a9 (PR 3).
 | `SkillForRatingSchema`: `stroke` field | **Done** — 55cd0a9 |
 | GET /categories: includes `stroke` per skill | **Done** — 55cd0a9 |
 | `EvalSectionHeader` component (collapsible, token styling) | **Done** — 55cd0a9 |
-| `buildSectionGroups` in helpers.ts | **Done** — 55cd0a9 |
+| `buildSectionGroups` in helpers.ts (now takes flat skill list) | **Done** — 1c1793a |
 | SessionSetup: today-date warning | **Done** — 55cd0a9 |
-| `screenSections.ts` exists with section config | **Partly done** — 55cd0a9: maps category slugs, not screen slugs; does not include cross-category skills; start sections list only the composite parent slug, not components + push-off + streamline-in-motion |
-| `skillDisplayLabel`: stroke name appears once per label | **Partly done** — 55cd0a9: appends `"· Free"` etc. per skill on name collisions; does not use section name as context; stroke name repeats per row instead of appearing once as a section heading |
-| EvaluateContent: collapsible sections, skillDisplayLabel applied | **Partly done** — 55cd0a9: sections render correctly against category-slug config, but category model not replaced and cross-category skills absent |
-| `BreathingPatternSchema` enum | **Not done** |
-| DB migration: `screenSlug` on `evaluationSessions` | **Not done** |
-| DB migration: `breathingPattern` on `evaluationSessions` | **Not done** |
-| DB migration: `recommendedBreathingPattern` on `swimmers` | **Not done** |
-| `SCREEN_SKILLS` map in shared (authoritative per-screen skill list) | **Not done** |
-| `CreateSessionBodySchema`: `screenSlug` replaces `categoryId`; `breathingPattern` field | **Not done** |
-| POST /sessions: validates `screenSlug`; validates skills against screen list | **Not done** |
-| GET /coach/screens (replaces GET /categories for evaluation form) | **Not done** |
-| PATCH /coach/swimmers/:id: `recommendedBreathingPattern` field | **Not done** |
-| SessionSetup: screen picker replacing category picker | **Not done** |
-| SessionSetup: breathing pattern selector for free/fly screens | **Not done** |
-| screenSections.ts: screen-slug keys, cross-category skills, start sections include components + push-off + streamline-in-motion | **Not done** |
-| EvaluateContent: calls GET /screens, uses screenSlug on session | **Not done** |
-| Swimmer profile: recommended breathing pattern field | **Not done** |
-| Golf score trend: age-group bands at threshold 10 (confirm with Jason); trend-only below threshold | **Not done** |
-| Tests (POST /sessions with screenSlug, GET /screens, breathing pattern, screen skill validation) | **Not done** |
+| `screenSections.ts`: screen-slug keys, cross-category skills, start sections include components + push-off + streamline-in-motion | **Done** — 1c1793a |
+| `skillDisplayLabel`: returns `skill.name` only (section heading carries stroke context) | **Done** — 1c1793a |
+| EvaluateContent: calls GET /screens, uses screenSlug, cross-category skills, collapsible sections | **Done** — 1c1793a |
+| `BreathingPatternSchema` enum | **Done** — 1c1793a |
+| DB migration: `screenSlug` on `evaluationSessions` | **Done** — 0e73a58 (not applied locally yet) |
+| DB migration: `breathingPattern` on `evaluationSessions` | **Done** — 0e73a58 (not applied locally yet) |
+| DB migration: `recommendedBreathingPattern` on `swimmers` | **Done** — 0e73a58 (not applied locally yet) |
+| `SCREEN_SKILLS` map in shared (authoritative per-screen skill list) | **Done** — 1c1793a |
+| `CreateSessionBodySchema`: `screenSlug` replaces `categoryId`; `breathingPattern` field | **Done** — 1c1793a |
+| POST /sessions: validates `screenSlug`; validates skills against screen list | **Done** — 1c1793a |
+| GET /coach/screens (new route, alongside GET /categories) | **Done** — 1c1793a |
+| PATCH /coach/swimmers/:id: `recommendedBreathingPattern` field | **Done** — 1c1793a |
+| SessionSetup: screen picker replacing category picker | **Done** — 1c1793a |
+| SessionSetup: breathing pattern selector for free/fly screens | **Done** — 1c1793a |
+| Swimmer profile: recommended breathing pattern field | **Done** — 1c1793a |
+| Tests (POST /sessions with screenSlug, GET /screens, breathing pattern, screen skill validation) | **Done** — 1c1793a |
+| Golf score trend: age-group bands at threshold 10 (confirm with Jason); trend-only below threshold | **Not done** — separate PR |
