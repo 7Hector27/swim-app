@@ -122,3 +122,52 @@ Test `helpers.ts` only — it's the only file with logic worth unit-testing (pur
 import { describe, expect, it } from "vitest";
 import { mapApiResponse } from "../content/AddSwimmerContent/helpers";
 ```
+
+## Value retention on error
+
+Every text, date, and select input must keep its value after a server error.
+
+**Controlled inputs**: use `useState` for every field (except password fields in login/signup, which may clear). Wire `value` and `onChange` on each input. On success, reset the state fields in addition to any `formRef.current?.reset()` call.
+
+**Re-open reset**: for forms that hide/show (CreateMeetForm, AddSwimForm), add a `useEffect` on the open state to reset all field state when the form opens.
+
+## Focus on error
+
+Import `useEffect` and `useRef`. Add a ref on the top-level error `<p>`:
+
+```tsx
+const errorRef = useRef<HTMLParagraphElement>(null);
+useEffect(() => {
+  if (state.status === "error" || state.status === "field_errors") {
+    errorRef.current?.focus();
+  }
+}, [state]);
+```
+
+The error paragraph:
+```tsx
+<p
+  ref={errorRef}
+  role="alert"
+  aria-live="assertive"
+  tabIndex={-1}
+  style={{ outline: "none" }}
+  className="text-danger text-sm min-h-5"
+>
+  {state.status === "error" ? state.message : ""}
+</p>
+```
+
+## Friendly error messages
+
+Import `apiErrorMessage` from `@/lib/apiErrorMessage` in every server action. Use it for API error code → message mapping:
+
+```ts
+import { apiErrorMessage } from "@/lib/apiErrorMessage";
+
+// In the action:
+const code = (body as { error?: string } | null)?.error;
+return { status: "error", message: apiErrorMessage(code) };
+```
+
+Never inline API error code strings — always go through `apiErrorMessage`. Network and session errors remain inline constants ("Something went wrong on our end. Try again in a moment." / "Session expired. Please sign in again.").

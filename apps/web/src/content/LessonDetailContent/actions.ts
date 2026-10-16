@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { apiErrorMessage } from "@/lib/apiErrorMessage";
 
 export type LessonDetailState = { status: "idle" } | { status: "error"; message: string };
 
@@ -38,7 +39,7 @@ export async function cancelLessonAction(
 
   const code = (responseBody as { error?: string } | null)?.error;
   if (code === "lesson_not_active") {
-    return { status: "error", message: "This lesson has already been canceled or completed." };
+    return { status: "error", message: apiErrorMessage("lesson_not_active") };
   }
   return { status: "error", message: "Could not cancel this lesson. Please try again." };
 }
@@ -91,13 +92,7 @@ export async function rescheduleLessonAction(
   }
 
   const code = (responseBody as { error?: string } | null)?.error;
-  const codeMessages: Record<string, string> = {
-    too_soon: "The new time must be at least 16 hours from now.",
-    too_far: "The new time must be within 10 weeks.",
-    not_a_lesson_day: "Jason doesn't teach on that day.",
-    slot_unavailable: "That time slot is no longer available.",
-  };
-  if (code && codeMessages[code]) return { status: "error", message: codeMessages[code]! };
   if (responseStatus === 403) return { status: "error", message: "You don't have permission to reschedule this lesson." };
-  return { status: "error", message: "Something went wrong. Please try again." };
+  if (code) return { status: "error", message: apiErrorMessage(code) };
+  return { status: "error", message: apiErrorMessage(undefined) };
 }

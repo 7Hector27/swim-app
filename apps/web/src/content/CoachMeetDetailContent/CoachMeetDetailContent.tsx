@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import type { MeetWithSwimsResponse, CoachSwimmer } from "@swim-app/shared";
 import { VALID_EVENTS } from "@swim-app/shared";
@@ -30,6 +30,11 @@ interface AddSwimFormProps {
 function AddSwimForm({ meet, swimmers }: AddSwimFormProps) {
   const [open, setOpen] = useState(false);
   const [selectedStroke, setSelectedStroke] = useState<string>("free");
+  const [distanceValue, setDistanceValue] = useState<string>("");
+  const [swimmerId, setSwimmerId] = useState<string>("");
+  const [timeString, setTimeString] = useState<string>("");
+  const [swumOn, setSwumOn] = useState<string>(meet.meetDate);
+  const errorRef = useRef<HTMLParagraphElement>(null);
   const [state, action, isPending] = useActionState<AddSwimState, FormData>(
     addSwim.bind(null, meet.id),
     { status: "idle" },
@@ -40,6 +45,22 @@ function AddSwimForm({ meet, swimmers }: AddSwimFormProps) {
       setOpen(false);
     }
   }, [state.status]);
+
+  useEffect(() => {
+    if (open) {
+      setSelectedStroke("free");
+      setDistanceValue("");
+      setSwimmerId("");
+      setTimeString("");
+      setSwumOn(meet.meetDate);
+    }
+  }, [open, meet.meetDate]);
+
+  useEffect(() => {
+    if (state.status === "error") {
+      errorRef.current?.focus();
+    }
+  }, [state]);
 
   const distances = VALID_EVENTS[selectedStroke as keyof typeof VALID_EVENTS] ?? [];
 
@@ -76,6 +97,8 @@ function AddSwimForm({ meet, swimmers }: AddSwimFormProps) {
           id="swim-swimmer"
           name="swimmerId"
           required
+          value={swimmerId}
+          onChange={(e) => setSwimmerId(e.target.value)}
           className="h-11 px-3 rounded-lg border border-border bg-background text-text text-sm focus:outline focus:outline-2 focus:outline-focus-ring"
         >
           <option value="">Select swimmer…</option>
@@ -97,7 +120,10 @@ function AddSwimForm({ meet, swimmers }: AddSwimFormProps) {
             name="eventStroke"
             required
             value={selectedStroke}
-            onChange={(event) => setSelectedStroke(event.target.value)}
+            onChange={(event) => {
+              setSelectedStroke(event.target.value);
+              setDistanceValue("");
+            }}
             className="h-11 px-3 rounded-lg border border-border bg-background text-text text-sm focus:outline focus:outline-2 focus:outline-focus-ring"
           >
             {Object.entries(STROKE_LABELS).map(([value, label]) => (
@@ -114,8 +140,11 @@ function AddSwimForm({ meet, swimmers }: AddSwimFormProps) {
             id="swim-distance"
             name="eventDistance"
             required
+            value={distanceValue}
+            onChange={(e) => setDistanceValue(e.target.value)}
             className="h-11 px-3 rounded-lg border border-border bg-background text-text text-sm focus:outline focus:outline-2 focus:outline-focus-ring"
           >
+            <option value="">Select…</option>
             {distances.map((dist) => (
               <option key={dist} value={dist}>{dist}y / {dist}m</option>
             ))}
@@ -151,6 +180,8 @@ function AddSwimForm({ meet, swimmers }: AddSwimFormProps) {
           required
           placeholder="e.g. 1:02.34 or 58.30"
           inputMode="decimal"
+          value={timeString}
+          onChange={(e) => setTimeString(e.target.value)}
           className="h-11 px-3 rounded-lg border border-border bg-background text-text text-sm font-variant-numeric tabular-nums focus:outline focus:outline-2 focus:outline-focus-ring"
         />
       </div>
@@ -164,13 +195,21 @@ function AddSwimForm({ meet, swimmers }: AddSwimFormProps) {
           name="swumOn"
           type="date"
           required
-          defaultValue={meet.meetDate}
+          value={swumOn}
+          onChange={(e) => setSwumOn(e.target.value)}
           className="h-11 px-3 rounded-lg border border-border bg-background text-text text-sm focus:outline focus:outline-2 focus:outline-focus-ring"
         />
       </div>
 
       {state.status === "error" && (
-        <p role="alert" className="text-sm text-danger">
+        <p
+          ref={errorRef}
+          role="alert"
+          aria-live="assertive"
+          tabIndex={-1}
+          style={{ outline: "none" }}
+          className="text-sm text-danger"
+        >
           {state.message}
         </p>
       )}

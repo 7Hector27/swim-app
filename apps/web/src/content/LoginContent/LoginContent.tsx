@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 
 import Button from "@/components/Button";
 
@@ -13,6 +13,14 @@ interface LoginContentProps {
 
 export default function LoginContent({ notice, returnTo }: LoginContentProps) {
   const [state, formAction, isPending] = useActionState(login, { error: null });
+  const [email, setEmail] = useState("");
+  const errorRef = useRef<HTMLParagraphElement>(null);
+
+  useEffect(() => {
+    if (state.error) {
+      errorRef.current?.focus();
+    }
+  }, [state.error]);
 
   return (
     <div className="flex flex-col flex-1">
@@ -39,6 +47,8 @@ export default function LoginContent({ notice, returnTo }: LoginContentProps) {
                 type="email"
                 autoComplete="email"
                 required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 className="h-12 px-4 rounded-lg border border-border bg-background text-text placeholder:text-text-secondary"
               />
             </div>
@@ -57,7 +67,14 @@ export default function LoginContent({ notice, returnTo }: LoginContentProps) {
               />
             </div>
 
-            <p aria-live="polite" className="text-danger text-sm min-h-5">
+            <p
+              ref={errorRef}
+              role="alert"
+              aria-live="assertive"
+              tabIndex={-1}
+              style={{ outline: "none" }}
+              className="text-danger text-sm min-h-5"
+            >
               {state.error ?? ""}
             </p>
 
