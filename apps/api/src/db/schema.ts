@@ -360,6 +360,77 @@ export const seasonSummerEndDates = pgTable("season_summer_end_dates", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }).enableRLS();
 
+// ── Availability seasons ──────────────────────────────────────────────────────
+
+export const availabilitySeasons = pgTable(
+  "availability_seasons",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: text("name").notNull(),
+    startDate: date("start_date").notNull().unique(),
+    // ISO day numbers: 1=Mon … 7=Sun. Non-empty subset of {1..7} — validated at the API layer.
+    teachesDays: integer("teaches_days").array().notNull(),
+    weekdayStartTime: time("weekday_start_time"),
+    weekendStartTime: time("weekend_start_time"),
+    endTime: time("end_time").notNull(),
+    // When true, this season starts on that year's daylight saving start date.
+    // "Copy to next year" uses the next year's DST date for it instead of a naive +1 year.
+    startsAtDst: boolean("starts_at_dst").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdateFn(() => new Date()),
+  },
+  (table) => [
+    check(
+      "availability_seasons_weekday_before_end",
+      sql`${table.weekdayStartTime} IS NULL OR ${table.weekdayStartTime} < ${table.endTime}`,
+    ),
+    check(
+      "availability_seasons_weekend_before_end",
+      sql`${table.weekendStartTime} IS NULL OR ${table.weekendStartTime} < ${table.endTime}`,
+    ),
+  ],
+).enableRLS();
+
+// ── Availability overrides ────────────────────────────────────────────────────
+
+export const availabilityOverrideKindEnum = pgEnum("availability_override_kind", [
+  "day_off",
+  "custom_hours",
+]);
+
+export const availabilityOverrides = pgTable(
+  "availability_overrides",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    kind: availabilityOverrideKindEnum("kind").notNull(),
+    startDate: date("start_date").notNull(),
+    endDate: date("end_date").notNull(),
+    startTime: time("start_time"),
+    endTime: time("end_time"),
+    note: text("note"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdateFn(() => new Date()),
+  },
+  (table) => [
+    check(
+      "availability_overrides_end_on_or_after_start",
+      sql`${table.endDate} >= ${table.startDate}`,
+    ),
+    // day_off: both times must be null. custom_hours: both times must be set, same day, start < end.
+    check(
+      "availability_overrides_kind_shape",
+      sql`(${table.kind} = 'day_off'
+            AND ${table.startTime} IS NULL
+            AND ${table.endTime} IS NULL)
+          OR (${table.kind} = 'custom_hours'
+            AND ${table.startTime} IS NOT NULL
+            AND ${table.endTime} IS NOT NULL
+            AND ${table.startDate} = ${table.endDate}
+            AND ${table.startTime} < ${table.endTime})`,
+    ),
+  ],
+).enableRLS();
+
 // ── Blocked times ─────────────────────────────────────────────────────────────
 
 export const blockedTimes = pgTable(

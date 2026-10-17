@@ -251,6 +251,42 @@ export const CoachStatsSchema = z.object({
 });
 export type CoachStats = z.infer<typeof CoachStatsSchema>;
 
+// ── Availability seasons ──────────────────────────────────────────────────────
+
+const TimeStringSchema = z.string().regex(/^\d{2}:\d{2}$/);
+
+export const AvailabilitySeasonSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string(),
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  teachesDays: z.array(z.number().int().min(1).max(7)),
+  weekdayStartTime: TimeStringSchema.nullable(),
+  weekendStartTime: TimeStringSchema.nullable(),
+  endTime: TimeStringSchema,
+  startsAtDst: z.boolean(),
+  createdAt: z.string().datetime({ offset: true }),
+  updatedAt: z.string().datetime({ offset: true }),
+});
+export type AvailabilitySeason = z.infer<typeof AvailabilitySeasonSchema>;
+
+// ── Availability overrides ────────────────────────────────────────────────────
+
+export const AvailabilityOverrideKindSchema = z.enum(["day_off", "custom_hours"]);
+export type AvailabilityOverrideKind = z.infer<typeof AvailabilityOverrideKindSchema>;
+
+export const AvailabilityOverrideSchema = z.object({
+  id: z.string().uuid(),
+  kind: AvailabilityOverrideKindSchema,
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  startTime: TimeStringSchema.nullable(),
+  endTime: TimeStringSchema.nullable(),
+  note: z.string().nullable(),
+  createdAt: z.string().datetime({ offset: true }),
+  updatedAt: z.string().datetime({ offset: true }),
+});
+export type AvailabilityOverride = z.infer<typeof AvailabilityOverrideSchema>;
+
 // ── Season summer end dates ───────────────────────────────────────────────────
 
 export const SeasonSummerEndDateSchema = z.object({

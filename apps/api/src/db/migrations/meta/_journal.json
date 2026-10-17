@@ -225,6 +225,20 @@
       "when": 1792185834327,
       "tag": "0031_kind_doctor_doom",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1792216000878,
+      "tag": "0032_puzzling_devos",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1792216007877,
+      "tag": "0033_seed_availability_seasons",
+      "breakpoints": true
     }
   ]
 }
