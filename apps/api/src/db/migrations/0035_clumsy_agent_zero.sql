@@ -1,0 +1,1 @@
+ALTER TABLE "availability_overrides" ADD CONSTRAINT "availability_overrides_note_length" CHECK ("availability_overrides"."note" IS NULL OR char_length("availability_overrides"."note") <= 500);

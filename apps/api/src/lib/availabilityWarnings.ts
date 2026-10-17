@@ -36,6 +36,8 @@ export interface UpcomingLessonForWarning {
   id: string;
   startsAt: Date;
   durationMinutes: number;
+  swimmerFirstNames: string[];
+  poolName: string;
 }
 
 export function computeImpactWarnings(
@@ -52,6 +54,8 @@ export function computeImpactWarnings(
         lessonId: lesson.id,
         startsAt: lesson.startsAt.toISOString(),
         reason: "day_closed",
+        swimmerFirstNames: lesson.swimmerFirstNames,
+        poolName: lesson.poolName,
       });
       continue;
     }
@@ -67,6 +71,8 @@ export function computeImpactWarnings(
         lessonId: lesson.id,
         startsAt: lesson.startsAt.toISOString(),
         reason: "outside_hours",
+        swimmerFirstNames: lesson.swimmerFirstNames,
+        poolName: lesson.poolName,
       });
     }
   }

@@ -50,8 +50,9 @@ Covers "a day off for one date", "vacation" (date range off), and "custom hours 
 
 API-level rules:
 
-- Overlapping overrides on the same date range → 422 `override_conflict` (one source of truth per date).
+- Overlapping overrides on the same date range → 422 `override_conflict` (one source of truth per date). **Kind-agnostic**: a `day_off` and a `custom_hours` on the same date (or overlapping ranges) conflict, because a date can only have one source of truth.
 - `custom_hours` times are 15-minute-aligned and `start_time < end_time`.
+- `note` is capped at 500 characters (Zod `max(500)` + DB `CHECK` constraint).
 
 ### 1.3 Blocked times — unchanged
 
@@ -143,6 +144,8 @@ packages/shared/src/index.ts                                            re-expor
 - The drop migration runs **last** so a rollback of PR 2 (slot engine) can still see the retired columns if needed. Per repo convention: state applied-locally status in the commit message; production migrations are never automatic.
 - No column renames hand-edited into snapshots.
 
+**Applied locally:** migrations `0032_puzzling_devos.sql`, `0033_seed_availability_seasons.sql`, and the drop migration `0034_tan_microbe.sql` were applied locally via `pnpm db:migrate`. The follow-on `0035_clumsy_agent_zero.sql` (adds the `availability_overrides_note_length` CHECK) was also applied locally.
+
 **Tests**
 
 - `apps/api/src/__tests__/schema.test.ts` (if present) still passes.
@@ -217,7 +220,7 @@ packages/shared/src/index.ts                     re-export
 | POST   | /coach/seasons                | Create. Body: `{ name, startDate, teachesDays, weekdayStartTime, weekendStartTime, endTime }`.                                     |
 | PATCH  | /coach/seasons/:id            | Update any field; `isCurrent` recomputed.                                                                                          |
 | DELETE | /coach/seasons/:id            | Remove. Returns a warning body if removing it leaves booked lessons outside the resulting hours (lessons are not changed).         |
-| POST   | /coach/seasons/copy-next-year | Duplicate every season with `start_date + 1 year`. Skips any whose shifted `start_date` already exists. Returns the inserted rows. |
+| POST   | /coach/seasons/copy-next-year | Duplicate seasons from the current cycle (those whose `start_date` is within 12 months of the latest season's `start_date`) with `start_date + 1 year`. Skips any whose shifted `start_date` already exists. Returns the inserted rows. |
 | GET    | /coach/overrides              | List all `availability_overrides`, ordered by `start_date`.                                                                        |
 | POST   | /coach/overrides              | Create. Body shape: `{ kind, startDate, endDate, startTime?, endTime?, note? }`.                                                   |
 | PATCH  | /coach/overrides/:id          | Update.                                                                                                                            |
@@ -233,8 +236,9 @@ packages/shared/src/index.ts                     re-export
   - `teaches_days` non-empty subset of `{1..7}`.
   - `custom_hours` requires `endDate == startDate`.
   - `day_off` requires both `startTime` and `endTime` absent.
-  - Overlapping overrides on the same date range → 422 `override_conflict`.
+  - Overlapping overrides on the same date range → 422 `override_conflict`. Kind-agnostic: `day_off` + `custom_hours` on the same date (or overlapping ranges) conflict.
   - Season `start_date` collision → 422 `season_date_taken`.
+  - Override `note` capped at 500 characters.
 - **Impact warning on hours-removing edits** (any PATCH or DELETE of a season or override that removes hours): compute `effectiveHours` across all upcoming approved+pending lessons; return `{ warnings: [{ lessonId, startsAt, reason }] }` for any lesson that now falls outside the new window. Pure additions skip the check. Never auto-cancel or move a lesson.
 - "Copy to next year" is **not** silently applied; it inserts rows and returns them so Jason sees the diff in the UI.
 
@@ -248,8 +252,11 @@ packages/shared/src/index.ts                     re-export
 - POST override `day_off` with a date range → 201; dates in range are closed.
 - POST override `custom_hours` with `endDate > startDate` → 422.
 - POST override overlapping an existing override's date range → 422 `override_conflict`.
-- DELETE season leaves one upcoming approved lesson outside new hours → response includes a `warnings` entry; lesson row untouched.
+- POST `day_off` override overlapping a `custom_hours` override (same date, different kind) → 422 `override_conflict` (kind-agnostic).
+- POST override with `note` longer than 500 characters → 422.
+- DELETE season leaves one upcoming approved lesson outside new hours → response includes a `warnings` entry with the lesson's swimmer first names and pool name; lesson row untouched.
 - `copy-next-year` on 5 seasons → inserts 5 rows with `start_date + 1 year`; a second call is a no-op (returns `[]`).
+- `copy-next-year` skips seasons older than 12 months before the latest season's `start_date` (prior-year cycles aren't rolled forward again).
 - Parent calling any of these → 403.
 
 **Out of scope**

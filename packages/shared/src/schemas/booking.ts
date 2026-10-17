@@ -389,7 +389,7 @@ export const CreateOverrideBodySchema = z.object({
   endDate: DateStringSchema,
   startTime: TimeStringSchema.optional(),
   endTime: TimeStringSchema.optional(),
-  note: z.string().optional(),
+  note: z.string().max(500).optional(),
 });
 export type CreateOverrideBody = z.infer<typeof CreateOverrideBodySchema>;
 
@@ -399,7 +399,7 @@ export const PatchOverrideBodySchema = z.object({
   endDate: DateStringSchema.optional(),
   startTime: TimeStringSchema.nullable().optional(),
   endTime: TimeStringSchema.nullable().optional(),
-  note: z.string().nullable().optional(),
+  note: z.string().max(500).nullable().optional(),
 });
 export type PatchOverrideBody = z.infer<typeof PatchOverrideBodySchema>;
 
@@ -407,6 +407,8 @@ export const ImpactWarningSchema = z.object({
   lessonId: z.string().uuid(),
   startsAt: z.string().datetime({ offset: true }),
   reason: z.enum(["outside_hours", "day_closed"]),
+  swimmerFirstNames: z.array(z.string()),
+  poolName: z.string(),
 });
 export type ImpactWarning = z.infer<typeof ImpactWarningSchema>;
 

@@ -410,6 +410,10 @@ export const availabilityOverrides = pgTable(
             AND ${table.startDate} = ${table.endDate}
             AND ${table.startTime} < ${table.endTime})`,
     ),
+    check(
+      "availability_overrides_note_length",
+      sql`${table.note} IS NULL OR char_length(${table.note}) <= 500`,
+    ),
   ],
 ).enableRLS();
 

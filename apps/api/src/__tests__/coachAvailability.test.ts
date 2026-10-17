@@ -142,6 +142,13 @@ function whereResolveSelect<T>(rows: T[]) {
   return { from: vi.fn().mockReturnValue({ where }) };
 }
 
+// For queries shaped .select().from().innerJoin().where() awaited directly.
+function innerJoinWhereSelect<T>(rows: T[]) {
+  const where = vi.fn().mockResolvedValue(rows);
+  const innerJoin = vi.fn().mockReturnValue({ where });
+  return { from: vi.fn().mockReturnValue({ innerJoin }) };
+}
+
 beforeEach(() => {
   vi.resetAllMocks();
 });
@@ -620,21 +627,27 @@ describe("POST /coach/seasons", () => {
 });
 
 describe("DELETE /coach/seasons/:id", () => {
-  it("returns warnings for upcoming lessons left outside hours", async () => {
+  it("returns warnings for upcoming lessons left outside hours with swimmer names and pool name", async () => {
     authAs(coachProfile);
 
     const deletedSeason = seasonRow();
-    const upcomingLesson = {
+    const lessonRow = {
       id: LESSON_A_ID,
       startsAt: new Date("2099-06-10T22:00:00.000Z"),
       durationMinutes: 30,
+      poolName: "Egret Park",
     };
+    const swimmerJoinRows = [
+      { lessonId: LESSON_A_ID, firstName: "Ava" },
+      { lessonId: LESSON_A_ID, firstName: "Max" },
+    ];
 
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(coachProfile))
       .mockReturnValueOnce(fromResolveSelect([]))
       .mockReturnValueOnce(fromResolveSelect([]))
-      .mockReturnValueOnce(whereResolveSelect([upcomingLesson]));
+      .mockReturnValueOnce(innerJoinWhereSelect([lessonRow]))
+      .mockReturnValueOnce(innerJoinWhereSelect(swimmerJoinRows));
 
     const deleteReturning = vi.fn().mockResolvedValue([deletedSeason]);
     const deleteWhere = vi.fn().mockReturnValue({ returning: deleteReturning });
@@ -649,7 +662,76 @@ describe("DELETE /coach/seasons/:id", () => {
     expect(res.body.warnings[0]).toMatchObject({
       lessonId: LESSON_A_ID,
       reason: "day_closed",
+      swimmerFirstNames: ["Ava", "Max"],
+      poolName: "Egret Park",
     });
+  });
+
+  it("returns 404 when the season does not exist", async () => {
+    authAs(coachProfile);
+    mockDbSelect.mockReturnValueOnce(requireUserSelect(coachProfile));
+
+    const deleteReturning = vi.fn().mockResolvedValue([]);
+    const deleteWhere = vi.fn().mockReturnValue({ returning: deleteReturning });
+    mockDbDelete.mockReturnValue({ where: deleteWhere });
+
+    const res = await request(app)
+      .delete(`/coach/seasons/${SEASON_A_ID}`)
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(404);
+  });
+});
+
+describe("PATCH /coach/seasons/:id", () => {
+  it("updates fields and returns 200 with warnings", async () => {
+    authAs(coachProfile);
+
+    // Use HH:MM in the fixture so the API-layer time-granularity validator
+    // (which expects HH:MM) accepts the fields the handler carries over from
+    // `existing` for keys the body doesn't override.
+    const existing = seasonRow({
+      weekdayStartTime: "15:00",
+      weekendStartTime: "09:00",
+      endTime: "20:00",
+    });
+    const updated = { ...existing, endTime: "19:00" };
+
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(coachProfile))
+      .mockReturnValueOnce(simpleSelect([existing]))
+      .mockReturnValueOnce(fromResolveSelect([updated]))
+      .mockReturnValueOnce(fromResolveSelect([]))
+      .mockReturnValueOnce(innerJoinWhereSelect([]));
+
+    const updateReturning = vi.fn().mockResolvedValue([updated]);
+    const updateWhere = vi.fn().mockReturnValue({ returning: updateReturning });
+    const updateSet = vi.fn().mockReturnValue({ where: updateWhere });
+    mockDbUpdate.mockReturnValue({ set: updateSet });
+
+    const res = await request(app)
+      .patch(`/coach/seasons/${SEASON_A_ID}`)
+      .set("Authorization", "Bearer token")
+      .send({ endTime: "19:00" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.season.endTime).toBe("19:00");
+    expect(res.body.warnings).toEqual([]);
+  });
+
+  it("returns 404 when the season does not exist", async () => {
+    authAs(coachProfile);
+
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(coachProfile))
+      .mockReturnValueOnce(simpleSelect<unknown>([]));
+
+    const res = await request(app)
+      .patch(`/coach/seasons/${SEASON_A_ID}`)
+      .set("Authorization", "Bearer token")
+      .send({ endTime: "19:00" });
+
+    expect(res.status).toBe(404);
   });
 });
 
@@ -717,6 +799,40 @@ describe("POST /coach/seasons/copy-next-year", () => {
     expect(mockDbInsert).not.toHaveBeenCalled();
   });
 
+  it("skips seasons older than 12 months before the latest season's start_date", async () => {
+    authAs(coachProfile);
+
+    // Latest is 2026-05-15. Cutoff is 2025-05-15. The 2024 season is older
+    // than the cutoff and must not be copied, even though its +1 year date
+    // (2025-11-01) isn't already in the table.
+    const seasons = [
+      seasonRow({ id: "11111111-0000-0000-0000-00000000000a", startDate: "2024-11-01" }),
+      seasonRow({ id: "11111111-0000-0000-0000-00000000000b", startDate: "2026-01-15" }),
+      seasonRow({ id: "11111111-0000-0000-0000-00000000000c", startDate: "2026-05-15" }),
+    ];
+
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(coachProfile))
+      .mockReturnValueOnce(fromResolveSelect(seasons));
+
+    const insertedRows = [
+      seasonRow({ id: "11111111-0000-0000-0000-00000000001b", startDate: "2027-01-15" }),
+      seasonRow({ id: "11111111-0000-0000-0000-00000000001c", startDate: "2027-05-15" }),
+    ];
+    const insertReturning = vi.fn().mockResolvedValue(insertedRows);
+    const insertValues = vi.fn().mockReturnValue({ returning: insertReturning });
+    mockDbInsert.mockReturnValue({ values: insertValues });
+
+    const res = await request(app)
+      .post("/coach/seasons/copy-next-year")
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(201);
+    expect(insertValues).toHaveBeenCalledTimes(1);
+    const firstArg = insertValues.mock.calls[0]?.[0] as Array<{ startDate: string }>;
+    expect(firstArg.map((row) => row.startDate)).toEqual(["2027-01-15", "2027-05-15"]);
+  });
+
   it("shifts a DST-pinned season to the next year's second Sunday of March", async () => {
     authAs(coachProfile);
 
@@ -751,7 +867,7 @@ describe("POST /coach/overrides", () => {
 
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(coachProfile))
-      .mockReturnValueOnce(fromResolveSelect([]));
+      .mockReturnValueOnce(simpleSelect<unknown>([]));
 
     const inserted = overrideRow();
     const insertReturning = vi.fn().mockResolvedValue([inserted]);
@@ -798,11 +914,7 @@ describe("POST /coach/overrides", () => {
 
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(coachProfile))
-      .mockReturnValueOnce(
-        fromResolveSelect([
-          { id: OVERRIDE_A_ID, startDate: "2025-12-24", endDate: "2025-12-26" },
-        ]),
-      );
+      .mockReturnValueOnce(simpleSelect([{ id: OVERRIDE_A_ID }]));
 
     const res = await request(app)
       .post("/coach/overrides")
@@ -815,6 +927,47 @@ describe("POST /coach/overrides", () => {
 
     expect(res.status).toBe(422);
     expect(res.body).toMatchObject({ error: "override_conflict" });
+  });
+
+  it("returns 422 override_conflict when a day_off and custom_hours overlap (kind-agnostic)", async () => {
+    authAs(coachProfile);
+
+    // Existing day_off; incoming custom_hours on a date inside that range.
+    // Overlap is purely date-range based regardless of kind.
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(coachProfile))
+      .mockReturnValueOnce(simpleSelect([{ id: OVERRIDE_A_ID }]));
+
+    const res = await request(app)
+      .post("/coach/overrides")
+      .set("Authorization", "Bearer token")
+      .send({
+        kind: "custom_hours",
+        startDate: "2025-12-25",
+        endDate: "2025-12-25",
+        startTime: "09:00",
+        endTime: "12:00",
+      });
+
+    expect(res.status).toBe(422);
+    expect(res.body).toMatchObject({ error: "override_conflict" });
+  });
+
+  it("returns 422 when note exceeds 500 characters", async () => {
+    authAs(coachProfile);
+    mockDbSelect.mockReturnValueOnce(requireUserSelect(coachProfile));
+
+    const res = await request(app)
+      .post("/coach/overrides")
+      .set("Authorization", "Bearer token")
+      .send({
+        kind: "day_off",
+        startDate: "2025-12-24",
+        endDate: "2025-12-26",
+        note: "x".repeat(501),
+      });
+
+    expect(res.status).toBe(422);
   });
 
   it("returns 403 for a parent", async () => {
@@ -831,6 +984,139 @@ describe("POST /coach/overrides", () => {
       });
 
     expect(res.status).toBe(403);
+  });
+});
+
+describe("PATCH /coach/overrides/:id", () => {
+  it("updates fields and returns 200 with warnings", async () => {
+    authAs(coachProfile);
+
+    const existing = overrideRow();
+    const updated = { ...existing, note: "updated note" };
+
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(coachProfile))
+      .mockReturnValueOnce(simpleSelect([existing]))
+      .mockReturnValueOnce(fromResolveSelect([]))
+      .mockReturnValueOnce(fromResolveSelect([updated]))
+      .mockReturnValueOnce(innerJoinWhereSelect([]));
+
+    const updateReturning = vi.fn().mockResolvedValue([updated]);
+    const updateWhere = vi.fn().mockReturnValue({ returning: updateReturning });
+    const updateSet = vi.fn().mockReturnValue({ where: updateWhere });
+    mockDbUpdate.mockReturnValue({ set: updateSet });
+
+    const res = await request(app)
+      .patch(`/coach/overrides/${OVERRIDE_A_ID}`)
+      .set("Authorization", "Bearer token")
+      .send({ note: "updated note" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.override.note).toBe("updated note");
+    expect(res.body.warnings).toEqual([]);
+  });
+
+  it("re-checks overlap when the date range changes and returns 422 on conflict", async () => {
+    authAs(coachProfile);
+
+    const existing = overrideRow({ startDate: "2025-12-24", endDate: "2025-12-26" });
+    const otherId = "22222222-0000-0000-0000-000000000002";
+
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(coachProfile))
+      .mockReturnValueOnce(simpleSelect([existing]))
+      .mockReturnValueOnce(simpleSelect([{ id: otherId }]));
+
+    const res = await request(app)
+      .patch(`/coach/overrides/${OVERRIDE_A_ID}`)
+      .set("Authorization", "Bearer token")
+      .send({ startDate: "2025-12-28", endDate: "2025-12-30" });
+
+    expect(res.status).toBe(422);
+    expect(res.body).toMatchObject({ error: "override_conflict" });
+  });
+
+  it("does not re-run the overlap check when only the note changes", async () => {
+    authAs(coachProfile);
+
+    const existing = overrideRow();
+    const updated = { ...existing, note: "touched" };
+
+    // Only requireUser select + existing select; no overlap select because
+    // startDate/endDate didn't change.
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(coachProfile))
+      .mockReturnValueOnce(simpleSelect([existing]))
+      .mockReturnValueOnce(fromResolveSelect([]))
+      .mockReturnValueOnce(fromResolveSelect([updated]))
+      .mockReturnValueOnce(innerJoinWhereSelect([]));
+
+    const updateReturning = vi.fn().mockResolvedValue([updated]);
+    const updateWhere = vi.fn().mockReturnValue({ returning: updateReturning });
+    const updateSet = vi.fn().mockReturnValue({ where: updateWhere });
+    mockDbUpdate.mockReturnValue({ set: updateSet });
+
+    const res = await request(app)
+      .patch(`/coach/overrides/${OVERRIDE_A_ID}`)
+      .set("Authorization", "Bearer token")
+      .send({ note: "touched" });
+
+    expect(res.status).toBe(200);
+  });
+
+  it("returns 404 when the override does not exist", async () => {
+    authAs(coachProfile);
+
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(coachProfile))
+      .mockReturnValueOnce(simpleSelect<unknown>([]));
+
+    const res = await request(app)
+      .patch(`/coach/overrides/${OVERRIDE_A_ID}`)
+      .set("Authorization", "Bearer token")
+      .send({ note: "x" });
+
+    expect(res.status).toBe(404);
+  });
+});
+
+describe("DELETE /coach/overrides/:id", () => {
+  it("deletes the override and returns 200 with warnings", async () => {
+    authAs(coachProfile);
+
+    const deleted = overrideRow();
+
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(coachProfile))
+      .mockReturnValueOnce(fromResolveSelect([]))
+      .mockReturnValueOnce(fromResolveSelect([]))
+      .mockReturnValueOnce(innerJoinWhereSelect([]));
+
+    const deleteReturning = vi.fn().mockResolvedValue([deleted]);
+    const deleteWhere = vi.fn().mockReturnValue({ returning: deleteReturning });
+    mockDbDelete.mockReturnValue({ where: deleteWhere });
+
+    const res = await request(app)
+      .delete(`/coach/overrides/${OVERRIDE_A_ID}`)
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(200);
+    expect(res.body.warnings).toEqual([]);
+  });
+
+  it("returns 404 when the override does not exist", async () => {
+    authAs(coachProfile);
+    mockDbSelect.mockReturnValueOnce(requireUserSelect(coachProfile));
+
+    const deleteReturning = vi.fn().mockResolvedValue([]);
+    const deleteWhere = vi.fn().mockReturnValue({ returning: deleteReturning });
+    mockDbDelete.mockReturnValue({ where: deleteWhere });
+
+    const res = await request(app)
+      .delete(`/coach/overrides/${OVERRIDE_A_ID}`)
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(404);
   });
 });
 

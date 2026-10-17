@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { and, asc, eq, gt, inArray, isNull } from "drizzle-orm";
+import { and, asc, eq, gt, gte, inArray, isNull, lte, ne } from "drizzle-orm";
 import type {
   LessonLocation,
   AvailabilityConfig,
@@ -46,6 +46,8 @@ import {
   blockedTimes,
   lessons,
   lessonLocations,
+  lessonSwimmers,
+  swimmers,
   travelBufferOverrides,
 } from "../db/schema";
 import { validate } from "../middleware/validate";
@@ -486,13 +488,45 @@ function todayInLA(): string {
   return `${get("year")}-${get("month")}-${get("day")}`;
 }
 
-// Fetches upcoming approved+pending lessons for impact-warning computation.
+// Fetches upcoming approved+pending lessons for impact-warning computation,
+// enriched with swimmer first names and pool name for the coach-only warning UI.
 async function fetchUpcomingLessons(): Promise<UpcomingLessonForWarning[]> {
-  const rows = await db
-    .select({ id: lessons.id, startsAt: lessons.startsAt, durationMinutes: lessons.durationMinutes })
+  const lessonRows = await db
+    .select({
+      id: lessons.id,
+      startsAt: lessons.startsAt,
+      durationMinutes: lessons.durationMinutes,
+      poolName: lessonLocations.name,
+    })
     .from(lessons)
+    .innerJoin(lessonLocations, eq(lessons.locationId, lessonLocations.id))
     .where(and(inArray(lessons.status, ["pending", "approved"]), gt(lessons.startsAt, new Date())));
-  return rows;
+
+  if (lessonRows.length === 0) return [];
+
+  const swimmerRows = await db
+    .select({
+      lessonId: lessonSwimmers.lessonId,
+      firstName: swimmers.firstName,
+    })
+    .from(lessonSwimmers)
+    .innerJoin(swimmers, eq(lessonSwimmers.swimmerId, swimmers.id))
+    .where(inArray(lessonSwimmers.lessonId, lessonRows.map((row) => row.id)));
+
+  const firstNamesByLesson = new Map<string, string[]>();
+  for (const row of swimmerRows) {
+    const list = firstNamesByLesson.get(row.lessonId) ?? [];
+    list.push(row.firstName);
+    firstNamesByLesson.set(row.lessonId, list);
+  }
+
+  return lessonRows.map((row) => ({
+    id: row.id,
+    startsAt: row.startsAt,
+    durationMinutes: row.durationMinutes,
+    swimmerFirstNames: firstNamesByLesson.get(row.id) ?? [],
+    poolName: row.poolName,
+  }));
 }
 
 coachAvailabilityRouter.get(
@@ -670,9 +704,21 @@ coachAvailabilityRouter.post(
     const existingRows = await db.select().from(availabilitySeasons);
     const existingDates = new Set(existingRows.map((row) => row.startDate));
 
+    // Only consider seasons whose startDate is within 12 months of the latest
+    // season's startDate: those make up the "current cycle" Jason wants to roll
+    // forward. Older seasons from past years are not copied again.
+    let latestStart: string | null = null;
+    for (const row of existingRows) {
+      if (latestStart === null || row.startDate > latestStart) {
+        latestStart = row.startDate;
+      }
+    }
+    const cycleCutoff = latestStart === null ? null : addMonthsIso(latestStart, -12);
+
     // A season is "original" when no prior-year version exists; copies produced
     // by a previous run are skipped so repeated calls stay idempotent.
     const toInsert = existingRows
+      .filter((row) => cycleCutoff === null || row.startDate > cycleCutoff)
       .map((row) => {
         const year = Number(row.startDate.slice(0, 4));
         const prevStart = row.startsAtDst
@@ -741,17 +787,24 @@ async function hasOverlappingOverride(
   excludeId: string | null,
 ): Promise<boolean> {
   // Overlap: existing.start_date <= endDate AND existing.end_date >= startDate.
+  // Kind-agnostic: any overlapping override (day_off or custom_hours) conflicts,
+  // since a date can only have one source of truth.
+  const whereClause = excludeId === null
+    ? and(
+        lte(availabilityOverrides.startDate, endDate),
+        gte(availabilityOverrides.endDate, startDate),
+      )
+    : and(
+        lte(availabilityOverrides.startDate, endDate),
+        gte(availabilityOverrides.endDate, startDate),
+        ne(availabilityOverrides.id, excludeId),
+      );
   const rows = await db
-    .select({
-      id: availabilityOverrides.id,
-      startDate: availabilityOverrides.startDate,
-      endDate: availabilityOverrides.endDate,
-    })
-    .from(availabilityOverrides);
-  return rows.some((row) => {
-    if (excludeId !== null && row.id === excludeId) return false;
-    return row.startDate <= endDate && row.endDate >= startDate;
-  });
+    .select({ id: availabilityOverrides.id })
+    .from(availabilityOverrides)
+    .where(whereClause)
+    .limit(1);
+  return rows.length > 0;
 }
 
 coachAvailabilityRouter.get(
@@ -902,6 +955,17 @@ function addDaysIso(date: string, offset: number): string {
   const month = Number(date.slice(5, 7));
   const day = Number(date.slice(8, 10));
   const next = new Date(Date.UTC(year, month - 1, day + offset));
+  const nextYear = next.getUTCFullYear();
+  const nextMonth = String(next.getUTCMonth() + 1).padStart(2, "0");
+  const nextDay = String(next.getUTCDate()).padStart(2, "0");
+  return `${nextYear}-${nextMonth}-${nextDay}`;
+}
+
+function addMonthsIso(date: string, offset: number): string {
+  const year = Number(date.slice(0, 4));
+  const month = Number(date.slice(5, 7));
+  const day = Number(date.slice(8, 10));
+  const next = new Date(Date.UTC(year, month - 1 + offset, day));
   const nextYear = next.getUTCFullYear();
   const nextMonth = String(next.getUTCMonth() + 1).padStart(2, "0");
   const nextDay = String(next.getUTCDate()).padStart(2, "0");
