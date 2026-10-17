@@ -8,9 +8,22 @@ import styles from "./BookingConfirmDialog.module.css";
 
 interface Props {
   lesson: UpcomingLesson;
+  movedFrom?: string;
 }
 
-export default function BookingConfirmDialog({ lesson }: Props) {
+function formatDateTime(isoStr: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Los_Angeles",
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).format(new Date(isoStr));
+}
+
+export default function BookingConfirmDialog({ lesson, movedFrom }: Props) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const router = useRouter();
 
@@ -50,17 +63,8 @@ export default function BookingConfirmDialog({ lesson }: Props) {
     router.push(`/dashboard/lessons/${lesson.id}`);
   }
 
+  const isRescheduled = movedFrom !== undefined;
   const isConfirmed = lesson.status === "approved";
-
-  const dateTime = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/Los_Angeles",
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  }).format(new Date(lesson.startsAt));
 
   const swimmerNames = lesson.swimmers
     .map((swimmer) => `${swimmer.firstName} ${swimmer.lastName}`)
@@ -71,14 +75,18 @@ export default function BookingConfirmDialog({ lesson }: Props) {
       <div className="flex flex-col gap-5">
         <div className="flex flex-col gap-1">
           <span
-            className={`text-xs font-bold uppercase tracking-widest ${isConfirmed ? "text-success" : "text-accent-on-section"}`}
+            className={`text-xs font-bold uppercase tracking-widest ${isConfirmed || isRescheduled ? "text-success" : "text-accent-on-section"}`}
           >
-            {isConfirmed ? "Confirmed" : "Pending"}
+            {isRescheduled ? "Rescheduled" : isConfirmed ? "Confirmed" : "Pending"}
           </span>
           <h2 className="text-lg font-semibold text-text-on-section leading-tight">
-            {isConfirmed ? "You are all set!" : "Request sent"}
+            {isRescheduled
+              ? "Your lesson has been moved."
+              : isConfirmed
+                ? "You are all set!"
+                : "Request sent"}
           </h2>
-          {!isConfirmed && (
+          {!isConfirmed && !isRescheduled && (
             <p className="text-sm text-text-secondary-on-section">
               Jason will confirm your lesson shortly.
             </p>
@@ -86,10 +94,29 @@ export default function BookingConfirmDialog({ lesson }: Props) {
         </div>
 
         <div className="flex flex-col gap-3 text-sm border-t border-divider-section pt-4">
-          <div className="flex justify-between gap-4">
-            <span className="text-text-secondary-on-section flex-shrink-0">When</span>
-            <span className="font-semibold text-text-on-section text-right">{dateTime}</span>
-          </div>
+          {isRescheduled ? (
+            <>
+              <div className="flex justify-between gap-4">
+                <span className="text-text-secondary-on-section flex-shrink-0">From</span>
+                <span className="font-semibold text-text-on-section text-right">
+                  {formatDateTime(movedFrom)}
+                </span>
+              </div>
+              <div className="flex justify-between gap-4">
+                <span className="text-text-secondary-on-section flex-shrink-0">To</span>
+                <span className="font-semibold text-text-on-section text-right">
+                  {formatDateTime(lesson.startsAt)}
+                </span>
+              </div>
+            </>
+          ) : (
+            <div className="flex justify-between gap-4">
+              <span className="text-text-secondary-on-section flex-shrink-0">When</span>
+              <span className="font-semibold text-text-on-section text-right">
+                {formatDateTime(lesson.startsAt)}
+              </span>
+            </div>
+          )}
           <div className="flex justify-between gap-4">
             <span className="text-text-secondary-on-section flex-shrink-0">Duration</span>
             <span className="font-semibold text-text-on-section">{lesson.durationMinutes} min</span>

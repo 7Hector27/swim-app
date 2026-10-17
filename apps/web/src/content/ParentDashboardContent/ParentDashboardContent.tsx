@@ -15,16 +15,19 @@ interface Props {
   profile: MeResponse;
   accessToken: string;
   bookedLessonId?: string;
+  rescheduledLessonId?: string;
+  rescheduledFrom?: string;
 }
 
-export default async function ParentDashboardContent({ profile, accessToken, bookedLessonId }: Props) {
+export default async function ParentDashboardContent({ profile, accessToken, bookedLessonId, rescheduledLessonId, rescheduledFrom }: Props) {
   const firstName = profile.fullName?.trim().split(/\s+/)[0] ?? "there";
   const hasPhone = !!(profile.phone && profile.phone.length > 0);
-  const [swimmers, upcomingLessons, household, bookedLesson] = await Promise.all([
+  const [swimmers, upcomingLessons, household, bookedLesson, rescheduledLesson] = await Promise.all([
     fetchSwimmers(accessToken),
     fetchUpcomingLessons(accessToken),
     fetchHousehold(accessToken),
     bookedLessonId ? fetchLesson(accessToken, bookedLessonId) : Promise.resolve(null),
+    rescheduledLessonId ? fetchLesson(accessToken, rescheduledLessonId) : Promise.resolve(null),
   ]);
   const today = todayLA();
   const showFinishSetup = !hasPhone;
@@ -36,6 +39,7 @@ export default async function ParentDashboardContent({ profile, accessToken, boo
     <div className="flex flex-col flex-1 bg-background">
 
       {bookedLesson && <BookingConfirmDialog lesson={bookedLesson} />}
+      {rescheduledLesson && <BookingConfirmDialog lesson={rescheduledLesson} {...(rescheduledFrom !== undefined && { movedFrom: rescheduledFrom })} />}
 
       <main id="main-content" className="flex-1">
         <div className="mx-auto max-w-content px-page pt-10 pb-tab-safe tablet:pt-14 tablet:pb-32">
