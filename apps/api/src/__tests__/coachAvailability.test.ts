@@ -1058,7 +1058,11 @@ describe("POST /coach/overrides", () => {
 
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(coachProfile))
-      .mockReturnValueOnce(simpleSelect<unknown>([]));
+      .mockReturnValueOnce(simpleSelect<unknown>([]))
+      .mockReturnValueOnce(fromResolveSelect([]))
+      .mockReturnValueOnce(fromResolveSelect([]))
+      .mockReturnValueOnce(simpleSelect([availabilityConfigRow]))
+      .mockReturnValueOnce(innerJoinWhereSelect([]));
 
     const inserted = overrideRow();
     const insertReturning = vi.fn().mockResolvedValue([inserted]);
@@ -1078,6 +1082,58 @@ describe("POST /coach/overrides", () => {
     expect(res.body).toMatchObject({
       override: { id: OVERRIDE_A_ID, kind: "day_off" },
       warnings: [],
+    });
+  });
+
+  it("returns warnings when the new override closes a day with a booked lesson", async () => {
+    authAs(coachProfile);
+
+    const inserted = overrideRow({
+      kind: "day_off",
+      startDate: "2025-12-24",
+      endDate: "2025-12-24",
+    });
+
+    // 2025-12-24T22:00 UTC === 2025-12-24 2pm LA (open under default hours).
+    // The new day_off override closes that day, so the lesson falls outside.
+    const lessonStart = new Date("2025-12-24T22:00:00.000Z");
+
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(coachProfile))
+      .mockReturnValueOnce(simpleSelect<unknown>([]))
+      .mockReturnValueOnce(fromResolveSelect([]))
+      .mockReturnValueOnce(fromResolveSelect([inserted]))
+      .mockReturnValueOnce(simpleSelect([availabilityConfigRow]))
+      .mockReturnValueOnce(
+        innerJoinWhereSelect([
+          {
+            id: "99999999-0000-0000-0000-000000000001",
+            startsAt: lessonStart,
+            durationMinutes: 60,
+            poolName: "Main Pool",
+          },
+        ]),
+      )
+      .mockReturnValueOnce(innerJoinWhereSelect([]));
+
+    const insertReturning = vi.fn().mockResolvedValue([inserted]);
+    const insertValues = vi.fn().mockReturnValue({ returning: insertReturning });
+    mockDbInsert.mockReturnValue({ values: insertValues });
+
+    const res = await request(app)
+      .post("/coach/overrides")
+      .set("Authorization", "Bearer token")
+      .send({
+        kind: "day_off",
+        startDate: "2025-12-24",
+        endDate: "2025-12-24",
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body.warnings).toHaveLength(1);
+    expect(res.body.warnings[0]).toMatchObject({
+      lessonId: "99999999-0000-0000-0000-000000000001",
+      poolName: "Main Pool",
     });
   });
 

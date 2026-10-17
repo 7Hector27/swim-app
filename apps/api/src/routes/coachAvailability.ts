@@ -53,7 +53,8 @@ import {
 import { validate } from "../middleware/validate";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { z } from "zod";
-import { fetchAvailabilityDefaults, mapConfigRow, mapOverrideRow, mapSeasonRow } from "../lib/availabilityMappers";
+import { mapConfigRow, mapOverrideRow, mapSeasonRow } from "../lib/availabilityMappers";
+import { fetchAvailabilityDefaults } from "../lib/availabilityQueries";
 import { effectiveHours } from "../lib/effectiveHours";
 import {
   computeImpactWarnings,
@@ -508,6 +509,10 @@ function todayInLA(): string {
 // Fetches upcoming approved+pending lessons for impact-warning computation,
 // enriched with swimmer first names and pool name for the coach-only warning UI.
 // Archived swimmers are excluded so warnings never surface ghost names.
+//
+// COACH-ONLY: the returned shape (`swimmerFirstNames`, `poolName`) is personal
+// data for other households' kids. Never surface it to a parent or public route.
+// Only call this inside handlers mounted under /coach (guarded by `requireCoach`).
 async function fetchUpcomingLessons(): Promise<UpcomingLessonForWarning[]> {
   const lessonRows = await db
     .select({
@@ -746,6 +751,22 @@ coachAvailabilityRouter.delete(
   }),
 );
 
+// POST /coach/seasons/copy-next-year
+//
+// Roll the current cycle forward one year. Rules:
+//   1. "Current cycle" = seasons whose start_date is within 12 months of the
+//      latest season's start_date. Older rows (prior cycles) are left alone.
+//   2. For each candidate, compute `nextStart = startDate + 1 year` (or that
+//      year's DST start when `startsAtDst = true`).
+//   3. Skip rows whose `nextStart` already exists (idempotent on repeated
+//      calls) OR whose prior-year sibling `prevStart` already exists (so a
+//      row that was itself produced by a previous copy run isn't re-copied).
+//
+// The `prevStart` check assumes manually-created rows don't happen to share a
+// start_date with a hypothetical prior-year version. If a coach hand-creates a
+// season on a date that would also be the prior-year date of some other row,
+// that other row will be skipped on the next copy. Flagged as a known edge
+// case; revisit if it ever bites.
 coachAvailabilityRouter.post(
   "/seasons/copy-next-year",
   validate({}),
@@ -906,7 +927,15 @@ coachAvailabilityRouter.post(
         .returning();
 
       const override = mapOverrideRow(inserted[0]!);
-      const responseBody: OverrideMutationResponse = { override, warnings: [] };
+      const seasonsRows = await db.select().from(availabilitySeasons);
+      const overridesRows = await db.select().from(availabilityOverrides);
+      const seasons = seasonsRows.map(mapSeasonRow);
+      const overrides = overridesRows.map(mapOverrideRow);
+      const defaults = await fetchAvailabilityDefaults();
+      const upcoming = await fetchUpcomingLessons();
+      const warnings = computeImpactWarnings(upcoming, seasons, overrides, defaults);
+
+      const responseBody: OverrideMutationResponse = { override, warnings };
       res.status(201).json(responseBody);
     } catch (err) {
       req.log.error({ err, route: "POST /coach/overrides" }, "availability mutation failed");

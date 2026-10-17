@@ -198,6 +198,42 @@ describe("CoachAvailabilityContent — seasons table", () => {
     await waitFor(() => expect(screen.getByText("Early Dec")).toBeInTheDocument());
   });
 
+  it("adding a future season keeps the current season marked Now", async () => {
+    // Server returns the new (future) season with isCurrent: false; the client
+    // must re-derive isCurrent locally so Mid-Oct stays flagged as Now.
+    mockCreateSeason.mockResolvedValue({
+      ok: true,
+      data: {
+        season: season({
+          id: "s-new",
+          name: "Early Dec",
+          startDate: "2026-12-01",
+          isCurrent: false,
+        }),
+        warnings: [],
+      },
+    });
+    mockFetchPreview.mockResolvedValue(basePreview);
+    renderPage();
+
+    fireEvent.click(screen.getAllByRole("button", { name: /\+ Add season/ })[0]!);
+    fireEvent.change(await screen.findByLabelText("Name"), { target: { value: "Early Dec" } });
+    fireEvent.change(screen.getByLabelText("Start date"), { target: { value: "2026-12-01" } });
+    fireEvent.change(screen.getByLabelText("Weekday start"), { target: { value: "14:30" } });
+    fireEvent.change(screen.getByLabelText("Weekend start"), { target: { value: "14:30" } });
+    fireEvent.change(screen.getByLabelText("Ends"), { target: { value: "17:30" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Add season", hidden: true }));
+
+    await waitFor(() => expect(screen.getByText("Early Dec")).toBeInTheDocument());
+
+    const rows = screen.getAllByRole("row").slice(1);
+    const midOctRow = rows.find((row) => row.textContent?.includes("Mid-Oct"));
+    const earlyDecRow = rows.find((row) => row.textContent?.includes("Early Dec"));
+    expect(midOctRow).toHaveTextContent("Now");
+    expect(earlyDecRow).not.toHaveTextContent("Now");
+  });
+
   it("surfaces the impact warning modal when creating a season returns warnings", async () => {
     mockCreateSeason.mockResolvedValue({
       ok: true,

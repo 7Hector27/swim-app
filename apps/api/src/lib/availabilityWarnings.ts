@@ -40,6 +40,9 @@ export interface UpcomingLessonForWarning {
   poolName: string;
 }
 
+// COACH-ONLY: returned warnings carry swimmer first names and pool names from
+// other households. Only call this from handlers mounted under /coach (guarded
+// by `requireCoach`); never surface the result to parents or public routes.
 export function computeImpactWarnings(
   lessons: UpcomingLessonForWarning[],
   seasons: AvailabilitySeason[],

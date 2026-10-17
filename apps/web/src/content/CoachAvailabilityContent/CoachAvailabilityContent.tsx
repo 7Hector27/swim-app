@@ -28,7 +28,7 @@ import {
   patchOverride,
   patchSeason,
 } from "@/lib/api/coachAvailability";
-import { addDaysIso } from "./availabilityFormat";
+import { addDaysIso, withIsCurrent } from "./availabilityFormat";
 import CopyToNextYearButton from "./CopyToNextYearButton";
 import DefaultHoursCard from "./DefaultHoursCard";
 import DefaultHoursModal from "./DefaultHoursModal";
@@ -126,9 +126,12 @@ export default function CoachAvailabilityContent({
 
   async function refreshPreview(nextWeekStart: string) {
     setPreviewLoading(true);
-    const response = await fetchAvailabilityPreview(accessToken, nextWeekStart, 7);
-    setPreview(response);
-    setPreviewLoading(false);
+    try {
+      const response = await fetchAvailabilityPreview(accessToken, nextWeekStart, 7);
+      setPreview(response);
+    } finally {
+      setPreviewLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -168,11 +171,12 @@ export default function CoachAvailabilityContent({
       if (mode === "create") {
         const result = await createSeason(accessToken, body as CreateSeasonBody);
         if (!result.ok) return apiErrorMessage(result.code);
-        setSeasons((prev) =>
-          [...prev.map((season) => ({ ...season, isCurrent: false })), result.data.season].sort(
-            (a, b) => a.startDate.localeCompare(b.startDate),
-          ),
-        );
+        setSeasons((prev) => {
+          const next = [...prev, result.data.season].sort((a, b) =>
+            a.startDate.localeCompare(b.startDate),
+          );
+          return withIsCurrent(next, today);
+        });
         if (result.data.warnings.length > 0) setWarnings(result.data.warnings);
         setSeasonModalOpen(false);
         await refreshPreview(weekStart);
@@ -181,11 +185,12 @@ export default function CoachAvailabilityContent({
       if (!editingSeason) return "Season no longer exists.";
       const result = await patchSeason(accessToken, editingSeason.id, body as PatchSeasonBody);
       if (!result.ok) return apiErrorMessage(result.code);
-      setSeasons((prev) =>
-        prev
+      setSeasons((prev) => {
+        const next = prev
           .map((season) => (season.id === editingSeason.id ? result.data.season : season))
-          .sort((a, b) => a.startDate.localeCompare(b.startDate)),
-      );
+          .sort((a, b) => a.startDate.localeCompare(b.startDate));
+        return withIsCurrent(next, today);
+      });
       if (result.data.warnings.length > 0) setWarnings(result.data.warnings);
       setSeasonModalOpen(false);
       await refreshPreview(weekStart);
@@ -223,7 +228,12 @@ export default function CoachAvailabilityContent({
           setDeleteError(apiErrorMessage(result.code));
           return;
         }
-        setSeasons((prev) => prev.filter((row) => row.id !== pendingDelete.season.id));
+        setSeasons((prev) =>
+          withIsCurrent(
+            prev.filter((row) => row.id !== pendingDelete.season.id),
+            today,
+          ),
+        );
         if (result.data.warnings.length > 0) setWarnings(result.data.warnings);
       } else {
         const result = await deleteOverride(accessToken, pendingDelete.override.id);
@@ -246,11 +256,10 @@ export default function CoachAvailabilityContent({
     if (!result.ok) return { error: apiErrorMessage(result.code) };
     const inserted = result.data.inserted;
     if (inserted.length > 0) {
-      setSeasons((prev) =>
-        [...prev, ...inserted.map((season) => ({ ...season, isCurrent: false }))].sort((a, b) =>
-          a.startDate.localeCompare(b.startDate),
-        ),
-      );
+      setSeasons((prev) => {
+        const next = [...prev, ...inserted].sort((a, b) => a.startDate.localeCompare(b.startDate));
+        return withIsCurrent(next, today);
+      });
       await refreshPreview(weekStart);
     }
     return { insertedCount: inserted.length };

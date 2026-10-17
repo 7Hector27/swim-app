@@ -1,4 +1,4 @@
-import type { AvailabilitySeason } from "@swim-app/shared";
+import type { AvailabilitySeason, SeasonWithIsCurrent } from "@swim-app/shared";
 
 const WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
 const WEEKDAY_SET = new Set([1, 2, 3, 4, 5]);
@@ -96,6 +96,24 @@ export function seasonHasDifferentWeekendStart(season: AvailabilitySeason): bool
     season.weekendStartTime !== null &&
     season.weekdayStartTime !== season.weekendStartTime
   );
+}
+
+// Marks the active season (latest startDate <= today) as isCurrent and clears
+// the flag on the rest. Mirrors the server rule so optimistic updates after a
+// create/patch/delete don't blank out the "Now" badge.
+export function withIsCurrent(
+  seasons: readonly AvailabilitySeason[],
+  today: string,
+): SeasonWithIsCurrent[] {
+  let activeId: string | null = null;
+  let activeStart = "";
+  for (const season of seasons) {
+    if (season.startDate <= today && season.startDate > activeStart) {
+      activeStart = season.startDate;
+      activeId = season.id;
+    }
+  }
+  return seasons.map((season) => ({ ...season, isCurrent: season.id === activeId }));
 }
 
 export function addDaysIso(dateIso: string, offset: number): string {
