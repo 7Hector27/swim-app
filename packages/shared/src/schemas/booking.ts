@@ -48,13 +48,6 @@ export type PatchLocationBody = z.infer<typeof PatchLocationBodySchema>;
 
 export const AvailabilityConfigSchema = z.object({
   id: z.string().uuid(),
-  lessonDays: z.array(z.number().int().min(1).max(7)),
-  schoolYearStartTime: z.string().regex(/^\d{2}:\d{2}$/),
-  schoolYearEndTime: z.string().regex(/^\d{2}:\d{2}$/),
-  summerMorningStartTime: z.string().regex(/^\d{2}:\d{2}$/),
-  summerMorningEndTime: z.string().regex(/^\d{2}:\d{2}$/),
-  summerEveningStartTime: z.string().regex(/^\d{2}:\d{2}$/),
-  summerEveningEndTime: z.string().regex(/^\d{2}:\d{2}$/),
   maxDailyLessonMinutes: z.number().int(),
   bookingMinAdvanceHours: z.number().int(),
   bookingMaxAdvanceWeeks: z.number().int(),
@@ -62,13 +55,6 @@ export const AvailabilityConfigSchema = z.object({
 export type AvailabilityConfig = z.infer<typeof AvailabilityConfigSchema>;
 
 export const PatchAvailabilityConfigBodySchema = z.object({
-  lessonDays: z.array(z.number().int().min(1).max(5)).min(1).optional(),
-  schoolYearStartTime: z.string().regex(/^\d{2}:\d{2}$/).optional(),
-  schoolYearEndTime: z.string().regex(/^\d{2}:\d{2}$/).optional(),
-  summerMorningStartTime: z.string().regex(/^\d{2}:\d{2}$/).optional(),
-  summerMorningEndTime: z.string().regex(/^\d{2}:\d{2}$/).optional(),
-  summerEveningStartTime: z.string().regex(/^\d{2}:\d{2}$/).optional(),
-  summerEveningEndTime: z.string().regex(/^\d{2}:\d{2}$/).optional(),
   maxDailyLessonMinutes: z.number().int().min(1).optional(),
   bookingMinAdvanceHours: z.number().int().min(1).optional(),
   bookingMaxAdvanceWeeks: z.number().int().min(1).optional(),
@@ -286,19 +272,6 @@ export const AvailabilityOverrideSchema = z.object({
   updatedAt: z.string().datetime({ offset: true }),
 });
 export type AvailabilityOverride = z.infer<typeof AvailabilityOverrideSchema>;
-
-// ── Season summer end dates ───────────────────────────────────────────────────
-
-export const SeasonSummerEndDateSchema = z.object({
-  year: z.number().int(),
-  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-});
-export type SeasonSummerEndDate = z.infer<typeof SeasonSummerEndDateSchema>;
-
-export const SetSeasonEndDateBodySchema = z.object({
-  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-});
-export type SetSeasonEndDateBody = z.infer<typeof SetSeasonEndDateBodySchema>;
 
 // ── Update lesson (cancel / reschedule) ──────────────────────────────────────
 

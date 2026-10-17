@@ -3,7 +3,8 @@ import { and, asc, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import type {
   AvailableSlot,
   AvailableSlotsQuery,
-  AvailabilityConfig,
+  AvailabilityOverride,
+  AvailabilitySeason,
   CreateLessonBody,
   DayAvailability,
   DayState,
@@ -12,7 +13,6 @@ import type {
   LessonSwimmer,
   MonthAvailabilityResponse,
   RangeAvailabilityQuery,
-  TeachingWindow,
   UpdateLessonBody,
   UpcomingLesson,
   UpcomingLessonsQuery,
@@ -23,12 +23,13 @@ import { AvailableSlotsQuerySchema, CreateLessonBodySchema, HOUSEHOLD_ROLE_RANK,
 import { db } from "../db/client";
 import {
   availabilityConfig,
+  availabilityOverrides,
+  availabilitySeasons,
   blockedTimes,
   householdMembers,
   lessonLocations,
   lessonSwimmers,
   lessons,
-  seasonSummerEndDates,
   swimmers,
   travelBufferOverrides,
 } from "../db/schema";
@@ -39,8 +40,38 @@ import { requireHouseholdRole } from "../middleware/requireHouseholdRole";
 import { validate } from "../middleware/validate";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { classifyDaySlots, computeAvailableSlots, getDateInLA, getISODayOfWeek } from "../lib/slots";
+import { effectiveHours } from "../lib/effectiveHours";
 import { needsApproval, notifyBookingCreated, notifyCoachOfChange } from "../lib/lessonApproval";
 import { isActiveSwimmer } from "../db/queries";
+
+function mapSeasonRow(row: typeof availabilitySeasons.$inferSelect): AvailabilitySeason {
+  return {
+    id: row.id,
+    name: row.name,
+    startDate: row.startDate,
+    teachesDays: row.teachesDays,
+    weekdayStartTime: row.weekdayStartTime,
+    weekendStartTime: row.weekendStartTime,
+    endTime: row.endTime,
+    startsAtDst: row.startsAtDst,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+function mapOverrideRow(row: typeof availabilityOverrides.$inferSelect): AvailabilityOverride {
+  return {
+    id: row.id,
+    kind: row.kind,
+    startDate: row.startDate,
+    endDate: row.endDate,
+    startTime: row.startTime,
+    endTime: row.endTime,
+    note: row.note,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
 
 export const lessonsRouter = Router();
 
@@ -189,7 +220,7 @@ lessonsRouter.get(
       }
     }
 
-    const [configRows, blockedRows, bufferRows, existingLessonRows, endDateRow] =
+    const [configRows, blockedRows, bufferRows, existingLessonRows, seasonRows, overrideRows] =
       await Promise.all([
         db.select().from(availabilityConfig).limit(1),
         db.select().from(blockedTimes),
@@ -202,11 +233,8 @@ lessonsRouter.get(
           })
           .from(lessons)
           .where(inArray(lessons.status, ["pending", "approved"])),
-        db
-          .select({ endDate: seasonSummerEndDates.endDate })
-          .from(seasonSummerEndDates)
-          .where(eq(seasonSummerEndDates.year, parseInt(query.date.slice(0, 4), 10)))
-          .limit(1),
+        db.select().from(availabilitySeasons),
+        db.select().from(availabilityOverrides),
       ]);
 
     const config = configRows[0];
@@ -235,18 +263,12 @@ lessonsRouter.get(
       })),
       config: {
         id: config.id,
-        lessonDays: config.lessonDays,
-        schoolYearStartTime: config.schoolYearStartTime,
-        schoolYearEndTime: config.schoolYearEndTime,
-        summerMorningStartTime: config.summerMorningStartTime,
-        summerMorningEndTime: config.summerMorningEndTime,
-        summerEveningStartTime: config.summerEveningStartTime,
-        summerEveningEndTime: config.summerEveningEndTime,
         maxDailyLessonMinutes: config.maxDailyLessonMinutes,
         bookingMinAdvanceHours: config.bookingMinAdvanceHours,
         bookingMaxAdvanceWeeks: config.bookingMaxAdvanceWeeks,
       },
-      summerEndDate: endDateRow[0]?.endDate ?? null,
+      seasons: seasonRows.map(mapSeasonRow),
+      overrides: overrideRows.map(mapOverrideRow),
       gcalBusyTimes: [],
       nowUtc: new Date(),
     });
@@ -297,9 +319,8 @@ lessonsRouter.get(
     }
 
     const days = getRangeDays(query.view, query.date);
-    const rangeYear = Number(days[0]!.slice(0, 4));
 
-    const [configRows, blockedRows, bufferRows, existingLessonRows, endDateRow] =
+    const [configRows, blockedRows, bufferRows, existingLessonRows, seasonRows, overrideRows] =
       await Promise.all([
         db.select().from(availabilityConfig).limit(1),
         db.select().from(blockedTimes),
@@ -314,11 +335,8 @@ lessonsRouter.get(
           })
           .from(lessons)
           .where(inArray(lessons.status, ["pending", "approved"])),
-        db
-          .select({ endDate: seasonSummerEndDates.endDate })
-          .from(seasonSummerEndDates)
-          .where(eq(seasonSummerEndDates.year, rangeYear))
-          .limit(1),
+        db.select().from(availabilitySeasons),
+        db.select().from(availabilityOverrides),
       ]);
 
     const config = configRows[0];
@@ -326,6 +344,9 @@ lessonsRouter.get(
       res.status(503).json({ error: "Availability config not found" });
       return;
     }
+
+    const seasons = seasonRows.map(mapSeasonRow);
+    const overrides = overrideRows.map(mapOverrideRow);
 
     let filteredLessons = existingLessonRows;
     if (query.excludeLessonId !== undefined) {
@@ -348,25 +369,10 @@ lessonsRouter.get(
     }
 
     const nowUtc = new Date();
-    const summerEndDate = endDateRow[0]?.endDate ?? null;
     const todayDateLA = getDateInLA(nowUtc);
     const maxAdvanceDateLA = getDateInLA(
       new Date(nowUtc.getTime() + config.bookingMaxAdvanceWeeks * 7 * 24 * 60 * 60 * 1000),
     );
-
-    const configShape: AvailabilityConfig = {
-      id: config.id,
-      lessonDays: config.lessonDays,
-      schoolYearStartTime: config.schoolYearStartTime,
-      schoolYearEndTime: config.schoolYearEndTime,
-      summerMorningStartTime: config.summerMorningStartTime,
-      summerMorningEndTime: config.summerMorningEndTime,
-      summerEveningStartTime: config.summerEveningStartTime,
-      summerEveningEndTime: config.summerEveningEndTime,
-      maxDailyLessonMinutes: config.maxDailyLessonMinutes,
-      bookingMinAdvanceHours: config.bookingMinAdvanceHours,
-      bookingMaxAdvanceWeeks: config.bookingMaxAdvanceWeeks,
-    };
 
     const sharedClassifyParams = {
       locationId: query.locationId,
@@ -382,15 +388,22 @@ lessonsRouter.get(
         toLocationId: row.toLocationId,
         bufferMinutes: row.bufferMinutes,
       })),
-      config: configShape,
-      summerEndDate,
+      config: {
+        id: config.id,
+        maxDailyLessonMinutes: config.maxDailyLessonMinutes,
+        bookingMinAdvanceHours: config.bookingMinAdvanceHours,
+        bookingMaxAdvanceWeeks: config.bookingMaxAdvanceWeeks,
+      },
+      seasons,
+      overrides,
       gcalBusyTimes: [],
       nowUtc,
     };
 
     if (query.view === "week") {
       const responseDays: WeekDayAvailability[] = days.map((date: string) => {
-        const dayState = computeDayState(date, config.lessonDays, todayDateLA, maxAdvanceDateLA);
+        const windows = effectiveHours(date, seasons, overrides);
+        const dayState = computeDayState(date, windows.length > 0, todayDateLA, maxAdvanceDateLA);
         if (dayState !== "open") {
           return { date, dayState, openCount: 0, totalCount: 0, teachingWindows: [], slots: [] };
         }
@@ -400,7 +413,7 @@ lessonsRouter.get(
           dayState: "open" as const,
           openCount: slots.filter((slot) => slot.state === "available").length,
           totalCount: slots.length,
-          teachingWindows: getTeachingWindowsForDay(date, configShape, summerEndDate),
+          teachingWindows: windows,
           slots,
         };
       });
@@ -408,7 +421,8 @@ lessonsRouter.get(
       res.json(body);
     } else {
       const responseDays: DayAvailability[] = days.map((date: string) => {
-        const dayState = computeDayState(date, config.lessonDays, todayDateLA, maxAdvanceDateLA);
+        const windows = effectiveHours(date, seasons, overrides);
+        const dayState = computeDayState(date, windows.length > 0, todayDateLA, maxAdvanceDateLA);
         if (dayState !== "open") {
           return { date, dayState, openCount: 0, totalCount: 0, teachingWindows: [] };
         }
@@ -418,7 +432,7 @@ lessonsRouter.get(
           dayState: "open" as const,
           openCount: slots.filter((slot) => slot.state === "available").length,
           totalCount: slots.length,
-          teachingWindows: getTeachingWindowsForDay(date, configShape, summerEndDate),
+          teachingWindows: windows,
         };
       });
       const body: MonthAvailabilityResponse = { needsApproval: approvalRequired, days: responseDays };
@@ -478,8 +492,6 @@ lessonsRouter.post(
     }
 
     // ── Derive the Los Angeles calendar date of the slot ─────────────────────
-    // Computed before the config fetch so laYear can be used for the
-    // season_summer_end_dates lookup (Jan 1 UTC can still be Dec 31 LA).
     const laDateParts = new Intl.DateTimeFormat("en-US", {
       timeZone: "America/Los_Angeles",
       year: "numeric",
@@ -489,20 +501,12 @@ lessonsRouter.post(
     const getPart = (type: string) =>
       laDateParts.find((p) => p.type === type)?.value ?? "";
     const laDateStr = `${getPart("year")}-${getPart("month")}-${getPart("day")}`;
-    const laYear = Number(laDateStr.slice(0, 4));
-    const laMonth = Number(laDateStr.slice(5, 7));
-    const laDay = Number(laDateStr.slice(8, 10));
-    const jsDay = new Date(Date.UTC(laYear, laMonth - 1, laDay, 12)).getUTCDay();
-    const isoDayOfWeek = jsDay === 0 ? 7 : jsDay;
 
-    // ── Fetch availability config ─────────────────────────────────────────────
-    const [configRows, endDateRow] = await Promise.all([
+    // ── Fetch availability config, seasons, overrides ─────────────────────────
+    const [configRows, seasonRows, overrideRows] = await Promise.all([
       db.select().from(availabilityConfig).limit(1),
-      db
-        .select({ endDate: seasonSummerEndDates.endDate })
-        .from(seasonSummerEndDates)
-        .where(eq(seasonSummerEndDates.year, laYear))
-        .limit(1),
+      db.select().from(availabilitySeasons),
+      db.select().from(availabilityOverrides),
     ]);
 
     const config = configRows[0];
@@ -511,9 +515,12 @@ lessonsRouter.post(
       return;
     }
 
+    const seasons = seasonRows.map(mapSeasonRow);
+    const overrides = overrideRows.map(mapOverrideRow);
+
     // ── Booking window validation (pre-lock) ──────────────────────────────────
 
-    if (!config.lessonDays.includes(isoDayOfWeek)) {
+    if (effectiveHours(laDateStr, seasons, overrides).length === 0) {
       res.status(422).json({ error: "not_a_lesson_day" });
       return;
     }
@@ -569,18 +576,12 @@ lessonsRouter.post(
         })),
         config: {
           id: config.id,
-          lessonDays: config.lessonDays,
-          schoolYearStartTime: config.schoolYearStartTime,
-          schoolYearEndTime: config.schoolYearEndTime,
-          summerMorningStartTime: config.summerMorningStartTime,
-          summerMorningEndTime: config.summerMorningEndTime,
-          summerEveningStartTime: config.summerEveningStartTime,
-          summerEveningEndTime: config.summerEveningEndTime,
           maxDailyLessonMinutes: config.maxDailyLessonMinutes,
           bookingMinAdvanceHours: config.bookingMinAdvanceHours,
           bookingMaxAdvanceWeeks: config.bookingMaxAdvanceWeeks,
         },
-        summerEndDate: endDateRow[0]?.endDate ?? null,
+        seasons,
+        overrides,
         gcalBusyTimes: [],
         nowUtc,
       });
@@ -853,27 +854,22 @@ lessonsRouter.patch(
     const getPart = (type: string) =>
       laDateParts.find((part) => part.type === type)?.value ?? "";
     const laDateStr = `${getPart("year")}-${getPart("month")}-${getPart("day")}`;
-    const laYear = Number(laDateStr.slice(0, 4));
-    const laMonth = Number(laDateStr.slice(5, 7));
-    const laDay = Number(laDateStr.slice(8, 10));
-    const jsDay = new Date(Date.UTC(laYear, laMonth - 1, laDay, 12)).getUTCDay();
-    const isoDayOfWeek = jsDay === 0 ? 7 : jsDay;
 
-    const [configRows, endDateRow] = await Promise.all([
+    const [configRows, seasonRows, overrideRows] = await Promise.all([
       db.select().from(availabilityConfig).limit(1),
-      db
-        .select({ endDate: seasonSummerEndDates.endDate })
-        .from(seasonSummerEndDates)
-        .where(eq(seasonSummerEndDates.year, laYear))
-        .limit(1),
+      db.select().from(availabilitySeasons),
+      db.select().from(availabilityOverrides),
     ]);
 
     const config = configRows[0];
     if (!config) { res.status(503).json({ error: "Availability config not found" }); return; }
 
+    const seasons = seasonRows.map(mapSeasonRow);
+    const overrides = overrideRows.map(mapOverrideRow);
+
     // Booking-window checks apply only when a new start time is explicitly requested.
     if (body.startsAt !== undefined) {
-      if (!config.lessonDays.includes(isoDayOfWeek)) {
+      if (effectiveHours(laDateStr, seasons, overrides).length === 0) {
         res.status(422).json({ error: "not_a_lesson_day" });
         return;
       }
@@ -930,18 +926,12 @@ lessonsRouter.patch(
         })),
         config: {
           id: config.id,
-          lessonDays: config.lessonDays,
-          schoolYearStartTime: config.schoolYearStartTime,
-          schoolYearEndTime: config.schoolYearEndTime,
-          summerMorningStartTime: config.summerMorningStartTime,
-          summerMorningEndTime: config.summerMorningEndTime,
-          summerEveningStartTime: config.summerEveningStartTime,
-          summerEveningEndTime: config.summerEveningEndTime,
           maxDailyLessonMinutes: config.maxDailyLessonMinutes,
           bookingMinAdvanceHours: config.bookingMinAdvanceHours,
           bookingMaxAdvanceWeeks: config.bookingMaxAdvanceWeeks,
         },
-        summerEndDate: endDateRow[0]?.endDate ?? null,
+        seasons,
+        overrides,
         gcalBusyTimes: [],
         nowUtc: nowForSlotCheck,
       });
@@ -1057,10 +1047,6 @@ export async function loadLessonWithSwimmers(
 
 // ── Range availability helpers ────────────────────────────────────────────────
 
-function toHHMM(timeStr: string): string {
-  return timeStr.slice(0, 5);
-}
-
 function addDaysToDate(dateStr: string, days: number): string {
   const year = Number(dateStr.slice(0, 4));
   const month = Number(dateStr.slice(5, 7));
@@ -1091,29 +1077,12 @@ function getRangeDays(view: "week" | "month", date: string): string[] {
 
 function computeDayState(
   date: string,
-  lessonDays: number[],
+  isTeachingDay: boolean,
   todayDateLA: string,
   maxAdvanceDateLA: string,
 ): DayState {
-  if (!lessonDays.includes(getISODayOfWeek(date))) return "closed";
+  if (!isTeachingDay) return "closed";
   if (date < todayDateLA) return "past";
   if (date > maxAdvanceDateLA) return "not_open_yet";
   return "open";
-}
-
-function getTeachingWindowsForDay(
-  date: string,
-  config: AvailabilityConfig,
-  summerEndDate: string | null,
-): TeachingWindow[] {
-  const year = date.slice(0, 4);
-  const summerStart = `${year}-06-01`;
-  const summerEnd = summerEndDate ?? `${year}-08-31`;
-  if (date >= summerStart && date <= summerEnd) {
-    return [
-      { start: toHHMM(config.summerMorningStartTime), end: toHHMM(config.summerMorningEndTime) },
-      { start: toHHMM(config.summerEveningStartTime), end: toHHMM(config.summerEveningEndTime) },
-    ];
-  }
-  return [{ start: toHHMM(config.schoolYearStartTime), end: toHHMM(config.schoolYearEndTime) }];
 }

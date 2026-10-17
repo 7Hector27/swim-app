@@ -99,13 +99,6 @@ const _homeLocationRow = {
 
 const availabilityConfigRow = {
   id: AVAILABILITY_CONFIG_ID,
-  lessonDays: [1, 2, 3, 5],
-  schoolYearStartTime: "16:30",
-  schoolYearEndTime: "20:30",
-  summerMorningStartTime: "08:00",
-  summerMorningEndTime: "14:00",
-  summerEveningStartTime: "19:30",
-  summerEveningEndTime: "21:00",
   maxDailyLessonMinutes: 240,
   bookingMinAdvanceHours: 16,
   bookingMaxAdvanceWeeks: 10,
@@ -225,46 +218,10 @@ describe("PATCH /coach/locations/:id", () => {
 // ── PATCH /coach/availability-config ─────────────────────────────────────────
 
 describe("PATCH /coach/availability-config", () => {
-  it("returns 422 when summerMorningEndTime is after 15:00", async () => {
-    authAs(coachProfile);
-    mockDbSelect.mockReturnValueOnce(requireUserSelect(coachProfile));
-
-    const res = await request(app)
-      .patch("/coach/availability-config")
-      .set("Authorization", "Bearer token")
-      .send({ summerMorningEndTime: "16:00" });
-
-    expect(res.status).toBe(422);
-  });
-
-  it("returns 422 when summerEveningStartTime is before 19:00", async () => {
-    authAs(coachProfile);
-    mockDbSelect.mockReturnValueOnce(requireUserSelect(coachProfile));
-
-    const res = await request(app)
-      .patch("/coach/availability-config")
-      .set("Authorization", "Bearer token")
-      .send({ summerEveningStartTime: "18:00" });
-
-    expect(res.status).toBe(422);
-  });
-
-  it("returns 422 when lessonDays contains a weekend day (day 6 fails schema max(5))", async () => {
-    authAs(coachProfile);
-    mockDbSelect.mockReturnValueOnce(requireUserSelect(coachProfile));
-
-    const res = await request(app)
-      .patch("/coach/availability-config")
-      .set("Authorization", "Bearer token")
-      .send({ lessonDays: [6] });
-
-    expect(res.status).toBe(422);
-  });
-
   it("updates the config successfully and returns 200", async () => {
     authAs(coachProfile);
 
-    const updatedRow = { ...availabilityConfigRow, schoolYearStartTime: "17:00" };
+    const updatedRow = { ...availabilityConfigRow, maxDailyLessonMinutes: 300 };
 
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(coachProfile))
@@ -278,10 +235,10 @@ describe("PATCH /coach/availability-config", () => {
     const res = await request(app)
       .patch("/coach/availability-config")
       .set("Authorization", "Bearer token")
-      .send({ schoolYearStartTime: "17:00" });
+      .send({ maxDailyLessonMinutes: 300 });
 
     expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({ schoolYearStartTime: "17:00" });
+    expect(res.body).toMatchObject({ maxDailyLessonMinutes: 300 });
   });
 });
 
@@ -486,36 +443,3 @@ describe("DELETE /coach/travel-buffers/:fromId/:toId", () => {
   });
 });
 
-// ── PATCH /coach/availability-config cross-field validation with existing config ──
-
-describe("PATCH /coach/availability-config cross-field validation with existing config", () => {
-  beforeEach(() => {
-    authAs(coachProfile);
-  });
-
-  it("returns 422 when schoolYearEndTime patch creates start >= end with existing start", async () => {
-    mockDbSelect
-      .mockReturnValueOnce(requireUserSelect(coachProfile))
-      .mockReturnValueOnce(simpleSelect([availabilityConfigRow]));
-
-    const res = await request(app)
-      .patch("/coach/availability-config")
-      .set("Authorization", "Bearer token")
-      .send({ schoolYearEndTime: "16:00" }); // existing start is "16:30", 16:30 >= 16:00
-
-    expect(res.status).toBe(422);
-  });
-
-  it("returns 422 when summerMorningStartTime patch creates start >= end with existing end", async () => {
-    mockDbSelect
-      .mockReturnValueOnce(requireUserSelect(coachProfile))
-      .mockReturnValueOnce(simpleSelect([availabilityConfigRow]));
-
-    const res = await request(app)
-      .patch("/coach/availability-config")
-      .set("Authorization", "Bearer token")
-      .send({ summerMorningStartTime: "14:30" }); // existing end is "14:00", 14:30 >= 14:00
-
-    expect(res.status).toBe(422);
-  });
-});

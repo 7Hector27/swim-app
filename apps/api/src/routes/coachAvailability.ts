@@ -5,13 +5,11 @@ import type {
   AvailabilityConfig,
   BlockedTime,
   TravelBufferOverride,
-  SeasonSummerEndDate,
   CreateLocationBody,
   PatchLocationBody,
   PatchAvailabilityConfigBody,
   CreateBlockedTimeBody,
   UpsertTravelBufferBody,
-  SetSeasonEndDateBody,
 } from "@swim-app/shared";
 import {
   CreateLocationBodySchema,
@@ -19,7 +17,6 @@ import {
   PatchAvailabilityConfigBodySchema,
   CreateBlockedTimeBodySchema,
   UpsertTravelBufferBodySchema,
-  SetSeasonEndDateBodySchema,
 } from "@swim-app/shared";
 import { db } from "../db/client";
 import {
@@ -27,7 +24,6 @@ import {
   availabilityConfig,
   blockedTimes,
   travelBufferOverrides,
-  seasonSummerEndDates,
 } from "../db/schema";
 import { validate } from "../middleware/validate";
 import { asyncHandler } from "../middleware/asyncHandler";
@@ -162,13 +158,6 @@ coachAvailabilityRouter.get(
 
     const body: AvailabilityConfig = {
       id: config.id,
-      lessonDays: config.lessonDays,
-      schoolYearStartTime: config.schoolYearStartTime.slice(0, 5),
-      schoolYearEndTime: config.schoolYearEndTime.slice(0, 5),
-      summerMorningStartTime: config.summerMorningStartTime.slice(0, 5),
-      summerMorningEndTime: config.summerMorningEndTime.slice(0, 5),
-      summerEveningStartTime: config.summerEveningStartTime.slice(0, 5),
-      summerEveningEndTime: config.summerEveningEndTime.slice(0, 5),
       maxDailyLessonMinutes: config.maxDailyLessonMinutes,
       bookingMinAdvanceHours: config.bookingMinAdvanceHours,
       bookingMaxAdvanceWeeks: config.bookingMaxAdvanceWeeks,
@@ -184,66 +173,15 @@ coachAvailabilityRouter.patch(
   asyncHandler(async (req, res) => {
     const body = req.body as PatchAvailabilityConfigBody;
 
-    // 1. absolute bounds — validate before DB read
-    if (body.lessonDays !== undefined) {
-      const hasWeekend = body.lessonDays.some((day) => day > 5);
-      if (hasWeekend) {
-        res.status(422).json({ error: "lesson_days must contain only weekday numbers (1–5)" });
-        return;
-      }
-    }
-
-    if (body.summerMorningEndTime !== undefined && body.summerMorningEndTime > "15:00") {
-      res.status(422).json({ error: "summerMorningEndTime must be at or before 15:00" });
-      return;
-    }
-
-    if (body.summerEveningStartTime !== undefined && body.summerEveningStartTime < "19:00") {
-      res.status(422).json({ error: "summerEveningStartTime must be at or after 19:00" });
-      return;
-    }
-
-    // 2. fetch existing (needed for merged cross-field validation)
     const existing = await db.select().from(availabilityConfig).limit(1);
     if (!existing[0]) {
       res.status(404).json({ error: "Availability config not found" });
       return;
     }
 
-    // 3. merge patch with existing, then validate every start < end
-    const merged = {
-      schoolYearStartTime: body.schoolYearStartTime ?? existing[0].schoolYearStartTime,
-      schoolYearEndTime: body.schoolYearEndTime ?? existing[0].schoolYearEndTime,
-      summerMorningStartTime: body.summerMorningStartTime ?? existing[0].summerMorningStartTime,
-      summerMorningEndTime: body.summerMorningEndTime ?? existing[0].summerMorningEndTime,
-      summerEveningStartTime: body.summerEveningStartTime ?? existing[0].summerEveningStartTime,
-      summerEveningEndTime: body.summerEveningEndTime ?? existing[0].summerEveningEndTime,
-    };
-
-    if (merged.schoolYearStartTime >= merged.schoolYearEndTime) {
-      res.status(422).json({ error: "schoolYearStartTime must be before schoolYearEndTime" });
-      return;
-    }
-    if (merged.summerMorningStartTime >= merged.summerMorningEndTime) {
-      res.status(422).json({ error: "summerMorningStartTime must be before summerMorningEndTime" });
-      return;
-    }
-    if (merged.summerEveningStartTime >= merged.summerEveningEndTime) {
-      res.status(422).json({ error: "summerEveningStartTime must be before summerEveningEndTime" });
-      return;
-    }
-
-    // 4. apply update
     const rows = await db
       .update(availabilityConfig)
       .set({
-        ...(body.lessonDays !== undefined && { lessonDays: body.lessonDays }),
-        ...(body.schoolYearStartTime !== undefined && { schoolYearStartTime: body.schoolYearStartTime }),
-        ...(body.schoolYearEndTime !== undefined && { schoolYearEndTime: body.schoolYearEndTime }),
-        ...(body.summerMorningStartTime !== undefined && { summerMorningStartTime: body.summerMorningStartTime }),
-        ...(body.summerMorningEndTime !== undefined && { summerMorningEndTime: body.summerMorningEndTime }),
-        ...(body.summerEveningStartTime !== undefined && { summerEveningStartTime: body.summerEveningStartTime }),
-        ...(body.summerEveningEndTime !== undefined && { summerEveningEndTime: body.summerEveningEndTime }),
         ...(body.maxDailyLessonMinutes !== undefined && { maxDailyLessonMinutes: body.maxDailyLessonMinutes }),
         ...(body.bookingMinAdvanceHours !== undefined && { bookingMinAdvanceHours: body.bookingMinAdvanceHours }),
         ...(body.bookingMaxAdvanceWeeks !== undefined && { bookingMaxAdvanceWeeks: body.bookingMaxAdvanceWeeks }),
@@ -255,13 +193,6 @@ coachAvailabilityRouter.patch(
 
     const responseBody: AvailabilityConfig = {
       id: updated.id,
-      lessonDays: updated.lessonDays,
-      schoolYearStartTime: updated.schoolYearStartTime.slice(0, 5),
-      schoolYearEndTime: updated.schoolYearEndTime.slice(0, 5),
-      summerMorningStartTime: updated.summerMorningStartTime.slice(0, 5),
-      summerMorningEndTime: updated.summerMorningEndTime.slice(0, 5),
-      summerEveningStartTime: updated.summerEveningStartTime.slice(0, 5),
-      summerEveningEndTime: updated.summerEveningEndTime.slice(0, 5),
       maxDailyLessonMinutes: updated.maxDailyLessonMinutes,
       bookingMinAdvanceHours: updated.bookingMinAdvanceHours,
       bookingMaxAdvanceWeeks: updated.bookingMaxAdvanceWeeks,
@@ -452,56 +383,3 @@ coachAvailabilityRouter.delete(
   }),
 );
 
-// ── Season summer end dates ───────────────────────────────────────────────────
-
-coachAvailabilityRouter.get(
-  "/season-end-dates",
-  validate({}),
-  asyncHandler(async (_req, res) => {
-    const rows = await db
-      .select()
-      .from(seasonSummerEndDates)
-      .orderBy(asc(seasonSummerEndDates.year));
-
-    const body: SeasonSummerEndDate[] = rows.map((row) => ({
-      year: row.year,
-      endDate: row.endDate,
-    }));
-
-    res.json(body);
-  }),
-);
-
-const SeasonYearParamsSchema = z.object({
-  year: z
-    .string()
-    .regex(/^\d{4}$/)
-    .transform((value) => parseInt(value, 10)),
-});
-
-coachAvailabilityRouter.put(
-  "/season-end-dates/:year",
-  validate({ params: SeasonYearParamsSchema, body: SetSeasonEndDateBodySchema }),
-  asyncHandler(async (req, res) => {
-    const { year } = req.params as unknown as { year: number };
-    const body = req.body as SetSeasonEndDateBody;
-
-    const rows = await db
-      .insert(seasonSummerEndDates)
-      .values({ year, endDate: body.endDate })
-      .onConflictDoUpdate({
-        target: seasonSummerEndDates.year,
-        set: { endDate: body.endDate },
-      })
-      .returning();
-
-    const upserted = rows[0]!;
-
-    const responseBody: SeasonSummerEndDate = {
-      year: upserted.year,
-      endDate: upserted.endDate,
-    };
-
-    res.json(responseBody);
-  }),
-);

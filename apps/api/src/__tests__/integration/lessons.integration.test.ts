@@ -11,7 +11,7 @@ import {
   type TestUser,
 } from "./helpers";
 import {
-  availabilityConfig,
+  availabilitySeasons,
   lessonLocations,
   lessonSwimmers,
   lessons,
@@ -95,27 +95,27 @@ afterAll(async () => {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-async function getConfig() {
-  const rows = await adminDb().select().from(availabilityConfig).limit(1);
-  return rows[0]!;
-}
-
-// Temporarily opens all seven days so a slot always exists regardless of the
-// day the test runs, then restores the original lessonDays.
+// Temporarily opens all seven days on every season so a slot always exists
+// regardless of the day the test runs, then restores the original teachesDays
+// per-season.
 async function withAllDaysEnabled<T>(fn: () => Promise<T>): Promise<T> {
-  const config = await getConfig();
-  const original = config.lessonDays;
-  await adminDb()
-    .update(availabilityConfig)
-    .set({ lessonDays: [0, 1, 2, 3, 4, 5, 6] })
-    .where(eq(availabilityConfig.id, config.id));
+  const seasons = await adminDb().select().from(availabilitySeasons);
+  const originals = seasons.map((season) => ({ id: season.id, teachesDays: season.teachesDays }));
+  for (const season of seasons) {
+    await adminDb()
+      .update(availabilitySeasons)
+      .set({ teachesDays: [1, 2, 3, 4, 5, 6, 7] })
+      .where(eq(availabilitySeasons.id, season.id));
+  }
   try {
     return await fn();
   } finally {
-    await adminDb()
-      .update(availabilityConfig)
-      .set({ lessonDays: original })
-      .where(eq(availabilityConfig.id, config.id));
+    for (const original of originals) {
+      await adminDb()
+        .update(availabilitySeasons)
+        .set({ teachesDays: original.teachesDays })
+        .where(eq(availabilitySeasons.id, original.id));
+    }
   }
 }
 

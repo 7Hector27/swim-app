@@ -165,16 +165,24 @@ const homeLocationBRow = {
 
 const configRow = {
   id: "eeeeeeee-0000-0000-0000-000000000001",
-  lessonDays: [1, 2, 3, 4, 5],
-  schoolYearStartTime: "16:30",
-  schoolYearEndTime: "20:30",
-  summerMorningStartTime: "07:00",
-  summerMorningEndTime: "11:00",
-  summerEveningStartTime: "19:00",
-  summerEveningEndTime: "21:00",
   maxDailyLessonMinutes: 240,
   bookingMinAdvanceHours: 16,
   bookingMaxAdvanceWeeks: 10,
+  createdAt: now,
+  updatedAt: now,
+};
+
+// Season covering Mon–Fri with 16:30–20:30 LA time. Dates in the past so it
+// always applies for ANCHOR_NOW onward.
+const schoolYearSeason = {
+  id: "season-sy-01",
+  name: "School year",
+  startDate: "2020-01-01",
+  teachesDays: [1, 2, 3, 4, 5],
+  weekdayStartTime: "16:30" as string | null,
+  weekendStartTime: null as string | null,
+  endTime: "20:30",
+  startsAtDst: false,
   createdAt: now,
   updatedAt: now,
 };
@@ -237,8 +245,15 @@ function limitSelect<T>(rows: T[]) {
   return { from: vi.fn().mockReturnValue({ where, limit }) };
 }
 
-// For available-slots Promise.all: 5 selects (blockedTimes, buffers, lessons share same pattern)
-function setupAvailableSlotsSelects(configRows: unknown[], blockedRows: unknown[], bufferRows: unknown[], lessonRows: unknown[], endDateRows: unknown[]) {
+// For available-slots Promise.all: 6 selects (config, blocked, buffers, lessons, seasons, overrides)
+function setupAvailableSlotsSelects(
+  configRows: unknown[],
+  blockedRows: unknown[],
+  bufferRows: unknown[],
+  lessonRows: unknown[],
+  seasonRows: unknown[] = [schoolYearSeason],
+  overrideRows: unknown[] = [],
+) {
   function makeFromLimit(rows: unknown[]) {
     const limit = vi.fn().mockResolvedValue(rows);
     const where = vi.fn().mockReturnValue({ limit, orderBy: vi.fn().mockResolvedValue(rows) });
@@ -251,17 +266,13 @@ function setupAvailableSlotsSelects(configRows: unknown[], blockedRows: unknown[
     const where = vi.fn().mockResolvedValue(rows);
     return { from: vi.fn().mockReturnValue({ where }) };
   }
-  function makeFromWhereLimit(rows: unknown[]) {
-    const limit = vi.fn().mockResolvedValue(rows);
-    const where = vi.fn().mockReturnValue({ limit });
-    return { from: vi.fn().mockReturnValue({ where }) };
-  }
   mockDbSelect
-    .mockReturnValueOnce(makeFromLimit(configRows))        // availabilityConfig.limit(1)
-    .mockReturnValueOnce(makeFromDirect(blockedRows))       // blockedTimes
-    .mockReturnValueOnce(makeFromDirect(bufferRows))        // travelBufferOverrides
-    .mockReturnValueOnce(makeFromWhere(lessonRows))         // lessons.where(...)
-    .mockReturnValueOnce(makeFromWhereLimit(endDateRows));  // seasonSummerEndDates.where(...).limit(1)
+    .mockReturnValueOnce(makeFromLimit(configRows))         // availabilityConfig.limit(1)
+    .mockReturnValueOnce(makeFromDirect(blockedRows))        // blockedTimes
+    .mockReturnValueOnce(makeFromDirect(bufferRows))         // travelBufferOverrides
+    .mockReturnValueOnce(makeFromWhere(lessonRows))          // lessons.where(...)
+    .mockReturnValueOnce(makeFromDirect(seasonRows))         // availabilitySeasons
+    .mockReturnValueOnce(makeFromDirect(overrideRows));      // availabilityOverrides
 }
 
 // Build a transaction mock for POST /lessons.
@@ -453,7 +464,8 @@ function setupRangeSelects(
   blockedRows: unknown[],
   bufferRows: unknown[],
   lessonRows: unknown[],
-  endDateRows: unknown[],
+  seasonRows: unknown[] = [schoolYearSeason],
+  overrideRows: unknown[] = [],
 ) {
   function makeFromLimit(rows: unknown[]) {
     const limit = vi.fn().mockResolvedValue(rows);
@@ -466,17 +478,13 @@ function setupRangeSelects(
     const where = vi.fn().mockResolvedValue(rows);
     return { from: vi.fn().mockReturnValue({ where }) };
   }
-  function makeFromWhereLimit(rows: unknown[]) {
-    const limit = vi.fn().mockResolvedValue(rows);
-    const where = vi.fn().mockReturnValue({ limit });
-    return { from: vi.fn().mockReturnValue({ where }) };
-  }
   mockDbSelect
     .mockReturnValueOnce(makeFromLimit(configRows))
     .mockReturnValueOnce(makeFromDirect(blockedRows))
     .mockReturnValueOnce(makeFromDirect(bufferRows))
     .mockReturnValueOnce(makeFromWhere(lessonRows))
-    .mockReturnValueOnce(makeFromWhereLimit(endDateRows));
+    .mockReturnValueOnce(makeFromDirect(seasonRows))
+    .mockReturnValueOnce(makeFromDirect(overrideRows));
 }
 
 function memberCheckSelect(householdId: string = HOUSEHOLD_ID) {
@@ -564,7 +572,8 @@ describe("POST /lessons", () => {
       .mockReturnValueOnce(limitSelect([namedLocationRow]))   // location
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([swimmerRow]) }) }) // swimmers
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([configRow]) }) }) // config
-      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([]) }) }) }); // endDate
+      .mockReturnValueOnce({ from: vi.fn().mockResolvedValue([schoolYearSeason]) }) // seasons
+      .mockReturnValueOnce({ from: vi.fn().mockResolvedValue([]) }); // overrides
 
     mockComputeSlots.mockReturnValueOnce([{ startsAt: futureStart, endsAt: new Date(futureStart.getTime() + 1800000) }]);
     transactionThatInserts(baseLessonRow, true); // needsApproval=true → pending
@@ -591,7 +600,8 @@ describe("POST /lessons", () => {
       .mockReturnValueOnce(limitSelect([namedLocationRow]))
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([swimmerRow]) }) })
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([configRow]) }) })
-      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([]) }) }) });
+      .mockReturnValueOnce({ from: vi.fn().mockResolvedValue([schoolYearSeason]) })
+      .mockReturnValueOnce({ from: vi.fn().mockResolvedValue([]) });
 
     mockComputeSlots.mockReturnValueOnce([{ startsAt: futureStart, endsAt: new Date(futureStart.getTime() + 1800000) }]);
     transactionThatInserts(approvedLesson, false); // needsApproval=false → auto-approved
@@ -624,7 +634,8 @@ describe("POST /lessons", () => {
       .mockReturnValueOnce(limitSelect([namedLocationRow]))
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([swimmerRow]) }) })
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([configRow]) }) })
-      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([]) }) }) });
+      .mockReturnValueOnce({ from: vi.fn().mockResolvedValue([schoolYearSeason]) })
+      .mockReturnValueOnce({ from: vi.fn().mockResolvedValue([]) });
 
     mockComputeSlots.mockReturnValueOnce([{ startsAt: futureStart, endsAt: new Date(futureStart.getTime() + 1800000) }]);
     transactionThatInserts({ ...completedLesson, status: "approved" as typeof baseLessonRow.status }, false);
@@ -649,7 +660,8 @@ describe("POST /lessons", () => {
       .mockReturnValueOnce(limitSelect([namedLocationRow]))
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([swimmerRow]) }) })
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([configRow]) }) })
-      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([]) }) }) });
+      .mockReturnValueOnce({ from: vi.fn().mockResolvedValue([schoolYearSeason]) })
+      .mockReturnValueOnce({ from: vi.fn().mockResolvedValue([]) });
 
     mockComputeSlots.mockReturnValueOnce([{ startsAt: futureStart, endsAt: new Date(futureStart.getTime() + 1800000) }]);
     // needsApproval=true because declined/canceled don't count
@@ -675,7 +687,8 @@ describe("POST /lessons", () => {
       .mockReturnValueOnce(limitSelect([namedLocationRow]))
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([swimmerRow]) }) })
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([configRow]) }) })
-      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([]) }) }) });
+      .mockReturnValueOnce({ from: vi.fn().mockResolvedValue([schoolYearSeason]) })
+      .mockReturnValueOnce({ from: vi.fn().mockResolvedValue([]) });
 
     mockComputeSlots.mockReturnValueOnce([{ startsAt: futureStart, endsAt: new Date(futureStart.getTime() + 1800000) }]);
     // needsApproval=true because no approved lessons at THIS location
@@ -710,7 +723,8 @@ describe("POST /lessons", () => {
       .mockReturnValueOnce(limitSelect([namedLocationRow]))
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([swimmerRow]) }) })
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([configRow]) }) })
-      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([]) }) }) });
+      .mockReturnValueOnce({ from: vi.fn().mockResolvedValue([schoolYearSeason]) })
+      .mockReturnValueOnce({ from: vi.fn().mockResolvedValue([]) });
 
     const res = await request(app)
       .post("/lessons")
@@ -731,7 +745,8 @@ describe("POST /lessons", () => {
       .mockReturnValueOnce(limitSelect([namedLocationRow]))
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([swimmerRow]) }) })
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([configRow]) }) })
-      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([]) }) }) });
+      .mockReturnValueOnce({ from: vi.fn().mockResolvedValue([schoolYearSeason]) })
+      .mockReturnValueOnce({ from: vi.fn().mockResolvedValue([]) });
 
     const res = await request(app)
       .post("/lessons")
@@ -752,7 +767,8 @@ describe("POST /lessons", () => {
       .mockReturnValueOnce(limitSelect([namedLocationRow]))
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([swimmerRow]) }) })
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([configRow]) }) })
-      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([]) }) }) });
+      .mockReturnValueOnce({ from: vi.fn().mockResolvedValue([schoolYearSeason]) })
+      .mockReturnValueOnce({ from: vi.fn().mockResolvedValue([]) });
 
     const res = await request(app)
       .post("/lessons")
@@ -833,7 +849,8 @@ describe("POST /lessons", () => {
       .mockReturnValueOnce(limitSelect([namedLocationRow]))
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([swimmerRow]) }) })
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([configRow]) }) })
-      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([]) }) }) });
+      .mockReturnValueOnce({ from: vi.fn().mockResolvedValue([schoolYearSeason]) })
+      .mockReturnValueOnce({ from: vi.fn().mockResolvedValue([]) });
 
     // computeAvailableSlots returns empty → slot not available
     mockComputeSlots.mockReturnValueOnce([]);
@@ -874,70 +891,6 @@ describe("POST /lessons", () => {
     expect(res.status).toBe(403);
   });
 
-  it("uses the LA year (not UTC) when looking up season end date", async () => {
-    authAs(parentProfile);
-    // 2027-01-01T01:00:00Z = 2026-12-31 17:00 PST.
-    // LA year = 2026, UTC year = 2027 — the bug would query year 2027.
-    // Dec 31, 2026 is a Thursday (ISO day 4).
-    // bookingMaxAdvanceWeeks: 14 (98 days) covers the ~79 days to Dec 31.
-    // lessonDays explicitly includes Thursday (4) so the day check passes and
-    // the season lookup is reached.
-    const decStart = new Date("2027-01-01T01:00:00.000Z");
-    const bigWindowConfig = {
-      ...configRow,
-      bookingMaxAdvanceWeeks: 14,
-      lessonDays: [1, 2, 3, 4, 5], // Thursday (4) is a lesson day
-    };
-    const decLesson = {
-      ...baseLessonRow,
-      startsAt: decStart,
-      expiresAt: new Date(decStart.getTime() - 16 * 60 * 60 * 1000) as Date | null,
-    };
-
-    // Capture the year argument passed to the season_summer_end_dates query.
-    // Drizzle's eq(col, year) stores the year value in its SQL AST; we walk
-    // the expression object to extract the first integer in a plausible year range.
-    let capturedSeasonYear: number | undefined;
-    function findYearInExpr(obj: unknown, depth: number, seen: Set<unknown>): number | undefined {
-      if (depth > 10 || seen.has(obj)) return undefined;
-      seen.add(obj);
-      if (typeof obj === "number" && obj >= 2000 && obj <= 2100) return obj;
-      if (typeof obj !== "object" || obj === null) return undefined;
-      for (const v of Object.values(obj as Record<string, unknown>)) {
-        const found = findYearInExpr(v, depth + 1, seen);
-        if (found !== undefined) return found;
-      }
-      return undefined;
-    }
-    const endDateFromMock = vi.fn().mockReturnValue({
-      where: vi.fn().mockImplementation((arg: unknown) => {
-        capturedSeasonYear = findYearInExpr(arg, 0, new Set());
-        return { limit: vi.fn().mockResolvedValue([{ endDate: "2026-08-31" }]) };
-      }),
-    });
-
-    mockDbSelect
-      .mockReturnValueOnce(requireUserSelect(parentProfile))
-      .mockReturnValueOnce(requireHouseholdMemberSelect())
-      .mockReturnValueOnce(limitSelect([namedLocationRow]))
-      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([swimmerRow]) }) })
-      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([bigWindowConfig]) }) }) // config
-      .mockReturnValueOnce({ from: endDateFromMock }); // season end date (year captured above)
-
-    mockComputeSlots.mockReturnValueOnce([{ startsAt: decStart, endsAt: new Date(decStart.getTime() + 1800000) }]);
-    transactionThatInserts(decLesson, true);
-    mockDbSelect.mockReturnValueOnce(swimmerResponseSelect());
-
-    const res = await request(app)
-      .post("/lessons")
-      .set("Authorization", "Bearer token")
-      .send({ ...validBody, startsAt: decStart.toISOString() });
-
-    expect(res.status).toBe(201);
-    // LA year (2026) must be used for the season lookup, not UTC year (2027).
-    expect(capturedSeasonYear).toBe(2026);
-  });
-
   it("can book any slot returned by available-slots (PST slot whose UTC date is the day after its LA date)", async () => {
     // 4:30 PM PST on Mon 2030-01-14 = 2030-01-15T00:30:00.000Z.
     // slice(0,10) on the ISO string gives "2030-01-15" (UTC, Tuesday) — not the
@@ -955,7 +908,8 @@ describe("POST /lessons", () => {
       .mockReturnValueOnce(limitSelect([namedLocationRow]))
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([swimmerRow]) }) })
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([farFutureConfig]) }) })
-      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([]) }) }) });
+      .mockReturnValueOnce({ from: vi.fn().mockResolvedValue([schoolYearSeason]) })
+      .mockReturnValueOnce({ from: vi.fn().mockResolvedValue([]) });
 
     // Return the slot only when called with the LA date; empty for any other date.
     // This causes 422 slot_unavailable before the fix and 201 after.
@@ -1124,7 +1078,8 @@ describe("PATCH /lessons/:id", () => {
       .mockReturnValueOnce(requireHouseholdMemberSelect(HOUSEHOLD_ID, "owner"))
       .mockReturnValueOnce(limitSelect([baseLessonRow]))         // load lesson
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([configRow]) }) }) // config
-      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([]) }) }) }); // endDate
+      .mockReturnValueOnce({ from: vi.fn().mockResolvedValue([schoolYearSeason]) }) // seasons
+      .mockReturnValueOnce({ from: vi.fn().mockResolvedValue([]) }); // overrides
 
     mockComputeSlots.mockReturnValueOnce([
       { startsAt: new Date(validNewStartsAt), endsAt: new Date(new Date(validNewStartsAt).getTime() + 1800000) },
@@ -1165,7 +1120,8 @@ describe("PATCH /lessons/:id", () => {
       .mockReturnValueOnce(requireHouseholdMemberSelect(HOUSEHOLD_ID, "owner"))
       .mockReturnValueOnce(limitSelect([baseLessonRow]))
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([configRow]) }) })
-      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([]) }) }) });
+      .mockReturnValueOnce({ from: vi.fn().mockResolvedValue([schoolYearSeason]) })
+      .mockReturnValueOnce({ from: vi.fn().mockResolvedValue([]) });
 
     const res = await request(app)
       .patch(`/lessons/${LESSON_ID}`)
@@ -1187,7 +1143,8 @@ describe("PATCH /lessons/:id", () => {
       .mockReturnValueOnce(requireHouseholdMemberSelect(HOUSEHOLD_ID, "owner"))
       .mockReturnValueOnce(limitSelect([insideLessonRow]))
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([configRow]) }) })
-      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([]) }) }) });
+      .mockReturnValueOnce({ from: vi.fn().mockResolvedValue([schoolYearSeason]) })
+      .mockReturnValueOnce({ from: vi.fn().mockResolvedValue([]) });
 
     mockComputeSlots.mockReturnValueOnce([
       { startsAt: new Date(validNewStartsAt), endsAt: new Date(new Date(validNewStartsAt).getTime() + 1800000) },
@@ -1228,7 +1185,8 @@ describe("PATCH /lessons/:id", () => {
       .mockReturnValueOnce(requireHouseholdMemberSelect(HOUSEHOLD_ID, "owner"))
       .mockReturnValueOnce(limitSelect([baseLessonRow]))
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([configRow]) }) })
-      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([]) }) }) });
+      .mockReturnValueOnce({ from: vi.fn().mockResolvedValue([schoolYearSeason]) })
+      .mockReturnValueOnce({ from: vi.fn().mockResolvedValue([]) });
 
     mockComputeSlots.mockReturnValueOnce([
       { startsAt: new Date(validNewStartsAt), endsAt: new Date(new Date(validNewStartsAt).getTime() + 1800000) },
@@ -1314,7 +1272,8 @@ describe("PATCH /lessons/:id", () => {
       .mockReturnValueOnce(requireHouseholdMemberSelect(HOUSEHOLD_ID, "owner"))
       .mockReturnValueOnce(limitSelect([baseLessonRow]))
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([configRow]) }) })
-      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([]) }) }) });
+      .mockReturnValueOnce({ from: vi.fn().mockResolvedValue([schoolYearSeason]) })
+      .mockReturnValueOnce({ from: vi.fn().mockResolvedValue([]) });
 
     mockComputeSlots.mockReturnValueOnce([]);
 
@@ -1349,7 +1308,8 @@ describe("PATCH /lessons/:id", () => {
       .mockReturnValueOnce(requireHouseholdMemberSelect(HOUSEHOLD_ID, "owner"))
       .mockReturnValueOnce(limitSelect([baseLessonRow]))
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([configRow]) }) })
-      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([]) }) }) });
+      .mockReturnValueOnce({ from: vi.fn().mockResolvedValue([schoolYearSeason]) })
+      .mockReturnValueOnce({ from: vi.fn().mockResolvedValue([]) });
 
     mockComputeSlots.mockReturnValueOnce([]);
 

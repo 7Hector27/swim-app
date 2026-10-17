@@ -124,16 +124,24 @@ const homeLocationB = {
 
 const configRow = {
   id: "cfg-range-01",
-  lessonDays: [1, 2, 3, 4, 5],
-  schoolYearStartTime: "16:30",
-  schoolYearEndTime: "19:30",
-  summerMorningStartTime: "07:00",
-  summerMorningEndTime: "11:00",
-  summerEveningStartTime: "19:00",
-  summerEveningEndTime: "21:00",
   maxDailyLessonMinutes: 240,
   bookingMinAdvanceHours: 16,
   bookingMaxAdvanceWeeks: 10,
+};
+
+// School-year season covering Mon–Fri with 16:30 start, 19:30 end LA time.
+// Dates in the past so it always applies for ANCHOR_NOW onward.
+const schoolYearSeason = {
+  id: "season-sy-01",
+  name: "School year",
+  startDate: "2020-01-01",
+  teachesDays: [1, 2, 3, 4, 5],
+  weekdayStartTime: "16:30" as string | null,
+  weekendStartTime: null as string | null,
+  endTime: "19:30",
+  startsAtDst: false,
+  createdAt: now,
+  updatedAt: now,
 };
 
 const availableSlot = {
@@ -188,19 +196,15 @@ function whereFromSelect(rows: unknown[]) {
   return { from: vi.fn().mockReturnValue({ where }) };
 }
 
-function whereWithLimitSelect(rows: unknown[]) {
-  const limit = vi.fn().mockResolvedValue(rows);
-  const where = vi.fn().mockReturnValue({ limit });
-  return { from: vi.fn().mockReturnValue({ where }) };
-}
-
-// Sets up the 8 sequential db.select() calls for a parent caller on a public location.
+// Sets up the sequential db.select() calls for a parent caller on a public location.
 function setupParentSelects(opts: {
   profile?: AnyProfile;
   locationRows?: unknown[];
   memberRows?: unknown[];
   configRows?: unknown[];
   lessonRows?: unknown[];
+  seasonRows?: unknown[];
+  overrideRows?: unknown[];
 } = {}) {
   const {
     profile      = parentProfile,
@@ -208,6 +212,8 @@ function setupParentSelects(opts: {
     memberRows   = [{ householdId: HOUSEHOLD_A_ID }],
     configRows   = [configRow],
     lessonRows   = [],
+    seasonRows   = [schoolYearSeason],
+    overrideRows = [],
   } = opts;
 
   mockDbSelect
@@ -218,7 +224,8 @@ function setupParentSelects(opts: {
     .mockReturnValueOnce(directFromSelect([]))                  // 5: blockedTimes
     .mockReturnValueOnce(directFromSelect([]))                  // 6: travelBufferOverrides
     .mockReturnValueOnce(whereFromSelect(lessonRows))           // 7: existing lessons
-    .mockReturnValueOnce(whereWithLimitSelect([]));             // 8: seasonSummerEndDates
+    .mockReturnValueOnce(directFromSelect(seasonRows))          // 8: availabilitySeasons
+    .mockReturnValueOnce(directFromSelect(overrideRows));       // 9: availabilityOverrides
 }
 
 // Sets up db.select() calls for a coach caller (no household step).
@@ -226,11 +233,15 @@ function setupCoachSelects(opts: {
   locationRows?: unknown[];
   configRows?: unknown[];
   lessonRows?: unknown[];
+  seasonRows?: unknown[];
+  overrideRows?: unknown[];
 } = {}) {
   const {
     locationRows = [publicLocation],
     configRows   = [configRow],
     lessonRows   = [],
+    seasonRows   = [schoolYearSeason],
+    overrideRows = [],
   } = opts;
 
   mockDbSelect
@@ -241,7 +252,8 @@ function setupCoachSelects(opts: {
     .mockReturnValueOnce(directFromSelect([]))                   // 4: blockedTimes
     .mockReturnValueOnce(directFromSelect([]))                   // 5: travelBufferOverrides
     .mockReturnValueOnce(whereFromSelect(lessonRows))            // 6: existing lessons
-    .mockReturnValueOnce(whereWithLimitSelect([]));              // 7: seasonSummerEndDates
+    .mockReturnValueOnce(directFromSelect(seasonRows))           // 7: availabilitySeasons
+    .mockReturnValueOnce(directFromSelect(overrideRows));        // 8: availabilityOverrides
 }
 
 // Base query string for the week view using TEST_DATE.
@@ -345,7 +357,8 @@ describe("GET /lessons/available-range — location access", () => {
       .mockReturnValueOnce(directFromSelect([]))
       .mockReturnValueOnce(directFromSelect([]))
       .mockReturnValueOnce(whereFromSelect([]))
-      .mockReturnValueOnce(whereWithLimitSelect([]));
+      .mockReturnValueOnce(directFromSelect([schoolYearSeason]))
+      .mockReturnValueOnce(directFromSelect([]));
 
     const q = new URLSearchParams({
       view: "week",
