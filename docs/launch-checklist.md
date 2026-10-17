@@ -30,12 +30,6 @@ Items that require human sign-off before the app goes live. Engineering items go
 
 ---
 
-## Clubs
-
-- [ ] Replace the placeholder clubs (`[Club 1]`, `[Club 2]`) with Jason's list of local clubs. Run `pnpm db:sync-catalog` (or a migration) to update the `clubs` table in each environment.
-
----
-
 ## Skills and evaluations
 
 - [ ] Skill structure (categories, skill list, level descriptors, fault tags) is locked in with Jason before any real swimmers are rated. Changes to skill slugs after ratings exist require a migration and a data backfill.

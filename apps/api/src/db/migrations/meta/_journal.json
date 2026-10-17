@@ -253,6 +253,13 @@
       "when": 1792254642382,
       "tag": "0035_clumsy_agent_zero",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1792276980504,
+      "tag": "0036_real_clubs",
+      "breakpoints": true
     }
   ]
 }
