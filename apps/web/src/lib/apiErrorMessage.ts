@@ -7,6 +7,18 @@ const MESSAGES: Record<string, string> = {
   lesson_in_past: "This lesson has already started and can't be changed.",
   invalid_event: "That distance and stroke combination isn't a valid event.",
   invalid_time: "Use the format M:SS.HH or SS.HH (e.g. 1:02.34 or 58.30).",
+  invalid_time_granularity: "Times must be on the quarter hour (:00, :15, :30, or :45).",
+  weekday_start_required: "Add a weekday start time, since this season teaches on weekdays.",
+  weekday_start_without_weekday: "Remove the weekday start time, since no weekdays are selected.",
+  weekend_start_required: "Add a weekend start time, since this season teaches on weekends.",
+  weekend_start_without_weekend: "Remove the weekend start time, since no weekends are selected.",
+  start_not_before_end: "Start time must be before the end time.",
+  season_date_taken: "Another season already starts on that date.",
+  invalid_date_range: "End date must be the same day or later than the start date.",
+  day_off_with_times: "Day-off overrides can't include start or end times.",
+  custom_hours_missing_times: "Custom-hours overrides need both a start and end time.",
+  custom_hours_date_mismatch: "Custom-hours overrides must start and end on the same day.",
+  override_conflict: "This override overlaps an existing one.",
 };
 
 export function apiErrorMessage(code: string | undefined): string {

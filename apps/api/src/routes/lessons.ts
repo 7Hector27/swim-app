@@ -3,8 +3,6 @@ import { and, asc, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import type {
   AvailableSlot,
   AvailableSlotsQuery,
-  AvailabilityOverride,
-  AvailabilitySeason,
   CreateLessonBody,
   DayAvailability,
   DayState,
@@ -41,37 +39,9 @@ import { validate } from "../middleware/validate";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { classifyDaySlots, computeAvailableSlots, getDateInLA, getISODayOfWeek } from "../lib/slots";
 import { effectiveHours } from "../lib/effectiveHours";
+import { mapSeasonRow, mapOverrideRow } from "../lib/availabilityMappers";
 import { needsApproval, notifyBookingCreated, notifyCoachOfChange } from "../lib/lessonApproval";
 import { isActiveSwimmer } from "../db/queries";
-
-function mapSeasonRow(row: typeof availabilitySeasons.$inferSelect): AvailabilitySeason {
-  return {
-    id: row.id,
-    name: row.name,
-    startDate: row.startDate,
-    teachesDays: row.teachesDays,
-    weekdayStartTime: row.weekdayStartTime,
-    weekendStartTime: row.weekendStartTime,
-    endTime: row.endTime,
-    startsAtDst: row.startsAtDst,
-    createdAt: row.createdAt.toISOString(),
-    updatedAt: row.updatedAt.toISOString(),
-  };
-}
-
-function mapOverrideRow(row: typeof availabilityOverrides.$inferSelect): AvailabilityOverride {
-  return {
-    id: row.id,
-    kind: row.kind,
-    startDate: row.startDate,
-    endDate: row.endDate,
-    startTime: row.startTime,
-    endTime: row.endTime,
-    note: row.note,
-    createdAt: row.createdAt.toISOString(),
-    updatedAt: row.updatedAt.toISOString(),
-  };
-}
 
 export const lessonsRouter = Router();
 

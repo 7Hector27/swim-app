@@ -273,6 +273,7 @@ export const AvailabilityOverrideSchema = z.object({
 });
 export type AvailabilityOverride = z.infer<typeof AvailabilityOverrideSchema>;
 
+
 // ── Update lesson (cancel / reschedule) ──────────────────────────────────────
 
 export const UpdateLessonBodySchema = z.object({
@@ -350,3 +351,109 @@ export const WeekAvailabilityResponseSchema = z.object({
   days:          z.array(WeekDayAvailabilitySchema),
 });
 export type WeekAvailabilityResponse = z.infer<typeof WeekAvailabilityResponseSchema>;
+
+// ── Coach availability-editor request + response shapes ──────────────────────
+
+const DateStringSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+
+export const SeasonWithIsCurrentSchema = AvailabilitySeasonSchema.extend({
+  isCurrent: z.boolean(),
+});
+export type SeasonWithIsCurrent = z.infer<typeof SeasonWithIsCurrentSchema>;
+
+export const CreateSeasonBodySchema = z.object({
+  name: z.string().min(1),
+  startDate: DateStringSchema,
+  teachesDays: z.array(z.number().int().min(1).max(7)).min(1),
+  weekdayStartTime: TimeStringSchema.nullable(),
+  weekendStartTime: TimeStringSchema.nullable(),
+  endTime: TimeStringSchema,
+  startsAtDst: z.boolean().optional(),
+});
+export type CreateSeasonBody = z.infer<typeof CreateSeasonBodySchema>;
+
+export const PatchSeasonBodySchema = z.object({
+  name: z.string().min(1).optional(),
+  startDate: DateStringSchema.optional(),
+  teachesDays: z.array(z.number().int().min(1).max(7)).min(1).optional(),
+  weekdayStartTime: TimeStringSchema.nullable().optional(),
+  weekendStartTime: TimeStringSchema.nullable().optional(),
+  endTime: TimeStringSchema.optional(),
+  startsAtDst: z.boolean().optional(),
+});
+export type PatchSeasonBody = z.infer<typeof PatchSeasonBodySchema>;
+
+export const CreateOverrideBodySchema = z.object({
+  kind: AvailabilityOverrideKindSchema,
+  startDate: DateStringSchema,
+  endDate: DateStringSchema,
+  startTime: TimeStringSchema.optional(),
+  endTime: TimeStringSchema.optional(),
+  note: z.string().optional(),
+});
+export type CreateOverrideBody = z.infer<typeof CreateOverrideBodySchema>;
+
+export const PatchOverrideBodySchema = z.object({
+  kind: AvailabilityOverrideKindSchema.optional(),
+  startDate: DateStringSchema.optional(),
+  endDate: DateStringSchema.optional(),
+  startTime: TimeStringSchema.nullable().optional(),
+  endTime: TimeStringSchema.nullable().optional(),
+  note: z.string().nullable().optional(),
+});
+export type PatchOverrideBody = z.infer<typeof PatchOverrideBodySchema>;
+
+export const ImpactWarningSchema = z.object({
+  lessonId: z.string().uuid(),
+  startsAt: z.string().datetime({ offset: true }),
+  reason: z.enum(["outside_hours", "day_closed"]),
+});
+export type ImpactWarning = z.infer<typeof ImpactWarningSchema>;
+
+export const SeasonMutationResponseSchema = z.object({
+  season: SeasonWithIsCurrentSchema,
+  warnings: z.array(ImpactWarningSchema),
+});
+export type SeasonMutationResponse = z.infer<typeof SeasonMutationResponseSchema>;
+
+export const SeasonDeleteResponseSchema = z.object({
+  warnings: z.array(ImpactWarningSchema),
+});
+export type SeasonDeleteResponse = z.infer<typeof SeasonDeleteResponseSchema>;
+
+export const OverrideMutationResponseSchema = z.object({
+  override: AvailabilityOverrideSchema,
+  warnings: z.array(ImpactWarningSchema),
+});
+export type OverrideMutationResponse = z.infer<typeof OverrideMutationResponseSchema>;
+
+export const OverrideDeleteResponseSchema = z.object({
+  warnings: z.array(ImpactWarningSchema),
+});
+export type OverrideDeleteResponse = z.infer<typeof OverrideDeleteResponseSchema>;
+
+export const CopyNextYearResponseSchema = z.object({
+  inserted: z.array(AvailabilitySeasonSchema),
+});
+export type CopyNextYearResponse = z.infer<typeof CopyNextYearResponseSchema>;
+
+export const AvailabilityPreviewQuerySchema = z.object({
+  from: DateStringSchema,
+  days: z
+    .string()
+    .transform((value) => parseInt(value, 10))
+    .pipe(z.number().int().min(1).max(31)),
+});
+export type AvailabilityPreviewQuery = z.infer<typeof AvailabilityPreviewQuerySchema>;
+
+export const AvailabilityPreviewDaySchema = z.object({
+  date: DateStringSchema,
+  state: z.enum(["open", "closed"]),
+  windows: z.array(TeachingWindowSchema),
+});
+export type AvailabilityPreviewDay = z.infer<typeof AvailabilityPreviewDaySchema>;
+
+export const AvailabilityPreviewResponseSchema = z.object({
+  days: z.array(AvailabilityPreviewDaySchema),
+});
+export type AvailabilityPreviewResponse = z.infer<typeof AvailabilityPreviewResponseSchema>;

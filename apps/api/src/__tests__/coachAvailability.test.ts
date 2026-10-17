@@ -443,3 +443,434 @@ describe("DELETE /coach/travel-buffers/:fromId/:toId", () => {
   });
 });
 
+// ── Availability seasons ─────────────────────────────────────────────────────
+
+const SEASON_A_ID = "11111111-0000-0000-0000-000000000001";
+const SEASON_B_ID = "11111111-0000-0000-0000-000000000002";
+const OVERRIDE_A_ID = "22222222-0000-0000-0000-000000000001";
+const LESSON_A_ID = "33333333-0000-0000-0000-000000000001";
+
+function fromResolveSelect<T>(rows: T[]) {
+  return { from: vi.fn().mockResolvedValue(rows) };
+}
+
+function seasonRow(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    id: SEASON_A_ID,
+    name: "School year",
+    startDate: "2025-08-15",
+    teachesDays: [1, 2, 3, 4, 5, 6],
+    weekdayStartTime: "15:00:00",
+    weekendStartTime: "09:00:00",
+    endTime: "20:00:00",
+    startsAtDst: false,
+    createdAt: now,
+    updatedAt: now,
+    ...overrides,
+  };
+}
+
+function overrideRow(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    id: OVERRIDE_A_ID,
+    kind: "day_off" as const,
+    startDate: "2025-12-24",
+    endDate: "2025-12-26",
+    startTime: null as string | null,
+    endTime: null as string | null,
+    note: null as string | null,
+    createdAt: now,
+    updatedAt: now,
+    ...overrides,
+  };
+}
+
+describe("POST /coach/seasons", () => {
+  it("creates a valid season and returns 201", async () => {
+    authAs(coachProfile);
+
+    const inserted = seasonRow({ name: "New season", startDate: "2026-01-05" });
+
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(coachProfile))
+      .mockReturnValueOnce(simpleSelect<unknown>([]))
+      .mockReturnValueOnce(fromResolveSelect([inserted]));
+
+    const insertReturning = vi.fn().mockResolvedValue([inserted]);
+    const insertValues = vi.fn().mockReturnValue({ returning: insertReturning });
+    mockDbInsert.mockReturnValue({ values: insertValues });
+
+    const res = await request(app)
+      .post("/coach/seasons")
+      .set("Authorization", "Bearer token")
+      .send({
+        name: "New season",
+        startDate: "2026-01-05",
+        teachesDays: [1, 2, 3, 4, 5, 6],
+        weekdayStartTime: "15:00",
+        weekendStartTime: "09:00",
+        endTime: "20:00",
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body).toMatchObject({ season: { id: SEASON_A_ID }, warnings: [] });
+  });
+
+  it("returns 422 invalid_time_granularity when start time is :07", async () => {
+    authAs(coachProfile);
+    mockDbSelect.mockReturnValueOnce(requireUserSelect(coachProfile));
+
+    const res = await request(app)
+      .post("/coach/seasons")
+      .set("Authorization", "Bearer token")
+      .send({
+        name: "Odd minute",
+        startDate: "2026-01-05",
+        teachesDays: [1, 2, 3, 4, 5],
+        weekdayStartTime: "15:07",
+        weekendStartTime: null,
+        endTime: "20:00",
+      });
+
+    expect(res.status).toBe(422);
+    expect(res.body).toMatchObject({ error: "invalid_time_granularity" });
+  });
+
+  it("returns 422 season_date_taken when another season has the same start_date", async () => {
+    authAs(coachProfile);
+
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(coachProfile))
+      .mockReturnValueOnce(simpleSelect([{ id: SEASON_B_ID }]));
+
+    const res = await request(app)
+      .post("/coach/seasons")
+      .set("Authorization", "Bearer token")
+      .send({
+        name: "Duplicate",
+        startDate: "2025-08-15",
+        teachesDays: [1, 2, 3, 4, 5],
+        weekdayStartTime: "15:00",
+        weekendStartTime: null,
+        endTime: "20:00",
+      });
+
+    expect(res.status).toBe(422);
+    expect(res.body).toMatchObject({ error: "season_date_taken" });
+  });
+
+  it("returns 422 weekday_start_without_weekday when days=[6] and weekday time is set", async () => {
+    authAs(coachProfile);
+    mockDbSelect.mockReturnValueOnce(requireUserSelect(coachProfile));
+
+    const res = await request(app)
+      .post("/coach/seasons")
+      .set("Authorization", "Bearer token")
+      .send({
+        name: "Weekend only",
+        startDate: "2026-02-01",
+        teachesDays: [6],
+        weekdayStartTime: "15:00",
+        weekendStartTime: "09:00",
+        endTime: "20:00",
+      });
+
+    expect(res.status).toBe(422);
+    expect(res.body).toMatchObject({ error: "weekday_start_without_weekday" });
+  });
+
+  it("returns 422 weekday_start_required when days=[1] and weekday time is null", async () => {
+    authAs(coachProfile);
+    mockDbSelect.mockReturnValueOnce(requireUserSelect(coachProfile));
+
+    const res = await request(app)
+      .post("/coach/seasons")
+      .set("Authorization", "Bearer token")
+      .send({
+        name: "Weekday missing",
+        startDate: "2026-02-01",
+        teachesDays: [1],
+        weekdayStartTime: null,
+        weekendStartTime: null,
+        endTime: "20:00",
+      });
+
+    expect(res.status).toBe(422);
+    expect(res.body).toMatchObject({ error: "weekday_start_required" });
+  });
+
+  it("returns 403 for a parent", async () => {
+    authAs(parentProfile);
+    mockDbSelect.mockReturnValueOnce(requireUserSelect(parentProfile));
+
+    const res = await request(app)
+      .post("/coach/seasons")
+      .set("Authorization", "Bearer token")
+      .send({
+        name: "Nope",
+        startDate: "2026-01-05",
+        teachesDays: [1],
+        weekdayStartTime: "15:00",
+        weekendStartTime: null,
+        endTime: "20:00",
+      });
+
+    expect(res.status).toBe(403);
+  });
+});
+
+describe("DELETE /coach/seasons/:id", () => {
+  it("returns warnings for upcoming lessons left outside hours", async () => {
+    authAs(coachProfile);
+
+    const deletedSeason = seasonRow();
+    const upcomingLesson = {
+      id: LESSON_A_ID,
+      startsAt: new Date("2099-06-10T22:00:00.000Z"),
+      durationMinutes: 30,
+    };
+
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(coachProfile))
+      .mockReturnValueOnce(fromResolveSelect([]))
+      .mockReturnValueOnce(fromResolveSelect([]))
+      .mockReturnValueOnce(whereResolveSelect([upcomingLesson]));
+
+    const deleteReturning = vi.fn().mockResolvedValue([deletedSeason]);
+    const deleteWhere = vi.fn().mockReturnValue({ returning: deleteReturning });
+    mockDbDelete.mockReturnValue({ where: deleteWhere });
+
+    const res = await request(app)
+      .delete(`/coach/seasons/${SEASON_A_ID}`)
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(200);
+    expect(res.body.warnings).toHaveLength(1);
+    expect(res.body.warnings[0]).toMatchObject({
+      lessonId: LESSON_A_ID,
+      reason: "day_closed",
+    });
+  });
+});
+
+describe("POST /coach/seasons/copy-next-year", () => {
+  it("inserts next-year rows for every existing season on first call", async () => {
+    authAs(coachProfile);
+
+    const seasons = [
+      seasonRow({ id: "11111111-0000-0000-0000-00000000000a", startDate: "2025-01-01" }),
+      seasonRow({ id: "11111111-0000-0000-0000-00000000000b", startDate: "2025-04-01" }),
+      seasonRow({ id: "11111111-0000-0000-0000-00000000000c", startDate: "2025-06-15" }),
+      seasonRow({ id: "11111111-0000-0000-0000-00000000000d", startDate: "2025-08-15" }),
+      seasonRow({ id: "11111111-0000-0000-0000-00000000000e", startDate: "2025-11-01" }),
+    ];
+
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(coachProfile))
+      .mockReturnValueOnce(fromResolveSelect(seasons));
+
+    const insertedRows = seasons.map((season) =>
+      seasonRow({
+        id: `11111111-0000-0000-0000-00000000${(season.id as string).slice(-4)}`,
+        startDate: `2026${(season.startDate as string).slice(4)}`,
+      }),
+    );
+    const insertReturning = vi.fn().mockResolvedValue(insertedRows);
+    const insertValues = vi.fn().mockReturnValue({ returning: insertReturning });
+    mockDbInsert.mockReturnValue({ values: insertValues });
+
+    const res = await request(app)
+      .post("/coach/seasons/copy-next-year")
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(201);
+    expect(res.body.inserted).toHaveLength(5);
+    expect(insertValues).toHaveBeenCalledTimes(1);
+    const firstArg = insertValues.mock.calls[0]?.[0] as Array<{ startDate: string }>;
+    expect(firstArg.map((row) => row.startDate)).toEqual([
+      "2026-01-01",
+      "2026-04-01",
+      "2026-06-15",
+      "2026-08-15",
+      "2026-11-01",
+    ]);
+  });
+
+  it("returns inserted:[] on second call when all next-year dates already exist", async () => {
+    authAs(coachProfile);
+
+    const seasons = [
+      seasonRow({ id: "11111111-0000-0000-0000-00000000000a", startDate: "2025-01-01" }),
+      seasonRow({ id: "11111111-0000-0000-0000-00000000000b", startDate: "2026-01-01" }),
+    ];
+
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(coachProfile))
+      .mockReturnValueOnce(fromResolveSelect(seasons));
+
+    const res = await request(app)
+      .post("/coach/seasons/copy-next-year")
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(201);
+    expect(res.body.inserted).toEqual([]);
+    expect(mockDbInsert).not.toHaveBeenCalled();
+  });
+
+  it("shifts a DST-pinned season to the next year's second Sunday of March", async () => {
+    authAs(coachProfile);
+
+    const dstSeason = seasonRow({
+      startDate: "2025-03-09",
+      startsAtDst: true,
+    });
+
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(coachProfile))
+      .mockReturnValueOnce(fromResolveSelect([dstSeason]));
+
+    const insertedRow = seasonRow({ startDate: "2026-03-08", startsAtDst: true });
+    const insertReturning = vi.fn().mockResolvedValue([insertedRow]);
+    const insertValues = vi.fn().mockReturnValue({ returning: insertReturning });
+    mockDbInsert.mockReturnValue({ values: insertValues });
+
+    const res = await request(app)
+      .post("/coach/seasons/copy-next-year")
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(201);
+    expect(insertValues).toHaveBeenCalledTimes(1);
+    const firstArg = insertValues.mock.calls[0]?.[0] as Array<{ startDate: string }>;
+    expect(firstArg[0]?.startDate).toBe("2026-03-08");
+  });
+});
+
+describe("POST /coach/overrides", () => {
+  it("creates a day_off date range override and returns 201", async () => {
+    authAs(coachProfile);
+
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(coachProfile))
+      .mockReturnValueOnce(fromResolveSelect([]));
+
+    const inserted = overrideRow();
+    const insertReturning = vi.fn().mockResolvedValue([inserted]);
+    const insertValues = vi.fn().mockReturnValue({ returning: insertReturning });
+    mockDbInsert.mockReturnValue({ values: insertValues });
+
+    const res = await request(app)
+      .post("/coach/overrides")
+      .set("Authorization", "Bearer token")
+      .send({
+        kind: "day_off",
+        startDate: "2025-12-24",
+        endDate: "2025-12-26",
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body).toMatchObject({
+      override: { id: OVERRIDE_A_ID, kind: "day_off" },
+      warnings: [],
+    });
+  });
+
+  it("returns 422 custom_hours_date_mismatch when custom_hours spans multiple days", async () => {
+    authAs(coachProfile);
+    mockDbSelect.mockReturnValueOnce(requireUserSelect(coachProfile));
+
+    const res = await request(app)
+      .post("/coach/overrides")
+      .set("Authorization", "Bearer token")
+      .send({
+        kind: "custom_hours",
+        startDate: "2025-07-04",
+        endDate: "2025-07-05",
+        startTime: "09:00",
+        endTime: "12:00",
+      });
+
+    expect(res.status).toBe(422);
+    expect(res.body).toMatchObject({ error: "custom_hours_date_mismatch" });
+  });
+
+  it("returns 422 override_conflict when overlapping an existing override", async () => {
+    authAs(coachProfile);
+
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(coachProfile))
+      .mockReturnValueOnce(
+        fromResolveSelect([
+          { id: OVERRIDE_A_ID, startDate: "2025-12-24", endDate: "2025-12-26" },
+        ]),
+      );
+
+    const res = await request(app)
+      .post("/coach/overrides")
+      .set("Authorization", "Bearer token")
+      .send({
+        kind: "day_off",
+        startDate: "2025-12-26",
+        endDate: "2025-12-28",
+      });
+
+    expect(res.status).toBe(422);
+    expect(res.body).toMatchObject({ error: "override_conflict" });
+  });
+
+  it("returns 403 for a parent", async () => {
+    authAs(parentProfile);
+    mockDbSelect.mockReturnValueOnce(requireUserSelect(parentProfile));
+
+    const res = await request(app)
+      .post("/coach/overrides")
+      .set("Authorization", "Bearer token")
+      .send({
+        kind: "day_off",
+        startDate: "2025-12-24",
+        endDate: "2025-12-26",
+      });
+
+    expect(res.status).toBe(403);
+  });
+});
+
+describe("GET /coach/availability-preview", () => {
+  it("returns a day-by-day preview using effectiveHours", async () => {
+    authAs(coachProfile);
+
+    const schoolYear = seasonRow({
+      startDate: "2025-08-15",
+      teachesDays: [1, 2, 3, 4, 5, 6],
+      weekdayStartTime: "15:00:00",
+      weekendStartTime: "09:00:00",
+      endTime: "20:00:00",
+    });
+
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(coachProfile))
+      .mockReturnValueOnce(fromResolveSelect([schoolYear]))
+      .mockReturnValueOnce(fromResolveSelect([]));
+
+    const res = await request(app)
+      .get("/coach/availability-preview?from=2025-09-01&days=3")
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(200);
+    expect(res.body.days).toHaveLength(3);
+    for (const day of res.body.days) {
+      expect(day.state).toBe("open");
+    }
+  });
+
+  it("returns 403 for a parent", async () => {
+    authAs(parentProfile);
+    mockDbSelect.mockReturnValueOnce(requireUserSelect(parentProfile));
+
+    const res = await request(app)
+      .get("/coach/availability-preview?from=2025-09-01&days=3")
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(403);
+  });
+});
+
