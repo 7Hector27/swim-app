@@ -12,6 +12,7 @@ import styles from "./CoachNav.module.css";
 const NAV_LINKS = [
   { label: "Home", href: "/dashboard" },
   { label: "Schedule", href: "/coach/schedule" },
+  { label: "Availability", href: "/coach/availability" },
   { label: "Swimmers", href: "/coach/swimmers" },
   { label: "Meets", href: "/coach/meets" },
 ] as const;
@@ -43,6 +44,15 @@ function ScheduleIcon() {
     <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
       <rect x="3" y="4" width="14" height="13" rx="2" stroke="currentColor" strokeWidth="1.5" />
       <path d="M7 2v4M13 2v4M3 9h14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function AvailabilityIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <circle cx="10" cy="10" r="7" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M10 6v4l2.5 2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
     </svg>
   );
 }
@@ -80,6 +90,7 @@ function MeetsIcon() {
 const ICONS: Record<NavLinkLabel, () => React.ReactElement> = {
   Home: HomeIcon,
   Schedule: ScheduleIcon,
+  Availability: AvailabilityIcon,
   Swimmers: SwimmersIcon,
   Meets: MeetsIcon,
 };

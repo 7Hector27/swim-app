@@ -1,6 +1,8 @@
 import type { CoachSwimmer } from "@swim-app/shared";
 import { todayLA } from "@swim-app/shared";
 
+import Link from "next/link";
+
 import Placeholder from "@/components/Placeholder";
 import { fetchCoachSwimmers } from "@/lib/api/coachSwimmers";
 import { coachGetPendingLessons, fetchCoachSchedule, fetchCoachStats } from "@/lib/api/lessons";
@@ -53,14 +55,12 @@ export default async function CoachDashboardContent({ accessToken }: Props) {
                   Log a time
                 </button>
               </Placeholder>
-              <Placeholder>
-                <button
-                  type="button"
-                  className="inline-flex items-center justify-center rounded-button border-2 border-button-outline text-button-outline font-bold text-sm px-5 h-11 transition-colors duration-150 hover:opacity-80"
-                >
-                  Edit availability
-                </button>
-              </Placeholder>
+              <Link
+                href="/coach/availability"
+                className="inline-flex items-center justify-center rounded-button border-2 border-button-outline text-button-outline font-bold text-sm px-5 h-11 transition-colors duration-150 hover:opacity-80"
+              >
+                Edit availability
+              </Link>
               <Placeholder>
                 <button
                   type="button"

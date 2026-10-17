@@ -1,0 +1,61 @@
+.dialog {
+  width: 100%;
+  max-width: min(90vw, 460px);
+  border-radius: var(--radius-card);
+  background: var(--color-section);
+  border: 1px solid var(--color-divider-section);
+  padding: 1.5rem;
+  margin: auto;
+
+  transition:
+    transform 220ms var(--ease-out-strong, cubic-bezier(0.23, 1, 0.32, 1)),
+    opacity 220ms var(--ease-out-strong, cubic-bezier(0.23, 1, 0.32, 1)),
+    overlay 220ms allow-discrete,
+    display 220ms allow-discrete;
+}
+
+.dialog[open] {
+  transform: scale(1);
+  opacity: 1;
+}
+
+@starting-style {
+  .dialog[open] {
+    transform: scale(0.95);
+    opacity: 0;
+  }
+}
+
+.dialog::backdrop {
+  background: rgba(0, 0, 0, 0.55);
+  transition:
+    opacity 220ms,
+    overlay 220ms allow-discrete,
+    display 220ms allow-discrete;
+}
+
+@starting-style {
+  .dialog::backdrop {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dialog,
+  .dialog::backdrop {
+    transition: opacity 150ms;
+  }
+
+  @starting-style {
+    .dialog[open] {
+      transform: none;
+      opacity: 0;
+    }
+  }
+}
+
+/* Mobile tab bar leaves ~60px at the bottom; shift sticky actions above it. */
+.phoneAddButton {
+  position: sticky;
+  bottom: calc(3.9rem + env(safe-area-inset-bottom, 0px));
+}
