@@ -75,12 +75,12 @@ export default function CopyToNextYearButton({ nextYearLabel, onConfirm }: Props
           <div className="flex flex-col gap-2">
             <h2
               id="copy-year-title"
-              className="text-lg font-heading font-semibold text-text-on-section leading-tight"
+              className="text-lg font-heading font-semibold text-text leading-tight"
               style={{ fontVariationSettings: '"SOFT" 100, "WONK" 0' }}
             >
               Copy seasons to {nextYearLabel}?
             </h2>
-            <p className="text-sm text-text-secondary-on-section leading-relaxed">
+            <p className="text-sm text-text-secondary leading-relaxed">
               This duplicates your current cycle one year forward. You can edit or delete the new seasons after.
             </p>
           </div>
@@ -96,7 +96,7 @@ export default function CopyToNextYearButton({ nextYearLabel, onConfirm }: Props
               type="button"
               onClick={handleCancel}
               disabled={isPending}
-              className="inline-flex items-center justify-center h-11 px-5 rounded-button border border-divider-section text-text-on-section font-semibold text-sm transition-colors duration-150 hover:border-text-secondary-on-section"
+              className="inline-flex items-center justify-center h-11 px-5 rounded-button border border-border text-text font-semibold text-sm transition-colors duration-150 hover:border-text-secondary"
             >
               Cancel
             </button>

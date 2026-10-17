@@ -56,7 +56,7 @@ export default function OverridesList({
 
   if (rows.length === 0) {
     return (
-      <p className="text-sm text-text-secondary-on-section py-6 text-center">
+      <p className="text-sm text-text-secondary py-6 text-center">
         No one-off changes yet.
       </p>
     );
@@ -80,18 +80,18 @@ export default function OverridesList({
           return (
             <li
               key={`override-${override.id}`}
-              className="rounded-card border border-divider-section bg-section p-3 flex items-center justify-between gap-3"
+              className="rounded-card border border-border bg-surface-soft p-3 flex items-center justify-between gap-3"
             >
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-text-on-section">{title}</p>
-                <p className="text-xs text-text-secondary-on-section truncate">{detail}</p>
+                <p className="text-sm font-semibold text-text">{title}</p>
+                <p className="text-xs text-text-secondary truncate">{detail}</p>
               </div>
               <div className="flex items-center gap-1">
                 <button
                   type="button"
                   onClick={() => onEdit(override)}
                   aria-label="Edit one-off change"
-                  className="inline-flex items-center justify-center w-11 h-11 rounded-button text-text-secondary-on-section hover:text-text-on-section transition-colors duration-150"
+                  className="inline-flex items-center justify-center w-11 h-11 rounded-button text-text-secondary hover:text-text transition-colors duration-150"
                 >
                   <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
                     <path
@@ -107,7 +107,7 @@ export default function OverridesList({
                   type="button"
                   onClick={() => onDelete(override)}
                   aria-label="Delete one-off change"
-                  className="inline-flex items-center justify-center w-11 h-11 rounded-button text-text-secondary-on-section hover:text-danger transition-colors duration-150"
+                  className="inline-flex items-center justify-center w-11 h-11 rounded-button text-text-secondary hover:text-danger transition-colors duration-150"
                 >
                   <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
                     <path
@@ -127,13 +127,13 @@ export default function OverridesList({
         return (
           <li
             key={`blocked-${blocked.id}`}
-            className="rounded-card border border-divider-section bg-surface-soft p-3 flex items-center justify-between gap-3"
+            className="rounded-card border border-border bg-surface-soft p-3 flex items-center justify-between gap-3"
           >
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-text-on-section">
+              <p className="text-sm font-semibold text-text">
                 Blocked · {date} · {timeOnlyLA(blocked.startsAt)} – {timeOnlyLA(blocked.endsAt)}
               </p>
-              <p className="text-xs text-text-secondary-on-section truncate">
+              <p className="text-xs text-text-secondary truncate">
                 {blocked.note ?? "Calendar event"}
               </p>
             </div>

@@ -141,8 +141,8 @@ export default function SeasonFormModal({
   const teachesWeekday = hasWeekday(teachesDays);
   const teachesWeekend = hasWeekend(teachesDays);
   const inputClass =
-    "h-11 px-3 rounded-button border border-divider-section bg-section text-text-on-section text-sm focus:outline focus:outline-2 focus:outline-focus-ring";
-  const labelClass = "text-sm font-semibold text-text-on-section";
+    "h-11 px-3 rounded-button border border-border bg-background text-text text-sm focus:outline focus:outline-2 focus:outline-focus-ring";
+  const labelClass = "text-sm font-semibold text-text";
 
   return (
     <dialog
@@ -155,7 +155,7 @@ export default function SeasonFormModal({
       <form onSubmit={handleSubmit} className="flex flex-col gap-5" noValidate>
         <h2
           id="season-form-title"
-          className="text-lg font-heading font-semibold text-text-on-section leading-tight"
+          className="text-lg font-heading font-semibold text-text leading-tight"
           style={{ fontVariationSettings: '"SOFT" 100, "WONK" 0' }}
         >
           {season === null ? "Add season" : `Edit ${season.name}`}
@@ -200,10 +200,10 @@ export default function SeasonFormModal({
                   type="button"
                   onClick={() => toggleDay(option.value)}
                   aria-pressed={active}
-                  className={`inline-flex items-center justify-center h-11 min-w-[52px] px-3 rounded-button border text-sm font-semibold transition-colors duration-150 ${
+                  className={`inline-flex items-center justify-center h-11 min-w-[52px] px-3 rounded-button border-2 text-sm font-semibold transition-colors duration-150 ${
                     active
-                      ? "bg-button-primary-background text-button-primary-text border-transparent"
-                      : "border-divider-section text-text-on-section"
+                      ? "bg-button-primary-background text-button-primary-text border-button-primary-background"
+                      : "bg-transparent border-button-outline text-text"
                   }`}
                 >
                   {option.label}
@@ -268,7 +268,7 @@ export default function SeasonFormModal({
           <button
             type="button"
             onClick={onCancel}
-            className="inline-flex items-center justify-center h-11 px-5 rounded-button border border-divider-section text-text-on-section font-semibold text-sm transition-colors duration-150 hover:border-text-secondary-on-section"
+            className="inline-flex items-center justify-center h-11 px-5 rounded-button border border-border text-text font-semibold text-sm transition-colors duration-150 hover:border-text-secondary"
           >
             Cancel
           </button>

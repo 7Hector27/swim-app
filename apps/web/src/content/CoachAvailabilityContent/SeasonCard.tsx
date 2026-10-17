@@ -11,22 +11,22 @@ interface Props {
 
 export default function SeasonCard({ season, onEdit }: Props) {
   return (
-    <div className="rounded-card border-2 border-accent-on-section bg-section p-5 flex flex-col gap-4">
+    <div className="rounded-card border-2 border-accent bg-background p-5 flex flex-col gap-4">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2 flex-wrap">
           <h2
-            className="text-xl text-text-on-section font-heading font-semibold"
+            className="text-xl text-text font-heading font-semibold"
             style={{ fontVariationSettings: '"SOFT" 100, "WONK" 0' }}
           >
             {season.name}
           </h2>
           {season.isCurrent && (
-            <span className="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-accent-on-section text-on-accent">
+            <span className="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-accent text-on-accent">
               Now
             </span>
           )}
         </div>
-        <span className="text-xs text-text-secondary-on-section whitespace-nowrap">
+        <span className="text-xs text-text-secondary whitespace-nowrap">
           Since {formatMonthDay(season.startDate)}
         </span>
       </div>
@@ -51,10 +51,10 @@ export default function SeasonCard({ season, onEdit }: Props) {
 function TimeStat({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-button bg-surface-soft px-3 py-2">
-      <p className="text-[10px] font-semibold uppercase tracking-widest text-text-secondary-on-section">
+      <p className="text-[10px] font-semibold uppercase tracking-widest text-text-secondary">
         {label}
       </p>
-      <p className="text-base font-bold text-text-on-section mt-0.5">{value}</p>
+      <p className="text-base font-bold text-text mt-0.5">{value}</p>
     </div>
   );
 }

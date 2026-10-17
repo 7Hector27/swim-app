@@ -46,12 +46,12 @@ export default function ImpactWarningModal({ open, warnings, onDismiss }: Props)
         <div className="flex flex-col gap-2">
           <h2
             id="impact-warning-title"
-            className="text-lg font-heading font-semibold text-text-on-section leading-tight"
+            className="text-lg font-heading font-semibold text-text leading-tight"
             style={{ fontVariationSettings: '"SOFT" 100, "WONK" 0' }}
           >
             {warnings.length} booked lesson{warnings.length === 1 ? "" : "s"} fall outside your new hours
           </h2>
-          <p className="text-sm text-text-secondary-on-section leading-relaxed">
+          <p className="text-sm text-text-secondary leading-relaxed">
             Your changes are saved. Review these lessons and reschedule or cancel with the family if needed. Nothing was changed for them.
           </p>
         </div>
@@ -62,12 +62,12 @@ export default function ImpactWarningModal({ open, warnings, onDismiss }: Props)
             return (
               <li
                 key={warning.lessonId}
-                className="rounded-card border border-divider-section bg-surface-soft p-3"
+                className="rounded-card border border-border bg-surface-soft p-3"
               >
-                <p className="text-sm font-semibold text-text-on-section">
+                <p className="text-sm font-semibold text-text">
                   {date} · {time}
                 </p>
-                <p className="text-xs text-text-secondary-on-section mt-0.5">
+                <p className="text-xs text-text-secondary mt-0.5">
                   {joinNames(warning.swimmerFirstNames)} · {warning.poolName}
                 </p>
               </li>

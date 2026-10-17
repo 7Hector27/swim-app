@@ -133,8 +133,8 @@ export default function OverrideFormModal({ open, override, onCancel, onSubmit, 
   }
 
   const inputClass =
-    "h-11 px-3 rounded-button border border-divider-section bg-section text-text-on-section text-sm focus:outline focus:outline-2 focus:outline-focus-ring";
-  const labelClass = "text-sm font-semibold text-text-on-section";
+    "h-11 px-3 rounded-button border border-border bg-background text-text text-sm focus:outline focus:outline-2 focus:outline-focus-ring";
+  const labelClass = "text-sm font-semibold text-text";
 
   return (
     <dialog
@@ -147,7 +147,7 @@ export default function OverrideFormModal({ open, override, onCancel, onSubmit, 
       <form onSubmit={handleSubmit} className="flex flex-col gap-5" noValidate>
         <h2
           id="override-form-title"
-          className="text-lg font-heading font-semibold text-text-on-section leading-tight"
+          className="text-lg font-heading font-semibold text-text leading-tight"
           style={{ fontVariationSettings: '"SOFT" 100, "WONK" 0' }}
         >
           {isEdit ? "Edit one-off change" : "Add a day off or custom hours"}
@@ -163,8 +163,8 @@ export default function OverrideFormModal({ open, override, onCancel, onSubmit, 
                   key={option.value}
                   className={`flex items-start gap-3 p-3 min-h-[44px] rounded-card border cursor-pointer transition-colors duration-150 ${
                     active
-                      ? "border-accent-on-section bg-surface-soft"
-                      : "border-divider-section"
+                      ? "border-accent bg-surface-soft"
+                      : "border-border"
                   }`}
                 >
                   <input
@@ -176,10 +176,10 @@ export default function OverrideFormModal({ open, override, onCancel, onSubmit, 
                     className="mt-1"
                   />
                   <span className="flex flex-col">
-                    <span className="text-sm font-semibold text-text-on-section">
+                    <span className="text-sm font-semibold text-text">
                       {option.label}
                     </span>
-                    <span className="text-xs text-text-secondary-on-section">{option.hint}</span>
+                    <span className="text-xs text-text-secondary">{option.hint}</span>
                   </span>
                 </label>
               );
@@ -261,9 +261,9 @@ export default function OverrideFormModal({ open, override, onCancel, onSubmit, 
             maxLength={500}
             value={note}
             onChange={(event) => setNote(event.target.value)}
-            className="px-3 py-2 rounded-button border border-divider-section bg-section text-text-on-section text-sm focus:outline focus:outline-2 focus:outline-focus-ring"
+            className="px-3 py-2 rounded-button border border-border bg-background text-text text-sm focus:outline focus:outline-2 focus:outline-focus-ring"
           />
-          <p className="text-xs text-text-secondary-on-section">{note.length}/500</p>
+          <p className="text-xs text-text-secondary">{note.length}/500</p>
         </div>
 
         {errorMessage && (
@@ -276,7 +276,7 @@ export default function OverrideFormModal({ open, override, onCancel, onSubmit, 
           <button
             type="button"
             onClick={onCancel}
-            className="inline-flex items-center justify-center h-11 px-5 rounded-button border border-divider-section text-text-on-section font-semibold text-sm transition-colors duration-150 hover:border-text-secondary-on-section"
+            className="inline-flex items-center justify-center h-11 px-5 rounded-button border border-border text-text font-semibold text-sm transition-colors duration-150 hover:border-text-secondary"
           >
             Cancel
           </button>

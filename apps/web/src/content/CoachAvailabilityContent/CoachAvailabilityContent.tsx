@@ -334,7 +334,7 @@ export default function CoachAvailabilityContent({
           <div className="hidden tablet:flex items-baseline justify-between">
             <h2
               id="seasons-section-title"
-              className="text-xl font-heading text-text-on-section"
+              className="text-xl font-heading text-text"
               style={{ fontVariationSettings: '"SOFT" 100, "WONK" 0' }}
             >
               {cycleLabel}
@@ -355,7 +355,7 @@ export default function CoachAvailabilityContent({
               <section aria-labelledby="upcoming-seasons-title" className="flex flex-col gap-3">
                 <h3
                   id="upcoming-seasons-title"
-                  className="text-base font-heading text-heading"
+                  className="text-base font-heading text-text"
                   style={{ fontVariationSettings: '"SOFT" 100, "WONK" 0' }}
                 >
                   Coming up
@@ -366,17 +366,17 @@ export default function CoachAvailabilityContent({
                       <button
                         type="button"
                         onClick={() => openEditSeason(season)}
-                        className="w-full text-left rounded-card border border-border bg-section p-4 min-h-[52px] flex items-center justify-between gap-3 hover:bg-surface-soft transition-colors duration-150 active:scale-[0.995]"
+                        className="w-full text-left rounded-card border border-border bg-background p-4 min-h-[52px] flex items-center justify-between gap-3 hover:bg-surface-soft transition-colors duration-150 active:scale-[0.995]"
                       >
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold text-text-on-section">
+                          <p className="text-sm font-semibold text-text">
                             {season.name} · {monthDay(season.startDate)}
                           </p>
-                          <p className="text-xs text-text-secondary-on-section truncate">
+                          <p className="text-xs text-text-secondary truncate">
                             {upcomingSummary(season)}
                           </p>
                         </div>
-                        <span className="text-text-secondary-on-section" aria-hidden="true">
+                        <span className="text-text-secondary" aria-hidden="true">
                           ›
                         </span>
                       </button>
@@ -420,12 +420,12 @@ export default function CoachAvailabilityContent({
 
           <section
             aria-labelledby="overrides-section-title"
-            className="rounded-card border border-border bg-section p-5 flex flex-col gap-4"
+            className="rounded-card border border-border bg-background p-5 flex flex-col gap-4"
           >
             <div className="flex items-center justify-between gap-3">
               <h3
                 id="overrides-section-title"
-                className="text-base font-heading text-text-on-section"
+                className="text-base font-heading text-text"
                 style={{ fontVariationSettings: '"SOFT" 100, "WONK" 0' }}
               >
                 One-off changes
