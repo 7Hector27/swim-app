@@ -1,6 +1,5 @@
 import { todayLA } from "@swim-app/shared";
 
-import CoachNav from "@/components/CoachNav";
 import { requireAuth } from "@/lib/requireAuth";
 import {
   fetchAvailabilityPreview,
@@ -29,18 +28,15 @@ export default async function CoachAvailabilityPage() {
   ]);
 
   return (
-    <div className="flex flex-col flex-1 bg-background min-h-screen">
-      <CoachNav />
-      <CoachAvailabilityContent
-        accessToken={auth.accessToken}
-        initialSeasons={seasons}
-        initialOverrides={overrides}
-        initialBlockedTimes={blockedTimes}
-        initialPreview={preview}
-        initialWeekStart={weekStart}
-        today={today}
-      />
-    </div>
+    <CoachAvailabilityContent
+      accessToken={auth.accessToken}
+      initialSeasons={seasons}
+      initialOverrides={overrides}
+      initialBlockedTimes={blockedTimes}
+      initialPreview={preview}
+      initialWeekStart={weekStart}
+      today={today}
+    />
   );
 }
 

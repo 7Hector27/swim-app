@@ -580,33 +580,38 @@ coachAvailabilityRouter.post(
       return;
     }
 
-    const inserted = await db
-      .insert(availabilitySeasons)
-      .values({
-        name: body.name,
-        startDate: body.startDate,
-        teachesDays: body.teachesDays,
-        weekdayStartTime: body.weekdayStartTime,
-        weekendStartTime: body.weekendStartTime,
-        endTime: body.endTime,
-        startsAtDst: body.startsAtDst ?? false,
-      })
-      .returning();
+    try {
+      const inserted = await db
+        .insert(availabilitySeasons)
+        .values({
+          name: body.name,
+          startDate: body.startDate,
+          teachesDays: body.teachesDays,
+          weekdayStartTime: body.weekdayStartTime,
+          weekendStartTime: body.weekendStartTime,
+          endTime: body.endTime,
+          startsAtDst: body.startsAtDst ?? false,
+        })
+        .returning();
 
-    const season = mapSeasonRow(inserted[0]!);
-    const allRows = await db.select().from(availabilitySeasons);
-    const overrideRows = await db.select().from(availabilityOverrides);
-    const allSeasons = allRows.map(mapSeasonRow);
-    const overrides = overrideRows.map(mapOverrideRow);
+      const season = mapSeasonRow(inserted[0]!);
+      const allRows = await db.select().from(availabilitySeasons);
+      const overrideRows = await db.select().from(availabilityOverrides);
+      const allSeasons = allRows.map(mapSeasonRow);
+      const overrides = overrideRows.map(mapOverrideRow);
 
-    const upcoming = await fetchUpcomingLessons();
-    const warnings = computeImpactWarnings(upcoming, allSeasons, overrides);
+      const upcoming = await fetchUpcomingLessons();
+      const warnings = computeImpactWarnings(upcoming, allSeasons, overrides);
 
-    const responseBody: SeasonMutationResponse = {
-      season: toSeasonWithIsCurrent(season, allSeasons, todayInLA()),
-      warnings,
-    };
-    res.status(201).json(responseBody);
+      const responseBody: SeasonMutationResponse = {
+        season: toSeasonWithIsCurrent(season, allSeasons, todayInLA()),
+        warnings,
+      };
+      res.status(201).json(responseBody);
+    } catch (err) {
+      req.log.error({ err, route: "POST /coach/seasons" }, "availability mutation failed");
+      throw err;
+    }
   }),
 );
 
@@ -661,26 +666,31 @@ coachAvailabilityRouter.patch(
       }
     }
 
-    const updated = await db
-      .update(availabilitySeasons)
-      .set(next)
-      .where(eq(availabilitySeasons.id, id))
-      .returning();
+    try {
+      const updated = await db
+        .update(availabilitySeasons)
+        .set(next)
+        .where(eq(availabilitySeasons.id, id))
+        .returning();
 
-    const season = mapSeasonRow(updated[0]!);
-    const allRows = await db.select().from(availabilitySeasons);
-    const overrideRows = await db.select().from(availabilityOverrides);
-    const allSeasons = allRows.map(mapSeasonRow);
-    const overrides = overrideRows.map(mapOverrideRow);
+      const season = mapSeasonRow(updated[0]!);
+      const allRows = await db.select().from(availabilitySeasons);
+      const overrideRows = await db.select().from(availabilityOverrides);
+      const allSeasons = allRows.map(mapSeasonRow);
+      const overrides = overrideRows.map(mapOverrideRow);
 
-    const upcoming = await fetchUpcomingLessons();
-    const warnings = computeImpactWarnings(upcoming, allSeasons, overrides);
+      const upcoming = await fetchUpcomingLessons();
+      const warnings = computeImpactWarnings(upcoming, allSeasons, overrides);
 
-    const responseBody: SeasonMutationResponse = {
-      season: toSeasonWithIsCurrent(season, allSeasons, todayInLA()),
-      warnings,
-    };
-    res.json(responseBody);
+      const responseBody: SeasonMutationResponse = {
+        season: toSeasonWithIsCurrent(season, allSeasons, todayInLA()),
+        warnings,
+      };
+      res.json(responseBody);
+    } catch (err) {
+      req.log.error({ err, route: "PATCH /coach/seasons/:id", seasonId: id }, "availability mutation failed");
+      throw err;
+    }
   }),
 );
 
@@ -690,24 +700,29 @@ coachAvailabilityRouter.delete(
   asyncHandler(async (req, res) => {
     const { id } = req.params as { id: string };
 
-    const deleted = await db
-      .delete(availabilitySeasons)
-      .where(eq(availabilitySeasons.id, id))
-      .returning();
-    if (deleted.length === 0) {
-      res.status(404).json({ error: "Season not found" });
-      return;
+    try {
+      const deleted = await db
+        .delete(availabilitySeasons)
+        .where(eq(availabilitySeasons.id, id))
+        .returning();
+      if (deleted.length === 0) {
+        res.status(404).json({ error: "Season not found" });
+        return;
+      }
+
+      const remainingRows = await db.select().from(availabilitySeasons);
+      const overrideRows = await db.select().from(availabilityOverrides);
+      const remaining = remainingRows.map(mapSeasonRow);
+      const overrides = overrideRows.map(mapOverrideRow);
+      const upcoming = await fetchUpcomingLessons();
+      const warnings = computeImpactWarnings(upcoming, remaining, overrides);
+
+      const responseBody: SeasonDeleteResponse = { warnings };
+      res.json(responseBody);
+    } catch (err) {
+      req.log.error({ err, route: "DELETE /coach/seasons/:id", seasonId: id }, "availability mutation failed");
+      throw err;
     }
-
-    const remainingRows = await db.select().from(availabilitySeasons);
-    const overrideRows = await db.select().from(availabilityOverrides);
-    const remaining = remainingRows.map(mapSeasonRow);
-    const overrides = overrideRows.map(mapOverrideRow);
-    const upcoming = await fetchUpcomingLessons();
-    const warnings = computeImpactWarnings(upcoming, remaining, overrides);
-
-    const responseBody: SeasonDeleteResponse = { warnings };
-    res.json(responseBody);
   }),
 );
 
@@ -857,21 +872,26 @@ coachAvailabilityRouter.post(
       return;
     }
 
-    const inserted = await db
-      .insert(availabilityOverrides)
-      .values({
-        kind: body.kind,
-        startDate: body.startDate,
-        endDate: body.endDate,
-        startTime: body.startTime ?? null,
-        endTime: body.endTime ?? null,
-        ...(body.note !== undefined && { note: body.note }),
-      })
-      .returning();
+    try {
+      const inserted = await db
+        .insert(availabilityOverrides)
+        .values({
+          kind: body.kind,
+          startDate: body.startDate,
+          endDate: body.endDate,
+          startTime: body.startTime ?? null,
+          endTime: body.endTime ?? null,
+          ...(body.note !== undefined && { note: body.note }),
+        })
+        .returning();
 
-    const override = mapOverrideRow(inserted[0]!);
-    const responseBody: OverrideMutationResponse = { override, warnings: [] };
-    res.status(201).json(responseBody);
+      const override = mapOverrideRow(inserted[0]!);
+      const responseBody: OverrideMutationResponse = { override, warnings: [] };
+      res.status(201).json(responseBody);
+    } catch (err) {
+      req.log.error({ err, route: "POST /coach/overrides" }, "availability mutation failed");
+      throw err;
+    }
   }),
 );
 
@@ -916,22 +936,27 @@ coachAvailabilityRouter.patch(
       return;
     }
 
-    const updated = await db
-      .update(availabilityOverrides)
-      .set(next)
-      .where(eq(availabilityOverrides.id, id))
-      .returning();
+    try {
+      const updated = await db
+        .update(availabilityOverrides)
+        .set(next)
+        .where(eq(availabilityOverrides.id, id))
+        .returning();
 
-    const override = mapOverrideRow(updated[0]!);
-    const seasonsRows = await db.select().from(availabilitySeasons);
-    const overridesRows = await db.select().from(availabilityOverrides);
-    const seasons = seasonsRows.map(mapSeasonRow);
-    const overrides = overridesRows.map(mapOverrideRow);
-    const upcoming = await fetchUpcomingLessons();
-    const warnings = computeImpactWarnings(upcoming, seasons, overrides);
+      const override = mapOverrideRow(updated[0]!);
+      const seasonsRows = await db.select().from(availabilitySeasons);
+      const overridesRows = await db.select().from(availabilityOverrides);
+      const seasons = seasonsRows.map(mapSeasonRow);
+      const overrides = overridesRows.map(mapOverrideRow);
+      const upcoming = await fetchUpcomingLessons();
+      const warnings = computeImpactWarnings(upcoming, seasons, overrides);
 
-    const responseBody: OverrideMutationResponse = { override, warnings };
-    res.json(responseBody);
+      const responseBody: OverrideMutationResponse = { override, warnings };
+      res.json(responseBody);
+    } catch (err) {
+      req.log.error({ err, route: "PATCH /coach/overrides/:id", overrideId: id }, "availability mutation failed");
+      throw err;
+    }
   }),
 );
 
@@ -941,24 +966,29 @@ coachAvailabilityRouter.delete(
   asyncHandler(async (req, res) => {
     const { id } = req.params as { id: string };
 
-    const deleted = await db
-      .delete(availabilityOverrides)
-      .where(eq(availabilityOverrides.id, id))
-      .returning();
-    if (deleted.length === 0) {
-      res.status(404).json({ error: "Override not found" });
-      return;
+    try {
+      const deleted = await db
+        .delete(availabilityOverrides)
+        .where(eq(availabilityOverrides.id, id))
+        .returning();
+      if (deleted.length === 0) {
+        res.status(404).json({ error: "Override not found" });
+        return;
+      }
+
+      const seasonsRows = await db.select().from(availabilitySeasons);
+      const overridesRows = await db.select().from(availabilityOverrides);
+      const seasons = seasonsRows.map(mapSeasonRow);
+      const overrides = overridesRows.map(mapOverrideRow);
+      const upcoming = await fetchUpcomingLessons();
+      const warnings = computeImpactWarnings(upcoming, seasons, overrides);
+
+      const responseBody: OverrideDeleteResponse = { warnings };
+      res.json(responseBody);
+    } catch (err) {
+      req.log.error({ err, route: "DELETE /coach/overrides/:id", overrideId: id }, "availability mutation failed");
+      throw err;
     }
-
-    const seasonsRows = await db.select().from(availabilitySeasons);
-    const overridesRows = await db.select().from(availabilityOverrides);
-    const seasons = seasonsRows.map(mapSeasonRow);
-    const overrides = overridesRows.map(mapOverrideRow);
-    const upcoming = await fetchUpcomingLessons();
-    const warnings = computeImpactWarnings(upcoming, seasons, overrides);
-
-    const responseBody: OverrideDeleteResponse = { warnings };
-    res.json(responseBody);
   }),
 );
 
