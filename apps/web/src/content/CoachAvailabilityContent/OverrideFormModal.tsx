@@ -1,14 +1,22 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { CreateOverrideBody } from "@swim-app/shared";
+import type {
+  AvailabilityOverride,
+  CreateOverrideBody,
+  PatchOverrideBody,
+} from "@swim-app/shared";
 
 import styles from "./CoachAvailabilityContent.module.css";
 
 interface Props {
   open: boolean;
+  override: AvailabilityOverride | null;
   onCancel: () => void;
-  onSubmit: (body: CreateOverrideBody) => Promise<string | null>;
+  onSubmit: (
+    body: CreateOverrideBody | PatchOverrideBody,
+    mode: "create" | "patch",
+  ) => Promise<string | null>;
   isPending: boolean;
 }
 
@@ -20,7 +28,13 @@ const MODE_OPTIONS: { value: Mode; label: string; hint: string }[] = [
   { value: "custom_hours", label: "Custom hours", hint: "Different hours for one date." },
 ];
 
-export default function OverrideFormModal({ open, onCancel, onSubmit, isPending }: Props) {
+function inferMode(override: AvailabilityOverride): Mode {
+  if (override.kind === "custom_hours") return "custom_hours";
+  if (override.startDate === override.endDate) return "single_day_off";
+  return "range_day_off";
+}
+
+export default function OverrideFormModal({ open, override, onCancel, onSubmit, isPending }: Props) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [mode, setMode] = useState<Mode>("single_day_off");
   const [startDate, setStartDate] = useState("");
@@ -29,6 +43,8 @@ export default function OverrideFormModal({ open, onCancel, onSubmit, isPending 
   const [endTime, setEndTime] = useState("");
   const [note, setNote] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const isEdit = override !== null;
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -39,14 +55,23 @@ export default function OverrideFormModal({ open, onCancel, onSubmit, isPending 
 
   useEffect(() => {
     if (!open) return;
-    setMode("single_day_off");
-    setStartDate("");
-    setEndDate("");
-    setStartTime("");
-    setEndTime("");
-    setNote("");
+    if (override) {
+      setMode(inferMode(override));
+      setStartDate(override.startDate);
+      setEndDate(override.endDate);
+      setStartTime(override.startTime ?? "");
+      setEndTime(override.endTime ?? "");
+      setNote(override.note ?? "");
+    } else {
+      setMode("single_day_off");
+      setStartDate("");
+      setEndDate("");
+      setStartTime("");
+      setEndTime("");
+      setNote("");
+    }
     setErrorMessage(null);
-  }, [open]);
+  }, [open, override]);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -91,7 +116,7 @@ export default function OverrideFormModal({ open, onCancel, onSubmit, isPending 
       };
     }
 
-    const message = await onSubmit(body);
+    const message = await onSubmit(body, isEdit ? "patch" : "create");
     if (message) setErrorMessage(message);
   }
 
@@ -125,7 +150,7 @@ export default function OverrideFormModal({ open, onCancel, onSubmit, isPending 
           className="text-lg font-heading font-semibold text-text-on-section leading-tight"
           style={{ fontVariationSettings: '"SOFT" 100, "WONK" 0' }}
         >
-          Add a day off or custom hours
+          {isEdit ? "Edit one-off change" : "Add a day off or custom hours"}
         </h2>
 
         <fieldset className="flex flex-col gap-2">
@@ -260,7 +285,7 @@ export default function OverrideFormModal({ open, onCancel, onSubmit, isPending 
             disabled={isPending}
             className="inline-flex items-center justify-center h-11 px-5 rounded-button bg-button-primary-background text-button-primary-text font-bold text-sm transition-opacity duration-150 disabled:opacity-60 hover:opacity-90 active:scale-[0.97]"
           >
-            {isPending ? "Saving…" : "Save change"}
+            {isPending ? "Saving…" : isEdit ? "Save change" : "Save change"}
           </button>
         </div>
       </form>

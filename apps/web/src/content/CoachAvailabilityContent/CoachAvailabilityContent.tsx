@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   AvailabilityOverride,
   AvailabilityPreviewResponse,
@@ -8,10 +8,12 @@ import type {
   CreateOverrideBody,
   CreateSeasonBody,
   ImpactWarning,
+  PatchOverrideBody,
   PatchSeasonBody,
   SeasonWithIsCurrent,
 } from "@swim-app/shared";
 
+import ConfirmDialog from "@/components/ConfirmDialog";
 import { apiErrorMessage } from "@/lib/apiErrorMessage";
 import {
   copyNextYear,
@@ -20,6 +22,7 @@ import {
   deleteOverride,
   deleteSeason,
   fetchAvailabilityPreview,
+  patchOverride,
   patchSeason,
 } from "@/lib/api/coachAvailability";
 import { addDaysIso } from "./availabilityFormat";
@@ -44,6 +47,18 @@ interface Props {
 
 type PhoneTab = "seasons" | "overrides";
 
+type PendingDeleteSeason = {
+  kind: "season";
+  season: SeasonWithIsCurrent;
+};
+
+type PendingDeleteOverride = {
+  kind: "override";
+  override: AvailabilityOverride;
+};
+
+type PendingDelete = PendingDeleteSeason | PendingDeleteOverride;
+
 export default function CoachAvailabilityContent({
   accessToken,
   initialSeasons,
@@ -65,10 +80,16 @@ export default function CoachAvailabilityContent({
   const [seasonPending, setSeasonPending] = useState(false);
 
   const [overrideModalOpen, setOverrideModalOpen] = useState(false);
+  const [editingOverride, setEditingOverride] = useState<AvailabilityOverride | null>(null);
   const [overridePending, setOverridePending] = useState(false);
 
   const [warnings, setWarnings] = useState<ImpactWarning[]>([]);
   const [warningsOpen, setWarningsOpen] = useState(false);
+
+  const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
+  const [deletePending, setDeletePending] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const confirmDialogRef = useRef<HTMLDialogElement>(null);
 
   const [phoneTab, setPhoneTab] = useState<PhoneTab>("seasons");
 
@@ -77,10 +98,13 @@ export default function CoachAvailabilityContent({
     () => seasons.filter((season) => season.startDate > today),
     [seasons, today],
   );
-  const nextYearLabel = useMemo(() => {
-    const latest = [...seasons].sort((a, b) => (a.startDate < b.startDate ? 1 : -1))[0];
-    const base = latest ? Number(latest.startDate.slice(0, 4)) : new Date().getUTCFullYear();
-    return `${base + 1}`;
+  const { nextYearLabel, cycleLabel } = useMemo(() => {
+    const sorted = [...seasons].sort((a, b) => b.startDate.localeCompare(a.startDate));
+    const latest = sorted[0];
+    const latestYear = latest ? Number(latest.startDate.slice(0, 4)) : null;
+    const nextYear = (latestYear ?? new Date().getUTCFullYear()) + 1;
+    const label = latestYear ? `${latestYear - 1}–${String(latestYear).slice(2)} seasons` : "Seasons";
+    return { nextYearLabel: `${nextYear}`, cycleLabel: label };
   }, [seasons]);
 
   async function refreshPreview(nextWeekStart: string) {
@@ -94,6 +118,13 @@ export default function CoachAvailabilityContent({
     if (warnings.length > 0) setWarningsOpen(true);
   }, [warnings]);
 
+  useEffect(() => {
+    const dialog = confirmDialogRef.current;
+    if (!dialog) return;
+    if (pendingDelete && !dialog.open) dialog.showModal();
+    if (!pendingDelete && dialog.open) dialog.close();
+  }, [pendingDelete]);
+
   function openAddSeason() {
     setEditingSeason(null);
     setSeasonModalOpen(true);
@@ -101,6 +132,14 @@ export default function CoachAvailabilityContent({
   function openEditSeason(season: SeasonWithIsCurrent) {
     setEditingSeason(season);
     setSeasonModalOpen(true);
+  }
+  function openAddOverride() {
+    setEditingOverride(null);
+    setOverrideModalOpen(true);
+  }
+  function openEditOverride(override: AvailabilityOverride) {
+    setEditingOverride(override);
+    setOverrideModalOpen(true);
   }
 
   async function handleSeasonSubmit(
@@ -139,20 +178,50 @@ export default function CoachAvailabilityContent({
     }
   }
 
-  async function handleDeleteSeason(season: SeasonWithIsCurrent) {
-    const confirmed =
-      typeof window === "undefined"
-        ? true
-        : window.confirm(`Delete ${season.name}? Booked lessons will stay on the calendar.`);
-    if (!confirmed) return;
-    const result = await deleteSeason(accessToken, season.id);
-    if (!result.ok) {
-      window.alert(apiErrorMessage(result.code));
-      return;
+  function requestDeleteSeason(season: SeasonWithIsCurrent) {
+    setDeleteError(null);
+    setPendingDelete({ kind: "season", season });
+  }
+
+  function requestDeleteOverride(override: AvailabilityOverride) {
+    setDeleteError(null);
+    setPendingDelete({ kind: "override", override });
+  }
+
+  function cancelDelete() {
+    if (deletePending) return;
+    setPendingDelete(null);
+    setDeleteError(null);
+  }
+
+  async function handleConfirmDelete(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!pendingDelete) return;
+    setDeleteError(null);
+    setDeletePending(true);
+    try {
+      if (pendingDelete.kind === "season") {
+        const result = await deleteSeason(accessToken, pendingDelete.season.id);
+        if (!result.ok) {
+          setDeleteError(apiErrorMessage(result.code));
+          return;
+        }
+        setSeasons((prev) => prev.filter((row) => row.id !== pendingDelete.season.id));
+        if (result.data.warnings.length > 0) setWarnings(result.data.warnings);
+      } else {
+        const result = await deleteOverride(accessToken, pendingDelete.override.id);
+        if (!result.ok) {
+          setDeleteError(apiErrorMessage(result.code));
+          return;
+        }
+        setOverrides((prev) => prev.filter((row) => row.id !== pendingDelete.override.id));
+        if (result.data.warnings.length > 0) setWarnings(result.data.warnings);
+      }
+      setPendingDelete(null);
+      await refreshPreview(weekStart);
+    } finally {
+      setDeletePending(false);
     }
-    setSeasons((prev) => prev.filter((row) => row.id !== season.id));
-    if (result.data.warnings.length > 0) setWarnings(result.data.warnings);
-    await refreshPreview(weekStart);
   }
 
   async function handleCopyNextYear(): Promise<{ insertedCount: number } | { error: string }> {
@@ -170,13 +239,30 @@ export default function CoachAvailabilityContent({
     return { insertedCount: inserted.length };
   }
 
-  async function handleOverrideSubmit(body: CreateOverrideBody): Promise<string | null> {
+  async function handleOverrideSubmit(
+    body: CreateOverrideBody | PatchOverrideBody,
+    mode: "create" | "patch",
+  ): Promise<string | null> {
     setOverridePending(true);
     try {
-      const result = await createOverride(accessToken, body);
+      if (mode === "create") {
+        const result = await createOverride(accessToken, body as CreateOverrideBody);
+        if (!result.ok) return apiErrorMessage(result.code);
+        setOverrides((prev) =>
+          [...prev, result.data.override].sort((a, b) => a.startDate.localeCompare(b.startDate)),
+        );
+        if (result.data.warnings.length > 0) setWarnings(result.data.warnings);
+        setOverrideModalOpen(false);
+        await refreshPreview(weekStart);
+        return null;
+      }
+      if (!editingOverride) return "That one-off change no longer exists.";
+      const result = await patchOverride(accessToken, editingOverride.id, body as PatchOverrideBody);
       if (!result.ok) return apiErrorMessage(result.code);
       setOverrides((prev) =>
-        [...prev, result.data.override].sort((a, b) => a.startDate.localeCompare(b.startDate)),
+        prev
+          .map((row) => (row.id === editingOverride.id ? result.data.override : row))
+          .sort((a, b) => a.startDate.localeCompare(b.startDate)),
       );
       if (result.data.warnings.length > 0) setWarnings(result.data.warnings);
       setOverrideModalOpen(false);
@@ -187,34 +273,20 @@ export default function CoachAvailabilityContent({
     }
   }
 
-  async function handleDeleteOverride(override: AvailabilityOverride) {
-    const confirmed =
-      typeof window === "undefined" ? true : window.confirm("Delete this one-off change?");
-    if (!confirmed) return;
-    const result = await deleteOverride(accessToken, override.id);
-    if (!result.ok) {
-      window.alert(apiErrorMessage(result.code));
-      return;
-    }
-    setOverrides((prev) => prev.filter((row) => row.id !== override.id));
-    if (result.data.warnings.length > 0) setWarnings(result.data.warnings);
-    await refreshPreview(weekStart);
-  }
-
   async function shiftWeek(offset: number) {
     const next = addDaysIso(weekStart, offset);
     setWeekStart(next);
     await refreshPreview(next);
   }
 
-  const latestYear = useMemo(() => {
-    const latest = [...seasons].sort((a, b) => (a.startDate < b.startDate ? 1 : -1))[0];
-    return latest ? Number(latest.startDate.slice(0, 4)) : null;
-  }, [seasons]);
-  const cycleLabel = useMemo(() => {
-    if (!latestYear) return "Seasons";
-    return `${latestYear - 1}–${String(latestYear).slice(2)} seasons`;
-  }, [latestYear]);
+  const confirmTitle =
+    pendingDelete?.kind === "season"
+      ? `Delete ${pendingDelete.season.name}?`
+      : "Delete this one-off change?";
+  const confirmDescription =
+    pendingDelete?.kind === "season"
+      ? "Booked lessons stay on the calendar. If any fall outside the new hours, you'll see them next."
+      : "The date returns to its season hours. Booked lessons stay on the calendar.";
 
   return (
     <main id="main-content" className="flex-1 pb-tab-safe">
@@ -327,7 +399,7 @@ export default function CoachAvailabilityContent({
             <SeasonsTable
               seasons={seasons}
               onEdit={openEditSeason}
-              onDelete={handleDeleteSeason}
+              onDelete={requestDeleteSeason}
             />
           </div>
         </section>
@@ -362,11 +434,12 @@ export default function CoachAvailabilityContent({
             <OverridesList
               overrides={overrides}
               blockedTimes={blockedTimes}
-              onDelete={handleDeleteOverride}
+              onEdit={openEditOverride}
+              onDelete={requestDeleteOverride}
             />
             <button
               type="button"
-              onClick={() => setOverrideModalOpen(true)}
+              onClick={openAddOverride}
               className="inline-flex items-center justify-center h-11 px-5 rounded-button border-2 border-button-outline text-button-outline font-bold text-sm transition-opacity duration-150 hover:opacity-80 active:scale-[0.98]"
             >
               + Add a day off or custom hours
@@ -395,6 +468,7 @@ export default function CoachAvailabilityContent({
       />
       <OverrideFormModal
         open={overrideModalOpen}
+        override={editingOverride}
         onCancel={() => setOverrideModalOpen(false)}
         onSubmit={handleOverrideSubmit}
         isPending={overridePending}
@@ -406,6 +480,22 @@ export default function CoachAvailabilityContent({
           setWarningsOpen(false);
           setWarnings([]);
         }}
+      />
+
+      {/* The form the ConfirmDialog's submit button targets. Lives outside the
+          dialog so React keeps the handler attached across open/close cycles. */}
+      <form id="availability-delete-form" onSubmit={handleConfirmDelete} className="hidden" />
+      <ConfirmDialog
+        dialogRef={confirmDialogRef}
+        title={confirmTitle}
+        description={confirmDescription}
+        formId="availability-delete-form"
+        confirmLabel="Delete"
+        confirmDanger
+        cancelLabel="Keep it"
+        isPending={deletePending}
+        {...(deleteError && { errorMessage: deleteError })}
+        onCancel={cancelDelete}
       />
     </main>
   );

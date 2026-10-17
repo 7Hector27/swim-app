@@ -493,7 +493,64 @@ function overrideRow(overrides: Partial<Record<string, unknown>> = {}) {
 }
 
 describe("POST /coach/seasons", () => {
-  it("creates a valid season and returns 201", async () => {
+  it("creates a valid season and returns 201 with warnings when a lesson now falls outside hours", async () => {
+    authAs(coachProfile);
+
+    const inserted = seasonRow({
+      name: "Narrower season",
+      startDate: "2099-05-01",
+      teachesDays: [1, 2, 3, 4, 5, 6, 7],
+      weekdayStartTime: "15:00",
+      weekendStartTime: "15:00",
+      endTime: "18:00",
+    });
+    // A lesson that starts at 22:00 UTC (3:00pm PDT) and runs 30 min falls
+    // just inside the window; a lesson at 23:00 UTC (4:00pm) + 150 min (ends
+    // 6:30 pm PDT) overflows the 18:00 close, so the new season triggers a
+    // day_truncated warning.
+    const lessonRow = {
+      id: LESSON_A_ID,
+      startsAt: new Date("2099-06-10T23:00:00.000Z"),
+      durationMinutes: 150,
+      poolName: "Egret Park",
+    };
+    const swimmerJoinRows = [{ lessonId: LESSON_A_ID, firstName: "Ava" }];
+
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(coachProfile))
+      .mockReturnValueOnce(simpleSelect<unknown>([]))
+      .mockReturnValueOnce(fromResolveSelect([inserted]))
+      .mockReturnValueOnce(fromResolveSelect([]))
+      .mockReturnValueOnce(innerJoinWhereSelect([lessonRow]))
+      .mockReturnValueOnce(innerJoinWhereSelect(swimmerJoinRows));
+
+    const insertReturning = vi.fn().mockResolvedValue([inserted]);
+    const insertValues = vi.fn().mockReturnValue({ returning: insertReturning });
+    mockDbInsert.mockReturnValue({ values: insertValues });
+
+    const res = await request(app)
+      .post("/coach/seasons")
+      .set("Authorization", "Bearer token")
+      .send({
+        name: "Narrower season",
+        startDate: "2099-05-01",
+        teachesDays: [1, 2, 3, 4, 5, 6, 7],
+        weekdayStartTime: "15:00",
+        weekendStartTime: "15:00",
+        endTime: "18:00",
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body.season).toMatchObject({ id: SEASON_A_ID });
+    expect(res.body.warnings).toHaveLength(1);
+    expect(res.body.warnings[0]).toMatchObject({
+      lessonId: LESSON_A_ID,
+      swimmerFirstNames: ["Ava"],
+      poolName: "Egret Park",
+    });
+  });
+
+  it("creates a valid season and returns 201 with empty warnings when nothing is impacted", async () => {
     authAs(coachProfile);
 
     const inserted = seasonRow({ name: "New season", startDate: "2026-01-05" });
@@ -501,7 +558,9 @@ describe("POST /coach/seasons", () => {
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(coachProfile))
       .mockReturnValueOnce(simpleSelect<unknown>([]))
-      .mockReturnValueOnce(fromResolveSelect([inserted]));
+      .mockReturnValueOnce(fromResolveSelect([inserted]))
+      .mockReturnValueOnce(fromResolveSelect([]))
+      .mockReturnValueOnce(innerJoinWhereSelect([]));
 
     const insertReturning = vi.fn().mockResolvedValue([inserted]);
     const insertValues = vi.fn().mockReturnValue({ returning: insertReturning });

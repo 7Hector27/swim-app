@@ -7,6 +7,7 @@ import { formatMonthDay, formatTime12 } from "./availabilityFormat";
 interface OverridesListProps {
   overrides: AvailabilityOverride[];
   blockedTimes: BlockedTime[];
+  onEdit: (override: AvailabilityOverride) => void;
   onDelete: (override: AvailabilityOverride) => void;
 }
 
@@ -37,6 +38,7 @@ function timeOnlyLA(iso: string): string {
 export default function OverridesList({
   overrides,
   blockedTimes,
+  onEdit,
   onDelete,
 }: OverridesListProps) {
   const rows: Row[] = [
@@ -84,21 +86,39 @@ export default function OverridesList({
                 <p className="text-sm font-semibold text-text-on-section">{title}</p>
                 <p className="text-xs text-text-secondary-on-section truncate">{detail}</p>
               </div>
-              <button
-                type="button"
-                onClick={() => onDelete(override)}
-                aria-label="Delete one-off change"
-                className="inline-flex items-center justify-center w-11 h-11 rounded-button text-text-secondary-on-section hover:text-danger transition-colors duration-150"
-              >
-                <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-                  <path
-                    d="M4 6h12M8 6V4h4v2M6 6l1 10a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1l1-10"
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                    strokeLinecap="round"
-                  />
-                </svg>
-              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => onEdit(override)}
+                  aria-label="Edit one-off change"
+                  className="inline-flex items-center justify-center w-11 h-11 rounded-button text-text-secondary-on-section hover:text-text-on-section transition-colors duration-150"
+                >
+                  <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                    <path
+                      d="M4 16l1-4 9-9a1.414 1.414 0 0 1 2 2l-9 9-4 1z"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onDelete(override)}
+                  aria-label="Delete one-off change"
+                  className="inline-flex items-center justify-center w-11 h-11 rounded-button text-text-secondary-on-section hover:text-danger transition-colors duration-150"
+                >
+                  <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                    <path
+                      d="M4 6h12M8 6V4h4v2M6 6l1 10a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1l1-10"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                </button>
+              </div>
             </li>
           );
         }

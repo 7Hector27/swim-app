@@ -1,5 +1,5 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 
 beforeEach(() => {
   HTMLDialogElement.prototype.showModal = vi.fn(function (this: HTMLDialogElement) {
@@ -9,8 +9,6 @@ beforeEach(() => {
     this.removeAttribute("open");
   });
   vi.clearAllMocks();
-  window.confirm = vi.fn().mockReturnValue(true);
-  window.alert = vi.fn();
 });
 
 vi.mock("next/navigation", () => ({
@@ -23,6 +21,7 @@ const mockPatchSeason = vi.fn();
 const mockDeleteSeason = vi.fn();
 const mockCopyNextYear = vi.fn();
 const mockCreateOverride = vi.fn();
+const mockPatchOverride = vi.fn();
 const mockDeleteOverride = vi.fn();
 const mockFetchPreview = vi.fn();
 
@@ -32,6 +31,7 @@ vi.mock("@/lib/api/coachAvailability", () => ({
   deleteSeason: (...args: unknown[]) => mockDeleteSeason(...args),
   copyNextYear: (...args: unknown[]) => mockCopyNextYear(...args),
   createOverride: (...args: unknown[]) => mockCreateOverride(...args),
+  patchOverride: (...args: unknown[]) => mockPatchOverride(...args),
   deleteOverride: (...args: unknown[]) => mockDeleteOverride(...args),
   fetchAvailabilityPreview: (...args: unknown[]) => mockFetchPreview(...args),
 }));
@@ -182,7 +182,50 @@ describe("CoachAvailabilityContent — seasons table", () => {
     await waitFor(() => expect(screen.getByText("Early Dec")).toBeInTheDocument());
   });
 
-  it("deletes a season and surfaces the impact warning with swimmer names + pool name", async () => {
+  it("surfaces the impact warning modal when creating a season returns warnings", async () => {
+    mockCreateSeason.mockResolvedValue({
+      ok: true,
+      data: {
+        season: season({
+          id: "s-new",
+          name: "Early Dec",
+          startDate: "2026-12-01",
+          isCurrent: false,
+        }),
+        warnings: [
+          {
+            lessonId: "lesson-1",
+            startsAt: "2026-12-02T22:00:00.000Z",
+            reason: "outside_hours",
+            swimmerFirstNames: ["Mia"],
+            poolName: "Egret Park",
+          },
+        ],
+      },
+    });
+    mockFetchPreview.mockResolvedValue(basePreview);
+    renderPage();
+
+    fireEvent.click(screen.getAllByRole("button", { name: /\+ Add season/ })[0]!);
+    fireEvent.change(await screen.findByLabelText("Name"), { target: { value: "Early Dec" } });
+    fireEvent.change(screen.getByLabelText("Start date"), { target: { value: "2026-12-01" } });
+    fireEvent.change(screen.getByLabelText("Weekday start"), { target: { value: "14:30" } });
+    fireEvent.change(screen.getByLabelText("Weekend start"), { target: { value: "14:30" } });
+    fireEvent.change(screen.getByLabelText("Ends"), { target: { value: "17:30" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Add season", hidden: true }));
+
+    await waitFor(() => expect(mockCreateSeason).toHaveBeenCalled());
+    const warningDialog = await screen.findByRole("heading", {
+      name: /booked lesson/i,
+      hidden: true,
+    });
+    expect(warningDialog).toBeInTheDocument();
+    expect(screen.getByText(/Mia/)).toBeInTheDocument();
+    expect(screen.getByText(/Egret Park/)).toBeInTheDocument();
+  });
+
+  it("deletes a season through the confirm dialog and surfaces impact warnings", async () => {
     mockDeleteSeason.mockResolvedValue({
       ok: true,
       data: {
@@ -201,7 +244,10 @@ describe("CoachAvailabilityContent — seasons table", () => {
     renderPage();
 
     fireEvent.click(screen.getByRole("button", { name: "Delete Mid-Oct" }));
-    expect(window.confirm).toHaveBeenCalled();
+
+    // ConfirmDialog opens — click its Delete button.
+    const confirmButton = await screen.findByRole("button", { name: "Delete", hidden: true });
+    fireEvent.click(confirmButton);
 
     await waitFor(() => expect(mockDeleteSeason).toHaveBeenCalled());
     const warningDialog = await screen.findByRole("heading", {
@@ -260,6 +306,83 @@ describe("CoachAvailabilityContent — overrides", () => {
     await waitFor(() =>
       expect(screen.getByText("This override overlaps an existing one.")).toBeInTheDocument(),
     );
+  });
+
+  it("deletes an override through the confirm dialog", async () => {
+    mockDeleteOverride.mockResolvedValue({ ok: true, data: { warnings: [] } });
+    mockFetchPreview.mockResolvedValue(basePreview);
+    renderPage({ overrides: [override({ note: "Vacation" })] });
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete one-off change" }));
+
+    const confirmButton = await screen.findByRole("button", { name: "Delete", hidden: true });
+    fireEvent.click(confirmButton);
+
+    await waitFor(() => expect(mockDeleteOverride).toHaveBeenCalledWith("test-token", "override-1"));
+  });
+
+  it("edits an override: opens pre-populated, calls patchOverride, surfaces warnings", async () => {
+    const existing = override({
+      id: "override-1",
+      kind: "custom_hours",
+      startDate: "2026-10-24",
+      endDate: "2026-10-24",
+      startTime: "16:00",
+      endTime: "18:00",
+      note: "Short day",
+    });
+
+    mockPatchOverride.mockResolvedValue({
+      ok: true,
+      data: {
+        override: { ...existing, endTime: "19:00", note: "Later today" },
+        warnings: [
+          {
+            lessonId: "lesson-2",
+            startsAt: "2026-10-24T23:30:00.000Z",
+            reason: "outside_hours",
+            swimmerFirstNames: ["Noah"],
+            poolName: "Lincoln Pool",
+          },
+        ],
+      },
+    });
+    mockFetchPreview.mockResolvedValue(basePreview);
+    renderPage({ overrides: [existing] });
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit one-off change" }));
+
+    const title = await screen.findByRole("heading", {
+      name: /Edit one-off change/i,
+      hidden: true,
+    });
+    expect(title).toBeInTheDocument();
+    const dialog = title.closest("dialog") as HTMLDialogElement;
+    const inDialog = within(dialog);
+
+    // Pre-populated values.
+    const startTime = inDialog.getByLabelText("Starts") as HTMLInputElement;
+    const endTime = inDialog.getByLabelText("Ends") as HTMLInputElement;
+    expect(startTime.value).toBe("16:00");
+    expect(endTime.value).toBe("18:00");
+
+    fireEvent.change(endTime, { target: { value: "19:00" } });
+    fireEvent.click(inDialog.getByRole("button", { name: "Save change", hidden: true }));
+
+    await waitFor(() => expect(mockPatchOverride).toHaveBeenCalledTimes(1));
+    expect(mockPatchOverride).toHaveBeenCalledWith(
+      "test-token",
+      "override-1",
+      expect.objectContaining({ kind: "custom_hours", endTime: "19:00" }),
+    );
+
+    const warningDialog = await screen.findByRole("heading", {
+      name: /booked lesson/i,
+      hidden: true,
+    });
+    expect(warningDialog).toBeInTheDocument();
+    expect(screen.getByText(/Noah/)).toBeInTheDocument();
+    expect(screen.getByText(/Lincoln Pool/)).toBeInTheDocument();
   });
 });
 

@@ -490,6 +490,7 @@ function todayInLA(): string {
 
 // Fetches upcoming approved+pending lessons for impact-warning computation,
 // enriched with swimmer first names and pool name for the coach-only warning UI.
+// Archived swimmers are excluded so warnings never surface ghost names.
 async function fetchUpcomingLessons(): Promise<UpcomingLessonForWarning[]> {
   const lessonRows = await db
     .select({
@@ -511,7 +512,12 @@ async function fetchUpcomingLessons(): Promise<UpcomingLessonForWarning[]> {
     })
     .from(lessonSwimmers)
     .innerJoin(swimmers, eq(lessonSwimmers.swimmerId, swimmers.id))
-    .where(inArray(lessonSwimmers.lessonId, lessonRows.map((row) => row.id)));
+    .where(
+      and(
+        inArray(lessonSwimmers.lessonId, lessonRows.map((row) => row.id)),
+        isNull(swimmers.archivedAt),
+      ),
+    );
 
   const firstNamesByLesson = new Map<string, string[]>();
   for (const row of swimmerRows) {
@@ -589,9 +595,17 @@ coachAvailabilityRouter.post(
 
     const season = mapSeasonRow(inserted[0]!);
     const allRows = await db.select().from(availabilitySeasons);
-    const all = allRows.map(mapSeasonRow);
-    const seasonWithIsCurrent = toSeasonWithIsCurrent(season, all, todayInLA());
-    const responseBody: SeasonMutationResponse = { season: seasonWithIsCurrent, warnings: [] };
+    const overrideRows = await db.select().from(availabilityOverrides);
+    const allSeasons = allRows.map(mapSeasonRow);
+    const overrides = overrideRows.map(mapOverrideRow);
+
+    const upcoming = await fetchUpcomingLessons();
+    const warnings = computeImpactWarnings(upcoming, allSeasons, overrides);
+
+    const responseBody: SeasonMutationResponse = {
+      season: toSeasonWithIsCurrent(season, allSeasons, todayInLA()),
+      warnings,
+    };
     res.status(201).json(responseBody);
   }),
 );

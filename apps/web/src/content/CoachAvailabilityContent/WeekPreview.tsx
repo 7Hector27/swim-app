@@ -78,8 +78,8 @@ export default function WeekPreview({
               <p className="text-xs text-text-secondary-on-section mt-auto">Day off</p>
             ) : (
               <ul className="text-xs text-text-on-section mt-auto flex flex-col gap-0.5">
-                {day.windows.map((window, index) => (
-                  <li key={`${day.date}-${index}`}>{formatWindowRange(window.start, window.end)}</li>
+                {day.windows.map((window) => (
+                  <li key={`${day.date}-${window.start}`}>{formatWindowRange(window.start, window.end)}</li>
                 ))}
               </ul>
             )}

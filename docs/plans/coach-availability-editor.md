@@ -355,5 +355,6 @@ Decided (previously open, now settled):
 
 - **One window per day per season.** v1 ships this. If summer needs split days again, we revisit as a schema extension (`jsonb` of windows per day type), not a seasons rewrite.
 - **Week preview endpoint.** PR 3 adds `GET /coach/availability-preview?from=YYYY-MM-DD&days=7` returning `{ date, state, windows }[]`. PR 4 consumes it.
-- **Impact warnings.** Fired on any PATCH or DELETE of a season or override that removes hours. Lessons are never auto-modified.
+- **Impact warnings.** Fired on POST / PATCH / DELETE of a season or override. The create path computes warnings too, because adding a narrower season can push already-booked lessons outside the new hours. Lessons are never auto-modified.
 - **Deleting the active season.** Allowed; the API returns the standard impact warnings, and the UI confirms before saving.
+- **Single-coach model.** `availability_seasons` and `availability_overrides` have no `coach_id`; they describe the one coach's schedule. The impact-warning query returns every upcoming approved+pending lesson for that reason. Adding a second coach is a model change (coach FK on seasons + overrides, scoped lookups in `fetchUpcomingLessons`, resolver takes a coach), not a filter — see `docs/architecture.md` → *Availability is single-coach*.
