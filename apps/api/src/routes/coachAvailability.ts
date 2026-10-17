@@ -53,7 +53,7 @@ import {
 import { validate } from "../middleware/validate";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { z } from "zod";
-import { mapOverrideRow, mapSeasonRow } from "../lib/availabilityMappers";
+import { fetchAvailabilityDefaults, mapConfigRow, mapOverrideRow, mapSeasonRow } from "../lib/availabilityMappers";
 import { effectiveHours } from "../lib/effectiveHours";
 import {
   computeImpactWarnings,
@@ -193,6 +193,9 @@ coachAvailabilityRouter.get(
       maxDailyLessonMinutes: config.maxDailyLessonMinutes,
       bookingMinAdvanceHours: config.bookingMinAdvanceHours,
       bookingMaxAdvanceWeeks: config.bookingMaxAdvanceWeeks,
+      defaultTeachesDays: config.defaultTeachesDays,
+      defaultStartTime: config.defaultStartTime.slice(0, 5),
+      defaultEndTime: config.defaultEndTime.slice(0, 5),
     };
 
     res.json(body);
@@ -211,12 +214,23 @@ coachAvailabilityRouter.patch(
       return;
     }
 
+    // Validate the resulting start < end when only one side is being changed.
+    const nextStart = body.defaultStartTime ?? existing[0].defaultStartTime.slice(0, 5);
+    const nextEnd = body.defaultEndTime ?? existing[0].defaultEndTime.slice(0, 5);
+    if (nextStart >= nextEnd) {
+      res.status(422).json({ error: "Default end time must be after default start time." });
+      return;
+    }
+
     const rows = await db
       .update(availabilityConfig)
       .set({
         ...(body.maxDailyLessonMinutes !== undefined && { maxDailyLessonMinutes: body.maxDailyLessonMinutes }),
         ...(body.bookingMinAdvanceHours !== undefined && { bookingMinAdvanceHours: body.bookingMinAdvanceHours }),
         ...(body.bookingMaxAdvanceWeeks !== undefined && { bookingMaxAdvanceWeeks: body.bookingMaxAdvanceWeeks }),
+        ...(body.defaultTeachesDays !== undefined && { defaultTeachesDays: body.defaultTeachesDays }),
+        ...(body.defaultStartTime !== undefined && { defaultStartTime: body.defaultStartTime }),
+        ...(body.defaultEndTime !== undefined && { defaultEndTime: body.defaultEndTime }),
       })
       .where(eq(availabilityConfig.id, existing[0].id))
       .returning();
@@ -228,6 +242,9 @@ coachAvailabilityRouter.patch(
       maxDailyLessonMinutes: updated.maxDailyLessonMinutes,
       bookingMinAdvanceHours: updated.bookingMinAdvanceHours,
       bookingMaxAdvanceWeeks: updated.bookingMaxAdvanceWeeks,
+      defaultTeachesDays: updated.defaultTeachesDays,
+      defaultStartTime: updated.defaultStartTime.slice(0, 5),
+      defaultEndTime: updated.defaultEndTime.slice(0, 5),
     };
 
     res.json(responseBody);
@@ -600,8 +617,9 @@ coachAvailabilityRouter.post(
       const allSeasons = allRows.map(mapSeasonRow);
       const overrides = overrideRows.map(mapOverrideRow);
 
+      const defaults = await fetchAvailabilityDefaults();
       const upcoming = await fetchUpcomingLessons();
-      const warnings = computeImpactWarnings(upcoming, allSeasons, overrides);
+      const warnings = computeImpactWarnings(upcoming, allSeasons, overrides, defaults);
 
       const responseBody: SeasonMutationResponse = {
         season: toSeasonWithIsCurrent(season, allSeasons, todayInLA()),
@@ -679,8 +697,9 @@ coachAvailabilityRouter.patch(
       const allSeasons = allRows.map(mapSeasonRow);
       const overrides = overrideRows.map(mapOverrideRow);
 
+      const defaults = await fetchAvailabilityDefaults();
       const upcoming = await fetchUpcomingLessons();
-      const warnings = computeImpactWarnings(upcoming, allSeasons, overrides);
+      const warnings = computeImpactWarnings(upcoming, allSeasons, overrides, defaults);
 
       const responseBody: SeasonMutationResponse = {
         season: toSeasonWithIsCurrent(season, allSeasons, todayInLA()),
@@ -714,8 +733,9 @@ coachAvailabilityRouter.delete(
       const overrideRows = await db.select().from(availabilityOverrides);
       const remaining = remainingRows.map(mapSeasonRow);
       const overrides = overrideRows.map(mapOverrideRow);
+      const defaults = await fetchAvailabilityDefaults();
       const upcoming = await fetchUpcomingLessons();
-      const warnings = computeImpactWarnings(upcoming, remaining, overrides);
+      const warnings = computeImpactWarnings(upcoming, remaining, overrides, defaults);
 
       const responseBody: SeasonDeleteResponse = { warnings };
       res.json(responseBody);
@@ -948,8 +968,9 @@ coachAvailabilityRouter.patch(
       const overridesRows = await db.select().from(availabilityOverrides);
       const seasons = seasonsRows.map(mapSeasonRow);
       const overrides = overridesRows.map(mapOverrideRow);
+      const defaults = await fetchAvailabilityDefaults();
       const upcoming = await fetchUpcomingLessons();
-      const warnings = computeImpactWarnings(upcoming, seasons, overrides);
+      const warnings = computeImpactWarnings(upcoming, seasons, overrides, defaults);
 
       const responseBody: OverrideMutationResponse = { override, warnings };
       res.json(responseBody);
@@ -980,8 +1001,9 @@ coachAvailabilityRouter.delete(
       const overridesRows = await db.select().from(availabilityOverrides);
       const seasons = seasonsRows.map(mapSeasonRow);
       const overrides = overridesRows.map(mapOverrideRow);
+      const defaults = await fetchAvailabilityDefaults();
       const upcoming = await fetchUpcomingLessons();
-      const warnings = computeImpactWarnings(upcoming, seasons, overrides);
+      const warnings = computeImpactWarnings(upcoming, seasons, overrides, defaults);
 
       const responseBody: OverrideDeleteResponse = { warnings };
       res.json(responseBody);
@@ -1022,17 +1044,20 @@ coachAvailabilityRouter.get(
   asyncHandler(async (req, res) => {
     const { from, days } = req.query as unknown as AvailabilityPreviewQuery;
 
-    const [seasonRows, overrideRows] = await Promise.all([
+    const [seasonRows, overrideRows, configRows] = await Promise.all([
       db.select().from(availabilitySeasons),
       db.select().from(availabilityOverrides),
+      db.select().from(availabilityConfig).limit(1),
     ]);
     const seasons = seasonRows.map(mapSeasonRow);
     const overrides = overrideRows.map(mapOverrideRow);
+    const configRow = configRows[0];
+    const defaults = configRow ? mapConfigRow(configRow) : null;
 
     const preview: AvailabilityPreviewDay[] = [];
     for (let index = 0; index < days; index++) {
       const date = addDaysIso(from, index);
-      const windows = effectiveHours(date, seasons, overrides);
+      const windows = effectiveHours(date, seasons, overrides, defaults);
       preview.push({
         date,
         state: windows.length === 0 ? "closed" : "open",

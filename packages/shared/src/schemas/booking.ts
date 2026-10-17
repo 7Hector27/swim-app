@@ -46,19 +46,51 @@ export type PatchLocationBody = z.infer<typeof PatchLocationBodySchema>;
 
 // ── Availability config ───────────────────────────────────────────────────────
 
+const QuarterHourTimeStringSchema = z
+  .string()
+  .regex(/^\d{2}:\d{2}$/)
+  .refine(
+    (value) => {
+      const parts = value.split(":");
+      const minutes = parts[1];
+      if (minutes === undefined) return false;
+      return minutes === "00" || minutes === "15" || minutes === "30" || minutes === "45";
+    },
+    { message: "Time must be on a 15-minute step." },
+  );
+
 export const AvailabilityConfigSchema = z.object({
   id: z.string().uuid(),
   maxDailyLessonMinutes: z.number().int(),
   bookingMinAdvanceHours: z.number().int(),
   bookingMaxAdvanceWeeks: z.number().int(),
+  // Default teaching hours used when no season covers the date and no override applies.
+  defaultTeachesDays: z.array(z.number().int().min(1).max(7)),
+  defaultStartTime: z.string().regex(/^\d{2}:\d{2}$/),
+  defaultEndTime: z.string().regex(/^\d{2}:\d{2}$/),
 });
 export type AvailabilityConfig = z.infer<typeof AvailabilityConfigSchema>;
 
-export const PatchAvailabilityConfigBodySchema = z.object({
-  maxDailyLessonMinutes: z.number().int().min(1).optional(),
-  bookingMinAdvanceHours: z.number().int().min(1).optional(),
-  bookingMaxAdvanceWeeks: z.number().int().min(1).optional(),
-});
+export const PatchAvailabilityConfigBodySchema = z
+  .object({
+    maxDailyLessonMinutes: z.number().int().min(1).optional(),
+    bookingMinAdvanceHours: z.number().int().min(1).optional(),
+    bookingMaxAdvanceWeeks: z.number().int().min(1).optional(),
+    defaultTeachesDays: z.array(z.number().int().min(1).max(7)).min(1).optional(),
+    defaultStartTime: QuarterHourTimeStringSchema.optional(),
+    defaultEndTime: QuarterHourTimeStringSchema.optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.defaultStartTime !== undefined && data.defaultEndTime !== undefined) {
+      if (data.defaultStartTime >= data.defaultEndTime) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["defaultEndTime"],
+          message: "End time must be after start time.",
+        });
+      }
+    }
+  });
 export type PatchAvailabilityConfigBody = z.infer<typeof PatchAvailabilityConfigBodySchema>;
 
 // ── Blocked times ─────────────────────────────────────────────────────────────

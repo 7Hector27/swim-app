@@ -333,14 +333,28 @@ export const lessonLocations = pgTable("lesson_locations", {
 
 // ── Availability config (single row) ─────────────────────────────────────────
 
-export const availabilityConfig = pgTable("availability_config", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  maxDailyLessonMinutes: integer("max_daily_lesson_minutes").notNull().default(240),
-  bookingMinAdvanceHours: integer("booking_min_advance_hours").notNull().default(16),
-  bookingMaxAdvanceWeeks: integer("booking_max_advance_weeks").notNull().default(10),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdateFn(() => new Date()),
-}).enableRLS();
+export const availabilityConfig = pgTable(
+  "availability_config",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    maxDailyLessonMinutes: integer("max_daily_lesson_minutes").notNull().default(240),
+    bookingMinAdvanceHours: integer("booking_min_advance_hours").notNull().default(16),
+    bookingMaxAdvanceWeeks: integer("booking_max_advance_weeks").notNull().default(10),
+    // Default teaching hours used for dates with no active season and no override.
+    // ISO day numbers: 1=Mon … 7=Sun. Non-empty subset of {1..7} — validated at the API layer.
+    defaultTeachesDays: integer("default_teaches_days").array().notNull().default([2, 3, 4, 5]),
+    defaultStartTime: time("default_start_time").notNull().default("16:00"),
+    defaultEndTime: time("default_end_time").notNull().default("20:00"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdateFn(() => new Date()),
+  },
+  (table) => [
+    check(
+      "availability_config_default_start_before_end",
+      sql`${table.defaultStartTime} < ${table.defaultEndTime}`,
+    ),
+  ],
+).enableRLS();
 
 // ── Availability seasons ──────────────────────────────────────────────────────
 

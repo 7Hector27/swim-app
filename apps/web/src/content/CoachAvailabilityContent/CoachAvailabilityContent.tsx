@@ -2,12 +2,14 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {
+  AvailabilityConfig,
   AvailabilityOverride,
   AvailabilityPreviewResponse,
   BlockedTime,
   CreateOverrideBody,
   CreateSeasonBody,
   ImpactWarning,
+  PatchAvailabilityConfigBody,
   PatchOverrideBody,
   PatchSeasonBody,
   SeasonWithIsCurrent,
@@ -22,11 +24,14 @@ import {
   deleteOverride,
   deleteSeason,
   fetchAvailabilityPreview,
+  patchAvailabilityConfig,
   patchOverride,
   patchSeason,
 } from "@/lib/api/coachAvailability";
 import { addDaysIso } from "./availabilityFormat";
 import CopyToNextYearButton from "./CopyToNextYearButton";
+import DefaultHoursCard from "./DefaultHoursCard";
+import DefaultHoursModal from "./DefaultHoursModal";
 import ImpactWarningModal from "./ImpactWarningModal";
 import OverrideFormModal from "./OverrideFormModal";
 import OverridesList from "./OverridesList";
@@ -42,6 +47,7 @@ interface Props {
   initialBlockedTimes: BlockedTime[];
   initialPreview: AvailabilityPreviewResponse;
   initialWeekStart: string;
+  initialConfig: AvailabilityConfig;
   today: string;
 }
 
@@ -66,6 +72,7 @@ export default function CoachAvailabilityContent({
   initialBlockedTimes,
   initialPreview,
   initialWeekStart,
+  initialConfig,
   today,
 }: Props) {
   const [seasons, setSeasons] = useState(initialSeasons);
@@ -74,6 +81,7 @@ export default function CoachAvailabilityContent({
   const [preview, setPreview] = useState(initialPreview);
   const [weekStart, setWeekStart] = useState(initialWeekStart);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [config, setConfig] = useState(initialConfig);
 
   const [seasonModalOpen, setSeasonModalOpen] = useState(false);
   const [editingSeason, setEditingSeason] = useState<SeasonWithIsCurrent | null>(null);
@@ -82,6 +90,9 @@ export default function CoachAvailabilityContent({
   const [overrideModalOpen, setOverrideModalOpen] = useState(false);
   const [editingOverride, setEditingOverride] = useState<AvailabilityOverride | null>(null);
   const [overridePending, setOverridePending] = useState(false);
+
+  const [defaultHoursModalOpen, setDefaultHoursModalOpen] = useState(false);
+  const [defaultHoursPending, setDefaultHoursPending] = useState(false);
 
   const [warnings, setWarnings] = useState<ImpactWarning[]>([]);
   const [warningsOpen, setWarningsOpen] = useState(false);
@@ -98,6 +109,12 @@ export default function CoachAvailabilityContent({
     () => seasons.filter((season) => season.startDate > today),
     [seasons, today],
   );
+  const firstSeasonDate = useMemo(() => {
+    const future = seasons.filter((season) => season.startDate >= today);
+    if (future.length === 0) return null;
+    const sorted = [...future].sort((a, b) => a.startDate.localeCompare(b.startDate));
+    return sorted[0]!.startDate;
+  }, [seasons, today]);
   const { nextYearLabel, cycleLabel } = useMemo(() => {
     const sorted = [...seasons].sort((a, b) => b.startDate.localeCompare(a.startDate));
     const latest = sorted[0];
@@ -273,6 +290,22 @@ export default function CoachAvailabilityContent({
     }
   }
 
+  async function handleDefaultHoursSubmit(
+    body: PatchAvailabilityConfigBody,
+  ): Promise<string | null> {
+    setDefaultHoursPending(true);
+    try {
+      const result = await patchAvailabilityConfig(accessToken, body);
+      if (!result.ok) return apiErrorMessage(result.code);
+      setConfig(result.data);
+      setDefaultHoursModalOpen(false);
+      await refreshPreview(weekStart);
+      return null;
+    } finally {
+      setDefaultHoursPending(false);
+    }
+  }
+
   async function shiftWeek(offset: number) {
     const next = addDaysIso(weekStart, offset);
     setWeekStart(next);
@@ -314,6 +347,12 @@ export default function CoachAvailabilityContent({
           </div>
         </div>
 
+        <DefaultHoursCard
+          config={config}
+          firstSeasonDate={firstSeasonDate}
+          onEdit={() => setDefaultHoursModalOpen(true)}
+        />
+
         {/* Phone tabs */}
         <div className="tablet:hidden">
           <div className="inline-flex rounded-full bg-surface-soft p-1 w-full">
@@ -347,7 +386,8 @@ export default function CoachAvailabilityContent({
               <SeasonCard season={currentSeason} onEdit={() => openEditSeason(currentSeason)} />
             ) : (
               <p className="text-sm text-text-secondary">
-                No active season yet. Add one to set your teaching hours.
+                No season active right now — your default hours above are in effect. Add a season
+                to override them for a stretch.
               </p>
             )}
 
@@ -459,6 +499,13 @@ export default function CoachAvailabilityContent({
         </div>
       </div>
 
+      <DefaultHoursModal
+        open={defaultHoursModalOpen}
+        config={config}
+        onCancel={() => setDefaultHoursModalOpen(false)}
+        onSubmit={handleDefaultHoursSubmit}
+        isPending={defaultHoursPending}
+      />
       <SeasonFormModal
         open={seasonModalOpen}
         season={editingSeason}

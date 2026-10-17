@@ -358,3 +358,53 @@ Decided (previously open, now settled):
 - **Impact warnings.** Fired on POST / PATCH / DELETE of a season or override. The create path computes warnings too, because adding a narrower season can push already-booked lessons outside the new hours. Lessons are never auto-modified.
 - **Deleting the active season.** Allowed; the API returns the standard impact warnings, and the UI confirms before saving.
 - **Single-coach model.** `availability_seasons` and `availability_overrides` have no `coach_id`; they describe the one coach's schedule. The impact-warning query returns every upcoming approved+pending lesson for that reason. Adding a second coach is a model change (coach FK on seasons + overrides, scoped lookups in `fetchUpcomingLessons`, resolver takes a coach), not a filter — see `docs/architecture.md` → *Availability is single-coach*.
+
+---
+
+## 5. Follow-up — default hours (post-PR 4)
+
+The resolver falls back to **default hours** on `availability_config` when no season covers a date and no override applies. This replaces the 11 auto-seeded seasons: fresh databases start with sensible defaults (Tue–Fri, 16:00–20:00 PT) and Jason only adds a season when he wants to override the default for a stretch.
+
+### Data model
+
+Added to `availability_config` (migration `0037_default_hours.sql`):
+
+| Column                 | Type              | Default         | Notes                                               |
+| ---------------------- | ----------------- | --------------- | --------------------------------------------------- |
+| `default_teaches_days` | `integer[]` not null | `{2,3,4,5}`   | ISO day numbers; subset of `{1..7}`                 |
+| `default_start_time`   | `time` not null   | `16:00`         | 15-minute step                                      |
+| `default_end_time`     | `time` not null   | `20:00`         | 15-minute step; CHECK: `default_start < default_end` |
+
+Migration `0038_remove_seeded_seasons.sql` deletes the 11 Jason seasons by `start_date` (no-op on fresh DBs). The historical rhythm stays in `docs/reference/jason-seasonal-schedule.md` for anyone recreating them.
+
+### Resolver
+
+`effectiveHours` now has three tiers (highest priority first):
+
+1. **One-off override** — unchanged.
+2. **Active season** — unchanged.
+3. **Default hours** — used when no season has started yet AND when a date falls on a day of week included in `default_teaches_days`. If the day of week isn't in `default_teaches_days`, the day is closed.
+
+Blocked times still apply across all three. Tests covering tier-3 fallback live in `apps/api/src/__tests__/effectiveHours.test.ts` and `apps/api/src/__tests__/rangeAvailability.test.ts`.
+
+### API
+
+| Method | Path                           | Notes                                                              |
+| ------ | ------------------------------ | ------------------------------------------------------------------ |
+| GET    | `/coach/availability-config`   | Returns the full config row (including the three default-hour fields). |
+| PATCH  | `/coach/availability-config`   | Coach-only. Validates: times multiples of 15 minutes; `defaultStartTime < defaultEndTime`; `defaultTeachesDays` is a non-empty subset of `{1..7}`. |
+
+Both routes `requireCoach`. Shared schemas live in `packages/shared/src/schemas/booking.ts` as `AvailabilityConfigSchema` and `PatchAvailabilityConfigBodySchema`.
+
+### UI
+
+`CoachAvailabilityContent` renders a `DefaultHoursCard` above the seasons section:
+
+- Shows `defaultTeachesDays` as a collapsed range (`Tue to Fri`) and the window (`4:00 pm to 8:00 pm`).
+- Hint copy switches: "Used until your first season starts on {date}." when a future season exists, otherwise "These hours are in effect — add a season to override them for a specific stretch."
+- An Edit button opens `DefaultHoursModal` (day pill picker + 15-minute-step time inputs). Save calls `PATCH /coach/availability-config` and refreshes the week preview.
+- The seasons empty state copy now points back to the default hours instead of saying "No seasons yet."
+
+### Migrations applied locally
+
+`0037_default_hours.sql` and `0038_remove_seeded_seasons.sql` were applied locally via `pnpm db:migrate`.

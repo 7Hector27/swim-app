@@ -127,6 +127,9 @@ const configRow = {
   maxDailyLessonMinutes: 240,
   bookingMinAdvanceHours: 16,
   bookingMaxAdvanceWeeks: 10,
+  defaultTeachesDays: [2, 3, 4, 5],
+  defaultStartTime: "16:00:00",
+  defaultEndTime: "20:00:00",
 };
 
 // School-year season covering Mon–Fri with 16:30 start, 19:30 end LA time.

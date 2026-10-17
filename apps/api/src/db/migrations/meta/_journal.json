@@ -260,6 +260,20 @@
       "when": 1792276980504,
       "tag": "0036_real_clubs",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1792278534424,
+      "tag": "0037_default_hours",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1792278547457,
+      "tag": "0038_remove_seeded_seasons",
+      "breakpoints": true
     }
   ]
 }

@@ -103,7 +103,8 @@ export default function SeasonsTable({ seasons, onEdit, onDelete }: SeasonsTable
                 colSpan={6}
                 className="px-5 py-10 text-center text-sm text-text-secondary"
               >
-                No seasons yet. Add one to set your teaching hours.
+                No seasons yet — your default hours above are in effect. Add a season to override
+                them for a stretch.
               </td>
             </tr>
           )}

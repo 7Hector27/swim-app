@@ -25,6 +25,8 @@ const mockPatchOverride = vi.fn();
 const mockDeleteOverride = vi.fn();
 const mockFetchPreview = vi.fn();
 
+const mockPatchConfig = vi.fn();
+
 vi.mock("@/lib/api/coachAvailability", () => ({
   createSeason: (...args: unknown[]) => mockCreateSeason(...args),
   patchSeason: (...args: unknown[]) => mockPatchSeason(...args),
@@ -34,10 +36,12 @@ vi.mock("@/lib/api/coachAvailability", () => ({
   patchOverride: (...args: unknown[]) => mockPatchOverride(...args),
   deleteOverride: (...args: unknown[]) => mockDeleteOverride(...args),
   fetchAvailabilityPreview: (...args: unknown[]) => mockFetchPreview(...args),
+  patchAvailabilityConfig: (...args: unknown[]) => mockPatchConfig(...args),
 }));
 
 import CoachAvailabilityContent from "../content/CoachAvailabilityContent/CoachAvailabilityContent";
 import type {
+  AvailabilityConfig,
   AvailabilityOverride,
   AvailabilityPreviewResponse,
   SeasonWithIsCurrent,
@@ -79,6 +83,16 @@ function override(partial: Partial<AvailabilityOverride>): AvailabilityOverride 
   };
 }
 
+const baseConfig: AvailabilityConfig = {
+  id: "00000000-0000-0000-0000-000000000001",
+  maxDailyLessonMinutes: 240,
+  bookingMinAdvanceHours: 16,
+  bookingMaxAdvanceWeeks: 10,
+  defaultTeachesDays: [2, 3, 4, 5],
+  defaultStartTime: "16:00",
+  defaultEndTime: "20:00",
+};
+
 const basePreview: AvailabilityPreviewResponse = {
   days: [
     {
@@ -103,6 +117,7 @@ function renderPage(overrides: {
   seasons?: SeasonWithIsCurrent[];
   overrides?: AvailabilityOverride[];
   preview?: AvailabilityPreviewResponse;
+  config?: AvailabilityConfig;
 } = {}) {
   const seasons = overrides.seasons ?? [
     season({ id: "s-oct", name: "Mid-Oct", startDate: "2026-10-15", isCurrent: true }),
@@ -123,6 +138,7 @@ function renderPage(overrides: {
       initialBlockedTimes={[]}
       initialPreview={overrides.preview ?? basePreview}
       initialWeekStart={WEEK_START}
+      initialConfig={overrides.config ?? baseConfig}
       today={TODAY}
     />,
   );

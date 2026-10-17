@@ -1,6 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { effectiveHours } from "../lib/effectiveHours";
+import { effectiveHours, type DefaultHours } from "../lib/effectiveHours";
 import type { AvailabilitySeason, AvailabilityOverride } from "@swim-app/shared";
+
+const DEFAULTS: DefaultHours = {
+  defaultTeachesDays: [2, 3, 4, 5],
+  defaultStartTime: "16:00",
+  defaultEndTime: "20:00",
+};
 
 const makeSeason = (overrides: Partial<AvailabilitySeason> = {}): AvailabilitySeason => ({
   id: "season-x",
@@ -153,5 +159,61 @@ describe("effectiveHours", () => {
     expect(effectiveHours("2026-06-06", [season], [override])).toEqual([
       { start: "10:00", end: "12:00" },
     ]);
+  });
+
+  // ── Default hours fallback ──────────────────────────────────────────────────
+
+  it("uses the default hours on a date before any season starts", () => {
+    const season = makeSeason({ startDate: "2026-06-01" });
+    // 2026-05-26 is a Tuesday — included in defaults [2,3,4,5]
+    expect(effectiveHours("2026-05-26", [season], [], DEFAULTS)).toEqual([
+      { start: "16:00", end: "20:00" },
+    ]);
+  });
+
+  it("defaults close the day on Monday and Saturday", () => {
+    // Monday: 2026-05-25 (ISO 1)
+    expect(effectiveHours("2026-05-25", [], [], DEFAULTS)).toEqual([]);
+    // Saturday: 2026-05-30 (ISO 6)
+    expect(effectiveHours("2026-05-30", [], [], DEFAULTS)).toEqual([]);
+    // Sunday: 2026-05-31 (ISO 7)
+    expect(effectiveHours("2026-05-31", [], [], DEFAULTS)).toEqual([]);
+  });
+
+  it("the season wins over defaults from its start_date onward", () => {
+    const season = makeSeason({
+      startDate: "2026-06-01",
+      weekdayStartTime: "17:00",
+      weekendStartTime: "17:00",
+      endTime: "21:00",
+    });
+    // Day before season starts: 2026-05-26 (Tue) uses defaults
+    expect(effectiveHours("2026-05-26", [season], [], DEFAULTS)).toEqual([
+      { start: "16:00", end: "20:00" },
+    ]);
+    // Start date and beyond use the season window
+    expect(effectiveHours("2026-06-02", [season], [], DEFAULTS)).toEqual([
+      { start: "17:00", end: "21:00" },
+    ]);
+  });
+
+  it("override still wins when only defaults apply", () => {
+    const override = makeOverride({
+      kind: "custom_hours",
+      startDate: "2026-05-25",
+      endDate: "2026-05-25",
+      startTime: "09:00",
+      endTime: "11:00",
+    });
+    // 2026-05-25 (Mon) is closed by defaults, but the override replaces it.
+    expect(effectiveHours("2026-05-25", [], [override], DEFAULTS)).toEqual([
+      { start: "09:00", end: "11:00" },
+    ]);
+  });
+
+  it("without defaults, a date before any season is closed", () => {
+    const season = makeSeason({ startDate: "2026-06-01" });
+    expect(effectiveHours("2026-05-26", [season], [])).toEqual([]);
+    expect(effectiveHours("2026-05-26", [season], [], null)).toEqual([]);
   });
 });

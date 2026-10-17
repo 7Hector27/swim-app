@@ -39,7 +39,7 @@ import { validate } from "../middleware/validate";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { classifyDaySlots, computeAvailableSlots, getDateInLA, getISODayOfWeek } from "../lib/slots";
 import { effectiveHours } from "../lib/effectiveHours";
-import { mapSeasonRow, mapOverrideRow } from "../lib/availabilityMappers";
+import { mapConfigRow, mapSeasonRow, mapOverrideRow } from "../lib/availabilityMappers";
 import { needsApproval, notifyBookingCreated, notifyCoachOfChange } from "../lib/lessonApproval";
 import { isActiveSwimmer } from "../db/queries";
 
@@ -231,12 +231,7 @@ lessonsRouter.get(
         toLocationId: row.toLocationId,
         bufferMinutes: row.bufferMinutes,
       })),
-      config: {
-        id: config.id,
-        maxDailyLessonMinutes: config.maxDailyLessonMinutes,
-        bookingMinAdvanceHours: config.bookingMinAdvanceHours,
-        bookingMaxAdvanceWeeks: config.bookingMaxAdvanceWeeks,
-      },
+      config: mapConfigRow(config),
       seasons: seasonRows.map(mapSeasonRow),
       overrides: overrideRows.map(mapOverrideRow),
       gcalBusyTimes: [],
@@ -358,12 +353,7 @@ lessonsRouter.get(
         toLocationId: row.toLocationId,
         bufferMinutes: row.bufferMinutes,
       })),
-      config: {
-        id: config.id,
-        maxDailyLessonMinutes: config.maxDailyLessonMinutes,
-        bookingMinAdvanceHours: config.bookingMinAdvanceHours,
-        bookingMaxAdvanceWeeks: config.bookingMaxAdvanceWeeks,
-      },
+      config: mapConfigRow(config),
       seasons,
       overrides,
       gcalBusyTimes: [],
@@ -372,7 +362,7 @@ lessonsRouter.get(
 
     if (query.view === "week") {
       const responseDays: WeekDayAvailability[] = days.map((date: string) => {
-        const windows = effectiveHours(date, seasons, overrides);
+        const windows = effectiveHours(date, seasons, overrides, config);
         const dayState = computeDayState(date, windows.length > 0, todayDateLA, maxAdvanceDateLA);
         if (dayState !== "open") {
           return { date, dayState, openCount: 0, totalCount: 0, teachingWindows: [], slots: [] };
@@ -391,7 +381,7 @@ lessonsRouter.get(
       res.json(body);
     } else {
       const responseDays: DayAvailability[] = days.map((date: string) => {
-        const windows = effectiveHours(date, seasons, overrides);
+        const windows = effectiveHours(date, seasons, overrides, config);
         const dayState = computeDayState(date, windows.length > 0, todayDateLA, maxAdvanceDateLA);
         if (dayState !== "open") {
           return { date, dayState, openCount: 0, totalCount: 0, teachingWindows: [] };
@@ -490,7 +480,7 @@ lessonsRouter.post(
 
     // ── Booking window validation (pre-lock) ──────────────────────────────────
 
-    if (effectiveHours(laDateStr, seasons, overrides).length === 0) {
+    if (effectiveHours(laDateStr, seasons, overrides, config).length === 0) {
       res.status(422).json({ error: "not_a_lesson_day" });
       return;
     }
@@ -544,12 +534,7 @@ lessonsRouter.post(
           toLocationId: row.toLocationId,
           bufferMinutes: row.bufferMinutes,
         })),
-        config: {
-          id: config.id,
-          maxDailyLessonMinutes: config.maxDailyLessonMinutes,
-          bookingMinAdvanceHours: config.bookingMinAdvanceHours,
-          bookingMaxAdvanceWeeks: config.bookingMaxAdvanceWeeks,
-        },
+        config: mapConfigRow(config),
         seasons,
         overrides,
         gcalBusyTimes: [],
@@ -839,7 +824,7 @@ lessonsRouter.patch(
 
     // Booking-window checks apply only when a new start time is explicitly requested.
     if (body.startsAt !== undefined) {
-      if (effectiveHours(laDateStr, seasons, overrides).length === 0) {
+      if (effectiveHours(laDateStr, seasons, overrides, config).length === 0) {
         res.status(422).json({ error: "not_a_lesson_day" });
         return;
       }
@@ -894,12 +879,7 @@ lessonsRouter.patch(
           toLocationId: row.toLocationId,
           bufferMinutes: row.bufferMinutes,
         })),
-        config: {
-          id: config.id,
-          maxDailyLessonMinutes: config.maxDailyLessonMinutes,
-          bookingMinAdvanceHours: config.bookingMinAdvanceHours,
-          bookingMaxAdvanceWeeks: config.bookingMaxAdvanceWeeks,
-        },
+        config: mapConfigRow(config),
         seasons,
         overrides,
         gcalBusyTimes: [],

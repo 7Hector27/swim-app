@@ -1,5 +1,5 @@
 import type { AvailabilitySeason, AvailabilityOverride, ImpactWarning } from "@swim-app/shared";
-import { effectiveHours } from "./effectiveHours";
+import { effectiveHours, type DefaultHours } from "./effectiveHours";
 import { getDateInLA } from "./slots";
 
 const LA_TZ = "America/Los_Angeles";
@@ -44,11 +44,12 @@ export function computeImpactWarnings(
   lessons: UpcomingLessonForWarning[],
   seasons: AvailabilitySeason[],
   overrides: AvailabilityOverride[],
+  defaults: DefaultHours | null = null,
 ): ImpactWarning[] {
   const warnings: ImpactWarning[] = [];
   for (const lesson of lessons) {
     const laDate = getDateInLA(lesson.startsAt);
-    const windows = effectiveHours(laDate, seasons, overrides);
+    const windows = effectiveHours(laDate, seasons, overrides, defaults);
     if (windows.length === 0) {
       warnings.push({
         lessonId: lesson.id,

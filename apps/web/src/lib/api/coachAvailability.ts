@@ -1,4 +1,5 @@
 import {
+  AvailabilityConfigSchema,
   AvailabilityOverrideSchema,
   AvailabilityPreviewResponseSchema,
   BlockedTimeSchema,
@@ -8,6 +9,7 @@ import {
   SeasonDeleteResponseSchema,
   SeasonMutationResponseSchema,
   SeasonWithIsCurrentSchema,
+  type AvailabilityConfig,
   type AvailabilityOverride,
   type AvailabilityPreviewResponse,
   type BlockedTime,
@@ -16,6 +18,7 @@ import {
   type CreateSeasonBody,
   type OverrideDeleteResponse,
   type OverrideMutationResponse,
+  type PatchAvailabilityConfigBody,
   type PatchOverrideBody,
   type PatchSeasonBody,
   type SeasonDeleteResponse,
@@ -42,6 +45,48 @@ function authHeaders(accessToken: string, json = false): HeadersInit {
   const headers: Record<string, string> = { Authorization: `Bearer ${accessToken}` };
   if (json) headers["Content-Type"] = "application/json";
   return headers;
+}
+
+// ── Availability config (default hours) ──────────────────────────────────────
+
+export async function fetchAvailabilityConfig(
+  accessToken: string,
+): Promise<AvailabilityConfig | null> {
+  try {
+    const response = await fetch(
+      `${process.env.NEXT_PUBLIC_API_URL}/coach/availability-config`,
+      { headers: authHeaders(accessToken), cache: "no-store" },
+    );
+    if (!response.ok) return null;
+    const body: unknown = await response.json();
+    const parsed = AvailabilityConfigSchema.safeParse(body);
+    return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function patchAvailabilityConfig(
+  accessToken: string,
+  body: PatchAvailabilityConfigBody,
+): Promise<ApiResult<AvailabilityConfig>> {
+  try {
+    const response = await fetch(
+      `${process.env.NEXT_PUBLIC_API_URL}/coach/availability-config`,
+      {
+        method: "PATCH",
+        headers: authHeaders(accessToken, true),
+        body: JSON.stringify(body),
+      },
+    );
+    if (!response.ok) return { ok: false, ...(await parseError(response)) };
+    const data: unknown = await response.json();
+    const parsed = AvailabilityConfigSchema.safeParse(data);
+    if (!parsed.success) return { ok: false, status: 500 };
+    return { ok: true, data: parsed.data };
+  } catch {
+    return { ok: false, status: 0 };
+  }
 }
 
 // ── Seasons ──────────────────────────────────────────────────────────────────

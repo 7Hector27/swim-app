@@ -2,6 +2,7 @@ import { todayLA } from "@swim-app/shared";
 
 import { requireAuth } from "@/lib/requireAuth";
 import {
+  fetchAvailabilityConfig,
   fetchAvailabilityPreview,
   fetchBlockedTimes,
   fetchOverrides,
@@ -20,12 +21,15 @@ export default async function CoachAvailabilityPage() {
   const today = todayLA();
   const weekStart = startOfWeekLA(today);
 
-  const [seasons, overrides, blockedTimes, preview] = await Promise.all([
+  const [seasons, overrides, blockedTimes, preview, config] = await Promise.all([
     fetchSeasons(auth.accessToken),
     fetchOverrides(auth.accessToken),
     fetchBlockedTimes(auth.accessToken),
     fetchAvailabilityPreview(auth.accessToken, weekStart, 7),
+    fetchAvailabilityConfig(auth.accessToken),
   ]);
+
+  if (!config) return null;
 
   return (
     <CoachAvailabilityContent
@@ -35,6 +39,7 @@ export default async function CoachAvailabilityPage() {
       initialBlockedTimes={blockedTimes}
       initialPreview={preview}
       initialWeekStart={weekStart}
+      initialConfig={config}
       today={today}
     />
   );

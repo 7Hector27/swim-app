@@ -172,8 +172,13 @@ function resolveWindows(
   date: string,
   seasons: AvailabilitySeason[],
   overrides: AvailabilityOverride[],
+  defaults: {
+    defaultTeachesDays: number[];
+    defaultStartTime: string;
+    defaultEndTime: string;
+  },
 ): Interval[] {
-  return effectiveHours(date, seasons, overrides).map((window) => [
+  return effectiveHours(date, seasons, overrides, defaults).map((window) => [
     laToUtc(date, window.start).getTime(),
     laToUtc(date, window.end).getTime(),
   ]);
@@ -194,7 +199,7 @@ export function computeAvailableSlots(params: SlotParams): Slot[] {
     nowUtc,
   } = params;
 
-  const windows = resolveWindows(date, seasons, overrides);
+  const windows = resolveWindows(date, seasons, overrides, config);
   if (windows.length === 0) return [];
 
   // Build forbidden intervals from lessons, blocked times, and GCal.
@@ -271,7 +276,7 @@ export function classifyDaySlots(params: SlotParams): SlotWithState[] {
     nowUtc,
   } = params;
 
-  const windows = resolveWindows(date, seasons, overrides);
+  const windows = resolveWindows(date, seasons, overrides, config);
   if (windows.length === 0) return [];
 
   const forbidden: Interval[] = [];

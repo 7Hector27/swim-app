@@ -1,5 +1,15 @@
-import type { AvailabilitySeason, AvailabilityOverride, TeachingWindow } from "@swim-app/shared";
+import type {
+  AvailabilityConfig,
+  AvailabilitySeason,
+  AvailabilityOverride,
+  TeachingWindow,
+} from "@swim-app/shared";
 import { getISODayOfWeek } from "./slots";
+
+export type DefaultHours = Pick<
+  AvailabilityConfig,
+  "defaultTeachesDays" | "defaultStartTime" | "defaultEndTime"
+>;
 
 // Normalizes "HH:MM" or "HH:MM:SS" to "HH:MM".
 function toHHMM(time: string): string {
@@ -42,11 +52,13 @@ function findActiveOverride(
 }
 
 // Resolves teaching windows for a given LA calendar date.
+// Precedence: one-off override → active season → default hours (when provided).
 // Returns zero windows when the day is closed; one window otherwise.
 export function effectiveHours(
   date: string,
   seasons: AvailabilitySeason[],
   overrides: AvailabilityOverride[],
+  defaults: DefaultHours | null = null,
 ): TeachingWindow[] {
   const override = findActiveOverride(date, overrides);
   if (override !== null) {
@@ -57,14 +69,23 @@ export function effectiveHours(
   }
 
   const season = findActiveSeason(date, seasons);
-  if (season === null) return [];
+  if (season !== null) {
+    const iso = getISODayOfWeek(date);
+    if (!season.teachesDays.includes(iso)) return [];
+
+    const isWeekend = iso === 6 || iso === 7;
+    const start = isWeekend ? season.weekendStartTime : season.weekdayStartTime;
+    if (start === null) return [];
+
+    return [{ start: toHHMM(start), end: toHHMM(season.endTime) }];
+  }
+
+  if (defaults === null) return [];
 
   const iso = getISODayOfWeek(date);
-  if (!season.teachesDays.includes(iso)) return [];
+  if (!defaults.defaultTeachesDays.includes(iso)) return [];
 
-  const isWeekend = iso === 6 || iso === 7;
-  const start = isWeekend ? season.weekendStartTime : season.weekdayStartTime;
-  if (start === null) return [];
-
-  return [{ start: toHHMM(start), end: toHHMM(season.endTime) }];
+  return [
+    { start: toHHMM(defaults.defaultStartTime), end: toHHMM(defaults.defaultEndTime) },
+  ];
 }

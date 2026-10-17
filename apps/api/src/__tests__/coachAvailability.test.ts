@@ -102,6 +102,9 @@ const availabilityConfigRow = {
   maxDailyLessonMinutes: 240,
   bookingMinAdvanceHours: 16,
   bookingMaxAdvanceWeeks: 10,
+  defaultTeachesDays: [2, 3, 4, 5],
+  defaultStartTime: "16:00:00",
+  defaultEndTime: "20:00:00",
   createdAt: now,
   updatedAt: now,
 };
@@ -222,6 +225,29 @@ describe("PATCH /coach/locations/:id", () => {
   });
 });
 
+// ── GET /coach/availability-config ───────────────────────────────────────────
+
+describe("GET /coach/availability-config", () => {
+  it("returns the config with default-hours fields normalized to HH:MM", async () => {
+    authAs(coachProfile);
+
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(coachProfile))
+      .mockReturnValueOnce(simpleSelect([availabilityConfigRow]));
+
+    const res = await request(app)
+      .get("/coach/availability-config")
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      defaultTeachesDays: [2, 3, 4, 5],
+      defaultStartTime: "16:00",
+      defaultEndTime: "20:00",
+    });
+  });
+});
+
 // ── PATCH /coach/availability-config ─────────────────────────────────────────
 
 describe("PATCH /coach/availability-config", () => {
@@ -246,6 +272,105 @@ describe("PATCH /coach/availability-config", () => {
 
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ maxDailyLessonMinutes: 300 });
+  });
+
+  it("updates default hours and returns the new values", async () => {
+    authAs(coachProfile);
+
+    const updatedRow = {
+      ...availabilityConfigRow,
+      defaultTeachesDays: [1, 2, 3, 4, 5],
+      defaultStartTime: "15:30:00",
+      defaultEndTime: "19:45:00",
+    };
+
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(coachProfile))
+      .mockReturnValueOnce(simpleSelect([availabilityConfigRow]));
+
+    const updateReturning = vi.fn().mockResolvedValue([updatedRow]);
+    const updateWhere = vi.fn().mockReturnValue({ returning: updateReturning });
+    const updateSet = vi.fn().mockReturnValue({ where: updateWhere });
+    mockDbUpdate.mockReturnValue({ set: updateSet });
+
+    const res = await request(app)
+      .patch("/coach/availability-config")
+      .set("Authorization", "Bearer token")
+      .send({
+        defaultTeachesDays: [1, 2, 3, 4, 5],
+        defaultStartTime: "15:30",
+        defaultEndTime: "19:45",
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      defaultTeachesDays: [1, 2, 3, 4, 5],
+      defaultStartTime: "15:30",
+      defaultEndTime: "19:45",
+    });
+  });
+
+  it("rejects times that are not on a 15-minute step", async () => {
+    authAs(coachProfile);
+    mockDbSelect.mockReturnValueOnce(requireUserSelect(coachProfile));
+
+    const res = await request(app)
+      .patch("/coach/availability-config")
+      .set("Authorization", "Bearer token")
+      .send({ defaultStartTime: "16:10" });
+
+    expect(res.status).toBe(422);
+  });
+
+  it("rejects an empty default teaches days array", async () => {
+    authAs(coachProfile);
+    mockDbSelect.mockReturnValueOnce(requireUserSelect(coachProfile));
+
+    const res = await request(app)
+      .patch("/coach/availability-config")
+      .set("Authorization", "Bearer token")
+      .send({ defaultTeachesDays: [] });
+
+    expect(res.status).toBe(422);
+  });
+
+  it("rejects when start >= end in the same request", async () => {
+    authAs(coachProfile);
+    mockDbSelect.mockReturnValueOnce(requireUserSelect(coachProfile));
+
+    const res = await request(app)
+      .patch("/coach/availability-config")
+      .set("Authorization", "Bearer token")
+      .send({ defaultStartTime: "20:00", defaultEndTime: "16:00" });
+
+    expect(res.status).toBe(422);
+  });
+
+  it("rejects when the resulting start >= stored end (only start is being changed)", async () => {
+    authAs(coachProfile);
+
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(coachProfile))
+      .mockReturnValueOnce(simpleSelect([availabilityConfigRow]));
+
+    const res = await request(app)
+      .patch("/coach/availability-config")
+      .set("Authorization", "Bearer token")
+      .send({ defaultStartTime: "21:00" });
+
+    expect(res.status).toBe(422);
+  });
+
+  it("rejects coach impersonators (non-coach role is 403)", async () => {
+    authAs(parentProfile);
+    mockDbSelect.mockReturnValueOnce(requireUserSelect(parentProfile));
+
+    const res = await request(app)
+      .patch("/coach/availability-config")
+      .set("Authorization", "Bearer token")
+      .send({ defaultStartTime: "16:00" });
+
+    expect(res.status).toBe(403);
   });
 });
 
@@ -521,6 +646,7 @@ describe("POST /coach/seasons", () => {
       .mockReturnValueOnce(simpleSelect<unknown>([]))
       .mockReturnValueOnce(fromResolveSelect([inserted]))
       .mockReturnValueOnce(fromResolveSelect([]))
+      .mockReturnValueOnce(simpleSelect([availabilityConfigRow]))
       .mockReturnValueOnce(innerJoinWhereSelect([lessonRow]))
       .mockReturnValueOnce(innerJoinWhereSelect(swimmerJoinRows));
 
@@ -560,6 +686,7 @@ describe("POST /coach/seasons", () => {
       .mockReturnValueOnce(simpleSelect<unknown>([]))
       .mockReturnValueOnce(fromResolveSelect([inserted]))
       .mockReturnValueOnce(fromResolveSelect([]))
+      .mockReturnValueOnce(simpleSelect([availabilityConfigRow]))
       .mockReturnValueOnce(innerJoinWhereSelect([]));
 
     const insertReturning = vi.fn().mockResolvedValue([inserted]);
@@ -705,6 +832,7 @@ describe("DELETE /coach/seasons/:id", () => {
       .mockReturnValueOnce(requireUserSelect(coachProfile))
       .mockReturnValueOnce(fromResolveSelect([]))
       .mockReturnValueOnce(fromResolveSelect([]))
+      .mockReturnValueOnce(simpleSelect([availabilityConfigRow]))
       .mockReturnValueOnce(innerJoinWhereSelect([lessonRow]))
       .mockReturnValueOnce(innerJoinWhereSelect(swimmerJoinRows));
 
@@ -718,9 +846,12 @@ describe("DELETE /coach/seasons/:id", () => {
 
     expect(res.status).toBe(200);
     expect(res.body.warnings).toHaveLength(1);
+    // After seasons are deleted, the default hours (Tue–Fri 16:00–20:00) apply.
+    // 2099-06-10 is a Wednesday, so the day is open per defaults — but the lesson
+    // starts at 15:00 PDT, outside the 16:00 default window → outside_hours.
     expect(res.body.warnings[0]).toMatchObject({
       lessonId: LESSON_A_ID,
-      reason: "day_closed",
+      reason: "outside_hours",
       swimmerFirstNames: ["Ava", "Max"],
       poolName: "Egret Park",
     });
@@ -761,6 +892,7 @@ describe("PATCH /coach/seasons/:id", () => {
       .mockReturnValueOnce(simpleSelect([existing]))
       .mockReturnValueOnce(fromResolveSelect([updated]))
       .mockReturnValueOnce(fromResolveSelect([]))
+      .mockReturnValueOnce(simpleSelect([availabilityConfigRow]))
       .mockReturnValueOnce(innerJoinWhereSelect([]));
 
     const updateReturning = vi.fn().mockResolvedValue([updated]);
@@ -1058,6 +1190,7 @@ describe("PATCH /coach/overrides/:id", () => {
       .mockReturnValueOnce(simpleSelect([existing]))
       .mockReturnValueOnce(fromResolveSelect([]))
       .mockReturnValueOnce(fromResolveSelect([updated]))
+      .mockReturnValueOnce(simpleSelect([availabilityConfigRow]))
       .mockReturnValueOnce(innerJoinWhereSelect([]));
 
     const updateReturning = vi.fn().mockResolvedValue([updated]);
@@ -1108,6 +1241,7 @@ describe("PATCH /coach/overrides/:id", () => {
       .mockReturnValueOnce(simpleSelect([existing]))
       .mockReturnValueOnce(fromResolveSelect([]))
       .mockReturnValueOnce(fromResolveSelect([updated]))
+      .mockReturnValueOnce(simpleSelect([availabilityConfigRow]))
       .mockReturnValueOnce(innerJoinWhereSelect([]));
 
     const updateReturning = vi.fn().mockResolvedValue([updated]);
@@ -1149,6 +1283,7 @@ describe("DELETE /coach/overrides/:id", () => {
       .mockReturnValueOnce(requireUserSelect(coachProfile))
       .mockReturnValueOnce(fromResolveSelect([]))
       .mockReturnValueOnce(fromResolveSelect([]))
+      .mockReturnValueOnce(simpleSelect([availabilityConfigRow]))
       .mockReturnValueOnce(innerJoinWhereSelect([]));
 
     const deleteReturning = vi.fn().mockResolvedValue([deleted]);
@@ -1194,7 +1329,8 @@ describe("GET /coach/availability-preview", () => {
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(coachProfile))
       .mockReturnValueOnce(fromResolveSelect([schoolYear]))
-      .mockReturnValueOnce(fromResolveSelect([]));
+      .mockReturnValueOnce(fromResolveSelect([]))
+      .mockReturnValueOnce(simpleSelect([availabilityConfigRow]));
 
     const res = await request(app)
       .get("/coach/availability-preview?from=2025-09-01&days=3")

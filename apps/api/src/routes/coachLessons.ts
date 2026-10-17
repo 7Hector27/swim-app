@@ -27,6 +27,7 @@ import {
 } from "../db/schema";
 import { validate } from "../middleware/validate";
 import { asyncHandler } from "../middleware/asyncHandler";
+import { mapConfigRow } from "../lib/availabilityMappers";
 import { notifyLessonApproved, notifyLessonDeclined, syncCalendarApproved } from "../lib/lessonApproval";
 import { computeAvailableSlots, mergeSlotWindows } from "../lib/slots";
 import { z } from "zod";
@@ -222,12 +223,7 @@ coachLessonsRouter.get(
             toLocationId: row.toLocationId,
             bufferMinutes: row.bufferMinutes,
           })),
-          config: {
-            id: config.id,
-            maxDailyLessonMinutes: config.maxDailyLessonMinutes,
-            bookingMinAdvanceHours: config.bookingMinAdvanceHours,
-            bookingMaxAdvanceWeeks: config.bookingMaxAdvanceWeeks,
-          },
+          config: mapConfigRow(config),
           seasons,
           overrides,
           gcalBusyTimes: [],
