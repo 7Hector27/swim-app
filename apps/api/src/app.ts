@@ -50,6 +50,18 @@ export function createApp(logger: Logger) {
     .split(",")
     .map((o) => o.trim())
     .filter(Boolean);
+  // In non-production, default to allowing http://localhost:3000 when the env
+  // is unset. Without this, a stale local .env causes every client-side mutation
+  // to fail silently in the browser (preflight passes but has no
+  // Access-Control-Allow-Origin header, so fetch rejects). Prod must set
+  // CORS_ORIGINS explicitly.
+  if (corsOrigins.length === 0 && process.env.NODE_ENV !== "production") {
+    corsOrigins.push("http://localhost:3000");
+    logger.warn(
+      { fallback: "http://localhost:3000" },
+      "CORS_ORIGINS is unset — using dev fallback. Set it explicitly in apps/api/.env.",
+    );
+  }
   app.use(cors({ origin: corsOrigins }));
 
   app.use(requestId);

@@ -225,6 +225,28 @@ describe("CoachAvailabilityContent — seasons table", () => {
     expect(screen.getByText(/Egret Park/)).toBeInTheDocument();
   });
 
+  it("closes the confirm dialog and removes the row when delete succeeds with no warnings", async () => {
+    mockDeleteSeason.mockResolvedValue({ ok: true, data: { warnings: [] } });
+    mockFetchPreview.mockResolvedValue(basePreview);
+    renderPage();
+
+    const table = screen.getByRole("table");
+    expect(within(table).getByText("Mid-Oct")).toBeInTheDocument();
+
+    fireEvent.click(within(table).getByRole("button", { name: "Delete Mid-Oct" }));
+
+    const confirmButton = await screen.findByRole("button", { name: "Delete", hidden: true });
+    const confirmDialog = confirmButton.closest("dialog");
+    expect(confirmDialog).toHaveAttribute("open");
+    fireEvent.click(confirmButton);
+
+    await waitFor(() => expect(mockDeleteSeason).toHaveBeenCalledWith("test-token", "s-oct"));
+    await waitFor(() => expect(confirmDialog).not.toHaveAttribute("open"));
+    expect(within(table).queryByText("Mid-Oct")).not.toBeInTheDocument();
+    // The other seeded season should still be in the table.
+    expect(within(table).getByText("Nov")).toBeInTheDocument();
+  });
+
   it("deletes a season through the confirm dialog and surfaces impact warnings", async () => {
     mockDeleteSeason.mockResolvedValue({
       ok: true,
