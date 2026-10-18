@@ -46,33 +46,51 @@ export type PatchLocationBody = z.infer<typeof PatchLocationBodySchema>;
 
 // ── Availability config ───────────────────────────────────────────────────────
 
+const QuarterHourTimeStringSchema = z
+  .string()
+  .regex(/^\d{2}:\d{2}$/)
+  .refine(
+    (value) => {
+      const parts = value.split(":");
+      const minutes = parts[1];
+      if (minutes === undefined) return false;
+      return minutes === "00" || minutes === "15" || minutes === "30" || minutes === "45";
+    },
+    { message: "Time must be on a 15-minute step." },
+  );
+
 export const AvailabilityConfigSchema = z.object({
   id: z.string().uuid(),
-  lessonDays: z.array(z.number().int().min(1).max(7)),
-  schoolYearStartTime: z.string().regex(/^\d{2}:\d{2}$/),
-  schoolYearEndTime: z.string().regex(/^\d{2}:\d{2}$/),
-  summerMorningStartTime: z.string().regex(/^\d{2}:\d{2}$/),
-  summerMorningEndTime: z.string().regex(/^\d{2}:\d{2}$/),
-  summerEveningStartTime: z.string().regex(/^\d{2}:\d{2}$/),
-  summerEveningEndTime: z.string().regex(/^\d{2}:\d{2}$/),
   maxDailyLessonMinutes: z.number().int(),
   bookingMinAdvanceHours: z.number().int(),
   bookingMaxAdvanceWeeks: z.number().int(),
+  // Default teaching hours used when no season covers the date and no override applies.
+  defaultTeachesDays: z.array(z.number().int().min(1).max(7)),
+  defaultStartTime: z.string().regex(/^\d{2}:\d{2}$/),
+  defaultEndTime: z.string().regex(/^\d{2}:\d{2}$/),
 });
 export type AvailabilityConfig = z.infer<typeof AvailabilityConfigSchema>;
 
-export const PatchAvailabilityConfigBodySchema = z.object({
-  lessonDays: z.array(z.number().int().min(1).max(5)).min(1).optional(),
-  schoolYearStartTime: z.string().regex(/^\d{2}:\d{2}$/).optional(),
-  schoolYearEndTime: z.string().regex(/^\d{2}:\d{2}$/).optional(),
-  summerMorningStartTime: z.string().regex(/^\d{2}:\d{2}$/).optional(),
-  summerMorningEndTime: z.string().regex(/^\d{2}:\d{2}$/).optional(),
-  summerEveningStartTime: z.string().regex(/^\d{2}:\d{2}$/).optional(),
-  summerEveningEndTime: z.string().regex(/^\d{2}:\d{2}$/).optional(),
-  maxDailyLessonMinutes: z.number().int().min(1).optional(),
-  bookingMinAdvanceHours: z.number().int().min(1).optional(),
-  bookingMaxAdvanceWeeks: z.number().int().min(1).optional(),
-});
+export const PatchAvailabilityConfigBodySchema = z
+  .object({
+    maxDailyLessonMinutes: z.number().int().min(1).optional(),
+    bookingMinAdvanceHours: z.number().int().min(1).optional(),
+    bookingMaxAdvanceWeeks: z.number().int().min(1).optional(),
+    defaultTeachesDays: z.array(z.number().int().min(1).max(7)).min(1).optional(),
+    defaultStartTime: QuarterHourTimeStringSchema.optional(),
+    defaultEndTime: QuarterHourTimeStringSchema.optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.defaultStartTime !== undefined && data.defaultEndTime !== undefined) {
+      if (data.defaultStartTime >= data.defaultEndTime) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["defaultEndTime"],
+          message: "End time must be after start time.",
+        });
+      }
+    }
+  });
 export type PatchAvailabilityConfigBody = z.infer<typeof PatchAvailabilityConfigBodySchema>;
 
 // ── Blocked times ─────────────────────────────────────────────────────────────
@@ -251,18 +269,42 @@ export const CoachStatsSchema = z.object({
 });
 export type CoachStats = z.infer<typeof CoachStatsSchema>;
 
-// ── Season summer end dates ───────────────────────────────────────────────────
+// ── Availability seasons ──────────────────────────────────────────────────────
 
-export const SeasonSummerEndDateSchema = z.object({
-  year: z.number().int(),
-  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-});
-export type SeasonSummerEndDate = z.infer<typeof SeasonSummerEndDateSchema>;
+const TimeStringSchema = z.string().regex(/^\d{2}:\d{2}$/);
 
-export const SetSeasonEndDateBodySchema = z.object({
-  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+export const AvailabilitySeasonSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string(),
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  teachesDays: z.array(z.number().int().min(1).max(7)),
+  weekdayStartTime: TimeStringSchema.nullable(),
+  weekendStartTime: TimeStringSchema.nullable(),
+  endTime: TimeStringSchema,
+  startsAtDst: z.boolean(),
+  createdAt: z.string().datetime({ offset: true }),
+  updatedAt: z.string().datetime({ offset: true }),
 });
-export type SetSeasonEndDateBody = z.infer<typeof SetSeasonEndDateBodySchema>;
+export type AvailabilitySeason = z.infer<typeof AvailabilitySeasonSchema>;
+
+// ── Availability overrides ────────────────────────────────────────────────────
+
+export const AvailabilityOverrideKindSchema = z.enum(["day_off", "custom_hours"]);
+export type AvailabilityOverrideKind = z.infer<typeof AvailabilityOverrideKindSchema>;
+
+export const AvailabilityOverrideSchema = z.object({
+  id: z.string().uuid(),
+  kind: AvailabilityOverrideKindSchema,
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  startTime: TimeStringSchema.nullable(),
+  endTime: TimeStringSchema.nullable(),
+  note: z.string().nullable(),
+  createdAt: z.string().datetime({ offset: true }),
+  updatedAt: z.string().datetime({ offset: true }),
+});
+export type AvailabilityOverride = z.infer<typeof AvailabilityOverrideSchema>;
+
 
 // ── Update lesson (cancel / reschedule) ──────────────────────────────────────
 
@@ -341,3 +383,111 @@ export const WeekAvailabilityResponseSchema = z.object({
   days:          z.array(WeekDayAvailabilitySchema),
 });
 export type WeekAvailabilityResponse = z.infer<typeof WeekAvailabilityResponseSchema>;
+
+// ── Coach availability-editor request + response shapes ──────────────────────
+
+const DateStringSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+
+export const SeasonWithIsCurrentSchema = AvailabilitySeasonSchema.extend({
+  isCurrent: z.boolean(),
+});
+export type SeasonWithIsCurrent = z.infer<typeof SeasonWithIsCurrentSchema>;
+
+export const CreateSeasonBodySchema = z.object({
+  name: z.string().min(1),
+  startDate: DateStringSchema,
+  teachesDays: z.array(z.number().int().min(1).max(7)).min(1),
+  weekdayStartTime: TimeStringSchema.nullable(),
+  weekendStartTime: TimeStringSchema.nullable(),
+  endTime: TimeStringSchema,
+  startsAtDst: z.boolean().optional(),
+});
+export type CreateSeasonBody = z.infer<typeof CreateSeasonBodySchema>;
+
+export const PatchSeasonBodySchema = z.object({
+  name: z.string().min(1).optional(),
+  startDate: DateStringSchema.optional(),
+  teachesDays: z.array(z.number().int().min(1).max(7)).min(1).optional(),
+  weekdayStartTime: TimeStringSchema.nullable().optional(),
+  weekendStartTime: TimeStringSchema.nullable().optional(),
+  endTime: TimeStringSchema.optional(),
+  startsAtDst: z.boolean().optional(),
+});
+export type PatchSeasonBody = z.infer<typeof PatchSeasonBodySchema>;
+
+export const CreateOverrideBodySchema = z.object({
+  kind: AvailabilityOverrideKindSchema,
+  startDate: DateStringSchema,
+  endDate: DateStringSchema,
+  startTime: TimeStringSchema.optional(),
+  endTime: TimeStringSchema.optional(),
+  note: z.string().max(500).optional(),
+});
+export type CreateOverrideBody = z.infer<typeof CreateOverrideBodySchema>;
+
+export const PatchOverrideBodySchema = z.object({
+  kind: AvailabilityOverrideKindSchema.optional(),
+  startDate: DateStringSchema.optional(),
+  endDate: DateStringSchema.optional(),
+  startTime: TimeStringSchema.nullable().optional(),
+  endTime: TimeStringSchema.nullable().optional(),
+  note: z.string().max(500).nullable().optional(),
+});
+export type PatchOverrideBody = z.infer<typeof PatchOverrideBodySchema>;
+
+export const ImpactWarningSchema = z.object({
+  lessonId: z.string().uuid(),
+  startsAt: z.string().datetime({ offset: true }),
+  reason: z.enum(["outside_hours", "day_closed"]),
+  swimmerFirstNames: z.array(z.string()),
+  poolName: z.string(),
+});
+export type ImpactWarning = z.infer<typeof ImpactWarningSchema>;
+
+export const SeasonMutationResponseSchema = z.object({
+  season: SeasonWithIsCurrentSchema,
+  warnings: z.array(ImpactWarningSchema),
+});
+export type SeasonMutationResponse = z.infer<typeof SeasonMutationResponseSchema>;
+
+export const SeasonDeleteResponseSchema = z.object({
+  warnings: z.array(ImpactWarningSchema),
+});
+export type SeasonDeleteResponse = z.infer<typeof SeasonDeleteResponseSchema>;
+
+export const OverrideMutationResponseSchema = z.object({
+  override: AvailabilityOverrideSchema,
+  warnings: z.array(ImpactWarningSchema),
+});
+export type OverrideMutationResponse = z.infer<typeof OverrideMutationResponseSchema>;
+
+export const OverrideDeleteResponseSchema = z.object({
+  warnings: z.array(ImpactWarningSchema),
+});
+export type OverrideDeleteResponse = z.infer<typeof OverrideDeleteResponseSchema>;
+
+export const CopyNextYearResponseSchema = z.object({
+  inserted: z.array(AvailabilitySeasonSchema),
+});
+export type CopyNextYearResponse = z.infer<typeof CopyNextYearResponseSchema>;
+
+export const AvailabilityPreviewQuerySchema = z.object({
+  from: DateStringSchema,
+  days: z
+    .string()
+    .transform((value) => parseInt(value, 10))
+    .pipe(z.number().int().min(1).max(31)),
+});
+export type AvailabilityPreviewQuery = z.infer<typeof AvailabilityPreviewQuerySchema>;
+
+export const AvailabilityPreviewDaySchema = z.object({
+  date: DateStringSchema,
+  state: z.enum(["open", "closed"]),
+  windows: z.array(TeachingWindowSchema),
+});
+export type AvailabilityPreviewDay = z.infer<typeof AvailabilityPreviewDaySchema>;
+
+export const AvailabilityPreviewResponseSchema = z.object({
+  days: z.array(AvailabilityPreviewDaySchema),
+});
+export type AvailabilityPreviewResponse = z.infer<typeof AvailabilityPreviewResponseSchema>;

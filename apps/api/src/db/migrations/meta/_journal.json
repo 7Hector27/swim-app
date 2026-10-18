@@ -225,6 +225,55 @@
       "when": 1792185834327,
       "tag": "0031_kind_doctor_doom",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1792216000878,
+      "tag": "0032_puzzling_devos",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1792216007877,
+      "tag": "0033_seed_availability_seasons",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1792218069703,
+      "tag": "0034_tan_microbe",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1792254642382,
+      "tag": "0035_clumsy_agent_zero",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1792276980504,
+      "tag": "0036_real_clubs",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1792278534424,
+      "tag": "0037_default_hours",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1792278547457,
+      "tag": "0038_remove_seeded_seasons",
+      "breakpoints": true
     }
   ]
 }

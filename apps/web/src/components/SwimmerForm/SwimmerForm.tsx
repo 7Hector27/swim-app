@@ -7,6 +7,8 @@ import type { Club, SwimmerClubInput } from "@swim-app/shared";
 import Button from "@/components/Button";
 import FieldError from "@/components/FieldError";
 
+import ClubCombobox from "./ClubCombobox";
+
 type SwimmerFormState =
   | { status: "idle" }
   | { status: "error"; message: string }
@@ -258,29 +260,19 @@ export default function SwimmerForm({
         {onTeam === "yes" && (
           <div className="flex flex-col gap-3">
             <div className="flex flex-col gap-1.5">
-              <label htmlFor="clubSelect" className="sr-only">
+              <label htmlFor="clubSelect" className="text-sm font-semibold text-text">
                 Club or team
               </label>
-              <select
-                id="clubSelect"
+              <ClubCombobox
+                inputId="clubSelect"
+                clubs={clubs}
                 value={clubSelection}
-                onChange={(event) => {
-                  setClubSelection(event.target.value);
-                  if (event.target.value !== "other") setOtherClubName("");
+                onChange={(next) => {
+                  setClubSelection(next);
+                  if (next !== "other") setOtherClubName("");
                 }}
-                className="h-11 rounded-[8px] border border-border bg-background text-text px-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
-                aria-describedby={fieldErrors["clubs"] ? "clubs-error" : undefined}
-              >
-                <option value="" disabled>
-                  Select a club…
-                </option>
-                {clubs.map((club) => (
-                  <option key={club.id} value={club.id}>
-                    {club.name}
-                  </option>
-                ))}
-                <option value="other">Other (not listed)</option>
-              </select>
+                {...(fieldErrors["clubs"] && { describedBy: "clubs-error" })}
+              />
             </div>
 
             {clubSelection === "other" && (

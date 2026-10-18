@@ -1,37 +1,66 @@
 import { Router } from "express";
-import { and, asc, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, eq, gt, gte, inArray, isNull, lte, ne } from "drizzle-orm";
 import type {
   LessonLocation,
   AvailabilityConfig,
+  AvailabilityPreviewDay,
+  AvailabilityPreviewQuery,
+  AvailabilityPreviewResponse,
+  AvailabilitySeason,
+  AvailabilityOverride,
   BlockedTime,
-  TravelBufferOverride,
-  SeasonSummerEndDate,
-  CreateLocationBody,
-  PatchLocationBody,
-  PatchAvailabilityConfigBody,
+  CopyNextYearResponse,
   CreateBlockedTimeBody,
+  CreateLocationBody,
+  CreateOverrideBody,
+  CreateSeasonBody,
+  OverrideDeleteResponse,
+  OverrideMutationResponse,
+  PatchAvailabilityConfigBody,
+  PatchLocationBody,
+  PatchOverrideBody,
+  PatchSeasonBody,
+  SeasonDeleteResponse,
+  SeasonMutationResponse,
+  SeasonWithIsCurrent,
+  TravelBufferOverride,
   UpsertTravelBufferBody,
-  SetSeasonEndDateBody,
 } from "@swim-app/shared";
 import {
-  CreateLocationBodySchema,
-  PatchLocationBodySchema,
-  PatchAvailabilityConfigBodySchema,
+  AvailabilityPreviewQuerySchema,
   CreateBlockedTimeBodySchema,
+  CreateLocationBodySchema,
+  CreateOverrideBodySchema,
+  CreateSeasonBodySchema,
+  PatchAvailabilityConfigBodySchema,
+  PatchLocationBodySchema,
+  PatchOverrideBodySchema,
+  PatchSeasonBodySchema,
   UpsertTravelBufferBodySchema,
-  SetSeasonEndDateBodySchema,
 } from "@swim-app/shared";
 import { db } from "../db/client";
 import {
-  lessonLocations,
   availabilityConfig,
+  availabilityOverrides,
+  availabilitySeasons,
   blockedTimes,
+  lessons,
+  lessonLocations,
+  lessonSwimmers,
+  swimmers,
   travelBufferOverrides,
-  seasonSummerEndDates,
 } from "../db/schema";
 import { validate } from "../middleware/validate";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { z } from "zod";
+import { mapConfigRow, mapOverrideRow, mapSeasonRow } from "../lib/availabilityMappers";
+import { fetchAvailabilityDefaults } from "../lib/availabilityQueries";
+import { effectiveHours } from "../lib/effectiveHours";
+import {
+  computeImpactWarnings,
+  dstStartDate,
+  type UpcomingLessonForWarning,
+} from "../lib/availabilityWarnings";
 
 export const coachAvailabilityRouter = Router();
 
@@ -162,16 +191,12 @@ coachAvailabilityRouter.get(
 
     const body: AvailabilityConfig = {
       id: config.id,
-      lessonDays: config.lessonDays,
-      schoolYearStartTime: config.schoolYearStartTime.slice(0, 5),
-      schoolYearEndTime: config.schoolYearEndTime.slice(0, 5),
-      summerMorningStartTime: config.summerMorningStartTime.slice(0, 5),
-      summerMorningEndTime: config.summerMorningEndTime.slice(0, 5),
-      summerEveningStartTime: config.summerEveningStartTime.slice(0, 5),
-      summerEveningEndTime: config.summerEveningEndTime.slice(0, 5),
       maxDailyLessonMinutes: config.maxDailyLessonMinutes,
       bookingMinAdvanceHours: config.bookingMinAdvanceHours,
       bookingMaxAdvanceWeeks: config.bookingMaxAdvanceWeeks,
+      defaultTeachesDays: config.defaultTeachesDays,
+      defaultStartTime: config.defaultStartTime.slice(0, 5),
+      defaultEndTime: config.defaultEndTime.slice(0, 5),
     };
 
     res.json(body);
@@ -184,69 +209,29 @@ coachAvailabilityRouter.patch(
   asyncHandler(async (req, res) => {
     const body = req.body as PatchAvailabilityConfigBody;
 
-    // 1. absolute bounds — validate before DB read
-    if (body.lessonDays !== undefined) {
-      const hasWeekend = body.lessonDays.some((day) => day > 5);
-      if (hasWeekend) {
-        res.status(422).json({ error: "lesson_days must contain only weekday numbers (1–5)" });
-        return;
-      }
-    }
-
-    if (body.summerMorningEndTime !== undefined && body.summerMorningEndTime > "15:00") {
-      res.status(422).json({ error: "summerMorningEndTime must be at or before 15:00" });
-      return;
-    }
-
-    if (body.summerEveningStartTime !== undefined && body.summerEveningStartTime < "19:00") {
-      res.status(422).json({ error: "summerEveningStartTime must be at or after 19:00" });
-      return;
-    }
-
-    // 2. fetch existing (needed for merged cross-field validation)
     const existing = await db.select().from(availabilityConfig).limit(1);
     if (!existing[0]) {
       res.status(404).json({ error: "Availability config not found" });
       return;
     }
 
-    // 3. merge patch with existing, then validate every start < end
-    const merged = {
-      schoolYearStartTime: body.schoolYearStartTime ?? existing[0].schoolYearStartTime,
-      schoolYearEndTime: body.schoolYearEndTime ?? existing[0].schoolYearEndTime,
-      summerMorningStartTime: body.summerMorningStartTime ?? existing[0].summerMorningStartTime,
-      summerMorningEndTime: body.summerMorningEndTime ?? existing[0].summerMorningEndTime,
-      summerEveningStartTime: body.summerEveningStartTime ?? existing[0].summerEveningStartTime,
-      summerEveningEndTime: body.summerEveningEndTime ?? existing[0].summerEveningEndTime,
-    };
-
-    if (merged.schoolYearStartTime >= merged.schoolYearEndTime) {
-      res.status(422).json({ error: "schoolYearStartTime must be before schoolYearEndTime" });
-      return;
-    }
-    if (merged.summerMorningStartTime >= merged.summerMorningEndTime) {
-      res.status(422).json({ error: "summerMorningStartTime must be before summerMorningEndTime" });
-      return;
-    }
-    if (merged.summerEveningStartTime >= merged.summerEveningEndTime) {
-      res.status(422).json({ error: "summerEveningStartTime must be before summerEveningEndTime" });
+    // Validate the resulting start < end when only one side is being changed.
+    const nextStart = body.defaultStartTime ?? existing[0].defaultStartTime.slice(0, 5);
+    const nextEnd = body.defaultEndTime ?? existing[0].defaultEndTime.slice(0, 5);
+    if (nextStart >= nextEnd) {
+      res.status(422).json({ error: "Default end time must be after default start time." });
       return;
     }
 
-    // 4. apply update
     const rows = await db
       .update(availabilityConfig)
       .set({
-        ...(body.lessonDays !== undefined && { lessonDays: body.lessonDays }),
-        ...(body.schoolYearStartTime !== undefined && { schoolYearStartTime: body.schoolYearStartTime }),
-        ...(body.schoolYearEndTime !== undefined && { schoolYearEndTime: body.schoolYearEndTime }),
-        ...(body.summerMorningStartTime !== undefined && { summerMorningStartTime: body.summerMorningStartTime }),
-        ...(body.summerMorningEndTime !== undefined && { summerMorningEndTime: body.summerMorningEndTime }),
-        ...(body.summerEveningStartTime !== undefined && { summerEveningStartTime: body.summerEveningStartTime }),
-        ...(body.summerEveningEndTime !== undefined && { summerEveningEndTime: body.summerEveningEndTime }),
         ...(body.maxDailyLessonMinutes !== undefined && { maxDailyLessonMinutes: body.maxDailyLessonMinutes }),
         ...(body.bookingMinAdvanceHours !== undefined && { bookingMinAdvanceHours: body.bookingMinAdvanceHours }),
         ...(body.bookingMaxAdvanceWeeks !== undefined && { bookingMaxAdvanceWeeks: body.bookingMaxAdvanceWeeks }),
+        ...(body.defaultTeachesDays !== undefined && { defaultTeachesDays: body.defaultTeachesDays }),
+        ...(body.defaultStartTime !== undefined && { defaultStartTime: body.defaultStartTime }),
+        ...(body.defaultEndTime !== undefined && { defaultEndTime: body.defaultEndTime }),
       })
       .where(eq(availabilityConfig.id, existing[0].id))
       .returning();
@@ -255,16 +240,12 @@ coachAvailabilityRouter.patch(
 
     const responseBody: AvailabilityConfig = {
       id: updated.id,
-      lessonDays: updated.lessonDays,
-      schoolYearStartTime: updated.schoolYearStartTime.slice(0, 5),
-      schoolYearEndTime: updated.schoolYearEndTime.slice(0, 5),
-      summerMorningStartTime: updated.summerMorningStartTime.slice(0, 5),
-      summerMorningEndTime: updated.summerMorningEndTime.slice(0, 5),
-      summerEveningStartTime: updated.summerEveningStartTime.slice(0, 5),
-      summerEveningEndTime: updated.summerEveningEndTime.slice(0, 5),
       maxDailyLessonMinutes: updated.maxDailyLessonMinutes,
       bookingMinAdvanceHours: updated.bookingMinAdvanceHours,
       bookingMaxAdvanceWeeks: updated.bookingMaxAdvanceWeeks,
+      defaultTeachesDays: updated.defaultTeachesDays,
+      defaultStartTime: updated.defaultStartTime.slice(0, 5),
+      defaultEndTime: updated.defaultEndTime.slice(0, 5),
     };
 
     res.json(responseBody);
@@ -452,56 +433,669 @@ coachAvailabilityRouter.delete(
   }),
 );
 
-// ── Season summer end dates ───────────────────────────────────────────────────
+// ── Availability seasons ─────────────────────────────────────────────────────
+
+const SeasonIdParamsSchema = z.object({ id: z.string().uuid() });
+const OverrideIdParamsSchema = z.object({ id: z.string().uuid() });
+
+function isValidTimeGranularity(time: string | null | undefined): boolean {
+  if (time === null || time === undefined) return true;
+  if (!/^\d{2}:\d{2}$/.test(time)) return false;
+  const minute = Number(time.slice(3, 5));
+  return minute === 0 || minute === 15 || minute === 30 || minute === 45;
+}
+
+function hasWeekday(days: number[]): boolean {
+  return days.some((day) => day >= 1 && day <= 5);
+}
+
+function hasWeekend(days: number[]): boolean {
+  return days.some((day) => day === 6 || day === 7);
+}
+
+// Validates season fields. Returns an error code on failure, null on success.
+function validateSeasonFields(fields: {
+  teachesDays: number[];
+  weekdayStartTime: string | null;
+  weekendStartTime: string | null;
+  endTime: string;
+}): string | null {
+  if (!isValidTimeGranularity(fields.weekdayStartTime)) return "invalid_time_granularity";
+  if (!isValidTimeGranularity(fields.weekendStartTime)) return "invalid_time_granularity";
+  if (!isValidTimeGranularity(fields.endTime)) return "invalid_time_granularity";
+
+  const teachesWeekday = hasWeekday(fields.teachesDays);
+  const teachesWeekend = hasWeekend(fields.teachesDays);
+
+  if (teachesWeekday && fields.weekdayStartTime === null) return "weekday_start_required";
+  if (!teachesWeekday && fields.weekdayStartTime !== null) return "weekday_start_without_weekday";
+  if (teachesWeekend && fields.weekendStartTime === null) return "weekend_start_required";
+  if (!teachesWeekend && fields.weekendStartTime !== null) return "weekend_start_without_weekend";
+
+  if (fields.weekdayStartTime !== null && fields.weekdayStartTime >= fields.endTime) {
+    return "start_not_before_end";
+  }
+  if (fields.weekendStartTime !== null && fields.weekendStartTime >= fields.endTime) {
+    return "start_not_before_end";
+  }
+  return null;
+}
+
+function toSeasonWithIsCurrent(
+  season: AvailabilitySeason,
+  allSeasons: AvailabilitySeason[],
+  todayIso: string,
+): SeasonWithIsCurrent {
+  let latest: AvailabilitySeason | null = null;
+  for (const row of allSeasons) {
+    if (row.startDate <= todayIso && (latest === null || row.startDate > latest.startDate)) {
+      latest = row;
+    }
+  }
+  return { ...season, isCurrent: latest !== null && latest.id === season.id };
+}
+
+function todayInLA(): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Los_Angeles",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const get = (type: string) => parts.find((part) => part.type === type)?.value ?? "";
+  return `${get("year")}-${get("month")}-${get("day")}`;
+}
+
+// Fetches upcoming approved+pending lessons for impact-warning computation,
+// enriched with swimmer first names and pool name for the coach-only warning UI.
+// Archived swimmers are excluded so warnings never surface ghost names.
+//
+// COACH-ONLY: the returned shape (`swimmerFirstNames`, `poolName`) is personal
+// data for other households' kids. Never surface it to a parent or public route.
+// Only call this inside handlers mounted under /coach (guarded by `requireCoach`).
+async function fetchUpcomingLessons(): Promise<UpcomingLessonForWarning[]> {
+  const lessonRows = await db
+    .select({
+      id: lessons.id,
+      startsAt: lessons.startsAt,
+      durationMinutes: lessons.durationMinutes,
+      poolName: lessonLocations.name,
+    })
+    .from(lessons)
+    .innerJoin(lessonLocations, eq(lessons.locationId, lessonLocations.id))
+    .where(and(inArray(lessons.status, ["pending", "approved"]), gt(lessons.startsAt, new Date())));
+
+  if (lessonRows.length === 0) return [];
+
+  const swimmerRows = await db
+    .select({
+      lessonId: lessonSwimmers.lessonId,
+      firstName: swimmers.firstName,
+    })
+    .from(lessonSwimmers)
+    .innerJoin(swimmers, eq(lessonSwimmers.swimmerId, swimmers.id))
+    .where(
+      and(
+        inArray(lessonSwimmers.lessonId, lessonRows.map((row) => row.id)),
+        isNull(swimmers.archivedAt),
+      ),
+    );
+
+  const firstNamesByLesson = new Map<string, string[]>();
+  for (const row of swimmerRows) {
+    const list = firstNamesByLesson.get(row.lessonId) ?? [];
+    list.push(row.firstName);
+    firstNamesByLesson.set(row.lessonId, list);
+  }
+
+  return lessonRows.map((row) => ({
+    id: row.id,
+    startsAt: row.startsAt,
+    durationMinutes: row.durationMinutes,
+    swimmerFirstNames: firstNamesByLesson.get(row.id) ?? [],
+    poolName: row.poolName,
+  }));
+}
 
 coachAvailabilityRouter.get(
-  "/season-end-dates",
+  "/seasons",
   validate({}),
   asyncHandler(async (_req, res) => {
     const rows = await db
       .select()
-      .from(seasonSummerEndDates)
-      .orderBy(asc(seasonSummerEndDates.year));
+      .from(availabilitySeasons)
+      .orderBy(asc(availabilitySeasons.startDate));
 
-    const body: SeasonSummerEndDate[] = rows.map((row) => ({
-      year: row.year,
-      endDate: row.endDate,
-    }));
-
+    const seasons = rows.map(mapSeasonRow);
+    const today = todayInLA();
+    const body: SeasonWithIsCurrent[] = seasons.map((season) =>
+      toSeasonWithIsCurrent(season, seasons, today),
+    );
     res.json(body);
   }),
 );
 
-const SeasonYearParamsSchema = z.object({
-  year: z
-    .string()
-    .regex(/^\d{4}$/)
-    .transform((value) => parseInt(value, 10)),
-});
-
-coachAvailabilityRouter.put(
-  "/season-end-dates/:year",
-  validate({ params: SeasonYearParamsSchema, body: SetSeasonEndDateBodySchema }),
+coachAvailabilityRouter.post(
+  "/seasons",
+  validate({ body: CreateSeasonBodySchema }),
   asyncHandler(async (req, res) => {
-    const { year } = req.params as unknown as { year: number };
-    const body = req.body as SetSeasonEndDateBody;
+    const body = req.body as CreateSeasonBody;
 
-    const rows = await db
-      .insert(seasonSummerEndDates)
-      .values({ year, endDate: body.endDate })
-      .onConflictDoUpdate({
-        target: seasonSummerEndDates.year,
-        set: { endDate: body.endDate },
-      })
-      .returning();
+    const invalid = validateSeasonFields({
+      teachesDays: body.teachesDays,
+      weekdayStartTime: body.weekdayStartTime,
+      weekendStartTime: body.weekendStartTime,
+      endTime: body.endTime,
+    });
+    if (invalid !== null) {
+      res.status(422).json({ error: invalid });
+      return;
+    }
 
-    const upserted = rows[0]!;
+    const existing = await db
+      .select({ id: availabilitySeasons.id })
+      .from(availabilitySeasons)
+      .where(eq(availabilitySeasons.startDate, body.startDate))
+      .limit(1);
+    if (existing[0]) {
+      res.status(422).json({ error: "season_date_taken" });
+      return;
+    }
 
-    const responseBody: SeasonSummerEndDate = {
-      year: upserted.year,
-      endDate: upserted.endDate,
-    };
+    try {
+      const inserted = await db
+        .insert(availabilitySeasons)
+        .values({
+          name: body.name,
+          startDate: body.startDate,
+          teachesDays: body.teachesDays,
+          weekdayStartTime: body.weekdayStartTime,
+          weekendStartTime: body.weekendStartTime,
+          endTime: body.endTime,
+          startsAtDst: body.startsAtDst ?? false,
+        })
+        .returning();
 
-    res.json(responseBody);
+      const season = mapSeasonRow(inserted[0]!);
+      const allRows = await db.select().from(availabilitySeasons);
+      const overrideRows = await db.select().from(availabilityOverrides);
+      const allSeasons = allRows.map(mapSeasonRow);
+      const overrides = overrideRows.map(mapOverrideRow);
+
+      const defaults = await fetchAvailabilityDefaults();
+      const upcoming = await fetchUpcomingLessons();
+      const warnings = computeImpactWarnings(upcoming, allSeasons, overrides, defaults);
+
+      const responseBody: SeasonMutationResponse = {
+        season: toSeasonWithIsCurrent(season, allSeasons, todayInLA()),
+        warnings,
+      };
+      res.status(201).json(responseBody);
+    } catch (err) {
+      req.log.error({ err, route: "POST /coach/seasons" }, "availability mutation failed");
+      throw err;
+    }
   }),
 );
+
+coachAvailabilityRouter.patch(
+  "/seasons/:id",
+  validate({ params: SeasonIdParamsSchema, body: PatchSeasonBodySchema }),
+  asyncHandler(async (req, res) => {
+    const { id } = req.params as { id: string };
+    const body = req.body as PatchSeasonBody;
+
+    const existingRows = await db
+      .select()
+      .from(availabilitySeasons)
+      .where(eq(availabilitySeasons.id, id))
+      .limit(1);
+    const existing = existingRows[0];
+    if (!existing) {
+      res.status(404).json({ error: "Season not found" });
+      return;
+    }
+
+    const next = {
+      name: body.name ?? existing.name,
+      startDate: body.startDate ?? existing.startDate,
+      teachesDays: body.teachesDays ?? existing.teachesDays,
+      weekdayStartTime: body.weekdayStartTime !== undefined ? body.weekdayStartTime : existing.weekdayStartTime,
+      weekendStartTime: body.weekendStartTime !== undefined ? body.weekendStartTime : existing.weekendStartTime,
+      endTime: body.endTime ?? existing.endTime,
+      startsAtDst: body.startsAtDst ?? existing.startsAtDst,
+    };
+
+    const invalid = validateSeasonFields({
+      teachesDays: next.teachesDays,
+      weekdayStartTime: next.weekdayStartTime,
+      weekendStartTime: next.weekendStartTime,
+      endTime: next.endTime,
+    });
+    if (invalid !== null) {
+      res.status(422).json({ error: invalid });
+      return;
+    }
+
+    if (next.startDate !== existing.startDate) {
+      const clash = await db
+        .select({ id: availabilitySeasons.id })
+        .from(availabilitySeasons)
+        .where(eq(availabilitySeasons.startDate, next.startDate))
+        .limit(1);
+      if (clash[0]) {
+        res.status(422).json({ error: "season_date_taken" });
+        return;
+      }
+    }
+
+    try {
+      const updated = await db
+        .update(availabilitySeasons)
+        .set(next)
+        .where(eq(availabilitySeasons.id, id))
+        .returning();
+
+      const season = mapSeasonRow(updated[0]!);
+      const allRows = await db.select().from(availabilitySeasons);
+      const overrideRows = await db.select().from(availabilityOverrides);
+      const allSeasons = allRows.map(mapSeasonRow);
+      const overrides = overrideRows.map(mapOverrideRow);
+
+      const defaults = await fetchAvailabilityDefaults();
+      const upcoming = await fetchUpcomingLessons();
+      const warnings = computeImpactWarnings(upcoming, allSeasons, overrides, defaults);
+
+      const responseBody: SeasonMutationResponse = {
+        season: toSeasonWithIsCurrent(season, allSeasons, todayInLA()),
+        warnings,
+      };
+      res.json(responseBody);
+    } catch (err) {
+      req.log.error({ err, route: "PATCH /coach/seasons/:id", seasonId: id }, "availability mutation failed");
+      throw err;
+    }
+  }),
+);
+
+coachAvailabilityRouter.delete(
+  "/seasons/:id",
+  validate({ params: SeasonIdParamsSchema }),
+  asyncHandler(async (req, res) => {
+    const { id } = req.params as { id: string };
+
+    try {
+      const deleted = await db
+        .delete(availabilitySeasons)
+        .where(eq(availabilitySeasons.id, id))
+        .returning();
+      if (deleted.length === 0) {
+        res.status(404).json({ error: "Season not found" });
+        return;
+      }
+
+      const remainingRows = await db.select().from(availabilitySeasons);
+      const overrideRows = await db.select().from(availabilityOverrides);
+      const remaining = remainingRows.map(mapSeasonRow);
+      const overrides = overrideRows.map(mapOverrideRow);
+      const defaults = await fetchAvailabilityDefaults();
+      const upcoming = await fetchUpcomingLessons();
+      const warnings = computeImpactWarnings(upcoming, remaining, overrides, defaults);
+
+      const responseBody: SeasonDeleteResponse = { warnings };
+      res.json(responseBody);
+    } catch (err) {
+      req.log.error({ err, route: "DELETE /coach/seasons/:id", seasonId: id }, "availability mutation failed");
+      throw err;
+    }
+  }),
+);
+
+// POST /coach/seasons/copy-next-year
+//
+// Roll the current cycle forward one year. Rules:
+//   1. "Current cycle" = seasons whose start_date is within 12 months of the
+//      latest season's start_date. Older rows (prior cycles) are left alone.
+//   2. For each candidate, compute `nextStart = startDate + 1 year` (or that
+//      year's DST start when `startsAtDst = true`).
+//   3. Skip rows whose `nextStart` already exists (idempotent on repeated
+//      calls) OR whose prior-year sibling `prevStart` already exists (so a
+//      row that was itself produced by a previous copy run isn't re-copied).
+//
+// The `prevStart` check assumes manually-created rows don't happen to share a
+// start_date with a hypothetical prior-year version. If a coach hand-creates a
+// season on a date that would also be the prior-year date of some other row,
+// that other row will be skipped on the next copy. Flagged as a known edge
+// case; revisit if it ever bites.
+coachAvailabilityRouter.post(
+  "/seasons/copy-next-year",
+  validate({}),
+  asyncHandler(async (_req, res) => {
+    const existingRows = await db.select().from(availabilitySeasons);
+    const existingDates = new Set(existingRows.map((row) => row.startDate));
+
+    // Only consider seasons whose startDate is within 12 months of the latest
+    // season's startDate: those make up the "current cycle" Jason wants to roll
+    // forward. Older seasons from past years are not copied again.
+    let latestStart: string | null = null;
+    for (const row of existingRows) {
+      if (latestStart === null || row.startDate > latestStart) {
+        latestStart = row.startDate;
+      }
+    }
+    const cycleCutoff = latestStart === null ? null : addMonthsIso(latestStart, -12);
+
+    // A season is "original" when no prior-year version exists; copies produced
+    // by a previous run are skipped so repeated calls stay idempotent.
+    const toInsert = existingRows
+      .filter((row) => cycleCutoff === null || row.startDate > cycleCutoff)
+      .map((row) => {
+        const year = Number(row.startDate.slice(0, 4));
+        const prevStart = row.startsAtDst
+          ? dstStartDate(year - 1)
+          : `${year - 1}${row.startDate.slice(4)}`;
+        const nextStart = row.startsAtDst
+          ? dstStartDate(year + 1)
+          : `${year + 1}${row.startDate.slice(4)}`;
+        return { row, prevStart, nextStart };
+      })
+      .filter(({ prevStart, nextStart }) =>
+        !existingDates.has(prevStart) && !existingDates.has(nextStart),
+      );
+
+    if (toInsert.length === 0) {
+      const body: CopyNextYearResponse = { inserted: [] };
+      res.status(201).json(body);
+      return;
+    }
+
+    const inserted = await db
+      .insert(availabilitySeasons)
+      .values(
+        toInsert.map(({ row, nextStart }) => ({
+          name: row.name,
+          startDate: nextStart,
+          teachesDays: row.teachesDays,
+          weekdayStartTime: row.weekdayStartTime,
+          weekendStartTime: row.weekendStartTime,
+          endTime: row.endTime,
+          startsAtDst: row.startsAtDst,
+        })),
+      )
+      .returning();
+
+    const responseBody: CopyNextYearResponse = { inserted: inserted.map(mapSeasonRow) };
+    res.status(201).json(responseBody);
+  }),
+);
+
+// ── Availability overrides ───────────────────────────────────────────────────
+
+function validateOverrideShape(fields: {
+  kind: "day_off" | "custom_hours";
+  startDate: string;
+  endDate: string;
+  startTime: string | null;
+  endTime: string | null;
+}): string | null {
+  if (fields.endDate < fields.startDate) return "invalid_date_range";
+  if (fields.kind === "day_off") {
+    if (fields.startTime !== null || fields.endTime !== null) return "day_off_with_times";
+  } else {
+    if (fields.startTime === null || fields.endTime === null) return "custom_hours_missing_times";
+    if (fields.startDate !== fields.endDate) return "custom_hours_date_mismatch";
+    if (!isValidTimeGranularity(fields.startTime)) return "invalid_time_granularity";
+    if (!isValidTimeGranularity(fields.endTime)) return "invalid_time_granularity";
+    if (fields.startTime >= fields.endTime) return "start_not_before_end";
+  }
+  return null;
+}
+
+async function hasOverlappingOverride(
+  startDate: string,
+  endDate: string,
+  excludeId: string | null,
+): Promise<boolean> {
+  // Overlap: existing.start_date <= endDate AND existing.end_date >= startDate.
+  // Kind-agnostic: any overlapping override (day_off or custom_hours) conflicts,
+  // since a date can only have one source of truth.
+  const whereClause = excludeId === null
+    ? and(
+        lte(availabilityOverrides.startDate, endDate),
+        gte(availabilityOverrides.endDate, startDate),
+      )
+    : and(
+        lte(availabilityOverrides.startDate, endDate),
+        gte(availabilityOverrides.endDate, startDate),
+        ne(availabilityOverrides.id, excludeId),
+      );
+  const rows = await db
+    .select({ id: availabilityOverrides.id })
+    .from(availabilityOverrides)
+    .where(whereClause)
+    .limit(1);
+  return rows.length > 0;
+}
+
+coachAvailabilityRouter.get(
+  "/overrides",
+  validate({}),
+  asyncHandler(async (_req, res) => {
+    const rows = await db
+      .select()
+      .from(availabilityOverrides)
+      .orderBy(asc(availabilityOverrides.startDate));
+    const body: AvailabilityOverride[] = rows.map(mapOverrideRow);
+    res.json(body);
+  }),
+);
+
+coachAvailabilityRouter.post(
+  "/overrides",
+  validate({ body: CreateOverrideBodySchema }),
+  asyncHandler(async (req, res) => {
+    const body = req.body as CreateOverrideBody;
+
+    const shape = validateOverrideShape({
+      kind: body.kind,
+      startDate: body.startDate,
+      endDate: body.endDate,
+      startTime: body.startTime ?? null,
+      endTime: body.endTime ?? null,
+    });
+    if (shape !== null) {
+      res.status(422).json({ error: shape });
+      return;
+    }
+
+    if (await hasOverlappingOverride(body.startDate, body.endDate, null)) {
+      res.status(422).json({ error: "override_conflict" });
+      return;
+    }
+
+    try {
+      const inserted = await db
+        .insert(availabilityOverrides)
+        .values({
+          kind: body.kind,
+          startDate: body.startDate,
+          endDate: body.endDate,
+          startTime: body.startTime ?? null,
+          endTime: body.endTime ?? null,
+          ...(body.note !== undefined && { note: body.note }),
+        })
+        .returning();
+
+      const override = mapOverrideRow(inserted[0]!);
+      const seasonsRows = await db.select().from(availabilitySeasons);
+      const overridesRows = await db.select().from(availabilityOverrides);
+      const seasons = seasonsRows.map(mapSeasonRow);
+      const overrides = overridesRows.map(mapOverrideRow);
+      const defaults = await fetchAvailabilityDefaults();
+      const upcoming = await fetchUpcomingLessons();
+      const warnings = computeImpactWarnings(upcoming, seasons, overrides, defaults);
+
+      const responseBody: OverrideMutationResponse = { override, warnings };
+      res.status(201).json(responseBody);
+    } catch (err) {
+      req.log.error({ err, route: "POST /coach/overrides" }, "availability mutation failed");
+      throw err;
+    }
+  }),
+);
+
+coachAvailabilityRouter.patch(
+  "/overrides/:id",
+  validate({ params: OverrideIdParamsSchema, body: PatchOverrideBodySchema }),
+  asyncHandler(async (req, res) => {
+    const { id } = req.params as { id: string };
+    const body = req.body as PatchOverrideBody;
+
+    const existingRows = await db
+      .select()
+      .from(availabilityOverrides)
+      .where(eq(availabilityOverrides.id, id))
+      .limit(1);
+    const existing = existingRows[0];
+    if (!existing) {
+      res.status(404).json({ error: "Override not found" });
+      return;
+    }
+
+    const next = {
+      kind: body.kind ?? existing.kind,
+      startDate: body.startDate ?? existing.startDate,
+      endDate: body.endDate ?? existing.endDate,
+      startTime: body.startTime !== undefined ? body.startTime : existing.startTime,
+      endTime: body.endTime !== undefined ? body.endTime : existing.endTime,
+      note: body.note !== undefined ? body.note : existing.note,
+    };
+
+    const shape = validateOverrideShape(next);
+    if (shape !== null) {
+      res.status(422).json({ error: shape });
+      return;
+    }
+
+    if (
+      (next.startDate !== existing.startDate || next.endDate !== existing.endDate) &&
+      (await hasOverlappingOverride(next.startDate, next.endDate, id))
+    ) {
+      res.status(422).json({ error: "override_conflict" });
+      return;
+    }
+
+    try {
+      const updated = await db
+        .update(availabilityOverrides)
+        .set(next)
+        .where(eq(availabilityOverrides.id, id))
+        .returning();
+
+      const override = mapOverrideRow(updated[0]!);
+      const seasonsRows = await db.select().from(availabilitySeasons);
+      const overridesRows = await db.select().from(availabilityOverrides);
+      const seasons = seasonsRows.map(mapSeasonRow);
+      const overrides = overridesRows.map(mapOverrideRow);
+      const defaults = await fetchAvailabilityDefaults();
+      const upcoming = await fetchUpcomingLessons();
+      const warnings = computeImpactWarnings(upcoming, seasons, overrides, defaults);
+
+      const responseBody: OverrideMutationResponse = { override, warnings };
+      res.json(responseBody);
+    } catch (err) {
+      req.log.error({ err, route: "PATCH /coach/overrides/:id", overrideId: id }, "availability mutation failed");
+      throw err;
+    }
+  }),
+);
+
+coachAvailabilityRouter.delete(
+  "/overrides/:id",
+  validate({ params: OverrideIdParamsSchema }),
+  asyncHandler(async (req, res) => {
+    const { id } = req.params as { id: string };
+
+    try {
+      const deleted = await db
+        .delete(availabilityOverrides)
+        .where(eq(availabilityOverrides.id, id))
+        .returning();
+      if (deleted.length === 0) {
+        res.status(404).json({ error: "Override not found" });
+        return;
+      }
+
+      const seasonsRows = await db.select().from(availabilitySeasons);
+      const overridesRows = await db.select().from(availabilityOverrides);
+      const seasons = seasonsRows.map(mapSeasonRow);
+      const overrides = overridesRows.map(mapOverrideRow);
+      const defaults = await fetchAvailabilityDefaults();
+      const upcoming = await fetchUpcomingLessons();
+      const warnings = computeImpactWarnings(upcoming, seasons, overrides, defaults);
+
+      const responseBody: OverrideDeleteResponse = { warnings };
+      res.json(responseBody);
+    } catch (err) {
+      req.log.error({ err, route: "DELETE /coach/overrides/:id", overrideId: id }, "availability mutation failed");
+      throw err;
+    }
+  }),
+);
+
+// ── Availability preview ─────────────────────────────────────────────────────
+
+function addDaysIso(date: string, offset: number): string {
+  const year = Number(date.slice(0, 4));
+  const month = Number(date.slice(5, 7));
+  const day = Number(date.slice(8, 10));
+  const next = new Date(Date.UTC(year, month - 1, day + offset));
+  const nextYear = next.getUTCFullYear();
+  const nextMonth = String(next.getUTCMonth() + 1).padStart(2, "0");
+  const nextDay = String(next.getUTCDate()).padStart(2, "0");
+  return `${nextYear}-${nextMonth}-${nextDay}`;
+}
+
+function addMonthsIso(date: string, offset: number): string {
+  const year = Number(date.slice(0, 4));
+  const month = Number(date.slice(5, 7));
+  const day = Number(date.slice(8, 10));
+  const next = new Date(Date.UTC(year, month - 1 + offset, day));
+  const nextYear = next.getUTCFullYear();
+  const nextMonth = String(next.getUTCMonth() + 1).padStart(2, "0");
+  const nextDay = String(next.getUTCDate()).padStart(2, "0");
+  return `${nextYear}-${nextMonth}-${nextDay}`;
+}
+
+coachAvailabilityRouter.get(
+  "/availability-preview",
+  validate({ query: AvailabilityPreviewQuerySchema }),
+  asyncHandler(async (req, res) => {
+    const { from, days } = req.query as unknown as AvailabilityPreviewQuery;
+
+    const [seasonRows, overrideRows, configRows] = await Promise.all([
+      db.select().from(availabilitySeasons),
+      db.select().from(availabilityOverrides),
+      db.select().from(availabilityConfig).limit(1),
+    ]);
+    const seasons = seasonRows.map(mapSeasonRow);
+    const overrides = overrideRows.map(mapOverrideRow);
+    const configRow = configRows[0];
+    const defaults = configRow ? mapConfigRow(configRow) : null;
+
+    const preview: AvailabilityPreviewDay[] = [];
+    for (let index = 0; index < days; index++) {
+      const date = addDaysIso(from, index);
+      const windows = effectiveHours(date, seasons, overrides, defaults);
+      preview.push({
+        date,
+        state: windows.length === 0 ? "closed" : "open",
+        windows,
+      });
+    }
+
+    const body: AvailabilityPreviewResponse = { days: preview };
+    res.json(body);
+  }),
+);
+

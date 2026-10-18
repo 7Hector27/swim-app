@@ -333,32 +333,103 @@ export const lessonLocations = pgTable("lesson_locations", {
 
 // ── Availability config (single row) ─────────────────────────────────────────
 
-export const availabilityConfig = pgTable("availability_config", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  // ISO day numbers: 1=Mon … 7=Sun. Default {1,2,3,5} = Mon/Tue/Wed/Fri.
-  lessonDays: integer("lesson_days").array().notNull().default(sql`'{1,2,3,5}'`),
-  schoolYearStartTime: time("school_year_start_time").notNull(),
-  schoolYearEndTime: time("school_year_end_time").notNull(),
-  summerMorningStartTime: time("summer_morning_start_time").notNull(),
-  // Must be <= 15:00 — validated at the API layer, not via DB constraint.
-  summerMorningEndTime: time("summer_morning_end_time").notNull(),
-  // Must be >= 19:00 — validated at the API layer.
-  summerEveningStartTime: time("summer_evening_start_time").notNull(),
-  summerEveningEndTime: time("summer_evening_end_time").notNull(),
-  maxDailyLessonMinutes: integer("max_daily_lesson_minutes").notNull().default(240),
-  bookingMinAdvanceHours: integer("booking_min_advance_hours").notNull().default(16),
-  bookingMaxAdvanceWeeks: integer("booking_max_advance_weeks").notNull().default(10),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdateFn(() => new Date()),
-}).enableRLS();
+export const availabilityConfig = pgTable(
+  "availability_config",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    maxDailyLessonMinutes: integer("max_daily_lesson_minutes").notNull().default(240),
+    bookingMinAdvanceHours: integer("booking_min_advance_hours").notNull().default(16),
+    bookingMaxAdvanceWeeks: integer("booking_max_advance_weeks").notNull().default(10),
+    // Default teaching hours used for dates with no active season and no override.
+    // ISO day numbers: 1=Mon … 7=Sun. Non-empty subset of {1..7} — validated at the API layer.
+    defaultTeachesDays: integer("default_teaches_days").array().notNull().default([2, 3, 4, 5]),
+    defaultStartTime: time("default_start_time").notNull().default("16:00"),
+    defaultEndTime: time("default_end_time").notNull().default("20:00"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdateFn(() => new Date()),
+  },
+  (table) => [
+    check(
+      "availability_config_default_start_before_end",
+      sql`${table.defaultStartTime} < ${table.defaultEndTime}`,
+    ),
+  ],
+).enableRLS();
 
-// ── Per-year summer end dates (ISL Championships vary annually) ───────────────
+// ── Availability seasons ──────────────────────────────────────────────────────
 
-export const seasonSummerEndDates = pgTable("season_summer_end_dates", {
-  year: integer("year").primaryKey(),
-  endDate: date("end_date").notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-}).enableRLS();
+export const availabilitySeasons = pgTable(
+  "availability_seasons",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: text("name").notNull(),
+    startDate: date("start_date").notNull().unique(),
+    // ISO day numbers: 1=Mon … 7=Sun. Non-empty subset of {1..7} — validated at the API layer.
+    teachesDays: integer("teaches_days").array().notNull(),
+    weekdayStartTime: time("weekday_start_time"),
+    weekendStartTime: time("weekend_start_time"),
+    endTime: time("end_time").notNull(),
+    // When true, this season starts on that year's daylight saving start date.
+    // "Copy to next year" uses the next year's DST date for it instead of a naive +1 year.
+    startsAtDst: boolean("starts_at_dst").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdateFn(() => new Date()),
+  },
+  (table) => [
+    check(
+      "availability_seasons_weekday_before_end",
+      sql`${table.weekdayStartTime} IS NULL OR ${table.weekdayStartTime} < ${table.endTime}`,
+    ),
+    check(
+      "availability_seasons_weekend_before_end",
+      sql`${table.weekendStartTime} IS NULL OR ${table.weekendStartTime} < ${table.endTime}`,
+    ),
+  ],
+).enableRLS();
+
+// ── Availability overrides ────────────────────────────────────────────────────
+
+export const availabilityOverrideKindEnum = pgEnum("availability_override_kind", [
+  "day_off",
+  "custom_hours",
+]);
+
+export const availabilityOverrides = pgTable(
+  "availability_overrides",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    kind: availabilityOverrideKindEnum("kind").notNull(),
+    startDate: date("start_date").notNull(),
+    endDate: date("end_date").notNull(),
+    startTime: time("start_time"),
+    endTime: time("end_time"),
+    note: text("note"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdateFn(() => new Date()),
+  },
+  (table) => [
+    check(
+      "availability_overrides_end_on_or_after_start",
+      sql`${table.endDate} >= ${table.startDate}`,
+    ),
+    // day_off: both times must be null. custom_hours: both times must be set, same day, start < end.
+    check(
+      "availability_overrides_kind_shape",
+      sql`(${table.kind} = 'day_off'
+            AND ${table.startTime} IS NULL
+            AND ${table.endTime} IS NULL)
+          OR (${table.kind} = 'custom_hours'
+            AND ${table.startTime} IS NOT NULL
+            AND ${table.endTime} IS NOT NULL
+            AND ${table.startDate} = ${table.endDate}
+            AND ${table.startTime} < ${table.endTime})`,
+    ),
+    check(
+      "availability_overrides_note_length",
+      sql`${table.note} IS NULL OR char_length(${table.note}) <= 500`,
+    ),
+  ],
+).enableRLS();
 
 // ── Blocked times ─────────────────────────────────────────────────────────────
 

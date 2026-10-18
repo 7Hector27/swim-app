@@ -16,16 +16,18 @@ import {
 import { db } from "../db/client";
 import {
   availabilityConfig,
+  availabilityOverrides,
+  availabilitySeasons,
   blockedTimes,
   lessonLocations,
   lessonSwimmers,
   lessons,
-  seasonSummerEndDates,
   swimmers,
   travelBufferOverrides,
 } from "../db/schema";
 import { validate } from "../middleware/validate";
 import { asyncHandler } from "../middleware/asyncHandler";
+import { mapConfigRow } from "../lib/availabilityMappers";
 import { notifyLessonApproved, notifyLessonDeclined, syncCalendarApproved } from "../lib/lessonApproval";
 import { computeAvailableSlots, mergeSlotWindows } from "../lib/slots";
 import { z } from "zod";
@@ -92,8 +94,8 @@ coachLessonsRouter.get(
       swimmersByLesson.set(row.lessonId, list);
     }
 
-    // 3. Load config + buffers + blocked times + existing lessons for slot computation.
-    const [configRows, bufferRows, blockedRows, existingLessonRows, endDateRow] =
+    // 3. Load config + buffers + blocked times + existing lessons + seasons + overrides for slot computation.
+    const [configRows, bufferRows, blockedRows, existingLessonRows, seasonRows, overrideRows] =
       await Promise.all([
         db.select().from(availabilityConfig).limit(1),
         db.select().from(travelBufferOverrides),
@@ -111,11 +113,8 @@ coachLessonsRouter.get(
               sql`date_trunc('day', ${lessons.startsAt} AT TIME ZONE 'America/Los_Angeles') = ${date}::date`,
             ),
           ),
-        db
-          .select({ endDate: seasonSummerEndDates.endDate })
-          .from(seasonSummerEndDates)
-          .where(eq(seasonSummerEndDates.year, parseInt(date.slice(0, 4), 10)))
-          .limit(1),
+        db.select().from(availabilitySeasons),
+        db.select().from(availabilityOverrides),
       ]);
 
     // 4. Build schedule items.
@@ -183,6 +182,30 @@ coachLessonsRouter.get(
           ),
         );
 
+      const seasons = seasonRows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        startDate: row.startDate,
+        teachesDays: row.teachesDays,
+        weekdayStartTime: row.weekdayStartTime,
+        weekendStartTime: row.weekendStartTime,
+        endTime: row.endTime,
+        startsAtDst: row.startsAtDst,
+        createdAt: row.createdAt.toISOString(),
+        updatedAt: row.updatedAt.toISOString(),
+      }));
+      const overrides = overrideRows.map((row) => ({
+        id: row.id,
+        kind: row.kind,
+        startDate: row.startDate,
+        endDate: row.endDate,
+        startTime: row.startTime,
+        endTime: row.endTime,
+        note: row.note,
+        createdAt: row.createdAt.toISOString(),
+        updatedAt: row.updatedAt.toISOString(),
+      }));
+
       const allSlots: Array<{ startsAt: Date; endsAt: Date }> = [];
       for (const pool of namedPoolRows) {
         const poolSlots = computeAvailableSlots({
@@ -200,20 +223,9 @@ coachLessonsRouter.get(
             toLocationId: row.toLocationId,
             bufferMinutes: row.bufferMinutes,
           })),
-          config: {
-            id: config.id,
-            lessonDays: config.lessonDays,
-            schoolYearStartTime: config.schoolYearStartTime,
-            schoolYearEndTime: config.schoolYearEndTime,
-            summerMorningStartTime: config.summerMorningStartTime,
-            summerMorningEndTime: config.summerMorningEndTime,
-            summerEveningStartTime: config.summerEveningStartTime,
-            summerEveningEndTime: config.summerEveningEndTime,
-            maxDailyLessonMinutes: config.maxDailyLessonMinutes,
-            bookingMinAdvanceHours: config.bookingMinAdvanceHours,
-            bookingMaxAdvanceWeeks: config.bookingMaxAdvanceWeeks,
-          },
-          summerEndDate: endDateRow[0]?.endDate ?? null,
+          config: mapConfigRow(config),
+          seasons,
+          overrides,
           gcalBusyTimes: [],
           nowUtc: new Date(),
         });

@@ -6,15 +6,22 @@ import type { Club } from "@swim-app/shared";
 
 const CLUBS: Club[] = [
   {
-    id: "club-1",
-    name: "[Club 1]",
+    id: "club-nova",
+    name: "Irvine Novaquatics (NOVA)",
     isActive: true,
     createdAt: "2024-01-01T00:00:00Z",
     updatedAt: "2024-01-01T00:00:00Z",
   },
   {
-    id: "club-2",
-    name: "[Club 2]",
+    id: "club-azot",
+    name: "Aquazot Swim Club (AZOT)",
+    isActive: true,
+    createdAt: "2024-01-01T00:00:00Z",
+    updatedAt: "2024-01-01T00:00:00Z",
+  },
+  {
+    id: "club-mvn",
+    name: "Mission Viejo Nadadores (MVN)",
     isActive: true,
     createdAt: "2024-01-01T00:00:00Z",
     updatedAt: "2024-01-01T00:00:00Z",
@@ -35,6 +42,11 @@ function getTeamFieldset() {
   return screen.getByRole("group", { name: /swim club or team/i });
 }
 
+function openClubPicker() {
+  fireEvent.click(within(getTeamFieldset()).getByRole("radio", { name: "Yes" }));
+  fireEvent.focus(screen.getByRole("combobox"));
+}
+
 describe("SwimmerForm — clubs (add mode)", () => {
   it("No saves no club", () => {
     const { container } = render(
@@ -50,6 +62,60 @@ describe("SwimmerForm — clubs (add mode)", () => {
     expect(getClubsJson(container)).toEqual([]);
   });
 
+  it("lists active clubs alphabetically with Other last", () => {
+    render(
+      <SwimmerForm
+        clubs={CLUBS}
+        formAction={noop}
+        state={idleState}
+        isPending={false}
+        mode="add"
+      />,
+    );
+    openClubPicker();
+    const optionNames = screen
+      .getAllByRole("option")
+      .map((option) => option.textContent);
+    expect(optionNames).toEqual([
+      "Aquazot Swim Club (AZOT)",
+      "Irvine Novaquatics (NOVA)",
+      "Mission Viejo Nadadores (MVN)",
+      "Other (not listed)",
+    ]);
+  });
+
+  it("typing filters the list", () => {
+    render(
+      <SwimmerForm
+        clubs={CLUBS}
+        formAction={noop}
+        state={idleState}
+        isPending={false}
+        mode="add"
+      />,
+    );
+    openClubPicker();
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "mvn" } });
+    const optionNames = screen
+      .getAllByRole("option")
+      .map((option) => option.textContent);
+    expect(optionNames).toEqual(["Mission Viejo Nadadores (MVN)"]);
+  });
+
+  it("does not show placeholder clubs even if the component is passed only real ones", () => {
+    render(
+      <SwimmerForm
+        clubs={CLUBS}
+        formAction={noop}
+        state={idleState}
+        isPending={false}
+        mode="add"
+      />,
+    );
+    openClubPicker();
+    expect(screen.queryByRole("option", { name: /\[Club/ })).toBeNull();
+  });
+
   it("Yes with a listed club saves that club's id", () => {
     const { container } = render(
       <SwimmerForm
@@ -60,12 +126,14 @@ describe("SwimmerForm — clubs (add mode)", () => {
         mode="add"
       />,
     );
-    fireEvent.click(within(getTeamFieldset()).getByRole("radio", { name: "Yes" }));
-    fireEvent.change(screen.getByRole("combobox"), { target: { value: "club-1" } });
-    expect(getClubsJson(container)).toEqual([{ clubId: "club-1" }]);
+    openClubPicker();
+    fireEvent.click(
+      screen.getByRole("option", { name: "Aquazot Swim Club (AZOT)" }),
+    );
+    expect(getClubsJson(container)).toEqual([{ clubId: "club-azot" }]);
   });
 
-  it("Yes with Other and a name saves the other club name", () => {
+  it("Yes with Other reveals the text field and saves the other club name", () => {
     const { container } = render(
       <SwimmerForm
         clubs={CLUBS}
@@ -75,11 +143,10 @@ describe("SwimmerForm — clubs (add mode)", () => {
         mode="add"
       />,
     );
-    fireEvent.click(within(getTeamFieldset()).getByRole("radio", { name: "Yes" }));
-    fireEvent.change(screen.getByRole("combobox"), { target: { value: "other" } });
-    fireEvent.change(screen.getByPlaceholderText("Enter club or team name"), {
-      target: { value: "Wave Riders" },
-    });
+    openClubPicker();
+    fireEvent.click(screen.getByRole("option", { name: "Other (not listed)" }));
+    const otherInput = screen.getByPlaceholderText("Enter club or team name");
+    fireEvent.change(otherInput, { target: { value: "Wave Riders" } });
     expect(getClubsJson(container)).toEqual([{ otherClubName: "Wave Riders" }]);
   });
 });
@@ -94,13 +161,14 @@ describe("SwimmerForm — clubs (edit mode)", () => {
         isPending={false}
         mode="edit"
         swimmerId="swimmer-1"
-        initialValues={{ clubs: [{ clubId: "club-1" }] }}
+        initialValues={{ clubs: [{ clubId: "club-nova" }] }}
       />,
     );
-    // Pre-populated: Yes + club-1 selected
-    expect(getClubsJson(container)).toEqual([{ clubId: "club-1" }]);
-    // Change to club-2
-    fireEvent.change(screen.getByRole("combobox"), { target: { value: "club-2" } });
-    expect(getClubsJson(container)).toEqual([{ clubId: "club-2" }]);
+    expect(getClubsJson(container)).toEqual([{ clubId: "club-nova" }]);
+    fireEvent.focus(screen.getByRole("combobox"));
+    fireEvent.click(
+      screen.getByRole("option", { name: "Mission Viejo Nadadores (MVN)" }),
+    );
+    expect(getClubsJson(container)).toEqual([{ clubId: "club-mvn" }]);
   });
 });

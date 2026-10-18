@@ -137,16 +137,27 @@ const pendingLessonRow = {
 
 const configRow = {
   id: "config-id-0000-0000-0000-000000000001",
-  lessonDays: [1, 2, 3, 5],
-  schoolYearStartTime: "16:30",
-  schoolYearEndTime: "20:30",
-  summerMorningStartTime: "09:00",
-  summerMorningEndTime: "12:00",
-  summerEveningStartTime: "19:00",
-  summerEveningEndTime: "21:00",
   maxDailyLessonMinutes: 240,
   bookingMinAdvanceHours: 16,
   bookingMaxAdvanceWeeks: 10,
+  defaultTeachesDays: [2, 3, 4, 5],
+  defaultStartTime: "16:00:00",
+  defaultEndTime: "20:00:00",
+  createdAt: now,
+  updatedAt: now,
+};
+
+// Season covering Mon/Tue/Wed/Fri (teachesDays [1,2,3,5]) with 16:30 start,
+// 20:30 end. Dates in the past so it always applies for ANCHOR_NOW onward.
+const schoolYearSeason = {
+  id: "season-sy-01",
+  name: "School year",
+  startDate: "2020-01-01",
+  teachesDays: [1, 2, 3, 5],
+  weekdayStartTime: "16:30" as string | null,
+  weekendStartTime: null as string | null,
+  endTime: "20:30",
+  startsAtDst: false,
   createdAt: now,
   updatedAt: now,
 };
@@ -487,7 +498,7 @@ describe("GET /coach/schedule", () => {
     const swimmerInnerJoin = vi.fn().mockReturnValue({ where: swimmerWhere });
     mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ innerJoin: swimmerInnerJoin }) });
 
-    // 3. Promise.all of 5 selects: [configRows, bufferRows, blockedRows, existingLessonRows, endDateRow]
+    // 3. Promise.all of 6 selects: [configRows, bufferRows, blockedRows, existingLessonRows, seasonRows, overrideRows]
     // configRows
     const configLimit = vi.fn().mockResolvedValue([configRow]);
     mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ limit: configLimit }) });
@@ -501,9 +512,10 @@ describe("GET /coach/schedule", () => {
       { startsAt: lessonB.startsAt, durationMinutes: 30, locationId: LOCATION_ID_B },
     ]);
     mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: existingWhere }) });
-    // seasonSummerEndDates
-    const endDateWhere = vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([]) });
-    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: endDateWhere }) });
+    // availabilitySeasons
+    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockResolvedValue([schoolYearSeason]) });
+    // availabilityOverrides
+    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockResolvedValue([]) });
 
     // 4. namedPoolRows for open slot computation
     const poolWhere = vi.fn().mockResolvedValue([{ id: LOCATION_ID }, { id: LOCATION_ID_B }]);

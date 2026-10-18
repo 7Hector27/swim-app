@@ -96,6 +96,24 @@ All signed-in routes are guarded by `requireAuth()` (`apps/web/src/lib/requireAu
 
 **Public board caching:** `web` fetches the three public board endpoints with `{ next: { revalidate: 60 } }`, so each board page is cached server-side for up to 60 seconds. A swimmer whose `is_public` flag is set to `false` (via the coach visibility toggle) can remain visible on the public boards for up to one minute after the change.
 
+## Availability is single-coach
+
+`availability_seasons` and `availability_overrides` have no `coach_id` column — they describe the hours the one coach (Jason) teaches. The `/coach/*` availability routes are guarded by `requireCoach` but assume there is a single coach's schedule in the system, so they do not filter by coach. The impact-warning query (`fetchUpcomingLessons` in `apps/api/src/routes/coachAvailability.ts`) likewise fetches every upcoming approved+pending lesson regardless of coach, because every lesson is Jason's.
+
+Supporting a second coach is a model change, not just a filter: seasons and overrides need a `coach_id` FK, the impact-warning query must scope to the requesting coach's lessons, and the resolver (`effectiveHours`) must take a coach as input. Flagged for whenever the business adds a second coach — do not add a coach column opportunistically; the whole slot engine assumes one availability source today.
+
+## Hours resolver order
+
+`effectiveHours` (`apps/api/src/lib/effectiveHours.ts`) resolves a date's teaching window in this order:
+
+1. **One-off override** (`availability_overrides` row covering the date) — wins over everything else; `day_off` returns closed, `custom_hours` returns the override window.
+2. **Active season** (`availability_seasons` row whose `start_date <= date` and runs through the next season's start, if any) — returns the season's weekday/weekend window for that day of week.
+3. **Default hours** (`availability_config.default_teaches_days` / `default_start_time` / `default_end_time`) — the fallback used before any coach-created season begins, and on dates no season covers. The seeded defaults are Tue–Fri, 16:00–20:00 PT.
+
+Blocked times (`blocked_times`) are always subtracted from the resolved window regardless of which layer produced it. The resolver is pure and tested in `apps/api/src/__tests__/effectiveHours.test.ts`.
+
+The 11 auto-seeded Jason seasons were removed in migration `0038_remove_seeded_seasons.sql`: the default hours now cover the pre-first-season stretch, so there is no need to seed those seasons on fresh databases. The historical rhythm is preserved in `docs/reference/jason-seasonal-schedule.md` for anyone recreating them by hand.
+
 ## Progress endpoint data loading
 
 `GET /coach/swimmers/:id/progress` uses two DB queries to separate computation from display:

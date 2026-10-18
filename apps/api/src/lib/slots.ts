@@ -1,4 +1,11 @@
-import type { AvailabilityConfig, SlotState, SlotWithState } from "@swim-app/shared";
+import type {
+  AvailabilityConfig,
+  AvailabilityOverride,
+  AvailabilitySeason,
+  SlotState,
+  SlotWithState,
+} from "@swim-app/shared";
+import { effectiveHours } from "./effectiveHours";
 
 export interface SlotParams {
   date: string; // YYYY-MM-DD in America/Los_Angeles
@@ -12,7 +19,8 @@ export interface SlotParams {
   blockedTimes: { startsAt: Date; endsAt: Date }[];
   travelBufferOverrides: { fromLocationId: string; toLocationId: string; bufferMinutes: number }[];
   config: AvailabilityConfig;
-  summerEndDate: string | null; // YYYY-MM-DD from season_summer_end_dates; null → Aug 31
+  seasons: AvailabilitySeason[];
+  overrides: AvailabilityOverride[];
   gcalBusyTimes: { startsAt: Date; endsAt: Date }[]; // empty until PR 6
   nowUtc: Date;
 }
@@ -159,6 +167,23 @@ export function mergeSlotWindows(slots: Slot[]): Slot[] {
   return merged;
 }
 
+// Resolves the teaching windows for a date into UTC-ms intervals.
+function resolveWindows(
+  date: string,
+  seasons: AvailabilitySeason[],
+  overrides: AvailabilityOverride[],
+  defaults: {
+    defaultTeachesDays: number[];
+    defaultStartTime: string;
+    defaultEndTime: string;
+  },
+): Interval[] {
+  return effectiveHours(date, seasons, overrides, defaults).map((window) => [
+    laToUtc(date, window.start).getTime(),
+    laToUtc(date, window.end).getTime(),
+  ]);
+}
+
 export function computeAvailableSlots(params: SlotParams): Slot[] {
   const {
     date,
@@ -168,40 +193,16 @@ export function computeAvailableSlots(params: SlotParams): Slot[] {
     blockedTimes,
     travelBufferOverrides,
     config,
-    summerEndDate,
+    seasons,
+    overrides,
     gcalBusyTimes,
     nowUtc,
   } = params;
 
-  // Step 1: Reject days not in lesson_days.
-  if (!config.lessonDays.includes(getISODayOfWeek(date))) return [];
+  const windows = resolveWindows(date, seasons, overrides, config);
+  if (windows.length === 0) return [];
 
-  // Step 2: Determine season.
-  const year = date.slice(0, 4);
-  const summerStart = `${year}-06-01`;
-  const summerEnd = summerEndDate ?? `${year}-08-31`;
-  const isSummer = date >= summerStart && date <= summerEnd;
-
-  // Step 3: Build teaching windows (in UTC, converted from LA wall-clock times).
-  const windows: Interval[] = isSummer
-    ? [
-        [
-          laToUtc(date, config.summerMorningStartTime).getTime(),
-          laToUtc(date, config.summerMorningEndTime).getTime(),
-        ],
-        [
-          laToUtc(date, config.summerEveningStartTime).getTime(),
-          laToUtc(date, config.summerEveningEndTime).getTime(),
-        ],
-      ]
-    : [
-        [
-          laToUtc(date, config.schoolYearStartTime).getTime(),
-          laToUtc(date, config.schoolYearEndTime).getTime(),
-        ],
-      ];
-
-  // Steps 4–5: Build forbidden intervals from lessons, blocked times, and GCal.
+  // Build forbidden intervals from lessons, blocked times, and GCal.
   const forbidden: Interval[] = [];
 
   for (const lesson of existingLessons) {
@@ -231,15 +232,13 @@ export function computeAvailableSlots(params: SlotParams): Slot[] {
 
   const mergedForbidden = mergeIntervals(forbidden);
 
-  // Step 7: Enforce daily lesson cap.
+  // Daily lesson cap.
   const committedMinutes = existingLessons
     .filter((l) => getDateInLA(l.startsAt) === date)
     .reduce((sum, l) => sum + l.durationMinutes, 0);
 
   if (config.maxDailyLessonMinutes - committedMinutes < durationMinutes) return [];
 
-  // Steps 6 + 8: Subtract forbidden intervals per window (step 6) and enumerate
-  // 15-minute-aligned candidate slots within each gap (step 8).
   const durationMs = durationMinutes * MIN_MS;
   const slots: Slot[] = [];
 
@@ -252,7 +251,7 @@ export function computeAvailableSlots(params: SlotParams): Slot[] {
     }
   }
 
-  // Step 9: Filter by booking advance window.
+  // Booking advance window.
   const minStartMs = nowUtc.getTime() + config.bookingMinAdvanceHours * 60 * MIN_MS;
   const maxStartMs =
     nowUtc.getTime() + config.bookingMaxAdvanceWeeks * 7 * 24 * 60 * MIN_MS;
@@ -271,35 +270,14 @@ export function classifyDaySlots(params: SlotParams): SlotWithState[] {
     blockedTimes,
     travelBufferOverrides,
     config,
-    summerEndDate,
+    seasons,
+    overrides,
     gcalBusyTimes,
     nowUtc,
   } = params;
 
-  if (!config.lessonDays.includes(getISODayOfWeek(date))) return [];
-
-  const year = date.slice(0, 4);
-  const summerStart = `${year}-06-01`;
-  const summerEnd = summerEndDate ?? `${year}-08-31`;
-  const isSummer = date >= summerStart && date <= summerEnd;
-
-  const windows: Interval[] = isSummer
-    ? [
-        [
-          laToUtc(date, config.summerMorningStartTime).getTime(),
-          laToUtc(date, config.summerMorningEndTime).getTime(),
-        ],
-        [
-          laToUtc(date, config.summerEveningStartTime).getTime(),
-          laToUtc(date, config.summerEveningEndTime).getTime(),
-        ],
-      ]
-    : [
-        [
-          laToUtc(date, config.schoolYearStartTime).getTime(),
-          laToUtc(date, config.schoolYearEndTime).getTime(),
-        ],
-      ];
+  const windows = resolveWindows(date, seasons, overrides, config);
+  if (windows.length === 0) return [];
 
   const forbidden: Interval[] = [];
 
