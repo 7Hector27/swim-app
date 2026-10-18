@@ -58,8 +58,9 @@ function season(partial: Partial<SeasonWithIsCurrent>): SeasonWithIsCurrent {
     startDate: "2026-09-15",
     teachesDays: [1, 2, 3, 4, 5, 6, 7],
     weekdayStartTime: "15:00",
+    weekdayEndTime: "18:30",
     weekendStartTime: "15:00",
-    endTime: "18:30",
+    weekendEndTime: "18:30",
     startsAtDst: false,
     isCurrent: false,
     createdAt: "2026-01-01T00:00:00.000Z",
@@ -126,8 +127,9 @@ function renderPage(overrides: {
       name: "Nov",
       startDate: "2026-11-01",
       weekdayStartTime: "14:30",
+      weekdayEndTime: "17:30",
       weekendStartTime: "13:00",
-      endTime: "17:30",
+      weekendEndTime: "17:30",
     }),
   ];
   return render(

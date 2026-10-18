@@ -20,7 +20,8 @@ A season is a named row that owns Jason's hours from its `start_date` until the 
 | `teaches_days`              | integer[] not null | ISO day numbers 1=Mon … 7=Sun; subset of `{1..7}`, non-empty                                        |
 | `weekday_start_time`        | time nullable      | required when `teaches_days` intersects `{1..5}`; `null` when he doesn't teach weekdays this season |
 | `weekend_start_time`        | time nullable      | required when `teaches_days` intersects `{6,7}`; `null` otherwise                                   |
-| `end_time`                  | time not null      | applies to both weekday and weekend days                                                            |
+| `end_time`                  | time nullable      | weekday end; DB column name kept as `end_time` (TS accessor renamed to `weekdayEndTime` in schema and shared types) |
+| `weekend_end_time`          | time nullable      | weekend end; required when `teaches_days` intersects `{6,7}`; backfilled from `end_time` for rows created before migration `0040` |
 | `starts_at_dst`             | boolean not null default false | When true, this season starts on that year's daylight saving start date; "Copy to next year" uses next year's DST date for it. |
 | `created_at` / `updated_at` | timestamptz        |                                                                                                     |
 
@@ -28,7 +29,8 @@ Rules enforced at the API layer:
 
 - `start_date` is unique (no two seasons share a start date).
 - `teaches_days` is non-empty and all values are in `1..7`.
-- `weekday_start_time < end_time` and `weekend_start_time < end_time` when each start is non-null.
+- `weekday_start_time < end_time` and `weekend_start_time < weekend_end_time` when each start is non-null.
+- `weekday_end_time` and `weekend_end_time` are each required when their respective days are taught.
 - All times are a multiple of 15 minutes (minute component ∈ `{00, 15, 30, 45}`).
 
 The **active season for a date** is the latest `availability_seasons` row with `start_date <= date`. If no season has started yet (the earliest `start_date` is in the future), that date has no teaching hours. Seasons never overlap by construction.
@@ -73,7 +75,9 @@ effectiveHours(date):
     if dayOfWeek(date) not in season.teaches_days → return CLOSED
     start = isWeekend(date) ? season.weekend_start_time : season.weekday_start_time
     if start is null → return CLOSED
-    window = [start, season.end_time]
+    end = isWeekend(date) ? season.weekend_end_time : season.end_time
+    if end is null → return CLOSED
+    window = [start, end]
   // 3. subtract blocked_times that intersect this LA date
   return window minus blockedRangesOnDate(date)
 ```
@@ -408,3 +412,23 @@ Both routes `requireCoach`. Shared schemas live in `packages/shared/src/schemas/
 ### Migrations applied locally
 
 `0037_default_hours.sql` and `0038_remove_seeded_seasons.sql` were applied locally via `pnpm db:migrate`.
+
+---
+
+## 6. Fix — Season form (branch `fix/season-form2`)
+
+### What changed
+
+**DB** — Migration `0039_silky_vindicator.sql` adds `weekend_end_time time` to `availability_seasons`, drops `NOT NULL` on `end_time` (now the weekday-only end), and updates both check constraints. Migration `0040_backfill_weekend_end_time.sql` backfills `weekend_end_time = end_time` for any row where `weekend_start_time IS NOT NULL`. Both applied locally.
+
+**Shared schema** — `AvailabilitySeasonSchema`, `CreateSeasonBodySchema`, and `PatchSeasonBodySchema` now use `weekdayEndTime` (maps to DB `end_time`) and `weekendEndTime` (maps to `weekend_end_time`). The old `endTime` field is gone.
+
+**effectiveHours** — Weekend days now use `season.weekendEndTime`; weekdays use `season.weekdayEndTime`. Both branches return `[]` if the relevant end time is null.
+
+**API** — `validateSeasonFields` checks that `weekdayEndTime` is present when weekday days are taught, and `weekendEndTime` is present when weekend days are taught. Both start-before-end checks use their own end time. All insert/patch/copy-next-year operations include both end times.
+
+**SeasonFormModal** — New default selection is Tue–Fri `[2,3,4,5]` (matches the default hours). Day chips: filled = teaches that day (inverted was already correct; default was the bug). Added "Tap the days you teach." hint. Weekday and weekend sections are hidden unless the corresponding days are selected. Each visible time field shows a "Required" error if missing on submit. Under the start date: "Runs until [next season start] (next season)" or "Runs until you add another season."
+
+**SeasonsTable** — Replaced the three time columns (weekday start, weekend start, ends) with two range columns: Weekday hours and Weekend hours, each showing `start – end`.
+
+**SeasonCard** — Same range format as the table.

@@ -1,17 +1,19 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   CreateSeasonBody,
   PatchSeasonBody,
   SeasonWithIsCurrent,
 } from "@swim-app/shared";
 
+import { formatMonthDay } from "./availabilityFormat";
 import styles from "./CoachAvailabilityContent.module.css";
 
 interface Props {
   open: boolean;
   season: SeasonWithIsCurrent | null;
+  seasons: SeasonWithIsCurrent[];
   onCancel: () => void;
   onSubmit: (
     body: CreateSeasonBody | PatchSeasonBody,
@@ -37,9 +39,12 @@ function hasWeekend(days: number[]): boolean {
   return days.some((day) => day === 6 || day === 7);
 }
 
+type FieldErrors = Partial<Record<"weekdayStart" | "weekdayEnd" | "weekendStart" | "weekendEnd", string>>;
+
 export default function SeasonFormModal({
   open,
   season,
+  seasons,
   onCancel,
   onSubmit,
   isPending,
@@ -47,11 +52,13 @@ export default function SeasonFormModal({
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [name, setName] = useState("");
   const [startDate, setStartDate] = useState("");
-  const [teachesDays, setTeachesDays] = useState<number[]>([1, 2, 3, 4, 5, 6, 7]);
+  const [teachesDays, setTeachesDays] = useState<number[]>([2, 3, 4, 5]);
   const [weekdayStart, setWeekdayStart] = useState("");
+  const [weekdayEnd, setWeekdayEnd] = useState("");
   const [weekendStart, setWeekendStart] = useState("");
-  const [endTime, setEndTime] = useState("");
+  const [weekendEnd, setWeekendEnd] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -63,22 +70,34 @@ export default function SeasonFormModal({
   useEffect(() => {
     if (!open) return;
     setErrorMessage(null);
+    setFieldErrors({});
     if (season) {
       setName(season.name);
       setStartDate(season.startDate);
       setTeachesDays([...season.teachesDays]);
       setWeekdayStart(season.weekdayStartTime ?? "");
+      setWeekdayEnd(season.weekdayEndTime ?? "");
       setWeekendStart(season.weekendStartTime ?? "");
-      setEndTime(season.endTime);
+      setWeekendEnd(season.weekendEndTime ?? "");
     } else {
       setName("");
       setStartDate("");
-      setTeachesDays([1, 2, 3, 4, 5, 6, 7]);
+      setTeachesDays([2, 3, 4, 5]);
       setWeekdayStart("");
+      setWeekdayEnd("");
       setWeekendStart("");
-      setEndTime("");
+      setWeekendEnd("");
     }
   }, [open, season]);
+
+  const runsUntil = useMemo(() => {
+    if (!startDate) return null;
+    const editingId = season?.id ?? null;
+    const next = seasons
+      .filter((s) => s.id !== editingId && s.startDate > startDate)
+      .sort((a, b) => a.startDate.localeCompare(b.startDate))[0] ?? null;
+    return next ? next.startDate : null;
+  }, [startDate, season, seasons]);
 
   function toggleDay(day: number) {
     setTeachesDays((prev) =>
@@ -98,17 +117,32 @@ export default function SeasonFormModal({
     const teachesWeekday = hasWeekday(teachesDays);
     const teachesWeekend = hasWeekend(teachesDays);
 
-    const weekdayValue = teachesWeekday ? weekdayStart || null : null;
-    const weekendValue = teachesWeekend ? weekendStart || null : null;
+    const errors: FieldErrors = {};
+    if (teachesWeekday && !weekdayStart) errors.weekdayStart = "Required";
+    if (teachesWeekday && !weekdayEnd) errors.weekdayEnd = "Required";
+    if (teachesWeekend && !weekendStart) errors.weekendStart = "Required";
+    if (teachesWeekend && !weekendEnd) errors.weekendEnd = "Required";
+
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      return;
+    }
+    setFieldErrors({});
+
+    const weekdayStartValue = teachesWeekday ? weekdayStart || null : null;
+    const weekdayEndValue = teachesWeekday ? weekdayEnd || null : null;
+    const weekendStartValue = teachesWeekend ? weekendStart || null : null;
+    const weekendEndValue = teachesWeekend ? weekendEnd || null : null;
 
     if (season === null) {
       const body: CreateSeasonBody = {
         name,
         startDate,
         teachesDays,
-        weekdayStartTime: weekdayValue,
-        weekendStartTime: weekendValue,
-        endTime,
+        weekdayStartTime: weekdayStartValue,
+        weekdayEndTime: weekdayEndValue,
+        weekendStartTime: weekendStartValue,
+        weekendEndTime: weekendEndValue,
       };
       const message = await onSubmit(body, "create");
       if (message) setErrorMessage(message);
@@ -117,9 +151,10 @@ export default function SeasonFormModal({
         name,
         startDate,
         teachesDays,
-        weekdayStartTime: weekdayValue,
-        weekendStartTime: weekendValue,
-        endTime,
+        weekdayStartTime: weekdayStartValue,
+        weekdayEndTime: weekdayEndValue,
+        weekendStartTime: weekendStartValue,
+        weekendEndTime: weekendEndValue,
       };
       const message = await onSubmit(body, "patch");
       if (message) setErrorMessage(message);
@@ -143,6 +178,7 @@ export default function SeasonFormModal({
   const inputClass =
     "h-11 px-3 rounded-button border border-border bg-background text-text text-sm focus:outline focus:outline-2 focus:outline-focus-ring";
   const labelClass = "text-sm font-semibold text-text";
+  const fieldLabelClass = "text-xs font-semibold text-text-secondary";
 
   return (
     <dialog
@@ -187,10 +223,18 @@ export default function SeasonFormModal({
             onChange={(event) => setStartDate(event.target.value)}
             className={inputClass}
           />
+          {startDate && (
+            <p className="text-xs text-text-secondary">
+              {runsUntil
+                ? `Runs until ${formatMonthDay(runsUntil)} (next season)`
+                : "Runs until you add another season."}
+            </p>
+          )}
         </div>
 
         <fieldset className="flex flex-col gap-2">
-          <legend className={labelClass}>Teaches on</legend>
+          <legend className={labelClass}>Teaching days</legend>
+          <p className="text-xs text-text-secondary">Tap the days you teach.</p>
           <div className="flex flex-wrap gap-2">
             {DAY_OPTIONS.map((option) => {
               const active = teachesDays.includes(option.value);
@@ -213,50 +257,85 @@ export default function SeasonFormModal({
           </div>
         </fieldset>
 
-        <div className="grid grid-cols-1 tablet:grid-cols-3 gap-3">
-          <div className="flex flex-col gap-1">
-            <label htmlFor="weekday-start" className={labelClass}>
-              Weekday start
-            </label>
-            <input
-              id="weekday-start"
-              type="time"
-              step={900}
-              disabled={!teachesWeekday}
-              value={weekdayStart}
-              onChange={(event) => setWeekdayStart(event.target.value)}
-              className={`${inputClass} disabled:opacity-50`}
-            />
-          </div>
-          <div className="flex flex-col gap-1">
-            <label htmlFor="weekend-start" className={labelClass}>
-              Weekend start
-            </label>
-            <input
-              id="weekend-start"
-              type="time"
-              step={900}
-              disabled={!teachesWeekend}
-              value={weekendStart}
-              onChange={(event) => setWeekendStart(event.target.value)}
-              className={`${inputClass} disabled:opacity-50`}
-            />
-          </div>
-          <div className="flex flex-col gap-1">
-            <label htmlFor="end-time" className={labelClass}>
-              Ends
-            </label>
-            <input
-              id="end-time"
-              type="time"
-              step={900}
-              required
-              value={endTime}
-              onChange={(event) => setEndTime(event.target.value)}
-              className={inputClass}
-            />
-          </div>
-        </div>
+        {teachesWeekday && (
+          <fieldset className="flex flex-col gap-2">
+            <legend className={labelClass}>Weekday hours</legend>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex flex-col gap-1">
+                <label htmlFor="weekday-start" className={fieldLabelClass}>
+                  Start
+                </label>
+                <input
+                  id="weekday-start"
+                  type="time"
+                  step={900}
+                  value={weekdayStart}
+                  onChange={(event) => setWeekdayStart(event.target.value)}
+                  className={inputClass}
+                />
+                {fieldErrors.weekdayStart && (
+                  <p className="text-xs text-danger">{fieldErrors.weekdayStart}</p>
+                )}
+              </div>
+              <div className="flex flex-col gap-1">
+                <label htmlFor="weekday-end" className={fieldLabelClass}>
+                  End
+                </label>
+                <input
+                  id="weekday-end"
+                  type="time"
+                  step={900}
+                  value={weekdayEnd}
+                  onChange={(event) => setWeekdayEnd(event.target.value)}
+                  className={inputClass}
+                />
+                {fieldErrors.weekdayEnd && (
+                  <p className="text-xs text-danger">{fieldErrors.weekdayEnd}</p>
+                )}
+              </div>
+            </div>
+          </fieldset>
+        )}
+
+        {teachesWeekend && (
+          <fieldset className="flex flex-col gap-2">
+            <legend className={labelClass}>Weekend hours</legend>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex flex-col gap-1">
+                <label htmlFor="weekend-start" className={fieldLabelClass}>
+                  Start
+                </label>
+                <input
+                  id="weekend-start"
+                  type="time"
+                  step={900}
+                  value={weekendStart}
+                  onChange={(event) => setWeekendStart(event.target.value)}
+                  className={inputClass}
+                />
+                {fieldErrors.weekendStart && (
+                  <p className="text-xs text-danger">{fieldErrors.weekendStart}</p>
+                )}
+              </div>
+              <div className="flex flex-col gap-1">
+                <label htmlFor="weekend-end" className={fieldLabelClass}>
+                  End
+                </label>
+                <input
+                  id="weekend-end"
+                  type="time"
+                  step={900}
+                  value={weekendEnd}
+                  onChange={(event) => setWeekendEnd(event.target.value)}
+                  className={inputClass}
+                />
+                {fieldErrors.weekendEnd && (
+                  <p className="text-xs text-danger">{fieldErrors.weekendEnd}</p>
+                )}
+              </div>
+            </div>
+          </fieldset>
+        )}
 
         {errorMessage && (
           <p role="alert" aria-live="polite" className="text-sm text-danger">

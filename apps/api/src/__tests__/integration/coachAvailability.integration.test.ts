@@ -94,8 +94,9 @@ async function insertTestSeason(name: string): Promise<string> {
       startDate: TEST_SEASON_START,
       teachesDays: [1],
       weekdayStartTime: "02:00:00",
+      weekdayEndTime: "04:00:00",
       weekendStartTime: null,
-      endTime: "04:00:00",
+      weekendEndTime: null,
       startsAtDst: false,
     })
     .returning({ id: availabilitySeasons.id });

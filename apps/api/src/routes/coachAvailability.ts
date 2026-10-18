@@ -457,25 +457,32 @@ function hasWeekend(days: number[]): boolean {
 function validateSeasonFields(fields: {
   teachesDays: number[];
   weekdayStartTime: string | null;
+  weekdayEndTime: string | null;
   weekendStartTime: string | null;
-  endTime: string;
+  weekendEndTime: string | null;
 }): string | null {
   if (!isValidTimeGranularity(fields.weekdayStartTime)) return "invalid_time_granularity";
+  if (!isValidTimeGranularity(fields.weekdayEndTime)) return "invalid_time_granularity";
   if (!isValidTimeGranularity(fields.weekendStartTime)) return "invalid_time_granularity";
-  if (!isValidTimeGranularity(fields.endTime)) return "invalid_time_granularity";
+  if (!isValidTimeGranularity(fields.weekendEndTime)) return "invalid_time_granularity";
 
   const teachesWeekday = hasWeekday(fields.teachesDays);
   const teachesWeekend = hasWeekend(fields.teachesDays);
 
   if (teachesWeekday && fields.weekdayStartTime === null) return "weekday_start_required";
   if (!teachesWeekday && fields.weekdayStartTime !== null) return "weekday_start_without_weekday";
+  if (teachesWeekday && fields.weekdayEndTime === null) return "weekday_end_required";
+  if (!teachesWeekday && fields.weekdayEndTime !== null) return "weekday_end_without_weekday";
+
   if (teachesWeekend && fields.weekendStartTime === null) return "weekend_start_required";
   if (!teachesWeekend && fields.weekendStartTime !== null) return "weekend_start_without_weekend";
+  if (teachesWeekend && fields.weekendEndTime === null) return "weekend_end_required";
+  if (!teachesWeekend && fields.weekendEndTime !== null) return "weekend_end_without_weekend";
 
-  if (fields.weekdayStartTime !== null && fields.weekdayStartTime >= fields.endTime) {
+  if (fields.weekdayStartTime !== null && fields.weekdayEndTime !== null && fields.weekdayStartTime >= fields.weekdayEndTime) {
     return "start_not_before_end";
   }
-  if (fields.weekendStartTime !== null && fields.weekendStartTime >= fields.endTime) {
+  if (fields.weekendStartTime !== null && fields.weekendEndTime !== null && fields.weekendStartTime >= fields.weekendEndTime) {
     return "start_not_before_end";
   }
   return null;
@@ -584,8 +591,9 @@ coachAvailabilityRouter.post(
     const invalid = validateSeasonFields({
       teachesDays: body.teachesDays,
       weekdayStartTime: body.weekdayStartTime,
+      weekdayEndTime: body.weekdayEndTime,
       weekendStartTime: body.weekendStartTime,
-      endTime: body.endTime,
+      weekendEndTime: body.weekendEndTime,
     });
     if (invalid !== null) {
       res.status(422).json({ error: invalid });
@@ -610,8 +618,9 @@ coachAvailabilityRouter.post(
           startDate: body.startDate,
           teachesDays: body.teachesDays,
           weekdayStartTime: body.weekdayStartTime,
+          weekdayEndTime: body.weekdayEndTime,
           weekendStartTime: body.weekendStartTime,
-          endTime: body.endTime,
+          weekendEndTime: body.weekendEndTime,
           startsAtDst: body.startsAtDst ?? false,
         })
         .returning();
@@ -661,16 +670,18 @@ coachAvailabilityRouter.patch(
       startDate: body.startDate ?? existing.startDate,
       teachesDays: body.teachesDays ?? existing.teachesDays,
       weekdayStartTime: body.weekdayStartTime !== undefined ? body.weekdayStartTime : existing.weekdayStartTime,
+      weekdayEndTime: body.weekdayEndTime !== undefined ? body.weekdayEndTime : existing.weekdayEndTime,
       weekendStartTime: body.weekendStartTime !== undefined ? body.weekendStartTime : existing.weekendStartTime,
-      endTime: body.endTime ?? existing.endTime,
+      weekendEndTime: body.weekendEndTime !== undefined ? body.weekendEndTime : existing.weekendEndTime,
       startsAtDst: body.startsAtDst ?? existing.startsAtDst,
     };
 
     const invalid = validateSeasonFields({
       teachesDays: next.teachesDays,
       weekdayStartTime: next.weekdayStartTime,
+      weekdayEndTime: next.weekdayEndTime,
       weekendStartTime: next.weekendStartTime,
-      endTime: next.endTime,
+      weekendEndTime: next.weekendEndTime,
     });
     if (invalid !== null) {
       res.status(422).json({ error: invalid });
@@ -817,8 +828,9 @@ coachAvailabilityRouter.post(
           startDate: nextStart,
           teachesDays: row.teachesDays,
           weekdayStartTime: row.weekdayStartTime,
+          weekdayEndTime: row.weekdayEndTime,
           weekendStartTime: row.weekendStartTime,
-          endTime: row.endTime,
+          weekendEndTime: row.weekendEndTime,
           startsAtDst: row.startsAtDst,
         })),
       )

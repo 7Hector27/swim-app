@@ -518,6 +518,7 @@ export default function CoachAvailabilityContent({
       <SeasonFormModal
         open={seasonModalOpen}
         season={editingSeason}
+        seasons={seasons}
         onCancel={() => setSeasonModalOpen(false)}
         onSubmit={handleSeasonSubmit}
         isPending={seasonPending}
@@ -599,7 +600,7 @@ function upcomingSummary(season: SeasonWithIsCurrent): string {
   ) {
     parts.push(`${time12(season.weekendStartTime)} weekends`);
   }
-  parts.push(`ends ${time12(season.endTime)}`);
+  parts.push(`ends ${time12(season.weekdayEndTime ?? season.weekendEndTime ?? "")}`);
   return parts.join(" · ");
 }
 

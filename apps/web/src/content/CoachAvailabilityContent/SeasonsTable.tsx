@@ -5,7 +5,7 @@ import type { SeasonWithIsCurrent } from "@swim-app/shared";
 import {
   formatMonthDay,
   formatTeachesDays,
-  formatTime12,
+  formatWindowRange,
   seasonHasDifferentWeekendStart,
 } from "./availabilityFormat";
 
@@ -23,15 +23,13 @@ export default function SeasonsTable({ seasons, onEdit, onDelete }: SeasonsTable
           <tr className="text-left text-text-secondary text-[11px] uppercase tracking-widest">
             <th className="px-5 py-3 font-semibold">Season</th>
             <th className="px-5 py-3 font-semibold">Teaches</th>
-            <th className="px-5 py-3 font-semibold">Weekday start</th>
-            <th className="px-5 py-3 font-semibold">Weekend start</th>
-            <th className="px-5 py-3 font-semibold">Ends</th>
+            <th className="px-5 py-3 font-semibold">Weekday hours</th>
+            <th className="px-5 py-3 font-semibold">Weekend hours</th>
             <th className="px-5 py-3 font-semibold w-11" aria-label="Actions" />
           </tr>
         </thead>
         <tbody>
           {seasons.map((season) => {
-            const highlight = seasonHasDifferentWeekendStart(season);
             return (
               <tr
                 key={season.id}
@@ -60,12 +58,16 @@ export default function SeasonsTable({ seasons, onEdit, onDelete }: SeasonsTable
                   {formatTeachesDays(season.teachesDays)}
                 </td>
                 <td className="px-5 py-4 text-text align-middle">
-                  {formatTime12(season.weekdayStartTime)}
+                  {season.weekdayStartTime && season.weekdayEndTime
+                    ? formatWindowRange(season.weekdayStartTime, season.weekdayEndTime)
+                    : "—"}
                 </td>
                 <td className="px-5 py-4 text-text align-middle">
                   <span className="inline-flex items-center gap-2">
-                    {formatTime12(season.weekendStartTime)}
-                    {highlight && (
+                    {season.weekendStartTime && season.weekendEndTime
+                      ? formatWindowRange(season.weekendStartTime, season.weekendEndTime)
+                      : "—"}
+                    {seasonHasDifferentWeekendStart(season) && (
                       <span
                         aria-label="Weekend start differs from weekdays"
                         title="Weekend start differs from weekdays"
@@ -73,9 +75,6 @@ export default function SeasonsTable({ seasons, onEdit, onDelete }: SeasonsTable
                       />
                     )}
                   </span>
-                </td>
-                <td className="px-5 py-4 text-text align-middle">
-                  {formatTime12(season.endTime)}
                 </td>
                 <td className="px-3 py-4 align-middle">
                   <button
@@ -100,7 +99,7 @@ export default function SeasonsTable({ seasons, onEdit, onDelete }: SeasonsTable
           {seasons.length === 0 && (
             <tr>
               <td
-                colSpan={6}
+                colSpan={5}
                 className="px-5 py-10 text-center text-sm text-text-secondary"
               >
                 No seasons yet — your default hours above are in effect. Add a season to override

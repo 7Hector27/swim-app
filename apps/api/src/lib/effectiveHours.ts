@@ -76,8 +76,9 @@ export function effectiveHours(
     const isWeekend = iso === 6 || iso === 7;
     const start = isWeekend ? season.weekendStartTime : season.weekdayStartTime;
     if (start === null) return [];
-
-    return [{ start: toHHMM(start), end: toHHMM(season.endTime) }];
+    const end = isWeekend ? season.weekendEndTime : season.weekdayEndTime;
+    if (end === null) return [];
+    return [{ start: toHHMM(start), end: toHHMM(end) }];
   }
 
   if (defaults === null) return [];
