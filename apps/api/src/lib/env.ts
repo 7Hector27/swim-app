@@ -4,8 +4,22 @@ import { z } from "zod";
 // not "production" so `pnpm dev` still works with a bare .env. In production
 // the additional refinements below require explicit values for anything that
 // would otherwise fall back to localhost or be silently empty.
+//
+// Two parse surfaces: `parseEnv` validates everything the HTTP server needs
+// (Supabase keys, CORS, cron, etc.); `parseDbEnv` validates only the DB
+// connection string. DB-only scripts (migrate, seed, catalog sync) and
+// `db/client.ts` go through the smaller surface so operators can run
+// migrations without setting unrelated API vars.
 
 const LOCALHOST_RE = /^https?:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/i;
+
+const DbEnvSchema = z.object({
+  DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
+});
+
+export interface DbEnv {
+  databaseUrl: string;
+}
 
 const RawEnvSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -88,7 +102,16 @@ function formatZodError(error: z.ZodError): string[] {
   });
 }
 
+export function parseDbEnv(raw: Record<string, string | undefined>): DbEnv {
+  const result = DbEnvSchema.safeParse(raw);
+  if (!result.success) {
+    throw new EnvValidationError(formatZodError(result.error));
+  }
+  return { databaseUrl: result.data.DATABASE_URL };
+}
+
 let cached: ApiEnv | undefined;
+let cachedDb: DbEnv | undefined;
 
 export function getEnv(): ApiEnv {
   if (cached) return cached;
@@ -96,7 +119,14 @@ export function getEnv(): ApiEnv {
   return cached;
 }
 
+export function getDbEnv(): DbEnv {
+  if (cachedDb) return cachedDb;
+  cachedDb = parseDbEnv(process.env);
+  return cachedDb;
+}
+
 // Testing hook: lets a test reset the cached env so a fresh parse happens.
 export function __resetEnvCacheForTests(): void {
   cached = undefined;
+  cachedDb = undefined;
 }

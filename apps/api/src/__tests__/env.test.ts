@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { EnvValidationError, parseEnv } from "../lib/env";
+import { EnvValidationError, parseDbEnv, parseEnv } from "../lib/env";
 
 const baseEnv = {
   DATABASE_URL: "postgres://user:pass@localhost:5432/db",
@@ -131,5 +131,34 @@ describe("parseEnv", () => {
       expect(message).toMatch(/SITE_URL/);
       expect(message).toMatch(/CRON_SECRET/);
     });
+  });
+});
+
+describe("parseDbEnv", () => {
+  it("accepts an env with only DATABASE_URL set", () => {
+    // DB-only scripts (migrate, seed, catalog sync) must not require the full
+    // API env — they run in CI with just a connection string.
+    const env = parseDbEnv({ DATABASE_URL: "postgres://user:pass@localhost:5432/db" });
+    expect(env.databaseUrl).toBe("postgres://user:pass@localhost:5432/db");
+  });
+
+  it("ignores unrelated API vars", () => {
+    const env = parseDbEnv({
+      DATABASE_URL: "postgres://user:pass@localhost:5432/db",
+      SUPABASE_URL: "not-a-url",
+      CORS_ORIGINS: "",
+    });
+    expect(env.databaseUrl).toBe("postgres://user:pass@localhost:5432/db");
+  });
+
+  it("fails with a clear message when DATABASE_URL is missing", () => {
+    let caught: unknown;
+    try {
+      parseDbEnv({});
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(EnvValidationError);
+    expect((caught as EnvValidationError).message).toMatch(/DATABASE_URL/);
   });
 });
