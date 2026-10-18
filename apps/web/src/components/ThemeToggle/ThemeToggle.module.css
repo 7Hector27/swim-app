@@ -1,26 +1,17 @@
-.icon {
+/* Moon shown in light mode (default), hidden in dark. Sun is the inverse. */
+
+.moon {
   display: inline-flex;
-  transition:
-    opacity 200ms var(--ease-out-strong, cubic-bezier(0.23, 1, 0.32, 1)),
-    transform 200ms var(--ease-out-strong, cubic-bezier(0.23, 1, 0.32, 1));
 }
 
-@starting-style {
-  .icon {
-    opacity: 0;
-    transform: scale(0.7);
-  }
+:global(:root[data-theme="dark"]) .moon {
+  display: none;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .icon {
-    transition: opacity 150ms var(--ease-out-strong, cubic-bezier(0.23, 1, 0.32, 1));
-  }
+.sun {
+  display: none;
+}
 
-  @starting-style {
-    .icon {
-      opacity: 0;
-      transform: none;
-    }
-  }
+:global(:root[data-theme="dark"]) .sun {
+  display: inline-flex;
 }

@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { useTheme } from "next-themes";
 
 import styles from "./ThemeToggle.module.css";
@@ -50,32 +49,20 @@ function MoonIcon() {
 
 export default function ThemeToggle() {
   const { theme, setTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  const isDark = theme === "dark";
 
   function handleToggle() {
-    setTheme(isDark ? "light" : "dark");
+    setTheme(theme === "dark" ? "light" : "dark");
   }
 
   return (
     <button
       type="button"
       onClick={handleToggle}
-      aria-label={isDark ? "Switch to light theme" : "Switch to dark theme"}
+      aria-label="Toggle color theme"
       className="flex items-center justify-center w-10 h-10 rounded-button bg-icon-button-background text-heading hover:opacity-80 transition-opacity duration-150"
     >
-      {mounted ? (
-        <span key={isDark ? "sun" : "moon"} className={styles.icon}>
-          {isDark ? <SunIcon /> : <MoonIcon />}
-        </span>
-      ) : (
-        <MoonIcon />
-      )}
+      <span className={styles.moon}><MoonIcon /></span>
+      <span className={styles.sun}><SunIcon /></span>
     </button>
   );
 }
