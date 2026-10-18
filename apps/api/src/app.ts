@@ -7,6 +7,7 @@ import { sql, eq } from "drizzle-orm";
 import { db } from "./db/client";
 import { profiles } from "./db/schema";
 import { buildHealthResponse } from "./health";
+import { getEnv } from "./lib/env";
 import { requestId } from "./middleware/requestId";
 import { validate } from "./middleware/validate";
 import { asyncHandler } from "./middleware/asyncHandler";
@@ -36,27 +37,27 @@ import {
 } from "@swim-app/shared";
 
 export function createApp(logger: Logger) {
+  const env = getEnv();
   const app = express();
 
   // Trust n proxy hops so req.ip reflects the real client IP behind reverse
   // proxies (e.g. Railway = 1 hop). Defaults to 0 (disabled) in local dev.
   // Controls the rate-limiter key. See ADR 023.
-  const trustProxyHops = Number(process.env.TRUST_PROXY ?? "0");
-  if (trustProxyHops > 0) app.set("trust proxy", trustProxyHops);
+  if (env.trustProxy > 0) app.set("trust proxy", env.trustProxy);
 
   app.use(helmet());
 
-  const corsOrigins = (process.env.CORS_ORIGINS ?? "")
-    .split(",")
-    .map((o) => o.trim())
-    .filter(Boolean);
-  // In non-production, default to allowing http://localhost:3000 when the env
-  // is unset. Without this, a stale local .env causes every client-side mutation
-  // to fail silently in the browser (preflight passes but has no
-  // Access-Control-Allow-Origin header, so fetch rejects). Prod must set
-  // CORS_ORIGINS explicitly.
-  if (corsOrigins.length === 0 && process.env.NODE_ENV !== "production") {
-    corsOrigins.push("http://localhost:3000");
+  // Prod is guaranteed non-empty by env validation. In dev/test the fallback
+  // keeps `pnpm dev` working with an empty CORS_ORIGINS — without it, a stale
+  // .env would cause every browser mutation to fail silently (preflight passes
+  // but with no Access-Control-Allow-Origin header, so fetch rejects).
+  const corsOrigins =
+    env.corsOrigins.length > 0
+      ? env.corsOrigins
+      : env.nodeEnv !== "production"
+        ? ["http://localhost:3000"]
+        : [];
+  if (env.corsOrigins.length === 0 && env.nodeEnv !== "production") {
     logger.warn(
       { fallback: "http://localhost:3000" },
       "CORS_ORIGINS is unset — using dev fallback. Set it explicitly in apps/api/.env.",
@@ -104,13 +105,12 @@ export function createApp(logger: Logger) {
       return;
     }
 
-    const siteUrl = process.env["SITE_URL"] ?? "http://localhost:3000";
     // Always set emailRedirectTo so GoTrue never falls back to the bare site_url
     // as .RedirectTo — that would break the template's &token_hash= separator.
     // Trailing ? on the normal-signup path lets the template safely append &token_hash=...
-    const confirmBase = `${siteUrl}/auth/confirm`;
+    const confirmBase = `${env.siteUrl}/auth/confirm`;
     const emailRedirectTo =
-      body.returnTo && isSafeReturnTo(body.returnTo, siteUrl)
+      body.returnTo && isSafeReturnTo(body.returnTo, env.siteUrl)
         ? `${confirmBase}?returnTo=${encodeURIComponent(body.returnTo)}`
         : `${confirmBase}?`;
 

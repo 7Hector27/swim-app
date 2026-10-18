@@ -1,9 +1,7 @@
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
+import { getEnv } from "../lib/env";
 import * as schema from "./schema";
 
-const connectionString = process.env.DATABASE_URL;
-if (!connectionString) throw new Error("DATABASE_URL is not set");
-
-const pool = postgres(connectionString);
+const pool = postgres(getEnv().databaseUrl);
 export const db = drizzle(pool, { schema });

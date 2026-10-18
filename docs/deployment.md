@@ -136,11 +136,11 @@ One Railway project, one service, pointed at this repo.
 - **Root directory**: repo root (so pnpm workspaces resolve)
 - **Install command**: `pnpm install --frozen-lockfile`
 - **Build command**: _(empty)_ — the API runs via `tsx` at runtime; no build step
-- **Start command**: `pnpm --filter api exec tsx src/index.ts`
+- **Start command**: `pnpm --filter api start`
 - **Node version**: 24 (set via `NIXPACKS_NODE_VERSION=24` or Railway's auto-detect from `.nvmrc`)
 - **Watch paths**: `apps/api/**`, `packages/shared/**` (so edits to web don't redeploy the API)
 
-> Note: `apps/api/package.json` has no `start` or `build` script yet. We may want to add `"start": "tsx src/index.ts"` later for clarity; the start command above is a workaround that reads the current repo as-is.
+> Note: `apps/api/package.json` now defines `"start": "tsx src/index.ts"`, and `tsx` is a regular dependency so it's installed in production. A compiled build (tsc or esbuild) is planned before prod; the start command will switch to `node dist/index.js` at that point.
 
 ### 2b. Environment variables
 
@@ -407,21 +407,21 @@ Railway is already pay-as-you-go.
 
 ---
 
-## Appendix: code that currently assumes localhost
+## Appendix: code that previously assumed localhost — now fixed
 
-Everything the deploy flow needs to work around is listed here. All these are either env-var defaults or dev-only fallbacks — nothing is a hard-coded production bug — but each is a landmine if the matching env var isn't set in a hosted environment.
+Each row below used to be either an env-var default pointing at `localhost` or a dev-only fallback that would silently activate in production if a var was unset. All of them are now hardened: `apps/api/src/lib/env.ts` and `apps/web/src/lib/env.ts` validate required env vars at startup/build with Zod and refuse to run with missing or localhost values in production.
 
-| File:line                                                | What it does                                                                             | Why it matters when hosted                                                              |
-| -------------------------------------------------------- | ---------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `apps/api/src/index.ts:8`                                | `logger.info("http://localhost:${port}")` startup line                                   | Cosmetic — log only. Harmless but misleading in prod logs.                              |
-| `apps/api/src/app.ts:49-64`                              | `CORS_ORIGINS` defaults to empty; non-prod fallback to `http://localhost:3000`           | In prod with var unset: every cross-origin preflight fails. **Must** be set on Railway. |
-| `apps/api/src/app.ts:107`                                | `SITE_URL = … ?? "http://localhost:3000"` for signup `emailRedirectTo`                   | Confirmation emails would carry `localhost` links. Must set `SITE_URL` to the real web URL. |
-| `apps/api/src/routes/households.ts:143`                  | Builds invite URLs from `SITE_URL`                                                       | Same — invite emails must point at the real domain.                                     |
-| `apps/web/src/app/layout.tsx:23`                         | `metadataBase: new URL(NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000")`                 | OpenGraph/canonical links degrade to localhost. Must set `NEXT_PUBLIC_SITE_URL`.        |
-| `apps/web/src/app/auth/confirm/route.ts:7`               | `SITE_ORIGIN = NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"` for `returnTo` validation | `isSafeReturnTo` would reject real production returnTo paths.                           |
-| `apps/web/src/content/LoginContent/actions.ts:7`         | Same `SITE_ORIGIN` fallback for returnTo validation on login                             | Same.                                                                                   |
-| `apps/web/src/content/SignupContent/actions.ts:8`        | Same `SITE_ORIGIN` fallback for returnTo validation on signup                            | Same.                                                                                   |
-| `apps/web/src/content/**/actions.ts` + `src/lib/**` (~70 call sites) | `fetch(\`${NEXT_PUBLIC_API_URL}/…\`)` with **no default**                   | Missing env → `fetch("undefined/…")` → all API calls fail. **Must** be set in Vercel.  |
-| `apps/web/src/lib/supabase/server.ts:14-22` + `updateSession.ts:15-20` | SSR cookie writer passes through `@supabase/ssr`'s `CookieOptions` with no explicit `secure`/`sameSite`/`domain` | On HTTPS Vercel, Supabase sets `Secure` + `SameSite=Lax` by default, so this works. If we ever host the web app over plain HTTP (we won't), cookies would be rejected. |
+| File                                              | Previous behavior                                                                        | Status                                                                                                                 |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `apps/api/src/index.ts`                           | `logger.info("http://localhost:${port}")` startup line                                   | **Fixed** — startup log now reads from `env.port` and prints "listening on port N"; env parse exits before bind if invalid. |
+| `apps/api/src/app.ts` (CORS)                      | `CORS_ORIGINS` default empty; non-prod fallback to `http://localhost:3000`               | **Fixed** — `parseEnv` rejects empty `CORS_ORIGINS` when `NODE_ENV=production`; dev-only fallback is unchanged.         |
+| `apps/api/src/app.ts` (SITE_URL)                  | `SITE_URL = … ?? "http://localhost:3000"` for signup `emailRedirectTo`                   | **Fixed** — reads `env.siteUrl`; `parseEnv` rejects a localhost `SITE_URL` in production.                              |
+| `apps/api/src/routes/households.ts`               | Invite URL built from `SITE_URL` with localhost fallback                                 | **Fixed** — reads `getEnv().siteUrl`; same production guard applies.                                                   |
+| `apps/web/src/app/layout.tsx`                     | `metadataBase: new URL(NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000")`                 | **Fixed** — reads `publicEnv.siteUrl`; `parsePublicEnv` requires it to be a valid URL at build time.                   |
+| `apps/web/src/app/auth/confirm/route.ts`          | `SITE_ORIGIN = NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"` for `isSafeReturnTo`     | **Fixed** — reads `publicEnv.siteUrl`; env validation guarantees it's set.                                             |
+| `apps/web/src/content/LoginContent/actions.ts`    | Same `SITE_ORIGIN` fallback for login returnTo validation                                | **Fixed** — reads `publicEnv.siteUrl`.                                                                                 |
+| `apps/web/src/content/SignupContent/actions.ts`   | Same `SITE_ORIGIN` fallback for signup returnTo validation                               | **Fixed** — reads `publicEnv.siteUrl`.                                                                                 |
+| `apps/web` fetch call sites (~70)                 | `fetch(\`${NEXT_PUBLIC_API_URL}/…\`)` with no default — would resolve to `"undefined/…"` | **Fixed** — `next.config.ts` pre-flight check and `parsePublicEnv` both fail the build if `NEXT_PUBLIC_API_URL` is missing. Call sites unchanged (Next inlines the value at build time). |
+| `apps/web/src/lib/supabase/server.ts` + `updateSession.ts` | SSR cookie writer uses `@supabase/ssr` defaults — no explicit `secure`/`sameSite`/`domain` | **Not a localhost issue** — Supabase sets `Secure` + `SameSite=Lax` automatically on HTTPS. Left as-is.               |
 
-Nothing here needs changing before the first deploy — but all of the env vars in [§2](#2-railway-api-service) and [§3](#3-vercel-web-app) must be set, or at least one of these fallbacks will activate silently in a hosted environment.
+With these in place, a hosted environment missing any required var fails fast at startup or build with a clear message naming the variable, instead of silently falling back to localhost.

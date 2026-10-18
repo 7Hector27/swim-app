@@ -350,8 +350,10 @@ describe("PATCH /coach/lessons/:id/decline", () => {
 // ── POST /internal/cron/tick ──────────────────────────────────────────────────
 
 describe("POST /internal/cron/tick", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     process.env["CRON_SECRET"] = "test-cron-secret";
+    const { __resetEnvCacheForTests } = await import("../lib/env");
+    __resetEnvCacheForTests();
   });
 
   it("returns 401 without CRON_SECRET header", async () => {

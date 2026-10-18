@@ -2,9 +2,8 @@
 
 import { redirect } from "next/navigation";
 import { isSafeReturnTo, LoginBodySchema } from "@swim-app/shared";
+import { publicEnv } from "@/lib/env";
 import { createClient } from "@/lib/supabase/server";
-
-const SITE_ORIGIN = process.env["NEXT_PUBLIC_SITE_URL"] ?? "http://localhost:3000";
 
 export async function login(
   _prev: { error: string | null },
@@ -27,7 +26,7 @@ export async function login(
   }
 
   const returnToRaw = formData.get("returnTo");
-  if (typeof returnToRaw === "string" && isSafeReturnTo(returnToRaw, SITE_ORIGIN)) {
+  if (typeof returnToRaw === "string" && isSafeReturnTo(returnToRaw, publicEnv.siteUrl)) {
     redirect(returnToRaw);
   }
   redirect("/dashboard");

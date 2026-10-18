@@ -5,6 +5,7 @@ import { Fraunces, Figtree } from "next/font/google";
 import Providers from "@/components/Providers";
 import NavController from "@/components/NavController";
 import SiteFooter from "@/components/SiteFooter";
+import { publicEnv } from "@/lib/env";
 import { fetchMe } from "@/lib/api/me";
 import { fetchHousehold } from "@/lib/api/households";
 
@@ -20,7 +21,7 @@ const figtree = Figtree({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"),
+  metadataBase: new URL(publicEnv.siteUrl),
   title: "Axiom Aquatics",
   description: "Private swim lessons with Coach Jason",
   icons: {

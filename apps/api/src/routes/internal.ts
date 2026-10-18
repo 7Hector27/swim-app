@@ -5,6 +5,7 @@ import { db } from "../db/client";
 import { lessons } from "../db/schema";
 import { validate } from "../middleware/validate";
 import { asyncHandler } from "../middleware/asyncHandler";
+import { getEnv } from "../lib/env";
 import { chargeLessonComplete } from "../lib/lessonApproval";
 import type { RequestHandler } from "express";
 
@@ -18,7 +19,7 @@ function sha256(value: string): Buffer {
 }
 
 const requireCronSecret: RequestHandler = (req, res, next) => {
-  const secret = process.env["CRON_SECRET"];
+  const secret = getEnv().cronSecret;
   const provided = req.headers["cron-secret"];
   if (
     !secret ||
