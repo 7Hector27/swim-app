@@ -3,6 +3,7 @@
 import { useActionState, useEffect, useRef, useState } from "react";
 
 import Button from "@/components/Button";
+import PasswordInput from "@/components/PasswordInput";
 
 import { login } from "./actions";
 
@@ -57,13 +58,11 @@ export default function LoginContent({ notice, returnTo }: LoginContentProps) {
               <label htmlFor="password" className="text-sm font-semibold text-text">
                 Password
               </label>
-              <input
+              <PasswordInput
                 id="password"
                 name="password"
-                type="password"
                 autoComplete="current-password"
                 required
-                className="h-12 px-4 rounded-lg border border-border bg-background text-text"
               />
             </div>
 
