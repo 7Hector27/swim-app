@@ -1,0 +1,46 @@
+name: Dev Migrations
+
+# Runs database migrations and the skills-catalog sync against the hosted
+# dev Supabase project on every push to `dev`. Prod migrations stay manual —
+# this workflow intentionally does not fire on `main`. See docs/deployment.md.
+
+on:
+  push:
+    branches: [dev]
+
+concurrency:
+  group: dev-migrations
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    name: Apply migrations and sync catalog
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      # Pinned to full commit SHAs so a compromised tag can't swap in malicious
+      # code against a workflow that holds DEV_DATABASE_URL. Bump these when
+      # upgrading; verify the SHA in the action's GitHub releases page first.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+        with:
+          version: 12
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Apply migrations
+        run: pnpm db:migrate
+        env:
+          DATABASE_URL: ${{ secrets.DEV_DATABASE_URL }}
+
+      - name: Sync skills catalog
+        run: pnpm db:sync-catalog
+        env:
+          DATABASE_URL: ${{ secrets.DEV_DATABASE_URL }}

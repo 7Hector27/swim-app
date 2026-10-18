@@ -15,6 +15,7 @@ import {
   RenameHouseholdBodySchema,
   TransferOwnershipBodySchema,
 } from "@swim-app/shared";
+import { getEnv } from "../lib/env";
 import { db } from "../db/client";
 import {
   householdAuditLog,
@@ -140,8 +141,7 @@ householdsRouter.post(
       return rows[0]!;
     });
 
-    const siteUrl = process.env["SITE_URL"] ?? "http://localhost:3000";
-    const url = `${siteUrl}/invite/${raw}`;
+    const url = `${getEnv().siteUrl}/invite/${raw}`;
 
     const body: GenerateInviteResponse = {
       id: inserted.id,
