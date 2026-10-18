@@ -51,8 +51,8 @@ export function parseEnv(raw: Record<string, string | undefined>): ApiEnv {
     if (LOCALHOST_RE.test(parsed.SITE_URL)) {
       issues.push("SITE_URL: must not point to localhost in production");
     }
-    if (!parsed.CRON_SECRET || parsed.CRON_SECRET.length < 16) {
-      issues.push("CRON_SECRET: must be set and at least 16 characters in production");
+    if (!parsed.CRON_SECRET || parsed.CRON_SECRET.length < 32) {
+      issues.push("CRON_SECRET: must be set and at least 32 characters in production");
     }
     if (issues.length > 0) {
       throw new EnvValidationError(issues);
@@ -81,7 +81,7 @@ export class EnvValidationError extends Error {
   }
 }
 
-export function formatZodError(error: z.ZodError): string[] {
+function formatZodError(error: z.ZodError): string[] {
   return error.issues.map((issue) => {
     const path = issue.path.join(".") || "env";
     return `${path}: ${issue.message}`;
@@ -92,15 +92,8 @@ let cached: ApiEnv | undefined;
 
 export function getEnv(): ApiEnv {
   if (cached) return cached;
-  try {
-    cached = parseEnv(process.env);
-    return cached;
-  } catch (err) {
-    if (err instanceof z.ZodError) {
-      throw new EnvValidationError(formatZodError(err));
-    }
-    throw err;
-  }
+  cached = parseEnv(process.env);
+  return cached;
 }
 
 // Testing hook: lets a test reset the cached env so a fresh parse happens.

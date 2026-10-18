@@ -60,4 +60,8 @@ export function parsePublicEnv(raw: Record<string, string | undefined>): PublicE
   };
 }
 
+// Validated at import time. Tests should NOT import `publicEnv` directly —
+// doing so runs the schema against whatever `process.env` holds at the moment
+// the module graph loads, which may be before the test setup assigns
+// placeholders. Call `parsePublicEnv(fixture)` from tests instead.
 export const publicEnv: PublicEnv = parsePublicEnv(process.env);

@@ -100,15 +100,17 @@ describe("parseEnv", () => {
       expect((caught as EnvValidationError).issues.join("\n")).toMatch(/CRON_SECRET/);
     });
 
-    it("rejects a short CRON_SECRET", () => {
+    it("rejects a CRON_SECRET shorter than 32 characters", () => {
       let caught: unknown;
       try {
-        parseEnv({ ...prodBase, CRON_SECRET: "short" });
+        parseEnv({ ...prodBase, CRON_SECRET: "a".repeat(31) });
       } catch (err) {
         caught = err;
       }
       expect(caught).toBeInstanceOf(EnvValidationError);
-      expect((caught as EnvValidationError).issues.join("\n")).toMatch(/CRON_SECRET/);
+      expect((caught as EnvValidationError).issues.join("\n")).toMatch(
+        /CRON_SECRET.*at least 32 characters/,
+      );
     });
 
     it("reports every failing variable in one error", () => {
