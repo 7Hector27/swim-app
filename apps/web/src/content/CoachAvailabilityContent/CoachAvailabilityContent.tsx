@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { todayLA } from "@swim-app/shared";
 import type {
   AvailabilityConfig,
   AvailabilityOverride,
@@ -24,11 +25,13 @@ import {
   deleteOverride,
   deleteSeason,
   fetchAvailabilityPreview,
+  fetchSeasons,
   patchAvailabilityConfig,
   patchOverride,
   patchSeason,
 } from "@/lib/api/coachAvailability";
 import { addDaysIso, withIsCurrent } from "./availabilityFormat";
+import { upcomingSummary } from "./seasonSummary";
 import CopyToNextYearButton from "./CopyToNextYearButton";
 import DefaultHoursCard from "./DefaultHoursCard";
 import DefaultHoursModal from "./DefaultHoursModal";
@@ -145,11 +148,18 @@ export default function CoachAvailabilityContent({
     if (!pendingDelete && dialog.open) dialog.close();
   }, [pendingDelete]);
 
+  async function refreshSeasons() {
+    const fresh = await fetchSeasons(accessToken);
+    if (fresh.length > 0) setSeasons(withIsCurrent(fresh, todayLA()));
+  }
+
   function openAddSeason() {
+    void refreshSeasons();
     setEditingSeason(null);
     setSeasonModalOpen(true);
   }
   function openEditSeason(season: SeasonWithIsCurrent) {
+    void refreshSeasons();
     setEditingSeason(season);
     setSeasonModalOpen(true);
   }
@@ -170,7 +180,7 @@ export default function CoachAvailabilityContent({
     try {
       if (mode === "create") {
         const result = await createSeason(accessToken, body as CreateSeasonBody);
-        if (!result.ok) return apiErrorMessage(result.code);
+        if (!result.ok) return apiErrorMessage(result.code, result.conflictingSeasonName);
         setSeasons((prev) => {
           const next = [...prev, result.data.season].sort((a, b) =>
             a.startDate.localeCompare(b.startDate),
@@ -184,7 +194,7 @@ export default function CoachAvailabilityContent({
       }
       if (!editingSeason) return "Season no longer exists.";
       const result = await patchSeason(accessToken, editingSeason.id, body as PatchSeasonBody);
-      if (!result.ok) return apiErrorMessage(result.code);
+      if (!result.ok) return apiErrorMessage(result.code, result.conflictingSeasonName);
       setSeasons((prev) => {
         const next = prev
           .map((season) => (season.id === editingSeason.id ? result.data.season : season))
@@ -518,6 +528,7 @@ export default function CoachAvailabilityContent({
       <SeasonFormModal
         open={seasonModalOpen}
         season={editingSeason}
+        seasons={seasons}
         onCancel={() => setSeasonModalOpen(false)}
         onSubmit={handleSeasonSubmit}
         isPending={seasonPending}
@@ -590,23 +601,3 @@ function monthDay(dateIso: string): string {
   }).format(date);
 }
 
-function upcomingSummary(season: SeasonWithIsCurrent): string {
-  const parts: string[] = [];
-  if (season.weekdayStartTime) parts.push(`${time12(season.weekdayStartTime)} weekdays`);
-  if (
-    season.weekendStartTime &&
-    season.weekendStartTime !== season.weekdayStartTime
-  ) {
-    parts.push(`${time12(season.weekendStartTime)} weekends`);
-  }
-  parts.push(`ends ${time12(season.endTime)}`);
-  return parts.join(" · ");
-}
-
-function time12(time: string): string {
-  const [hoursStr, minutes] = time.split(":") as [string, string];
-  const hours = Number(hoursStr);
-  const period = hours >= 12 ? "pm" : "am";
-  const display = hours % 12 === 0 ? 12 : hours % 12;
-  return `${display}:${minutes} ${period}`;
-}

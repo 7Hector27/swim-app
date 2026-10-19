@@ -5,6 +5,7 @@ import { useActionState, useEffect, useRef, useState } from "react";
 import { calculateAge, todayLA } from "@swim-app/shared";
 
 import Button from "@/components/Button";
+import PasswordInput from "@/components/PasswordInput";
 
 import { signup } from "./actions";
 import AgeBlockedScreen from "./AgeBlockedScreen";
@@ -131,14 +132,12 @@ export default function SignupContent({ returnTo }: SignupContentProps) {
               <label htmlFor="password" className="text-sm font-semibold text-text">
                 Password
               </label>
-              <input
+              <PasswordInput
                 id="password"
                 name="password"
-                type="password"
                 autoComplete="new-password"
                 required
                 ref={passwordRef}
-                className="h-12 px-4 rounded-lg border border-border bg-background text-text"
               />
               <p className="text-text-secondary text-xs">Minimum 8 characters</p>
               <FieldError message={fieldErrors["password"]} />
@@ -148,17 +147,15 @@ export default function SignupContent({ returnTo }: SignupContentProps) {
               <label htmlFor="confirmPassword" className="text-sm font-semibold text-text">
                 Confirm password
               </label>
-              <input
+              <PasswordInput
                 id="confirmPassword"
                 name="confirmPassword"
-                type="password"
                 autoComplete="new-password"
                 required
                 ref={confirmPasswordRef}
                 onChange={() => {
                   if (confirmPasswordError) setConfirmPasswordError("");
                 }}
-                className="h-12 px-4 rounded-lg border border-border bg-background text-text"
               />
               <FieldError message={confirmPasswordError || fieldErrors["confirmPassword"]} />
             </div>

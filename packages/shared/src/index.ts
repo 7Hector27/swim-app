@@ -5,6 +5,7 @@ export type { League, LeagueRegistrationParams } from "./schemas/registration";
 export { LeagueSchema, LeagueRegistrationParamsSchema } from "./schemas/registration";
 
 export { currentSeasonStartYear, CLUB_SEASON_START_MONTH } from "./lib/currentSeasonStartYear";
+export { findActiveSeasonId } from "./lib/findActiveSeasonId";
 
 export {
   findDeepestLowFoundation,

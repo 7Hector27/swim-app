@@ -384,6 +384,8 @@ Prod goes through all the same steps as dev, with these changes:
 3. If the migration changes the catalog, run `pnpm db:sync-catalog` too.
 4. Vercel auto-deploys `main` to prod after step 2 completes successfully.
 
+> **Migration 0042** (`backfill_season_end_date`) backfills `end_date` for all existing availability seasons, using the next season's `start_date − 1 day` where available, or `start_date + 3 months` for the last season. After running `pnpm db:migrate`, verify the `availability_seasons` table has no NULL `end_date` rows before deploying the API.
+
 If a prod migration needs to be rolled back, Supabase point-in-time recovery is on by default on the Pro plan — see §Launch checklist.
 
 **Paid plans before launch**: Supabase Free pauses projects after 7 days of inactivity and has no PITR. Vercel Hobby is non-commercial. Both need paid plans before real users:

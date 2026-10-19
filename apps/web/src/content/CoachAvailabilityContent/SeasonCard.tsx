@@ -2,7 +2,7 @@
 
 import type { SeasonWithIsCurrent } from "@swim-app/shared";
 
-import { formatMonthDay, formatTime12 } from "./availabilityFormat";
+import { formatMonthDay, formatWindowRange } from "./availabilityFormat";
 
 interface Props {
   season: SeasonWithIsCurrent;
@@ -27,14 +27,27 @@ export default function SeasonCard({ season, onEdit }: Props) {
           )}
         </div>
         <span className="text-xs text-text-secondary whitespace-nowrap">
-          Since {formatMonthDay(season.startDate)}
+          {formatMonthDay(season.startDate)} – {formatMonthDay(season.endDate)}
         </span>
       </div>
 
-      <div className="grid grid-cols-3 gap-2">
-        <TimeStat label="Weekdays" value={formatTime12(season.weekdayStartTime)} />
-        <TimeStat label="Weekends" value={formatTime12(season.weekendStartTime)} />
-        <TimeStat label="Ends" value={formatTime12(season.endTime)} />
+      <div className="grid grid-cols-2 gap-2">
+        <TimeStat
+          label="Weekday hours"
+          value={
+            season.weekdayStartTime && season.weekdayEndTime
+              ? formatWindowRange(season.weekdayStartTime, season.weekdayEndTime)
+              : "—"
+          }
+        />
+        <TimeStat
+          label="Weekend hours"
+          value={
+            season.weekendStartTime && season.weekendEndTime
+              ? formatWindowRange(season.weekendStartTime, season.weekendEndTime)
+              : "—"
+          }
+        />
       </div>
 
       <button

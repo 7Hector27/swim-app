@@ -1,4 +1,5 @@
 import type { AvailabilitySeason, SeasonWithIsCurrent } from "@swim-app/shared";
+import { findActiveSeasonId } from "@swim-app/shared";
 
 const WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
 const WEEKDAY_SET = new Set([1, 2, 3, 4, 5]);
@@ -25,8 +26,20 @@ export function formatTime12(time: string | null): string {
   return `${displayHours}:${minutes} ${period}`;
 }
 
-// "2026-10-15" -> "Oct 15". LA calendar date is already a pure date.
+export function isValidDateIso(dateIso: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateIso)) return false;
+  const [year, month, day] = dateIso.split("-").map(Number) as [number, number, number];
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() + 1 === month &&
+    date.getUTCDate() === day
+  );
+}
+
+// "2026-10-15" -> "Oct 15". Returns "" for empty or invalid input.
 export function formatMonthDay(dateIso: string): string {
+  if (!isValidDateIso(dateIso)) return "";
   const [year, month, day] = dateIso.split("-").map(Number) as [number, number, number];
   const date = new Date(Date.UTC(year, month - 1, day));
   return new Intl.DateTimeFormat("en-US", {
@@ -36,8 +49,9 @@ export function formatMonthDay(dateIso: string): string {
   }).format(date);
 }
 
-// "2026-10-15" -> "Oct 15, 2026"
+// "2026-10-15" -> "Oct 15, 2026". Returns "" for empty or invalid input.
 export function formatMonthDayYear(dateIso: string): string {
+  if (!isValidDateIso(dateIso)) return "";
   const [year, month, day] = dateIso.split("-").map(Number) as [number, number, number];
   const date = new Date(Date.UTC(year, month - 1, day));
   return new Intl.DateTimeFormat("en-US", {
@@ -48,8 +62,9 @@ export function formatMonthDayYear(dateIso: string): string {
   }).format(date);
 }
 
-// Weekday short label for a YYYY-MM-DD date (LA calendar).
+// Weekday short label for a YYYY-MM-DD date (LA calendar). Returns "" for invalid input.
 export function weekdayShort(dateIso: string): string {
+  if (!isValidDateIso(dateIso)) return "";
   const [year, month, day] = dateIso.split("-").map(Number) as [number, number, number];
   const date = new Date(Date.UTC(year, month - 1, day));
   return new Intl.DateTimeFormat("en-US", { timeZone: "UTC", weekday: "short" }).format(date);
@@ -105,18 +120,12 @@ export function withIsCurrent(
   seasons: readonly AvailabilitySeason[],
   today: string,
 ): SeasonWithIsCurrent[] {
-  let activeId: string | null = null;
-  let activeStart = "";
-  for (const season of seasons) {
-    if (season.startDate <= today && season.startDate > activeStart) {
-      activeStart = season.startDate;
-      activeId = season.id;
-    }
-  }
+  const activeId = findActiveSeasonId(seasons, today);
   return seasons.map((season) => ({ ...season, isCurrent: season.id === activeId }));
 }
 
 export function addDaysIso(dateIso: string, offset: number): string {
+  if (!isValidDateIso(dateIso)) return "";
   const [year, month, day] = dateIso.split("-").map(Number) as [number, number, number];
   const next = new Date(Date.UTC(year, month - 1, day + offset));
   const yyyy = next.getUTCFullYear();

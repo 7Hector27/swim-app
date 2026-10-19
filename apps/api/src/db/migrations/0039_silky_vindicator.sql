@@ -1,0 +1,6 @@
+ALTER TABLE "availability_seasons" DROP CONSTRAINT "availability_seasons_weekday_before_end";--> statement-breakpoint
+ALTER TABLE "availability_seasons" DROP CONSTRAINT "availability_seasons_weekend_before_end";--> statement-breakpoint
+ALTER TABLE "availability_seasons" ALTER COLUMN "end_time" DROP NOT NULL;--> statement-breakpoint
+ALTER TABLE "availability_seasons" ADD COLUMN "weekend_end_time" time;--> statement-breakpoint
+ALTER TABLE "availability_seasons" ADD CONSTRAINT "availability_seasons_weekday_before_end" CHECK ("availability_seasons"."weekday_start_time" IS NULL OR "availability_seasons"."end_time" IS NULL OR "availability_seasons"."weekday_start_time" < "availability_seasons"."end_time");--> statement-breakpoint
+ALTER TABLE "availability_seasons" ADD CONSTRAINT "availability_seasons_weekend_before_end" CHECK ("availability_seasons"."weekend_start_time" IS NULL OR "availability_seasons"."weekend_end_time" IS NULL OR "availability_seasons"."weekend_start_time" < "availability_seasons"."weekend_end_time");

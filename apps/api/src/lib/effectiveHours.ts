@@ -16,15 +16,20 @@ function toHHMM(time: string): string {
   return time.slice(0, 5);
 }
 
-// Returns the active season for `date`: the latest row with start_date <= date.
-// Returns null when every season starts after `date`.
+// Returns the active season for `date`: among rows where startDate <= date <= endDate,
+// picks the one with the latest startDate (so if seasons overlap in data, the most
+// recent one wins — mirrors the tiebreak behavior at the API layer).
 function findActiveSeason(
   date: string,
   seasons: AvailabilitySeason[],
 ): AvailabilitySeason | null {
   let active: AvailabilitySeason | null = null;
   for (const season of seasons) {
-    if (season.startDate <= date && (active === null || season.startDate > active.startDate)) {
+    if (
+      season.startDate <= date &&
+      season.endDate >= date &&
+      (active === null || season.startDate > active.startDate)
+    ) {
       active = season;
     }
   }
@@ -76,8 +81,9 @@ export function effectiveHours(
     const isWeekend = iso === 6 || iso === 7;
     const start = isWeekend ? season.weekendStartTime : season.weekdayStartTime;
     if (start === null) return [];
-
-    return [{ start: toHHMM(start), end: toHHMM(season.endTime) }];
+    const end = isWeekend ? season.weekendEndTime : season.weekdayEndTime;
+    if (end === null) return [];
+    return [{ start: toHHMM(start), end: toHHMM(end) }];
   }
 
   if (defaults === null) return [];

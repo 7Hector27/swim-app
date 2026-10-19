@@ -12,6 +12,10 @@ const MESSAGES: Record<string, string> = {
   weekday_start_without_weekday: "Remove the weekday start time, since no weekdays are selected.",
   weekend_start_required: "Add a weekend start time, since this season teaches on weekends.",
   weekend_start_without_weekend: "Remove the weekend start time, since no weekends are selected.",
+  weekday_end_required: "Add a weekday end time, since this season teaches on weekdays.",
+  weekday_end_without_weekday: "Remove the weekday end time, since no weekdays are selected.",
+  weekend_end_required: "Add a weekend end time, since this season teaches on weekends.",
+  weekend_end_without_weekend: "Remove the weekend end time, since no weekends are selected.",
   start_not_before_end: "Start time must be before the end time.",
   season_date_taken: "Another season already starts on that date.",
   invalid_date_range: "End date must be the same day or later than the start date.",
@@ -19,9 +23,15 @@ const MESSAGES: Record<string, string> = {
   custom_hours_missing_times: "Custom-hours overrides need both a start and end time.",
   custom_hours_date_mismatch: "Custom-hours overrides must start and end on the same day.",
   override_conflict: "This override overlaps an existing one.",
+  end_date_before_start: "End date must be on or after the start date.",
 };
 
-export function apiErrorMessage(code: string | undefined): string {
-  if (code && MESSAGES[code]) return MESSAGES[code]!;
+export function apiErrorMessage(code: string | undefined, conflictingSeasonName?: string): string {
+  if (!code) return "Something went wrong on our end. Try again in a moment.";
+  if (code === "season_overlap") {
+    const name = conflictingSeasonName ?? "another season";
+    return `This season overlaps with "${name}". Adjust the dates.`;
+  }
+  if (MESSAGES[code]) return MESSAGES[code]!;
   return "Something went wrong on our end. Try again in a moment.";
 }

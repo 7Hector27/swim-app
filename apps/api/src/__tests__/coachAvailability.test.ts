@@ -591,10 +591,12 @@ function seasonRow(overrides: Partial<Record<string, unknown>> = {}) {
     id: SEASON_A_ID,
     name: "School year",
     startDate: "2025-08-15",
+    endDate: "2099-12-31",
     teachesDays: [1, 2, 3, 4, 5, 6],
     weekdayStartTime: "15:00:00",
+    weekdayEndTime: "20:00:00",
     weekendStartTime: "09:00:00",
-    endTime: "20:00:00",
+    weekendEndTime: "20:00:00",
     startsAtDst: false,
     createdAt: now,
     updatedAt: now,
@@ -626,8 +628,9 @@ describe("POST /coach/seasons", () => {
       startDate: "2099-05-01",
       teachesDays: [1, 2, 3, 4, 5, 6, 7],
       weekdayStartTime: "15:00",
+      weekdayEndTime: "18:00",
       weekendStartTime: "15:00",
-      endTime: "18:00",
+      weekendEndTime: "18:00",
     });
     // A lesson that starts at 22:00 UTC (3:00pm PDT) and runs 30 min falls
     // just inside the window; a lesson at 23:00 UTC (4:00pm) + 150 min (ends
@@ -643,7 +646,8 @@ describe("POST /coach/seasons", () => {
 
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(coachProfile))
-      .mockReturnValueOnce(simpleSelect<unknown>([]))
+      .mockReturnValueOnce(simpleSelect<unknown>([]))   // same startDate check
+      .mockReturnValueOnce(simpleSelect<unknown>([]))   // findOverlappingSeason
       .mockReturnValueOnce(fromResolveSelect([inserted]))
       .mockReturnValueOnce(fromResolveSelect([]))
       .mockReturnValueOnce(simpleSelect([availabilityConfigRow]))
@@ -660,10 +664,12 @@ describe("POST /coach/seasons", () => {
       .send({
         name: "Narrower season",
         startDate: "2099-05-01",
+        endDate: "2099-12-31",
         teachesDays: [1, 2, 3, 4, 5, 6, 7],
         weekdayStartTime: "15:00",
+        weekdayEndTime: "18:00",
         weekendStartTime: "15:00",
-        endTime: "18:00",
+        weekendEndTime: "18:00",
       });
 
     expect(res.status).toBe(201);
@@ -683,7 +689,8 @@ describe("POST /coach/seasons", () => {
 
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(coachProfile))
-      .mockReturnValueOnce(simpleSelect<unknown>([]))
+      .mockReturnValueOnce(simpleSelect<unknown>([]))   // same startDate check
+      .mockReturnValueOnce(simpleSelect<unknown>([]))   // findOverlappingSeason
       .mockReturnValueOnce(fromResolveSelect([inserted]))
       .mockReturnValueOnce(fromResolveSelect([]))
       .mockReturnValueOnce(simpleSelect([availabilityConfigRow]))
@@ -699,10 +706,12 @@ describe("POST /coach/seasons", () => {
       .send({
         name: "New season",
         startDate: "2026-01-05",
+        endDate: "2026-12-31",
         teachesDays: [1, 2, 3, 4, 5, 6],
         weekdayStartTime: "15:00",
+        weekdayEndTime: "20:00",
         weekendStartTime: "09:00",
-        endTime: "20:00",
+        weekendEndTime: "20:00",
       });
 
     expect(res.status).toBe(201);
@@ -719,10 +728,12 @@ describe("POST /coach/seasons", () => {
       .send({
         name: "Odd minute",
         startDate: "2026-01-05",
+        endDate: "2026-12-31",
         teachesDays: [1, 2, 3, 4, 5],
         weekdayStartTime: "15:07",
+        weekdayEndTime: "20:00",
         weekendStartTime: null,
-        endTime: "20:00",
+        weekendEndTime: null,
       });
 
     expect(res.status).toBe(422);
@@ -742,10 +753,12 @@ describe("POST /coach/seasons", () => {
       .send({
         name: "Duplicate",
         startDate: "2025-08-15",
+        endDate: "2025-12-31",
         teachesDays: [1, 2, 3, 4, 5],
         weekdayStartTime: "15:00",
+        weekdayEndTime: "20:00",
         weekendStartTime: null,
-        endTime: "20:00",
+        weekendEndTime: null,
       });
 
     expect(res.status).toBe(422);
@@ -762,10 +775,12 @@ describe("POST /coach/seasons", () => {
       .send({
         name: "Weekend only",
         startDate: "2026-02-01",
+        endDate: "2026-12-31",
         teachesDays: [6],
         weekdayStartTime: "15:00",
+        weekdayEndTime: null,
         weekendStartTime: "09:00",
-        endTime: "20:00",
+        weekendEndTime: "20:00",
       });
 
     expect(res.status).toBe(422);
@@ -782,10 +797,12 @@ describe("POST /coach/seasons", () => {
       .send({
         name: "Weekday missing",
         startDate: "2026-02-01",
+        endDate: "2026-12-31",
         teachesDays: [1],
         weekdayStartTime: null,
+        weekdayEndTime: null,
         weekendStartTime: null,
-        endTime: "20:00",
+        weekendEndTime: null,
       });
 
     expect(res.status).toBe(422);
@@ -804,11 +821,35 @@ describe("POST /coach/seasons", () => {
         startDate: "2026-01-05",
         teachesDays: [1],
         weekdayStartTime: "15:00",
+        weekdayEndTime: "20:00",
         weekendStartTime: null,
-        endTime: "20:00",
+        weekendEndTime: null,
       });
 
     expect(res.status).toBe(403);
+  });
+
+  it("returns 422 with season_overlap and conflictingSeasonName when dates overlap", async () => {
+    authAs(coachProfile);
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(coachProfile))
+      .mockReturnValueOnce(simpleSelect([]))              // same startDate check
+      .mockReturnValueOnce(simpleSelect([{ id: SEASON_B_ID, name: "School Year" }])); // findOverlappingSeason
+    const res = await request(app)
+      .post("/coach/seasons")
+      .set("Authorization", "Bearer token")
+      .send({
+        name: "Duplicate range",
+        startDate: "2025-08-16",
+        endDate: "2026-01-31",
+        teachesDays: [1, 2, 3, 4, 5],
+        weekdayStartTime: "15:00",
+        weekdayEndTime: "20:00",
+        weekendStartTime: null,
+        weekendEndTime: null,
+      });
+    expect(res.status).toBe(422);
+    expect(res.body).toEqual({ error: "season_overlap", conflictingSeasonName: "School Year" });
   });
 });
 
@@ -882,10 +923,11 @@ describe("PATCH /coach/seasons/:id", () => {
     // `existing` for keys the body doesn't override.
     const existing = seasonRow({
       weekdayStartTime: "15:00",
+      weekdayEndTime: "20:00",
       weekendStartTime: "09:00",
-      endTime: "20:00",
+      weekendEndTime: "20:00",
     });
-    const updated = { ...existing, endTime: "19:00" };
+    const updated = { ...existing, weekdayEndTime: "19:00" };
 
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(coachProfile))
@@ -903,10 +945,10 @@ describe("PATCH /coach/seasons/:id", () => {
     const res = await request(app)
       .patch(`/coach/seasons/${SEASON_A_ID}`)
       .set("Authorization", "Bearer token")
-      .send({ endTime: "19:00" });
+      .send({ weekdayEndTime: "19:00" });
 
     expect(res.status).toBe(200);
-    expect(res.body.season.endTime).toBe("19:00");
+    expect(res.body.season.weekdayEndTime).toBe("19:00");
     expect(res.body.warnings).toEqual([]);
   });
 
@@ -920,9 +962,30 @@ describe("PATCH /coach/seasons/:id", () => {
     const res = await request(app)
       .patch(`/coach/seasons/${SEASON_A_ID}`)
       .set("Authorization", "Bearer token")
-      .send({ endTime: "19:00" });
+      .send({ weekdayEndTime: "19:00" });
 
     expect(res.status).toBe(404);
+  });
+
+  it("returns 422 with season_overlap and conflictingSeasonName when patched dates overlap", async () => {
+    authAs(coachProfile);
+    const existing = seasonRow({
+      teachesDays: [1, 2, 3, 4, 5],
+      weekdayStartTime: "15:00",
+      weekdayEndTime: "20:00",
+      weekendStartTime: null,
+      weekendEndTime: null,
+    });
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(coachProfile))
+      .mockReturnValueOnce(simpleSelect([existing]))       // fetch existing
+      .mockReturnValueOnce(simpleSelect([{ id: SEASON_B_ID, name: "Winter" }])); // findOverlappingSeason
+    const res = await request(app)
+      .patch(`/coach/seasons/${SEASON_A_ID}`)
+      .set("Authorization", "Bearer token")
+      .send({ endDate: "2026-06-30" });
+    expect(res.status).toBe(422);
+    expect(res.body).toEqual({ error: "season_overlap", conflictingSeasonName: "Winter" });
   });
 });
 
@@ -1378,8 +1441,9 @@ describe("GET /coach/availability-preview", () => {
       startDate: "2025-08-15",
       teachesDays: [1, 2, 3, 4, 5, 6],
       weekdayStartTime: "15:00:00",
+      weekdayEndTime: "20:00:00",
       weekendStartTime: "09:00:00",
-      endTime: "20:00:00",
+      weekendEndTime: "20:00:00",
     });
 
     mockDbSelect

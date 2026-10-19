@@ -3,9 +3,10 @@
 import type { SeasonWithIsCurrent } from "@swim-app/shared";
 
 import {
+  addDaysIso,
   formatMonthDay,
   formatTeachesDays,
-  formatTime12,
+  formatWindowRange,
   seasonHasDifferentWeekendStart,
 } from "./availabilityFormat";
 
@@ -15,7 +16,33 @@ interface SeasonsTableProps {
   onDelete: (season: SeasonWithIsCurrent) => void;
 }
 
+type TableEntry =
+  | { kind: "season"; season: SeasonWithIsCurrent }
+  | { kind: "gap"; from: string; to: string | null };
+
+function buildEntries(seasons: SeasonWithIsCurrent[]): TableEntry[] {
+  const sorted = [...seasons].sort((a, b) => a.startDate.localeCompare(b.startDate));
+  const entries: TableEntry[] = [];
+  for (let index = 0; index < sorted.length; index++) {
+    const season = sorted[index]!;
+    entries.push({ kind: "season", season });
+    const next = sorted[index + 1] ?? null;
+    const gapStart = addDaysIso(season.endDate, 1);
+    if (next === null) {
+      entries.push({ kind: "gap", from: gapStart, to: null });
+    } else if (gapStart < next.startDate) {
+      entries.push({ kind: "gap", from: gapStart, to: addDaysIso(next.startDate, -1) });
+    }
+  }
+  if (sorted.length === 0) {
+    entries.push({ kind: "gap", from: "—", to: null });
+  }
+  return entries;
+}
+
 export default function SeasonsTable({ seasons, onEdit, onDelete }: SeasonsTableProps) {
+  const entries = buildEntries(seasons);
+
   return (
     <div className="rounded-card border border-border overflow-hidden bg-background">
       <table className="w-full text-sm">
@@ -23,14 +50,31 @@ export default function SeasonsTable({ seasons, onEdit, onDelete }: SeasonsTable
           <tr className="text-left text-text-secondary text-[11px] uppercase tracking-widest">
             <th className="px-5 py-3 font-semibold">Season</th>
             <th className="px-5 py-3 font-semibold">Teaches</th>
-            <th className="px-5 py-3 font-semibold">Weekday start</th>
-            <th className="px-5 py-3 font-semibold">Weekend start</th>
-            <th className="px-5 py-3 font-semibold">Ends</th>
+            <th className="px-5 py-3 font-semibold">Weekday hours</th>
+            <th className="px-5 py-3 font-semibold">Weekend hours</th>
             <th className="px-5 py-3 font-semibold w-11" aria-label="Actions" />
           </tr>
         </thead>
         <tbody>
-          {seasons.map((season) => {
+          {entries.map((entry) => {
+            if (entry.kind === "gap") {
+              const label = entry.to
+                ? `Default hours · ${formatMonthDay(entry.from)} – ${formatMonthDay(entry.to)}`
+                : `Default hours · from ${formatMonthDay(entry.from)}`;
+              return (
+                <tr
+                  key={`gap-${entry.from}`}
+                  className="border-t border-border bg-surface-soft"
+                >
+                  <td colSpan={4} className="px-5 py-3 align-middle">
+                    <span className="text-xs text-text-secondary italic">{label}</span>
+                  </td>
+                  <td className="px-3 py-3 align-middle" />
+                </tr>
+              );
+            }
+
+            const { season } = entry;
             const highlight = seasonHasDifferentWeekendStart(season);
             return (
               <tr
@@ -41,7 +85,7 @@ export default function SeasonsTable({ seasons, onEdit, onDelete }: SeasonsTable
                   <button
                     type="button"
                     onClick={() => onEdit(season)}
-                    className="flex flex-col items-start gap-1 text-left h-11 justify-center active:scale-[0.99] transition-transform duration-150"
+                    className="flex flex-col items-start gap-0.5 text-left min-h-[44px] justify-center active:scale-[0.99] transition-transform duration-150"
                   >
                     <span className="font-semibold text-text inline-flex items-center gap-2">
                       {season.name}
@@ -52,7 +96,7 @@ export default function SeasonsTable({ seasons, onEdit, onDelete }: SeasonsTable
                       )}
                     </span>
                     <span className="text-xs text-text-secondary">
-                      Starts {formatMonthDay(season.startDate)}
+                      {formatMonthDay(season.startDate)} – {formatMonthDay(season.endDate)}
                     </span>
                   </button>
                 </td>
@@ -60,11 +104,15 @@ export default function SeasonsTable({ seasons, onEdit, onDelete }: SeasonsTable
                   {formatTeachesDays(season.teachesDays)}
                 </td>
                 <td className="px-5 py-4 text-text align-middle">
-                  {formatTime12(season.weekdayStartTime)}
+                  {season.weekdayStartTime && season.weekdayEndTime
+                    ? formatWindowRange(season.weekdayStartTime, season.weekdayEndTime)
+                    : "—"}
                 </td>
                 <td className="px-5 py-4 text-text align-middle">
                   <span className="inline-flex items-center gap-2">
-                    {formatTime12(season.weekendStartTime)}
+                    {season.weekendStartTime && season.weekendEndTime
+                      ? formatWindowRange(season.weekendStartTime, season.weekendEndTime)
+                      : "—"}
                     {highlight && (
                       <span
                         aria-label="Weekend start differs from weekdays"
@@ -73,9 +121,6 @@ export default function SeasonsTable({ seasons, onEdit, onDelete }: SeasonsTable
                       />
                     )}
                   </span>
-                </td>
-                <td className="px-5 py-4 text-text align-middle">
-                  {formatTime12(season.endTime)}
                 </td>
                 <td className="px-3 py-4 align-middle">
                   <button
@@ -97,17 +142,6 @@ export default function SeasonsTable({ seasons, onEdit, onDelete }: SeasonsTable
               </tr>
             );
           })}
-          {seasons.length === 0 && (
-            <tr>
-              <td
-                colSpan={6}
-                className="px-5 py-10 text-center text-sm text-text-secondary"
-              >
-                No seasons yet — your default hours above are in effect. Add a season to override
-                them for a stretch.
-              </td>
-            </tr>
-          )}
         </tbody>
       </table>
     </div>

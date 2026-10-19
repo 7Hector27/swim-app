@@ -16,21 +16,13 @@ beforeEach(() => {
 });
 
 describe("ThemeToggle", () => {
-  it("shows 'Switch to dark theme' aria-label in light mode", () => {
+  it("renders the same aria-label regardless of theme — no hydration mismatch", () => {
     render(<ThemeToggle />);
-    expect(screen.getByRole("button")).toHaveAttribute(
-      "aria-label",
-      "Switch to dark theme",
-    );
-  });
+    expect(screen.getByRole("button")).toHaveAttribute("aria-label", "Toggle color theme");
 
-  it("shows 'Switch to light theme' aria-label in dark mode", () => {
     mockTheme = "dark";
     render(<ThemeToggle />);
-    expect(screen.getByRole("button")).toHaveAttribute(
-      "aria-label",
-      "Switch to light theme",
-    );
+    expect(screen.getAllByRole("button")[1]).toHaveAttribute("aria-label", "Toggle color theme");
   });
 
   it("calls setTheme('dark') when clicked in light mode", () => {

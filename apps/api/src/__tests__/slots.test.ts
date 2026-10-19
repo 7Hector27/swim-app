@@ -28,10 +28,12 @@ const makeSeason = (overrides: Partial<AvailabilitySeason> = {}): AvailabilitySe
   id: "season-base",
   name: "School year",
   startDate: "2025-01-01",
+  endDate: "2099-12-31",
   teachesDays: [1, 2, 3, 5], // Mon Tue Wed Fri
   weekdayStartTime: "16:30",
+  weekdayEndTime: "19:30",
   weekendStartTime: "16:30",
-  endTime: "19:30",
+  weekendEndTime: "19:30",
   startsAtDst: false,
   createdAt: "2025-01-01T00:00:00.000Z",
   updatedAt: "2025-01-01T00:00:00.000Z",
@@ -132,8 +134,9 @@ describe("computeAvailableSlots", () => {
         startDate: "2025-01-01",
         teachesDays: [1, 2, 3, 4, 5, 6, 7],
         weekdayStartTime: "16:30",
+        weekdayEndTime: "19:30",
         weekendStartTime: "16:30",
-        endTime: "19:30",
+        weekendEndTime: "19:30",
       }),
       makeSeason({
         id: "summer",
@@ -141,8 +144,9 @@ describe("computeAvailableSlots", () => {
         startDate: "2025-06-01",
         teachesDays: [1, 2, 3, 4, 5, 6, 7],
         weekdayStartTime: "07:00",
+        weekdayEndTime: "11:00",
         weekendStartTime: "07:00",
-        endTime: "11:00",
+        weekendEndTime: "11:00",
       }),
     ];
     const nowUtc = new Date("2025-05-30T00:00:00.000Z");
@@ -167,8 +171,9 @@ describe("computeAvailableSlots", () => {
       startDate: "2025-01-01",
       teachesDays: [1, 2, 3, 4, 5, 6, 7],
       weekdayStartTime: "16:30",
+      weekdayEndTime: "19:30",
       weekendStartTime: "13:00",
-      endTime: "19:30",
+      weekendEndTime: "19:30",
     });
     const nowUtc = new Date("2025-09-15T00:00:00.000Z");
 
