@@ -1,4 +1,5 @@
 import type { AvailabilitySeason, SeasonWithIsCurrent } from "@swim-app/shared";
+import { findActiveSeasonId } from "@swim-app/shared";
 
 const WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
 const WEEKDAY_SET = new Set([1, 2, 3, 4, 5]);
@@ -28,7 +29,12 @@ export function formatTime12(time: string | null): string {
 export function isValidDateIso(dateIso: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateIso)) return false;
   const [year, month, day] = dateIso.split("-").map(Number) as [number, number, number];
-  return month >= 1 && month <= 12 && day >= 1 && day <= 31 && year > 0;
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() + 1 === month &&
+    date.getUTCDate() === day
+  );
 }
 
 // "2026-10-15" -> "Oct 15". Returns "" for empty or invalid input.
@@ -114,14 +120,7 @@ export function withIsCurrent(
   seasons: readonly AvailabilitySeason[],
   today: string,
 ): SeasonWithIsCurrent[] {
-  let activeId: string | null = null;
-  let activeStart = "";
-  for (const season of seasons) {
-    if (season.startDate <= today && season.startDate > activeStart) {
-      activeStart = season.startDate;
-      activeId = season.id;
-    }
-  }
+  const activeId = findActiveSeasonId(seasons, today);
   return seasons.map((season) => ({ ...season, isCurrent: season.id === activeId }));
 }
 

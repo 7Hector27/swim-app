@@ -23,6 +23,18 @@ describe("isValidDateIso", () => {
   it("rejects date with letters", () => {
     expect(isValidDateIso("2026-1x-15")).toBe(false);
   });
+  it("rejects an impossible date like 2026-02-31", () => {
+    expect(isValidDateIso("2026-02-31")).toBe(false);
+  });
+  it("rejects month 13", () => {
+    expect(isValidDateIso("2026-13-01")).toBe(false);
+  });
+  it("accepts Feb 29 on a leap year", () => {
+    expect(isValidDateIso("2024-02-29")).toBe(true);
+  });
+  it("rejects Feb 29 on a non-leap year", () => {
+    expect(isValidDateIso("2025-02-29")).toBe(false);
+  });
 });
 
 describe("formatMonthDay", () => {

@@ -368,7 +368,7 @@ export const availabilitySeasons = pgTable(
     // ISO day numbers: 1=Mon … 7=Sun. Non-empty subset of {1..7} — validated at the API layer.
     teachesDays: integer("teaches_days").array().notNull(),
     weekdayStartTime: time("weekday_start_time"),
-    weekdayEndTime: time("end_time"),
+    weekdayEndTime: time("weekday_end_time"),
     weekendStartTime: time("weekend_start_time"),
     weekendEndTime: time("weekend_end_time"),
     // When true, this season starts on that year's daylight saving start date.

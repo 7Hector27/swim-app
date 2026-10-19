@@ -302,6 +302,13 @@
       "when": 1792369786463,
       "tag": "0042_backfill_season_end_date",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1792430229844,
+      "tag": "0043_rename_end_time_to_weekday_end_time",
+      "breakpoints": true
     }
   ]
 }
