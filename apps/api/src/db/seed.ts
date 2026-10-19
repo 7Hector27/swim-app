@@ -49,7 +49,11 @@ async function seed() {
   process.stdout.write("Seed complete.\n");
 }
 
-seed().catch((error: unknown) => {
-  process.stderr.write(`${String(error)}\n`);
-  process.exit(1);
-});
+seed()
+  .then(() => {
+    process.exit(0);
+  })
+  .catch((error: unknown) => {
+    process.stderr.write(`${String(error)}\n`);
+    process.exit(1);
+  });
