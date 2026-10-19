@@ -391,8 +391,9 @@ describe("CoachAvailabilityContent — overrides", () => {
     mockFetchPreview.mockResolvedValue(basePreview);
     renderPage({ overrides: [override({})] });
 
+    // Two "Add" buttons exist (phone card + desktop section); click the first.
     fireEvent.click(
-      screen.getByRole("button", { name: /\+ Add a day off or custom hours/ }),
+      screen.getAllByRole("button", { name: /\+ Add a day off or custom hours/ })[0]!,
     );
 
     fireEvent.change(screen.getByLabelText("Date"), { target: { value: "2026-10-24" } });
@@ -409,7 +410,8 @@ describe("CoachAvailabilityContent — overrides", () => {
     mockFetchPreview.mockResolvedValue(basePreview);
     renderPage({ overrides: [override({ note: "Vacation" })] });
 
-    fireEvent.click(screen.getByRole("button", { name: "Delete one-off change" }));
+    // Two delete buttons exist (phone card + desktop section); click the first.
+    fireEvent.click(screen.getAllByRole("button", { name: "Delete one-off change" })[0]!);
 
     const confirmButton = await screen.findByRole("button", { name: "Delete", hidden: true });
     fireEvent.click(confirmButton);
@@ -446,7 +448,8 @@ describe("CoachAvailabilityContent — overrides", () => {
     mockFetchPreview.mockResolvedValue(basePreview);
     renderPage({ overrides: [existing] });
 
-    fireEvent.click(screen.getByRole("button", { name: "Edit one-off change" }));
+    // Two edit buttons exist (phone card + desktop section); click the first.
+    fireEvent.click(screen.getAllByRole("button", { name: "Edit one-off change" })[0]!);
 
     const title = await screen.findByRole("heading", {
       name: /Edit one-off change/i,
@@ -483,12 +486,19 @@ describe("CoachAvailabilityContent — overrides", () => {
 });
 
 describe("CoachAvailabilityContent — phone layout", () => {
-  it("renders tabs and the current-season card in phone mode", () => {
+  it("renders all four sections without tab controls", () => {
     renderPage();
-    expect(screen.getByRole("button", { name: "Seasons", pressed: true })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "One-off changes", pressed: false })).toBeInTheDocument();
-    // Phone card renders an Edit <name> button
+    // Tabs are gone — no pressed tab buttons
+    expect(screen.queryByRole("button", { name: "Seasons", pressed: true })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "One-off changes" })).not.toBeInTheDocument();
+    // Seasons card heading and current-season edit button are present
+    expect(screen.getByRole("heading", { name: "Seasons" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Edit Mid-Oct" })).toBeInTheDocument();
+    // One-off changes heading present
+    const offHeadings = screen.getAllByRole("heading", { name: "One-off changes" });
+    expect(offHeadings.length).toBeGreaterThanOrEqual(1);
+    // Week preview present
+    expect(screen.getAllByText("What parents see").length).toBeGreaterThanOrEqual(1);
   });
 });
 

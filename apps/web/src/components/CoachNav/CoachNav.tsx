@@ -7,9 +7,25 @@ import { usePathname } from "next/navigation";
 import ProfileMenu from "@/components/ProfileMenu";
 import ThemeLogo from "@/components/ThemeLogo";
 import ThemeToggle from "@/components/ThemeToggle";
+import { logout } from "@/lib/logout";
 import styles from "./CoachNav.module.css";
 
-const NAV_LINKS = [
+// ── Configuration — change tabs and sheet items here ─────────────────────────
+
+const BOTTOM_NAV_TABS = [
+  { label: "Home", href: "/dashboard" },
+  { label: "Schedule", href: "/coach/schedule" },
+  { label: "Swimmers", href: "/coach/swimmers" },
+] as const;
+
+const MORE_SHEET_ITEMS = [
+  { label: "Meets", href: "/coach/meets" },
+  { label: "Availability", href: "/coach/availability" },
+  { label: "Account settings", href: "/account" },
+] as const;
+
+// Desktop header shows all destinations
+const DESKTOP_NAV_LINKS = [
   { label: "Home", href: "/dashboard" },
   { label: "Schedule", href: "/coach/schedule" },
   { label: "Availability", href: "/coach/availability" },
@@ -17,7 +33,7 @@ const NAV_LINKS = [
   { label: "Meets", href: "/coach/meets" },
 ] as const;
 
-type NavLinkLabel = (typeof NAV_LINKS)[number]["label"];
+// ── Active-state helper ───────────────────────────────────────────────────────
 
 export function isCoachLinkActive(href: string, pathname: string | null): boolean {
   if (!pathname) return false;
@@ -25,9 +41,15 @@ export function isCoachLinkActive(href: string, pathname: string | null): boolea
   return pathname === href || pathname.startsWith(href + "/");
 }
 
+function isMoreActive(pathname: string | null): boolean {
+  return MORE_SHEET_ITEMS.some((item) => isCoachLinkActive(item.href, pathname));
+}
+
+// ── Icons ─────────────────────────────────────────────────────────────────────
+
 function HomeIcon() {
   return (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+    <svg width="22" height="22" viewBox="0 0 20 20" fill="none" aria-hidden="true">
       <path
         d="M3 9L10 3l7 6v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9Z"
         stroke="currentColor"
@@ -41,25 +63,16 @@ function HomeIcon() {
 
 function ScheduleIcon() {
   return (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+    <svg width="22" height="22" viewBox="0 0 20 20" fill="none" aria-hidden="true">
       <rect x="3" y="4" width="14" height="13" rx="2" stroke="currentColor" strokeWidth="1.5" />
       <path d="M7 2v4M13 2v4M3 9h14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
     </svg>
   );
 }
 
-function AvailabilityIcon() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-      <circle cx="10" cy="10" r="7" stroke="currentColor" strokeWidth="1.5" />
-      <path d="M10 6v4l2.5 2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-    </svg>
-  );
-}
-
 function SwimmersIcon() {
   return (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+    <svg width="22" height="22" viewBox="0 0 20 20" fill="none" aria-hidden="true">
       <circle cx="7" cy="6" r="2.5" stroke="currentColor" strokeWidth="1.5" />
       <path
         d="M2 16c0-2.761 2.239-5 5-5s5 2.239 5 5"
@@ -78,6 +91,25 @@ function SwimmersIcon() {
   );
 }
 
+function MoreIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <circle cx="5" cy="10" r="1.5" fill="currentColor" />
+      <circle cx="10" cy="10" r="1.5" fill="currentColor" />
+      <circle cx="15" cy="10" r="1.5" fill="currentColor" />
+    </svg>
+  );
+}
+
+function AvailabilityIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <circle cx="10" cy="10" r="7" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M10 6v4l2.5 2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 function MeetsIcon() {
   return (
     <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
@@ -87,18 +119,132 @@ function MeetsIcon() {
   );
 }
 
-const ICONS: Record<NavLinkLabel, () => React.ReactElement> = {
+type TabLabel = (typeof BOTTOM_NAV_TABS)[number]["label"];
+
+const TAB_ICONS: Record<TabLabel, () => React.ReactElement> = {
   Home: HomeIcon,
   Schedule: ScheduleIcon,
-  Availability: AvailabilityIcon,
   Swimmers: SwimmersIcon,
-  Meets: MeetsIcon,
 };
+
+// ── More sheet ────────────────────────────────────────────────────────────────
+
+const SHEET_ICONS: Record<string, () => React.ReactElement> = {
+  Meets: MeetsIcon,
+  Availability: AvailabilityIcon,
+};
+
+interface MoreSheetProps {
+  open: boolean;
+  onClose: () => void;
+  triggerRef: React.RefObject<HTMLButtonElement | null>;
+}
+
+function MoreSheet({ open, onClose, triggerRef }: MoreSheetProps) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    if (open && !dialog.open) dialog.showModal();
+    if (!open && dialog.open) {
+      dialog.close();
+      triggerRef.current?.focus();
+    }
+  }, [open, triggerRef]);
+
+  function handleBackdropClick(event: React.MouseEvent<HTMLDialogElement>) {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const clickedOutside =
+      event.clientX < rect.left ||
+      event.clientX > rect.right ||
+      event.clientY < rect.top ||
+      event.clientY > rect.bottom;
+    if (clickedOutside) onClose();
+  }
+
+  function handleKeyDown(event: React.KeyboardEvent<HTMLDialogElement>) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      onClose();
+    }
+  }
+
+  // Hidden logout form so the submit button can target it
+  return (
+    <>
+      <form id="coach-nav-logout-form" action={logout} className="hidden" />
+      <dialog
+        ref={dialogRef}
+        className={styles.moreSheet}
+        onClick={handleBackdropClick}
+        onKeyDown={handleKeyDown}
+        aria-label="More navigation options"
+      >
+        <div className={styles.moreSheetInner}>
+          <div className="flex items-center justify-between px-5 py-4 border-b border-divider-section">
+            <span className="text-sm font-semibold text-text-on-section">More</span>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close"
+              className="inline-flex items-center justify-center w-10 h-10 rounded-button text-text-secondary-on-section hover:text-text-on-section transition-colors duration-150"
+            >
+              <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                <path d="M5 5l10 10M15 5L5 15" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+              </svg>
+            </button>
+          </div>
+
+          <nav aria-label="More options">
+            <ul>
+              {MORE_SHEET_ITEMS.map((item) => {
+                const Icon = SHEET_ICONS[item.label];
+                return (
+                  <li key={item.href}>
+                    <Link
+                      href={item.href}
+                      onClick={onClose}
+                      className="flex items-center gap-4 px-5 h-14 text-sm font-semibold text-text-on-section hover:bg-white/5 transition-colors duration-150"
+                    >
+                      {Icon && (
+                        <span className="text-text-secondary-on-section">
+                          <Icon />
+                        </span>
+                      )}
+                      {item.label}
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          </nav>
+
+          <div className="border-t border-divider-section mt-1" />
+
+          <div className={styles.moreSheetFooter}>
+            <button
+              type="submit"
+              form="coach-nav-logout-form"
+              className="flex items-center gap-4 w-full px-5 h-14 text-sm font-semibold text-text-on-section hover:bg-white/5 transition-colors duration-150"
+            >
+              Log out
+            </button>
+          </div>
+        </div>
+      </dialog>
+    </>
+  );
+}
+
+// ── Main nav ──────────────────────────────────────────────────────────────────
 
 export default function CoachNav() {
   const pathname = usePathname();
   const [scrolled, setScrolled] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(false);
   const sentinelRef = useRef<HTMLDivElement>(null);
+  const moreBtnRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     const sentinel = sentinelRef.current;
@@ -112,6 +258,11 @@ export default function CoachNav() {
     observer.observe(sentinel);
     return () => observer.disconnect();
   }, []);
+
+  // Close sheet on route change
+  useEffect(() => {
+    setSheetOpen(false);
+  }, [pathname]);
 
   return (
     <>
@@ -130,7 +281,7 @@ export default function CoachNav() {
 
           {/* Desktop center links — hidden on mobile */}
           <nav className="hidden tablet:flex items-center gap-1" aria-label="Coach navigation">
-            {NAV_LINKS.map((link) => {
+            {DESKTOP_NAV_LINKS.map((link) => {
               const active = isCoachLinkActive(link.href, pathname);
               return (
                 <Link
@@ -161,24 +312,47 @@ export default function CoachNav() {
         className={`${styles.tabBar} tablet:hidden fixed bottom-0 inset-x-0 z-50 bg-section border-t border-divider-section flex`}
         aria-label="Coach navigation"
       >
-        {NAV_LINKS.map((link) => {
-          const active = isCoachLinkActive(link.href, pathname);
-          const Icon = ICONS[link.label];
+        {BOTTOM_NAV_TABS.map((tab) => {
+          const active = isCoachLinkActive(tab.href, pathname);
+          const Icon = TAB_ICONS[tab.label];
           return (
             <Link
-              key={link.href}
-              href={link.href}
+              key={tab.href}
+              href={tab.href}
               aria-current={active ? "page" : undefined}
-              className={`${styles.tabItem} flex flex-col items-center justify-center gap-1 flex-1 text-xs font-semibold transition-colors duration-150 ${
+              className={`${styles.tabItem} flex flex-col items-center justify-center gap-1.5 flex-1 text-xs font-semibold transition-colors duration-150 ${
                 active ? "text-accent-on-section" : "text-text-secondary-on-section"
               }`}
             >
               <Icon />
-              <span>{link.label}</span>
+              <span>{tab.label}</span>
             </Link>
           );
         })}
+
+        {/* More button */}
+        <button
+          ref={moreBtnRef}
+          type="button"
+          aria-haspopup="dialog"
+          aria-expanded={sheetOpen}
+          onClick={() => setSheetOpen(true)}
+          className={`${styles.tabItem} flex flex-col items-center justify-center gap-1.5 flex-1 text-xs font-semibold transition-colors duration-150 ${
+            isMoreActive(pathname) || sheetOpen
+              ? "text-accent-on-section"
+              : "text-text-secondary-on-section"
+          }`}
+        >
+          <MoreIcon />
+          <span>More</span>
+        </button>
       </nav>
+
+      <MoreSheet
+        open={sheetOpen}
+        onClose={() => setSheetOpen(false)}
+        triggerRef={moreBtnRef}
+      />
     </>
   );
 }

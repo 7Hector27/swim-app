@@ -1,8 +1,6 @@
 import type { CoachSwimmer } from "@swim-app/shared";
 import { todayLA } from "@swim-app/shared";
 
-import Link from "next/link";
-
 import Placeholder from "@/components/Placeholder";
 import { fetchCoachSwimmers } from "@/lib/api/coachSwimmers";
 import { coachGetPendingLessons, fetchCoachSchedule, fetchCoachStats } from "@/lib/api/lessons";
@@ -36,40 +34,13 @@ export default async function CoachDashboardContent({ accessToken }: Props) {
       <main id="main-content" className="flex-1">
         <div className="mx-auto max-w-content px-page pt-10 pb-20 tablet:pt-14 tablet:pb-32">
           {/* Page header */}
-          <div className="flex flex-col gap-4 mb-8 tablet:flex-row tablet:items-start tablet:justify-between">
-            <div>
-              <h1 className="text-3xl tablet:text-4xl text-heading">{dateLabel}</h1>
-              <p className="mt-2 text-sm text-text-secondary">
-                {(stats?.lessonsToday ?? 0) === 0
-                  ? "No lessons today."
-                  : `${stats?.lessonsToday} lesson${(stats?.lessonsToday ?? 0) !== 1 ? "s" : ""} today.`}
-              </p>
-            </div>
-
-            <div className="flex items-center gap-3 flex-wrap flex-shrink-0">
-              <Placeholder>
-                <button
-                  type="button"
-                  className="inline-flex items-center justify-center rounded-button border-2 border-button-outline text-button-outline font-bold text-sm px-5 h-11 transition-colors duration-150 hover:opacity-80"
-                >
-                  Log a time
-                </button>
-              </Placeholder>
-              <Link
-                href="/coach/availability"
-                className="inline-flex items-center justify-center rounded-button border-2 border-button-outline text-button-outline font-bold text-sm px-5 h-11 transition-colors duration-150 hover:opacity-80"
-              >
-                Edit availability
-              </Link>
-              <Placeholder>
-                <button
-                  type="button"
-                  className="inline-flex items-center justify-center rounded-button bg-button-primary-background text-button-primary-text font-bold text-sm px-5 h-11 transition-opacity hover:opacity-90"
-                >
-                  Add swimmer
-                </button>
-              </Placeholder>
-            </div>
+          <div className="mb-8">
+            <h1 className="text-3xl tablet:text-4xl text-heading">{dateLabel}</h1>
+            <p className="mt-2 text-sm text-text-secondary">
+              {(stats?.lessonsToday ?? 0) === 0
+                ? "No lessons today."
+                : `${stats?.lessonsToday} lesson${(stats?.lessonsToday ?? 0) !== 1 ? "s" : ""} today.`}
+            </p>
           </div>
 
           {/* Stat cards */}
@@ -84,7 +55,7 @@ export default async function CoachDashboardContent({ accessToken }: Props) {
           <div className="flex flex-col tablet:flex-row gap-6 desktop:gap-8 items-start">
             {/* Main column */}
             <div className="flex-1 min-w-0 flex flex-col gap-6">
-              <TodayScheduleCard items={scheduleItems} />
+              <TodayScheduleCard initialItems={scheduleItems} today={today} accessToken={accessToken} />
 
               <SwimmersSection swimmers={swimmers} />
             </div>
