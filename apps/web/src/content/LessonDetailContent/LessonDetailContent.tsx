@@ -7,6 +7,7 @@ import type { LessonLocation, UpcomingLesson } from "@swim-app/shared";
 
 import AddNoteForm from "@/components/AddNoteForm";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import LessonStatusBadge from "@/components/LessonStatusBadge";
 import { cancelLessonAction, type LessonDetailState } from "./actions";
 
 interface Props {
@@ -64,11 +65,15 @@ export default function LessonDetailContent({ lesson, locations: _locations, isV
                       Confirmed
                     </span>
                   ) : (
-                    <span className="inline-flex items-center rounded-full text-xs font-semibold px-2.5 py-1 bg-surface-soft text-text-secondary border border-border">
-                      Pending
-                    </span>
+                    <LessonStatusBadge status={lesson.status} viewer="parent" />
                   )}
                 </Row>
+                {lesson.movedAt !== null && lesson.previousStartsAt !== null && (
+                  <Row label="Rescheduled">
+                    Moved by Jason from {formatDateLabel(lesson.previousStartsAt)} at{" "}
+                    {formatTime(new Date(lesson.previousStartsAt))}
+                  </Row>
+                )}
               </dl>
             </div>
 

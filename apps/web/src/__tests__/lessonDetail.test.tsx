@@ -46,6 +46,8 @@ const lesson: UpcomingLesson = {
   approvedAt: "2025-05-30T10:00:00.000Z",
   declinedAt: null,
   declineReason: null,
+  movedAt: null,
+  previousStartsAt: null,
   createdAt: "2025-05-29T10:00:00.000Z",
 };
 

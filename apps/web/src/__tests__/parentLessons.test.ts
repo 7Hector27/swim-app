@@ -15,6 +15,8 @@ const makeLesson = (id: string, startsAt: string, status: UpcomingLesson["status
   approvedAt: null,
   declinedAt: null,
   declineReason: null,
+  movedAt: null,
+  previousStartsAt: null,
   createdAt: "2024-01-01T00:00:00.000Z",
 });
 

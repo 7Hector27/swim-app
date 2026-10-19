@@ -492,6 +492,9 @@ export const lessons = pgTable("lessons", {
   calendarSyncStatus: text("calendar_sync_status").notNull().default("not_synced"),
   calendarSyncError: text("calendar_sync_error"),
   calendarSyncAttempts: integer("calendar_sync_attempts").notNull().default(0),
+  notes: text("notes"),
+  movedAt: timestamp("moved_at", { withTimezone: true }),
+  previousStartsAt: timestamp("previous_starts_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdateFn(() => new Date()),
 }, (table) => [

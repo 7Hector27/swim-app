@@ -85,6 +85,15 @@ export default function CoachRosterContent({ swimmers }: CoachRosterContentProps
                     )}
                   </div>
                   <p className="text-sm text-text-secondary">Age {swimmer.age}</p>
+                  {(() => {
+                    const clubLabel = swimmer.clubs
+                      .map((club) => club.clubName ?? club.otherClubName)
+                      .filter((name): name is string => name !== null)
+                      .join(", ");
+                    return clubLabel ? (
+                      <p className="text-xs text-text-secondary">{clubLabel}</p>
+                    ) : null;
+                  })()}
                   {swimmer.currentLeagues.length > 0 && (
                     <div className="flex gap-2 flex-wrap mt-1">
                       {swimmer.currentLeagues.map((league) => (

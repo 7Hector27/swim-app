@@ -3,6 +3,7 @@ import { and, asc, desc, eq, inArray, isNotNull, isNull, or, sql } from "drizzle
 import type { IdParams } from "@swim-app/shared";
 import { db } from "../db/client";
 import {
+  clubs,
   coachNotes,
   evaluationSessions,
   householdMembers,
@@ -71,19 +72,11 @@ const swimmerColumns = {
   updatedAt: swimmers.updatedAt,
 } as const;
 
-const swimmerClubColumns = {
-  id: swimmerClubs.id,
-  swimmerId: swimmerClubs.swimmerId,
-  clubId: swimmerClubs.clubId,
-  otherClubName: swimmerClubs.otherClubName,
-  createdAt: swimmerClubs.createdAt,
-  updatedAt: swimmerClubs.updatedAt,
-} as const;
-
 type SwimmerClubRow = {
   id: string;
   swimmerId: string;
   clubId: string | null;
+  clubName: string | null;
   otherClubName: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -94,6 +87,7 @@ function mapClub(club: SwimmerClubRow): CoachSwimmer["clubs"][number] {
     id: club.id,
     swimmerId: club.swimmerId,
     clubId: club.clubId,
+    clubName: club.clubName,
     otherClubName: club.otherClubName,
     createdAt: toISO(club.createdAt),
     updatedAt: toISO(club.updatedAt),
@@ -141,7 +135,19 @@ coachSwimmersRouter.get(
     const householdIds = [...new Set(swimmerRows.map((row) => row.householdId))];
 
     const [clubRows, regRows, memberRows] = await Promise.all([
-      db.select(swimmerClubColumns).from(swimmerClubs).where(inArray(swimmerClubs.swimmerId, swimmerIds)),
+      db
+        .select({
+          id: swimmerClubs.id,
+          swimmerId: swimmerClubs.swimmerId,
+          clubId: swimmerClubs.clubId,
+          clubName: clubs.name,
+          otherClubName: swimmerClubs.otherClubName,
+          createdAt: swimmerClubs.createdAt,
+          updatedAt: swimmerClubs.updatedAt,
+        })
+        .from(swimmerClubs)
+        .leftJoin(clubs, eq(swimmerClubs.clubId, clubs.id))
+        .where(inArray(swimmerClubs.swimmerId, swimmerIds)),
       db
         .select({ swimmerId: leagueRegistrations.swimmerId, league: leagueRegistrations.league })
         .from(leagueRegistrations)
@@ -212,7 +218,19 @@ coachSwimmersRouter.get(
     }
 
     const [clubRows, regRows, memberRows, homePoolRows] = await Promise.all([
-      db.select(swimmerClubColumns).from(swimmerClubs).where(eq(swimmerClubs.swimmerId, swimmerId)),
+      db
+        .select({
+          id: swimmerClubs.id,
+          swimmerId: swimmerClubs.swimmerId,
+          clubId: swimmerClubs.clubId,
+          clubName: clubs.name,
+          otherClubName: swimmerClubs.otherClubName,
+          createdAt: swimmerClubs.createdAt,
+          updatedAt: swimmerClubs.updatedAt,
+        })
+        .from(swimmerClubs)
+        .leftJoin(clubs, eq(swimmerClubs.clubId, clubs.id))
+        .where(eq(swimmerClubs.swimmerId, swimmerId)),
       db
         .select({ swimmerId: leagueRegistrations.swimmerId, league: leagueRegistrations.league })
         .from(leagueRegistrations)

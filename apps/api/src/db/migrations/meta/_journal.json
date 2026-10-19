@@ -309,6 +309,13 @@
       "when": 1792430229844,
       "tag": "0043_rename_end_time_to_weekday_end_time",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1792452662718,
+      "tag": "0044_burly_ender_wiggin",
+      "breakpoints": true
     }
   ]
 }

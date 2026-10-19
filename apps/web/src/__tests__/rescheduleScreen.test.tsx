@@ -69,6 +69,8 @@ const futureLesson: UpcomingLesson = {
   approvedAt: null,
   declinedAt: null,
   declineReason: null,
+  movedAt: null,
+  previousStartsAt: null,
   createdAt: "2099-06-01T00:00:00.000Z",
 };
 

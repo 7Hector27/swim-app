@@ -1,12 +1,14 @@
 import { Router } from "express";
 import { and, asc, eq, inArray, lt, sql } from "drizzle-orm";
 import type {
+  CoachLessonDetail,
+  CoachLessonSwimmer,
   CoachListLessonsQuery,
+  CoachScheduleItem,
   CoachScheduleQuery,
   DeclineLessonBody,
   LessonResponse,
   LessonSwimmer,
-  ScheduleItem,
 } from "@swim-app/shared";
 import {
   CoachListLessonsQuerySchema,
@@ -19,10 +21,14 @@ import {
   availabilityOverrides,
   availabilitySeasons,
   blockedTimes,
+  clubs,
+  householdMembers,
   lessonLocations,
   lessonSwimmers,
   lessons,
+  profiles,
   swimmers,
+  swimmerClubs,
   travelBufferOverrides,
 } from "../db/schema";
 import { validate } from "../middleware/validate";
@@ -58,6 +64,8 @@ coachLessonsRouter.get(
         approvedAt: lessons.approvedAt,
         declinedAt: lessons.declinedAt,
         declineReason: lessons.declineReason,
+        movedAt: lessons.movedAt,
+        previousStartsAt: lessons.previousStartsAt,
         createdAt: lessons.createdAt,
       })
       .from(lessons)
@@ -72,8 +80,8 @@ coachLessonsRouter.get(
 
     const lessonIds = lessonRows.map((row) => row.id);
 
-    // 2. Load swimmers for those lessons.
-    const swimmerRows =
+    // 2. Load swimmers for those lessons (with club names, left-join deduplicated).
+    const rawSwimmerRows =
       lessonIds.length > 0
         ? await db
             .select({
@@ -81,17 +89,32 @@ coachLessonsRouter.get(
               swimmerId: lessonSwimmers.swimmerId,
               firstName: swimmers.firstName,
               lastName: swimmers.lastName,
+              clubName: clubs.name,
+              otherClubName: swimmerClubs.otherClubName,
             })
             .from(lessonSwimmers)
             .innerJoin(swimmers, eq(lessonSwimmers.swimmerId, swimmers.id))
+            .leftJoin(swimmerClubs, eq(swimmers.id, swimmerClubs.swimmerId))
+            .leftJoin(clubs, eq(swimmerClubs.clubId, clubs.id))
             .where(inArray(lessonSwimmers.lessonId, lessonIds))
         : [];
 
-    const swimmersByLesson = new Map<string, LessonSwimmer[]>();
-    for (const row of swimmerRows) {
-      const list = swimmersByLesson.get(row.lessonId) ?? [];
-      list.push({ swimmerId: row.swimmerId, firstName: row.firstName, lastName: row.lastName });
-      swimmersByLesson.set(row.lessonId, list);
+    // Deduplicate: one row per lessonId+swimmerId (take first club found).
+    const swimmersByLesson = new Map<string, CoachLessonSwimmer[]>();
+    const seenSwimmerKeys = new Set<string>();
+    for (const row of rawSwimmerRows) {
+      const key = `${row.lessonId}:${row.swimmerId}`;
+      if (!seenSwimmerKeys.has(key)) {
+        seenSwimmerKeys.add(key);
+        const list = swimmersByLesson.get(row.lessonId) ?? [];
+        list.push({
+          swimmerId: row.swimmerId,
+          firstName: row.firstName,
+          lastName: row.lastName,
+          clubName: row.clubName ?? row.otherClubName ?? null,
+        });
+        swimmersByLesson.set(row.lessonId, list);
+      }
     }
 
     // 3. Load config + buffers + blocked times + existing lessons + seasons + overrides for slot computation.
@@ -118,11 +141,11 @@ coachLessonsRouter.get(
       ]);
 
     // 4. Build schedule items.
-    const items: ScheduleItem[] = [];
+    const items: CoachScheduleItem[] = [];
 
     // Add lesson items.
     for (const row of lessonRows) {
-      const lessonResponse: LessonResponse = {
+      const coachLessonResponse = {
         id: row.id,
         householdId: row.householdId,
         locationId: row.locationId,
@@ -135,9 +158,11 @@ coachLessonsRouter.get(
         approvedAt: row.approvedAt?.toISOString() ?? null,
         declinedAt: row.declinedAt?.toISOString() ?? null,
         declineReason: row.declineReason ?? null,
+        movedAt: row.movedAt?.toISOString() ?? null,
+        previousStartsAt: row.previousStartsAt?.toISOString() ?? null,
         createdAt: row.createdAt.toISOString(),
       };
-      items.push({ type: "lesson", lesson: lessonResponse, locationName: row.locationName });
+      items.push({ type: "lesson", lesson: coachLessonResponse, locationName: row.locationName, householdId: row.householdId });
     }
 
     // Insert travel buffer items between consecutive lessons at different locations.
@@ -246,7 +271,7 @@ coachLessonsRouter.get(
 
     // 6. Sort all items by start time numerically.
     items.sort((itemA, itemB) => {
-      const getStart = (item: ScheduleItem) =>
+      const getStart = (item: CoachScheduleItem) =>
         new Date(item.type === "lesson" ? item.lesson.startsAt : item.startsAt).getTime();
       return getStart(itemA) - getStart(itemB);
     });
@@ -328,6 +353,8 @@ coachLessonsRouter.get(
       approvedAt: row.approvedAt?.toISOString() ?? null,
       declinedAt: row.declinedAt?.toISOString() ?? null,
       declineReason: row.declineReason ?? null,
+      movedAt: row.movedAt?.toISOString() ?? null,
+      previousStartsAt: row.previousStartsAt?.toISOString() ?? null,
       createdAt: row.createdAt.toISOString(),
     }));
 
@@ -390,6 +417,8 @@ coachLessonsRouter.patch(
       approvedAt: updated.approvedAt?.toISOString() ?? null,
       declinedAt: null,
       declineReason: null,
+      movedAt: updated.movedAt?.toISOString() ?? null,
+      previousStartsAt: updated.previousStartsAt?.toISOString() ?? null,
       createdAt: updated.createdAt.toISOString(),
     };
 
@@ -454,9 +483,121 @@ coachLessonsRouter.patch(
       approvedAt: updated.approvedAt?.toISOString() ?? null,
       declinedAt: updated.declinedAt?.toISOString() ?? null,
       declineReason: updated.declineReason ?? null,
+      movedAt: updated.movedAt?.toISOString() ?? null,
+      previousStartsAt: updated.previousStartsAt?.toISOString() ?? null,
       createdAt: updated.createdAt.toISOString(),
     };
 
     res.json(responseBody);
+  }),
+);
+
+// ── GET /coach/lessons/:id ────────────────────────────────────────────────────
+
+coachLessonsRouter.get(
+  "/lessons/:id",
+  validate({ params: LessonIdParamsSchema }),
+  asyncHandler(async (req, res) => {
+    const { id } = req.params as { id: string };
+
+    const lessonRows = await db
+      .select({
+        id: lessons.id,
+        householdId: lessons.householdId,
+        locationId: lessons.locationId,
+        locationName: lessonLocations.name,
+        locationAddress: lessonLocations.address,
+        locationCity: lessonLocations.city,
+        locationState: lessonLocations.state,
+        locationZip: lessonLocations.zip,
+        isHomePool: sql<boolean>`${lessonLocations.householdId} IS NOT NULL`,
+        startsAt: lessons.startsAt,
+        durationMinutes: lessons.durationMinutes,
+        type: lessons.type,
+        status: lessons.status,
+        expiresAt: lessons.expiresAt,
+        approvedAt: lessons.approvedAt,
+        declinedAt: lessons.declinedAt,
+        declineReason: lessons.declineReason,
+        movedAt: lessons.movedAt,
+        previousStartsAt: lessons.previousStartsAt,
+        notes: lessons.notes,
+        createdAt: lessons.createdAt,
+      })
+      .from(lessons)
+      .innerJoin(lessonLocations, eq(lessons.locationId, lessonLocations.id))
+      .where(eq(lessons.id, id))
+      .limit(1);
+
+    const lessonRow = lessonRows[0];
+    if (!lessonRow) {
+      res.status(404).json({ error: "Lesson not found" });
+      return;
+    }
+
+    // Load swimmers with club names (deduplicated).
+    const rawSwimmerRows = await db
+      .select({
+        swimmerId: lessonSwimmers.swimmerId,
+        firstName: swimmers.firstName,
+        lastName: swimmers.lastName,
+        clubName: clubs.name,
+        otherClubName: swimmerClubs.otherClubName,
+      })
+      .from(lessonSwimmers)
+      .innerJoin(swimmers, eq(lessonSwimmers.swimmerId, swimmers.id))
+      .leftJoin(swimmerClubs, eq(swimmers.id, swimmerClubs.swimmerId))
+      .leftJoin(clubs, eq(swimmerClubs.clubId, clubs.id))
+      .where(eq(lessonSwimmers.lessonId, id));
+
+    const swimmerMap = new Map<string, CoachLessonSwimmer>();
+    for (const row of rawSwimmerRows) {
+      if (!swimmerMap.has(row.swimmerId)) {
+        swimmerMap.set(row.swimmerId, {
+          swimmerId: row.swimmerId,
+          firstName: row.firstName,
+          lastName: row.lastName,
+          clubName: row.clubName ?? row.otherClubName ?? null,
+        });
+      }
+    }
+
+    // Load household name (first member's full name).
+    const memberRows = await db
+      .select({ fullName: profiles.fullName })
+      .from(householdMembers)
+      .innerJoin(profiles, eq(householdMembers.profileId, profiles.id))
+      .where(eq(householdMembers.householdId, lessonRow.householdId))
+      .limit(1);
+
+    const householdName = memberRows[0]?.fullName ?? null;
+
+    const body: CoachLessonDetail = {
+      id: lessonRow.id,
+      householdId: lessonRow.householdId,
+      householdName,
+      locationId: lessonRow.locationId,
+      locationName: lessonRow.locationName,
+      locationAddress: lessonRow.locationAddress,
+      locationCity: lessonRow.locationCity,
+      locationState: lessonRow.locationState,
+      locationZip: lessonRow.locationZip,
+      isHomePool: lessonRow.isHomePool,
+      startsAt: lessonRow.startsAt.toISOString(),
+      durationMinutes: lessonRow.durationMinutes as 30 | 45 | 60,
+      type: lessonRow.type,
+      status: lessonRow.status,
+      swimmers: [...swimmerMap.values()],
+      expiresAt: lessonRow.expiresAt?.toISOString() ?? null,
+      approvedAt: lessonRow.approvedAt?.toISOString() ?? null,
+      declinedAt: lessonRow.declinedAt?.toISOString() ?? null,
+      declineReason: lessonRow.declineReason ?? null,
+      movedAt: lessonRow.movedAt?.toISOString() ?? null,
+      previousStartsAt: lessonRow.previousStartsAt?.toISOString() ?? null,
+      notes: lessonRow.notes ?? null,
+      createdAt: lessonRow.createdAt.toISOString(),
+    };
+
+    res.json(body);
   }),
 );

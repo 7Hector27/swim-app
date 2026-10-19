@@ -1,9 +1,10 @@
 import Link from "next/link";
 
 import { todayLA } from "@swim-app/shared";
-import type { ScheduleItem } from "@swim-app/shared";
+import type { CoachScheduleItem } from "@swim-app/shared";
 
 import { fetchCoachSchedule } from "@/lib/api/lessons";
+import CoachLessonRow from "./CoachLessonRow";
 
 interface Props {
   accessToken: string;
@@ -23,7 +24,6 @@ export default async function CoachScheduleContent({ accessToken, date }: Props)
 
   return (
     <div className="flex flex-col flex-1 bg-background">
-
       <main id="main-content" className="flex-1">
         <div className="mx-auto max-w-content px-page pt-10 pb-20 tablet:pt-14 tablet:pb-32">
           <div className="flex flex-col gap-4 mb-8 tablet:flex-row tablet:items-center tablet:justify-between">
@@ -60,42 +60,9 @@ export default async function CoachScheduleContent({ accessToken, date }: Props)
 
 // ── Sub-components ─────────────────────────────────────────────────────────────
 
-function ScheduleRow({ item }: { item: ScheduleItem }) {
+function ScheduleRow({ item }: { item: CoachScheduleItem }) {
   if (item.type === "lesson") {
-    const startLabel = new Intl.DateTimeFormat("en-US", {
-      timeZone: "America/Los_Angeles",
-      hour: "numeric",
-      minute: "2-digit",
-    }).format(new Date(item.lesson.startsAt));
-
-    const swimmerNames = item.lesson.swimmers
-      .map((swimmer) => swimmer.firstName)
-      .join(", ");
-
-    return (
-      <div className="flex items-center gap-4 px-5 py-4">
-        <div className="flex-shrink-0 w-[72px]">
-          <p className="text-xs font-semibold text-text-secondary tabular-nums">{startLabel}</p>
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-text">
-            {swimmerNames || "No swimmers"}, {item.lesson.durationMinutes} min
-          </p>
-          <p className="text-xs text-text-secondary mt-0.5">
-            {item.locationName} &middot; {item.lesson.type === "private" ? "Private" : "Family"} lesson
-          </p>
-        </div>
-        <span
-          className={`inline-flex items-center rounded-full text-xs font-semibold px-2.5 py-1 ${
-            item.lesson.status === "approved"
-              ? "bg-success/10 text-success"
-              : "bg-surface-soft text-text-secondary border border-border"
-          }`}
-        >
-          {item.lesson.status === "approved" ? "Confirmed" : "Pending"}
-        </span>
-      </div>
-    );
+    return <CoachLessonRow item={item} />;
   }
 
   if (item.type === "travel_buffer") {
@@ -132,9 +99,7 @@ function ScheduleRow({ item }: { item: ScheduleItem }) {
             <circle cx="18.5" cy="18.5" r="2.5" />
           </svg>
           <div>
-            <p className="text-sm font-semibold text-text">
-              Travel buffer, {durationMin} min
-            </p>
+            <p className="text-sm font-semibold text-text">Travel buffer, {durationMin} min</p>
             <p className="text-xs text-text-secondary mt-0.5">
               {item.fromLocationName} &rarr; {item.toLocationName}
             </p>
@@ -163,9 +128,7 @@ function ScheduleRow({ item }: { item: ScheduleItem }) {
         <p className="text-xs font-semibold text-text-secondary tabular-nums">{startLabel}</p>
       </div>
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold text-text-secondary">
-          Open until {endLabel}
-        </p>
+        <p className="text-sm font-semibold text-text-secondary">Open until {endLabel}</p>
       </div>
     </div>
   );

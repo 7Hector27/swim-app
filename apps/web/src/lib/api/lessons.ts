@@ -1,18 +1,20 @@
 import {
   AvailableSlotSchema,
+  CoachLessonDetailSchema,
+  CoachScheduleItemSchema,
   CoachStatsSchema,
   LessonLocationSchema,
   LessonResponseSchema,
   MonthAvailabilityResponseSchema,
-  ScheduleItemSchema,
   UpcomingLessonSchema,
   WeekAvailabilityResponseSchema,
   type AvailableSlot,
+  type CoachLessonDetail,
+  type CoachScheduleItem,
   type CoachStats,
   type LessonLocation,
   type LessonResponse,
   type MonthAvailabilityResponse,
-  type ScheduleItem,
   type UpcomingLesson,
   type WeekAvailabilityResponse,
 } from "@swim-app/shared";
@@ -88,7 +90,7 @@ export async function coachGetPendingLessons(accessToken: string): Promise<Lesso
 export async function fetchCoachSchedule(
   accessToken: string,
   date: string,
-): Promise<ScheduleItem[]> {
+): Promise<CoachScheduleItem[]> {
   try {
     const response = await fetch(
       `${process.env.NEXT_PUBLIC_API_URL}/coach/schedule?date=${date}`,
@@ -99,14 +101,36 @@ export async function fetchCoachSchedule(
     );
     if (!response.ok) return [];
     const body: unknown = await response.json();
-    const parsed = ScheduleItemSchema.array().safeParse(body);
+    const parsed = CoachScheduleItemSchema.array().safeParse(body);
     if (!parsed.success) {
-      console.warn("fetchCoachSchedule: 200 response did not match ScheduleItemSchema.array()");
+      console.warn("fetchCoachSchedule: 200 response did not match CoachScheduleItemSchema.array()");
       return [];
     }
     return parsed.data;
   } catch {
     return [];
+  }
+}
+
+export async function fetchCoachLesson(
+  accessToken: string,
+  lessonId: string,
+): Promise<CoachLessonDetail | null> {
+  try {
+    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/coach/lessons/${lessonId}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      cache: "no-store",
+    });
+    if (!response.ok) return null;
+    const body: unknown = await response.json();
+    const parsed = CoachLessonDetailSchema.safeParse(body);
+    if (!parsed.success) {
+      console.warn("fetchCoachLesson: 200 response did not match CoachLessonDetailSchema");
+      return null;
+    }
+    return parsed.data;
+  } catch {
+    return null;
   }
 }
 

@@ -1,0 +1,250 @@
+"use client";
+
+import { useRef, useActionState } from "react";
+import Link from "next/link";
+import type { CoachLessonDetail } from "@swim-app/shared";
+
+import ConfirmDialog from "@/components/ConfirmDialog";
+import LessonStatusBadge from "@/components/LessonStatusBadge";
+import {
+  cancelCoachLessonAction,
+  approveCoachLessonAction,
+  declineCoachLessonAction,
+  type CoachLessonDetailState,
+} from "./actions";
+
+interface Props {
+  lesson: CoachLessonDetail;
+}
+
+export default function CoachLessonDetailContent({ lesson }: Props) {
+  const cancelDialogRef = useRef<HTMLDialogElement>(null);
+  const declineDialogRef = useRef<HTMLDialogElement>(null);
+
+  const [cancelState, cancelFormAction, isCanceling] = useActionState<
+    CoachLessonDetailState,
+    FormData
+  >(cancelCoachLessonAction, { status: "idle" });
+
+  const [approveState, approveFormAction, isApproving] = useActionState<
+    CoachLessonDetailState,
+    FormData
+  >(approveCoachLessonAction, { status: "idle" });
+
+  const [declineState, declineFormAction, isDeclining] = useActionState<
+    CoachLessonDetailState,
+    FormData
+  >(declineCoachLessonAction, { status: "idle" });
+
+  const startsAt = new Date(lesson.startsAt);
+  const endsAt = new Date(startsAt.getTime() + lesson.durationMinutes * 60 * 1000);
+  const lessonType = lesson.type === "private" ? "Private lesson" : "Family lesson";
+  const swimmerNames = lesson.swimmers
+    .map((swimmer) =>
+      swimmer.clubName ? `${swimmer.firstName} (${swimmer.clubName})` : swimmer.firstName,
+    )
+    .join(", ");
+
+  const isPending = lesson.status === "pending";
+  const isActive = lesson.status === "pending" || lesson.status === "approved";
+
+  const poolAddress = lesson.isHomePool
+    ? `${lesson.locationAddress}, ${lesson.locationCity}, ${lesson.locationState} ${lesson.locationZip}`
+    : null;
+
+  return (
+    <div className="flex flex-col flex-1 bg-background">
+      <main id="main-content" className="flex-1">
+        <div className="mx-auto max-w-content px-page pt-10 pb-20 tablet:pt-14 tablet:pb-32">
+          <Link
+            href="/coach/schedule"
+            className="inline-flex items-center gap-1.5 text-sm font-semibold text-link hover:text-link-hover transition-colors duration-150 mb-6"
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path
+                d="M10 12L6 8l4-4"
+                stroke="currentColor"
+                strokeWidth="1.75"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+            Back to schedule
+          </Link>
+
+          <h1 className="text-3xl tablet:text-4xl text-heading mb-8">Lesson details</h1>
+
+          <div className="flex flex-col gap-6 desktop:max-w-[640px]">
+            {/* Lesson summary */}
+            <div className="rounded-card border border-border p-5 tablet:p-6">
+              <h2 className="text-xl text-heading mb-4">Summary</h2>
+              <dl className="flex flex-col gap-3">
+                <Row label="Date">{formatDateLabel(lesson.startsAt)}</Row>
+                <Row label="Time">{`${formatTime(startsAt)} to ${formatTime(endsAt)}`}</Row>
+                <Row label="Pool">{lesson.locationName}</Row>
+                {poolAddress !== null && <Row label="Address">{poolAddress}</Row>}
+                <Row label="Duration">{`${lesson.durationMinutes} min`}</Row>
+                <Row label="Swimmers">{swimmerNames || "—"}</Row>
+                <Row label="Type">{lessonType}</Row>
+                {lesson.householdName !== null && (
+                  <Row label="Household">{lesson.householdName}</Row>
+                )}
+                <Row label="Status">
+                  {lesson.status === "approved" ? (
+                    <span className="inline-flex items-center rounded-full text-xs font-semibold px-2.5 py-1 bg-success/10 text-success">
+                      Confirmed
+                    </span>
+                  ) : (
+                    <LessonStatusBadge status={lesson.status} viewer="coach" />
+                  )}
+                </Row>
+                {lesson.notes !== null && <Row label="Notes">{lesson.notes}</Row>}
+              </dl>
+            </div>
+
+            {/* Pending actions */}
+            {isPending && (
+              <div className="rounded-card border border-border p-5 tablet:p-6">
+                <h2 className="text-xl text-heading mb-1">Approval</h2>
+                <p className="text-sm text-text-secondary mb-5">
+                  This lesson is waiting for your approval.
+                </p>
+
+                <form id="approve-detail-form" action={approveFormAction}>
+                  <input type="hidden" name="lessonId" value={lesson.id} />
+                </form>
+
+                <div className="flex gap-3 flex-wrap">
+                  <button
+                    type="submit"
+                    form="approve-detail-form"
+                    disabled={isApproving || isDeclining}
+                    className="inline-flex items-center justify-center rounded-button bg-button-primary-background text-button-primary-text font-bold text-sm px-5 h-11 transition-opacity hover:opacity-90 disabled:opacity-60"
+                  >
+                    {isApproving ? "Approving…" : "Approve"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isApproving || isDeclining}
+                    onClick={() => declineDialogRef.current?.showModal()}
+                    className="inline-flex items-center justify-center rounded-button border border-border text-text font-semibold text-sm px-5 h-11 transition-colors hover:bg-surface-soft disabled:opacity-60"
+                  >
+                    Decline
+                  </button>
+                </div>
+                {approveState.status === "error" && (
+                  <p role="alert" className="text-sm text-danger mt-3">
+                    {approveState.message}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* Reschedule */}
+            {isActive && (
+              <Link
+                href={`/coach/lessons/${lesson.id}/reschedule`}
+                className="inline-flex items-center justify-center rounded-button bg-button-primary-background text-button-primary-text font-bold text-sm px-5 h-11 transition-opacity hover:opacity-90 active:scale-[0.97] motion-reduce:transform-none self-start"
+              >
+                Reschedule
+              </Link>
+            )}
+
+            {/* Cancel */}
+            {isActive && (
+              <div className="rounded-card border border-border p-5 tablet:p-6">
+                <h2 className="text-xl text-heading mb-1">Cancel lesson</h2>
+                <p className="text-sm text-text-secondary mb-5">
+                  Canceling is permanent. The family will be notified.
+                </p>
+
+                <form id="cancel-coach-lesson-form" action={cancelFormAction}>
+                  <input type="hidden" name="lessonId" value={lesson.id} />
+                </form>
+
+                <button
+                  type="button"
+                  onClick={() => cancelDialogRef.current?.showModal()}
+                  className="inline-flex items-center justify-center rounded-button bg-danger text-button-danger-text font-bold text-sm px-5 h-11 transition-opacity hover:opacity-90"
+                >
+                  Cancel this lesson
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </main>
+
+      {/* Decline dialog */}
+      <form id="decline-detail-form" action={declineFormAction}>
+        <input type="hidden" name="lessonId" value={lesson.id} />
+      </form>
+      <ConfirmDialog
+        dialogRef={declineDialogRef}
+        title="Decline this lesson?"
+        description="The family will be notified. You can optionally leave a reason."
+        formId="decline-detail-form"
+        confirmLabel="Decline"
+        confirmDanger
+        cancelLabel="Keep it"
+        isPending={isDeclining}
+        {...(declineState.status === "error" ? { errorMessage: declineState.message } : {})}
+        onCancel={() => declineDialogRef.current?.close()}
+      >
+        <label className="flex flex-col gap-1.5">
+          <span className="text-xs font-semibold text-text-secondary-on-section">
+            Reason (optional)
+          </span>
+          <textarea
+            name="reason"
+            form="decline-detail-form"
+            rows={3}
+            placeholder="e.g. scheduling conflict"
+            className="rounded-card border border-divider-section bg-card text-text-on-section text-sm px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-focus-ring placeholder:text-text-secondary-on-section"
+          />
+        </label>
+      </ConfirmDialog>
+
+      {/* Cancel dialog */}
+      <ConfirmDialog
+        dialogRef={cancelDialogRef}
+        title="Cancel this lesson?"
+        description={`${formatDateLabel(lesson.startsAt)} at ${formatTime(startsAt)} at ${lesson.locationName}. This can't be undone.`}
+        formId="cancel-coach-lesson-form"
+        confirmLabel="Cancel lesson"
+        confirmDanger
+        cancelLabel="Keep it"
+        isPending={isCanceling}
+        {...(cancelState.status === "error" ? { errorMessage: cancelState.message } : {})}
+        onCancel={() => cancelDialogRef.current?.close()}
+      />
+    </div>
+  );
+}
+
+function Row({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-start gap-3">
+      <dt className="text-sm text-text-secondary w-24 flex-shrink-0">{label}</dt>
+      <dd className="text-sm text-text">{children}</dd>
+    </div>
+  );
+}
+
+function formatDateLabel(startsAt: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Los_Angeles",
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+  }).format(new Date(startsAt));
+}
+
+function formatTime(date: Date): string {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Los_Angeles",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).format(date);
+}

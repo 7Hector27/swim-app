@@ -204,6 +204,11 @@ export type {
   AvailabilityPreviewQuery,
   AvailabilityPreviewDay,
   AvailabilityPreviewResponse,
+  CoachLessonSwimmer,
+  CoachLessonResponse,
+  CoachScheduleLessonItem,
+  CoachScheduleItem,
+  CoachLessonDetail,
 } from "./schemas/booking";
 export {
   SlotStateSchema,
@@ -229,7 +234,19 @@ export {
   AvailabilityPreviewQuerySchema,
   AvailabilityPreviewDaySchema,
   AvailabilityPreviewResponseSchema,
+  CoachLessonSwimmerSchema,
+  CoachLessonResponseSchema,
+  CoachScheduleLessonItemSchema,
+  CoachScheduleItemSchema,
+  CoachLessonDetailSchema,
 } from "./schemas/booking";
+
+export type {
+  CoachSwimmerClub,
+} from "./schemas/swimmer";
+export {
+  CoachSwimmerClubSchema,
+} from "./schemas/swimmer";
 
 export type {
   CoachNoteType,

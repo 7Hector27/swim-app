@@ -493,11 +493,13 @@ describe("GET /coach/schedule", () => {
     const lessonsInnerJoin = vi.fn().mockReturnValue({ where: lessonsWhere });
     mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ innerJoin: lessonsInnerJoin }) });
 
-    // 2. lessonSwimmers + innerJoin(swimmers) .where()
+    // 2. lessonSwimmers + innerJoin(swimmers).leftJoin(swimmerClubs).leftJoin(clubs).where()
     const swimmerWhere = vi.fn().mockResolvedValue([
-      { lessonId: LESSON_ID, swimmerId: SWIMMER_ID, firstName: "Alice", lastName: "Smith" },
+      { lessonId: LESSON_ID, swimmerId: SWIMMER_ID, firstName: "Alice", lastName: "Smith", clubName: null, otherClubName: null },
     ]);
-    const swimmerInnerJoin = vi.fn().mockReturnValue({ where: swimmerWhere });
+    const swimmerLeftJoin2 = vi.fn().mockReturnValue({ where: swimmerWhere });
+    const swimmerLeftJoin1 = vi.fn().mockReturnValue({ leftJoin: swimmerLeftJoin2 });
+    const swimmerInnerJoin = vi.fn().mockReturnValue({ leftJoin: swimmerLeftJoin1 });
     mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ innerJoin: swimmerInnerJoin }) });
 
     // 3. Promise.all of 6 selects: [configRows, bufferRows, blockedRows, existingLessonRows, seasonRows, overrideRows]
