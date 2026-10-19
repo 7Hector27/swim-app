@@ -1,15 +1,15 @@
 "use client";
 
 import { useState } from "react";
+import { deleteSessionAction } from "./actions";
 
 interface UndoToastProps {
   swimmer: { id: string; firstName: string };
   sessionId: string;
-  accessToken: string;
   savedAt: number;
 }
 
-export default function UndoToast({ swimmer, sessionId, accessToken, savedAt }: UndoToastProps) {
+export default function UndoToast({ swimmer, sessionId, savedAt }: UndoToastProps) {
   const [undoInProgress, setUndoInProgress] = useState(false);
   const [undoError, setUndoError] = useState<string | null>(null);
 
@@ -20,14 +20,8 @@ export default function UndoToast({ swimmer, sessionId, accessToken, savedAt }: 
     setUndoInProgress(true);
     setUndoError(null);
     try {
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/coach/sessions/${sessionId}`,
-        {
-          method: "DELETE",
-          headers: { Authorization: `Bearer ${accessToken}` },
-        },
-      );
-      if (!response.ok) {
+      const result = await deleteSessionAction(sessionId);
+      if (!result.ok) {
         setUndoError("Could not undo. The undo window may have passed.");
         setUndoInProgress(false);
         return;

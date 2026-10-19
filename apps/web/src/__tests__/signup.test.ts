@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { vi, describe, expect, it } from "vitest";
-import { mapApiResponse } from "../content/SignupContent/helpers";
+import { mapApiResponse, AGE_ERROR } from "../content/SignupContent/helpers";
 import { mapZodErrors } from "../lib/mapZodErrors";
 
 // ── Signup server action — password confirm tests ──────────────────────────────
@@ -105,9 +105,10 @@ describe("mapApiResponse", () => {
     expect(mapApiResponse(201, null)).toEqual({ status: "success" });
   });
 
-  it("403 → age_blocked regardless of body", () => {
+  it("403 → field_errors with birthDate message regardless of body", () => {
     expect(mapApiResponse(403, { error: "Under 18" })).toEqual({
-      status: "age_blocked",
+      status: "field_errors",
+      errors: { birthDate: AGE_ERROR },
     });
   });
 

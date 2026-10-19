@@ -8,6 +8,9 @@ vi.mock("@/content/EvaluateContent/actions", () => ({
   submitEvaluation: vi.fn(),
   saveDraft: vi.fn(),
   deleteDraft: vi.fn(),
+  fetchDependencyMapAction: vi.fn().mockResolvedValue({ ok: false }),
+  fetchServerDraftsAction: vi.fn().mockResolvedValue([]),
+  deleteSessionAction: vi.fn().mockResolvedValue({ ok: true }),
 }));
 
 // Mock fetch
@@ -369,7 +372,7 @@ describe("draft persistence — full component", () => {
     }));
     localStorage.setItem(skillsKey(SWIMMER_ID, SCREEN_A_SLUG), JSON.stringify({ skills: {} }));
 
-    render(<EvaluateContent swimmer={SWIMMER_DETAIL} screens={TEST_SCREENS} accessToken="tok" />);
+    render(<EvaluateContent swimmer={SWIMMER_DETAIL} screens={TEST_SCREENS} />);
 
     await waitFor(() => {
       expect(
@@ -387,7 +390,7 @@ describe("draft persistence — full component", () => {
       breathingPattern: null,
     }));
 
-    render(<EvaluateContent swimmer={SWIMMER_DETAIL} screens={TEST_SCREENS} accessToken="tok" />);
+    render(<EvaluateContent swimmer={SWIMMER_DETAIL} screens={TEST_SCREENS} />);
 
     await act(async () => {});
 
@@ -402,7 +405,7 @@ describe("draft persistence — full component", () => {
       skills: { [SKILL_B_ID]: { ...defaultSkillDraft(), grade: 5 } },
     }));
 
-    render(<EvaluateContent swimmer={SWIMMER_DETAIL} screens={TEST_SCREENS} accessToken="tok" />);
+    render(<EvaluateContent swimmer={SWIMMER_DETAIL} screens={TEST_SCREENS} />);
 
     const select = screen.getByRole("combobox");
 
@@ -439,7 +442,7 @@ describe("draft persistence — full component", () => {
     });
 
     const { container } = render(
-      <EvaluateContent swimmer={SWIMMER_DETAIL} screens={TEST_SCREENS} accessToken="tok" />,
+      <EvaluateContent swimmer={SWIMMER_DETAIL} screens={TEST_SCREENS} />,
     );
 
     await waitFor(() => {
@@ -503,8 +506,7 @@ describe("EvaluateContent — section headers for screen-sectioned screens", () 
       <EvaluateContent
         swimmer={SWIMMER_DETAIL}
         screens={freestyleScreens}
-        accessToken="tok"
-      />,
+             />,
     );
 
     const select = screen.getByRole("combobox");
@@ -561,7 +563,7 @@ describe("EvaluateContent — breathing pattern selector", () => {
   });
 
   it("shows breathing pattern selector for freestyle screen", async () => {
-    render(<EvaluateContent swimmer={SWIMMER_DETAIL} screens={freestyleScreens} accessToken="tok" />);
+    render(<EvaluateContent swimmer={SWIMMER_DETAIL} screens={freestyleScreens} />);
     const select = screen.getByRole("combobox");
     fireEvent.change(select, { target: { value: "freestyle" } });
     await waitFor(() => {
@@ -570,7 +572,7 @@ describe("EvaluateContent — breathing pattern selector", () => {
   });
 
   it("shows breathing pattern selector for butterfly screen", async () => {
-    render(<EvaluateContent swimmer={SWIMMER_DETAIL} screens={freestyleScreens} accessToken="tok" />);
+    render(<EvaluateContent swimmer={SWIMMER_DETAIL} screens={freestyleScreens} />);
     const select = screen.getByRole("combobox");
     fireEvent.change(select, { target: { value: "butterfly" } });
     await waitFor(() => {
@@ -579,7 +581,7 @@ describe("EvaluateContent — breathing pattern selector", () => {
   });
 
   it("does not show breathing pattern selector for backstroke screen", async () => {
-    render(<EvaluateContent swimmer={SWIMMER_DETAIL} screens={freestyleScreens} accessToken="tok" />);
+    render(<EvaluateContent swimmer={SWIMMER_DETAIL} screens={freestyleScreens} />);
     const select = screen.getByRole("combobox");
     fireEvent.change(select, { target: { value: "backstroke" } });
     await waitFor(() => {
@@ -609,28 +611,24 @@ describe("UndoToast", () => {
       <UndoToast
         swimmer={SWIMMER}
         sessionId={SESSION_ID}
-        accessToken="tok"
         savedAt={Date.now()}
       />,
     );
     expect(screen.getByRole("button", { name: /undo/i })).toBeInTheDocument();
   });
 
-  it("calls DELETE /coach/sessions/:id when undo is clicked", async () => {
+  it("calls deleteSessionAction when undo is clicked", async () => {
+    const { deleteSessionAction } = await import("../content/EvaluateContent/actions");
     render(
       <UndoToast
         swimmer={SWIMMER}
         sessionId={SESSION_ID}
-        accessToken="tok"
         savedAt={Date.now()}
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: /undo/i }));
     await vi.waitFor(() => {
-      expect(mockFetch).toHaveBeenCalledWith(
-        expect.stringContaining(`/coach/sessions/${SESSION_ID}`),
-        expect.objectContaining({ method: "DELETE" }),
-      );
+      expect(deleteSessionAction).toHaveBeenCalledWith(SESSION_ID);
     });
   });
 });
@@ -653,18 +651,11 @@ describe("EvaluateContent — server draft banner", () => {
     updatedAt: DRAFT_DATE,
   };
 
-  beforeEach(() => {
+  beforeEach(async () => {
     localStorage.clear();
     vi.mocked(submitEvaluation).mockResolvedValue({ status: "idle" });
-    mockFetch.mockImplementation((url: string) => {
-      if (typeof url === "string" && url.includes("/drafts") && !url.includes("/draft-")) {
-        return Promise.resolve({
-          ok: true,
-          json: async () => ({ drafts: [serverDraft] }),
-        });
-      }
-      return Promise.resolve({ ok: true, json: async () => ({ suggestion: null }) });
-    });
+    const { fetchServerDraftsAction } = await import("../content/EvaluateContent/actions");
+    vi.mocked(fetchServerDraftsAction).mockResolvedValue([serverDraft]);
   });
 
   afterEach(() => {
@@ -673,7 +664,7 @@ describe("EvaluateContent — server draft banner", () => {
   });
 
   it("shows the resume banner when a server draft exists for the selected screen", async () => {
-    render(<EvaluateContent swimmer={SWIMMER_DETAIL} screens={TEST_SCREENS} accessToken="tok" />);
+    render(<EvaluateContent swimmer={SWIMMER_DETAIL} screens={TEST_SCREENS} />);
 
     const select = screen.getByRole("combobox");
     fireEvent.change(select, { target: { value: DRAFT_SCREEN } });
@@ -685,14 +676,10 @@ describe("EvaluateContent — server draft banner", () => {
   });
 
   it("does not show the banner when no server draft exists for the selected screen", async () => {
-    mockFetch.mockImplementation((url: string) => {
-      if (typeof url === "string" && url.includes("/drafts") && !url.includes("/draft-")) {
-        return Promise.resolve({ ok: true, json: async () => ({ drafts: [] }) });
-      }
-      return Promise.resolve({ ok: true, json: async () => ({ suggestion: null }) });
-    });
+    const { fetchServerDraftsAction } = await import("../content/EvaluateContent/actions");
+    vi.mocked(fetchServerDraftsAction).mockResolvedValue([]);
 
-    render(<EvaluateContent swimmer={SWIMMER_DETAIL} screens={TEST_SCREENS} accessToken="tok" />);
+    render(<EvaluateContent swimmer={SWIMMER_DETAIL} screens={TEST_SCREENS} />);
     const select = screen.getByRole("combobox");
     fireEvent.change(select, { target: { value: DRAFT_SCREEN } });
 
@@ -701,7 +688,7 @@ describe("EvaluateContent — server draft banner", () => {
   });
 
   it("clicking Start fresh shows a confirm prompt", async () => {
-    render(<EvaluateContent swimmer={SWIMMER_DETAIL} screens={TEST_SCREENS} accessToken="tok" />);
+    render(<EvaluateContent swimmer={SWIMMER_DETAIL} screens={TEST_SCREENS} />);
     const select = screen.getByRole("combobox");
     fireEvent.change(select, { target: { value: DRAFT_SCREEN } });
 
@@ -717,14 +704,7 @@ describe("EvaluateContent — server draft banner", () => {
   });
 
   it("clicking Delete draft calls DELETE on the draft and dismisses the banner", async () => {
-    mockFetch.mockImplementation((url: string) => {
-      if (typeof url === "string" && url.includes("/drafts") && !url.includes("/draft-")) {
-        return Promise.resolve({ ok: true, json: async () => ({ drafts: [serverDraft] }) });
-      }
-      return Promise.resolve({ ok: true, status: 204, json: async () => null });
-    });
-
-    render(<EvaluateContent swimmer={SWIMMER_DETAIL} screens={TEST_SCREENS} accessToken="tok" />);
+    render(<EvaluateContent swimmer={SWIMMER_DETAIL} screens={TEST_SCREENS} />);
     const select = screen.getByRole("combobox");
     fireEvent.change(select, { target: { value: DRAFT_SCREEN } });
 
@@ -758,7 +738,7 @@ describe("EvaluateContent — server draft banner", () => {
       return Promise.resolve({ ok: true, json: async () => ({ suggestion: null }) });
     });
 
-    render(<EvaluateContent swimmer={SWIMMER_DETAIL} screens={TEST_SCREENS} accessToken="tok" />);
+    render(<EvaluateContent swimmer={SWIMMER_DETAIL} screens={TEST_SCREENS} />);
 
     const select = screen.getByRole("combobox");
     fireEvent.change(select, { target: { value: DRAFT_SCREEN } });

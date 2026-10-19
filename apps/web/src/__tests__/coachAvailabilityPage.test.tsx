@@ -27,17 +27,17 @@ const mockFetchPreview = vi.fn();
 
 const mockPatchConfig = vi.fn();
 
-vi.mock("@/lib/api/coachAvailability", () => ({
-  createSeason: (...args: unknown[]) => mockCreateSeason(...args),
-  patchSeason: (...args: unknown[]) => mockPatchSeason(...args),
-  deleteSeason: (...args: unknown[]) => mockDeleteSeason(...args),
-  copyNextYear: (...args: unknown[]) => mockCopyNextYear(...args),
-  createOverride: (...args: unknown[]) => mockCreateOverride(...args),
-  patchOverride: (...args: unknown[]) => mockPatchOverride(...args),
-  deleteOverride: (...args: unknown[]) => mockDeleteOverride(...args),
-  fetchAvailabilityPreview: (...args: unknown[]) => mockFetchPreview(...args),
-  patchAvailabilityConfig: (...args: unknown[]) => mockPatchConfig(...args),
-  fetchSeasons: () => Promise.resolve([]),
+vi.mock("@/content/CoachAvailabilityContent/actions", () => ({
+  createSeasonAction: (...args: unknown[]) => mockCreateSeason(...args),
+  patchSeasonAction: (...args: unknown[]) => mockPatchSeason(...args),
+  deleteSeasonAction: (...args: unknown[]) => mockDeleteSeason(...args),
+  copyNextYearAction: (...args: unknown[]) => mockCopyNextYear(...args),
+  createOverrideAction: (...args: unknown[]) => mockCreateOverride(...args),
+  patchOverrideAction: (...args: unknown[]) => mockPatchOverride(...args),
+  deleteOverrideAction: (...args: unknown[]) => mockDeleteOverride(...args),
+  fetchAvailabilityPreviewAction: (...args: unknown[]) => mockFetchPreview(...args),
+  patchAvailabilityConfigAction: (...args: unknown[]) => mockPatchConfig(...args),
+  fetchSeasonsAction: () => Promise.resolve([]),
 }));
 
 import CoachAvailabilityContent from "../content/CoachAvailabilityContent/CoachAvailabilityContent";
@@ -136,7 +136,6 @@ function renderPage(overrides: {
   ];
   return render(
     <CoachAvailabilityContent
-      accessToken="test-token"
       initialSeasons={seasons}
       initialOverrides={overrides.overrides ?? []}
       initialBlockedTimes={[]}
@@ -205,7 +204,6 @@ describe("CoachAvailabilityContent — seasons table", () => {
 
     await waitFor(() => expect(mockCreateSeason).toHaveBeenCalledTimes(1));
     expect(mockCreateSeason).toHaveBeenCalledWith(
-      "test-token",
       expect.objectContaining({ name: "Early Dec", startDate: "2026-12-01" }),
     );
     await waitFor(() => expect(screen.getByText("Early Dec")).toBeInTheDocument());
@@ -314,7 +312,7 @@ describe("CoachAvailabilityContent — seasons table", () => {
     expect(confirmDialog).toHaveAttribute("open");
     fireEvent.click(confirmButton);
 
-    await waitFor(() => expect(mockDeleteSeason).toHaveBeenCalledWith("test-token", "s-oct"));
+    await waitFor(() => expect(mockDeleteSeason).toHaveBeenCalledWith("s-oct"));
     await waitFor(() => expect(confirmDialog).not.toHaveAttribute("open"));
     expect(within(table).queryByText("Mid-Oct")).not.toBeInTheDocument();
     // The other seeded season should still be in the table.
@@ -391,8 +389,9 @@ describe("CoachAvailabilityContent — overrides", () => {
     mockFetchPreview.mockResolvedValue(basePreview);
     renderPage({ overrides: [override({})] });
 
+    // Two "Add" buttons exist (phone card + desktop section); click the first.
     fireEvent.click(
-      screen.getByRole("button", { name: /\+ Add a day off or custom hours/ }),
+      screen.getAllByRole("button", { name: /\+ Add a day off or custom hours/ })[0]!,
     );
 
     fireEvent.change(screen.getByLabelText("Date"), { target: { value: "2026-10-24" } });
@@ -409,12 +408,13 @@ describe("CoachAvailabilityContent — overrides", () => {
     mockFetchPreview.mockResolvedValue(basePreview);
     renderPage({ overrides: [override({ note: "Vacation" })] });
 
-    fireEvent.click(screen.getByRole("button", { name: "Delete one-off change" }));
+    // Two delete buttons exist (phone card + desktop section); click the first.
+    fireEvent.click(screen.getAllByRole("button", { name: "Delete one-off change" })[0]!);
 
     const confirmButton = await screen.findByRole("button", { name: "Delete", hidden: true });
     fireEvent.click(confirmButton);
 
-    await waitFor(() => expect(mockDeleteOverride).toHaveBeenCalledWith("test-token", "override-1"));
+    await waitFor(() => expect(mockDeleteOverride).toHaveBeenCalledWith("override-1"));
   });
 
   it("edits an override: opens pre-populated, calls patchOverride, surfaces warnings", async () => {
@@ -446,7 +446,8 @@ describe("CoachAvailabilityContent — overrides", () => {
     mockFetchPreview.mockResolvedValue(basePreview);
     renderPage({ overrides: [existing] });
 
-    fireEvent.click(screen.getByRole("button", { name: "Edit one-off change" }));
+    // Two edit buttons exist (phone card + desktop section); click the first.
+    fireEvent.click(screen.getAllByRole("button", { name: "Edit one-off change" })[0]!);
 
     const title = await screen.findByRole("heading", {
       name: /Edit one-off change/i,
@@ -467,7 +468,6 @@ describe("CoachAvailabilityContent — overrides", () => {
 
     await waitFor(() => expect(mockPatchOverride).toHaveBeenCalledTimes(1));
     expect(mockPatchOverride).toHaveBeenCalledWith(
-      "test-token",
       "override-1",
       expect.objectContaining({ kind: "custom_hours", endTime: "19:00" }),
     );
@@ -483,12 +483,19 @@ describe("CoachAvailabilityContent — overrides", () => {
 });
 
 describe("CoachAvailabilityContent — phone layout", () => {
-  it("renders tabs and the current-season card in phone mode", () => {
+  it("renders all four sections without tab controls", () => {
     renderPage();
-    expect(screen.getByRole("button", { name: "Seasons", pressed: true })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "One-off changes", pressed: false })).toBeInTheDocument();
-    // Phone card renders an Edit <name> button
+    // Tabs are gone — no pressed tab buttons
+    expect(screen.queryByRole("button", { name: "Seasons", pressed: true })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "One-off changes" })).not.toBeInTheDocument();
+    // Seasons card heading and current-season edit button are present
+    expect(screen.getByRole("heading", { name: "Seasons" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Edit Mid-Oct" })).toBeInTheDocument();
+    // One-off changes heading present
+    const offHeadings = screen.getAllByRole("heading", { name: "One-off changes" });
+    expect(offHeadings.length).toBeGreaterThanOrEqual(1);
+    // Week preview present
+    expect(screen.getAllByText("What parents see").length).toBeGreaterThanOrEqual(1);
   });
 });
 

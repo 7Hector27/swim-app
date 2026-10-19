@@ -78,7 +78,6 @@ describe("CoachSwimmerDetailContent", () => {
     render(
       <CoachSwimmerDetailContent
         swimmer={TEST_SWIMMER}
-        accessToken="test-token"
         grades={{}}
         startGrades={{}}
         coachingPriorities={[]}
@@ -102,7 +101,6 @@ describe("CoachSwimmerDetailContent", () => {
     render(
       <CoachSwimmerDetailContent
         swimmer={TEST_SWIMMER}
-        accessToken="test-token"
         grades={TEST_GRADES}
         startGrades={{}}
         coachingPriorities={[]}
@@ -123,7 +121,6 @@ describe("CoachSwimmerDetailContent", () => {
     render(
       <CoachSwimmerDetailContent
         swimmer={TEST_SWIMMER}
-        accessToken="test-token"
         grades={{}}
         startGrades={{}}
         coachingPriorities={[]}
@@ -146,7 +143,6 @@ describe("CoachSwimmerDetailContent", () => {
     render(
       <CoachSwimmerDetailContent
         swimmer={TEST_SWIMMER}
-        accessToken="test-token"
         grades={TEST_GRADES}
         startGrades={{}}
         coachingPriorities={[]}

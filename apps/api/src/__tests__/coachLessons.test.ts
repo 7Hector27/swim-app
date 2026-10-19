@@ -565,4 +565,31 @@ describe("GET /coach/schedule", () => {
 
     expect(res.status).toBe(403);
   });
+
+  it("returns 422 for a malformed date", async () => {
+    authAsCoach();
+    const res = await request(app)
+      .get("/coach/schedule?date=not-a-date")
+      .set("Authorization", "Bearer token");
+    expect(res.status).toBe(422);
+  });
+
+  it("returns 422 for a calendar-invalid date", async () => {
+    authAsCoach();
+    const res = await request(app)
+      .get("/coach/schedule?date=2025-13-45")
+      .set("Authorization", "Bearer token");
+    expect(res.status).toBe(422);
+  });
+
+  it("returns 422 for a date more than one year in the future", async () => {
+    authAsCoach();
+    const farFuture = new Date();
+    farFuture.setFullYear(farFuture.getFullYear() + 2);
+    const dateStr = farFuture.toISOString().slice(0, 10);
+    const res = await request(app)
+      .get(`/coach/schedule?date=${dateStr}`)
+      .set("Authorization", "Bearer token");
+    expect(res.status).toBe(422);
+  });
 });

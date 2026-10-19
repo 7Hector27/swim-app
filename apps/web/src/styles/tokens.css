@@ -41,6 +41,8 @@
   --color-danger: #C8102E;
   --color-on-danger: #FFFFFF;
   --color-button-danger-text: #FFFFFF;
+  --color-section-item-hover: rgba(255, 255, 255, 0.05);
+  --color-backdrop: rgba(0, 0, 0, 0.5);
 
   /* Type */
   --font-heading: 'Fraunces', Georgia, serif;
@@ -88,6 +90,8 @@
   --color-danger: #FF6B6B;
   --color-on-danger: #141A2E;
   --color-button-danger-text: #141A2E;
+  --color-section-item-hover: rgba(255, 255, 255, 0.07);
+  --color-backdrop: rgba(0, 0, 0, 0.6);
 }
 
 @media (max-width: 768px) {

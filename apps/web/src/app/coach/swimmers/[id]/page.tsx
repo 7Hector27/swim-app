@@ -58,7 +58,6 @@ export default async function CoachSwimmerPage({ params }: CoachSwimmerPageProps
   return (
     <CoachSwimmerDetailContent
       swimmer={swimmerResult.swimmer}
-      accessToken={auth.accessToken}
       grades={grades}
       startGrades={startGrades}
       coachingPriorities={coachingPriorities}

@@ -33,7 +33,6 @@ export default async function CoachAvailabilityPage() {
 
   return (
     <CoachAvailabilityContent
-      accessToken={auth.accessToken}
       initialSeasons={seasons}
       initialOverrides={overrides}
       initialBlockedTimes={blockedTimes}

@@ -3,7 +3,78 @@
 }
 
 .tabItem {
-  min-height: 44px;
-  padding-top: 6px;
-  padding-bottom: 6px;
+  min-height: 52px;
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+/* Bottom sheet — slides up from the bottom of the screen */
+.moreSheet {
+  position: fixed;
+  inset-x: 0;
+  bottom: 0;
+  top: auto;
+  margin: 0;
+  max-width: 100%;
+  width: 100%;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-card) var(--radius-card) 0 0;
+  background: var(--color-section);
+  color: var(--color-text-on-section);
+
+  transition:
+    transform 260ms cubic-bezier(0.23, 1, 0.32, 1),
+    opacity 260ms cubic-bezier(0.23, 1, 0.32, 1),
+    overlay 260ms allow-discrete,
+    display 260ms allow-discrete;
+}
+
+.moreSheet[open] {
+  transform: translateY(0);
+  opacity: 1;
+}
+
+@starting-style {
+  .moreSheet[open] {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+}
+
+.moreSheet::backdrop {
+  background: var(--color-backdrop);
+  transition:
+    opacity 260ms,
+    overlay 260ms allow-discrete,
+    display 260ms allow-discrete;
+}
+
+@starting-style {
+  .moreSheet::backdrop {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .moreSheet,
+  .moreSheet::backdrop {
+    transition: opacity 150ms;
+  }
+
+  @starting-style {
+    .moreSheet[open] {
+      transform: none;
+      opacity: 0;
+    }
+  }
+}
+
+.moreSheetInner {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.moreSheetFooter {
+  display: flex;
+  flex-direction: column;
 }

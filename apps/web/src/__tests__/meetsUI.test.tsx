@@ -155,7 +155,6 @@ describe("CoachMeetDetailContent", () => {
 describe("CoachSwimmerDetailContent — times", () => {
   const baseProps = {
     swimmer: testSwimmer,
-    accessToken: "test-token",
     grades: {},
     startGrades: {},
     coachingPriorities: [],

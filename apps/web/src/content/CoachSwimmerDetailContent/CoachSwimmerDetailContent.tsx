@@ -14,7 +14,6 @@ import type { AddSwimState, EditSwimState, DeleteSwimState } from "./actions";
 
 interface CoachSwimmerDetailContentProps {
   swimmer: CoachSwimmerDetail;
-  accessToken: string;
   grades: SwimmerSkillsResponse["grades"];
   startGrades: SwimmerSkillsResponse["startGrades"];
   coachingPriorities: SwimmerSkillsResponse["coachingPriorities"];
@@ -549,7 +548,6 @@ function SwimmerTimesSection({ swimmerId, swims, personalBests, meets }: Swimmer
 
 export default function CoachSwimmerDetailContent({
   swimmer,
-  accessToken,
   grades,
   startGrades,
   coachingPriorities,
@@ -781,7 +779,6 @@ export default function CoachSwimmerDetailContent({
 
           <SwimmerSkillsHistory
             swimmerId={swimmer.id}
-            accessToken={accessToken}
             categories={categories}
             grades={grades}
           />

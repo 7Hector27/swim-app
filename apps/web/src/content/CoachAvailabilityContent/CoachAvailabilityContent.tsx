@@ -19,17 +19,17 @@ import type {
 import ConfirmDialog from "@/components/ConfirmDialog";
 import { apiErrorMessage } from "@/lib/apiErrorMessage";
 import {
-  copyNextYear,
-  createOverride,
-  createSeason,
-  deleteOverride,
-  deleteSeason,
-  fetchAvailabilityPreview,
-  fetchSeasons,
-  patchAvailabilityConfig,
-  patchOverride,
-  patchSeason,
-} from "@/lib/api/coachAvailability";
+  copyNextYearAction,
+  createOverrideAction,
+  createSeasonAction,
+  deleteOverrideAction,
+  deleteSeasonAction,
+  fetchAvailabilityPreviewAction,
+  fetchSeasonsAction,
+  patchAvailabilityConfigAction,
+  patchOverrideAction,
+  patchSeasonAction,
+} from "./actions";
 import { addDaysIso, withIsCurrent } from "./availabilityFormat";
 import { upcomingSummary } from "./seasonSummary";
 import CopyToNextYearButton from "./CopyToNextYearButton";
@@ -44,7 +44,6 @@ import SeasonsTable from "./SeasonsTable";
 import WeekPreview from "./WeekPreview";
 
 interface Props {
-  accessToken: string;
   initialSeasons: SeasonWithIsCurrent[];
   initialOverrides: AvailabilityOverride[];
   initialBlockedTimes: BlockedTime[];
@@ -53,8 +52,6 @@ interface Props {
   initialConfig: AvailabilityConfig;
   today: string;
 }
-
-type PhoneTab = "seasons" | "overrides";
 
 type PendingDeleteSeason = {
   kind: "season";
@@ -69,7 +66,6 @@ type PendingDeleteOverride = {
 type PendingDelete = PendingDeleteSeason | PendingDeleteOverride;
 
 export default function CoachAvailabilityContent({
-  accessToken,
   initialSeasons,
   initialOverrides,
   initialBlockedTimes,
@@ -105,8 +101,6 @@ export default function CoachAvailabilityContent({
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const confirmDialogRef = useRef<HTMLDialogElement>(null);
 
-  const [phoneTab, setPhoneTab] = useState<PhoneTab>("seasons");
-
   const currentSeason = useMemo(() => seasons.find((season) => season.isCurrent) ?? null, [seasons]);
   const upcomingSeasons = useMemo(
     () => seasons.filter((season) => season.startDate > today),
@@ -130,7 +124,7 @@ export default function CoachAvailabilityContent({
   async function refreshPreview(nextWeekStart: string) {
     setPreviewLoading(true);
     try {
-      const response = await fetchAvailabilityPreview(accessToken, nextWeekStart, 7);
+      const response = await fetchAvailabilityPreviewAction(nextWeekStart, 7);
       setPreview(response);
     } finally {
       setPreviewLoading(false);
@@ -149,7 +143,7 @@ export default function CoachAvailabilityContent({
   }, [pendingDelete]);
 
   async function refreshSeasons() {
-    const fresh = await fetchSeasons(accessToken);
+    const fresh = await fetchSeasonsAction();
     if (fresh.length > 0) setSeasons(withIsCurrent(fresh, todayLA()));
   }
 
@@ -179,7 +173,7 @@ export default function CoachAvailabilityContent({
     setSeasonPending(true);
     try {
       if (mode === "create") {
-        const result = await createSeason(accessToken, body as CreateSeasonBody);
+        const result = await createSeasonAction(body as CreateSeasonBody);
         if (!result.ok) return apiErrorMessage(result.code, result.conflictingSeasonName);
         setSeasons((prev) => {
           const next = [...prev, result.data.season].sort((a, b) =>
@@ -193,7 +187,7 @@ export default function CoachAvailabilityContent({
         return null;
       }
       if (!editingSeason) return "Season no longer exists.";
-      const result = await patchSeason(accessToken, editingSeason.id, body as PatchSeasonBody);
+      const result = await patchSeasonAction(editingSeason.id, body as PatchSeasonBody);
       if (!result.ok) return apiErrorMessage(result.code, result.conflictingSeasonName);
       setSeasons((prev) => {
         const next = prev
@@ -233,7 +227,7 @@ export default function CoachAvailabilityContent({
     setDeletePending(true);
     try {
       if (pendingDelete.kind === "season") {
-        const result = await deleteSeason(accessToken, pendingDelete.season.id);
+        const result = await deleteSeasonAction(pendingDelete.season.id);
         if (!result.ok) {
           setDeleteError(apiErrorMessage(result.code));
           return;
@@ -246,7 +240,7 @@ export default function CoachAvailabilityContent({
         );
         if (result.data.warnings.length > 0) setWarnings(result.data.warnings);
       } else {
-        const result = await deleteOverride(accessToken, pendingDelete.override.id);
+        const result = await deleteOverrideAction(pendingDelete.override.id);
         if (!result.ok) {
           setDeleteError(apiErrorMessage(result.code));
           return;
@@ -262,7 +256,7 @@ export default function CoachAvailabilityContent({
   }
 
   async function handleCopyNextYear(): Promise<{ insertedCount: number } | { error: string }> {
-    const result = await copyNextYear(accessToken);
+    const result = await copyNextYearAction();
     if (!result.ok) return { error: apiErrorMessage(result.code) };
     const inserted = result.data.inserted;
     if (inserted.length > 0) {
@@ -282,7 +276,7 @@ export default function CoachAvailabilityContent({
     setOverridePending(true);
     try {
       if (mode === "create") {
-        const result = await createOverride(accessToken, body as CreateOverrideBody);
+        const result = await createOverrideAction(body as CreateOverrideBody);
         if (!result.ok) return apiErrorMessage(result.code);
         setOverrides((prev) =>
           [...prev, result.data.override].sort((a, b) => a.startDate.localeCompare(b.startDate)),
@@ -293,7 +287,7 @@ export default function CoachAvailabilityContent({
         return null;
       }
       if (!editingOverride) return "That one-off change no longer exists.";
-      const result = await patchOverride(accessToken, editingOverride.id, body as PatchOverrideBody);
+      const result = await patchOverrideAction(editingOverride.id, body as PatchOverrideBody);
       if (!result.ok) return apiErrorMessage(result.code);
       setOverrides((prev) =>
         prev
@@ -314,7 +308,7 @@ export default function CoachAvailabilityContent({
   ): Promise<string | null> {
     setDefaultHoursPending(true);
     try {
-      const result = await patchAvailabilityConfig(accessToken, body);
+      const result = await patchAvailabilityConfigAction(body);
       if (!result.ok) return apiErrorMessage(result.code);
       setConfig(result.data);
       setDefaultHoursModalOpen(false);
@@ -342,7 +336,7 @@ export default function CoachAvailabilityContent({
 
   return (
     <main id="main-content" className="flex-1 pb-tab-safe">
-      <div className="mx-auto max-w-content px-page pt-8 pb-16 tablet:pt-12 tablet:pb-24 flex flex-col gap-8">
+      <div className="mx-auto max-w-content px-page pt-8 pb-16 tablet:pt-12 tablet:pb-24 flex flex-col gap-6 tablet:gap-8">
         {/* Header */}
         <div className="flex flex-col gap-3 tablet:flex-row tablet:items-start tablet:justify-between">
           <div>
@@ -366,41 +360,24 @@ export default function CoachAvailabilityContent({
           </div>
         </div>
 
+        {/* ── Default hours ─────────────────────────────────────────────── */}
         <DefaultHoursCard
           config={config}
           firstSeasonDate={firstSeasonDate}
           onEdit={() => setDefaultHoursModalOpen(true)}
         />
 
-        {/* Phone tabs */}
-        <div className="tablet:hidden">
-          <div className="inline-flex rounded-full bg-surface-soft p-1 w-full">
-            <TabButton active={phoneTab === "seasons"} onClick={() => setPhoneTab("seasons")}>
-              Seasons
-            </TabButton>
-            <TabButton active={phoneTab === "overrides"} onClick={() => setPhoneTab("overrides")}>
-              One-off changes
-            </TabButton>
-          </div>
-        </div>
-
-        {/* Desktop: seasons table */}
-        <section
-          aria-labelledby="seasons-section-title"
-          className={`${phoneTab === "seasons" ? "" : "hidden"} tablet:block flex flex-col gap-4`}
-        >
-          <div className="hidden tablet:flex items-baseline justify-between">
+        {/* ── Seasons ───────────────────────────────────────────────────── */}
+        <section aria-label="Seasons">
+          {/* Phone: card with heading */}
+          <div className="tablet:hidden rounded-card border border-border bg-background p-5 flex flex-col gap-5">
             <h2
-              id="seasons-section-title"
-              className="text-xl font-heading text-text"
+              className="text-base font-heading font-semibold text-heading"
               style={{ fontVariationSettings: '"SOFT" 100, "WONK" 0' }}
             >
-              {cycleLabel}
+              Seasons
             </h2>
-          </div>
 
-          {/* Phone: current season card + upcoming list */}
-          <div className="tablet:hidden flex flex-col gap-6">
             {currentSeason ? (
               <SeasonCard season={currentSeason} onEdit={() => openEditSeason(currentSeason)} />
             ) : (
@@ -411,11 +388,9 @@ export default function CoachAvailabilityContent({
             )}
 
             {upcomingSeasons.length > 0 && (
-              <section aria-labelledby="upcoming-seasons-title" className="flex flex-col gap-3">
+              <div className="flex flex-col gap-3">
                 <h3
-                  id="upcoming-seasons-title"
-                  className="text-base font-heading text-text"
-                  style={{ fontVariationSettings: '"SOFT" 100, "WONK" 0' }}
+                  className="text-sm font-semibold text-text-secondary uppercase tracking-widest"
                 >
                   Coming up
                 </h3>
@@ -425,7 +400,7 @@ export default function CoachAvailabilityContent({
                       <button
                         type="button"
                         onClick={() => openEditSeason(season)}
-                        className="w-full text-left rounded-card border border-border bg-background p-4 min-h-[52px] flex items-center justify-between gap-3 hover:bg-surface-soft transition-colors duration-150 active:scale-[0.995]"
+                        className="w-full text-left rounded-card border border-border bg-surface-soft p-4 min-h-[52px] flex items-center justify-between gap-3 hover:bg-border transition-colors duration-150 active:scale-[0.995]"
                       >
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-semibold text-text">
@@ -435,14 +410,12 @@ export default function CoachAvailabilityContent({
                             {upcomingSummary(season)}
                           </p>
                         </div>
-                        <span className="text-text-secondary" aria-hidden="true">
-                          ›
-                        </span>
+                        <span className="text-text-secondary" aria-hidden="true">›</span>
                       </button>
                     </li>
                   ))}
                 </ul>
-              </section>
+              </div>
             )}
 
             <button
@@ -454,6 +427,15 @@ export default function CoachAvailabilityContent({
             </button>
           </div>
 
+          {/* Desktop: heading row + table */}
+          <div className="hidden tablet:flex items-baseline justify-between mb-4">
+            <h2
+              className="text-xl font-heading text-text"
+              style={{ fontVariationSettings: '"SOFT" 100, "WONK" 0' }}
+            >
+              {cycleLabel}
+            </h2>
+          </div>
           <div className="hidden tablet:block">
             <SeasonsTable
               seasons={seasons}
@@ -463,33 +445,64 @@ export default function CoachAvailabilityContent({
           </div>
         </section>
 
-        {/* Desktop: week preview + overrides side-by-side; phone: stacked under tab */}
-        <div
-          className={`${phoneTab === "overrides" ? "" : "hidden"} tablet:grid tablet:grid-cols-[2fr_1fr] tablet:gap-6 flex flex-col gap-6`}
+        {/* ── One-off changes — phone card (always visible) ─────────────── */}
+        <section
+          aria-labelledby="overrides-heading-phone"
+          className="tablet:hidden rounded-card border border-border bg-background p-5 flex flex-col gap-4"
         >
-          <div className="hidden tablet:block">
-            <WeekPreview
-              weekStart={weekStart}
-              preview={preview}
-              isLoading={previewLoading}
-              onPrev={() => shiftWeek(-7)}
-              onNext={() => shiftWeek(7)}
-            />
-          </div>
+          <h2
+            id="overrides-heading-phone"
+            className="text-base font-heading font-semibold text-heading"
+            style={{ fontVariationSettings: '"SOFT" 100, "WONK" 0' }}
+          >
+            One-off changes
+          </h2>
+          <OverridesList
+            overrides={overrides}
+            blockedTimes={blockedTimes}
+            onEdit={openEditOverride}
+            onDelete={requestDeleteOverride}
+          />
+          <button
+            type="button"
+            onClick={openAddOverride}
+            className="inline-flex items-center justify-center h-11 px-5 rounded-button border-2 border-button-outline text-button-outline font-bold text-sm transition-opacity duration-150 hover:opacity-80 active:scale-[0.98]"
+          >
+            + Add a day off or custom hours
+          </button>
+        </section>
 
+        {/* ── What parents see — phone (always visible) ─────────────────── */}
+        <div className="tablet:hidden">
+          <WeekPreview
+            weekStart={weekStart}
+            preview={preview}
+            isLoading={previewLoading}
+            onPrev={() => shiftWeek(-7)}
+            onNext={() => shiftWeek(7)}
+          />
+        </div>
+
+        {/* ── Desktop: week preview + overrides side-by-side ────────────── */}
+        <div className="hidden tablet:grid tablet:grid-cols-[2fr_1fr] tablet:gap-6">
+          <WeekPreview
+            weekStart={weekStart}
+            preview={preview}
+            isLoading={previewLoading}
+            onPrev={() => shiftWeek(-7)}
+            onNext={() => shiftWeek(7)}
+          />
           <section
-            aria-labelledby="overrides-section-title"
+            aria-labelledby="overrides-heading-desktop"
             className="rounded-card border border-border bg-background p-5 flex flex-col gap-4"
           >
-            <div className="flex items-center justify-between gap-3">
-              <h3
-                id="overrides-section-title"
-                className="text-base font-heading text-text"
-                style={{ fontVariationSettings: '"SOFT" 100, "WONK" 0' }}
-              >
-                One-off changes
-              </h3>
-            </div>
+            <h3
+              id="overrides-heading-desktop"
+              className="text-base font-heading text-text"
+              style={{ fontVariationSettings: '"SOFT" 100, "WONK" 0' }}
+            >
+              One-off changes
+            </h3>
             <OverridesList
               overrides={overrides}
               blockedTimes={blockedTimes}
@@ -504,17 +517,6 @@ export default function CoachAvailabilityContent({
               + Add a day off or custom hours
             </button>
           </section>
-        </div>
-
-        {/* Phone: week preview appears under the seasons tab for context */}
-        <div className={`${phoneTab === "seasons" ? "" : "hidden"} tablet:hidden`}>
-          <WeekPreview
-            weekStart={weekStart}
-            preview={preview}
-            isLoading={previewLoading}
-            onPrev={() => shiftWeek(-7)}
-            onNext={() => shiftWeek(7)}
-          />
         </div>
       </div>
 
@@ -565,29 +567,6 @@ export default function CoachAvailabilityContent({
         onCancel={cancelDelete}
       />
     </main>
-  );
-}
-
-function TabButton({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={`flex-1 inline-flex items-center justify-center h-11 rounded-full text-sm font-bold transition-colors duration-150 ${
-        active ? "bg-button-primary-background text-button-primary-text" : "text-text-secondary"
-      }`}
-    >
-      {children}
-    </button>
   );
 }
 

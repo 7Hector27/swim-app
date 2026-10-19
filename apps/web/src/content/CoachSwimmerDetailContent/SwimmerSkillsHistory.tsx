@@ -2,11 +2,10 @@
 
 import { useState } from "react";
 import type { CategoriesResponse, CoachSkillRating } from "@swim-app/shared";
-import { fetchSkillRatingHistory, voidRating } from "@/lib/api/evaluations";
+import { fetchSkillRatingHistoryAction, voidRatingAction } from "./actions";
 
 interface SwimmerSkillsHistoryProps {
   swimmerId: string;
-  accessToken: string;
   categories: CategoriesResponse;
   grades: Record<string, number | "not_legal" | "no_concept">;
 }
@@ -48,7 +47,6 @@ function formatDate(isoString: string): string {
 
 export default function SwimmerSkillsHistory({
   swimmerId,
-  accessToken,
   categories,
   grades,
 }: SwimmerSkillsHistoryProps) {
@@ -78,7 +76,7 @@ export default function SwimmerSkillsHistory({
     const current = historyMap[skillId];
     if (current && (current.status === "loading" || current.status === "loaded")) return;
     setHistoryMap((prev) => ({ ...prev, [skillId]: { status: "loading" } }));
-    const result = await fetchSkillRatingHistory(swimmerId, skillId, accessToken);
+    const result = await fetchSkillRatingHistoryAction(swimmerId, skillId);
     if (result.ok) {
       setHistoryMap((prev) => ({ ...prev, [skillId]: { status: "loaded", ratings: result.ratings } }));
     } else {
@@ -89,7 +87,7 @@ export default function SwimmerSkillsHistory({
   async function handleVoidSubmit(skillId: string, ratingId: string) {
     const reason = voidReasons[ratingId] ?? "";
     if (!reason.trim()) return;
-    const result = await voidRating(ratingId, reason.trim(), accessToken);
+    const result = await voidRatingAction(ratingId, reason.trim());
     if (!result.ok) {
       setVoidErrors((prev) => ({ ...prev, [ratingId]: "Failed to void rating. Please try again." }));
       return;
@@ -107,7 +105,7 @@ export default function SwimmerSkillsHistory({
     });
     // Re-fetch history for this skill
     setHistoryMap((prev) => ({ ...prev, [skillId]: { status: "loading" } }));
-    const histResult = await fetchSkillRatingHistory(swimmerId, skillId, accessToken);
+    const histResult = await fetchSkillRatingHistoryAction(swimmerId, skillId);
     if (histResult.ok) {
       setHistoryMap((prev) => ({ ...prev, [skillId]: { status: "loaded", ratings: histResult.ratings } }));
     }

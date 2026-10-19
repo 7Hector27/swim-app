@@ -96,3 +96,47 @@ export async function deleteDraft(draftId: string): Promise<void> {
     headers: { Authorization: `Bearer ${session.access_token}` },
   }).catch(() => null);
 }
+
+export async function fetchDependencyMapAction(
+  swimmerId: string,
+  screenSlug: string,
+): Promise<{ ok: true; chain: Array<{ slug: string; grade: unknown; sortOrder: number }> | null } | { ok: false }> {
+  const supabase = await createClient();
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return { ok: false };
+  const response = await fetch(
+    `${process.env.NEXT_PUBLIC_API_URL}/coach/swimmers/${swimmerId}/sessions/dependency-map?screenSlug=${encodeURIComponent(screenSlug)}`,
+    { headers: { Authorization: `Bearer ${session.access_token}` } },
+  ).catch(() => null);
+  if (!response?.ok) return { ok: false };
+  const data: unknown = await response.json().catch(() => null);
+  const chain = (data as { suggestion?: Array<{ slug: string; grade: unknown; sortOrder: number }> | null } | null)?.suggestion ?? null;
+  return { ok: true, chain };
+}
+
+export async function fetchServerDraftsAction(swimmerId: string): Promise<import("@swim-app/shared").EvaluationDraft[]> {
+  const supabase = await createClient();
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return [];
+  const response = await fetch(
+    `${process.env.NEXT_PUBLIC_API_URL}/coach/swimmers/${swimmerId}/drafts`,
+    { headers: { Authorization: `Bearer ${session.access_token}` } },
+  ).catch(() => null);
+  if (!response?.ok) return [];
+  const data: unknown = await response.json().catch(() => null);
+  return (data as { drafts: import("@swim-app/shared").EvaluationDraft[] } | null)?.drafts ?? [];
+}
+
+export async function deleteSessionAction(sessionId: string): Promise<{ ok: boolean }> {
+  const supabase = await createClient();
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return { ok: false };
+  const response = await fetch(
+    `${process.env.NEXT_PUBLIC_API_URL}/coach/sessions/${sessionId}`,
+    {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    },
+  ).catch(() => null);
+  return { ok: response?.ok ?? false };
+}

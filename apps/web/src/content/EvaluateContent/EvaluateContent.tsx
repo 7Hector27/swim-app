@@ -9,7 +9,7 @@ import type {
 } from "@swim-app/shared";
 import { calculateBilateralBreathingGrade } from "@swim-app/shared";
 import AddNoteForm from "@/components/AddNoteForm";
-import { deleteDraft, saveDraft, submitEvaluation } from "./actions";
+import { deleteDraft, fetchDependencyMapAction, fetchServerDraftsAction, saveDraft, submitEvaluation } from "./actions";
 import type { EvaluateState, SessionDraft, SkillDraft } from "./helpers";
 import {
   defaultSkillDraft,
@@ -32,11 +32,10 @@ import UndoToast from "./UndoToast";
 interface EvaluateContentProps {
   swimmer: CoachSwimmerDetail;
   screens: ScreensResponse;
-  accessToken: string;
   resumeDraft?: EvaluationDraft;
 }
 
-export default function EvaluateContent({ swimmer, screens, accessToken, resumeDraft }: EvaluateContentProps) {
+export default function EvaluateContent({ swimmer, screens, resumeDraft }: EvaluateContentProps) {
   const metaKey = useMemo(() => `evaluate-draft-meta-${swimmer.id}`, [swimmer.id]);
   const skillsKey = useCallback((slug: string) => `evaluate-draft-skills-${swimmer.id}-${slug}`, [swimmer.id]);
 
@@ -156,19 +155,18 @@ export default function EvaluateContent({ swimmer, screens, accessToken, resumeD
       return;
     }
     setDepSuggestion({ status: "loading" });
-    fetch(
-      `${process.env.NEXT_PUBLIC_API_URL}/coach/swimmers/${swimmer.id}/sessions/dependency-map?screenSlug=${encodeURIComponent(draft.screenSlug)}`,
-      { headers: { Authorization: `Bearer ${accessToken}` } },
-    )
-      .then((response) => (response.ok ? response.json() : Promise.reject(response.status)))
-      .then((data: unknown) => {
-        const suggestion = (data as { suggestion?: Array<{ slug: string; grade: unknown; sortOrder: number }> | null } | null)?.suggestion ?? null;
-        setDepSuggestion({ status: "loaded", chain: suggestion });
+    fetchDependencyMapAction(swimmer.id, draft.screenSlug)
+      .then((result) => {
+        if (!result.ok) {
+          setDepSuggestion({ status: "error" });
+        } else {
+          setDepSuggestion({ status: "loaded", chain: result.chain });
+        }
       })
       .catch(() => {
         setDepSuggestion({ status: "error" });
       });
-  }, [draft.screenSlug, swimmer.id, accessToken]);
+  }, [draft.screenSlug, swimmer.id]);
 
   const boundAction = useMemo(() => submitEvaluation.bind(null, swimmer.id), [swimmer.id]);
   const [state, formAction, isPending] = useActionState<EvaluateState, FormData>(
@@ -206,12 +204,8 @@ export default function EvaluateContent({ swimmer, screens, accessToken, resumeD
   useEffect(() => {
     if (serverDraftsFetchedRef.current) return;
     serverDraftsFetchedRef.current = true;
-    fetch(`${process.env.NEXT_PUBLIC_API_URL}/coach/swimmers/${swimmer.id}/drafts`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data: unknown) => {
-        const drafts = (data as { drafts: import("@swim-app/shared").EvaluationDraft[] } | null)?.drafts ?? [];
+    fetchServerDraftsAction(swimmer.id)
+      .then((drafts) => {
         const map = new Map<string, import("@swim-app/shared").EvaluationDraft>();
         for (const serverDraft of drafts) {
           map.set(serverDraft.screenSlug, serverDraft);
@@ -219,7 +213,7 @@ export default function EvaluateContent({ swimmer, screens, accessToken, resumeD
         setServerDraftsBySlug(map);
       })
       .catch(() => null);
-  }, [swimmer.id, accessToken]);
+  }, [swimmer.id]);
 
   // Show banner when current screen has a server draft (not already loaded)
   useEffect(() => {
@@ -433,7 +427,6 @@ export default function EvaluateContent({ swimmer, screens, accessToken, resumeD
             <UndoToast
               swimmer={swimmer}
               sessionId={state.sessionId}
-              accessToken={accessToken}
               savedAt={savedAtRef.current}
             />
 
