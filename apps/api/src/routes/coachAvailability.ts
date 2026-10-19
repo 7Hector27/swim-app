@@ -37,6 +37,7 @@ import {
   PatchOverrideBodySchema,
   PatchSeasonBodySchema,
   UpsertTravelBufferBodySchema,
+  findActiveSeasonId,
 } from "@swim-app/shared";
 import { db } from "../db/client";
 import {
@@ -496,10 +497,8 @@ function toSeasonWithIsCurrent(
   allSeasons: AvailabilitySeason[],
   todayIso: string,
 ): SeasonWithIsCurrent {
-  const active = allSeasons.find(
-    (row) => row.startDate <= todayIso && row.endDate >= todayIso,
-  ) ?? null;
-  return { ...season, isCurrent: active !== null && active.id === season.id };
+  const activeId = findActiveSeasonId(allSeasons, todayIso);
+  return { ...season, isCurrent: activeId === season.id };
 }
 
 async function findOverlappingSeason(
@@ -637,7 +636,7 @@ coachAvailabilityRouter.post(
 
     const overlappingName = await findOverlappingSeason(body.startDate, body.endDate, null);
     if (overlappingName !== null) {
-      res.status(422).json({ error: `season_overlap:${overlappingName}` });
+      res.status(422).json({ error: "season_overlap", conflictingSeasonName: overlappingName });
       return;
     }
 
@@ -738,7 +737,7 @@ coachAvailabilityRouter.patch(
     if (next.startDate !== existing.startDate || next.endDate !== existing.endDate) {
       const overlappingName = await findOverlappingSeason(next.startDate, next.endDate, id);
       if (overlappingName !== null) {
-        res.status(422).json({ error: `season_overlap:${overlappingName}` });
+        res.status(422).json({ error: "season_overlap", conflictingSeasonName: overlappingName });
         return;
       }
     }

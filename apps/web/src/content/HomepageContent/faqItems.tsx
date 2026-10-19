@@ -91,7 +91,7 @@ export const FAQ_ITEMS: FaqItem[] = [
         Tuesday through Friday, 4:00 pm to 8:00 pm.
         During the school year, lessons start at 4:30&nbsp;pm.
         In summer (June&nbsp;1 through ISL Championships in August) I coach the Stonegate Seahawks from
-        3:00 to 7:00&nbsp;pm, so lesson times move outside that window. No lessons on Thursdays or
+        3:00 to 7:00&nbsp;pm, so lesson times move outside that window. No lessons on Mondays or
         weekends. Open times are always live on the{" "}
         <a
           href={siteLinks.booking ?? "/signup"}

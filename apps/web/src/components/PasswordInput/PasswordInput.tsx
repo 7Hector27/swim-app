@@ -40,10 +40,12 @@ function EyeOffIcon() {
   );
 }
 
-type PasswordInputProps = Omit<React.InputHTMLAttributes<HTMLInputElement>, "type">;
+type PasswordInputProps = Omit<React.InputHTMLAttributes<HTMLInputElement>, "type"> & {
+  wrapperClassName?: string;
+};
 
 const PasswordInput = forwardRef<HTMLInputElement, PasswordInputProps>(
-  function PasswordInput({ className, ...rest }, forwardedRef) {
+  function PasswordInput({ wrapperClassName, ...rest }, forwardedRef) {
     const [visible, setVisible] = useState(false);
     const innerRef = useRef<HTMLInputElement>(null);
 
@@ -61,7 +63,7 @@ const PasswordInput = forwardRef<HTMLInputElement, PasswordInputProps>(
     }
 
     return (
-      <div className={`relative${className ? ` ${className}` : ""}`}>
+      <div className={`relative${wrapperClassName ? ` ${wrapperClassName}` : ""}`}>
         <input
           ref={(node) => {
             (innerRef as React.MutableRefObject<HTMLInputElement | null>).current = node;

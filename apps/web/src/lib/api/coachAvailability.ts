@@ -28,13 +28,15 @@ import {
 
 export type ApiResult<T> =
   | { ok: true; data: T }
-  | { ok: false; status: number; code?: string };
+  | { ok: false; status: number; code?: string; conflictingSeasonName?: string };
 
-async function parseError(response: Response): Promise<{ status: number; code?: string }> {
+async function parseError(response: Response): Promise<{ status: number; code?: string; conflictingSeasonName?: string }> {
   try {
     const body: unknown = await response.json();
-    const code = (body as { error?: unknown } | null)?.error;
-    if (typeof code === "string") return { status: response.status, code };
+    const b = body as { error?: unknown; conflictingSeasonName?: unknown } | null;
+    const code = typeof b?.error === "string" ? b.error : undefined;
+    const conflictingSeasonName = typeof b?.conflictingSeasonName === "string" ? b.conflictingSeasonName : undefined;
+    if (code !== undefined) return { status: response.status, code, ...(conflictingSeasonName !== undefined && { conflictingSeasonName }) };
   } catch {
     // non-JSON body
   }

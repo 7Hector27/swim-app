@@ -238,6 +238,29 @@ RLS is enabled. Policies TBD.
 
 ---
 
+### `availability_seasons`
+
+Season windows that override the default availability config for a date range.
+
+| Column | Type | Nullable | Default | Notes |
+|---|---|---|---|---|
+| `id` | `uuid` | no | `gen_random_uuid()` | Primary key |
+| `name` | `text` | no | — | |
+| `start_date` | `date` | no | — | Unique. No two seasons may start on the same day. |
+| `end_date` | `date` | no | — | Must be ≥ `start_date` (CHECK constraint). |
+| `teaches_days` | `integer[]` | no | — | ISO weekday numbers (1=Mon … 7=Sun). Non-empty subset validated at the API layer. |
+| `weekday_start_time` | `time` | yes | `NULL` | Lesson window start for weekday lessons. `NULL` when no weekdays are taught. |
+| `weekday_end_time` | `time` | yes | `NULL` | Lesson window end for weekday lessons. Must be > `weekday_start_time` when both are set (CHECK constraint). |
+| `weekend_start_time` | `time` | yes | `NULL` | Lesson window start for weekend lessons. `NULL` when no weekends are taught. |
+| `weekend_end_time` | `time` | yes | `NULL` | Lesson window end for weekend lessons. Must be > `weekend_start_time` when both are set (CHECK constraint). |
+| `starts_at_dst` | `boolean` | no | `false` | When true, "copy to next year" uses the next year's DST start date instead of a naive +1 year. |
+| `created_at` | `timestamptz` | no | `now()` | |
+| `updated_at` | `timestamptz` | no | `now()` | Auto-updated. |
+
+RLS is enabled. Policies TBD.
+
+---
+
 ### `season_summer_end_dates`
 
 Per-year summer end dates (ISL Championships vary each year).

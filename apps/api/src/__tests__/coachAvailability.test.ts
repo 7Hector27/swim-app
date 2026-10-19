@@ -828,6 +828,29 @@ describe("POST /coach/seasons", () => {
 
     expect(res.status).toBe(403);
   });
+
+  it("returns 422 with season_overlap and conflictingSeasonName when dates overlap", async () => {
+    authAs(coachProfile);
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(coachProfile))
+      .mockReturnValueOnce(simpleSelect([]))              // same startDate check
+      .mockReturnValueOnce(simpleSelect([{ id: SEASON_B_ID, name: "School Year" }])); // findOverlappingSeason
+    const res = await request(app)
+      .post("/coach/seasons")
+      .set("Authorization", "Bearer token")
+      .send({
+        name: "Duplicate range",
+        startDate: "2025-08-16",
+        endDate: "2026-01-31",
+        teachesDays: [1, 2, 3, 4, 5],
+        weekdayStartTime: "15:00",
+        weekdayEndTime: "20:00",
+        weekendStartTime: null,
+        weekendEndTime: null,
+      });
+    expect(res.status).toBe(422);
+    expect(res.body).toEqual({ error: "season_overlap", conflictingSeasonName: "School Year" });
+  });
 });
 
 describe("DELETE /coach/seasons/:id", () => {
@@ -942,6 +965,27 @@ describe("PATCH /coach/seasons/:id", () => {
       .send({ weekdayEndTime: "19:00" });
 
     expect(res.status).toBe(404);
+  });
+
+  it("returns 422 with season_overlap and conflictingSeasonName when patched dates overlap", async () => {
+    authAs(coachProfile);
+    const existing = seasonRow({
+      teachesDays: [1, 2, 3, 4, 5],
+      weekdayStartTime: "15:00",
+      weekdayEndTime: "20:00",
+      weekendStartTime: null,
+      weekendEndTime: null,
+    });
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(coachProfile))
+      .mockReturnValueOnce(simpleSelect([existing]))       // fetch existing
+      .mockReturnValueOnce(simpleSelect([{ id: SEASON_B_ID, name: "Winter" }])); // findOverlappingSeason
+    const res = await request(app)
+      .patch(`/coach/seasons/${SEASON_A_ID}`)
+      .set("Authorization", "Bearer token")
+      .send({ endDate: "2026-06-30" });
+    expect(res.status).toBe(422);
+    expect(res.body).toEqual({ error: "season_overlap", conflictingSeasonName: "Winter" });
   });
 });
 

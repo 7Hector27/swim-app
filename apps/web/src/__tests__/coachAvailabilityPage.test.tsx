@@ -37,6 +37,7 @@ vi.mock("@/lib/api/coachAvailability", () => ({
   deleteOverride: (...args: unknown[]) => mockDeleteOverride(...args),
   fetchAvailabilityPreview: (...args: unknown[]) => mockFetchPreview(...args),
   patchAvailabilityConfig: (...args: unknown[]) => mockPatchConfig(...args),
+  fetchSeasons: () => Promise.resolve([]),
 }));
 
 import CoachAvailabilityContent from "../content/CoachAvailabilityContent/CoachAvailabilityContent";
