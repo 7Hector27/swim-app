@@ -39,6 +39,24 @@ vi.mock("@/components/Placeholder", () => ({
 
 import CoachDashboardContent from "../content/CoachDashboardContent/CoachDashboardContent";
 
+describe("CoachDashboardContent — schedule card full width on phones", () => {
+  it("today schedule card renders inside a w-full column (stretches to full width on mobile)", async () => {
+    const { container } = render(await CoachDashboardContent({ accessToken: "test-token" }));
+    const card = container.querySelector('[data-testid="today-schedule-card"]');
+    expect(card).not.toBeNull();
+    // The immediate parent column must have w-full so on phones it is not width-constrained
+    expect(card?.parentElement?.className).toContain("w-full");
+  });
+
+  it("two-column container does not apply items-start without tablet: prefix", async () => {
+    const { container } = render(await CoachDashboardContent({ accessToken: "test-token" }));
+    const card = container.querySelector('[data-testid="today-schedule-card"]');
+    const twoCol = card?.parentElement?.parentElement;
+    // bare items-start would prevent the column from stretching to full width on mobile
+    expect(twoCol?.className).not.toMatch(/(?<![:\w])items-start/);
+  });
+});
+
 describe("CoachDashboardContent — header buttons removed", () => {
   async function renderDashboard() {
     render(await CoachDashboardContent({ accessToken: "test-token" }));
