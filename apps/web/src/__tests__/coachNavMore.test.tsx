@@ -34,11 +34,7 @@ vi.mock("@/lib/logout", () => ({
 import CoachNav, { isCoachLinkActive } from "../components/CoachNav/CoachNav";
 
 function getBottomNav() {
-  // Two navs share aria-label "Coach navigation": desktop header + mobile tab bar.
-  // The tab bar is a <nav> element (not inside the header <nav>).
-  const navs = screen.getAllByRole("navigation", { name: "Coach navigation" });
-  // The bottom nav is the one rendered as a sibling to the header (not nested inside it).
-  return navs[navs.length - 1]!;
+  return screen.getByTestId("coach-bottom-nav");
 }
 
 describe("CoachNav — bottom tab bar has exactly 4 items", () => {

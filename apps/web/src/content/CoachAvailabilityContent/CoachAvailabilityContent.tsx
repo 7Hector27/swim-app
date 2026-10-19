@@ -19,17 +19,17 @@ import type {
 import ConfirmDialog from "@/components/ConfirmDialog";
 import { apiErrorMessage } from "@/lib/apiErrorMessage";
 import {
-  copyNextYear,
-  createOverride,
-  createSeason,
-  deleteOverride,
-  deleteSeason,
-  fetchAvailabilityPreview,
-  fetchSeasons,
-  patchAvailabilityConfig,
-  patchOverride,
-  patchSeason,
-} from "@/lib/api/coachAvailability";
+  copyNextYearAction,
+  createOverrideAction,
+  createSeasonAction,
+  deleteOverrideAction,
+  deleteSeasonAction,
+  fetchAvailabilityPreviewAction,
+  fetchSeasonsAction,
+  patchAvailabilityConfigAction,
+  patchOverrideAction,
+  patchSeasonAction,
+} from "./actions";
 import { addDaysIso, withIsCurrent } from "./availabilityFormat";
 import { upcomingSummary } from "./seasonSummary";
 import CopyToNextYearButton from "./CopyToNextYearButton";
@@ -44,7 +44,6 @@ import SeasonsTable from "./SeasonsTable";
 import WeekPreview from "./WeekPreview";
 
 interface Props {
-  accessToken: string;
   initialSeasons: SeasonWithIsCurrent[];
   initialOverrides: AvailabilityOverride[];
   initialBlockedTimes: BlockedTime[];
@@ -67,7 +66,6 @@ type PendingDeleteOverride = {
 type PendingDelete = PendingDeleteSeason | PendingDeleteOverride;
 
 export default function CoachAvailabilityContent({
-  accessToken,
   initialSeasons,
   initialOverrides,
   initialBlockedTimes,
@@ -126,7 +124,7 @@ export default function CoachAvailabilityContent({
   async function refreshPreview(nextWeekStart: string) {
     setPreviewLoading(true);
     try {
-      const response = await fetchAvailabilityPreview(accessToken, nextWeekStart, 7);
+      const response = await fetchAvailabilityPreviewAction(nextWeekStart, 7);
       setPreview(response);
     } finally {
       setPreviewLoading(false);
@@ -145,7 +143,7 @@ export default function CoachAvailabilityContent({
   }, [pendingDelete]);
 
   async function refreshSeasons() {
-    const fresh = await fetchSeasons(accessToken);
+    const fresh = await fetchSeasonsAction();
     if (fresh.length > 0) setSeasons(withIsCurrent(fresh, todayLA()));
   }
 
@@ -175,7 +173,7 @@ export default function CoachAvailabilityContent({
     setSeasonPending(true);
     try {
       if (mode === "create") {
-        const result = await createSeason(accessToken, body as CreateSeasonBody);
+        const result = await createSeasonAction(body as CreateSeasonBody);
         if (!result.ok) return apiErrorMessage(result.code, result.conflictingSeasonName);
         setSeasons((prev) => {
           const next = [...prev, result.data.season].sort((a, b) =>
@@ -189,7 +187,7 @@ export default function CoachAvailabilityContent({
         return null;
       }
       if (!editingSeason) return "Season no longer exists.";
-      const result = await patchSeason(accessToken, editingSeason.id, body as PatchSeasonBody);
+      const result = await patchSeasonAction(editingSeason.id, body as PatchSeasonBody);
       if (!result.ok) return apiErrorMessage(result.code, result.conflictingSeasonName);
       setSeasons((prev) => {
         const next = prev
@@ -229,7 +227,7 @@ export default function CoachAvailabilityContent({
     setDeletePending(true);
     try {
       if (pendingDelete.kind === "season") {
-        const result = await deleteSeason(accessToken, pendingDelete.season.id);
+        const result = await deleteSeasonAction(pendingDelete.season.id);
         if (!result.ok) {
           setDeleteError(apiErrorMessage(result.code));
           return;
@@ -242,7 +240,7 @@ export default function CoachAvailabilityContent({
         );
         if (result.data.warnings.length > 0) setWarnings(result.data.warnings);
       } else {
-        const result = await deleteOverride(accessToken, pendingDelete.override.id);
+        const result = await deleteOverrideAction(pendingDelete.override.id);
         if (!result.ok) {
           setDeleteError(apiErrorMessage(result.code));
           return;
@@ -258,7 +256,7 @@ export default function CoachAvailabilityContent({
   }
 
   async function handleCopyNextYear(): Promise<{ insertedCount: number } | { error: string }> {
-    const result = await copyNextYear(accessToken);
+    const result = await copyNextYearAction();
     if (!result.ok) return { error: apiErrorMessage(result.code) };
     const inserted = result.data.inserted;
     if (inserted.length > 0) {
@@ -278,7 +276,7 @@ export default function CoachAvailabilityContent({
     setOverridePending(true);
     try {
       if (mode === "create") {
-        const result = await createOverride(accessToken, body as CreateOverrideBody);
+        const result = await createOverrideAction(body as CreateOverrideBody);
         if (!result.ok) return apiErrorMessage(result.code);
         setOverrides((prev) =>
           [...prev, result.data.override].sort((a, b) => a.startDate.localeCompare(b.startDate)),
@@ -289,7 +287,7 @@ export default function CoachAvailabilityContent({
         return null;
       }
       if (!editingOverride) return "That one-off change no longer exists.";
-      const result = await patchOverride(accessToken, editingOverride.id, body as PatchOverrideBody);
+      const result = await patchOverrideAction(editingOverride.id, body as PatchOverrideBody);
       if (!result.ok) return apiErrorMessage(result.code);
       setOverrides((prev) =>
         prev
@@ -310,7 +308,7 @@ export default function CoachAvailabilityContent({
   ): Promise<string | null> {
     setDefaultHoursPending(true);
     try {
-      const result = await patchAvailabilityConfig(accessToken, body);
+      const result = await patchAvailabilityConfigAction(body);
       if (!result.ok) return apiErrorMessage(result.code);
       setConfig(result.data);
       setDefaultHoursModalOpen(false);
@@ -370,11 +368,10 @@ export default function CoachAvailabilityContent({
         />
 
         {/* ── Seasons ───────────────────────────────────────────────────── */}
-        <section aria-labelledby="seasons-heading">
+        <section aria-label="Seasons">
           {/* Phone: card with heading */}
           <div className="tablet:hidden rounded-card border border-border bg-background p-5 flex flex-col gap-5">
             <h2
-              id="seasons-heading"
               className="text-base font-heading font-semibold text-heading"
               style={{ fontVariationSettings: '"SOFT" 100, "WONK" 0' }}
             >
@@ -433,7 +430,6 @@ export default function CoachAvailabilityContent({
           {/* Desktop: heading row + table */}
           <div className="hidden tablet:flex items-baseline justify-between mb-4">
             <h2
-              id="seasons-heading-desktop"
               className="text-xl font-heading text-text"
               style={{ fontVariationSettings: '"SOFT" 100, "WONK" 0' }}
             >

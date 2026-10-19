@@ -82,7 +82,6 @@ function season(partial: Partial<SeasonWithIsCurrent> = {}): SeasonWithIsCurrent
 function renderPage(seasons: SeasonWithIsCurrent[] = []) {
   return render(
     <CoachAvailabilityContent
-      accessToken="test-token"
       initialSeasons={seasons}
       initialOverrides={[]}
       initialBlockedTimes={[]}

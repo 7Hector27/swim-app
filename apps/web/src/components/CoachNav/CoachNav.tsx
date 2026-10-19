@@ -137,21 +137,17 @@ const SHEET_ICONS: Record<string, () => React.ReactElement> = {
 interface MoreSheetProps {
   open: boolean;
   onClose: () => void;
-  triggerRef: React.RefObject<HTMLButtonElement | null>;
 }
 
-function MoreSheet({ open, onClose, triggerRef }: MoreSheetProps) {
+function MoreSheet({ open, onClose }: MoreSheetProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
     if (open && !dialog.open) dialog.showModal();
-    if (!open && dialog.open) {
-      dialog.close();
-      triggerRef.current?.focus();
-    }
-  }, [open, triggerRef]);
+    if (!open && dialog.open) dialog.close();
+  }, [open]);
 
   function handleBackdropClick(event: React.MouseEvent<HTMLDialogElement>) {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -205,7 +201,7 @@ function MoreSheet({ open, onClose, triggerRef }: MoreSheetProps) {
                     <Link
                       href={item.href}
                       onClick={onClose}
-                      className="flex items-center gap-4 px-5 h-14 text-sm font-semibold text-text-on-section hover:bg-white/5 transition-colors duration-150"
+                      className="flex items-center gap-4 px-5 h-14 text-sm font-semibold text-text-on-section hover:bg-section-item-hover transition-colors duration-150"
                     >
                       {Icon && (
                         <span className="text-text-secondary-on-section">
@@ -226,7 +222,7 @@ function MoreSheet({ open, onClose, triggerRef }: MoreSheetProps) {
             <button
               type="submit"
               form="coach-nav-logout-form"
-              className="flex items-center gap-4 w-full px-5 h-14 text-sm font-semibold text-text-on-section hover:bg-white/5 transition-colors duration-150"
+              className="flex items-center gap-4 w-full px-5 h-14 text-sm font-semibold text-text-on-section hover:bg-section-item-hover transition-colors duration-150"
             >
               Log out
             </button>
@@ -309,6 +305,7 @@ export default function CoachNav() {
 
       {/* Mobile bottom tab bar — hidden on tablet+ */}
       <nav
+        data-testid="coach-bottom-nav"
         className={`${styles.tabBar} tablet:hidden fixed bottom-0 inset-x-0 z-50 bg-section border-t border-divider-section flex`}
         aria-label="Coach navigation"
       >
@@ -350,8 +347,10 @@ export default function CoachNav() {
 
       <MoreSheet
         open={sheetOpen}
-        onClose={() => setSheetOpen(false)}
-        triggerRef={moreBtnRef}
+        onClose={() => {
+          setSheetOpen(false);
+          moreBtnRef.current?.focus();
+        }}
       />
     </>
   );

@@ -55,7 +55,7 @@ export default async function CoachDashboardContent({ accessToken }: Props) {
           <div className="flex flex-col tablet:flex-row gap-6 desktop:gap-8 items-start">
             {/* Main column */}
             <div className="flex-1 min-w-0 flex flex-col gap-6">
-              <TodayScheduleCard initialItems={scheduleItems} today={today} accessToken={accessToken} />
+              <TodayScheduleCard initialItems={scheduleItems} today={today} />
 
               <SwimmersSection swimmers={swimmers} />
             </div>

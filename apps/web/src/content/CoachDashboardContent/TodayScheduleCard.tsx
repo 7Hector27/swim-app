@@ -1,15 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import type { ScheduleItem } from "@swim-app/shared";
 
-import { fetchCoachSchedule } from "@/lib/api/lessons";
+import { getCoachScheduleAction } from "./actions";
 
 interface Props {
   initialItems: ScheduleItem[];
   today: string; // YYYY-MM-DD (LA timezone)
-  accessToken: string;
 }
 
 function addDays(dateStr: string, days: number): string {
@@ -30,19 +29,31 @@ function dayLabel(viewDate: string, today: string): string {
   }).format(new Date(Date.UTC(year, month - 1, day)));
 }
 
-export default function TodayScheduleCard({ initialItems, today, accessToken }: Props) {
+export default function TodayScheduleCard({ initialItems, today }: Props) {
   const [viewDate, setViewDate] = useState(today);
   const [items, setItems] = useState(initialItems);
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const navIdRef = useRef(0);
 
   async function navigate(newDate: string) {
+    const navId = ++navIdRef.current;
     setViewDate(newDate);
     setIsLoading(true);
+    setError(null);
     try {
-      const fetched = await fetchCoachSchedule(accessToken, newDate);
-      setItems(fetched);
+      const result = await getCoachScheduleAction(newDate);
+      if (navId !== navIdRef.current) return;
+      if (!result.ok) {
+        setError(result.error);
+      } else {
+        setItems(result.items);
+      }
+    } catch {
+      if (navId !== navIdRef.current) return;
+      setError("Could not load schedule. Please try again.");
     } finally {
-      setIsLoading(false);
+      if (navId === navIdRef.current) setIsLoading(false);
     }
   }
 
@@ -86,6 +97,17 @@ export default function TodayScheduleCard({ initialItems, today, accessToken }: 
 
       {isLoading ? (
         <p className="text-sm text-text-secondary py-4">Loading…</p>
+      ) : error !== null ? (
+        <div className="py-4 flex flex-col gap-3">
+          <p className="text-sm text-danger">{error}</p>
+          <button
+            type="button"
+            onClick={() => { void navigate(viewDate); }}
+            className="self-start text-sm font-semibold text-link hover:text-link-hover transition-colors duration-150"
+          >
+            Retry
+          </button>
+        </div>
       ) : items.length === 0 ? (
         <p className="text-sm text-text-secondary py-4">No lessons scheduled.</p>
       ) : (
@@ -118,6 +140,7 @@ function formatTime(isoString: string): string {
 function LessonRow({ item }: { item: Extract<ScheduleItem, { type: "lesson" }> }) {
   const time = formatTime(item.lesson.startsAt);
   const swimmerNames = item.lesson.swimmers.map((swimmer) => swimmer.firstName).join(", ");
+  const firstSwimmerId = item.lesson.swimmers[0]?.swimmerId;
 
   return (
     <div className="py-4 flex flex-col gap-1.5 tablet:flex-row tablet:items-center tablet:gap-4">
@@ -132,12 +155,14 @@ function LessonRow({ item }: { item: Extract<ScheduleItem, { type: "lesson" }> }
           {item.lesson.type === "private" ? "Private" : "Family"} lesson &middot; {item.locationName}
         </p>
       </div>
-      <button
-        type="button"
-        className="self-start tablet:flex-shrink-0 min-h-[44px] flex items-center text-sm font-semibold text-link hover:text-link-hover transition-colors duration-150"
-      >
-        Open swimmer
-      </button>
+      {firstSwimmerId !== undefined && (
+        <Link
+          href={`/coach/swimmers/${firstSwimmerId}`}
+          className="self-start tablet:flex-shrink-0 min-h-[44px] flex items-center text-sm font-semibold text-link hover:text-link-hover transition-colors duration-150"
+        >
+          Open swimmer
+        </Link>
+      )}
     </div>
   );
 }

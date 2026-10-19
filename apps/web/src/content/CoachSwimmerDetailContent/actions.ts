@@ -3,9 +3,43 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { CreateMeetSwimBodySchema, PatchMeetSwimBodySchema } from "@swim-app/shared";
+import type { CoachSkillRating } from "@swim-app/shared";
 import { createClient } from "@/lib/supabase/server";
+import { fetchSkillRatingHistory, voidRating } from "@/lib/api/evaluations";
 import type { HideSwimmerState } from "./helpers";
 import { mapHideApiResponse } from "./helpers";
+
+export type FetchSkillRatingHistoryResult =
+  | { ok: true; ratings: CoachSkillRating[] }
+  | { ok: false; status: number };
+
+export type VoidRatingResult =
+  | { ok: true }
+  | { ok: false; status: number };
+
+async function getToken(): Promise<string | null> {
+  const supabase = await createClient();
+  const { data } = await supabase.auth.getSession();
+  return data.session?.access_token ?? null;
+}
+
+export async function fetchSkillRatingHistoryAction(
+  swimmerId: string,
+  skillId: string,
+): Promise<FetchSkillRatingHistoryResult> {
+  const token = await getToken();
+  if (!token) return { ok: false, status: 401 };
+  return fetchSkillRatingHistory(swimmerId, skillId, token);
+}
+
+export async function voidRatingAction(
+  ratingId: string,
+  reason: string,
+): Promise<VoidRatingResult> {
+  const token = await getToken();
+  if (!token) return { ok: false, status: 401 };
+  return voidRating(ratingId, reason, token);
+}
 
 export async function hideSwimmer(
   swimmerId: string,

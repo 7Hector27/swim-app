@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { vi, describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 
 vi.mock("next/navigation", () => ({
@@ -6,35 +6,56 @@ vi.mock("next/navigation", () => ({
   usePathname: () => "/dashboard",
 }));
 
+vi.mock("@swim-app/shared", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@swim-app/shared")>();
+  return { ...actual, todayLA: vi.fn().mockReturnValue("2025-06-01") };
+});
+
 vi.mock("@/lib/api/lessons", () => ({
   fetchCoachSchedule: vi.fn().mockResolvedValue([]),
   coachGetPendingLessons: vi.fn().mockResolvedValue([]),
   fetchCoachStats: vi.fn().mockResolvedValue(null),
 }));
 
-import TodayScheduleCard from "../content/CoachDashboardContent/TodayScheduleCard";
+vi.mock("@/lib/api/coachSwimmers", () => ({
+  fetchCoachSwimmers: vi.fn().mockResolvedValue([]),
+}));
 
-const TODAY = "2025-06-01";
+vi.mock("@/content/CoachDashboardContent/TodayScheduleCard", () => ({
+  default: () => <div data-testid="today-schedule-card" />,
+}));
 
-describe("Dashboard header — buttons removed", () => {
-  it("TodayScheduleCard does not render Log a time", () => {
-    render(
-      <TodayScheduleCard initialItems={[]} today={TODAY} accessToken="tok" />,
-    );
+vi.mock("@/content/CoachDashboardContent/BookingRequestsCard", () => ({
+  default: () => <div data-testid="booking-requests-card" />,
+}));
+
+vi.mock("@/content/CoachDashboardContent/SwimmersTable", () => ({
+  default: () => <div data-testid="swimmers-table" />,
+}));
+
+vi.mock("@/components/Placeholder", () => ({
+  default: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+}));
+
+import CoachDashboardContent from "../content/CoachDashboardContent/CoachDashboardContent";
+
+describe("CoachDashboardContent — header buttons removed", () => {
+  async function renderDashboard() {
+    render(await CoachDashboardContent({ accessToken: "test-token" }));
+  }
+
+  it("does not render a Log a time button", async () => {
+    await renderDashboard();
     expect(screen.queryByText("Log a time")).not.toBeInTheDocument();
   });
 
-  it("TodayScheduleCard does not render Edit availability", () => {
-    render(
-      <TodayScheduleCard initialItems={[]} today={TODAY} accessToken="tok" />,
-    );
+  it("does not render an Edit availability button", async () => {
+    await renderDashboard();
     expect(screen.queryByText("Edit availability")).not.toBeInTheDocument();
   });
 
-  it("TodayScheduleCard does not render Add swimmer", () => {
-    render(
-      <TodayScheduleCard initialItems={[]} today={TODAY} accessToken="tok" />,
-    );
+  it("does not render an Add swimmer button", async () => {
+    await renderDashboard();
     expect(screen.queryByText("Add swimmer")).not.toBeInTheDocument();
   });
 });
