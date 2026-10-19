@@ -224,7 +224,19 @@ export type UpcomingLesson = z.infer<typeof UpcomingLessonSchema>;
 // ── Coach schedule ────────────────────────────────────────────────────────────
 
 export const CoachScheduleQuerySchema = z.object({
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .refine((s) => !isNaN(new Date(s).getTime()), { message: "Invalid date" })
+    .refine(
+      (s) => {
+        const d = new Date(s);
+        const limit = new Date();
+        limit.setFullYear(limit.getFullYear() + 1);
+        return d <= limit;
+      },
+      { message: "Date too far in the future" },
+    ),
 });
 export type CoachScheduleQuery = z.infer<typeof CoachScheduleQuerySchema>;
 

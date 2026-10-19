@@ -27,17 +27,17 @@ const mockFetchPreview = vi.fn();
 
 const mockPatchConfig = vi.fn();
 
-vi.mock("@/lib/api/coachAvailability", () => ({
-  createSeason: (...args: unknown[]) => mockCreateSeason(...args),
-  patchSeason: (...args: unknown[]) => mockPatchSeason(...args),
-  deleteSeason: (...args: unknown[]) => mockDeleteSeason(...args),
-  copyNextYear: (...args: unknown[]) => mockCopyNextYear(...args),
-  createOverride: (...args: unknown[]) => mockCreateOverride(...args),
-  patchOverride: (...args: unknown[]) => mockPatchOverride(...args),
-  deleteOverride: (...args: unknown[]) => mockDeleteOverride(...args),
-  fetchAvailabilityPreview: (...args: unknown[]) => mockFetchPreview(...args),
-  patchAvailabilityConfig: (...args: unknown[]) => mockPatchConfig(...args),
-  fetchSeasons: () => Promise.resolve([]),
+vi.mock("@/content/CoachAvailabilityContent/actions", () => ({
+  createSeasonAction: (...args: unknown[]) => mockCreateSeason(...args),
+  patchSeasonAction: (...args: unknown[]) => mockPatchSeason(...args),
+  deleteSeasonAction: (...args: unknown[]) => mockDeleteSeason(...args),
+  copyNextYearAction: (...args: unknown[]) => mockCopyNextYear(...args),
+  createOverrideAction: (...args: unknown[]) => mockCreateOverride(...args),
+  patchOverrideAction: (...args: unknown[]) => mockPatchOverride(...args),
+  deleteOverrideAction: (...args: unknown[]) => mockDeleteOverride(...args),
+  fetchAvailabilityPreviewAction: (...args: unknown[]) => mockFetchPreview(...args),
+  patchAvailabilityConfigAction: (...args: unknown[]) => mockPatchConfig(...args),
+  fetchSeasonsAction: () => Promise.resolve([]),
 }));
 
 import CoachAvailabilityContent from "../content/CoachAvailabilityContent/CoachAvailabilityContent";
@@ -136,7 +136,6 @@ function renderPage(overrides: {
   ];
   return render(
     <CoachAvailabilityContent
-      accessToken="test-token"
       initialSeasons={seasons}
       initialOverrides={overrides.overrides ?? []}
       initialBlockedTimes={[]}
@@ -205,7 +204,6 @@ describe("CoachAvailabilityContent — seasons table", () => {
 
     await waitFor(() => expect(mockCreateSeason).toHaveBeenCalledTimes(1));
     expect(mockCreateSeason).toHaveBeenCalledWith(
-      "test-token",
       expect.objectContaining({ name: "Early Dec", startDate: "2026-12-01" }),
     );
     await waitFor(() => expect(screen.getByText("Early Dec")).toBeInTheDocument());
@@ -314,7 +312,7 @@ describe("CoachAvailabilityContent — seasons table", () => {
     expect(confirmDialog).toHaveAttribute("open");
     fireEvent.click(confirmButton);
 
-    await waitFor(() => expect(mockDeleteSeason).toHaveBeenCalledWith("test-token", "s-oct"));
+    await waitFor(() => expect(mockDeleteSeason).toHaveBeenCalledWith("s-oct"));
     await waitFor(() => expect(confirmDialog).not.toHaveAttribute("open"));
     expect(within(table).queryByText("Mid-Oct")).not.toBeInTheDocument();
     // The other seeded season should still be in the table.
@@ -416,7 +414,7 @@ describe("CoachAvailabilityContent — overrides", () => {
     const confirmButton = await screen.findByRole("button", { name: "Delete", hidden: true });
     fireEvent.click(confirmButton);
 
-    await waitFor(() => expect(mockDeleteOverride).toHaveBeenCalledWith("test-token", "override-1"));
+    await waitFor(() => expect(mockDeleteOverride).toHaveBeenCalledWith("override-1"));
   });
 
   it("edits an override: opens pre-populated, calls patchOverride, surfaces warnings", async () => {
@@ -470,7 +468,6 @@ describe("CoachAvailabilityContent — overrides", () => {
 
     await waitFor(() => expect(mockPatchOverride).toHaveBeenCalledTimes(1));
     expect(mockPatchOverride).toHaveBeenCalledWith(
-      "test-token",
       "override-1",
       expect.objectContaining({ kind: "custom_hours", endTime: "19:00" }),
     );

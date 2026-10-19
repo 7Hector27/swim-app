@@ -1,12 +1,12 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
-vi.mock("@/lib/api/evaluations", () => ({
-  fetchSkillRatingHistory: vi.fn(),
-  voidRating: vi.fn(),
+vi.mock("@/content/CoachSwimmerDetailContent/actions", () => ({
+  fetchSkillRatingHistoryAction: vi.fn(),
+  voidRatingAction: vi.fn(),
 }));
 
-import { fetchSkillRatingHistory, voidRating } from "../lib/api/evaluations";
+import { fetchSkillRatingHistoryAction, voidRatingAction } from "../content/CoachSwimmerDetailContent/actions";
 import SwimmerSkillsHistory from "../content/CoachSwimmerDetailContent/SwimmerSkillsHistory";
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -70,8 +70,8 @@ const TEST_RATING = {
   updatedAt: "2024-06-01T10:00:00Z",
 };
 
-const mockFetch = fetchSkillRatingHistory as ReturnType<typeof vi.fn>;
-const mockVoid = voidRating as ReturnType<typeof vi.fn>;
+const mockFetch = fetchSkillRatingHistoryAction as ReturnType<typeof vi.fn>;
+const mockVoid = voidRatingAction as ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -84,7 +84,6 @@ describe("SwimmerSkillsHistory", () => {
     render(
       <SwimmerSkillsHistory
         swimmerId={SWIMMER_ID}
-        accessToken="test-token"
         categories={TEST_CATEGORIES}
         grades={TEST_GRADES}
       />,
@@ -96,7 +95,6 @@ describe("SwimmerSkillsHistory", () => {
     render(
       <SwimmerSkillsHistory
         swimmerId={SWIMMER_ID}
-        accessToken="test-token"
         categories={TEST_CATEGORIES}
         grades={TEST_GRADES}
       />,
@@ -111,7 +109,6 @@ describe("SwimmerSkillsHistory", () => {
     render(
       <SwimmerSkillsHistory
         swimmerId={SWIMMER_ID}
-        accessToken="test-token"
         categories={TEST_CATEGORIES}
         grades={TEST_GRADES}
       />,
@@ -121,11 +118,7 @@ describe("SwimmerSkillsHistory", () => {
     fireEvent.click(screen.getByRole("button", { name: /flutter kick/i }));
 
     await waitFor(() => {
-      expect(mockFetch).toHaveBeenCalledWith(
-        SWIMMER_ID,
-        SKILL_ID,
-        "test-token",
-      );
+      expect(mockFetch).toHaveBeenCalledWith(SWIMMER_ID, SKILL_ID);
     });
 
     // After loading, a "Void" button should appear (non-voided rating)
@@ -140,7 +133,6 @@ describe("SwimmerSkillsHistory", () => {
     render(
       <SwimmerSkillsHistory
         swimmerId={SWIMMER_ID}
-        accessToken="test-token"
         categories={TEST_CATEGORIES}
         grades={TEST_GRADES}
       />,
@@ -171,7 +163,6 @@ describe("SwimmerSkillsHistory", () => {
     render(
       <SwimmerSkillsHistory
         swimmerId={SWIMMER_ID}
-        accessToken="test-token"
         categories={TEST_CATEGORIES}
         grades={TEST_GRADES}
       />,
@@ -189,11 +180,7 @@ describe("SwimmerSkillsHistory", () => {
     fireEvent.click(submitBtn);
 
     await waitFor(() => {
-      expect(mockVoid).toHaveBeenCalledWith(
-        RATING_ID,
-        "Data entry error",
-        "test-token",
-      );
+      expect(mockVoid).toHaveBeenCalledWith(RATING_ID, "Data entry error");
     });
   });
 });

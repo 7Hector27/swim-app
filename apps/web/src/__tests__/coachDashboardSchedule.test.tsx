@@ -1,15 +1,15 @@
-import { vi, describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { vi, describe, it, expect, beforeEach } from "vitest";
+import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 
-vi.mock("@/lib/api/lessons", () => ({
-  fetchCoachSchedule: vi.fn(),
+vi.mock("@/content/CoachDashboardContent/actions", () => ({
+  getCoachScheduleAction: vi.fn().mockResolvedValue({ ok: true, items: [] }),
 }));
 
 import TodayScheduleCard from "../content/CoachDashboardContent/TodayScheduleCard";
 import type { ScheduleItem } from "@swim-app/shared";
+import { getCoachScheduleAction } from "../content/CoachDashboardContent/actions";
 
 const TODAY = "2025-06-01";
-const ACCESS_TOKEN = "test-token";
 
 // 10:00 AM and 11:00 AM PT on a fixed date (2025-06-01 UTC offsets are PDT = -7h)
 const AT_10AM = "2025-06-01T17:00:00.000Z"; // 10:00 AM PDT
@@ -54,7 +54,7 @@ const openSlotItem: ScheduleItem = {
 
 function renderCard(items: ScheduleItem[]) {
   render(
-    <TodayScheduleCard initialItems={items} today={TODAY} accessToken={ACCESS_TOKEN} />,
+    <TodayScheduleCard initialItems={items} today={TODAY} />,
   );
 }
 
@@ -101,9 +101,10 @@ describe("TodayScheduleCard — lesson row (phone layout)", () => {
     expect(screen.getByText(/Egret Park/)).toBeInTheDocument();
   });
 
-  it("renders the Open swimmer button", () => {
+  it("renders the Open swimmer link pointing to the swimmer profile", () => {
     renderCard([lessonItem]);
-    expect(screen.getByRole("button", { name: "Open swimmer" })).toBeInTheDocument();
+    const link = screen.getByRole("link", { name: "Open swimmer" });
+    expect(link).toHaveAttribute("href", "/coach/swimmers/sw-001");
   });
 
   it("time is rendered as a separate element from the lesson detail", () => {
@@ -144,5 +145,69 @@ describe("TodayScheduleCard — mixed schedule", () => {
     expect(screen.getByText(/Morgan/)).toBeInTheDocument();
     expect(screen.getByText(/Travel buffer/)).toBeInTheDocument();
     expect(screen.getByText(/Open until/)).toBeInTheDocument();
+  });
+});
+
+describe("TodayScheduleCard — stale-response guard", () => {
+  beforeEach(() => {
+    vi.mocked(getCoachScheduleAction).mockResolvedValue({ ok: true, items: [] });
+  });
+
+  it("discards a slow first response when a second navigation finishes first", async () => {
+    let resolveFirst!: (v: { ok: true; items: ScheduleItem[] }) => void;
+    let resolveSecond!: (v: { ok: true; items: ScheduleItem[] }) => void;
+    const firstPromise = new Promise<{ ok: true; items: ScheduleItem[] }>((r) => { resolveFirst = r; });
+    const secondPromise = new Promise<{ ok: true; items: ScheduleItem[] }>((r) => { resolveSecond = r; });
+
+    vi.mocked(getCoachScheduleAction)
+      .mockReturnValueOnce(firstPromise)
+      .mockReturnValueOnce(secondPromise);
+
+    renderCard([]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Next day" }));
+    fireEvent.click(screen.getByRole("button", { name: "Previous day" }));
+
+    await act(async () => {
+      resolveSecond({ ok: true, items: [lessonItem] });
+    });
+    expect(screen.getByText(/Morgan/)).toBeInTheDocument();
+
+    await act(async () => {
+      resolveFirst({ ok: true, items: [] });
+    });
+    expect(screen.getByText(/Morgan/)).toBeInTheDocument();
+  });
+});
+
+describe("TodayScheduleCard — fetch error", () => {
+  beforeEach(() => {
+    vi.mocked(getCoachScheduleAction).mockResolvedValue({ ok: true, items: [] });
+  });
+
+  it("shows the error message and Retry button when action returns ok: false", async () => {
+    vi.mocked(getCoachScheduleAction).mockResolvedValueOnce({
+      ok: false,
+      error: "Could not load schedule. Please try again.",
+    });
+    renderCard([]);
+    fireEvent.click(screen.getByRole("button", { name: "Next day" }));
+    await waitFor(() => {
+      expect(screen.getByText("Could not load schedule. Please try again.")).toBeInTheDocument();
+    });
+    expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
+  });
+
+  it("Retry re-triggers the navigation and shows updated items", async () => {
+    vi.mocked(getCoachScheduleAction)
+      .mockResolvedValueOnce({ ok: false, error: "Could not load schedule. Please try again." })
+      .mockResolvedValueOnce({ ok: true, items: [lessonItem] });
+    renderCard([]);
+    fireEvent.click(screen.getByRole("button", { name: "Next day" }));
+    await waitFor(() => screen.getByRole("button", { name: "Retry" }));
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() => {
+      expect(screen.getByText(/Morgan/)).toBeInTheDocument();
+    });
   });
 });

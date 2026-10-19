@@ -59,7 +59,6 @@ export default async function EvaluatePage({ params, searchParams }: EvaluatePag
     <EvaluateContent
       swimmer={swimmerResult.swimmer}
       screens={screensResult.screens}
-      accessToken={auth.accessToken}
       {...(resumeDraft !== undefined && { resumeDraft })}
     />
   );
