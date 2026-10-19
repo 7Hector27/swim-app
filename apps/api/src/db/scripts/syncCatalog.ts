@@ -7,7 +7,11 @@ import "dotenv/config";
 import { db } from "../client";
 import syncCatalogFn from "./syncCatalogFn";
 
-syncCatalogFn(db).catch((error: unknown) => {
-  process.stderr.write(`${String(error)}\n`);
-  process.exit(1);
-});
+syncCatalogFn(db)
+  .then(() => {
+    process.exit(0);
+  })
+  .catch((error: unknown) => {
+    process.stderr.write(`${String(error)}\n`);
+    process.exit(1);
+  });

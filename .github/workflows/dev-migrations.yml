@@ -17,6 +17,7 @@ jobs:
     name: Apply migrations and sync catalog
     runs-on: ubuntu-latest
     environment: dev
+    timeout-minutes: 10
     steps:
       # Pinned to full commit SHAs so a compromised tag can't swap in malicious
       # code against a workflow that holds DEV_DATABASE_URL. Bump these when
