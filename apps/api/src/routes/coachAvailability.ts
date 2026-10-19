@@ -661,10 +661,11 @@ coachAvailabilityRouter.post(
       const overrideRows = await db.select().from(availabilityOverrides);
       const allSeasons = allRows.map(mapSeasonRow);
       const overrides = overrideRows.map(mapOverrideRow);
+      const seasonsBefore = allSeasons.filter((s) => s.id !== season.id);
 
       const defaults = await fetchAvailabilityDefaults();
       const upcoming = await fetchUpcomingLessons();
-      const warnings = computeImpactWarnings(upcoming, allSeasons, overrides, defaults);
+      const warnings = computeImpactWarnings(upcoming, seasonsBefore, overrides, allSeasons, overrides, defaults);
 
       const responseBody: SeasonMutationResponse = {
         season: toSeasonWithIsCurrent(season, allSeasons, todayInLA()),
@@ -754,10 +755,11 @@ coachAvailabilityRouter.patch(
       const overrideRows = await db.select().from(availabilityOverrides);
       const allSeasons = allRows.map(mapSeasonRow);
       const overrides = overrideRows.map(mapOverrideRow);
+      const seasonsBefore = allSeasons.map((s) => (s.id === id ? mapSeasonRow(existing) : s));
 
       const defaults = await fetchAvailabilityDefaults();
       const upcoming = await fetchUpcomingLessons();
-      const warnings = computeImpactWarnings(upcoming, allSeasons, overrides, defaults);
+      const warnings = computeImpactWarnings(upcoming, seasonsBefore, overrides, allSeasons, overrides, defaults);
 
       const responseBody: SeasonMutationResponse = {
         season: toSeasonWithIsCurrent(season, allSeasons, todayInLA()),
@@ -787,13 +789,15 @@ coachAvailabilityRouter.delete(
         return;
       }
 
+      const deletedSeason = mapSeasonRow(deleted[0]!);
       const remainingRows = await db.select().from(availabilitySeasons);
       const overrideRows = await db.select().from(availabilityOverrides);
       const remaining = remainingRows.map(mapSeasonRow);
       const overrides = overrideRows.map(mapOverrideRow);
+      const seasonsBefore = [...remaining, deletedSeason];
       const defaults = await fetchAvailabilityDefaults();
       const upcoming = await fetchUpcomingLessons();
-      const warnings = computeImpactWarnings(upcoming, remaining, overrides, defaults);
+      const warnings = computeImpactWarnings(upcoming, seasonsBefore, overrides, remaining, overrides, defaults);
 
       const responseBody: SeasonDeleteResponse = { warnings };
       res.json(responseBody);
@@ -988,9 +992,10 @@ coachAvailabilityRouter.post(
       const overridesRows = await db.select().from(availabilityOverrides);
       const seasons = seasonsRows.map(mapSeasonRow);
       const overrides = overridesRows.map(mapOverrideRow);
+      const overridesBefore = overrides.filter((o) => o.id !== override.id);
       const defaults = await fetchAvailabilityDefaults();
       const upcoming = await fetchUpcomingLessons();
-      const warnings = computeImpactWarnings(upcoming, seasons, overrides, defaults);
+      const warnings = computeImpactWarnings(upcoming, seasons, overridesBefore, seasons, overrides, defaults);
 
       const responseBody: OverrideMutationResponse = { override, warnings };
       res.status(201).json(responseBody);
@@ -1054,9 +1059,10 @@ coachAvailabilityRouter.patch(
       const overridesRows = await db.select().from(availabilityOverrides);
       const seasons = seasonsRows.map(mapSeasonRow);
       const overrides = overridesRows.map(mapOverrideRow);
+      const overridesBefore = overrides.map((o) => (o.id === id ? mapOverrideRow(existing) : o));
       const defaults = await fetchAvailabilityDefaults();
       const upcoming = await fetchUpcomingLessons();
-      const warnings = computeImpactWarnings(upcoming, seasons, overrides, defaults);
+      const warnings = computeImpactWarnings(upcoming, seasons, overridesBefore, seasons, overrides, defaults);
 
       const responseBody: OverrideMutationResponse = { override, warnings };
       res.json(responseBody);
@@ -1083,13 +1089,15 @@ coachAvailabilityRouter.delete(
         return;
       }
 
+      const deletedOverride = mapOverrideRow(deleted[0]!);
       const seasonsRows = await db.select().from(availabilitySeasons);
       const overridesRows = await db.select().from(availabilityOverrides);
       const seasons = seasonsRows.map(mapSeasonRow);
       const overrides = overridesRows.map(mapOverrideRow);
+      const overridesBefore = [...overrides, deletedOverride];
       const defaults = await fetchAvailabilityDefaults();
       const upcoming = await fetchUpcomingLessons();
-      const warnings = computeImpactWarnings(upcoming, seasons, overrides, defaults);
+      const warnings = computeImpactWarnings(upcoming, seasons, overridesBefore, seasons, overrides, defaults);
 
       const responseBody: OverrideDeleteResponse = { warnings };
       res.json(responseBody);

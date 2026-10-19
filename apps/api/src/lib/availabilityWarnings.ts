@@ -40,45 +40,46 @@ export interface UpcomingLessonForWarning {
   poolName: string;
 }
 
+function lessonFitsWindows(lesson: UpcomingLessonForWarning, windows: ReturnType<typeof effectiveHours>): boolean {
+  if (windows.length === 0) return false;
+  const startMin = getLaMinutes(lesson.startsAt);
+  const endMin = startMin + lesson.durationMinutes;
+  return windows.some((window) => {
+    const windowStart = parseHHMM(window.start);
+    const windowEnd = parseHHMM(window.end);
+    return startMin >= windowStart && endMin <= windowEnd;
+  });
+}
+
 // COACH-ONLY: returned warnings carry swimmer first names and pool names from
 // other households. Only call this from handlers mounted under /coach (guarded
 // by `requireCoach`); never surface the result to parents or public routes.
+//
+// Only flags lessons that fit before the change and no longer fit after — so
+// lessons outside the affected date range (where before == after) are never
+// surfaced, and lessons that were already broken before the change are ignored.
 export function computeImpactWarnings(
   lessons: UpcomingLessonForWarning[],
-  seasons: AvailabilitySeason[],
-  overrides: AvailabilityOverride[],
+  seasonsBefore: AvailabilitySeason[],
+  overridesBefore: AvailabilityOverride[],
+  seasonsAfter: AvailabilitySeason[],
+  overridesAfter: AvailabilityOverride[],
   defaults: DefaultHours | null = null,
 ): ImpactWarning[] {
   const warnings: ImpactWarning[] = [];
   for (const lesson of lessons) {
     const laDate = getDateInLA(lesson.startsAt);
-    const windows = effectiveHours(laDate, seasons, overrides, defaults);
-    if (windows.length === 0) {
-      warnings.push({
-        lessonId: lesson.id,
-        startsAt: lesson.startsAt.toISOString(),
-        reason: "day_closed",
-        swimmerFirstNames: lesson.swimmerFirstNames,
-        poolName: lesson.poolName,
-      });
-      continue;
-    }
-    const startMin = getLaMinutes(lesson.startsAt);
-    const endMin = startMin + lesson.durationMinutes;
-    const inside = windows.some((window) => {
-      const windowStart = parseHHMM(window.start);
-      const windowEnd = parseHHMM(window.end);
-      return startMin >= windowStart && endMin <= windowEnd;
+    const windowsBefore = effectiveHours(laDate, seasonsBefore, overridesBefore, defaults);
+    const windowsAfter = effectiveHours(laDate, seasonsAfter, overridesAfter, defaults);
+    if (!lessonFitsWindows(lesson, windowsBefore)) continue;
+    if (lessonFitsWindows(lesson, windowsAfter)) continue;
+    warnings.push({
+      lessonId: lesson.id,
+      startsAt: lesson.startsAt.toISOString(),
+      reason: windowsAfter.length === 0 ? "day_closed" : "outside_hours",
+      swimmerFirstNames: lesson.swimmerFirstNames,
+      poolName: lesson.poolName,
     });
-    if (!inside) {
-      warnings.push({
-        lessonId: lesson.id,
-        startsAt: lesson.startsAt.toISOString(),
-        reason: "outside_hours",
-        swimmerFirstNames: lesson.swimmerFirstNames,
-        poolName: lesson.poolName,
-      });
-    }
   }
   return warnings;
 }
