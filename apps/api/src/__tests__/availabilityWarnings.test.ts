@@ -145,6 +145,17 @@ describe("computeImpactWarnings", () => {
       expect(warnings).toHaveLength(1);
       expect(warnings[0]!.reason).toBe("outside_hours");
     });
+
+    it("flags with day_closed when the edited season removes the lesson's weekday", () => {
+      // Before: WIDE_SEASON teaches Mon–Fri (includes Wed). After: Wed dropped from teachesDays.
+      // An active season that excludes a day closes it — defaults are not consulted as a fallback.
+      const noWedSeason = makeSeason({ teachesDays: [1, 2, 4, 5] }); // Mon,Tue,Thu,Fri
+      const warnings = computeImpactWarnings(
+        [MORNING], [WIDE_SEASON], [], [noWedSeason], [], WIDE_DEFAULTS,
+      );
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0]!.reason).toBe("day_closed");
+    });
   });
 
   // ── Season delete ─────────────────────────────────────────────────────────
@@ -200,6 +211,18 @@ describe("computeImpactWarnings", () => {
       );
       expect(warnings).toHaveLength(1);
       expect(warnings[0]!.reason).toBe("day_closed");
+    });
+
+    it("flags a lesson on the override date that fit the season but not the narrow custom hours", () => {
+      // AFTERNOON (17:00–18:00) fits WIDE_SEASON (09:00–20:00) before the override is added.
+      // A narrow custom_hours override (09:00–12:00) takes precedence over the season,
+      // so the lesson no longer fits and is flagged outside_hours.
+      const narrowCustom = makeOverride({ kind: "custom_hours", startTime: "09:00", endTime: "12:00" });
+      const warnings = computeImpactWarnings(
+        [AFTERNOON], [WIDE_SEASON], [], [WIDE_SEASON], [narrowCustom], WIDE_DEFAULTS,
+      );
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0]!.reason).toBe("outside_hours");
     });
   });
 
