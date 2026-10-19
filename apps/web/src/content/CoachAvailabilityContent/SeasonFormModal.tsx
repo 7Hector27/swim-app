@@ -52,6 +52,7 @@ export default function SeasonFormModal({
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [name, setName] = useState("");
   const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
   const [teachesDays, setTeachesDays] = useState<number[]>([2, 3, 4, 5]);
   const [weekdayStart, setWeekdayStart] = useState("");
   const [weekdayEnd, setWeekdayEnd] = useState("");
@@ -74,6 +75,7 @@ export default function SeasonFormModal({
     if (season) {
       setName(season.name);
       setStartDate(season.startDate);
+      setEndDate(season.endDate);
       setTeachesDays([...season.teachesDays]);
       setWeekdayStart(season.weekdayStartTime ?? "");
       setWeekdayEnd(season.weekdayEndTime ?? "");
@@ -82,6 +84,7 @@ export default function SeasonFormModal({
     } else {
       setName("");
       setStartDate("");
+      setEndDate("");
       setTeachesDays([2, 3, 4, 5]);
       setWeekdayStart("");
       setWeekdayEnd("");
@@ -90,14 +93,17 @@ export default function SeasonFormModal({
     }
   }, [open, season]);
 
-  const runsUntil = useMemo(() => {
-    if (!startDate) return null;
+  const afterMessage = useMemo(() => {
+    if (!endDate) return null;
     const editingId = season?.id ?? null;
     const next = seasons
-      .filter((s) => s.id !== editingId && s.startDate > startDate)
+      .filter((s) => s.id !== editingId && s.startDate > endDate)
       .sort((a, b) => a.startDate.localeCompare(b.startDate))[0] ?? null;
-    return next ? next.startDate : null;
-  }, [startDate, season, seasons]);
+    if (next) {
+      return `After ${formatMonthDay(endDate)}, ${next.name} starts on ${formatMonthDay(next.startDate)}.`;
+    }
+    return `After ${formatMonthDay(endDate)}, your default hours apply.`;
+  }, [endDate, season, seasons]);
 
   function toggleDay(day: number) {
     setTeachesDays((prev) =>
@@ -138,6 +144,7 @@ export default function SeasonFormModal({
       const body: CreateSeasonBody = {
         name,
         startDate,
+        endDate,
         teachesDays,
         weekdayStartTime: weekdayStartValue,
         weekdayEndTime: weekdayEndValue,
@@ -150,6 +157,7 @@ export default function SeasonFormModal({
       const body: PatchSeasonBody = {
         name,
         startDate,
+        endDate,
         teachesDays,
         weekdayStartTime: weekdayStartValue,
         weekdayEndTime: weekdayEndValue,
@@ -211,24 +219,37 @@ export default function SeasonFormModal({
           />
         </div>
 
-        <div className="flex flex-col gap-1">
-          <label htmlFor="season-start-date" className={labelClass}>
-            Start date
-          </label>
-          <input
-            id="season-start-date"
-            type="date"
-            required
-            value={startDate}
-            onChange={(event) => setStartDate(event.target.value)}
-            className={inputClass}
-          />
-          {startDate && (
-            <p className="text-xs text-text-secondary">
-              {runsUntil
-                ? `Runs until ${formatMonthDay(runsUntil)} (next season)`
-                : "Runs until you add another season."}
-            </p>
+        <div className="flex flex-col gap-2">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-1">
+              <label htmlFor="season-start-date" className={labelClass}>
+                Start date
+              </label>
+              <input
+                id="season-start-date"
+                type="date"
+                required
+                value={startDate}
+                onChange={(event) => setStartDate(event.target.value)}
+                className={inputClass}
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label htmlFor="season-end-date" className={labelClass}>
+                End date
+              </label>
+              <input
+                id="season-end-date"
+                type="date"
+                required
+                value={endDate}
+                onChange={(event) => setEndDate(event.target.value)}
+                className={inputClass}
+              />
+            </div>
+          </div>
+          {afterMessage && (
+            <p className="text-xs text-text-secondary -mt-2">{afterMessage}</p>
           )}
         </div>
 

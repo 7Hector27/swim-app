@@ -12,6 +12,7 @@ const makeSeason = (overrides: Partial<AvailabilitySeason> = {}): AvailabilitySe
   id: "season-x",
   name: "Season X",
   startDate: "2026-06-01",
+  endDate: "2099-12-31",
   teachesDays: [1, 2, 3, 4, 5, 6, 7],
   weekdayStartTime: "17:00",
   weekdayEndTime: "21:00",

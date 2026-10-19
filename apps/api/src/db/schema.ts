@@ -364,6 +364,7 @@ export const availabilitySeasons = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     name: text("name").notNull(),
     startDate: date("start_date").notNull().unique(),
+    endDate: date("end_date").notNull(),
     // ISO day numbers: 1=Mon … 7=Sun. Non-empty subset of {1..7} — validated at the API layer.
     teachesDays: integer("teaches_days").array().notNull(),
     weekdayStartTime: time("weekday_start_time"),
@@ -377,6 +378,10 @@ export const availabilitySeasons = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdateFn(() => new Date()),
   },
   (table) => [
+    check(
+      "availability_seasons_end_after_start",
+      sql`${table.endDate} >= ${table.startDate}`,
+    ),
     check(
       "availability_seasons_weekday_before_end",
       sql`${table.weekdayStartTime} IS NULL OR ${table.weekdayEndTime} IS NULL OR ${table.weekdayStartTime} < ${table.weekdayEndTime}`,

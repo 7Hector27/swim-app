@@ -56,6 +56,7 @@ function season(partial: Partial<SeasonWithIsCurrent>): SeasonWithIsCurrent {
     id: "season-1",
     name: "Season",
     startDate: "2026-09-15",
+    endDate: "2099-12-31",
     teachesDays: [1, 2, 3, 4, 5, 6, 7],
     weekdayStartTime: "15:00",
     weekdayEndTime: "18:30",

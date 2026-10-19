@@ -455,12 +455,15 @@ function hasWeekend(days: number[]): boolean {
 
 // Validates season fields. Returns an error code on failure, null on success.
 function validateSeasonFields(fields: {
+  startDate: string;
+  endDate: string;
   teachesDays: number[];
   weekdayStartTime: string | null;
   weekdayEndTime: string | null;
   weekendStartTime: string | null;
   weekendEndTime: string | null;
 }): string | null {
+  if (fields.endDate < fields.startDate) return "end_date_before_start";
   if (!isValidTimeGranularity(fields.weekdayStartTime)) return "invalid_time_granularity";
   if (!isValidTimeGranularity(fields.weekdayEndTime)) return "invalid_time_granularity";
   if (!isValidTimeGranularity(fields.weekendStartTime)) return "invalid_time_granularity";
@@ -493,13 +496,33 @@ function toSeasonWithIsCurrent(
   allSeasons: AvailabilitySeason[],
   todayIso: string,
 ): SeasonWithIsCurrent {
-  let latest: AvailabilitySeason | null = null;
-  for (const row of allSeasons) {
-    if (row.startDate <= todayIso && (latest === null || row.startDate > latest.startDate)) {
-      latest = row;
-    }
-  }
-  return { ...season, isCurrent: latest !== null && latest.id === season.id };
+  const active = allSeasons.find(
+    (row) => row.startDate <= todayIso && row.endDate >= todayIso,
+  ) ?? null;
+  return { ...season, isCurrent: active !== null && active.id === season.id };
+}
+
+async function findOverlappingSeason(
+  startDate: string,
+  endDate: string,
+  excludeId: string | null,
+): Promise<string | null> {
+  const whereClause = excludeId === null
+    ? and(
+        lte(availabilitySeasons.startDate, endDate),
+        gte(availabilitySeasons.endDate, startDate),
+      )
+    : and(
+        lte(availabilitySeasons.startDate, endDate),
+        gte(availabilitySeasons.endDate, startDate),
+        ne(availabilitySeasons.id, excludeId),
+      );
+  const rows = await db
+    .select({ id: availabilitySeasons.id, name: availabilitySeasons.name })
+    .from(availabilitySeasons)
+    .where(whereClause)
+    .limit(1);
+  return rows[0] ? rows[0].name : null;
 }
 
 function todayInLA(): string {
@@ -589,6 +612,8 @@ coachAvailabilityRouter.post(
     const body = req.body as CreateSeasonBody;
 
     const invalid = validateSeasonFields({
+      startDate: body.startDate,
+      endDate: body.endDate,
       teachesDays: body.teachesDays,
       weekdayStartTime: body.weekdayStartTime,
       weekdayEndTime: body.weekdayEndTime,
@@ -610,12 +635,19 @@ coachAvailabilityRouter.post(
       return;
     }
 
+    const overlappingName = await findOverlappingSeason(body.startDate, body.endDate, null);
+    if (overlappingName !== null) {
+      res.status(422).json({ error: `season_overlap:${overlappingName}` });
+      return;
+    }
+
     try {
       const inserted = await db
         .insert(availabilitySeasons)
         .values({
           name: body.name,
           startDate: body.startDate,
+          endDate: body.endDate,
           teachesDays: body.teachesDays,
           weekdayStartTime: body.weekdayStartTime,
           weekdayEndTime: body.weekdayEndTime,
@@ -668,6 +700,7 @@ coachAvailabilityRouter.patch(
     const next = {
       name: body.name ?? existing.name,
       startDate: body.startDate ?? existing.startDate,
+      endDate: body.endDate ?? existing.endDate,
       teachesDays: body.teachesDays ?? existing.teachesDays,
       weekdayStartTime: body.weekdayStartTime !== undefined ? body.weekdayStartTime : existing.weekdayStartTime,
       weekdayEndTime: body.weekdayEndTime !== undefined ? body.weekdayEndTime : existing.weekdayEndTime,
@@ -677,6 +710,8 @@ coachAvailabilityRouter.patch(
     };
 
     const invalid = validateSeasonFields({
+      startDate: next.startDate,
+      endDate: next.endDate,
       teachesDays: next.teachesDays,
       weekdayStartTime: next.weekdayStartTime,
       weekdayEndTime: next.weekdayEndTime,
@@ -696,6 +731,14 @@ coachAvailabilityRouter.patch(
         .limit(1);
       if (clash[0]) {
         res.status(422).json({ error: "season_date_taken" });
+        return;
+      }
+    }
+
+    if (next.startDate !== existing.startDate || next.endDate !== existing.endDate) {
+      const overlappingName = await findOverlappingSeason(next.startDate, next.endDate, id);
+      if (overlappingName !== null) {
+        res.status(422).json({ error: `season_overlap:${overlappingName}` });
         return;
       }
     }
@@ -808,7 +851,9 @@ coachAvailabilityRouter.post(
         const nextStart = row.startsAtDst
           ? dstStartDate(year + 1)
           : `${year + 1}${row.startDate.slice(4)}`;
-        return { row, prevStart, nextStart };
+        const endYear = Number(row.endDate.slice(0, 4));
+        const nextEnd = `${endYear + 1}${row.endDate.slice(4)}`;
+        return { row, prevStart, nextStart, nextEnd };
       })
       .filter(({ prevStart, nextStart }) =>
         !existingDates.has(prevStart) && !existingDates.has(nextStart),
@@ -823,9 +868,10 @@ coachAvailabilityRouter.post(
     const inserted = await db
       .insert(availabilitySeasons)
       .values(
-        toInsert.map(({ row, nextStart }) => ({
+        toInsert.map(({ row, nextStart, nextEnd }) => ({
           name: row.name,
           startDate: nextStart,
+          endDate: nextEnd,
           teachesDays: row.teachesDays,
           weekdayStartTime: row.weekdayStartTime,
           weekdayEndTime: row.weekdayEndTime,

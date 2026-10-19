@@ -432,3 +432,25 @@ Both routes `requireCoach`. Shared schemas live in `packages/shared/src/schemas/
 **SeasonsTable** — Replaced the three time columns (weekday start, weekend start, ends) with two range columns: Weekday hours and Weekend hours, each showing `start – end`.
 
 **SeasonCard** — Same range format as the table.
+
+---
+
+## 7. Fix — Season end date (branch `fix/season-end-date`)
+
+### What changed
+
+**DB** — Migration `0041_loving_lucky_pierre.sql` adds `end_date date` (nullable). Migration `0042_backfill_season_end_date.sql` backfills it (day before next season's start, or start + 3 months for the last row), then `ALTER COLUMN end_date SET NOT NULL` and adds `CHECK (end_date >= start_date)`. Both applied locally.
+
+**Shared schema** — `AvailabilitySeasonSchema`, `CreateSeasonBodySchema`, and `PatchSeasonBodySchema` include `endDate: DateStringSchema` (required on create, optional on patch).
+
+**effectiveHours** — `findActiveSeason` now requires `startDate <= date <= endDate`. Dates in gaps between seasons (after a season ends but before the next starts) fall through to default hours.
+
+**API** — `validateSeasonFields` checks `end_date_before_start` (returns 422 when endDate < startDate). New `findOverlappingSeason` helper uses a range-overlap query (`lte(startDate, endDate) AND gte(endDate, startDate)`, excluding the row being patched) and returns 422 `season_overlap:<name>` on conflict. `toSeasonWithIsCurrent` uses `startDate <= today <= endDate`. POST/PATCH/copyNextYear all include `endDate`; copy-next-year shifts `endDate` by one year alongside `startDate`.
+
+**SeasonFormModal** — Start and end dates shown side by side. Hint below end date: "After {endDate}, your default hours apply." (or names the next season if one follows immediately).
+
+**SeasonsTable** — Season column shows `{startDate} – {endDate}` date range. Gap rows interleaved: "Default hours · {range}" on `bg-surface-soft` in italic. Always shows a trailing gap after the last season. `buildEntries()` helper computes gaps using `addDaysIso`.
+
+**SeasonCard** — Changed "Since {startDate}" to `{startDate} – {endDate}`.
+
+**apiErrorMessage** — Added `end_date_before_start`, `weekday_end_required`, `weekend_end_required`, and `season_overlap:` prefix handler.

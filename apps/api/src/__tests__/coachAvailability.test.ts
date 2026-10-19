@@ -591,6 +591,7 @@ function seasonRow(overrides: Partial<Record<string, unknown>> = {}) {
     id: SEASON_A_ID,
     name: "School year",
     startDate: "2025-08-15",
+    endDate: "2099-12-31",
     teachesDays: [1, 2, 3, 4, 5, 6],
     weekdayStartTime: "15:00:00",
     weekdayEndTime: "20:00:00",
@@ -645,7 +646,8 @@ describe("POST /coach/seasons", () => {
 
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(coachProfile))
-      .mockReturnValueOnce(simpleSelect<unknown>([]))
+      .mockReturnValueOnce(simpleSelect<unknown>([]))   // same startDate check
+      .mockReturnValueOnce(simpleSelect<unknown>([]))   // findOverlappingSeason
       .mockReturnValueOnce(fromResolveSelect([inserted]))
       .mockReturnValueOnce(fromResolveSelect([]))
       .mockReturnValueOnce(simpleSelect([availabilityConfigRow]))
@@ -662,6 +664,7 @@ describe("POST /coach/seasons", () => {
       .send({
         name: "Narrower season",
         startDate: "2099-05-01",
+        endDate: "2099-12-31",
         teachesDays: [1, 2, 3, 4, 5, 6, 7],
         weekdayStartTime: "15:00",
         weekdayEndTime: "18:00",
@@ -686,7 +689,8 @@ describe("POST /coach/seasons", () => {
 
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(coachProfile))
-      .mockReturnValueOnce(simpleSelect<unknown>([]))
+      .mockReturnValueOnce(simpleSelect<unknown>([]))   // same startDate check
+      .mockReturnValueOnce(simpleSelect<unknown>([]))   // findOverlappingSeason
       .mockReturnValueOnce(fromResolveSelect([inserted]))
       .mockReturnValueOnce(fromResolveSelect([]))
       .mockReturnValueOnce(simpleSelect([availabilityConfigRow]))
@@ -702,6 +706,7 @@ describe("POST /coach/seasons", () => {
       .send({
         name: "New season",
         startDate: "2026-01-05",
+        endDate: "2026-12-31",
         teachesDays: [1, 2, 3, 4, 5, 6],
         weekdayStartTime: "15:00",
         weekdayEndTime: "20:00",
@@ -723,6 +728,7 @@ describe("POST /coach/seasons", () => {
       .send({
         name: "Odd minute",
         startDate: "2026-01-05",
+        endDate: "2026-12-31",
         teachesDays: [1, 2, 3, 4, 5],
         weekdayStartTime: "15:07",
         weekdayEndTime: "20:00",
@@ -747,6 +753,7 @@ describe("POST /coach/seasons", () => {
       .send({
         name: "Duplicate",
         startDate: "2025-08-15",
+        endDate: "2025-12-31",
         teachesDays: [1, 2, 3, 4, 5],
         weekdayStartTime: "15:00",
         weekdayEndTime: "20:00",
@@ -768,6 +775,7 @@ describe("POST /coach/seasons", () => {
       .send({
         name: "Weekend only",
         startDate: "2026-02-01",
+        endDate: "2026-12-31",
         teachesDays: [6],
         weekdayStartTime: "15:00",
         weekdayEndTime: null,
@@ -789,6 +797,7 @@ describe("POST /coach/seasons", () => {
       .send({
         name: "Weekday missing",
         startDate: "2026-02-01",
+        endDate: "2026-12-31",
         teachesDays: [1],
         weekdayStartTime: null,
         weekdayEndTime: null,

@@ -26,6 +26,7 @@ export function mapSeasonRow(
     id: row.id,
     name: row.name,
     startDate: row.startDate,
+    endDate: row.endDate,
     teachesDays: row.teachesDays,
     weekdayStartTime: row.weekdayStartTime === null ? null : toHHMM(row.weekdayStartTime),
     weekdayEndTime: row.weekdayEndTime === null ? null : toHHMM(row.weekdayEndTime),

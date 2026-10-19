@@ -186,6 +186,7 @@ coachLessonsRouter.get(
         id: row.id,
         name: row.name,
         startDate: row.startDate,
+        endDate: row.endDate,
         teachesDays: row.teachesDays,
         weekdayStartTime: row.weekdayStartTime,
         weekdayEndTime: row.weekdayEndTime,

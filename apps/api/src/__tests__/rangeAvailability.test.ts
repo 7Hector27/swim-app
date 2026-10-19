@@ -138,6 +138,7 @@ const schoolYearSeason = {
   id: "season-sy-01",
   name: "School year",
   startDate: "2020-01-01",
+  endDate: "2099-12-31",
   teachesDays: [1, 2, 3, 4, 5],
   weekdayStartTime: "16:30" as string | null,
   weekdayEndTime: "19:30" as string | null,

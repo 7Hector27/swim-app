@@ -1,0 +1,1 @@
+ALTER TABLE "availability_seasons" ADD COLUMN "end_date" date;
