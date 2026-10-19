@@ -171,12 +171,19 @@ export default function SignupContent({ returnTo }: SignupContentProps) {
                 autoComplete="bday"
                 required
                 value={birthDate}
+                aria-describedby="birthDate-age-error"
                 onChange={(event) => {
                   setBirthDate(event.target.value);
                 }}
                 className="h-12 px-4 rounded-lg border border-border bg-background text-text"
               />
-              <FieldError message={fieldErrors["birthDate"]} />
+              <p
+                id="birthDate-age-error"
+                aria-live="polite"
+                className="text-danger text-xs mt-1 min-h-4"
+              >
+                {ageError || fieldErrors["birthDate"] || ""}
+              </p>
             </div>
 
             <div className="flex flex-col gap-1.5">
@@ -200,7 +207,7 @@ export default function SignupContent({ returnTo }: SignupContentProps) {
               <FieldError message={fieldErrors["acceptedTerms"]} />
             </div>
 
-            <Button type="submit" disabled={isPending} className="w-full mt-2">
+            <Button type="submit" disabled={isPending || !!ageError} className="w-full mt-2">
               {isPending ? "Creating account\u2026" : "Create account"}
             </Button>
           </form>
