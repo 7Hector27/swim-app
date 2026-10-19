@@ -272,15 +272,18 @@ export type CoachStats = z.infer<typeof CoachStatsSchema>;
 // ── Availability seasons ──────────────────────────────────────────────────────
 
 const TimeStringSchema = z.string().regex(/^\d{2}:\d{2}$/);
+const DateStringSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
 export const AvailabilitySeasonSchema = z.object({
   id: z.string().uuid(),
   name: z.string(),
-  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  startDate: DateStringSchema,
+  endDate: DateStringSchema,
   teachesDays: z.array(z.number().int().min(1).max(7)),
   weekdayStartTime: TimeStringSchema.nullable(),
+  weekdayEndTime: TimeStringSchema.nullable(),
   weekendStartTime: TimeStringSchema.nullable(),
-  endTime: TimeStringSchema,
+  weekendEndTime: TimeStringSchema.nullable(),
   startsAtDst: z.boolean(),
   createdAt: z.string().datetime({ offset: true }),
   updatedAt: z.string().datetime({ offset: true }),
@@ -386,8 +389,6 @@ export type WeekAvailabilityResponse = z.infer<typeof WeekAvailabilityResponseSc
 
 // ── Coach availability-editor request + response shapes ──────────────────────
 
-const DateStringSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
-
 export const SeasonWithIsCurrentSchema = AvailabilitySeasonSchema.extend({
   isCurrent: z.boolean(),
 });
@@ -396,10 +397,12 @@ export type SeasonWithIsCurrent = z.infer<typeof SeasonWithIsCurrentSchema>;
 export const CreateSeasonBodySchema = z.object({
   name: z.string().min(1),
   startDate: DateStringSchema,
+  endDate: DateStringSchema,
   teachesDays: z.array(z.number().int().min(1).max(7)).min(1),
   weekdayStartTime: TimeStringSchema.nullable(),
+  weekdayEndTime: TimeStringSchema.nullable(),
   weekendStartTime: TimeStringSchema.nullable(),
-  endTime: TimeStringSchema,
+  weekendEndTime: TimeStringSchema.nullable(),
   startsAtDst: z.boolean().optional(),
 });
 export type CreateSeasonBody = z.infer<typeof CreateSeasonBodySchema>;
@@ -407,10 +410,12 @@ export type CreateSeasonBody = z.infer<typeof CreateSeasonBodySchema>;
 export const PatchSeasonBodySchema = z.object({
   name: z.string().min(1).optional(),
   startDate: DateStringSchema.optional(),
+  endDate: DateStringSchema.optional(),
   teachesDays: z.array(z.number().int().min(1).max(7)).min(1).optional(),
   weekdayStartTime: TimeStringSchema.nullable().optional(),
+  weekdayEndTime: TimeStringSchema.nullable().optional(),
   weekendStartTime: TimeStringSchema.nullable().optional(),
-  endTime: TimeStringSchema.optional(),
+  weekendEndTime: TimeStringSchema.nullable().optional(),
   startsAtDst: z.boolean().optional(),
 });
 export type PatchSeasonBody = z.infer<typeof PatchSeasonBodySchema>;

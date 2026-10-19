@@ -19,9 +19,13 @@ const MESSAGES: Record<string, string> = {
   custom_hours_missing_times: "Custom-hours overrides need both a start and end time.",
   custom_hours_date_mismatch: "Custom-hours overrides must start and end on the same day.",
   override_conflict: "This override overlaps an existing one.",
+  end_date_before_start: "End date must be on or after the start date.",
 };
 
 export function apiErrorMessage(code: string | undefined): string {
-  if (code && MESSAGES[code]) return MESSAGES[code]!;
+  if (!code) return "Something went wrong on our end. Try again in a moment.";
+  if (code.startsWith("season_overlap:"))
+    return `This season overlaps with "${code.slice("season_overlap:".length)}". Adjust the dates.`;
+  if (MESSAGES[code]) return MESSAGES[code]!;
   return "Something went wrong on our end. Try again in a moment.";
 }

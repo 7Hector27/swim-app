@@ -25,8 +25,15 @@ export function formatTime12(time: string | null): string {
   return `${displayHours}:${minutes} ${period}`;
 }
 
-// "2026-10-15" -> "Oct 15". LA calendar date is already a pure date.
+export function isValidDateIso(dateIso: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateIso)) return false;
+  const [year, month, day] = dateIso.split("-").map(Number) as [number, number, number];
+  return month >= 1 && month <= 12 && day >= 1 && day <= 31 && year > 0;
+}
+
+// "2026-10-15" -> "Oct 15". Returns "" for empty or invalid input.
 export function formatMonthDay(dateIso: string): string {
+  if (!isValidDateIso(dateIso)) return "";
   const [year, month, day] = dateIso.split("-").map(Number) as [number, number, number];
   const date = new Date(Date.UTC(year, month - 1, day));
   return new Intl.DateTimeFormat("en-US", {
@@ -36,8 +43,9 @@ export function formatMonthDay(dateIso: string): string {
   }).format(date);
 }
 
-// "2026-10-15" -> "Oct 15, 2026"
+// "2026-10-15" -> "Oct 15, 2026". Returns "" for empty or invalid input.
 export function formatMonthDayYear(dateIso: string): string {
+  if (!isValidDateIso(dateIso)) return "";
   const [year, month, day] = dateIso.split("-").map(Number) as [number, number, number];
   const date = new Date(Date.UTC(year, month - 1, day));
   return new Intl.DateTimeFormat("en-US", {
@@ -48,8 +56,9 @@ export function formatMonthDayYear(dateIso: string): string {
   }).format(date);
 }
 
-// Weekday short label for a YYYY-MM-DD date (LA calendar).
+// Weekday short label for a YYYY-MM-DD date (LA calendar). Returns "" for invalid input.
 export function weekdayShort(dateIso: string): string {
+  if (!isValidDateIso(dateIso)) return "";
   const [year, month, day] = dateIso.split("-").map(Number) as [number, number, number];
   const date = new Date(Date.UTC(year, month - 1, day));
   return new Intl.DateTimeFormat("en-US", { timeZone: "UTC", weekday: "short" }).format(date);
@@ -117,6 +126,7 @@ export function withIsCurrent(
 }
 
 export function addDaysIso(dateIso: string, offset: number): string {
+  if (!isValidDateIso(dateIso)) return "";
   const [year, month, day] = dateIso.split("-").map(Number) as [number, number, number];
   const next = new Date(Date.UTC(year, month - 1, day + offset));
   const yyyy = next.getUTCFullYear();

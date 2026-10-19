@@ -92,10 +92,12 @@ async function insertTestSeason(name: string): Promise<string> {
     .values({
       name,
       startDate: TEST_SEASON_START,
+      endDate: "2030-12-31",
       teachesDays: [1],
       weekdayStartTime: "02:00:00",
+      weekdayEndTime: "04:00:00",
       weekendStartTime: null,
-      endTime: "04:00:00",
+      weekendEndTime: null,
       startsAtDst: false,
     })
     .returning({ id: availabilitySeasons.id });

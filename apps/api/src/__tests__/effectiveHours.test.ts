@@ -12,10 +12,12 @@ const makeSeason = (overrides: Partial<AvailabilitySeason> = {}): AvailabilitySe
   id: "season-x",
   name: "Season X",
   startDate: "2026-06-01",
+  endDate: "2099-12-31",
   teachesDays: [1, 2, 3, 4, 5, 6, 7],
   weekdayStartTime: "17:00",
+  weekdayEndTime: "21:00",
   weekendStartTime: "17:00",
-  endTime: "21:00",
+  weekendEndTime: "21:00",
   startsAtDst: false,
   createdAt: "2026-01-01T00:00:00.000Z",
   updatedAt: "2026-01-01T00:00:00.000Z",
@@ -38,9 +40,9 @@ const makeOverride = (overrides: Partial<AvailabilityOverride> = {}): Availabili
 describe("effectiveHours", () => {
   it("selects the latest season whose start_date <= date", () => {
     const seasons = [
-      makeSeason({ id: "s1", startDate: "2026-06-01", weekdayStartTime: "17:00", endTime: "21:00" }),
-      makeSeason({ id: "s2", startDate: "2026-08-15", weekdayStartTime: "16:45", endTime: "20:30" }),
-      makeSeason({ id: "s3", startDate: "2026-09-15", weekdayStartTime: "16:00", endTime: "19:30" }),
+      makeSeason({ id: "s1", startDate: "2026-06-01", weekdayStartTime: "17:00", weekdayEndTime: "21:00" }),
+      makeSeason({ id: "s2", startDate: "2026-08-15", weekdayStartTime: "16:45", weekdayEndTime: "20:30" }),
+      makeSeason({ id: "s3", startDate: "2026-09-15", weekdayStartTime: "16:00", weekdayEndTime: "19:30" }),
     ];
     // 2026-08-17 (Mon) → s2 is active
     expect(effectiveHours("2026-08-17", seasons, [])).toEqual([{ start: "16:45", end: "20:30" }]);
@@ -60,8 +62,9 @@ describe("effectiveHours", () => {
     const season = makeSeason({
       startDate: "2026-11-01",
       weekdayStartTime: "14:30",
+      weekdayEndTime: "17:30",
       weekendStartTime: "13:00",
-      endTime: "17:30",
+      weekendEndTime: "17:30",
     });
     // 2026-11-07 is a Saturday (ISO 6)
     expect(effectiveHours("2026-11-07", [season], [])).toEqual([{ start: "13:00", end: "17:30" }]);
@@ -76,8 +79,9 @@ describe("effectiveHours", () => {
     const season = makeSeason({
       teachesDays: [1, 2, 3, 4, 5, 6, 7],
       weekdayStartTime: "17:00",
+      weekdayEndTime: "21:00",
       weekendStartTime: null,
-      endTime: "21:00",
+      weekendEndTime: null,
     });
     // 2026-06-06 is Saturday
     expect(effectiveHours("2026-06-06", [season], [])).toEqual([]);
@@ -114,7 +118,7 @@ describe("effectiveHours", () => {
   });
 
   it("custom_hours override replaces the season window on that date", () => {
-    const season = makeSeason({ weekdayStartTime: "17:00", endTime: "21:00" });
+    const season = makeSeason({ weekdayStartTime: "17:00", weekdayEndTime: "21:00" });
     const override = makeOverride({
       kind: "custom_hours",
       startDate: "2026-07-15",
@@ -140,8 +144,9 @@ describe("effectiveHours", () => {
   it("normalizes HH:MM:SS DB time strings to HH:MM", () => {
     const season = makeSeason({
       weekdayStartTime: "16:30:00" as unknown as string,
+      weekdayEndTime: "19:30:00" as unknown as string,
       weekendStartTime: "16:30:00" as unknown as string,
-      endTime: "19:30:00" as unknown as string,
+      weekendEndTime: "19:30:00" as unknown as string,
     });
     expect(effectiveHours("2026-06-02", [season], [])).toEqual([{ start: "16:30", end: "19:30" }]);
   });
@@ -159,6 +164,23 @@ describe("effectiveHours", () => {
     expect(effectiveHours("2026-06-06", [season], [override])).toEqual([
       { start: "10:00", end: "12:00" },
     ]);
+  });
+
+  it("uses weekendEndTime on Saturday/Sunday and weekdayEndTime on weekdays", () => {
+    const season = makeSeason({
+      startDate: "2026-11-01",
+      teachesDays: [1, 2, 3, 4, 5, 6, 7],
+      weekdayStartTime: "16:00",
+      weekdayEndTime: "20:00",
+      weekendStartTime: "13:00",
+      weekendEndTime: "17:00",
+    });
+    // 2026-11-07 is Saturday (ISO 6)
+    expect(effectiveHours("2026-11-07", [season], [])).toEqual([{ start: "13:00", end: "17:00" }]);
+    // 2026-11-08 is Sunday (ISO 7)
+    expect(effectiveHours("2026-11-08", [season], [])).toEqual([{ start: "13:00", end: "17:00" }]);
+    // 2026-11-06 is Friday (ISO 5)
+    expect(effectiveHours("2026-11-06", [season], [])).toEqual([{ start: "16:00", end: "20:00" }]);
   });
 
   // ── Default hours fallback ──────────────────────────────────────────────────
@@ -184,8 +206,9 @@ describe("effectiveHours", () => {
     const season = makeSeason({
       startDate: "2026-06-01",
       weekdayStartTime: "17:00",
+      weekdayEndTime: "21:00",
       weekendStartTime: "17:00",
-      endTime: "21:00",
+      weekendEndTime: "21:00",
     });
     // Day before season starts: 2026-05-26 (Tue) uses defaults
     expect(effectiveHours("2026-05-26", [season], [], DEFAULTS)).toEqual([
