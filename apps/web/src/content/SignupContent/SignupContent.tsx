@@ -8,9 +8,8 @@ import Button from "@/components/Button";
 import PasswordInput from "@/components/PasswordInput";
 
 import { signup } from "./actions";
-import AgeBlockedScreen from "./AgeBlockedScreen";
 import FieldError from "./FieldError";
-import type { SignupState } from "./helpers";
+import { AGE_ERROR, type SignupState } from "./helpers";
 import SuccessScreen from "./SuccessScreen";
 
 interface SignupContentProps {
@@ -21,7 +20,6 @@ const initialState: SignupState = { status: "idle" };
 
 export default function SignupContent({ returnTo }: SignupContentProps) {
   const [state, formAction, isPending] = useActionState(signup, initialState);
-  const [clientAgeBlocked, setClientAgeBlocked] = useState(false);
   const [confirmPasswordError, setConfirmPasswordError] = useState("");
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -31,13 +29,15 @@ export default function SignupContent({ returnTo }: SignupContentProps) {
   const confirmPasswordRef = useRef<HTMLInputElement>(null);
   const errorRef = useRef<HTMLParagraphElement>(null);
 
+  const ageError =
+    birthDate !== "" && calculateAge(birthDate, todayLA()) < 18 ? AGE_ERROR : "";
+
   useEffect(() => {
     if (state.status === "error" || state.status === "field_errors") {
       errorRef.current?.focus();
     }
   }, [state]);
 
-  if (clientAgeBlocked || state.status === "age_blocked") return <AgeBlockedScreen />;
   if (state.status === "success") return <SuccessScreen />;
 
   const fieldErrors = state.status === "field_errors" ? state.errors : {};
@@ -173,9 +173,6 @@ export default function SignupContent({ returnTo }: SignupContentProps) {
                 value={birthDate}
                 onChange={(event) => {
                   setBirthDate(event.target.value);
-                  if (event.target.value) {
-                    setClientAgeBlocked(calculateAge(event.target.value, todayLA()) < 18);
-                  }
                 }}
                 className="h-12 px-4 rounded-lg border border-border bg-background text-text"
               />
