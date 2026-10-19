@@ -27,7 +27,7 @@ export default function SeasonCard({ season, onEdit }: Props) {
           )}
         </div>
         <span className="text-xs text-text-secondary whitespace-nowrap">
-          Since {formatMonthDay(season.startDate)}
+          {formatMonthDay(season.startDate)} – {formatMonthDay(season.endDate)}
         </span>
       </div>
 

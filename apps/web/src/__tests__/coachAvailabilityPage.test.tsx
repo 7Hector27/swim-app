@@ -150,7 +150,11 @@ function renderPage(overrides: {
 describe("CoachAvailabilityContent — seasons table", () => {
   it("renders seasons in start-date order with Now on the current season", () => {
     renderPage();
-    const rows = screen.getAllByRole("row").slice(1); // skip header
+    // Exclude gap rows (identified by "Default hours" text).
+    const rows = screen
+      .getAllByRole("row")
+      .slice(1)
+      .filter((row) => !row.textContent?.includes("Default hours"));
     expect(rows).toHaveLength(2);
     expect(rows[0]).toHaveTextContent("Mid-Oct");
     expect(rows[0]).toHaveTextContent("Now");
@@ -185,13 +189,18 @@ describe("CoachAvailabilityContent — seasons table", () => {
     const nameInput = await screen.findByLabelText("Name");
     expect(nameInput).toBeInTheDocument();
 
-    fireEvent.change(nameInput, { target: { value: "Early Dec" } });
-    fireEvent.change(screen.getByLabelText("Start date"), { target: { value: "2026-12-01" } });
-    fireEvent.change(screen.getByLabelText("Weekday start"), { target: { value: "14:30" } });
-    fireEvent.change(screen.getByLabelText("Weekend start"), { target: { value: "14:30" } });
-    fireEvent.change(screen.getByLabelText("Ends"), { target: { value: "17:30" } });
+    // Scope to the season form dialog to avoid collisions with other dialogs on page.
+    const dialog = nameInput.closest("dialog") as HTMLDialogElement;
+    const inDialog = within(dialog);
 
-    fireEvent.click(screen.getByRole("button", { name: "Add season", hidden: true }));
+    fireEvent.change(nameInput, { target: { value: "Early Dec" } });
+    fireEvent.change(inDialog.getByLabelText("Start date"), { target: { value: "2026-12-01" } });
+    fireEvent.change(inDialog.getByLabelText("End date"), { target: { value: "2026-12-31" } });
+    // Default teaching days are Tue–Fri (weekdays only), so only the weekday section is visible.
+    fireEvent.change(inDialog.getByLabelText("Start"), { target: { value: "14:30" } });
+    fireEvent.change(inDialog.getByLabelText("End"), { target: { value: "17:30" } });
+
+    fireEvent.click(inDialog.getByRole("button", { name: "Add season" }));
 
     await waitFor(() => expect(mockCreateSeason).toHaveBeenCalledTimes(1));
     expect(mockCreateSeason).toHaveBeenCalledWith(
@@ -220,17 +229,23 @@ describe("CoachAvailabilityContent — seasons table", () => {
     renderPage();
 
     fireEvent.click(screen.getAllByRole("button", { name: /\+ Add season/ })[0]!);
-    fireEvent.change(await screen.findByLabelText("Name"), { target: { value: "Early Dec" } });
-    fireEvent.change(screen.getByLabelText("Start date"), { target: { value: "2026-12-01" } });
-    fireEvent.change(screen.getByLabelText("Weekday start"), { target: { value: "14:30" } });
-    fireEvent.change(screen.getByLabelText("Weekend start"), { target: { value: "14:30" } });
-    fireEvent.change(screen.getByLabelText("Ends"), { target: { value: "17:30" } });
+    const addName = await screen.findByLabelText("Name");
+    const addDialog = addName.closest("dialog") as HTMLDialogElement;
+    const inAddDialog = within(addDialog);
+    fireEvent.change(addName, { target: { value: "Early Dec" } });
+    fireEvent.change(inAddDialog.getByLabelText("Start date"), { target: { value: "2026-12-01" } });
+    fireEvent.change(inAddDialog.getByLabelText("End date"), { target: { value: "2026-12-31" } });
+    fireEvent.change(inAddDialog.getByLabelText("Start"), { target: { value: "14:30" } });
+    fireEvent.change(inAddDialog.getByLabelText("End"), { target: { value: "17:30" } });
 
-    fireEvent.click(screen.getByRole("button", { name: "Add season", hidden: true }));
+    fireEvent.click(inAddDialog.getByRole("button", { name: "Add season" }));
 
     await waitFor(() => expect(screen.getByText("Early Dec")).toBeInTheDocument());
 
-    const rows = screen.getAllByRole("row").slice(1);
+    const rows = screen
+      .getAllByRole("row")
+      .slice(1)
+      .filter((row) => !row.textContent?.includes("Default hours"));
     const midOctRow = rows.find((row) => row.textContent?.includes("Mid-Oct"));
     const earlyDecRow = rows.find((row) => row.textContent?.includes("Early Dec"));
     expect(midOctRow).toHaveTextContent("Now");
@@ -262,13 +277,16 @@ describe("CoachAvailabilityContent — seasons table", () => {
     renderPage();
 
     fireEvent.click(screen.getAllByRole("button", { name: /\+ Add season/ })[0]!);
-    fireEvent.change(await screen.findByLabelText("Name"), { target: { value: "Early Dec" } });
-    fireEvent.change(screen.getByLabelText("Start date"), { target: { value: "2026-12-01" } });
-    fireEvent.change(screen.getByLabelText("Weekday start"), { target: { value: "14:30" } });
-    fireEvent.change(screen.getByLabelText("Weekend start"), { target: { value: "14:30" } });
-    fireEvent.change(screen.getByLabelText("Ends"), { target: { value: "17:30" } });
+    const warnName = await screen.findByLabelText("Name");
+    const warnDialog = warnName.closest("dialog") as HTMLDialogElement;
+    const inWarnDialog = within(warnDialog);
+    fireEvent.change(warnName, { target: { value: "Early Dec" } });
+    fireEvent.change(inWarnDialog.getByLabelText("Start date"), { target: { value: "2026-12-01" } });
+    fireEvent.change(inWarnDialog.getByLabelText("End date"), { target: { value: "2026-12-31" } });
+    fireEvent.change(inWarnDialog.getByLabelText("Start"), { target: { value: "14:30" } });
+    fireEvent.change(inWarnDialog.getByLabelText("End"), { target: { value: "17:30" } });
 
-    fireEvent.click(screen.getByRole("button", { name: "Add season", hidden: true }));
+    fireEvent.click(inWarnDialog.getByRole("button", { name: "Add season" }));
 
     await waitFor(() => expect(mockCreateSeason).toHaveBeenCalled());
     const warningDialog = await screen.findByRole("heading", {
@@ -470,6 +488,24 @@ describe("CoachAvailabilityContent — phone layout", () => {
     expect(screen.getByRole("button", { name: "One-off changes", pressed: false })).toBeInTheDocument();
     // Phone card renders an Edit <name> button
     expect(screen.getByRole("button", { name: "Edit Mid-Oct" })).toBeInTheDocument();
+  });
+});
+
+describe("CoachAvailabilityContent — robustness", () => {
+  it("renders without crashing when a season has an empty endDate", () => {
+    // Guards against stale API responses missing end_date.
+    renderPage({
+      seasons: [season({ endDate: "" as string })],
+    });
+    expect(screen.getAllByText("Season").length).toBeGreaterThan(0);
+  });
+
+  it("does not show the after-end-date helper text while end date is partially typed", async () => {
+    renderPage();
+    fireEvent.click(screen.getAllByRole("button", { name: /\+ Add season/ })[0]!);
+    const endDateInput = await screen.findByLabelText("End date");
+    fireEvent.change(endDateInput, { target: { value: "2026-12" } });
+    expect(screen.queryByText(/After/)).not.toBeInTheDocument();
   });
 });
 

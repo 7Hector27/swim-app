@@ -7,7 +7,7 @@ import type {
   SeasonWithIsCurrent,
 } from "@swim-app/shared";
 
-import { formatMonthDay } from "./availabilityFormat";
+import { formatMonthDay, isValidDateIso } from "./availabilityFormat";
 import styles from "./CoachAvailabilityContent.module.css";
 
 interface Props {
@@ -94,7 +94,7 @@ export default function SeasonFormModal({
   }, [open, season]);
 
   const afterMessage = useMemo(() => {
-    if (!endDate) return null;
+    if (!isValidDateIso(endDate)) return null;
     const editingId = season?.id ?? null;
     const next = seasons
       .filter((s) => s.id !== editingId && s.startDate > endDate)
