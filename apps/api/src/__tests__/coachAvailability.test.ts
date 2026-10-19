@@ -1157,9 +1157,9 @@ describe("POST /coach/overrides", () => {
       endDate: "2025-12-24",
     });
 
-    // 2025-12-24T22:00 UTC === 2025-12-24 2pm LA (open under default hours).
+    // 2025-12-25T01:00 UTC === 2025-12-24 5pm LA (within default hours 16:00–20:00).
     // The new day_off override closes that day, so the lesson falls outside.
-    const lessonStart = new Date("2025-12-24T22:00:00.000Z");
+    const lessonStart = new Date("2025-12-25T01:00:00.000Z");
 
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(coachProfile))
