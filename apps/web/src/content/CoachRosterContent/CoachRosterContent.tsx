@@ -12,6 +12,13 @@ const LEAGUE_LABELS: Record<League, string> = {
   summer_league: "Summer League",
 };
 
+function swimmerClubLabel(clubs: CoachSwimmer["clubs"]): string {
+  return clubs
+    .map((club) => club.clubName ?? club.otherClubName)
+    .filter((name): name is string => name !== null)
+    .join(", ");
+}
+
 export default function CoachRosterContent({ swimmers }: CoachRosterContentProps) {
   const [search, setSearch] = useState("");
   const [leagueFilter, setLeagueFilter] = useState<League | "all">("all");
@@ -68,6 +75,7 @@ export default function CoachRosterContent({ swimmers }: CoachRosterContentProps
       ) : (
         <ul className="flex flex-col gap-3">
           {filtered.map((swimmer) => {
+            const clubLabel = swimmerClubLabel(swimmer.clubs);
             return (
               <li key={swimmer.id}>
                 <a
@@ -85,15 +93,9 @@ export default function CoachRosterContent({ swimmers }: CoachRosterContentProps
                     )}
                   </div>
                   <p className="text-sm text-text-secondary">Age {swimmer.age}</p>
-                  {(() => {
-                    const clubLabel = swimmer.clubs
-                      .map((club) => club.clubName ?? club.otherClubName)
-                      .filter((name): name is string => name !== null)
-                      .join(", ");
-                    return clubLabel ? (
-                      <p className="text-xs text-text-secondary">{clubLabel}</p>
-                    ) : null;
-                  })()}
+                  {clubLabel && (
+                    <p className="text-xs text-text-secondary">{clubLabel}</p>
+                  )}
                   {swimmer.currentLeagues.length > 0 && (
                     <div className="flex gap-2 flex-wrap mt-1">
                       {swimmer.currentLeagues.map((league) => (

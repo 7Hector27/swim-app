@@ -19,11 +19,9 @@ export default async function CoachLessonPage({ params }: PageProps) {
   if (!auth) return <AccountInactiveScreen />;
   if (auth.profile.role !== "coach") redirect("/dashboard");
 
-  const [lesson, notes] = await Promise.all([
-    fetchCoachLesson(auth.accessToken, id),
-    fetchLessonNotes(auth.accessToken, id),
-  ]);
+  const lesson = await fetchCoachLesson(auth.accessToken, id);
   if (!lesson) notFound();
+  const notes = await fetchLessonNotes(auth.accessToken, id);
 
   return <CoachLessonDetailContent lesson={lesson} notes={notes} />;
 }

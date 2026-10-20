@@ -96,11 +96,17 @@ All signed-in routes are guarded by `requireAuth()` (`apps/web/src/lib/requireAu
 
 **Public board caching:** `web` fetches the three public board endpoints with `{ next: { revalidate: 60 } }`, so each board page is cached server-side for up to 60 seconds. A swimmer whose `is_public` flag is set to `false` (via the coach visibility toggle) can remain visible on the public boards for up to one minute after the change.
 
-## Availability is single-coach
+## Single-coach assumption
 
-`availability_seasons` and `availability_overrides` have no `coach_id` column — they describe the hours the one coach (Jason) teaches. The `/coach/*` availability routes are guarded by `requireCoach` but assume there is a single coach's schedule in the system, so they do not filter by coach. The impact-warning query (`fetchUpcomingLessons` in `apps/api/src/routes/coachAvailability.ts`) likewise fetches every upcoming approved+pending lesson regardless of coach, because every lesson is Jason's.
+The entire system is designed around a single coach (Jason). This assumption surfaces in three places:
 
-Supporting a second coach is a model change, not just a filter: seasons and overrides need a `coach_id` FK, the impact-warning query must scope to the requesting coach's lessons, and the resolver (`effectiveHours`) must take a coach as input. Flagged for whenever the business adds a second coach — do not add a coach column opportunistically; the whole slot engine assumes one availability source today.
+**Availability** — `availability_seasons` and `availability_overrides` have no `coach_id` column. The `/coach/*` availability routes are guarded by `requireCoach` but do not filter by coach. The impact-warning query (`fetchUpcomingLessons` in `apps/api/src/routes/coachAvailability.ts`) fetches every upcoming approved+pending lesson, because every lesson is Jason's.
+
+**Lessons** — `GET /coach/lessons/:id` and `GET /coach/lessons/:id/notes` fetch the lesson by UUID with no coach-ownership check beyond `requireCoach`. Adding a second coach would require scoping lessons to the requesting coach and restructuring the approval flow.
+
+**Coach notes** — `GET /coach/lessons/:id/notes` returns all notes for the lesson regardless of `created_by`. With multiple coaches, notes would need to be scoped to the requesting coach's `profile.id`.
+
+Supporting a second coach is a model change across all three areas: seasons and overrides need a `coach_id` FK, the slot engine must take a coach as input, and lesson/note routes must scope to the requesting coach. Do not add coach columns opportunistically — defer until the business adds a second coach, and capture the full scope in an ADR at that time.
 
 ## Hours resolver order
 

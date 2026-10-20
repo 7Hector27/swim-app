@@ -1,12 +1,15 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 
-export type CoachLessonActionState =
-  | { status: "idle" }
-  | { status: "success" }
-  | { status: "error"; message: string };
+export const CoachLessonActionStateSchema = z.discriminatedUnion("status", [
+  z.object({ status: z.literal("idle") }),
+  z.object({ status: z.literal("success") }),
+  z.object({ status: z.literal("error"), message: z.string() }),
+]);
+export type CoachLessonActionState = z.infer<typeof CoachLessonActionStateSchema>;
 
 export async function approveLessonAction(
   lessonId: string,

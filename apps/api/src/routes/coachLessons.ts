@@ -563,12 +563,16 @@ coachLessonsRouter.get(
       }
     }
 
-    // Load household name (first member's full name).
+    // Load household name: prefer the owner, then oldest member.
     const memberRows = await db
       .select({ fullName: profiles.fullName })
       .from(householdMembers)
       .innerJoin(profiles, eq(householdMembers.profileId, profiles.id))
       .where(eq(householdMembers.householdId, lessonRow.householdId))
+      .orderBy(
+        sql`CASE ${householdMembers.role} WHEN 'owner' THEN 0 WHEN 'manager' THEN 1 ELSE 2 END`,
+        asc(householdMembers.joinedAt),
+      )
       .limit(1);
 
     const householdName = memberRows[0]?.fullName ?? null;

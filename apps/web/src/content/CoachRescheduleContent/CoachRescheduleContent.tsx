@@ -197,11 +197,9 @@ export default function CoachRescheduleContent({ lesson, locations }: Props) {
   }
 
   function prevMonth() {
-    const [yearStr, monthIndexStr] = monthStr.split("-").map(Number);
-    const year = yearStr ?? 2026;
-    const monthIndex = monthIndexStr ?? 10;
-    const prevDate = new Date(year, monthIndex - 2, 1);
-    const newDate = prevDate.toISOString().slice(0, 10);
+    const base = new Date(`${monthStr}-01T12:00:00`);
+    base.setMonth(base.getMonth() - 1);
+    const newDate = base.toISOString().slice(0, 10);
     setCurrentDate(newDate);
     setSelectedStartsAt(null);
     setFetchSpec((prev) => ({
@@ -212,11 +210,9 @@ export default function CoachRescheduleContent({ lesson, locations }: Props) {
   }
 
   function nextMonth() {
-    const [yearStr, monthIndexStr] = monthStr.split("-").map(Number);
-    const year = yearStr ?? 2026;
-    const monthIndex = monthIndexStr ?? 10;
-    const nextDate = new Date(year, monthIndex, 1);
-    const newDate = nextDate.toISOString().slice(0, 10);
+    const base = new Date(`${monthStr}-01T12:00:00`);
+    base.setMonth(base.getMonth() + 1);
+    const newDate = base.toISOString().slice(0, 10);
     setCurrentDate(newDate);
     setSelectedStartsAt(null);
     setFetchSpec((prev) => ({

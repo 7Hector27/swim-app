@@ -1,10 +1,15 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { apiErrorMessage } from "@/lib/apiErrorMessage";
 
-export type CoachLessonDetailState = { status: "idle" } | { status: "error"; message: string };
+export const CoachLessonDetailStateSchema = z.discriminatedUnion("status", [
+  z.object({ status: z.literal("idle") }),
+  z.object({ status: z.literal("error"), message: z.string() }),
+]);
+export type CoachLessonDetailState = z.infer<typeof CoachLessonDetailStateSchema>;
 
 export async function cancelCoachLessonAction(
   _prev: CoachLessonDetailState,
@@ -58,6 +63,7 @@ export async function approveCoachLessonAction(
   const token = data.session?.access_token;
   if (!token) return { status: "error", message: "Session expired. Please sign in again." };
 
+  let ok = false;
   try {
     const response = await fetch(
       `${process.env.NEXT_PUBLIC_API_URL}/coach/lessons/${lessonId}/approve`,
@@ -67,13 +73,13 @@ export async function approveCoachLessonAction(
         body: JSON.stringify({}),
       },
     );
-    if (response.ok) {
-      redirect(`/coach/lessons/${lessonId}`);
-    }
-    return { status: "error", message: "Could not approve this lesson. Please try again." };
+    ok = response.ok;
   } catch {
     return { status: "error", message: "Could not reach the server. Please try again." };
   }
+
+  if (ok) redirect(`/coach/lessons/${lessonId}`);
+  return { status: "error", message: "Could not approve this lesson. Please try again." };
 }
 
 export async function declineCoachLessonAction(
@@ -92,6 +98,7 @@ export async function declineCoachLessonAction(
 
   const reason = (formData.get("reason") as string | null) ?? undefined;
 
+  let ok = false;
   try {
     const response = await fetch(
       `${process.env.NEXT_PUBLIC_API_URL}/coach/lessons/${lessonId}/decline`,
@@ -101,11 +108,11 @@ export async function declineCoachLessonAction(
         body: JSON.stringify({ ...(reason !== undefined && { reason }) }),
       },
     );
-    if (response.ok) {
-      redirect(`/coach/lessons/${lessonId}`);
-    }
-    return { status: "error", message: "Could not decline this lesson. Please try again." };
+    ok = response.ok;
   } catch {
     return { status: "error", message: "Could not reach the server. Please try again." };
   }
+
+  if (ok) redirect(`/coach/lessons/${lessonId}`);
+  return { status: "error", message: "Could not decline this lesson. Please try again." };
 }

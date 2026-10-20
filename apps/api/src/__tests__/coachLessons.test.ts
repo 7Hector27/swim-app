@@ -127,6 +127,8 @@ const pendingLessonRow = {
   noShowBy: null as string | null,
   completedAt: null as Date | null,
   expiresAt,
+  movedAt: null as Date | null,
+  previousStartsAt: null as Date | null,
   googleCalendarEventId: null as string | null,
   calendarSyncStatus: "not_synced",
   calendarSyncError: null as string | null,
@@ -666,5 +668,111 @@ describe("GET /coach/lessons/:id/notes", () => {
       .set("Authorization", "Bearer token");
 
     expect(res.status).toBe(403);
+  });
+});
+
+// ── GET /coach/lessons/:id ────────────────────────────────────────────────────
+
+describe("GET /coach/lessons/:id", () => {
+  const lessonDetailRow = {
+    id: LESSON_ID,
+    householdId: HOUSEHOLD_ID,
+    locationId: LOCATION_ID,
+    locationName: "Egret Park",
+    locationAddress: "45 Ovation",
+    locationCity: "Irvine",
+    locationState: "CA",
+    locationZip: "92620",
+    isHomePool: false,
+    startsAt: futureStart,
+    durationMinutes: 30 as 30 | 45 | 60,
+    type: "private" as const,
+    status: "pending" as const,
+    expiresAt,
+    approvedAt: null as Date | null,
+    declinedAt: null as Date | null,
+    declineReason: null as string | null,
+    movedAt: null as Date | null,
+    previousStartsAt: null as Date | null,
+    createdAt: now,
+  };
+
+  function mockGetLessonDetail(
+    row: typeof lessonDetailRow | null,
+    swimmerRows: unknown[] = [],
+    memberRows: { fullName: string | null }[] = [{ fullName: "Smith Family" }],
+  ) {
+    // 1. lesson + location inner join
+    const lessonLimit = vi.fn().mockResolvedValue(row ? [row] : []);
+    const lessonWhere = vi.fn().mockReturnValue({ limit: lessonLimit });
+    const lessonInnerJoin = vi.fn().mockReturnValue({ where: lessonWhere });
+    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ innerJoin: lessonInnerJoin }) });
+    if (!row) return;
+
+    // 2. swimmers: innerJoin + leftJoin + leftJoin + where
+    const swimWhere = vi.fn().mockResolvedValue(swimmerRows);
+    const leftJoin2 = vi.fn().mockReturnValue({ where: swimWhere });
+    const leftJoin1 = vi.fn().mockReturnValue({ leftJoin: leftJoin2 });
+    const swimInnerJoin = vi.fn().mockReturnValue({ leftJoin: leftJoin1 });
+    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ innerJoin: swimInnerJoin }) });
+
+    // 3. household members: innerJoin + where + orderBy + limit
+    const memberLimit = vi.fn().mockResolvedValue(memberRows);
+    const memberOrderBy = vi.fn().mockReturnValue({ limit: memberLimit });
+    const memberWhere = vi.fn().mockReturnValue({ orderBy: memberOrderBy });
+    const memberInnerJoin = vi.fn().mockReturnValue({ where: memberWhere });
+    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ innerJoin: memberInnerJoin }) });
+  }
+
+  it("returns lesson detail with householdName for a coach", async () => {
+    authAsCoach();
+    mockGetLessonDetail(lessonDetailRow);
+
+    const res = await request(app)
+      .get(`/coach/lessons/${LESSON_ID}`)
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      id: LESSON_ID,
+      locationName: "Egret Park",
+      householdName: "Smith Family",
+      swimmers: [],
+    });
+  });
+
+  it("returns 404 when the lesson does not exist", async () => {
+    authAsCoach();
+    mockGetLessonDetail(null);
+
+    const res = await request(app)
+      .get(`/coach/lessons/${LESSON_ID}`)
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 403 for a parent", async () => {
+    authAs(parentProfile);
+    mockDbSelect.mockReturnValueOnce(requireUserSelect(parentProfile));
+
+    const res = await request(app)
+      .get(`/coach/lessons/${LESSON_ID}`)
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(403);
+  });
+
+  it("sets isHomePool true and returns address when location belongs to a household", async () => {
+    authAsCoach();
+    mockGetLessonDetail({ ...lessonDetailRow, locationName: "Home pool", isHomePool: true });
+
+    const res = await request(app)
+      .get(`/coach/lessons/${LESSON_ID}`)
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(200);
+    expect(res.body.isHomePool).toBe(true);
+    expect(res.body.locationAddress).toBe("45 Ovation");
   });
 });

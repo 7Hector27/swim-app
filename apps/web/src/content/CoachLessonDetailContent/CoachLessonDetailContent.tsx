@@ -93,9 +93,7 @@ export default function CoachLessonDetailContent({ lesson, notes }: Props) {
                 )}
                 <Row label="Status">
                   {lesson.status === "approved" ? (
-                    <span className="inline-flex items-center rounded-full text-xs font-semibold px-2.5 py-1 bg-success/10 text-success">
-                      Confirmed
-                    </span>
+                    "Confirmed"
                   ) : (
                     <LessonStatusBadge status={lesson.status} viewer="coach" />
                   )}
