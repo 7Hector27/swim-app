@@ -148,10 +148,10 @@ describe("mapPublicToggleApiResponse — disable direction", () => {
     expect(mapPublicToggleApiResponse(200, "disable").status).toBe("idle");
   });
 
-  it("returns owners-and-managers error on 403 (viewers can't change)", () => {
+  it("returns permission error on 403 (not a household member)", () => {
     const result = mapPublicToggleApiResponse(403, "disable");
     expect(result.status).toBe("error");
-    expect("message" in result && result.message).toMatch(/managers/i);
+    expect("message" in result && result.message).toMatch(/permission/i);
   });
 });
 

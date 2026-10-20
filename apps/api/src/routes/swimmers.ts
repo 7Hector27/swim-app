@@ -336,10 +336,6 @@ swimmersRouter.patch(
       res.status(403).json({ error: "Only the household owner can make a swimmer public" });
       return;
     }
-    if (body.isPublic === false && HOUSEHOLD_ROLE_RANK[householdRole] < HOUSEHOLD_ROLE_RANK.manager) {
-      res.status(403).json({ error: "Insufficient household role" });
-      return;
-    }
     const hasSwimmerFieldChange =
       body.firstName !== undefined ||
       body.lastName !== undefined ||

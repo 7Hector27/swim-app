@@ -1,5 +1,6 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { fetchCoachSchedule } from "@/lib/api/lessons";
 import type { CoachScheduleItem } from "@swim-app/shared";
@@ -53,6 +54,8 @@ export async function approveLessonAction(
       },
     );
     if (response.ok) {
+      revalidatePath("/coach");
+      revalidatePath("/coach/schedule");
       return { status: "success" };
     }
     return { status: "error", message: "Could not approve the lesson. Please try again." };
@@ -90,6 +93,8 @@ export async function declineLessonAction(
       },
     );
     if (response.ok) {
+      revalidatePath("/coach");
+      revalidatePath("/coach/schedule");
       return { status: "success" };
     }
     return { status: "error", message: "Could not decline the lesson. Please try again." };

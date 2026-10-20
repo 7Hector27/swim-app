@@ -39,13 +39,18 @@ export default function CoachLessonRow({ item }: Props) {
     minute: "2-digit",
   }).format(new Date(lesson.startsAt));
 
-  const swimmerNames = lesson.swimmers
-    .map((swimmer) =>
-      swimmer.clubName ? `${swimmer.firstName} (${swimmer.clubName})` : swimmer.firstName,
-    )
-    .join(", ");
+  const swimmerNames = lesson.swimmers.map((swimmer) => swimmer.firstName).join(", ");
+
+  const clubNames = [
+    ...new Set(
+      lesson.swimmers
+        .map((swimmer) => swimmer.clubName)
+        .filter((name): name is string => name !== null),
+    ),
+  ];
 
   const isPending = lesson.status === "pending";
+  const isHiddenFromEvaluate = lesson.status === "canceled" || lesson.status === "declined";
   const approveFormId = `approve-${lesson.id}`;
   const declineFormId = `decline-${lesson.id}`;
 
@@ -60,6 +65,9 @@ export default function CoachLessonRow({ item }: Props) {
             <p className="text-sm font-semibold text-text">
               {swimmerNames || "No swimmers"}, {lesson.durationMinutes} min
             </p>
+            {clubNames.length > 0 && (
+              <p className="text-xs text-text-secondary mt-0.5">{clubNames.join(" · ")}</p>
+            )}
             <p className="text-xs text-text-secondary mt-0.5">
               {locationName} &middot; {lesson.type === "private" ? "Private" : "Family"} lesson
             </p>
@@ -89,6 +97,20 @@ export default function CoachLessonRow({ item }: Props) {
             {approveState.status === "error" && (
               <p className="text-xs text-danger w-full">{approveState.message}</p>
             )}
+          </div>
+        )}
+
+        {!isHiddenFromEvaluate && lesson.swimmers.length > 0 && (
+          <div className="flex flex-wrap gap-2 mt-3">
+            {lesson.swimmers.map((swimmer) => (
+              <Link
+                key={swimmer.swimmerId}
+                href={`/coach/swimmers/${swimmer.swimmerId}/evaluate`}
+                className="inline-flex items-center justify-center rounded-button bg-button-primary-background text-button-primary-text font-bold text-sm px-5 min-h-[44px] transition-opacity hover:opacity-80 active:scale-[0.97]"
+              >
+                Evaluate {swimmer.firstName}
+              </Link>
+            ))}
           </div>
         )}
 

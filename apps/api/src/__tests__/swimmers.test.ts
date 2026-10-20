@@ -779,28 +779,34 @@ describe("household role restrictions", () => {
     expect(res.status).toBe(403);
   });
 
-  it("viewer → 403 PATCH /:id { isPublic: false }", async () => {
+  it("viewer → 200 PATCH /:id { isPublic: false } (any member can opt out)", async () => {
     authAs(profileA);
-    mockDbSelect.mockImplementation(() => {
-      let call = 0;
-      return {
-        from: () => ({
-          where: () => {
-            call++;
-            if (call === 1) return requireUserSelect(profileA).from().where();
-            if (call === 2) return requireHouseholdMemberSelect(true, "viewer").from().where();
-            return requireHouseholdSwimmerSelect(true).from().where();
-          },
-        }),
-      };
-    });
-    // Mock each chained select call in order
+    const updatedSwimmer = { ...baseSwimmerRow, isPublic: false };
     let sel = 0;
     mockDbSelect.mockImplementation(() => {
       sel++;
       if (sel === 1) return requireUserSelect(profileA);
       if (sel === 2) return requireHouseholdMemberSelect(true, "viewer");
-      return requireHouseholdSwimmerSelect(true);
+      if (sel === 3) return requireHouseholdSwimmerSelect(true);
+      if (sel === 4) return swimmerSelect(updatedSwimmer);
+      if (sel === 5) return clubsSelect();
+      return regsSelect();
+    });
+
+    mockDbTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
+      const tx = {
+        select: () => {
+          const limit = vi.fn().mockResolvedValue([{ isPublic: true }]);
+          const where = vi.fn().mockReturnValue({ limit });
+          return { from: vi.fn().mockReturnValue({ where }) };
+        },
+        update: vi.fn().mockReturnValue({
+          set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) }),
+        }),
+        delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) }),
+        insert: vi.fn().mockReturnValue({ values: vi.fn().mockResolvedValue([]) }),
+      };
+      return fn(tx);
     });
 
     const res = await request(app)
@@ -808,7 +814,8 @@ describe("household role restrictions", () => {
       .set("Authorization", "Bearer token")
       .send({ isPublic: false });
 
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(200);
+    expect(res.body.isPublic).toBe(false);
   });
 
   it("manager → 201 POST /swimmers with isPublic: false", async () => {

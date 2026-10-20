@@ -144,14 +144,13 @@ describe("TodayScheduleCard — open slot row", () => {
   });
 });
 
-describe("TodayScheduleCard — club name in lesson row", () => {
-  it("shows swimmer name without parens when clubName is null", () => {
+describe("TodayScheduleCard — no club name on dashboard card", () => {
+  it("shows swimmer name without club when clubName is null", () => {
     renderCard([lessonItem]);
     expect(screen.getByText(/Morgan, 60 min/)).toBeInTheDocument();
-    expect(screen.queryByText(/Morgan \(/)).toBeNull();
   });
 
-  it("shows club name in parens when clubName is present", () => {
+  it("does not show club name even when the swimmer has one", () => {
     const withClub: CoachScheduleItem = {
       ...lessonItem,
       lesson: {
@@ -160,7 +159,8 @@ describe("TodayScheduleCard — club name in lesson row", () => {
       },
     };
     renderCard([withClub]);
-    expect(screen.getByText(/Morgan \(NCAP\)/)).toBeInTheDocument();
+    expect(screen.queryByText(/NCAP/)).toBeNull();
+    expect(screen.getByText(/Morgan, 60 min/)).toBeInTheDocument();
   });
 });
 

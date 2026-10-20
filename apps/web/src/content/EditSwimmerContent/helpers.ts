@@ -49,7 +49,7 @@ export function mapPublicToggleApiResponse(
       message:
         direction === "enable"
           ? "Only the household owner can make a swimmer public."
-          : "Only household owners and managers can change this.",
+          : "You don't have permission to remove this swimmer from leaderboards.",
     };
   }
   if (httpStatus === 404) {

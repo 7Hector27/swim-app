@@ -62,16 +62,20 @@ export const SwimmerClubBaseSchema = z.object({
   updatedAt: z.string().datetime({ offset: true }),
 });
 
-// Mirrors the DB CHECK: exactly one of clubId or otherClubName must be set.
-export const SwimmerClubSchema = SwimmerClubBaseSchema.refine(
-  (data) =>
+function isXorClub(data: { clubId: string | null; otherClubName: string | null }): boolean {
+  return (
     (data.clubId !== null && data.otherClubName === null) ||
-    (data.clubId === null && data.otherClubName !== null),
-  {
-    message: "exactly one of clubId or otherClubName must be set",
-    path: ["clubId"],
-  },
-);
+    (data.clubId === null && data.otherClubName !== null)
+  );
+}
+
+const xorClubOptions = {
+  message: "exactly one of clubId or otherClubName must be set",
+  path: ["clubId"],
+};
+
+// Mirrors the DB CHECK: exactly one of clubId or otherClubName must be set.
+export const SwimmerClubSchema = SwimmerClubBaseSchema.refine(isXorClub, xorClubOptions);
 
 export type SwimmerClub = z.infer<typeof SwimmerClubSchema>;
 
@@ -159,15 +163,7 @@ export type PublicSwimmer = z.infer<typeof PublicSwimmerSchema>;
 
 export const CoachSwimmerClubSchema = SwimmerClubBaseSchema.extend({
   clubName: z.string().nullable(),
-}).refine(
-  (data) =>
-    (data.clubId !== null && data.otherClubName === null) ||
-    (data.clubId === null && data.otherClubName !== null),
-  {
-    message: "exactly one of clubId or otherClubName must be set",
-    path: ["clubId"],
-  },
-);
+}).refine(isXorClub, xorClubOptions);
 export type CoachSwimmerClub = z.infer<typeof CoachSwimmerClubSchema>;
 
 export const CoachSwimmerSchema = z.object({
