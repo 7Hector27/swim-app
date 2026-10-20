@@ -49,7 +49,7 @@ export default function BottomBar({
     <div
       role="region"
       aria-label="Booking selection"
-      className="sticky bottom-4 z-10 mx-4 tablet:mx-0"
+      className="sticky bottom-[calc(44px_+_env(safe-area-inset-bottom,_0px)_+_1rem)] tablet:bottom-4 z-10 mx-4 tablet:mx-0"
     >
       <div className="bg-heading text-background rounded-[16px] px-5 py-4 flex items-center gap-4 transition-colors duration-200 motion-reduce:transition-none shadow-lg">
         <div className="flex-1 min-w-0">

@@ -19,6 +19,7 @@ interface Props {
   durationMinutes: 30 | 45 | 60;
   swimmerIds: string[];
   isLoading: boolean;
+  showSwimmerError: boolean;
   onLocationChange: (id: string) => void;
   onDurationChange: (d: 30 | 45 | 60) => void;
   onSwimmersChange: (ids: string[]) => void;
@@ -26,11 +27,49 @@ interface Props {
 
 const DURATIONS: Array<30 | 45 | 60> = [30, 45, 60];
 
-const CHIP_BASE =
-  "min-h-[36px] px-3 rounded-full border text-sm transition-colors duration-150 motion-reduce:transition-none disabled:opacity-40 disabled:cursor-default";
+const LABEL = "text-xs font-semibold text-text-secondary uppercase tracking-wide mb-1.5";
 
-const CHIP_ACTIVE = "border-accent text-accent bg-accent/10";
+const CHIP_BASE =
+  "min-h-[44px] px-3.5 rounded-full border text-sm font-semibold flex items-center gap-1.5 transition-colors duration-150 motion-reduce:transition-none disabled:opacity-40 disabled:cursor-default";
+
+const CHIP_ACTIVE = "border-accent bg-accent/10 text-accent";
 const CHIP_INACTIVE = "border-border text-text hover:bg-surface-soft";
+
+function CheckIcon() {
+  return (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 12 12"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <polyline points="1.5,6 5,9.5 10.5,2.5" />
+    </svg>
+  );
+}
+
+function PlusIcon() {
+  return (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 12 12"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      aria-hidden="true"
+    >
+      <line x1="6" y1="1" x2="6" y2="11" />
+      <line x1="1" y1="6" x2="11" y2="6" />
+    </svg>
+  );
+}
 
 export default function CalendarConfigRow({
   locations,
@@ -39,6 +78,7 @@ export default function CalendarConfigRow({
   durationMinutes,
   swimmerIds,
   isLoading,
+  showSwimmerError,
   onLocationChange,
   onDurationChange,
   onSwimmersChange,
@@ -51,15 +91,18 @@ export default function CalendarConfigRow({
     }
   }
 
+  const isFamilyLesson = swimmerIds.length >= 2;
+
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="flex flex-col gap-4">
       {locations.length > 1 && (
-        <>
+        <div>
+          <p className={LABEL}>Pool</p>
           <select
             value={locationId ?? ""}
             onChange={(event) => onLocationChange(event.target.value)}
             disabled={isLoading}
-            className={`${CHIP_BASE} appearance-none bg-background pr-7 cursor-pointer`}
+            className={`${CHIP_BASE} appearance-none bg-background pr-7 cursor-pointer border-border text-text`}
             aria-label="Pool location"
           >
             {locations.map((location) => (
@@ -68,41 +111,66 @@ export default function CalendarConfigRow({
               </option>
             ))}
           </select>
-          <span className="w-px h-5 bg-border flex-shrink-0" aria-hidden="true" />
-        </>
+        </div>
       )}
 
-      {DURATIONS.map((minutes) => (
-        <button
-          key={minutes}
-          type="button"
-          onClick={() => onDurationChange(minutes)}
-          disabled={isLoading}
-          className={`${CHIP_BASE} ${durationMinutes === minutes ? CHIP_ACTIVE : CHIP_INACTIVE}`}
-        >
-          {minutes} min
-        </button>
-      ))}
+      <div>
+        <p className={LABEL}>Length</p>
+        <div className="flex flex-wrap gap-2">
+          {DURATIONS.map((minutes) => (
+            <button
+              key={minutes}
+              type="button"
+              onClick={() => onDurationChange(minutes)}
+              disabled={isLoading}
+              className={`${CHIP_BASE} ${durationMinutes === minutes ? CHIP_ACTIVE : CHIP_INACTIVE}`}
+            >
+              {minutes} min
+            </button>
+          ))}
+        </div>
+      </div>
 
       {swimmers.length > 0 && (
-        <>
-          <span className="w-px h-5 bg-border flex-shrink-0" aria-hidden="true" />
-          {swimmers.map((swimmer) => {
-            const isActive = swimmerIds.includes(swimmer.id);
-            return (
-              <button
-                key={swimmer.id}
-                type="button"
-                onClick={() => toggleSwimmer(swimmer.id)}
-                disabled={isLoading}
-                aria-pressed={isActive}
-                className={`${CHIP_BASE} ${isActive ? CHIP_ACTIVE : CHIP_INACTIVE}`}
-              >
-                {swimmer.firstName} {swimmer.lastName}
-              </button>
-            );
-          })}
-        </>
+        <div>
+          <p className={LABEL}>Who&rsquo;s swimming</p>
+          {swimmers.length > 1 && (
+            <p className="text-xs text-text-secondary mb-2">Tap everyone who&rsquo;s swimming</p>
+          )}
+          <div className="flex flex-wrap gap-2">
+            {swimmers.map((swimmer) => {
+              const isActive = swimmerIds.includes(swimmer.id);
+              return (
+                <button
+                  key={swimmer.id}
+                  type="button"
+                  onClick={() => toggleSwimmer(swimmer.id)}
+                  disabled={isLoading}
+                  aria-pressed={isActive}
+                  className={[
+                    CHIP_BASE,
+                    isActive
+                      ? CHIP_ACTIVE
+                      : "border-dashed border-border text-text-secondary hover:bg-surface-soft",
+                  ].join(" ")}
+                >
+                  {isActive ? <CheckIcon /> : <PlusIcon />}
+                  {swimmer.firstName} {swimmer.lastName}
+                </button>
+              );
+            })}
+          </div>
+          {isFamilyLesson && (
+            <p className="text-xs text-text-secondary mt-2">
+              Family lesson · {swimmerIds.length}
+            </p>
+          )}
+          {showSwimmerError && swimmerIds.length === 0 && (
+            <p role="alert" className="text-xs text-danger mt-2">
+              Pick who&rsquo;s swimming
+            </p>
+          )}
+        </div>
       )}
     </div>
   );
