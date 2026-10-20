@@ -1,15 +1,11 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { apiErrorMessage } from "@/lib/apiErrorMessage";
+import type { CoachRescheduleState } from "./schemas";
 
-export const CoachRescheduleStateSchema = z.discriminatedUnion("status", [
-  z.object({ status: z.literal("idle") }),
-  z.object({ status: z.literal("error"), message: z.string() }),
-]);
-export type CoachRescheduleState = z.infer<typeof CoachRescheduleStateSchema>;
+export type { CoachRescheduleState } from "./schemas";
 
 export async function coachRescheduleLessonAction(
   _prev: CoachRescheduleState,

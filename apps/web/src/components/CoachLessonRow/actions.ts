@@ -1,15 +1,10 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
+import type { CoachLessonActionState } from "./schemas";
 
-export const CoachLessonActionStateSchema = z.discriminatedUnion("status", [
-  z.object({ status: z.literal("idle") }),
-  z.object({ status: z.literal("success") }),
-  z.object({ status: z.literal("error"), message: z.string() }),
-]);
-export type CoachLessonActionState = z.infer<typeof CoachLessonActionStateSchema>;
+export type { CoachLessonActionState } from "./schemas";
 
 export async function approveLessonAction(
   lessonId: string,

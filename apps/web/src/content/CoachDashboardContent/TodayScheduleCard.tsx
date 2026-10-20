@@ -1,10 +1,10 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import type { CoachScheduleItem } from "@swim-app/shared";
 
-import CoachLessonRow from "@/components/CoachLessonRow";
+import DashboardLessonRow from "./DashboardLessonRow";
 import { getCoachScheduleAction } from "./actions";
 
 interface Props {
@@ -37,7 +37,12 @@ export default function TodayScheduleCard({ initialItems, today }: Props) {
   const [items, setItems] = useState(initialItems);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [now, setNow] = useState<number | null>(null);
   const navIdRef = useRef(0);
+
+  useEffect(() => {
+    setNow(Date.now());
+  }, []);
 
   async function navigate(newDate: string) {
     const navId = ++navIdRef.current;
@@ -114,10 +119,10 @@ export default function TodayScheduleCard({ initialItems, today }: Props) {
       ) : items.filter((item) => item.type !== "open_slot").length === 0 ? (
         <p className="text-sm text-text-secondary py-4">No lessons scheduled.</p>
       ) : (
-        <div className="flex flex-col gap-2">
+        <div className="divide-y divide-border">
           {items.map((item) => {
             if (item.type === "lesson") {
-              return <CoachLessonRow key={item.lesson.id} item={item} />;
+              return <DashboardLessonRow key={item.lesson.id} item={item} now={now} />;
             }
             if (item.type === "travel_buffer") {
               return <TravelBufferRow key={`travel_buffer-${item.startsAt}`} item={item} />;

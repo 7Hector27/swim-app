@@ -8,14 +8,8 @@ vi.mock("@/components/CoachLessonRow/actions", () => ({
   approveLessonAction: vi.fn().mockResolvedValue({ status: "idle" }),
   declineLessonAction: vi.fn().mockResolvedValue({ status: "idle" }),
 }));
-vi.mock("@/components/ConfirmDialog", () => ({
-  default: () => <div data-testid="confirm-dialog" />,
-}));
-vi.mock("@/components/LessonStatusBadge", () => ({
-  default: () => null,
-}));
-
 import TodayScheduleCard from "../content/CoachDashboardContent/TodayScheduleCard";
+import DashboardLessonRow from "../content/CoachDashboardContent/DashboardLessonRow";
 import type { CoachScheduleItem } from "@swim-app/shared";
 import { getCoachScheduleAction } from "../content/CoachDashboardContent/actions";
 
@@ -103,15 +97,9 @@ describe("TodayScheduleCard — lesson row", () => {
     expect(screen.getByText("Morgan")).toBeInTheDocument();
   });
 
-  it("renders the lesson duration in the time slab", () => {
-    renderCard([lessonItem]);
-    expect(screen.getByText(/60 min/)).toBeInTheDocument();
-  });
-
-  it("renders the lesson type and pool", () => {
+  it("renders the pool name", () => {
     renderCard([lessonItem]);
     expect(screen.getByText(/Egret Park/)).toBeInTheDocument();
-    expect(screen.getByText(/Private/)).toBeInTheDocument();
   });
 
   it("renders the Open lesson link pointing to the lesson page", () => {
@@ -146,12 +134,7 @@ describe("TodayScheduleCard — travel buffer row", () => {
 });
 
 describe("TodayScheduleCard — club name", () => {
-  it("shows no club line when swimmer has no club", () => {
-    renderCard([lessonItem]);
-    expect(screen.queryByText(/NCAP/)).toBeNull();
-  });
-
-  it("shows club name when swimmer has one", () => {
+  it("does not show club name even when swimmer has one", () => {
     const withClub: CoachScheduleItem = {
       ...lessonItem,
       lesson: {
@@ -160,7 +143,7 @@ describe("TodayScheduleCard — club name", () => {
       },
     };
     renderCard([withClub]);
-    expect(screen.getByText("NCAP")).toBeInTheDocument();
+    expect(screen.queryByText("NCAP")).toBeNull();
   });
 });
 
@@ -257,5 +240,36 @@ describe("TodayScheduleCard — fetch error", () => {
     await waitFor(() => {
       expect(screen.getByText("Morgan")).toBeInTheDocument();
     });
+  });
+});
+
+describe("DashboardLessonRow — in-progress state", () => {
+  // AT_10AM lesson runs 10:00 AM–11:00 AM PDT; grace period ends 11:15 AM PDT
+  const nowInProgress = new Date("2025-06-01T17:30:00.000Z").getTime(); // 10:30 AM PDT
+  const nowAfterGrace = new Date("2025-06-01T18:16:00.000Z").getTime(); // 11:16 AM PDT
+
+  it("shows Now badge when lesson is in progress", () => {
+    render(<DashboardLessonRow item={lessonItem} now={nowInProgress} />);
+    expect(screen.getByText("Now")).toBeInTheDocument();
+  });
+
+  it("shows Evaluate link for each swimmer when in progress", () => {
+    render(<DashboardLessonRow item={lessonItem} now={nowInProgress} />);
+    expect(screen.getByRole("link", { name: "Evaluate Morgan" })).toBeInTheDocument();
+  });
+
+  it("does not show Now badge after the 15-minute grace period ends", () => {
+    render(<DashboardLessonRow item={lessonItem} now={nowAfterGrace} />);
+    expect(screen.queryByText("Now")).toBeNull();
+  });
+
+  it("does not show Now badge when now is null (SSR)", () => {
+    render(<DashboardLessonRow item={lessonItem} now={null} />);
+    expect(screen.queryByText("Now")).toBeNull();
+  });
+
+  it("does not show Evaluate links when now is null", () => {
+    render(<DashboardLessonRow item={lessonItem} now={null} />);
+    expect(screen.queryByRole("link", { name: "Evaluate Morgan" })).toBeNull();
   });
 });
