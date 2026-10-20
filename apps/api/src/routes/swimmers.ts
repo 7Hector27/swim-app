@@ -65,7 +65,6 @@ const swimmerColumns = {
   birthDate: swimmers.birthDate,
   sex: swimmers.sex,
   isPublic: swimmers.isPublic,
-  publicConsentAt: swimmers.publicConsentAt,
   createdAt: swimmers.createdAt,
   updatedAt: swimmers.updatedAt,
 } as const;
@@ -122,7 +121,6 @@ async function fetchSwimmerWithClubs(swimmerId: string): Promise<ParentSwimmer |
     birthDate: swimmer.birthDate,
     sex: swimmer.sex,
     isPublic: swimmer.isPublic,
-    publicConsentAt: swimmer.publicConsentAt ? toISO(swimmer.publicConsentAt) : null,
     createdAt: toISO(swimmer.createdAt),
     updatedAt: toISO(swimmer.updatedAt),
     clubs: clubRows.map(mapClub),
@@ -293,7 +291,6 @@ swimmersRouter.get(
       birthDate: swimmer.birthDate,
       sex: swimmer.sex,
       isPublic: swimmer.isPublic,
-      publicConsentAt: swimmer.publicConsentAt ? toISO(swimmer.publicConsentAt) : null,
       createdAt: toISO(swimmer.createdAt),
       updatedAt: toISO(swimmer.updatedAt),
       clubs: (clubsBySwimmer.get(swimmer.id) ?? []).map(mapClub),
@@ -335,22 +332,23 @@ swimmersRouter.patch(
     const callerId = req.profile.id;
     const { householdId, householdRole } = req;
 
-    if (body.isPublic === true) {
-      if (householdRole !== "owner") {
-        res.status(403).json({ error: "Only the household owner can make a swimmer public" });
-        return;
-      }
-    } else {
-      const hasSwimmerFieldChange =
-        body.firstName !== undefined ||
-        body.lastName !== undefined ||
-        body.birthDate !== undefined ||
-        body.sex !== undefined ||
-        body.clubs !== undefined;
-      if (hasSwimmerFieldChange && HOUSEHOLD_ROLE_RANK[householdRole] < HOUSEHOLD_ROLE_RANK.manager) {
-        res.status(403).json({ error: "Insufficient household role" });
-        return;
-      }
+    if (body.isPublic === true && householdRole !== "owner") {
+      res.status(403).json({ error: "Only the household owner can make a swimmer public" });
+      return;
+    }
+    if (body.isPublic === false && HOUSEHOLD_ROLE_RANK[householdRole] < HOUSEHOLD_ROLE_RANK.manager) {
+      res.status(403).json({ error: "Insufficient household role" });
+      return;
+    }
+    const hasSwimmerFieldChange =
+      body.firstName !== undefined ||
+      body.lastName !== undefined ||
+      body.birthDate !== undefined ||
+      body.sex !== undefined ||
+      body.clubs !== undefined;
+    if (hasSwimmerFieldChange && HOUSEHOLD_ROLE_RANK[householdRole] < HOUSEHOLD_ROLE_RANK.manager) {
+      res.status(403).json({ error: "Insufficient household role" });
+      return;
     }
 
     const hasSwimmerFields =

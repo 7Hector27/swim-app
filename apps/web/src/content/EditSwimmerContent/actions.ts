@@ -4,27 +4,23 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { UpdateSwimmerBodySchema } from "@swim-app/shared";
+import type { ParentSwimmer } from "@swim-app/shared";
+
+import { z } from "zod";
 
 import { mapZodErrors } from "@/lib/mapZodErrors";
 import { createClient } from "@/lib/supabase/server";
 
 import {
   getChangedFields,
+  InitialSnapshotSchema,
   mapApiResponse,
   mapPublicToggleApiResponse,
   toClubInputs,
 } from "./helpers";
 import type { EditSwimmerState, PublicToggleState } from "./helpers";
-import type { ParentSwimmer } from "@swim-app/shared";
 
-type InitialSnapshot = {
-  firstName: string;
-  lastName: string;
-  birthDate: string;
-  sex: "female" | "male";
-  isPublic: boolean;
-  clubs: ParentSwimmer["clubs"];
-};
+const UuidSchema = z.string().uuid();
 
 export async function editSwimmer(
   swimmerId: string,
@@ -39,12 +35,20 @@ export async function editSwimmer(
     return { status: "error", message: "Something went wrong. Please try again." };
   }
 
-  let initialSnapshot: InitialSnapshot | null = null;
-  try {
-    const initialJson = (formData.get("initialJson") as string | null) ?? null;
-    if (initialJson) initialSnapshot = JSON.parse(initialJson) as InitialSnapshot;
-  } catch {
-    return { status: "error", message: "Something went wrong. Please try again." };
+  let initialSnapshot: z.infer<typeof InitialSnapshotSchema> | null = null;
+  const initialJson = (formData.get("initialJson") as string | null) ?? null;
+  if (initialJson) {
+    let raw: unknown;
+    try {
+      raw = JSON.parse(initialJson);
+    } catch {
+      return { status: "error", message: "Something went wrong. Please try again." };
+    }
+    const parsed = InitialSnapshotSchema.safeParse(raw);
+    if (!parsed.success) {
+      return { status: "error", message: "Something went wrong. Please try again." };
+    }
+    initialSnapshot = parsed.data;
   }
 
   const firstName = ((formData.get("firstName") as string | null) ?? "").trim();
@@ -52,42 +56,25 @@ export async function editSwimmer(
   const birthDate = (formData.get("birthDate") as string | null) ?? "";
   const sex = (formData.get("sex") as string | null) ?? undefined;
 
-  const updated = {
-    firstName,
-    lastName,
-    birthDate,
-    sex: sex as "female" | "male",
-    isPublic: initialSnapshot?.isPublic ?? false,
-    clubs: clubsParsed as ParentSwimmer["clubs"],
-  };
+  const updatedClubs = toClubInputs(clubsParsed as ParentSwimmer["clubs"]);
 
-  const initial = initialSnapshot
-    ? {
-        firstName: initialSnapshot.firstName,
-        lastName: initialSnapshot.lastName,
-        birthDate: initialSnapshot.birthDate,
-        sex: initialSnapshot.sex,
+  const body = initialSnapshot
+    ? getChangedFields(initialSnapshot, {
+        firstName,
+        lastName,
+        birthDate,
+        sex: sex as "female" | "male",
         isPublic: initialSnapshot.isPublic,
-        clubs: toClubInputs(initialSnapshot.clubs),
-      }
-    : null;
-
-  const body = initial
-    ? getChangedFields(initial, { ...updated, clubs: toClubInputs(updated.clubs) })
+        clubs: updatedClubs,
+      })
     : (() => {
-        const raw = {
-          firstName,
-          lastName,
-          birthDate,
-          sex,
-          clubs: clubsParsed,
-        };
+        const raw = { firstName, lastName, birthDate, sex, clubs: clubsParsed };
         const parsed = UpdateSwimmerBodySchema.safeParse(raw);
         return parsed.success ? parsed.data : null;
       })();
 
   if (body === null) {
-    redirect("/dashboard");
+    return { status: "no_changes" };
   }
 
   const validationResult = UpdateSwimmerBodySchema.safeParse(body);
@@ -127,6 +114,7 @@ export async function editSwimmer(
   }
 
   if (status === 200) {
+    revalidatePath("/dashboard");
     redirect("/dashboard");
   }
 
@@ -137,7 +125,23 @@ export async function toggleSwimmerPublic(
   swimmerId: string,
   isPublic: boolean,
   _prev: PublicToggleState,
+  formData: FormData,
 ): Promise<PublicToggleState> {
+  const swimmerIdResult = UuidSchema.safeParse(swimmerId);
+  if (!swimmerIdResult.success) {
+    return { status: "error", message: "Something went wrong. Please try again." };
+  }
+  if (typeof isPublic !== "boolean") {
+    return { status: "error", message: "Something went wrong. Please try again." };
+  }
+
+  if (isPublic) {
+    const consentAcknowledged = formData.get("consentAcknowledged") === "true";
+    if (!consentAcknowledged) {
+      return { status: "error", message: "Please check the consent checkbox to continue." };
+    }
+  }
+
   const supabase = await createClient();
   // getSession is called only to extract the raw access token for forwarding to
   // the API. The API's requireUser middleware verifies the token independently.
@@ -145,25 +149,33 @@ export async function toggleSwimmerPublic(
   const token = data.session?.access_token;
   if (!token) return { status: "error", message: "Session expired. Please sign in again." };
 
+  const requestBody = isPublic
+    ? { isPublic: true as const, consentAcknowledged: true as const }
+    : { isPublic: false as const };
+
   let status: number;
 
   try {
-    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/swimmers/${swimmerId}`, {
-      method: "PATCH",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
+    const response = await fetch(
+      `${process.env.NEXT_PUBLIC_API_URL}/swimmers/${swimmerIdResult.data}`,
+      {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(requestBody),
       },
-      body: JSON.stringify({ isPublic }),
-    });
+    );
     status = response.status;
   } catch {
     return { status: "error", message: "Could not reach the server. Please try again." };
   }
 
-  const result = mapPublicToggleApiResponse(status);
+  const result = mapPublicToggleApiResponse(status, isPublic ? "enable" : "disable");
   if (result.status === "idle") {
-    revalidatePath(`/dashboard/swimmers/${swimmerId}`);
+    revalidatePath(`/dashboard/swimmers/${swimmerIdResult.data}`);
+    revalidatePath("/dashboard");
   }
   return result;
 }

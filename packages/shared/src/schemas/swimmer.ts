@@ -111,12 +111,20 @@ export const UpdateSwimmerBodySchema = z
       .optional(),
     sex: SexSchema.optional(),
     isPublic: z.boolean().optional(),
+    consentAcknowledged: z.literal(true).optional(),
     clubs: z.array(SwimmerClubInputSchema).optional(),
   })
   .strict()
   .refine((body) => Object.keys(body).length > 0, {
     message: "At least one field is required",
-  });
+  })
+  .refine(
+    (body) => body.isPublic !== true || body.consentAcknowledged === true,
+    {
+      message: "Consent acknowledgement is required to make a swimmer public",
+      path: ["consentAcknowledged"],
+    },
+  );
 
 export type UpdateSwimmerBody = z.infer<typeof UpdateSwimmerBodySchema>;
 
@@ -129,7 +137,6 @@ export const ParentSwimmerSchema = z.object({
   birthDate: z.string().date(),
   sex: SexSchema,
   isPublic: z.boolean(),
-  publicConsentAt: z.string().datetime({ offset: true }).nullable(),
   createdAt: z.string().datetime({ offset: true }),
   updatedAt: z.string().datetime({ offset: true }),
   clubs: z.array(SwimmerClubSchema),

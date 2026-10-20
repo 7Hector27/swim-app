@@ -181,9 +181,7 @@ describe("consent fields are server-controlled", () => {
       const swimmerId = createRes.body.id as string;
       createdSwimmerIds.add(swimmerId);
 
-      // publicConsentAt is returned to parents; publicConsentBy is omitted
-      // from the ParentSwimmer shape.
-      expect(createRes.body.publicConsentAt).toBeTruthy();
+      // publicConsentBy is omitted from the ParentSwimmer shape; consent fields are server-only.
       expect(createRes.body.publicConsentBy).toBeUndefined();
 
       // DB has the caller's id, not any client-supplied value.
@@ -279,7 +277,7 @@ describe("household role restrictions", () => {
     }
   });
 
-  it("viewer → 200 PATCH /:id { isPublic: false }", async () => {
+  it("viewer → 403 PATCH /:id { isPublic: false }", async () => {
     const owner = await createTestUser("role-viewer-ispublic-owner");
     const viewer = await createTestUserInHousehold("role-viewer-ispublic-viewer", owner.householdId, "viewer");
     try {
@@ -295,9 +293,30 @@ describe("household role restrictions", () => {
         .patch(`/swimmers/${swimmerId}`)
         .set("Authorization", `Bearer ${viewer.accessToken}`)
         .send({ isPublic: false });
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(403);
     } finally {
       await viewer.cleanup();
+      await owner.cleanup();
+    }
+  });
+
+  it("owner → 422 PATCH /:id { isPublic: true } without consentAcknowledged", async () => {
+    const owner = await createTestUser("role-owner-no-consent");
+    try {
+      const createRes = await request(app)
+        .post("/swimmers")
+        .set("Authorization", `Bearer ${owner.accessToken}`)
+        .send(validSwimmerBody());
+      expect(createRes.status).toBe(201);
+      const swimmerId = createRes.body.id as string;
+      createdSwimmerIds.add(swimmerId);
+
+      const res = await request(app)
+        .patch(`/swimmers/${swimmerId}`)
+        .set("Authorization", `Bearer ${owner.accessToken}`)
+        .send({ isPublic: true });
+      expect(res.status).toBe(422);
+    } finally {
       await owner.cleanup();
     }
   });
@@ -369,7 +388,7 @@ describe("household role restrictions", () => {
       const res = await request(app)
         .patch(`/swimmers/${swimmerId}`)
         .set("Authorization", `Bearer ${owner.accessToken}`)
-        .send({ isPublic: true });
+        .send({ isPublic: true, consentAcknowledged: true });
       expect(res.status).toBe(200);
       expect(res.body.isPublic).toBe(true);
     } finally {

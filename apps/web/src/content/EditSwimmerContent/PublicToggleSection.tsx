@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useMemo, useState } from "react";
 
 import type { HouseholdRole } from "@swim-app/shared";
 
@@ -27,8 +27,14 @@ export default function PublicToggleSection({
 }: PublicToggleSectionProps) {
   const [consentChecked, setConsentChecked] = useState(false);
 
-  const enableAction = toggleSwimmerPublic.bind(null, swimmerId, true);
-  const disableAction = toggleSwimmerPublic.bind(null, swimmerId, false);
+  const enableAction = useMemo(
+    () => toggleSwimmerPublic.bind(null, swimmerId, true),
+    [swimmerId],
+  );
+  const disableAction = useMemo(
+    () => toggleSwimmerPublic.bind(null, swimmerId, false),
+    [swimmerId],
+  );
 
   const [enableState, enableFormAction, isEnablePending] = useActionState(
     enableAction,
@@ -41,13 +47,6 @@ export default function PublicToggleSection({
 
   const canEnable = householdRole === "owner";
   const canDisable = householdRole === "owner" || householdRole === "manager";
-
-  const errorMessage =
-    enableState.status === "error"
-      ? enableState.message
-      : disableState.status === "error"
-        ? disableState.message
-        : null;
 
   return (
     <section className="flex flex-col gap-4 border-t border-border pt-8">
@@ -63,23 +62,24 @@ export default function PublicToggleSection({
         </p>
       </div>
 
-      {errorMessage && (
-        <p role="alert" aria-live="polite" className="text-danger text-sm">
-          {errorMessage}
-        </p>
-      )}
-
       {isPublic ? (
         canDisable ? (
-          <form action={disableFormAction}>
-            <button
-              type="submit"
-              disabled={isDisablePending}
-              className={`${buttonBase} border border-danger text-danger`}
-            >
-              {isDisablePending ? "Removing…" : "Remove from leaderboards"}
-            </button>
-          </form>
+          <>
+            {disableState.status === "error" && (
+              <p role="alert" aria-live="polite" className="text-danger text-sm">
+                {disableState.message}
+              </p>
+            )}
+            <form action={disableFormAction}>
+              <button
+                type="submit"
+                disabled={isDisablePending}
+                className={`${buttonBase} border border-danger text-danger`}
+              >
+                {isDisablePending ? "Removing…" : "Remove from leaderboards"}
+              </button>
+            </form>
+          </>
         ) : (
           <p className="text-xs text-text-secondary">
             Contact the household owner or manager to remove this swimmer from leaderboards.
@@ -87,6 +87,11 @@ export default function PublicToggleSection({
         )
       ) : canEnable ? (
         <div className="flex flex-col gap-3">
+          {enableState.status === "error" && (
+            <p role="alert" aria-live="polite" className="text-danger text-sm">
+              {enableState.message}
+            </p>
+          )}
           <label className="flex items-start gap-3 cursor-pointer">
             <input
               type="checkbox"
@@ -101,6 +106,7 @@ export default function PublicToggleSection({
             </span>
           </label>
           <form action={enableFormAction}>
+            <input type="hidden" name="consentAcknowledged" value="true" />
             <button
               type="submit"
               disabled={!consentChecked || isEnablePending}

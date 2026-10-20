@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useMemo } from "react";
 
 import type { Club, HouseholdRole, ParentSwimmer } from "@swim-app/shared";
 
@@ -24,7 +24,7 @@ export default function EditSwimmerContent({
   householdRole,
   clubs,
 }: EditSwimmerContentProps) {
-  const boundEditSwimmer = editSwimmer.bind(null, swimmer.id);
+  const boundEditSwimmer = useMemo(() => editSwimmer.bind(null, swimmer.id), [swimmer.id]);
   const [state, formAction, isPending] = useActionState(boundEditSwimmer, initialState);
 
   const initialValues = {
@@ -37,6 +37,11 @@ export default function EditSwimmerContent({
   };
 
   const canEdit = householdRole === "owner" || householdRole === "manager";
+
+  const formState =
+    state.status === "idle" || state.status === "no_changes"
+      ? ({ status: "idle" } as const)
+      : state;
 
   return (
     <div className="flex flex-col flex-1">
@@ -55,11 +60,17 @@ export default function EditSwimmerContent({
               {swimmer.firstName} {swimmer.lastName}
             </p>
 
+            {state.status === "no_changes" && (
+              <p aria-live="polite" className="text-text-secondary text-sm mb-4">
+                No changes to save.
+              </p>
+            )}
+
             {canEdit ? (
               <SwimmerForm
                 clubs={clubs}
                 formAction={formAction}
-                state={state}
+                state={formState}
                 isPending={isPending}
                 mode="edit"
                 swimmerId={swimmer.id}
