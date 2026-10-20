@@ -1,6 +1,7 @@
 import {
   AvailableSlotSchema,
   CoachLessonDetailSchema,
+  CoachNoteResponseSchema,
   CoachScheduleItemSchema,
   CoachStatsSchema,
   LessonLocationSchema,
@@ -10,6 +11,7 @@ import {
   WeekAvailabilityResponseSchema,
   type AvailableSlot,
   type CoachLessonDetail,
+  type CoachNoteResponse,
   type CoachScheduleItem,
   type CoachStats,
   type LessonLocation,
@@ -131,6 +133,24 @@ export async function fetchCoachLesson(
     return parsed.data;
   } catch {
     return null;
+  }
+}
+
+export async function fetchLessonNotes(
+  accessToken: string,
+  lessonId: string,
+): Promise<CoachNoteResponse[]> {
+  try {
+    const response = await fetch(
+      `${process.env.NEXT_PUBLIC_API_URL}/coach/lessons/${lessonId}/notes`,
+      { headers: { Authorization: `Bearer ${accessToken}` }, cache: "no-store" },
+    );
+    if (!response.ok) return [];
+    const body: unknown = await response.json();
+    const parsed = CoachNoteResponseSchema.array().safeParse(body);
+    return parsed.success ? parsed.data : [];
+  } catch {
+    return [];
   }
 }
 

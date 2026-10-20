@@ -1,9 +1,10 @@
 import { Router } from "express";
-import { and, asc, eq, inArray, lt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, lt, sql } from "drizzle-orm";
 import type {
   CoachLessonDetail,
   CoachLessonSwimmer,
   CoachListLessonsQuery,
+  CoachNoteResponse,
   CoachScheduleItem,
   CoachScheduleQuery,
   DeclineLessonBody,
@@ -22,6 +23,7 @@ import {
   availabilitySeasons,
   blockedTimes,
   clubs,
+  coachNotes,
   householdMembers,
   lessonLocations,
   lessonSwimmers,
@@ -597,5 +599,54 @@ coachLessonsRouter.get(
     };
 
     res.json(body);
+  }),
+);
+
+// ── GET /coach/lessons/:id/notes ──────────────────────────────────────────────
+
+coachLessonsRouter.get(
+  "/lessons/:id/notes",
+  validate({ params: LessonIdParamsSchema }),
+  asyncHandler(async (req, res) => {
+    const { id } = req.params as { id: string };
+
+    const lessonRows = await db
+      .select({ id: lessons.id })
+      .from(lessons)
+      .where(eq(lessons.id, id))
+      .limit(1);
+
+    if (!lessonRows[0]) {
+      res.status(404).json({ error: "Lesson not found" });
+      return;
+    }
+
+    const noteRows = await db
+      .select({
+        id: coachNotes.id,
+        swimmerId: coachNotes.swimmerId,
+        sessionId: coachNotes.sessionId,
+        lessonId: coachNotes.lessonId,
+        body: coachNotes.body,
+        createdBy: coachNotes.createdBy,
+        createdAt: coachNotes.createdAt,
+        updatedAt: coachNotes.updatedAt,
+      })
+      .from(coachNotes)
+      .where(eq(coachNotes.lessonId, id))
+      .orderBy(desc(coachNotes.createdAt));
+
+    const notes: CoachNoteResponse[] = noteRows.map((note) => ({
+      id: note.id,
+      swimmerId: note.swimmerId,
+      sessionId: note.sessionId,
+      lessonId: note.lessonId,
+      body: note.body,
+      createdBy: note.createdBy,
+      createdAt: note.createdAt.toISOString(),
+      updatedAt: note.updatedAt.toISOString(),
+    }));
+
+    res.json(notes);
   }),
 );

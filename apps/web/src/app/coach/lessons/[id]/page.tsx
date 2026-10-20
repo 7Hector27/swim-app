@@ -4,7 +4,7 @@ import { notFound, redirect } from "next/navigation";
 import AccountInactiveScreen from "@/components/AccountInactiveScreen";
 import CoachLessonDetailContent from "@/content/CoachLessonDetailContent";
 import { requireAuth } from "@/lib/requireAuth";
-import { fetchCoachLesson } from "@/lib/api/lessons";
+import { fetchCoachLesson, fetchLessonNotes } from "@/lib/api/lessons";
 
 export const metadata: Metadata = {
   title: "Lesson · Axiom Aquatics",
@@ -19,8 +19,11 @@ export default async function CoachLessonPage({ params }: PageProps) {
   if (!auth) return <AccountInactiveScreen />;
   if (auth.profile.role !== "coach") redirect("/dashboard");
 
-  const lesson = await fetchCoachLesson(auth.accessToken, id);
+  const [lesson, notes] = await Promise.all([
+    fetchCoachLesson(auth.accessToken, id),
+    fetchLessonNotes(auth.accessToken, id),
+  ]);
   if (!lesson) notFound();
 
-  return <CoachLessonDetailContent lesson={lesson} />;
+  return <CoachLessonDetailContent lesson={lesson} notes={notes} />;
 }

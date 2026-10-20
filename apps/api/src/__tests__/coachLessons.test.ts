@@ -595,3 +595,76 @@ describe("GET /coach/schedule", () => {
     expect(res.status).toBe(422);
   });
 });
+
+// ── GET /coach/lessons/:id/notes ──────────────────────────────────────────────
+
+describe("GET /coach/lessons/:id/notes", () => {
+  it("returns notes tied to the lesson, newest first", async () => {
+    authAsCoach();
+
+    // lesson existence check
+    const limitSelect = vi.fn().mockResolvedValue([{ id: LESSON_ID }]);
+    const whereLesson = vi.fn().mockReturnValue({ limit: limitSelect });
+    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: whereLesson }) });
+
+    const older = { id: "note-001", swimmerId: SWIMMER_ID, sessionId: null, lessonId: LESSON_ID, body: "Older note", createdBy: COACH_PROFILE_ID, createdAt: new Date("2025-01-01T10:00:00Z"), updatedAt: new Date("2025-01-01T10:00:00Z") };
+    const newer = { id: "note-002", swimmerId: SWIMMER_ID, sessionId: null, lessonId: LESSON_ID, body: "Newer note", createdBy: COACH_PROFILE_ID, createdAt: new Date("2025-01-02T10:00:00Z"), updatedAt: new Date("2025-01-02T10:00:00Z") };
+
+    const orderBy = vi.fn().mockResolvedValue([newer, older]);
+    const where = vi.fn().mockReturnValue({ orderBy });
+    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where }) });
+
+    const res = await request(app)
+      .get(`/coach/lessons/${LESSON_ID}/notes`)
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(2);
+    expect(res.body[0].body).toBe("Newer note");
+    expect(res.body[1].body).toBe("Older note");
+  });
+
+  it("returns empty array when no notes exist", async () => {
+    authAsCoach();
+
+    const limitSelect = vi.fn().mockResolvedValue([{ id: LESSON_ID }]);
+    const whereLesson = vi.fn().mockReturnValue({ limit: limitSelect });
+    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: whereLesson }) });
+
+    const orderBy = vi.fn().mockResolvedValue([]);
+    const where = vi.fn().mockReturnValue({ orderBy });
+    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where }) });
+
+    const res = await request(app)
+      .get(`/coach/lessons/${LESSON_ID}/notes`)
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([]);
+  });
+
+  it("returns 404 when lesson does not exist", async () => {
+    authAsCoach();
+
+    const limitSelect = vi.fn().mockResolvedValue([]);
+    const whereLesson = vi.fn().mockReturnValue({ limit: limitSelect });
+    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: whereLesson }) });
+
+    const res = await request(app)
+      .get(`/coach/lessons/${LESSON_ID}/notes`)
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 403 for a parent", async () => {
+    authAs(parentProfile);
+    mockDbSelect.mockReturnValueOnce(requireUserSelect(parentProfile));
+
+    const res = await request(app)
+      .get(`/coach/lessons/${LESSON_ID}/notes`)
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(403);
+  });
+});
