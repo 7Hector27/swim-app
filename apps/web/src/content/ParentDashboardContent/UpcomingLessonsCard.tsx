@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import type { UpcomingLesson } from "@swim-app/shared";
+import LessonStatusBadge from "@/components/LessonStatusBadge";
 
 interface Props {
   lessons: UpcomingLesson[];
@@ -26,9 +27,7 @@ export default function UpcomingLessonsCard({ lessons }: Props) {
 
   return (
     <div className="rounded-card border border-border p-5 tablet:p-6">
-      <div className="flex items-center justify-between mb-1">
-        <h2 className="text-xl text-heading">Upcoming lessons</h2>
-      </div>
+      <h2 className="text-xl text-heading mb-1">Upcoming lessons</h2>
       <div className="divide-y divide-border">
         {lessons.map((lesson) => (
           <LessonRow key={lesson.id} lesson={lesson} />
@@ -45,59 +44,61 @@ function LessonRow({ lesson }: { lesson: UpcomingLesson }) {
   const dayLabel = new Intl.DateTimeFormat("en-US", {
     timeZone: "America/Los_Angeles",
     weekday: "short",
-  }).format(startsAt).toUpperCase();
+  })
+    .format(startsAt)
+    .toUpperCase();
 
   const dateLabel = new Intl.DateTimeFormat("en-US", {
     timeZone: "America/Los_Angeles",
     day: "numeric",
   }).format(startsAt);
 
-  const timeRange = `${formatTime(startsAt)} to ${formatTime(endsAt)}`;
+  const timeRange = formatTimeRange(startsAt, endsAt);
   const swimmerNames = lesson.swimmers.map((swimmer) => swimmer.firstName).join(", ");
-  const lessonType = lesson.type === "private" ? "private lesson" : "family lesson";
-  const title = `${swimmerNames}, ${lessonType}`;
-  const timeDetail = `${timeRange} at ${lesson.locationName}`;
 
   return (
-    <div className="flex items-center gap-4 py-4">
-      <div className="text-center w-9 flex-shrink-0">
+    <Link
+      href={`/dashboard/lessons/${lesson.id}`}
+      className="flex items-start gap-4 py-4 -mx-5 px-5 tablet:-mx-6 tablet:px-6 hover:bg-surface-soft transition-colors duration-150"
+    >
+      <div className="text-center w-10 flex-shrink-0 pt-0.5">
         <p className="text-[10px] font-bold text-text-secondary uppercase tracking-wide">
           {dayLabel}
         </p>
-        <p className="text-xl font-heading text-heading leading-tight">{dateLabel}</p>
+        <p className="text-2xl font-heading text-heading leading-none mt-0.5">{dateLabel}</p>
       </div>
 
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold text-text">{title}</p>
-        <p className="text-xs text-text-secondary mt-0.5">{timeDetail}</p>
+        <p className="font-semibold text-text text-base leading-snug">{timeRange}</p>
+        <p className="text-sm text-text-secondary mt-0.5">{lesson.locationName}</p>
+        <p className="text-sm text-text-secondary">{swimmerNames}</p>
+        <div className="mt-1.5">
+          <LessonStatusBadge status={lesson.status} viewer="parent" />
+        </div>
       </div>
-
-      <div className="flex items-center gap-3 flex-shrink-0">
-        {lesson.status === "approved" ? (
-          <span className="inline-flex items-center rounded-full text-xs font-semibold px-2.5 py-1 bg-success/10 text-success">
-            Confirmed
-          </span>
-        ) : (
-          <span className="inline-flex items-center rounded-full text-xs font-semibold px-2.5 py-1 bg-surface-soft text-text-secondary border border-border">
-            Pending
-          </span>
-        )}
-        <Link
-          href={`/dashboard/lessons/${lesson.id}`}
-          className="text-xs font-semibold text-link hover:text-link-hover transition-colors duration-150"
-        >
-          Change
-        </Link>
-      </div>
-    </div>
+    </Link>
   );
 }
 
-function formatTime(date: Date): string {
-  return new Intl.DateTimeFormat("en-US", {
+function formatTimeRange(start: Date, end: Date): string {
+  const fmt = new Intl.DateTimeFormat("en-US", {
     timeZone: "America/Los_Angeles",
     hour: "numeric",
     minute: "2-digit",
     hour12: true,
-  }).format(date);
+  });
+  const startParts = fmt.formatToParts(start);
+  const endParts = fmt.formatToParts(end);
+  const startPeriod = startParts.find((p) => p.type === "dayPeriod")?.value;
+  const endPeriod = endParts.find((p) => p.type === "dayPeriod")?.value;
+  const endStr = fmt.format(end);
+  if (startPeriod !== undefined && startPeriod === endPeriod) {
+    const startShort = startParts
+      .filter((p) => p.type !== "dayPeriod")
+      .map((p) => p.value)
+      .join("")
+      .trimEnd();
+    return `${startShort} \u2013 ${endStr}`;
+  }
+  return `${fmt.format(start)} \u2013 ${endStr}`;
 }

@@ -59,7 +59,10 @@ export default function BookCalendarContent({
   const [currentDate, setCurrentDate] = useState<string>(initialDate ?? today);
   const [locationId, setLocationId] = useState<string | null>(locations[0]?.id ?? null);
   const [durationMinutes, setDurationMinutes] = useState<30 | 45 | 60>(30);
-  const [swimmerIds, setSwimmerIds] = useState<string[]>([]);
+  const [swimmerIds, setSwimmerIds] = useState<string[]>(
+    swimmers.length === 1 ? [swimmers[0]!.id] : [],
+  );
+  const [showSwimmerError, setShowSwimmerError] = useState(false);
   const [selectedStartsAt, setSelectedStartsAt] = useState<string | null>(null);
   const [tooSoon, setTooSoon] = useState(false);
   const [weekData, setWeekData] = useState<WeekAvailabilityResponse | null>(null);
@@ -237,8 +240,17 @@ export default function BookCalendarContent({
     }));
   }
 
+  function handleSwimmersChange(ids: string[]) {
+    setSwimmerIds(ids);
+    setShowSwimmerError(false);
+  }
+
   function handleConfirm() {
-    if (!selectedStartsAt || !locationId || swimmerIds.length === 0) return;
+    if (!selectedStartsAt || !locationId) return;
+    if (swimmerIds.length === 0) {
+      setShowSwimmerError(true);
+      return;
+    }
 
     const form = new FormData();
     form.append("startsAt", selectedStartsAt);
@@ -359,9 +371,10 @@ export default function BookCalendarContent({
         durationMinutes={durationMinutes}
         swimmerIds={swimmerIds}
         isLoading={isFetching}
+        showSwimmerError={showSwimmerError}
         onLocationChange={handleLocationChange}
         onDurationChange={handleDurationChange}
-        onSwimmersChange={setSwimmerIds}
+        onSwimmersChange={handleSwimmersChange}
       />
 
       {/* Nav row */}

@@ -90,6 +90,14 @@ describe("SwimmerCard", () => {
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
 
+  it("does not render any parent or guardian name on the card", () => {
+    render(<SwimmerCard {...baseProps} />);
+    // Swimmer cards show only swimmer data; parent/guardian names must not appear
+    expect(screen.getByText("Morgan Lee")).toBeInTheDocument();
+    expect(screen.queryByText(/parent/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/guardian/i)).not.toBeInTheDocument();
+  });
+
   it("persistent remove form is always in the DOM", () => {
     render(<SwimmerCard {...baseProps} />);
     expect(document.getElementById("remove-swimmer-swimmer-abc")).toBeInTheDocument();

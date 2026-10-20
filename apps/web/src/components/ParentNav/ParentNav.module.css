@@ -4,7 +4,7 @@
 }
 
 .tabItem {
-  min-height: 44px;
+  min-height: var(--tab-bar-height);
   padding-top: 6px;
   padding-bottom: 6px;
 }

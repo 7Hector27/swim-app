@@ -26,7 +26,7 @@ export default function RescheduleBottomBar({
   const confirmEnabled = newStartsAt !== null && !isConfirming;
 
   return (
-    <div role="region" aria-label="Reschedule selection" className="sticky bottom-4 z-10 mx-4 tablet:mx-0">
+    <div role="region" aria-label="Reschedule selection" className="sticky bottom-[calc(var(--tab-bar-height)_+_env(safe-area-inset-bottom,_0px)_+_1rem)] tablet:bottom-4 z-10 mx-4 tablet:mx-0">
       <div className="bg-heading text-background rounded-[16px] px-5 py-4 flex items-center gap-4 shadow-lg">
         <div className="flex-1 min-w-0 flex items-center gap-3">
           <div className="flex flex-col min-w-0">
