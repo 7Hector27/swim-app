@@ -59,7 +59,7 @@ function LessonRow({ lesson }: { lesson: UpcomingLesson }) {
   return (
     <Link
       href={`/dashboard/lessons/${lesson.id}`}
-      className="flex items-start gap-4 py-4 -mx-5 px-5 tablet:-mx-6 tablet:px-6 hover:bg-surface-soft transition-colors duration-150 rounded-lg"
+      className="flex items-start gap-4 py-4 -mx-5 px-5 tablet:-mx-6 tablet:px-6 hover:bg-surface-soft transition-colors duration-150"
     >
       <div className="text-center w-10 flex-shrink-0 pt-0.5">
         <p className="text-[10px] font-bold text-text-secondary uppercase tracking-wide">
@@ -80,19 +80,25 @@ function LessonRow({ lesson }: { lesson: UpcomingLesson }) {
   );
 }
 
-function formatTime(date: Date): string {
-  return new Intl.DateTimeFormat("en-US", {
+function formatTimeRange(start: Date, end: Date): string {
+  const fmt = new Intl.DateTimeFormat("en-US", {
     timeZone: "America/Los_Angeles",
     hour: "numeric",
     minute: "2-digit",
     hour12: true,
-  }).format(date);
-}
-
-function formatTimeRange(start: Date, end: Date): string {
-  const startStr = formatTime(start);
-  const endStr = formatTime(end);
-  const sameAmPm = startStr.slice(-2) === endStr.slice(-2);
-  const startShort = sameAmPm ? startStr.replace(/\s(AM|PM)$/i, "") : startStr;
-  return `${startShort} \u2013 ${endStr}`;
+  });
+  const startParts = fmt.formatToParts(start);
+  const endParts = fmt.formatToParts(end);
+  const startPeriod = startParts.find((p) => p.type === "dayPeriod")?.value;
+  const endPeriod = endParts.find((p) => p.type === "dayPeriod")?.value;
+  const endStr = fmt.format(end);
+  if (startPeriod !== undefined && startPeriod === endPeriod) {
+    const startShort = startParts
+      .filter((p) => p.type !== "dayPeriod")
+      .map((p) => p.value)
+      .join("")
+      .trimEnd();
+    return `${startShort} \u2013 ${endStr}`;
+  }
+  return `${fmt.format(start)} \u2013 ${endStr}`;
 }

@@ -196,7 +196,7 @@ describe("BottomBar", () => {
     expect(screen.getByRole("button", { name: /confirm booking/i })).toBeDisabled();
   });
 
-  it("shows formatted time but disabled button when selection + no swimmers", () => {
+  it("shows formatted time and enabled button when selection + no swimmers", () => {
     render(
       <BottomBar
         selectedStartsAt="2026-10-14T23:15:00.000Z"
@@ -208,7 +208,24 @@ describe("BottomBar", () => {
         isConfirming={false}
       />,
     );
-    expect(screen.getByRole("button", { name: /confirm booking/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /confirm booking/i })).not.toBeDisabled();
+  });
+
+  it("calls onConfirm when tapping Confirm with no swimmers selected", () => {
+    const onConfirm = vi.fn();
+    render(
+      <BottomBar
+        selectedStartsAt="2026-10-14T23:15:00.000Z"
+        tooSoon={false}
+        durationMinutes={30}
+        swimmerIds={[]}
+        needsApproval={false}
+        onConfirm={onConfirm}
+        isConfirming={false}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /confirm booking/i }));
+    expect(onConfirm).toHaveBeenCalledOnce();
   });
 
   it("shows price and enabled button when selection + swimmers", () => {

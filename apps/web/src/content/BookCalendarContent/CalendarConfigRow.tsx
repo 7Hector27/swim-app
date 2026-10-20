@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useRef } from "react";
+
 interface Location {
   id: string;
   name: string;
@@ -83,6 +85,14 @@ export default function CalendarConfigRow({
   onDurationChange,
   onSwimmersChange,
 }: Props) {
+  const swimmerErrorRef = useRef<HTMLParagraphElement>(null);
+
+  useEffect(() => {
+    if (showSwimmerError && swimmerIds.length === 0) {
+      swimmerErrorRef.current?.focus();
+    }
+  }, [showSwimmerError, swimmerIds.length]);
+
   function toggleSwimmer(id: string) {
     if (swimmerIds.includes(id)) {
       onSwimmersChange(swimmerIds.filter((existing) => existing !== id));
@@ -166,7 +176,13 @@ export default function CalendarConfigRow({
             </p>
           )}
           {showSwimmerError && swimmerIds.length === 0 && (
-            <p role="alert" className="text-xs text-danger mt-2">
+            <p
+              ref={swimmerErrorRef}
+              role="alert"
+              tabIndex={-1}
+              style={{ outline: "none" }}
+              className="text-xs text-danger mt-2"
+            >
               Pick who&rsquo;s swimming
             </p>
           )}
