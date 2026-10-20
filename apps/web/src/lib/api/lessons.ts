@@ -4,6 +4,7 @@ import {
   CoachNoteResponseSchema,
   CoachScheduleItemSchema,
   CoachStatsSchema,
+  CoachWeekScheduleResponseSchema,
   LessonLocationSchema,
   LessonResponseSchema,
   MonthAvailabilityResponseSchema,
@@ -14,6 +15,7 @@ import {
   type CoachNoteResponse,
   type CoachScheduleItem,
   type CoachStats,
+  type CoachWeekScheduleResponse,
   type LessonLocation,
   type LessonResponse,
   type MonthAvailabilityResponse,
@@ -115,6 +117,31 @@ export async function fetchCoachSchedule(
     return parsed.data;
   } catch {
     return [];
+  }
+}
+
+export async function fetchCoachWeekSchedule(
+  accessToken: string,
+  startDate: string,
+): Promise<CoachWeekScheduleResponse | null> {
+  try {
+    const response = await fetch(
+      `${process.env.NEXT_PUBLIC_API_URL}/coach/schedule/week?startDate=${startDate}`,
+      {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        cache: "no-store",
+      },
+    );
+    if (!response.ok) return null;
+    const body: unknown = await response.json();
+    const parsed = CoachWeekScheduleResponseSchema.safeParse(body);
+    if (!parsed.success) {
+      console.warn("fetchCoachWeekSchedule: response shape mismatch");
+      return null;
+    }
+    return parsed.data;
+  } catch {
+    return null;
   }
 }
 

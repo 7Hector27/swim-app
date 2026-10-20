@@ -563,3 +563,24 @@ export const AvailabilityPreviewResponseSchema = z.object({
   days: z.array(AvailabilityPreviewDaySchema),
 });
 export type AvailabilityPreviewResponse = z.infer<typeof AvailabilityPreviewResponseSchema>;
+
+// ── Coach week schedule ────────────────────────────────────────────────────────
+
+export const CoachWeekScheduleQuerySchema = z.object({
+  startDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .refine((s) => !isNaN(new Date(s).getTime()), { message: "Invalid date" }),
+});
+export type CoachWeekScheduleQuery = z.infer<typeof CoachWeekScheduleQuerySchema>;
+
+export const CoachWeekScheduleDaySchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  items: CoachScheduleLessonItemSchema.array(),
+});
+export type CoachWeekScheduleDay = z.infer<typeof CoachWeekScheduleDaySchema>;
+
+export const CoachWeekScheduleResponseSchema = z.object({
+  days: CoachWeekScheduleDaySchema.array(),
+});
+export type CoachWeekScheduleResponse = z.infer<typeof CoachWeekScheduleResponseSchema>;
