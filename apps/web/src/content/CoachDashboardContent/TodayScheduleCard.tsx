@@ -163,11 +163,7 @@ function LessonRow({ item }: { item: Extract<CoachScheduleItem, { type: "lesson"
   );
 
   const time = formatTime(lesson.startsAt);
-  const swimmerNames = lesson.swimmers
-    .map((swimmer) =>
-      swimmer.clubName ? `${swimmer.firstName} (${swimmer.clubName})` : swimmer.firstName,
-    )
-    .join(", ");
+  const swimmerNames = lesson.swimmers.map((swimmer) => swimmer.firstName).join(", ");
   const firstSwimmerId = lesson.swimmers[0]?.swimmerId;
   const isPending = lesson.status === "pending";
   const approveFormId = `dashboard-approve-${lesson.id}`;
