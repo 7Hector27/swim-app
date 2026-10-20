@@ -54,6 +54,8 @@
   --radius-media: 24px;
   --content-max-width: 1200px;
   --page-padding: 24px;
+  /* Mobile tab bar — tap target height of each item; used by ParentNav and sticky Confirm bars */
+  --tab-bar-item-height: 44px;
 }
 
 :root[data-theme="dark"] {
