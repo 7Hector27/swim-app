@@ -8,8 +8,7 @@ vi.mock("next/navigation", () => ({
   usePathname: () => "/coach/schedule",
 }));
 
-vi.mock("@/content/CoachScheduleContent/CoachLessonRow", () => ({ default: () => null }));
-vi.mock("@/content/CoachScheduleContent/WeekLessonCard", () => ({
+vi.mock("@/components/CoachLessonRow", () => ({
   default: ({ item }: { item: { lesson: { id: string } } }) =>
     `<div data-lesson="${item.lesson.id}"></div>`,
 }));
@@ -114,7 +113,7 @@ describe("CoachScheduleContent — week view", () => {
     expect(count).toBeGreaterThanOrEqual(7);
   });
 
-  it("passes lesson items to WeekLessonCard for days that have lessons", async () => {
+  it("passes lesson items to CoachLessonRow for days that have lessons", async () => {
     mockFetchWeekSchedule.mockResolvedValue(makeWeekResponse({ "2026-10-20": ["lesson-xyz"] }));
     const html = await renderToStaticMarkup(
       await CoachScheduleContent({ accessToken: "tok", date: MONDAY, view: "week", today: TODAY }),
@@ -219,7 +218,7 @@ describe("CoachScheduleContent — day view", () => {
     const html = await renderToStaticMarkup(
       await CoachScheduleContent({ accessToken: "tok", date: TODAY, view: "day", today: TODAY }),
     );
-    expect(html).toContain("No lessons or open slots for this day.");
+    expect(html).toContain("No lessons for this day.");
   });
 
   it("calls fetchCoachSchedule with the access token and date", async () => {

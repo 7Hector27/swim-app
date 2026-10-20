@@ -9,9 +9,8 @@ import {
   weekDates,
   weekRangeLabel,
 } from "@/lib/calendarDate";
-import CoachLessonRow from "./CoachLessonRow";
+import CoachLessonRow from "@/components/CoachLessonRow";
 import DatePickerInput from "./DatePickerInput";
-import WeekLessonCard from "./WeekLessonCard";
 
 interface Props {
   accessToken: string;
@@ -141,25 +140,24 @@ export default async function CoachScheduleContent({ accessToken, date, view, to
 // ── Day view ──────────────────────────────────────────────────────────────────
 
 function DayContent({ items }: { items: CoachScheduleItem[] }) {
-  if (items.length === 0) {
+  const visibleItems = items.filter((item) => item.type !== "open_slot");
+  if (visibleItems.length === 0) {
     return (
       <div className="rounded-card border border-border">
         <p className="px-5 py-10 text-sm text-text-secondary text-center">
-          No lessons or open slots for this day.
+          No lessons for this day.
         </p>
       </div>
     );
   }
   return (
-    <div className="rounded-card border border-border overflow-hidden">
-      <div className="divide-y divide-border">
-        {items.map((item) => (
-          <ScheduleRow
-            key={item.type === "lesson" ? item.lesson.id : `${item.type}-${item.startsAt}`}
-            item={item}
-          />
-        ))}
-      </div>
+    <div className="flex flex-col gap-3">
+      {visibleItems.map((item) => (
+        <ScheduleRow
+          key={item.type === "lesson" ? item.lesson.id : `${item.type}-${item.startsAt}`}
+          item={item}
+        />
+      ))}
     </div>
   );
 }
@@ -179,44 +177,26 @@ function ScheduleRow({ item }: { item: CoachScheduleItem }) {
       (new Date(item.endsAt).getTime() - new Date(item.startsAt).getTime()) / 60_000,
     );
     return (
-      <div className="flex items-center gap-4 px-5 py-4 bg-surface-soft">
-        <div className="flex-shrink-0 w-[72px]">
-          <p className="text-xs font-semibold text-text-secondary tabular-nums">{startLabel}</p>
-        </div>
-        <div className="flex-1 min-w-0 flex items-center gap-2">
-          <TravelIcon />
-          <div>
-            <p className="text-sm font-semibold text-text">Travel buffer, {durationMin} min</p>
-            <p className="text-xs text-text-secondary mt-0.5">
-              {item.fromLocationName} &rarr; {item.toLocationName}
-            </p>
+      <div className="rounded-card border border-border overflow-hidden">
+        <div className="flex items-center gap-4 px-5 py-4 bg-surface-soft">
+          <div className="flex-shrink-0 w-[72px]">
+            <p className="text-xs font-semibold text-text-secondary tabular-nums">{startLabel}</p>
+          </div>
+          <div className="flex-1 min-w-0 flex items-center gap-2">
+            <TravelIcon />
+            <div>
+              <p className="text-sm font-semibold text-text">Travel buffer, {durationMin} min</p>
+              <p className="text-xs text-text-secondary mt-0.5">
+                {item.fromLocationName} &rarr; {item.toLocationName}
+              </p>
+            </div>
           </div>
         </div>
       </div>
     );
   }
 
-  // open_slot
-  const startLabel = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/Los_Angeles",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(new Date(item.startsAt));
-  const endLabel = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/Los_Angeles",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(new Date(item.endsAt));
-  return (
-    <div className="flex items-center gap-4 px-5 py-4">
-      <div className="flex-shrink-0 w-[72px]">
-        <p className="text-xs font-semibold text-text-secondary tabular-nums">{startLabel}</p>
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold text-text-secondary">Open until {endLabel}</p>
-      </div>
-    </div>
-  );
+  return null;
 }
 
 // ── Week view ─────────────────────────────────────────────────────────────────
@@ -261,7 +241,7 @@ function DayColumn({ day, today }: { day: CoachWeekScheduleDay; today: string })
           <p className="text-xs text-text-secondary text-center py-4">No lessons.</p>
         ) : (
           day.items.map((item) => (
-            <WeekLessonCard key={item.lesson.id} item={item} />
+            <CoachLessonRow key={item.lesson.id} item={item} />
           ))
         )}
       </div>
@@ -283,15 +263,15 @@ function DaySection({ day, today }: { day: CoachWeekScheduleDay; today: string }
         {shortDayLabel(day.date)}
         {isToday && <span className="sr-only"> (today)</span>}
       </Link>
-      <div className="rounded-card border border-border overflow-hidden">
+      <div className="flex flex-col gap-2">
         {day.items.length === 0 ? (
-          <p className="px-5 py-4 text-sm text-text-secondary">No lessons.</p>
-        ) : (
-          <div className="divide-y divide-border">
-            {day.items.map((item) => (
-              <WeekLessonCard key={item.lesson.id} item={item} />
-            ))}
+          <div className="rounded-card border border-border">
+            <p className="px-5 py-4 text-sm text-text-secondary">No lessons.</p>
           </div>
+        ) : (
+          day.items.map((item) => (
+            <CoachLessonRow key={item.lesson.id} item={item} />
+          ))
         )}
       </div>
     </section>

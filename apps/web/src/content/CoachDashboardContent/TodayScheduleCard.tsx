@@ -1,17 +1,11 @@
 "use client";
 
-import { useRef, useState, useActionState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import type { CoachScheduleItem } from "@swim-app/shared";
 
-import ConfirmDialog from "@/components/ConfirmDialog";
-import LessonStatusBadge from "@/components/LessonStatusBadge";
-import {
-  getCoachScheduleAction,
-  approveLessonAction,
-  declineLessonAction,
-  type CoachActionState,
-} from "./actions";
+import CoachLessonRow from "@/components/CoachLessonRow";
+import { getCoachScheduleAction } from "./actions";
 
 interface Props {
   initialItems: CoachScheduleItem[];
@@ -117,18 +111,18 @@ export default function TodayScheduleCard({ initialItems, today }: Props) {
             Retry
           </button>
         </div>
-      ) : items.length === 0 ? (
+      ) : items.filter((item) => item.type !== "open_slot").length === 0 ? (
         <p className="text-sm text-text-secondary py-4">No lessons scheduled.</p>
       ) : (
-        <div className="divide-y divide-border">
+        <div className="flex flex-col gap-2">
           {items.map((item) => {
             if (item.type === "lesson") {
-              return <LessonRow key={item.lesson.id} item={item} />;
+              return <CoachLessonRow key={item.lesson.id} item={item} />;
             }
             if (item.type === "travel_buffer") {
               return <TravelBufferRow key={`travel_buffer-${item.startsAt}`} item={item} />;
             }
-            return <OpenSlotRow key={`open_slot-${item.startsAt}`} item={item} />;
+            return null;
           })}
         </div>
       )}
@@ -144,115 +138,6 @@ function formatTime(isoString: string): string {
     hour: "numeric",
     minute: "2-digit",
   }).format(new Date(isoString));
-}
-
-const initialActionState: CoachActionState = { status: "idle" };
-
-function LessonRow({ item }: { item: Extract<CoachScheduleItem, { type: "lesson" }> }) {
-  const { lesson, locationName } = item;
-  const declineDialogRef = useRef<HTMLDialogElement>(null);
-
-  const approveAction = approveLessonAction.bind(null, lesson.id);
-  const declineAction = declineLessonAction.bind(null, lesson.id);
-
-  const [approveState, approveFormAction, isApproving] = useActionState<CoachActionState, FormData>(
-    approveAction,
-    initialActionState,
-  );
-  const [declineState, declineFormAction, isDeclining] = useActionState<CoachActionState, FormData>(
-    declineAction,
-    initialActionState,
-  );
-
-  const time = formatTime(lesson.startsAt);
-  const swimmerNames = lesson.swimmers.map((swimmer) => swimmer.firstName).join(", ");
-  const firstSwimmerId = lesson.swimmers[0]?.swimmerId;
-  const isPending = lesson.status === "pending";
-  const approveFormId = `dashboard-approve-${lesson.id}`;
-  const declineFormId = `dashboard-decline-${lesson.id}`;
-
-  return (
-    <div className="py-4 flex flex-col gap-1.5">
-      <div className="flex items-start gap-4">
-        <p className="text-xs font-semibold text-text-secondary tabular-nums tablet:w-[68px] tablet:flex-shrink-0 pt-0.5">
-          {time}
-        </p>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-start justify-between gap-2 flex-wrap">
-            <div>
-              <p className="text-sm font-semibold text-text">
-                {swimmerNames || "No swimmers"}, {lesson.durationMinutes} min
-              </p>
-              <p className="text-xs text-text-secondary mt-0.5">
-                {lesson.type === "private" ? "Private" : "Family"} lesson &middot; {locationName}
-              </p>
-            </div>
-            <LessonStatusBadge status={lesson.status} viewer="coach" />
-          </div>
-
-          {isPending && (
-            <div className="flex items-center gap-2 mt-2 flex-wrap">
-              <form id={approveFormId} action={approveFormAction} />
-              <button
-                type="submit"
-                form={approveFormId}
-                disabled={isApproving || isDeclining}
-                className="inline-flex items-center justify-center rounded-button bg-button-primary-background text-button-primary-text font-semibold text-xs px-4 h-9 transition-opacity disabled:opacity-60 hover:opacity-90 active:scale-[0.97]"
-              >
-                {isApproving ? "Approving…" : "Approve"}
-              </button>
-              <button
-                type="button"
-                disabled={isApproving || isDeclining}
-                onClick={() => declineDialogRef.current?.showModal()}
-                className="inline-flex items-center justify-center rounded-button border border-border text-text-secondary font-semibold text-xs px-4 h-9 transition-colors disabled:opacity-60 hover:border-text-secondary"
-              >
-                Decline
-              </button>
-              {approveState.status === "error" && (
-                <p className="text-xs text-danger w-full">{approveState.message}</p>
-              )}
-            </div>
-          )}
-
-          {firstSwimmerId !== undefined && (
-            <Link
-              href={`/coach/swimmers/${firstSwimmerId}`}
-              className="inline-flex items-center mt-1 min-h-[44px] text-sm font-semibold text-link hover:text-link-hover transition-colors duration-150"
-            >
-              Open swimmer
-            </Link>
-          )}
-        </div>
-      </div>
-
-      <form id={declineFormId} action={declineFormAction} />
-      <ConfirmDialog
-        dialogRef={declineDialogRef}
-        title="Decline this lesson?"
-        description="The family will be notified. You can optionally leave a reason."
-        formId={declineFormId}
-        confirmLabel="Decline"
-        confirmDanger
-        cancelLabel="Keep it"
-        isPending={isDeclining}
-        {...(declineState.status === "error" ? { errorMessage: declineState.message } : {})}
-        onCancel={() => declineDialogRef.current?.close()}
-      >
-        <label className="flex flex-col gap-1.5">
-          <span className="text-xs font-semibold text-text-secondary-on-section">
-            Reason (optional)
-          </span>
-          <textarea
-            name="reason"
-            rows={3}
-            placeholder="e.g. scheduling conflict"
-            className="rounded-card border border-divider-section bg-card text-text-on-section text-sm px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-focus-ring placeholder:text-text-secondary-on-section"
-          />
-        </label>
-      </ConfirmDialog>
-    </div>
-  );
 }
 
 function TravelBufferRow({ item }: { item: Extract<CoachScheduleItem, { type: "travel_buffer" }> }) {
@@ -292,18 +177,3 @@ function TravelBufferRow({ item }: { item: Extract<CoachScheduleItem, { type: "t
   );
 }
 
-function OpenSlotRow({ item }: { item: Extract<CoachScheduleItem, { type: "open_slot" }> }) {
-  const time = formatTime(item.startsAt);
-  const until = formatTime(item.endsAt);
-
-  return (
-    <div className="py-4 flex flex-col gap-1.5 tablet:flex-row tablet:items-center tablet:gap-4">
-      <p className="text-xs font-semibold text-text-secondary tabular-nums tablet:w-[68px] tablet:flex-shrink-0">
-        {time}
-      </p>
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold text-text-secondary">Open until {until}</p>
-      </div>
-    </div>
-  );
-}

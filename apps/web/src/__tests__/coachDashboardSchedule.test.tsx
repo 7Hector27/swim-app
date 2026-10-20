@@ -3,8 +3,16 @@ import { render, screen, fireEvent, waitFor, act } from "@testing-library/react"
 
 vi.mock("@/content/CoachDashboardContent/actions", () => ({
   getCoachScheduleAction: vi.fn().mockResolvedValue({ ok: true, items: [] }),
+}));
+vi.mock("@/components/CoachLessonRow/actions", () => ({
   approveLessonAction: vi.fn().mockResolvedValue({ status: "idle" }),
   declineLessonAction: vi.fn().mockResolvedValue({ status: "idle" }),
+}));
+vi.mock("@/components/ConfirmDialog", () => ({
+  default: () => <div data-testid="confirm-dialog" />,
+}));
+vi.mock("@/components/LessonStatusBadge", () => ({
+  default: () => null,
 }));
 
 import TodayScheduleCard from "../content/CoachDashboardContent/TodayScheduleCard";
@@ -89,33 +97,33 @@ describe("TodayScheduleCard — day navigation", () => {
   });
 });
 
-describe("TodayScheduleCard — lesson row (phone layout)", () => {
+describe("TodayScheduleCard — lesson row", () => {
   it("renders the swimmer name", () => {
     renderCard([lessonItem]);
-    expect(screen.getByText(/Morgan/)).toBeInTheDocument();
+    expect(screen.getByText("Morgan")).toBeInTheDocument();
   });
 
-  it("renders the lesson duration", () => {
+  it("renders the lesson duration in the time slab", () => {
     renderCard([lessonItem]);
     expect(screen.getByText(/60 min/)).toBeInTheDocument();
   });
 
   it("renders the lesson type and pool", () => {
     renderCard([lessonItem]);
-    expect(screen.getByText(/Private lesson/)).toBeInTheDocument();
     expect(screen.getByText(/Egret Park/)).toBeInTheDocument();
+    expect(screen.getByText(/Private/)).toBeInTheDocument();
   });
 
-  it("renders the Open swimmer link pointing to the swimmer profile", () => {
+  it("renders the Open lesson link pointing to the lesson page", () => {
     renderCard([lessonItem]);
-    const link = screen.getByRole("link", { name: "Open swimmer" });
-    expect(link).toHaveAttribute("href", "/coach/swimmers/sw-001");
+    const link = screen.getByRole("link", { name: "Open lesson" });
+    expect(link).toHaveAttribute("href", "/coach/lessons/lesson-001");
   });
 
-  it("time is rendered as a separate element from the lesson detail", () => {
+  it("time is rendered as a separate element from the swimmer name", () => {
     renderCard([lessonItem]);
     const timeEl = screen.getByText("10:00 AM");
-    const nameEl = screen.getByText(/Morgan.*60 min/);
+    const nameEl = screen.getByText("Morgan");
     expect(timeEl).not.toBe(nameEl);
   });
 });
@@ -137,20 +145,13 @@ describe("TodayScheduleCard — travel buffer row", () => {
   });
 });
 
-describe("TodayScheduleCard — open slot row", () => {
-  it("renders the open-until text", () => {
-    renderCard([openSlotItem]);
-    expect(screen.getByText(/Open until/)).toBeInTheDocument();
-  });
-});
-
-describe("TodayScheduleCard — no club name on dashboard card", () => {
-  it("shows swimmer name without club when clubName is null", () => {
+describe("TodayScheduleCard — club name", () => {
+  it("shows no club line when swimmer has no club", () => {
     renderCard([lessonItem]);
-    expect(screen.getByText(/Morgan, 60 min/)).toBeInTheDocument();
+    expect(screen.queryByText(/NCAP/)).toBeNull();
   });
 
-  it("does not show club name even when the swimmer has one", () => {
+  it("shows club name when swimmer has one", () => {
     const withClub: CoachScheduleItem = {
       ...lessonItem,
       lesson: {
@@ -159,8 +160,7 @@ describe("TodayScheduleCard — no club name on dashboard card", () => {
       },
     };
     renderCard([withClub]);
-    expect(screen.queryByText(/NCAP/)).toBeNull();
-    expect(screen.getByText(/Morgan, 60 min/)).toBeInTheDocument();
+    expect(screen.getByText("NCAP")).toBeInTheDocument();
   });
 });
 
@@ -188,11 +188,11 @@ describe("TodayScheduleCard — approve and decline on pending lesson", () => {
 });
 
 describe("TodayScheduleCard — mixed schedule", () => {
-  it("renders all three row types together", () => {
+  it("renders lessons and travel buffers, suppresses open slots", () => {
     renderCard([lessonItem, travelItem, openSlotItem]);
-    expect(screen.getByText(/Morgan/)).toBeInTheDocument();
+    expect(screen.getByText("Morgan")).toBeInTheDocument();
     expect(screen.getByText(/Travel buffer/)).toBeInTheDocument();
-    expect(screen.getByText(/Open until/)).toBeInTheDocument();
+    expect(screen.queryByText(/Open until/)).toBeNull();
   });
 });
 
@@ -219,12 +219,12 @@ describe("TodayScheduleCard — stale-response guard", () => {
     await act(async () => {
       resolveSecond({ ok: true, items: [lessonItem] });
     });
-    expect(screen.getByText(/Morgan/)).toBeInTheDocument();
+    expect(screen.getByText("Morgan")).toBeInTheDocument();
 
     await act(async () => {
       resolveFirst({ ok: true, items: [] });
     });
-    expect(screen.getByText(/Morgan/)).toBeInTheDocument();
+    expect(screen.getByText("Morgan")).toBeInTheDocument();
   });
 });
 
@@ -255,7 +255,7 @@ describe("TodayScheduleCard — fetch error", () => {
     await waitFor(() => screen.getByRole("button", { name: "Retry" }));
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     await waitFor(() => {
-      expect(screen.getByText(/Morgan/)).toBeInTheDocument();
+      expect(screen.getByText("Morgan")).toBeInTheDocument();
     });
   });
 });

@@ -4,7 +4,11 @@ import { useState, useEffect, useActionState } from "react";
 
 import type { LessonResponse } from "@swim-app/shared";
 
-import { approveLessonAction, declineLessonAction, type CoachActionState } from "./actions";
+import {
+  approveLessonAction,
+  declineLessonAction,
+  type CoachLessonActionState,
+} from "@/components/CoachLessonRow/actions";
 
 interface Props {
   initialLessons: LessonResponse[];
@@ -48,13 +52,13 @@ function BookingRequestRow({
   const boundApprove = approveLessonAction.bind(null, lesson.id);
   const [approveState, approveFormAction, isApproving] = useActionState(
     boundApprove,
-    { status: "idle" } as CoachActionState,
+    { status: "idle" } as CoachLessonActionState,
   );
 
   const boundDecline = declineLessonAction.bind(null, lesson.id);
   const [declineState, declineFormAction, isDeclining] = useActionState(
     boundDecline,
-    { status: "idle" } as CoachActionState,
+    { status: "idle" } as CoachLessonActionState,
   );
 
   useEffect(() => {
