@@ -31,6 +31,7 @@ interface SwimmerFormProps {
   mode: "add" | "edit";
   swimmerId?: string;
   initialValues?: SwimmerFormInitialValues;
+  hidePublicSection?: boolean;
 }
 
 const inputClass =
@@ -44,6 +45,7 @@ export default function SwimmerForm({
   mode,
   swimmerId,
   initialValues,
+  hidePublicSection = false,
 }: SwimmerFormProps) {
   const [isPublicValue, setIsPublicValue] = useState<"yes" | "no" | null>(
     () =>
@@ -123,7 +125,7 @@ export default function SwimmerForm({
   const isSubmitDisabled =
     onTeam === null ||
     !clubSelectionComplete ||
-    (mode === "add" && isPublicValue === null) ||
+    (mode === "add" && !hidePublicSection && isPublicValue === null) ||
     isPending;
 
   const submitLabel = mode === "add" ? "Add swimmer" : "Save changes";
@@ -301,51 +303,53 @@ export default function SwimmerForm({
       </fieldset>
 
       {/* Public leaderboards */}
-      <fieldset className="flex flex-col gap-2">
-        <legend className="text-sm font-semibold text-text">Public leaderboards</legend>
-        <p className="text-xs text-text-secondary mt-0.5">
-          Choosing Yes shows your swimmer's first name and last initial, times, and level
-          on the public leaderboard. Swim progress is tracked either way — this setting
-          only affects what others can see.
-        </p>
-        <div className="flex gap-6 mt-1">
-          <label className="flex items-center gap-2 cursor-pointer text-sm text-text min-h-[44px]">
-            <input
-              type="radio"
-              name="isPublic"
-              value="yes"
-              checked={isPublicValue === "yes"}
-              onChange={() => setIsPublicValue("yes")}
-              className="accent-button-primary-background"
-              aria-describedby={fieldErrors["isPublic"] ? "isPublic-error" : undefined}
-            />
-            Yes
-          </label>
-          <label className="flex items-center gap-2 cursor-pointer text-sm text-text min-h-[44px]">
-            <input
-              type="radio"
-              name="isPublic"
-              value="no"
-              checked={isPublicValue === "no"}
-              onChange={() => setIsPublicValue("no")}
-              className="accent-button-primary-background"
-            />
-            No
-          </label>
-        </div>
-        <p className="text-text-secondary text-xs">
-          Changes can take up to a minute to show on public leaderboards.
-        </p>
-        {mode === "add" && isPublicValue === null && (
-          <p className="text-text-secondary text-xs">Please select Yes or No to continue.</p>
-        )}
-        {showPublicToPrivateNote && (
-          <p className="text-text-secondary text-xs">
-            Switching to No will remove your swimmer from public leaderboards.
+      {!hidePublicSection && (
+        <fieldset className="flex flex-col gap-2">
+          <legend className="text-sm font-semibold text-text">Public leaderboards</legend>
+          <p className="text-xs text-text-secondary mt-0.5">
+            Choosing Yes shows your swimmer's first name and last initial, times, and level
+            on the public leaderboard. Swim progress is tracked either way — this setting
+            only affects what others can see.
           </p>
-        )}
-        <FieldError id="isPublic-error" message={fieldErrors["isPublic"]} />
-      </fieldset>
+          <div className="flex gap-6 mt-1">
+            <label className="flex items-center gap-2 cursor-pointer text-sm text-text min-h-[44px]">
+              <input
+                type="radio"
+                name="isPublic"
+                value="yes"
+                checked={isPublicValue === "yes"}
+                onChange={() => setIsPublicValue("yes")}
+                className="accent-button-primary-background"
+                aria-describedby={fieldErrors["isPublic"] ? "isPublic-error" : undefined}
+              />
+              Yes
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer text-sm text-text min-h-[44px]">
+              <input
+                type="radio"
+                name="isPublic"
+                value="no"
+                checked={isPublicValue === "no"}
+                onChange={() => setIsPublicValue("no")}
+                className="accent-button-primary-background"
+              />
+              No
+            </label>
+          </div>
+          <p className="text-text-secondary text-xs">
+            Changes can take up to a minute to show on public leaderboards.
+          </p>
+          {mode === "add" && isPublicValue === null && (
+            <p className="text-text-secondary text-xs">Please select Yes or No to continue.</p>
+          )}
+          {showPublicToPrivateNote && (
+            <p className="text-text-secondary text-xs">
+              Switching to No will remove your swimmer from public leaderboards.
+            </p>
+          )}
+          <FieldError id="isPublic-error" message={fieldErrors["isPublic"]} />
+        </fieldset>
+      )}
 
       <input type="hidden" name="clubsJson" value={clubsJson} />
       {mode === "edit" && swimmerId && (

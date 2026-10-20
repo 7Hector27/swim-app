@@ -20,11 +20,27 @@ export function mapApiResponse(
         "One or more selected clubs are no longer available. Please refresh and try again.",
     };
   }
+  if (status === 403) {
+    return { status: "error", message: "You don't have permission to make this change." };
+  }
   if (status === 404) {
     return { status: "error", message: "Swimmer not found. Please return to the dashboard." };
   }
   if (status === 422 && isApiBody(body) && Array.isArray(body.issues)) {
     return { status: "field_errors", errors: mapZodErrors(body.issues) };
+  }
+  return { status: "error", message: "Something went wrong. Please try again." };
+}
+
+export type PublicToggleState = { status: "idle" } | { status: "error"; message: string };
+
+export function mapPublicToggleApiResponse(httpStatus: number): PublicToggleState {
+  if (httpStatus === 200) return { status: "idle" };
+  if (httpStatus === 403) {
+    return { status: "error", message: "Only the household owner can make a swimmer public." };
+  }
+  if (httpStatus === 404) {
+    return { status: "error", message: "Swimmer not found. Please return to the dashboard." };
   }
   return { status: "error", message: "Something went wrong. Please try again." };
 }
