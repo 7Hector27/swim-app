@@ -277,7 +277,7 @@ describe("household role restrictions", () => {
     }
   });
 
-  it("viewer → 403 PATCH /:id { isPublic: false }", async () => {
+  it("viewer → 200 PATCH /:id { isPublic: false } (any member can opt out)", async () => {
     const owner = await createTestUser("role-viewer-ispublic-owner");
     const viewer = await createTestUserInHousehold("role-viewer-ispublic-viewer", owner.householdId, "viewer");
     try {
@@ -293,7 +293,7 @@ describe("household role restrictions", () => {
         .patch(`/swimmers/${swimmerId}`)
         .set("Authorization", `Bearer ${viewer.accessToken}`)
         .send({ isPublic: false });
-      expect(res.status).toBe(403);
+      expect(res.status).toBe(200);
     } finally {
       await viewer.cleanup();
       await owner.cleanup();

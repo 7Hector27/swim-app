@@ -29,6 +29,8 @@ function dayLabel(viewDate: string, today: string): string {
   if (viewDate === addDays(today, 1)) return "Tomorrow";
   const [year, month, day] = viewDate.split("-").map(Number) as [number, number, number];
   return new Intl.DateTimeFormat("en-US", {
+    // viewDate is an LA-timezone calendar string; Date.UTC constructs midnight UTC for that
+    // date, and timeZone: "UTC" ensures the formatter reads it back without shifting.
     timeZone: "UTC",
     weekday: "short",
     month: "short",

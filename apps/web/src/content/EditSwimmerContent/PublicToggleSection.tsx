@@ -46,7 +46,7 @@ export default function PublicToggleSection({
   );
 
   const canEnable = householdRole === "owner";
-  const canDisable = householdRole === "owner" || householdRole === "manager";
+  const canDisable = true;
 
   return (
     <section className="flex flex-col gap-4 border-t border-border pt-8">

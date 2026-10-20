@@ -31,7 +31,7 @@ Every parent profile belongs to exactly one household. Signup automatically crea
 | ------- | ----------------------------------- | ----------------------------------------------------------------- |
 | owner   | The profile that created the account | Full control: manage swimmers, set `is_public` to `true` or `false`, manage household membership |
 | manager | Additional trusted adults            | Manage swimmers, set `is_public` to `false`; cannot set `is_public` to `true` |
-| viewer  | Read-only household members          | View swimmers; no write access                                   |
+| viewer  | Read-only household members          | View swimmers and set `is_public` to `false`; cannot set `is_public` to `true` or edit swimmer data |
 
 ### Member management rules
 

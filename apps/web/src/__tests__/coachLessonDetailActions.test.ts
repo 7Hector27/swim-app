@@ -21,6 +21,7 @@ global.fetch = mockFetch;
 import {
   approveCoachLessonAction,
   declineCoachLessonAction,
+  cancelCoachLessonAction,
 } from "../content/CoachLessonDetailContent/actions";
 import type { CoachLessonDetailState } from "../content/CoachLessonDetailContent/actions";
 
@@ -79,5 +80,23 @@ describe("declineCoachLessonAction", () => {
     await declineCoachLessonAction(idle, fd);
 
     expect(mockRedirect).toHaveBeenCalledWith(`/coach/lessons/${LESSON_ID}`);
+  });
+});
+
+describe("cancelCoachLessonAction", () => {
+  it("returns lesson_not_active error state when the API responds 422 lesson_not_active", async () => {
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 422,
+      json: async () => ({ error: "lesson_not_active" }),
+    });
+
+    const fd = new FormData();
+    fd.set("lessonId", LESSON_ID);
+
+    const result = await cancelCoachLessonAction(idle, fd);
+
+    expect(mockRedirect).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ status: "error", message: "lesson_not_active" });
   });
 });

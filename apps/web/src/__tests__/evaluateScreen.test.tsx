@@ -506,7 +506,7 @@ describe("EvaluateContent — section headers for screen-sectioned screens", () 
       <EvaluateContent
         swimmer={SWIMMER_DETAIL}
         screens={freestyleScreens}
-             />,
+      />,
     );
 
     const select = screen.getByRole("combobox");
