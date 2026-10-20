@@ -179,6 +179,8 @@ export const LessonResponseSchema = z.object({
   approvedAt: z.string().datetime({ offset: true }).nullable(),
   declinedAt: z.string().datetime({ offset: true }).nullable(),
   declineReason: z.string().nullable(),
+  movedAt: z.string().datetime({ offset: true }).nullable(),
+  previousStartsAt: z.string().datetime({ offset: true }).nullable(),
   createdAt: z.string().datetime({ offset: true }),
 });
 export type LessonResponse = z.infer<typeof LessonResponseSchema>;
@@ -487,6 +489,59 @@ export const CopyNextYearResponseSchema = z.object({
   inserted: z.array(AvailabilitySeasonSchema),
 });
 export type CopyNextYearResponse = z.infer<typeof CopyNextYearResponseSchema>;
+
+// ── Coach schedule types ──────────────────────────────────────────────────────
+
+export const CoachLessonSwimmerSchema = LessonSwimmerSchema.extend({
+  clubName: z.string().nullable(),
+});
+export type CoachLessonSwimmer = z.infer<typeof CoachLessonSwimmerSchema>;
+
+export const CoachLessonResponseSchema = LessonResponseSchema.extend({
+  swimmers: z.array(CoachLessonSwimmerSchema),
+});
+export type CoachLessonResponse = z.infer<typeof CoachLessonResponseSchema>;
+
+export const CoachScheduleLessonItemSchema = z.object({
+  type: z.literal("lesson"),
+  lesson: CoachLessonResponseSchema,
+  locationName: z.string(),
+  householdId: z.string().uuid(),
+});
+export type CoachScheduleLessonItem = z.infer<typeof CoachScheduleLessonItemSchema>;
+
+export const CoachScheduleItemSchema = z.discriminatedUnion("type", [
+  CoachScheduleLessonItemSchema,
+  ScheduleTravelBufferItemSchema,
+  ScheduleOpenSlotItemSchema,
+]);
+export type CoachScheduleItem = z.infer<typeof CoachScheduleItemSchema>;
+
+export const CoachLessonDetailSchema = z.object({
+  id: z.string().uuid(),
+  householdId: z.string().uuid(),
+  householdName: z.string().nullable(),
+  locationId: z.string().uuid(),
+  locationName: z.string(),
+  locationAddress: z.string(),
+  locationCity: z.string(),
+  locationState: z.string(),
+  locationZip: z.string(),
+  isHomePool: z.boolean(),
+  startsAt: z.string().datetime({ offset: true }),
+  durationMinutes: z.union([z.literal(30), z.literal(45), z.literal(60)]),
+  type: LessonTypeSchema,
+  status: LessonStatusSchema,
+  swimmers: z.array(CoachLessonSwimmerSchema),
+  expiresAt: z.string().datetime({ offset: true }).nullable(),
+  approvedAt: z.string().datetime({ offset: true }).nullable(),
+  declinedAt: z.string().datetime({ offset: true }).nullable(),
+  declineReason: z.string().nullable(),
+  movedAt: z.string().datetime({ offset: true }).nullable(),
+  previousStartsAt: z.string().datetime({ offset: true }).nullable(),
+  createdAt: z.string().datetime({ offset: true }),
+});
+export type CoachLessonDetail = z.infer<typeof CoachLessonDetailSchema>;
 
 export const AvailabilityPreviewQuerySchema = z.object({
   from: DateStringSchema,

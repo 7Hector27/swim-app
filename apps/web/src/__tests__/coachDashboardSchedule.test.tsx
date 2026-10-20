@@ -3,10 +3,12 @@ import { render, screen, fireEvent, waitFor, act } from "@testing-library/react"
 
 vi.mock("@/content/CoachDashboardContent/actions", () => ({
   getCoachScheduleAction: vi.fn().mockResolvedValue({ ok: true, items: [] }),
+  approveLessonAction: vi.fn().mockResolvedValue({ status: "idle" }),
+  declineLessonAction: vi.fn().mockResolvedValue({ status: "idle" }),
 }));
 
 import TodayScheduleCard from "../content/CoachDashboardContent/TodayScheduleCard";
-import type { ScheduleItem } from "@swim-app/shared";
+import type { CoachScheduleItem } from "@swim-app/shared";
 import { getCoachScheduleAction } from "../content/CoachDashboardContent/actions";
 
 const TODAY = "2025-06-01";
@@ -16,8 +18,9 @@ const AT_10AM = "2025-06-01T17:00:00.000Z"; // 10:00 AM PDT
 const AT_11AM = "2025-06-01T18:00:00.000Z"; // 11:00 AM PDT
 const AT_1130AM = "2025-06-01T18:30:00.000Z"; // 11:30 AM PDT
 
-const lessonItem: ScheduleItem = {
+const lessonItem: CoachScheduleItem = {
   type: "lesson",
+  householdId: "hh-001",
   locationName: "Egret Park",
   lesson: {
     id: "lesson-001",
@@ -28,17 +31,19 @@ const lessonItem: ScheduleItem = {
     type: "private",
     status: "approved",
     swimmers: [
-      { swimmerId: "sw-001", firstName: "Morgan", lastName: "Lee" },
+      { swimmerId: "sw-001", firstName: "Morgan", lastName: "Lee", clubName: null },
     ],
     expiresAt: null,
     approvedAt: AT_10AM,
     declinedAt: null,
     declineReason: null,
+    movedAt: null,
+    previousStartsAt: null,
     createdAt: AT_10AM,
   },
 };
 
-const travelItem: ScheduleItem = {
+const travelItem: CoachScheduleItem = {
   type: "travel_buffer",
   startsAt: AT_11AM,
   endsAt: AT_1130AM,
@@ -46,13 +51,13 @@ const travelItem: ScheduleItem = {
   toLocationName: "Riverside Pool",
 };
 
-const openSlotItem: ScheduleItem = {
+const openSlotItem: CoachScheduleItem = {
   type: "open_slot",
   startsAt: AT_1130AM,
   endsAt: AT_11AM, // intentionally earlier so duration is negative — only "until" time matters here
 };
 
-function renderCard(items: ScheduleItem[]) {
+function renderCard(items: CoachScheduleItem[]) {
   render(
     <TodayScheduleCard initialItems={items} today={TODAY} />,
   );
@@ -139,6 +144,49 @@ describe("TodayScheduleCard — open slot row", () => {
   });
 });
 
+describe("TodayScheduleCard — club name in lesson row", () => {
+  it("shows swimmer name without parens when clubName is null", () => {
+    renderCard([lessonItem]);
+    expect(screen.getByText(/Morgan, 60 min/)).toBeInTheDocument();
+    expect(screen.queryByText(/Morgan \(/)).toBeNull();
+  });
+
+  it("shows club name in parens when clubName is present", () => {
+    const withClub: CoachScheduleItem = {
+      ...lessonItem,
+      lesson: {
+        ...lessonItem.lesson,
+        swimmers: [{ swimmerId: "sw-001", firstName: "Morgan", lastName: "Lee", clubName: "NCAP" }],
+      },
+    };
+    renderCard([withClub]);
+    expect(screen.getByText(/Morgan \(NCAP\)/)).toBeInTheDocument();
+  });
+});
+
+describe("TodayScheduleCard — approve and decline on pending lesson", () => {
+  const pendingItem: CoachScheduleItem = {
+    ...lessonItem,
+    lesson: {
+      ...lessonItem.lesson,
+      status: "pending",
+      approvedAt: null,
+    },
+  };
+
+  it("shows Approve and Decline buttons for a pending lesson", () => {
+    renderCard([pendingItem]);
+    expect(screen.getByRole("button", { name: "Approve" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Decline" })).toBeInTheDocument();
+  });
+
+  it("does not show Approve or Decline for an approved lesson", () => {
+    renderCard([lessonItem]);
+    expect(screen.queryByRole("button", { name: "Approve" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Decline" })).toBeNull();
+  });
+});
+
 describe("TodayScheduleCard — mixed schedule", () => {
   it("renders all three row types together", () => {
     renderCard([lessonItem, travelItem, openSlotItem]);
@@ -154,10 +202,10 @@ describe("TodayScheduleCard — stale-response guard", () => {
   });
 
   it("discards a slow first response when a second navigation finishes first", async () => {
-    let resolveFirst!: (v: { ok: true; items: ScheduleItem[] }) => void;
-    let resolveSecond!: (v: { ok: true; items: ScheduleItem[] }) => void;
-    const firstPromise = new Promise<{ ok: true; items: ScheduleItem[] }>((r) => { resolveFirst = r; });
-    const secondPromise = new Promise<{ ok: true; items: ScheduleItem[] }>((r) => { resolveSecond = r; });
+    let resolveFirst!: (v: { ok: true; items: CoachScheduleItem[] }) => void;
+    let resolveSecond!: (v: { ok: true; items: CoachScheduleItem[] }) => void;
+    const firstPromise = new Promise<{ ok: true; items: CoachScheduleItem[] }>((r) => { resolveFirst = r; });
+    const secondPromise = new Promise<{ ok: true; items: CoachScheduleItem[] }>((r) => { resolveSecond = r; });
 
     vi.mocked(getCoachScheduleAction)
       .mockReturnValueOnce(firstPromise)

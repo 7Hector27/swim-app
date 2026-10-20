@@ -334,6 +334,8 @@ One row per lesson booking request.
 | `no_show_by` | `uuid` | yes | — | FK → `profiles.id` |
 | `completed_at` | `timestamptz` | yes | — | Set by cron auto-complete or coach manual action |
 | `expires_at` | `timestamptz` | yes | — | `starts_at − 16 h`; null for auto-approved lessons |
+| `moved_at` | `timestamptz` | yes | — | Set when the coach reschedules the lesson. Null for lessons that have never been moved. |
+| `previous_starts_at` | `timestamptz` | yes | — | The original `starts_at` value before the most recent coach-initiated reschedule. Null when `moved_at` is null. |
 | `google_calendar_event_id` | `text` | yes | — | Populated in PR 6 |
 | `calendar_sync_status` | `text` | no | `'not_synced'` | CHECK IN ('not_synced', 'synced', 'sync_failed') |
 | `calendar_sync_error` | `text` | yes | — | Last sync error message |

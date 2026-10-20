@@ -1,0 +1,227 @@
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import request from "supertest";
+import pino from "pino";
+import { and, eq, inArray } from "drizzle-orm";
+import { createApp } from "../../app";
+import {
+  adminDb,
+  closeAdminDb,
+  createTestUser,
+  type TestUser,
+} from "./helpers";
+import {
+  availabilityConfig,
+  availabilitySeasons,
+  lessonLocations,
+  lessonSwimmers,
+  lessons,
+  profiles,
+  swimmers,
+} from "../../db/schema";
+import { getDateInLA } from "../../lib/slots";
+
+const logger = pino({ level: "silent" });
+const app = createApp(logger);
+
+let owner: TestUser;
+let coach: TestUser;
+let locationId: string;
+let swimmerId: string;
+
+async function makeCoach(userId: string): Promise<void> {
+  await adminDb()
+    .update(profiles)
+    .set({ role: "coach" })
+    .where(eq(profiles.id, userId));
+}
+
+// Temporarily opens all seven days on every season so a slot exists
+// regardless of the day the test runs.
+async function withAllDaysEnabled<T>(fn: () => Promise<T>): Promise<T> {
+  const seasons = await adminDb().select().from(availabilitySeasons);
+  const originals = seasons.map((season) => ({ id: season.id, teachesDays: season.teachesDays }));
+  for (const season of seasons) {
+    await adminDb()
+      .update(availabilitySeasons)
+      .set({ teachesDays: [1, 2, 3, 4, 5, 6, 7] })
+      .where(eq(availabilitySeasons.id, season.id));
+  }
+  try {
+    return await fn();
+  } finally {
+    for (const original of originals) {
+      await adminDb()
+        .update(availabilitySeasons)
+        .set({ teachesDays: original.teachesDays })
+        .where(eq(availabilitySeasons.id, original.id));
+    }
+  }
+}
+
+// Walks available-range week by week until it finds the first slot with state "available".
+async function findFirstAvailableSlot(
+  token: string,
+  locId: string,
+  durationMinutes: number,
+): Promise<string> {
+  for (let weekOffset = 0; weekOffset < 10; weekOffset++) {
+    const weekDate = new Date(Date.now() + weekOffset * 7 * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .slice(0, 10);
+    const res = await request(app)
+      .get("/lessons/available-range")
+      .set("Authorization", `Bearer ${token}`)
+      .query({ view: "week", date: weekDate, durationMinutes: String(durationMinutes), locationId: locId });
+    if (res.status !== 200) continue;
+    const body = res.body as { days: Array<{ slots: Array<{ startsAt: string; state: string }> }> };
+    for (const day of body.days) {
+      for (const slot of day.slots) {
+        if (slot.state === "available") return slot.startsAt;
+      }
+    }
+  }
+  throw new Error("No available slot found within 10 weeks");
+}
+
+beforeAll(async () => {
+  owner = await createTestUser("coach-lessons-int-owner");
+  coach = await createTestUser("coach-lessons-int-coach");
+  await makeCoach(coach.userId);
+
+  const locs = await adminDb()
+    .select({ id: lessonLocations.id })
+    .from(lessonLocations)
+    .where(eq(lessonLocations.isActive, true))
+    .limit(1);
+  locationId = locs[0]?.id ?? "";
+
+  const swimmerRows = await adminDb()
+    .insert(swimmers)
+    .values({
+      firstName: "CoachInt",
+      lastName: "Swimmer",
+      birthDate: "2015-01-01",
+      sex: "female",
+      isPublic: false,
+      householdId: owner.householdId,
+    })
+    .returning({ id: swimmers.id });
+  swimmerId = swimmerRows[0]?.id ?? "";
+});
+
+afterAll(async () => {
+  if (swimmerId) {
+    await adminDb().delete(lessonSwimmers).where(eq(lessonSwimmers.swimmerId, swimmerId));
+    await adminDb().delete(lessons).where(eq(lessons.householdId, owner.householdId));
+    await adminDb().delete(swimmers).where(eq(swimmers.id, swimmerId));
+  }
+  if (coach) await coach.cleanup();
+  if (owner) await owner.cleanup();
+  await closeAdminDb();
+});
+
+describe("PATCH /lessons/:id coach reschedule (integration)", () => {
+  it("double-booking: coach moving a lesson to an occupied slot returns 422 slot_unavailable", async () => {
+    await withAllDaysEnabled(async () => {
+      const slot1 = await findFirstAvailableSlot(owner.accessToken, locationId, 30);
+      const resA = await request(app)
+        .post("/lessons")
+        .set("Authorization", `Bearer ${owner.accessToken}`)
+        .send({ locationId, startsAt: slot1, durationMinutes: 30, swimmerIds: [swimmerId] });
+      expect(resA.status).toBe(201);
+      const lessonAId = resA.body.id as string;
+
+      // Find the next available slot — slot1 is now occupied, so this will be a different time.
+      const slot2 = await findFirstAvailableSlot(owner.accessToken, locationId, 30);
+      const resB = await request(app)
+        .post("/lessons")
+        .set("Authorization", `Bearer ${owner.accessToken}`)
+        .send({ locationId, startsAt: slot2, durationMinutes: 30, swimmerIds: [swimmerId] });
+      expect(resB.status).toBe(201);
+      const lessonBId = resB.body.id as string;
+
+      // Coach tries to move lesson B to slot1 (already taken by lesson A).
+      const res = await request(app)
+        .patch(`/lessons/${lessonBId}`)
+        .set("Authorization", `Bearer ${coach.accessToken}`)
+        .send({ startsAt: slot1 });
+
+      expect(res.status).toBe(422);
+      expect(res.body.error).toBe("slot_unavailable");
+
+      // Cleanup
+      await adminDb()
+        .delete(lessonSwimmers)
+        .where(inArray(lessonSwimmers.lessonId, [lessonAId, lessonBId]));
+      await adminDb()
+        .delete(lessons)
+        .where(inArray(lessons.id, [lessonAId, lessonBId]));
+    });
+  });
+
+  it("daily cap: coach moving a lesson to a full day returns 422 slot_unavailable", async () => {
+    await withAllDaysEnabled(async () => {
+      const configRows = await adminDb()
+        .select({ maxDailyLessonMinutes: availabilityConfig.maxDailyLessonMinutes })
+        .from(availabilityConfig)
+        .limit(1);
+      const maxDailyMinutes = configRows[0]?.maxDailyLessonMinutes ?? 240;
+
+      // Find slot X on day D. We'll fill day D to capacity using direct DB inserts.
+      const slotX = await findFirstAvailableSlot(owner.accessToken, locationId, 30);
+      const dayD = getDateInLA(new Date(slotX));
+
+      // Insert enough fake lessons on day D (at consecutive 30-min slots starting at slotX)
+      // so their total equals maxDailyMinutes. These count toward the daily cap check.
+      const numFake = Math.floor(maxDailyMinutes / 30);
+      const fakeLessonIds: string[] = [];
+      for (let index = 0; index < numFake; index++) {
+        const fakeStartsAt = new Date(new Date(slotX).getTime() + index * 30 * 60 * 1000);
+        const [inserted] = await adminDb()
+          .insert(lessons)
+          .values({
+            householdId: owner.householdId,
+            locationId,
+            startsAt: fakeStartsAt,
+            durationMinutes: 30,
+            type: "private",
+            status: "pending",
+            requestedBy: owner.userId,
+            expiresAt: new Date(fakeStartsAt.getTime() - 16 * 60 * 60 * 1000),
+          })
+          .returning({ id: lessons.id });
+        fakeLessonIds.push(inserted!.id);
+      }
+
+      // Day D is now at the daily cap — findFirstAvailableSlot returns a slot on a later day.
+      const slotY = await findFirstAvailableSlot(owner.accessToken, locationId, 30);
+      expect(getDateInLA(new Date(slotY))).not.toBe(dayD);
+
+      // Book lesson Y on day Y via the API.
+      const resY = await request(app)
+        .post("/lessons")
+        .set("Authorization", `Bearer ${owner.accessToken}`)
+        .send({ locationId, startsAt: slotY, durationMinutes: 30, swimmerIds: [swimmerId] });
+      expect(resY.status).toBe(201);
+      const lessonYId = resY.body.id as string;
+
+      // Coach tries to move lesson Y to slotX (day D is at the daily cap).
+      const res = await request(app)
+        .patch(`/lessons/${lessonYId}`)
+        .set("Authorization", `Bearer ${coach.accessToken}`)
+        .send({ startsAt: slotX });
+
+      expect(res.status).toBe(422);
+      expect(res.body.error).toBe("slot_unavailable");
+
+      // Cleanup fake lessons, then lesson Y.
+      const allIds = [...fakeLessonIds, lessonYId];
+      await adminDb()
+        .delete(lessonSwimmers)
+        .where(and(inArray(lessonSwimmers.lessonId, allIds)));
+      await adminDb()
+        .delete(lessons)
+        .where(inArray(lessons.id, allIds));
+    });
+  });
+});

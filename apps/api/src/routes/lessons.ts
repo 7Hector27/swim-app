@@ -83,6 +83,8 @@ lessonsRouter.get(
       approvedAt: lessons.approvedAt,
       declinedAt: lessons.declinedAt,
       declineReason: lessons.declineReason,
+      movedAt: lessons.movedAt,
+      previousStartsAt: lessons.previousStartsAt,
       createdAt: lessons.createdAt,
     };
 
@@ -149,6 +151,8 @@ lessonsRouter.get(
       approvedAt: row.approvedAt?.toISOString() ?? null,
       declinedAt: row.declinedAt?.toISOString() ?? null,
       declineReason: row.declineReason ?? null,
+      movedAt: row.movedAt?.toISOString() ?? null,
+      previousStartsAt: row.previousStartsAt?.toISOString() ?? null,
       createdAt: row.createdAt.toISOString(),
     }));
 
@@ -616,6 +620,8 @@ lessonsRouter.post(
       approvedAt: newLesson.approvedAt?.toISOString() ?? null,
       declinedAt: null,
       declineReason: null,
+      movedAt: null,
+      previousStartsAt: null,
       createdAt: newLesson.createdAt.toISOString(),
     };
 
@@ -646,6 +652,8 @@ lessonsRouter.get(
         approvedAt: lessons.approvedAt,
         declinedAt: lessons.declinedAt,
         declineReason: lessons.declineReason,
+        movedAt: lessons.movedAt,
+        previousStartsAt: lessons.previousStartsAt,
         createdAt: lessons.createdAt,
       })
       .from(lessons)
@@ -682,6 +690,8 @@ lessonsRouter.get(
       approvedAt: lessonRow.approvedAt?.toISOString() ?? null,
       declinedAt: lessonRow.declinedAt?.toISOString() ?? null,
       declineReason: lessonRow.declineReason ?? null,
+      movedAt: lessonRow.movedAt?.toISOString() ?? null,
+      previousStartsAt: lessonRow.previousStartsAt?.toISOString() ?? null,
       createdAt: lessonRow.createdAt.toISOString(),
     };
 
@@ -828,23 +838,35 @@ lessonsRouter.patch(
         res.status(422).json({ error: "not_a_lesson_day" });
         return;
       }
-      const minMs = nowUtc.getTime() + config.bookingMinAdvanceHours * 60 * 60 * 1000;
-      const maxMs = nowUtc.getTime() + config.bookingMaxAdvanceWeeks * 7 * 24 * 60 * 60 * 1000;
-      if (newStartsAt.getTime() < minMs) {
-        res.status(422).json({ error: "too_soon" });
-        return;
-      }
-      if (newStartsAt.getTime() > maxMs) {
-        res.status(422).json({ error: "too_far" });
-        return;
+      // Coach can move a lesson inside the min-advance window; parents cannot.
+      if (!isCoach) {
+        const minMs = nowUtc.getTime() + config.bookingMinAdvanceHours * 60 * 60 * 1000;
+        const maxMs = nowUtc.getTime() + config.bookingMaxAdvanceWeeks * 7 * 24 * 60 * 60 * 1000;
+        if (newStartsAt.getTime() < minMs) {
+          res.status(422).json({ error: "too_soon" });
+          return;
+        }
+        if (newStartsAt.getTime() > maxMs) {
+          res.status(422).json({ error: "too_far" });
+          return;
+        }
       }
     }
 
     // For honor-system edits (no new startsAt), shift the slot-check clock backward
     // so the existing time appears inside the booking window to computeAvailableSlots.
-    const nowForSlotCheck = body.startsAt !== undefined
-      ? nowUtc
-      : new Date(newStartsAt.getTime() - (config.bookingMinAdvanceHours + 1) * 60 * 60 * 1000);
+    // Coach can also pick near-future slots — use epoch to open all teaching-hour slots.
+    const nowForSlotCheck = isCoach
+      ? new Date(0)
+      : body.startsAt !== undefined
+        ? nowUtc
+        : new Date(newStartsAt.getTime() - (config.bookingMinAdvanceHours + 1) * 60 * 60 * 1000);
+
+    // Track coach-initiated reschedule so the parent sees "Moved by Jason".
+    const newMovedAt = isCoach && body.startsAt !== undefined ? nowUtc : (existingLesson.movedAt ?? null);
+    const newPreviousStartsAt = isCoach && body.startsAt !== undefined
+      ? existingLesson.startsAt
+      : (existingLesson.previousStartsAt ?? null);
 
     const updatedLesson = await db.transaction(async (tx) => {
       await tx.execute(
@@ -897,7 +919,13 @@ lessonsRouter.patch(
       let newApprovedBy: string | null = existingLesson!.approvedBy;
       let newExpiresAt: Date | null = existingLesson!.expiresAt;
 
-      if (body.locationId !== undefined && body.locationId !== existingLesson!.locationId) {
+      if (isCoach) {
+        // Coach reschedule: lesson keeps its current status (approved stays approved).
+        // Only update expiresAt for pending lessons whose time is being moved.
+        if (body.startsAt !== undefined && existingLesson!.status === "pending") {
+          newExpiresAt = new Date(newStartsAt.getTime() - 16 * 60 * 60 * 1000);
+        }
+      } else if (body.locationId !== undefined && body.locationId !== existingLesson!.locationId) {
         const approval = await needsApproval(existingLesson!.householdId, newLocationId, tx);
         if (approval) {
           newStatus = "pending";
@@ -924,6 +952,8 @@ lessonsRouter.patch(
           approvedAt: newApprovedAt,
           approvedBy: newApprovedBy,
           expiresAt: newExpiresAt,
+          movedAt: newMovedAt,
+          previousStartsAt: newPreviousStartsAt,
         })
         .where(eq(lessons.id, id))
         .returning();
@@ -991,6 +1021,8 @@ export async function loadLessonWithSwimmers(
     approvedAt: lesson.approvedAt?.toISOString() ?? null,
     declinedAt: lesson.declinedAt?.toISOString() ?? null,
     declineReason: lesson.declineReason ?? null,
+    movedAt: lesson.movedAt?.toISOString() ?? null,
+    previousStartsAt: lesson.previousStartsAt?.toISOString() ?? null,
     createdAt: lesson.createdAt.toISOString(),
   };
 }

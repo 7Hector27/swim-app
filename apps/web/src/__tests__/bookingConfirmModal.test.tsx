@@ -34,6 +34,8 @@ const baseLesson = {
   approvedAt: "2026-06-10T10:00:00-07:00",
   declinedAt: null,
   declineReason: null,
+  movedAt: null,
+  previousStartsAt: null,
   createdAt: "2026-06-10T09:00:00-07:00",
 };
 

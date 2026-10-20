@@ -150,6 +150,19 @@ export type PublicSwimmer = z.infer<typeof PublicSwimmerSchema>;
 
 // ── Coach response schemas ─────────────────────────────────────────────────────
 
+export const CoachSwimmerClubSchema = SwimmerClubBaseSchema.extend({
+  clubName: z.string().nullable(),
+}).refine(
+  (data) =>
+    (data.clubId !== null && data.otherClubName === null) ||
+    (data.clubId === null && data.otherClubName !== null),
+  {
+    message: "exactly one of clubId or otherClubName must be set",
+    path: ["clubId"],
+  },
+);
+export type CoachSwimmerClub = z.infer<typeof CoachSwimmerClubSchema>;
+
 export const CoachSwimmerSchema = z.object({
   id: z.string().uuid(),
   firstName: z.string().trim().min(1),
@@ -159,7 +172,7 @@ export const CoachSwimmerSchema = z.object({
   isPublic: z.boolean(),
   createdAt: z.string().datetime({ offset: true }),
   updatedAt: z.string().datetime({ offset: true }),
-  clubs: z.array(SwimmerClubSchema),
+  clubs: z.array(CoachSwimmerClubSchema),
   currentLeagues: z.array(LeagueSchema),
   memberNames: z.array(z.string()),
 });

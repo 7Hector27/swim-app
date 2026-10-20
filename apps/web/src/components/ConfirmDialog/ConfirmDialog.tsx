@@ -14,6 +14,7 @@ interface ConfirmDialogProps {
   cancelLabel?: string;
   isPending?: boolean;
   errorMessage?: string;
+  children?: React.ReactNode;
   onCancel: () => void;
 }
 
@@ -27,6 +28,7 @@ export default function ConfirmDialog({
   cancelLabel = "Cancel",
   isPending = false,
   errorMessage,
+  children,
   onCancel,
 }: ConfirmDialogProps) {
   function handleBackdropClick(event: React.MouseEvent<HTMLDialogElement>) {
@@ -56,6 +58,8 @@ export default function ConfirmDialog({
           </h2>
           <p className="text-sm text-text-secondary-on-section leading-relaxed">{description}</p>
         </div>
+
+        {children && <div>{children}</div>}
 
         {errorMessage && (
           <p role="alert" aria-live="polite" className="text-sm text-danger">

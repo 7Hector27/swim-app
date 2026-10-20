@@ -101,7 +101,8 @@ function swimmerSingleSelect(row: typeof baseSwimmerRow | null) {
 
 function clubsSelect() {
   const where = vi.fn().mockResolvedValue([]);
-  return { from: vi.fn().mockReturnValue({ where }) };
+  const leftJoin = vi.fn().mockReturnValue({ where });
+  return { from: vi.fn().mockReturnValue({ leftJoin }) };
 }
 
 function regsSelect() {

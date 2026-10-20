@@ -2,10 +2,10 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { fetchCoachSchedule } from "@/lib/api/lessons";
-import type { ScheduleItem } from "@swim-app/shared";
+import type { CoachScheduleItem } from "@swim-app/shared";
 
 export type GetCoachScheduleResult =
-  | { ok: true; items: ScheduleItem[] }
+  | { ok: true; items: CoachScheduleItem[] }
   | { ok: false; error: string };
 
 export async function getCoachScheduleAction(date: string): Promise<GetCoachScheduleResult> {
