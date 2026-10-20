@@ -1339,4 +1339,47 @@ describe("PATCH /lessons/:id", () => {
     expect(res.status).toBe(422);
     expect(res.body.error).toBe("slot_unavailable");
   });
+
+  it("coach reschedules to a slot < 16h away and returns 200 (bypasses too_soon guard)", async () => {
+    // A slot that a parent cannot book (too soon), but a coach can.
+    const tooSoonStartsAt = nextLessonDay(ANCHOR_NOW, 8).toISOString();
+    const updatedRow = { ...baseLessonRow, startsAt: new Date(tooSoonStartsAt), movedAt: ANCHOR_NOW, previousStartsAt: baseLessonRow.startsAt };
+
+    authAs(coachProfile);
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(coachProfile))
+      .mockReturnValueOnce(limitSelect([baseLessonRow]))         // coach loads lesson directly
+      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([configRow]) }) })
+      .mockReturnValueOnce({ from: vi.fn().mockResolvedValue([schoolYearSeason]) })
+      .mockReturnValueOnce({ from: vi.fn().mockResolvedValue([]) });
+
+    mockComputeSlots.mockReturnValueOnce([
+      { startsAt: new Date(tooSoonStartsAt), endsAt: new Date(new Date(tooSoonStartsAt).getTime() + 1800000) },
+    ]);
+
+    mockDbTransaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) => {
+      const tx = {
+        execute: vi.fn().mockResolvedValue(undefined),
+        select: vi.fn()
+          .mockReturnValueOnce({ from: vi.fn().mockResolvedValue([]) })   // blockedTimes
+          .mockReturnValueOnce({ from: vi.fn().mockResolvedValue([]) })   // travelBufferOverrides
+          .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) }) }), // lessons (excluding self)
+        update: vi.fn().mockReturnValue({ set: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ returning: vi.fn().mockResolvedValue([updatedRow]) }) }) }),
+        insert: vi.fn(),
+      };
+      return callback(tx);
+    });
+
+    mockDbSelect
+      .mockReturnValueOnce(limitSelect([updatedRow]))
+      .mockReturnValueOnce(swimmerResponseSelectForLesson());
+
+    const res = await request(app)
+      .patch(`/lessons/${LESSON_ID}`)
+      .set("Authorization", "Bearer token")
+      .send({ startsAt: tooSoonStartsAt });
+
+    expect(res.status).toBe(200);
+    expect(res.body.movedAt).not.toBeNull();
+  });
 });

@@ -1606,12 +1606,6 @@
           "notNull": true,
           "default": 0
         },
-        "notes": {
-          "name": "notes",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "moved_at": {
           "name": "moved_at",
           "type": "timestamp with time zone",

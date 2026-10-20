@@ -4,6 +4,7 @@ import { useRef, useActionState } from "react";
 import Link from "next/link";
 import type { CoachLessonDetail } from "@swim-app/shared";
 
+import AddNoteForm from "@/components/AddNoteForm";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import LessonStatusBadge from "@/components/LessonStatusBadge";
 import {
@@ -98,9 +99,20 @@ export default function CoachLessonDetailContent({ lesson }: Props) {
                     <LessonStatusBadge status={lesson.status} viewer="coach" />
                   )}
                 </Row>
-                {lesson.notes !== null && <Row label="Notes">{lesson.notes}</Row>}
               </dl>
             </div>
+
+            {lesson.swimmers.length > 0 && (
+              <div className="flex flex-col gap-4 desktop:max-w-[640px]">
+                <h2 className="text-xl text-heading">Lesson notes</h2>
+                {lesson.swimmers.map((swimmer) => (
+                  <div key={swimmer.swimmerId} className="rounded-card border border-border p-5 tablet:p-6 flex flex-col gap-3">
+                    <p className="text-sm font-semibold text-text">{swimmer.firstName} {swimmer.lastName}</p>
+                    <AddNoteForm swimmerId={swimmer.swimmerId} lessonId={lesson.id} label="Note" />
+                  </div>
+                ))}
+              </div>
+            )}
 
             {/* Pending actions */}
             {isPending && (

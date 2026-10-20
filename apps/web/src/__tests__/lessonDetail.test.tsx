@@ -72,6 +72,28 @@ describe("LessonDetailContent — started lesson guard", () => {
   });
 });
 
+describe("LessonDetailContent — Moved by Jason", () => {
+  it("shows 'Moved by Jason' row when movedAt and previousStartsAt are set", () => {
+    const movedLesson: UpcomingLesson = {
+      ...lesson,
+      startsAt: "2099-01-02T17:00:00.000Z",
+      movedAt: "2099-01-01T12:00:00.000Z",
+      previousStartsAt: "2099-01-01T15:00:00.000Z",
+    };
+    render(
+      <LessonDetailContent lesson={movedLesson} locations={locations} isViewer={false} isCoach={false} />,
+    );
+    expect(screen.getByText(/Moved by Jason/)).toBeInTheDocument();
+  });
+
+  it("does not show 'Moved by Jason' when movedAt is null", () => {
+    render(
+      <LessonDetailContent lesson={lesson} locations={locations} isViewer={false} isCoach={false} />,
+    );
+    expect(screen.queryByText(/Moved by Jason/)).toBeNull();
+  });
+});
+
 describe("LessonDetailContent — isCoach guard", () => {
   it("does not render note forms when isCoach is false", () => {
     render(

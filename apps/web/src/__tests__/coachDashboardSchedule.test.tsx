@@ -144,6 +144,49 @@ describe("TodayScheduleCard — open slot row", () => {
   });
 });
 
+describe("TodayScheduleCard — club name in lesson row", () => {
+  it("shows swimmer name without parens when clubName is null", () => {
+    renderCard([lessonItem]);
+    expect(screen.getByText(/Morgan, 60 min/)).toBeInTheDocument();
+    expect(screen.queryByText(/Morgan \(/)).toBeNull();
+  });
+
+  it("shows club name in parens when clubName is present", () => {
+    const withClub: CoachScheduleItem = {
+      ...lessonItem,
+      lesson: {
+        ...lessonItem.lesson,
+        swimmers: [{ swimmerId: "sw-001", firstName: "Morgan", lastName: "Lee", clubName: "NCAP" }],
+      },
+    };
+    renderCard([withClub]);
+    expect(screen.getByText(/Morgan \(NCAP\)/)).toBeInTheDocument();
+  });
+});
+
+describe("TodayScheduleCard — approve and decline on pending lesson", () => {
+  const pendingItem: CoachScheduleItem = {
+    ...lessonItem,
+    lesson: {
+      ...lessonItem.lesson,
+      status: "pending",
+      approvedAt: null,
+    },
+  };
+
+  it("shows Approve and Decline buttons for a pending lesson", () => {
+    renderCard([pendingItem]);
+    expect(screen.getByRole("button", { name: "Approve" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Decline" })).toBeInTheDocument();
+  });
+
+  it("does not show Approve or Decline for an approved lesson", () => {
+    renderCard([lessonItem]);
+    expect(screen.queryByRole("button", { name: "Approve" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Decline" })).toBeNull();
+  });
+});
+
 describe("TodayScheduleCard — mixed schedule", () => {
   it("renders all three row types together", () => {
     renderCard([lessonItem, travelItem, openSlotItem]);

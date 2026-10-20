@@ -521,7 +521,6 @@ coachLessonsRouter.get(
         declineReason: lessons.declineReason,
         movedAt: lessons.movedAt,
         previousStartsAt: lessons.previousStartsAt,
-        notes: lessons.notes,
         createdAt: lessons.createdAt,
       })
       .from(lessons)
@@ -594,7 +593,6 @@ coachLessonsRouter.get(
       declineReason: lessonRow.declineReason ?? null,
       movedAt: lessonRow.movedAt?.toISOString() ?? null,
       previousStartsAt: lessonRow.previousStartsAt?.toISOString() ?? null,
-      notes: lessonRow.notes ?? null,
       createdAt: lessonRow.createdAt.toISOString(),
     };
 

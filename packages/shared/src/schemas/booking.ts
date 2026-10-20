@@ -539,7 +539,6 @@ export const CoachLessonDetailSchema = z.object({
   declineReason: z.string().nullable(),
   movedAt: z.string().datetime({ offset: true }).nullable(),
   previousStartsAt: z.string().datetime({ offset: true }).nullable(),
-  notes: z.string().nullable(),
   createdAt: z.string().datetime({ offset: true }),
 });
 export type CoachLessonDetail = z.infer<typeof CoachLessonDetailSchema>;
