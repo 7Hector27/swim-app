@@ -1,3 +1,5 @@
+import { apiFetch } from "./apiFetch";
+
 import {
   AvailableSlotSchema,
   CoachLessonDetailSchema,
@@ -23,7 +25,7 @@ import {
 
 export async function fetchLocations(accessToken: string): Promise<LessonLocation[]> {
   try {
-    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/locations`, {
+    const response = await apiFetch(`${process.env.NEXT_PUBLIC_API_URL}/locations`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
     if (!response.ok) return [];
@@ -50,7 +52,7 @@ export async function fetchAvailableSlots(
       durationMinutes: String(params.durationMinutes),
       locationId: params.locationId,
     });
-    const response = await fetch(
+    const response = await apiFetch(
       `${process.env.NEXT_PUBLIC_API_URL}/lessons/available-slots?${searchParams.toString()}`,
       {
         headers: { Authorization: `Bearer ${accessToken}` },
@@ -72,7 +74,7 @@ export async function fetchAvailableSlots(
 
 export async function coachGetPendingLessons(accessToken: string): Promise<LessonResponse[]> {
   try {
-    const response = await fetch(
+    const response = await apiFetch(
       `${process.env.NEXT_PUBLIC_API_URL}/coach/lessons?status=pending`,
       {
         headers: { Authorization: `Bearer ${accessToken}` },
@@ -97,7 +99,7 @@ export async function fetchCoachSchedule(
   date: string,
 ): Promise<CoachScheduleItem[]> {
   try {
-    const response = await fetch(
+    const response = await apiFetch(
       `${process.env.NEXT_PUBLIC_API_URL}/coach/schedule?date=${date}`,
       {
         headers: { Authorization: `Bearer ${accessToken}` },
@@ -123,7 +125,7 @@ export async function fetchCoachLesson(
   lessonId: string,
 ): Promise<CoachLessonDetail | null> {
   try {
-    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/coach/lessons/${lessonId}`, {
+    const response = await apiFetch(`${process.env.NEXT_PUBLIC_API_URL}/coach/lessons/${lessonId}`, {
       headers: { Authorization: `Bearer ${accessToken}` },
       cache: "no-store",
     });
@@ -146,7 +148,7 @@ export async function fetchLessonNotes(
   lessonId: string,
 ): Promise<CoachNoteResponse[]> {
   try {
-    const response = await fetch(
+    const response = await apiFetch(
       `${process.env.NEXT_PUBLIC_API_URL}/coach/lessons/${lessonId}/notes`,
       { headers: { Authorization: `Bearer ${accessToken}` }, cache: "no-store" },
     );
@@ -161,7 +163,7 @@ export async function fetchLessonNotes(
 
 export async function fetchCoachStats(accessToken: string): Promise<CoachStats | null> {
   try {
-    const response = await fetch(
+    const response = await apiFetch(
       `${process.env.NEXT_PUBLIC_API_URL}/coach/stats`,
       { headers: { Authorization: `Bearer ${accessToken}` }, cache: "no-store" },
     );
@@ -183,7 +185,7 @@ export async function fetchUpcomingLessons(
   accessToken: string,
 ): Promise<UpcomingLesson[]> {
   try {
-    const response = await fetch(
+    const response = await apiFetch(
       `${process.env.NEXT_PUBLIC_API_URL}/lessons`,
       {
         headers: { Authorization: `Bearer ${accessToken}` },
@@ -206,7 +208,7 @@ export async function fetchUpcomingLessons(
 
 export async function fetchLesson(accessToken: string, lessonId: string): Promise<UpcomingLesson | null> {
   try {
-    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/lessons/${lessonId}`, {
+    const response = await apiFetch(`${process.env.NEXT_PUBLIC_API_URL}/lessons/${lessonId}`, {
       headers: { Authorization: `Bearer ${accessToken}` },
       cache: "no-store",
     });
@@ -226,7 +228,7 @@ export async function fetchLesson(accessToken: string, lessonId: string): Promis
 
 export async function fetchPastLessons(accessToken: string): Promise<UpcomingLesson[]> {
   try {
-    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/lessons?filter=past`, {
+    const response = await apiFetch(`${process.env.NEXT_PUBLIC_API_URL}/lessons?filter=past`, {
       headers: { Authorization: `Bearer ${accessToken}` },
       cache: "no-store",
     });
@@ -246,7 +248,7 @@ export async function fetchPastLessons(accessToken: string): Promise<UpcomingLes
 
 export async function cancelLesson(accessToken: string, lessonId: string): Promise<{ ok: boolean; error?: string }> {
   try {
-    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/lessons/${lessonId}`, {
+    const response = await apiFetch(`${process.env.NEXT_PUBLIC_API_URL}/lessons/${lessonId}`, {
       method: "DELETE",
       headers: { Authorization: `Bearer ${accessToken}` },
     });
@@ -270,7 +272,7 @@ export async function updateLesson(
   body: { startsAt?: string; durationMinutes?: 30 | 45 | 60; locationId?: string },
 ): Promise<{ lesson: LessonResponse } | { error: string; code?: string }> {
   try {
-    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/lessons/${lessonId}`, {
+    const response = await apiFetch(`${process.env.NEXT_PUBLIC_API_URL}/lessons/${lessonId}`, {
       method: "PATCH",
       headers: {
         "Content-Type": "application/json",
@@ -312,7 +314,7 @@ export async function fetchRangeAvailability(
     if (params.excludeLessonId !== undefined) {
       searchParams.set("excludeLessonId", params.excludeLessonId);
     }
-    const response = await fetch(
+    const response = await apiFetch(
       `${process.env.NEXT_PUBLIC_API_URL}/lessons/available-range?${searchParams.toString()}`,
       { headers: { Authorization: `Bearer ${accessToken}` } },
     );

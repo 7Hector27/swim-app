@@ -1,8 +1,10 @@
 import { ClubSchema, type Club } from "@swim-app/shared";
 
+import { apiFetch } from "./apiFetch";
+
 export async function fetchClubs(accessToken: string): Promise<Club[]> {
   try {
-    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/clubs`, {
+    const response = await apiFetch(`${process.env.NEXT_PUBLIC_API_URL}/clubs`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
     if (!response.ok) return [];

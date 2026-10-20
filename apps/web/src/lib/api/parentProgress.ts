@@ -1,3 +1,5 @@
+import { apiFetch } from "./apiFetch";
+
 import {
   ParentSwimmerProgressResponseSchema,
   type ParentSwimmerProgressResponse,
@@ -14,7 +16,7 @@ export async function fetchParentSwimmerProgress(
   accessToken: string,
 ): Promise<FetchParentSwimmerProgressResult> {
   try {
-    const response = await fetch(
+    const response = await apiFetch(
       `${process.env.NEXT_PUBLIC_API_URL}/swimmers/${swimmerId}/progress`,
       { headers: { Authorization: `Bearer ${accessToken}` } },
     );
@@ -37,7 +39,7 @@ export async function fetchParentSwimmer(
   accessToken: string,
 ): Promise<FetchParentSwimmerResult> {
   try {
-    const response = await fetch(
+    const response = await apiFetch(
       `${process.env.NEXT_PUBLIC_API_URL}/swimmers/${swimmerId}`,
       { headers: { Authorization: `Bearer ${accessToken}` } },
     );

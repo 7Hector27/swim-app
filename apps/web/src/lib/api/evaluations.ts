@@ -1,3 +1,5 @@
+import { apiFetch } from "./apiFetch";
+
 import {
   CategoriesResponseSchema,
   type CategoriesResponse,
@@ -21,7 +23,7 @@ export async function fetchSkillCategories(
   accessToken: string,
 ): Promise<FetchCategoriesResult> {
   try {
-    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/coach/categories`, {
+    const response = await apiFetch(`${process.env.NEXT_PUBLIC_API_URL}/coach/categories`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
     if (!response.ok) return { ok: false, status: response.status };
@@ -42,7 +44,7 @@ export async function fetchScreens(
   accessToken: string,
 ): Promise<FetchScreensResult> {
   try {
-    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/coach/screens`, {
+    const response = await apiFetch(`${process.env.NEXT_PUBLIC_API_URL}/coach/screens`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
     if (!response.ok) return { ok: false, status: response.status };
@@ -65,7 +67,7 @@ export async function fetchSkillRatingHistory(
   accessToken: string,
 ): Promise<FetchSkillRatingHistoryResult> {
   try {
-    const response = await fetch(
+    const response = await apiFetch(
       `${process.env.NEXT_PUBLIC_API_URL}/coach/swimmers/${swimmerId}/skills/${skillId}/ratings`,
       { headers: { Authorization: `Bearer ${accessToken}` } },
     );
@@ -88,7 +90,7 @@ export async function fetchSwimmerSkills(
   accessToken: string,
 ): Promise<FetchSwimmerSkillsResult> {
   try {
-    const response = await fetch(
+    const response = await apiFetch(
       `${process.env.NEXT_PUBLIC_API_URL}/coach/swimmers/${swimmerId}/skills`,
       { headers: { Authorization: `Bearer ${accessToken}` } },
     );
@@ -111,7 +113,7 @@ export async function fetchSwimmerProgress(
   accessToken: string,
 ): Promise<FetchSwimmerProgressResult> {
   try {
-    const response = await fetch(
+    const response = await apiFetch(
       `${process.env.NEXT_PUBLIC_API_URL}/coach/swimmers/${swimmerId}/progress`,
       { headers: { Authorization: `Bearer ${accessToken}` } },
     );
@@ -152,7 +154,7 @@ export async function voidRating(
   accessToken: string,
 ): Promise<VoidRatingResult> {
   try {
-    const response = await fetch(
+    const response = await apiFetch(
       `${process.env.NEXT_PUBLIC_API_URL}/coach/ratings/${ratingId}/void`,
       {
         method: "PATCH",

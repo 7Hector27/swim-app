@@ -1,3 +1,5 @@
+import { apiFetch } from "./apiFetch";
+
 import {
   AvailabilityConfigSchema,
   AvailabilityOverrideSchema,
@@ -55,7 +57,7 @@ export async function fetchAvailabilityConfig(
   accessToken: string,
 ): Promise<AvailabilityConfig | null> {
   try {
-    const response = await fetch(
+    const response = await apiFetch(
       `${process.env.NEXT_PUBLIC_API_URL}/coach/availability-config`,
       { headers: authHeaders(accessToken), cache: "no-store" },
     );
@@ -73,7 +75,7 @@ export async function patchAvailabilityConfig(
   body: PatchAvailabilityConfigBody,
 ): Promise<ApiResult<AvailabilityConfig>> {
   try {
-    const response = await fetch(
+    const response = await apiFetch(
       `${process.env.NEXT_PUBLIC_API_URL}/coach/availability-config`,
       {
         method: "PATCH",
@@ -95,7 +97,7 @@ export async function patchAvailabilityConfig(
 
 export async function fetchSeasons(accessToken: string): Promise<SeasonWithIsCurrent[]> {
   try {
-    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/coach/seasons`, {
+    const response = await apiFetch(`${process.env.NEXT_PUBLIC_API_URL}/coach/seasons`, {
       headers: authHeaders(accessToken),
       cache: "no-store",
     });
@@ -113,7 +115,7 @@ export async function createSeason(
   body: CreateSeasonBody,
 ): Promise<ApiResult<SeasonMutationResponse>> {
   try {
-    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/coach/seasons`, {
+    const response = await apiFetch(`${process.env.NEXT_PUBLIC_API_URL}/coach/seasons`, {
       method: "POST",
       headers: authHeaders(accessToken, true),
       body: JSON.stringify(body),
@@ -134,7 +136,7 @@ export async function patchSeason(
   body: PatchSeasonBody,
 ): Promise<ApiResult<SeasonMutationResponse>> {
   try {
-    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/coach/seasons/${id}`, {
+    const response = await apiFetch(`${process.env.NEXT_PUBLIC_API_URL}/coach/seasons/${id}`, {
       method: "PATCH",
       headers: authHeaders(accessToken, true),
       body: JSON.stringify(body),
@@ -154,7 +156,7 @@ export async function deleteSeason(
   id: string,
 ): Promise<ApiResult<SeasonDeleteResponse>> {
   try {
-    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/coach/seasons/${id}`, {
+    const response = await apiFetch(`${process.env.NEXT_PUBLIC_API_URL}/coach/seasons/${id}`, {
       method: "DELETE",
       headers: authHeaders(accessToken),
     });
@@ -172,7 +174,7 @@ export async function copyNextYear(
   accessToken: string,
 ): Promise<ApiResult<CopyNextYearResponse>> {
   try {
-    const response = await fetch(
+    const response = await apiFetch(
       `${process.env.NEXT_PUBLIC_API_URL}/coach/seasons/copy-next-year`,
       { method: "POST", headers: authHeaders(accessToken) },
     );
@@ -190,7 +192,7 @@ export async function copyNextYear(
 
 export async function fetchOverrides(accessToken: string): Promise<AvailabilityOverride[]> {
   try {
-    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/coach/overrides`, {
+    const response = await apiFetch(`${process.env.NEXT_PUBLIC_API_URL}/coach/overrides`, {
       headers: authHeaders(accessToken),
       cache: "no-store",
     });
@@ -208,7 +210,7 @@ export async function createOverride(
   body: CreateOverrideBody,
 ): Promise<ApiResult<OverrideMutationResponse>> {
   try {
-    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/coach/overrides`, {
+    const response = await apiFetch(`${process.env.NEXT_PUBLIC_API_URL}/coach/overrides`, {
       method: "POST",
       headers: authHeaders(accessToken, true),
       body: JSON.stringify(body),
@@ -229,7 +231,7 @@ export async function patchOverride(
   body: PatchOverrideBody,
 ): Promise<ApiResult<OverrideMutationResponse>> {
   try {
-    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/coach/overrides/${id}`, {
+    const response = await apiFetch(`${process.env.NEXT_PUBLIC_API_URL}/coach/overrides/${id}`, {
       method: "PATCH",
       headers: authHeaders(accessToken, true),
       body: JSON.stringify(body),
@@ -249,7 +251,7 @@ export async function deleteOverride(
   id: string,
 ): Promise<ApiResult<OverrideDeleteResponse>> {
   try {
-    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/coach/overrides/${id}`, {
+    const response = await apiFetch(`${process.env.NEXT_PUBLIC_API_URL}/coach/overrides/${id}`, {
       method: "DELETE",
       headers: authHeaders(accessToken),
     });
@@ -267,7 +269,7 @@ export async function deleteOverride(
 
 export async function fetchBlockedTimes(accessToken: string): Promise<BlockedTime[]> {
   try {
-    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/coach/blocked-times`, {
+    const response = await apiFetch(`${process.env.NEXT_PUBLIC_API_URL}/coach/blocked-times`, {
       headers: authHeaders(accessToken),
       cache: "no-store",
     });
@@ -289,7 +291,7 @@ export async function fetchAvailabilityPreview(
 ): Promise<AvailabilityPreviewResponse> {
   try {
     const url = `${process.env.NEXT_PUBLIC_API_URL}/coach/availability-preview?from=${from}&days=${days}`;
-    const response = await fetch(url, { headers: authHeaders(accessToken), cache: "no-store" });
+    const response = await apiFetch(url, { headers: authHeaders(accessToken), cache: "no-store" });
     if (!response.ok) return { days: [] };
     const body: unknown = await response.json();
     const parsed = AvailabilityPreviewResponseSchema.safeParse(body);

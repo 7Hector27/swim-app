@@ -4,6 +4,7 @@ import { MeResponseSchema } from "@swim-app/shared";
 import type { MeResponse } from "@swim-app/shared";
 
 import { createClient } from "@/lib/supabase/server";
+import { apiFetch } from "./apiFetch";
 
 type MeStatusResult = { ok: true; profile: MeResponse } | { ok: false; status: number };
 
@@ -32,7 +33,7 @@ export const fetchMe = cache(async function fetchMe(): Promise<MeResult> {
   let body: unknown = null;
 
   try {
-    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/me`, {
+    const response = await apiFetch(`${process.env.NEXT_PUBLIC_API_URL}/me`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     status = response.status;

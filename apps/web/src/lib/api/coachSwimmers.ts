@@ -7,9 +7,11 @@ import {
   type TimelineResponse,
 } from "@swim-app/shared";
 
+import { apiFetch } from "./apiFetch";
+
 export async function fetchCoachSwimmers(accessToken: string): Promise<CoachSwimmer[]> {
   try {
-    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/coach/swimmers`, {
+    const response = await apiFetch(`${process.env.NEXT_PUBLIC_API_URL}/coach/swimmers`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
     if (!response.ok) return [];
@@ -34,7 +36,7 @@ export async function fetchSwimmerTimeline(
   accessToken: string,
 ): Promise<FetchSwimmerTimelineResult> {
   try {
-    const response = await fetch(
+    const response = await apiFetch(
       `${process.env.NEXT_PUBLIC_API_URL}/coach/swimmers/${swimmerId}/timeline`,
       { headers: { Authorization: `Bearer ${accessToken}` } },
     );
@@ -60,7 +62,7 @@ export async function fetchCoachSwimmerDetail(
   accessToken: string,
 ): Promise<FetchCoachSwimmerDetailResult> {
   try {
-    const response = await fetch(
+    const response = await apiFetch(
       `${process.env.NEXT_PUBLIC_API_URL}/coach/swimmers/${swimmerId}`,
       { headers: { Authorization: `Bearer ${accessToken}` } },
     );

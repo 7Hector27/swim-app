@@ -1,3 +1,5 @@
+import { apiFetch } from "./apiFetch";
+
 import {
   MeetResponseSchema,
   MeetWithSwimsResponseSchema,
@@ -11,7 +13,7 @@ export type FetchMeetsResult = { ok: true; meets: MeetResponse[] } | { ok: false
 
 export async function fetchMeets(accessToken: string): Promise<FetchMeetsResult> {
   try {
-    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/coach/meets`, {
+    const response = await apiFetch(`${process.env.NEXT_PUBLIC_API_URL}/coach/meets`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
     if (!response.ok) return { ok: false, status: response.status };
@@ -36,7 +38,7 @@ export async function fetchMeetDetail(
   accessToken: string,
 ): Promise<FetchMeetDetailResult> {
   try {
-    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/coach/meets/${meetId}`, {
+    const response = await apiFetch(`${process.env.NEXT_PUBLIC_API_URL}/coach/meets/${meetId}`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
     if (!response.ok) return { ok: false, status: response.status };
@@ -61,7 +63,7 @@ export async function fetchSwimmerMeetSwims(
   accessToken: string,
 ): Promise<FetchSwimmerMeetSwimsResult> {
   try {
-    const response = await fetch(
+    const response = await apiFetch(
       `${process.env.NEXT_PUBLIC_API_URL}/coach/swimmers/${swimmerId}/meet-swims`,
       { headers: { Authorization: `Bearer ${accessToken}` } },
     );

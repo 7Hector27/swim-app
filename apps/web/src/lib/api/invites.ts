@@ -1,3 +1,5 @@
+import { apiFetch } from "./apiFetch";
+
 import {
   AcceptInviteResponseSchema,
   GenerateInviteResponseSchema,
@@ -9,7 +11,7 @@ import {
 
 export async function getInviteStatus(token: string): Promise<InviteStatusResponse | null> {
   try {
-    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/invites/${token}`, {
+    const response = await apiFetch(`${process.env.NEXT_PUBLIC_API_URL}/invites/${token}`, {
       cache: "no-store",
     });
     if (!response.ok) return null;
@@ -23,7 +25,7 @@ export async function getInviteStatus(token: string): Promise<InviteStatusRespon
 
 export async function generateInvite(accessToken: string): Promise<GenerateInviteResponse | null> {
   try {
-    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/households/mine/invites`, {
+    const response = await apiFetch(`${process.env.NEXT_PUBLIC_API_URL}/households/mine/invites`, {
       method: "POST",
       headers: { Authorization: `Bearer ${accessToken}` },
     });
@@ -41,7 +43,7 @@ export async function acceptInvite(
   accessToken: string,
 ): Promise<{ ok: true; data: AcceptInviteResponse } | { ok: false; error: string; code: string }> {
   try {
-    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/invites/${token}/accept`, {
+    const response = await apiFetch(`${process.env.NEXT_PUBLIC_API_URL}/invites/${token}/accept`, {
       method: "POST",
       headers: { Authorization: `Bearer ${accessToken}` },
     });
