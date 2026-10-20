@@ -354,6 +354,123 @@ describe("CoachAvailabilityContent — seasons table", () => {
   });
 });
 
+describe("CoachAvailabilityContent — edit season", () => {
+  it("edit button opens the form prefilled with the season's data", async () => {
+    renderPage();
+    const table = screen.getByRole("table");
+    fireEvent.click(within(table).getByRole("button", { name: "Edit Mid-Oct" }));
+
+    const nameInput = (await screen.findByLabelText("Name")) as HTMLInputElement;
+    expect(nameInput.value).toBe("Mid-Oct");
+
+    const dialog = nameInput.closest("dialog") as HTMLDialogElement;
+    const inDialog = within(dialog);
+    expect((inDialog.getByLabelText("Start date") as HTMLInputElement).value).toBe("2026-10-15");
+    expect(inDialog.getByRole("heading", { name: "Edit season" })).toBeInTheDocument();
+    expect(inDialog.getByRole("button", { name: "Save" })).toBeInTheDocument();
+  });
+
+  it("saving an edited season updates the row in the table", async () => {
+    mockPatchSeason.mockResolvedValue({
+      ok: true,
+      data: {
+        season: season({ id: "s-oct", name: "Mid-Oct Revised", startDate: "2026-10-15", isCurrent: true }),
+        warnings: [],
+      },
+    });
+    mockFetchPreview.mockResolvedValue(basePreview);
+    renderPage();
+
+    const table = screen.getByRole("table");
+    fireEvent.click(within(table).getByRole("button", { name: "Edit Mid-Oct" }));
+
+    const nameInput = (await screen.findByLabelText("Name")) as HTMLInputElement;
+    const dialog = nameInput.closest("dialog") as HTMLDialogElement;
+    const inDialog = within(dialog);
+
+    fireEvent.change(nameInput, { target: { value: "Mid-Oct Revised" } });
+    fireEvent.click(inDialog.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(mockPatchSeason).toHaveBeenCalledWith(
+        "s-oct",
+        expect.objectContaining({ name: "Mid-Oct Revised" }),
+      ),
+    );
+    await waitFor(() =>
+      expect(within(table).getByText("Mid-Oct Revised")).toBeInTheDocument(),
+    );
+  });
+
+  it("shows a validation error in the form when all teaching days are deselected", async () => {
+    renderPage();
+    const table = screen.getByRole("table");
+    fireEvent.click(within(table).getByRole("button", { name: "Edit Mid-Oct" }));
+
+    const nameInput = await screen.findByLabelText("Name");
+    const dialog = nameInput.closest("dialog") as HTMLDialogElement;
+    const inDialog = within(dialog);
+
+    for (const day of ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]) {
+      fireEvent.click(inDialog.getByRole("button", { name: day }));
+    }
+    fireEvent.click(inDialog.getByRole("button", { name: "Save" }));
+
+    expect(
+      inDialog.getByText("Pick at least one day Jason teaches this season."),
+    ).toBeInTheDocument();
+    expect(mockPatchSeason).not.toHaveBeenCalled();
+  });
+
+  it("surfaces the impact warning modal when editing a season returns warnings", async () => {
+    mockPatchSeason.mockResolvedValue({
+      ok: true,
+      data: {
+        season: season({ id: "s-oct", name: "Mid-Oct", startDate: "2026-10-15", isCurrent: true }),
+        warnings: [
+          {
+            lessonId: "lesson-1",
+            startsAt: "2026-10-20T22:00:00.000Z",
+            reason: "outside_hours",
+            swimmerFirstNames: ["Lily"],
+            poolName: "Sunrise Pool",
+          },
+        ],
+      },
+    });
+    mockFetchPreview.mockResolvedValue(basePreview);
+    renderPage();
+
+    const table = screen.getByRole("table");
+    fireEvent.click(within(table).getByRole("button", { name: "Edit Mid-Oct" }));
+
+    const nameInput = await screen.findByLabelText("Name");
+    const dialog = nameInput.closest("dialog") as HTMLDialogElement;
+    const inDialog = within(dialog);
+
+    fireEvent.click(inDialog.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(mockPatchSeason).toHaveBeenCalled());
+    const warningHeading = await screen.findByRole("heading", {
+      name: /booked lesson/i,
+      hidden: true,
+    });
+    expect(warningHeading).toBeInTheDocument();
+    expect(screen.getByText(/Lily/)).toBeInTheDocument();
+    expect(screen.getByText(/Sunrise Pool/)).toBeInTheDocument();
+  });
+
+  it("shows the correct year range in the desktop seasons heading", () => {
+    renderPage({
+      seasons: [
+        season({ id: "s1", name: "Fall", startDate: "2026-10-01", endDate: "2026-12-31" }),
+        season({ id: "s2", name: "Winter", startDate: "2026-12-15", endDate: "2027-01-31" }),
+      ],
+    });
+    expect(screen.getByRole("heading", { name: "2026–27 seasons" })).toBeInTheDocument();
+  });
+});
+
 describe("CoachAvailabilityContent — copy to next year", () => {
   it("prompts, calls the route, shows inserted count", async () => {
     mockCopyNextYear.mockResolvedValue({
@@ -490,7 +607,8 @@ describe("CoachAvailabilityContent — phone layout", () => {
     expect(screen.queryByRole("button", { name: "One-off changes" })).not.toBeInTheDocument();
     // Seasons card heading and current-season edit button are present
     expect(screen.getByRole("heading", { name: "Seasons" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Edit Mid-Oct" })).toBeInTheDocument();
+    // Both phone card and desktop table render an "Edit Mid-Oct" button.
+    expect(screen.getAllByRole("button", { name: "Edit Mid-Oct" }).length).toBeGreaterThan(0);
     // One-off changes heading present
     const offHeadings = screen.getAllByRole("heading", { name: "One-off changes" });
     expect(offHeadings.length).toBeGreaterThanOrEqual(1);

@@ -202,7 +202,7 @@ export default function SeasonFormModal({
           className="text-lg font-heading font-semibold text-text leading-tight"
           style={{ fontVariationSettings: '"SOFT" 100, "WONK" 0' }}
         >
-          {season === null ? "Add season" : `Edit ${season.name}`}
+          {season === null ? "Add season" : "Edit season"}
         </h2>
 
         <div className="flex flex-col gap-1">
@@ -377,7 +377,7 @@ export default function SeasonFormModal({
             disabled={isPending}
             className="inline-flex items-center justify-center h-11 px-5 rounded-button bg-button-primary-background text-button-primary-text font-bold text-sm transition-opacity duration-150 disabled:opacity-60 hover:opacity-90 active:scale-[0.97]"
           >
-            {isPending ? "Saving…" : season === null ? "Add season" : "Save season"}
+            {isPending ? "Saving…" : season === null ? "Add season" : "Save"}
           </button>
         </div>
       </form>

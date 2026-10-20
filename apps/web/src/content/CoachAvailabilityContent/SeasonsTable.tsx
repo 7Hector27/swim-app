@@ -52,7 +52,7 @@ export default function SeasonsTable({ seasons, onEdit, onDelete }: SeasonsTable
             <th className="px-5 py-3 font-semibold">Teaches</th>
             <th className="px-5 py-3 font-semibold">Weekday hours</th>
             <th className="px-5 py-3 font-semibold">Weekend hours</th>
-            <th className="px-5 py-3 font-semibold w-11" aria-label="Actions" />
+            <th className="px-3 py-3 font-semibold" aria-label="Actions" />
           </tr>
         </thead>
         <tbody>
@@ -106,13 +106,13 @@ export default function SeasonsTable({ seasons, onEdit, onDelete }: SeasonsTable
                 <td className="px-5 py-4 text-text align-middle">
                   {season.weekdayStartTime && season.weekdayEndTime
                     ? formatWindowRange(season.weekdayStartTime, season.weekdayEndTime)
-                    : "—"}
+                    : "Off"}
                 </td>
                 <td className="px-5 py-4 text-text align-middle">
                   <span className="inline-flex items-center gap-2">
                     {season.weekendStartTime && season.weekendEndTime
                       ? formatWindowRange(season.weekendStartTime, season.weekendEndTime)
-                      : "—"}
+                      : "Off"}
                     {highlight && (
                       <span
                         aria-label="Weekend start differs from weekdays"
@@ -123,21 +123,39 @@ export default function SeasonsTable({ seasons, onEdit, onDelete }: SeasonsTable
                   </span>
                 </td>
                 <td className="px-3 py-4 align-middle">
-                  <button
-                    type="button"
-                    onClick={() => onDelete(season)}
-                    aria-label={`Delete ${season.name}`}
-                    className="inline-flex items-center justify-center w-11 h-11 rounded-button text-text-secondary hover:text-danger transition-colors duration-150"
-                  >
-                    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-                      <path
-                        d="M4 6h12M8 6V4h4v2M6 6l1 10a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1l1-10"
-                        stroke="currentColor"
-                        strokeWidth="1.5"
-                        strokeLinecap="round"
-                      />
-                    </svg>
-                  </button>
+                  <div className="flex items-center">
+                    <button
+                      type="button"
+                      onClick={() => onEdit(season)}
+                      aria-label={`Edit ${season.name}`}
+                      className="inline-flex items-center justify-center w-11 h-11 rounded-button text-text-secondary hover:text-accent transition-colors duration-150"
+                    >
+                      <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                        <path
+                          d="M13.586 3.586a2 2 0 1 1 2.828 2.828L7 15.828 3 17l1.172-4L13.586 3.586z"
+                          stroke="currentColor"
+                          strokeWidth="1.5"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onDelete(season)}
+                      aria-label={`Delete ${season.name}`}
+                      className="inline-flex items-center justify-center w-11 h-11 rounded-button text-text-secondary hover:text-danger transition-colors duration-150"
+                    >
+                      <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                        <path
+                          d="M4 6h12M8 6V4h4v2M6 6l1 10a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1l1-10"
+                          stroke="currentColor"
+                          strokeWidth="1.5"
+                          strokeLinecap="round"
+                        />
+                      </svg>
+                    </button>
+                  </div>
                 </td>
               </tr>
             );
