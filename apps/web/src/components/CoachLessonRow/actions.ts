@@ -1,15 +1,10 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
+import type { CoachLessonActionState } from "./schemas";
 
-export const CoachLessonActionStateSchema = z.discriminatedUnion("status", [
-  z.object({ status: z.literal("idle") }),
-  z.object({ status: z.literal("success") }),
-  z.object({ status: z.literal("error"), message: z.string() }),
-]);
-export type CoachLessonActionState = z.infer<typeof CoachLessonActionStateSchema>;
+export type { CoachLessonActionState } from "./schemas";
 
 export async function approveLessonAction(
   lessonId: string,
@@ -17,6 +12,8 @@ export async function approveLessonAction(
   _formData: FormData,
 ): Promise<CoachLessonActionState> {
   const supabase = await createClient();
+  // getSession is called only to extract the raw access token for forwarding to
+  // the API. The API's requireUser middleware verifies the token independently.
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
   if (!token) return { status: "error", message: "Session expired. Please sign in again." };
@@ -34,9 +31,9 @@ export async function approveLessonAction(
       revalidatePath("/coach");
       return { status: "success" };
     }
-    return { status: "error", message: "Could not approve. Try again." };
+    return { status: "error", message: "Could not approve the lesson. Please try again." };
   } catch {
-    return { status: "error", message: "Could not reach the server. Try again." };
+    return { status: "error", message: "Could not reach the server. Please try again." };
   }
 }
 
@@ -46,6 +43,8 @@ export async function declineLessonAction(
   formData: FormData,
 ): Promise<CoachLessonActionState> {
   const supabase = await createClient();
+  // getSession is called only to extract the raw access token for forwarding to
+  // the API. The API's requireUser middleware verifies the token independently.
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
   if (!token) return { status: "error", message: "Session expired. Please sign in again." };
@@ -64,8 +63,8 @@ export async function declineLessonAction(
       revalidatePath("/coach");
       return { status: "success" };
     }
-    return { status: "error", message: "Could not decline. Try again." };
+    return { status: "error", message: "Could not decline the lesson. Please try again." };
   } catch {
-    return { status: "error", message: "Could not reach the server. Try again." };
+    return { status: "error", message: "Could not reach the server. Please try again." };
   }
 }

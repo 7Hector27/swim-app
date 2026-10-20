@@ -83,11 +83,13 @@ export default function CoachAvailabilityContent({
   const [config, setConfig] = useState(initialConfig);
 
   const [seasonModalOpen, setSeasonModalOpen] = useState(false);
-  const [editingSeason, setEditingSeason] = useState<SeasonWithIsCurrent | null>(null);
+  const [editingSeason, setEditingSeason] =
+    useState<SeasonWithIsCurrent | null>(null);
   const [seasonPending, setSeasonPending] = useState(false);
 
   const [overrideModalOpen, setOverrideModalOpen] = useState(false);
-  const [editingOverride, setEditingOverride] = useState<AvailabilityOverride | null>(null);
+  const [editingOverride, setEditingOverride] =
+    useState<AvailabilityOverride | null>(null);
   const [overridePending, setOverridePending] = useState(false);
 
   const [defaultHoursModalOpen, setDefaultHoursModalOpen] = useState(false);
@@ -96,12 +98,17 @@ export default function CoachAvailabilityContent({
   const [warnings, setWarnings] = useState<ImpactWarning[]>([]);
   const [warningsOpen, setWarningsOpen] = useState(false);
 
-  const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(
+    null,
+  );
   const [deletePending, setDeletePending] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const confirmDialogRef = useRef<HTMLDialogElement>(null);
 
-  const currentSeason = useMemo(() => seasons.find((season) => season.isCurrent) ?? null, [seasons]);
+  const currentSeason = useMemo(
+    () => seasons.find((season) => season.isCurrent) ?? null,
+    [seasons],
+  );
   const upcomingSeasons = useMemo(
     () => seasons.filter((season) => season.startDate > today),
     [seasons, today],
@@ -109,15 +116,26 @@ export default function CoachAvailabilityContent({
   const firstSeasonDate = useMemo(() => {
     const future = seasons.filter((season) => season.startDate >= today);
     if (future.length === 0) return null;
-    const sorted = [...future].sort((a, b) => a.startDate.localeCompare(b.startDate));
+    const sorted = [...future].sort((a, b) =>
+      a.startDate.localeCompare(b.startDate),
+    );
     return sorted[0]!.startDate;
   }, [seasons, today]);
   const { nextYearLabel, cycleLabel } = useMemo(() => {
-    const sorted = [...seasons].sort((a, b) => b.startDate.localeCompare(a.startDate));
-    const latest = sorted[0];
-    const latestYear = latest ? Number(latest.startDate.slice(0, 4)) : null;
-    const nextYear = (latestYear ?? new Date().getUTCFullYear()) + 1;
-    const label = latestYear ? `${latestYear - 1}–${String(latestYear).slice(2)} seasons` : "Seasons";
+    if (seasons.length === 0) {
+      const nextYear = new Date().getUTCFullYear() + 1;
+      return { nextYearLabel: `${nextYear}`, cycleLabel: "Seasons" };
+    }
+    const startYears = seasons.map((s) => Number(s.startDate.slice(0, 4)));
+    const endYears = seasons.map((s) => Number(s.endDate.slice(0, 4)));
+    const minYear = Math.min(...startYears);
+    const maxYear = Math.max(...endYears);
+    const latestStartYear = Math.max(...startYears);
+    const nextYear = latestStartYear + 1;
+    const label =
+      minYear === maxYear
+        ? `${minYear} seasons`
+        : `${minYear}–${String(maxYear).slice(2)} seasons`;
     return { nextYearLabel: `${nextYear}`, cycleLabel: label };
   }, [seasons]);
 
@@ -174,7 +192,8 @@ export default function CoachAvailabilityContent({
     try {
       if (mode === "create") {
         const result = await createSeasonAction(body as CreateSeasonBody);
-        if (!result.ok) return apiErrorMessage(result.code, result.conflictingSeasonName);
+        if (!result.ok)
+          return apiErrorMessage(result.code, result.conflictingSeasonName);
         setSeasons((prev) => {
           const next = [...prev, result.data.season].sort((a, b) =>
             a.startDate.localeCompare(b.startDate),
@@ -187,11 +206,17 @@ export default function CoachAvailabilityContent({
         return null;
       }
       if (!editingSeason) return "Season no longer exists.";
-      const result = await patchSeasonAction(editingSeason.id, body as PatchSeasonBody);
-      if (!result.ok) return apiErrorMessage(result.code, result.conflictingSeasonName);
+      const result = await patchSeasonAction(
+        editingSeason.id,
+        body as PatchSeasonBody,
+      );
+      if (!result.ok)
+        return apiErrorMessage(result.code, result.conflictingSeasonName);
       setSeasons((prev) => {
         const next = prev
-          .map((season) => (season.id === editingSeason.id ? result.data.season : season))
+          .map((season) =>
+            season.id === editingSeason.id ? result.data.season : season,
+          )
           .sort((a, b) => a.startDate.localeCompare(b.startDate));
         return withIsCurrent(next, today);
       });
@@ -245,7 +270,9 @@ export default function CoachAvailabilityContent({
           setDeleteError(apiErrorMessage(result.code));
           return;
         }
-        setOverrides((prev) => prev.filter((row) => row.id !== pendingDelete.override.id));
+        setOverrides((prev) =>
+          prev.filter((row) => row.id !== pendingDelete.override.id),
+        );
         if (result.data.warnings.length > 0) setWarnings(result.data.warnings);
       }
       setPendingDelete(null);
@@ -255,13 +282,17 @@ export default function CoachAvailabilityContent({
     }
   }
 
-  async function handleCopyNextYear(): Promise<{ insertedCount: number } | { error: string }> {
+  async function handleCopyNextYear(): Promise<
+    { insertedCount: number } | { error: string }
+  > {
     const result = await copyNextYearAction();
     if (!result.ok) return { error: apiErrorMessage(result.code) };
     const inserted = result.data.inserted;
     if (inserted.length > 0) {
       setSeasons((prev) => {
-        const next = [...prev, ...inserted].sort((a, b) => a.startDate.localeCompare(b.startDate));
+        const next = [...prev, ...inserted].sort((a, b) =>
+          a.startDate.localeCompare(b.startDate),
+        );
         return withIsCurrent(next, today);
       });
       await refreshPreview(weekStart);
@@ -279,7 +310,9 @@ export default function CoachAvailabilityContent({
         const result = await createOverrideAction(body as CreateOverrideBody);
         if (!result.ok) return apiErrorMessage(result.code);
         setOverrides((prev) =>
-          [...prev, result.data.override].sort((a, b) => a.startDate.localeCompare(b.startDate)),
+          [...prev, result.data.override].sort((a, b) =>
+            a.startDate.localeCompare(b.startDate),
+          ),
         );
         if (result.data.warnings.length > 0) setWarnings(result.data.warnings);
         setOverrideModalOpen(false);
@@ -287,11 +320,16 @@ export default function CoachAvailabilityContent({
         return null;
       }
       if (!editingOverride) return "That one-off change no longer exists.";
-      const result = await patchOverrideAction(editingOverride.id, body as PatchOverrideBody);
+      const result = await patchOverrideAction(
+        editingOverride.id,
+        body as PatchOverrideBody,
+      );
       if (!result.ok) return apiErrorMessage(result.code);
       setOverrides((prev) =>
         prev
-          .map((row) => (row.id === editingOverride.id ? result.data.override : row))
+          .map((row) =>
+            row.id === editingOverride.id ? result.data.override : row,
+          )
           .sort((a, b) => a.startDate.localeCompare(b.startDate)),
       );
       if (result.data.warnings.length > 0) setWarnings(result.data.warnings);
@@ -340,9 +378,12 @@ export default function CoachAvailabilityContent({
         {/* Header */}
         <div className="flex flex-col gap-3 tablet:flex-row tablet:items-start tablet:justify-between">
           <div>
-            <h1 className="text-3xl tablet:text-4xl text-heading">Teaching hours</h1>
+            <h1 className="text-3xl tablet:text-4xl text-heading">
+              Teaching hours
+            </h1>
             <p className="mt-2 text-sm text-text-secondary">
-              Set your hours by season. Each season runs until the next one starts.
+              Your default hours apply all year. Add a season to change them for
+              a set range of dates.{" "}
             </p>
           </div>
           <div className="hidden tablet:flex items-center gap-3 flex-shrink-0 flex-wrap">
@@ -379,19 +420,20 @@ export default function CoachAvailabilityContent({
             </h2>
 
             {currentSeason ? (
-              <SeasonCard season={currentSeason} onEdit={() => openEditSeason(currentSeason)} />
+              <SeasonCard
+                season={currentSeason}
+                onEdit={() => openEditSeason(currentSeason)}
+              />
             ) : (
               <p className="text-sm text-text-secondary">
-                No season active right now — your default hours above are in effect. Add a season
-                to override them for a stretch.
+                No season active right now — your default hours above are in
+                effect. Add a season to override them for a stretch.
               </p>
             )}
 
             {upcomingSeasons.length > 0 && (
               <div className="flex flex-col gap-3">
-                <h3
-                  className="text-sm font-semibold text-text-secondary uppercase tracking-widest"
-                >
+                <h3 className="text-sm font-semibold text-text-secondary uppercase tracking-widest">
                   Coming up
                 </h3>
                 <ul className="flex flex-col gap-2">
@@ -410,7 +452,12 @@ export default function CoachAvailabilityContent({
                             {upcomingSummary(season)}
                           </p>
                         </div>
-                        <span className="text-text-secondary" aria-hidden="true">›</span>
+                        <span
+                          className="text-text-secondary"
+                          aria-hidden="true"
+                        >
+                          ›
+                        </span>
                       </button>
                     </li>
                   ))}
@@ -553,7 +600,11 @@ export default function CoachAvailabilityContent({
 
       {/* The form the ConfirmDialog's submit button targets. Lives outside the
           dialog so React keeps the handler attached across open/close cycles. */}
-      <form id="availability-delete-form" onSubmit={handleConfirmDelete} className="hidden" />
+      <form
+        id="availability-delete-form"
+        onSubmit={handleConfirmDelete}
+        className="hidden"
+      />
       <ConfirmDialog
         dialogRef={confirmDialogRef}
         title={confirmTitle}
@@ -571,7 +622,11 @@ export default function CoachAvailabilityContent({
 }
 
 function monthDay(dateIso: string): string {
-  const [year, month, day] = dateIso.split("-").map(Number) as [number, number, number];
+  const [year, month, day] = dateIso.split("-").map(Number) as [
+    number,
+    number,
+    number,
+  ];
   const date = new Date(Date.UTC(year, month - 1, day));
   return new Intl.DateTimeFormat("en-US", {
     timeZone: "UTC",
@@ -579,4 +634,3 @@ function monthDay(dateIso: string): string {
     day: "numeric",
   }).format(date);
 }
-

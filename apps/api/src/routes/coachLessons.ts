@@ -6,7 +6,10 @@ import type {
   CoachListLessonsQuery,
   CoachNoteResponse,
   CoachScheduleItem,
+  CoachScheduleLessonItem,
   CoachScheduleQuery,
+  CoachWeekScheduleQuery,
+  CoachWeekScheduleResponse,
   DeclineLessonBody,
   LessonResponse,
   LessonSwimmer,
@@ -14,6 +17,7 @@ import type {
 import {
   CoachListLessonsQuerySchema,
   CoachScheduleQuerySchema,
+  CoachWeekScheduleQuerySchema,
   DeclineLessonBodySchema,
 } from "@swim-app/shared";
 import { db } from "../db/client";
@@ -279,6 +283,157 @@ coachLessonsRouter.get(
     });
 
     res.json(items);
+  }),
+);
+
+// ── GET /coach/schedule/week ──────────────────────────────────────────────────
+
+coachLessonsRouter.get(
+  "/schedule/week",
+  validate({ query: CoachWeekScheduleQuerySchema }),
+  asyncHandler(async (req, res) => {
+    const query = req.query as unknown as CoachWeekScheduleQuery;
+    const startDate = query.startDate;
+
+    // Parse the startDate into year/month/day integers for UTC arithmetic.
+    const [yearStr, monthStr, dayStr] = startDate.split("-");
+    const year = parseInt(yearStr!, 10);
+    const month = parseInt(monthStr!, 10);
+    const day = parseInt(dayStr!, 10);
+
+    // Build 7 date strings (startDate + 0..6 days) using UTC arithmetic.
+    const dateStrings: string[] = Array.from({ length: 7 }, (_, index) =>
+      new Date(Date.UTC(year, month - 1, day + index)).toISOString().slice(0, 10),
+    );
+
+    const endDate = dateStrings[6]!;
+
+    // 1. Load all lessons for the 7-day window in one query.
+    const lessonRows = await db
+      .select({
+        id: lessons.id,
+        householdId: lessons.householdId,
+        locationId: lessons.locationId,
+        locationName: lessonLocations.name,
+        startsAt: lessons.startsAt,
+        durationMinutes: lessons.durationMinutes,
+        type: lessons.type,
+        status: lessons.status,
+        expiresAt: lessons.expiresAt,
+        approvedAt: lessons.approvedAt,
+        declinedAt: lessons.declinedAt,
+        declineReason: lessons.declineReason,
+        movedAt: lessons.movedAt,
+        previousStartsAt: lessons.previousStartsAt,
+        createdAt: lessons.createdAt,
+      })
+      .from(lessons)
+      .innerJoin(lessonLocations, eq(lessons.locationId, lessonLocations.id))
+      .where(
+        and(
+          inArray(lessons.status, ["pending", "approved"]),
+          sql`date_trunc('day', ${lessons.startsAt} AT TIME ZONE 'America/Los_Angeles') >= ${startDate}::date`,
+          sql`date_trunc('day', ${lessons.startsAt} AT TIME ZONE 'America/Los_Angeles') < ${endDate}::date + interval '1 day'`,
+        ),
+      )
+      .orderBy(asc(lessons.startsAt));
+
+    const lessonIds = lessonRows.map((row) => row.id);
+
+    // 2. Load swimmers for those lessons (with club names, deduplicated).
+    const rawSwimmerRows =
+      lessonIds.length > 0
+        ? await db
+            .select({
+              lessonId: lessonSwimmers.lessonId,
+              swimmerId: lessonSwimmers.swimmerId,
+              firstName: swimmers.firstName,
+              lastName: swimmers.lastName,
+              clubName: clubs.name,
+              otherClubName: swimmerClubs.otherClubName,
+            })
+            .from(lessonSwimmers)
+            .innerJoin(swimmers, eq(lessonSwimmers.swimmerId, swimmers.id))
+            .leftJoin(swimmerClubs, eq(swimmers.id, swimmerClubs.swimmerId))
+            .leftJoin(clubs, eq(swimmerClubs.clubId, clubs.id))
+            .where(inArray(lessonSwimmers.lessonId, lessonIds))
+        : [];
+
+    // Deduplicate: one row per lessonId+swimmerId (take first club found).
+    const swimmersByLesson = new Map<string, CoachLessonSwimmer[]>();
+    const seenSwimmerKeys = new Set<string>();
+    for (const row of rawSwimmerRows) {
+      const key = `${row.lessonId}:${row.swimmerId}`;
+      if (!seenSwimmerKeys.has(key)) {
+        seenSwimmerKeys.add(key);
+        const list = swimmersByLesson.get(row.lessonId) ?? [];
+        list.push({
+          swimmerId: row.swimmerId,
+          firstName: row.firstName,
+          lastName: row.lastName,
+          clubName: row.clubName ?? row.otherClubName ?? null,
+        });
+        swimmersByLesson.set(row.lessonId, list);
+      }
+    }
+
+    // 3. Group lessons by LA calendar date.
+    const itemsByDate = new Map<string, CoachScheduleLessonItem[]>();
+    for (const dateStr of dateStrings) {
+      itemsByDate.set(dateStr, []);
+    }
+
+    for (const row of lessonRows) {
+      // Determine the LA calendar date for this lesson.
+      const parts = new Intl.DateTimeFormat("en-US", {
+        timeZone: "America/Los_Angeles",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).formatToParts(row.startsAt);
+
+      const partMap: Record<string, string> = {};
+      for (const part of parts) {
+        partMap[part.type] = part.value;
+      }
+      const laDate = `${partMap["year"]!}-${partMap["month"]!}-${partMap["day"]!}`;
+
+      const dayItems = itemsByDate.get(laDate);
+      if (dayItems !== undefined) {
+        dayItems.push({
+          type: "lesson",
+          lesson: {
+            id: row.id,
+            householdId: row.householdId,
+            locationId: row.locationId,
+            startsAt: row.startsAt.toISOString(),
+            durationMinutes: row.durationMinutes as 30 | 45 | 60,
+            type: row.type,
+            status: row.status,
+            swimmers: swimmersByLesson.get(row.id) ?? [],
+            expiresAt: row.expiresAt?.toISOString() ?? null,
+            approvedAt: row.approvedAt?.toISOString() ?? null,
+            declinedAt: row.declinedAt?.toISOString() ?? null,
+            declineReason: row.declineReason ?? null,
+            movedAt: row.movedAt?.toISOString() ?? null,
+            previousStartsAt: row.previousStartsAt?.toISOString() ?? null,
+            createdAt: row.createdAt.toISOString(),
+          },
+          locationName: row.locationName,
+          householdId: row.householdId,
+        });
+      }
+    }
+
+    // 4. Build response with all 7 days.
+    const body: CoachWeekScheduleResponse = {
+      days: dateStrings.map((dateStr) => ({
+        date: dateStr,
+        items: itemsByDate.get(dateStr) ?? [],
+      })),
+    };
+
+    res.json(body);
   }),
 );
 

@@ -3,6 +3,9 @@
 import { useRef, useEffect } from "react";
 import type { WeekDayAvailability } from "@swim-app/shared";
 
+// pb-4 (16 px) clears the native horizontal scrollbar on Windows (≤17 px); pt/px-1 protect the focus ring.
+const STRIP_PADDING = "pt-1 pb-4 px-1" as const;
+
 interface Props {
   days: WeekDayAvailability[];
   selectedDayDate: string | null;
@@ -36,17 +39,21 @@ export default function PhoneDayStrip({
   onDaySelect,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const isFirstScrollRef = useRef(true);
 
   useEffect(() => {
     if (!selectedDayDate || !containerRef.current) return;
     const btn = containerRef.current.querySelector<HTMLElement>(
       `[data-date="${selectedDayDate}"]`,
     );
-    btn?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+    const isFirst = isFirstScrollRef.current;
+    isFirstScrollRef.current = false;
+    // "auto" on mount avoids a visible scroll animation on every page load.
+    btn?.scrollIntoView({ behavior: isFirst ? "auto" : "smooth", inline: "center", block: "nearest" });
   }, [selectedDayDate]);
 
   return (
-    <div ref={containerRef} className="flex overflow-x-auto gap-2 pb-1">
+    <div ref={containerRef} className={`flex overflow-x-auto gap-2 snap-x snap-mandatory scroll-pl-1 ${STRIP_PADDING}`}>
       {days.map((day) => {
         const isSelected = day.date === selectedDayDate;
         const isToday = day.date === todayStr;
@@ -59,7 +66,7 @@ export default function PhoneDayStrip({
             onClick={() => onDaySelect(day.date)}
             aria-current={isToday ? "date" : undefined}
             aria-pressed={isSelected}
-            className={`min-h-[44px] min-w-[60px] flex flex-col items-center justify-center rounded-button border px-2 py-1 text-xs flex-shrink-0 transition-colors duration-100 motion-reduce:transition-none ${
+            className={`min-h-[44px] min-w-[60px] flex flex-col items-center justify-center rounded-button border px-2 py-1 text-xs flex-shrink-0 snap-start transition-colors duration-100 motion-reduce:transition-none ${
               isSelected
                 ? "border-accent text-accent bg-accent/10"
                 : "border-border text-text-secondary hover:bg-surface-soft"

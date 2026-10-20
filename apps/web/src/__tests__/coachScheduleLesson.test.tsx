@@ -7,12 +7,12 @@ vi.mock("@/components/ConfirmDialog", () => ({
 vi.mock("@/components/LessonStatusBadge", () => ({
   default: () => null,
 }));
-vi.mock("../content/CoachScheduleContent/actions", () => ({
+vi.mock("@/components/CoachLessonRow/actions", () => ({
   approveLessonAction: vi.fn().mockResolvedValue({ status: "idle" }),
   declineLessonAction: vi.fn().mockResolvedValue({ status: "idle" }),
 }));
 
-import CoachLessonRow from "../content/CoachScheduleContent/CoachLessonRow";
+import CoachLessonRow from "@/components/CoachLessonRow";
 import type { CoachScheduleLessonItem } from "@swim-app/shared";
 
 const LESSON_ID = "aaaaaaaa-0000-4000-8000-000000000001";
@@ -67,7 +67,7 @@ describe("CoachLessonRow — club name on schedule", () => {
     expect(screen.queryByText(/NCAP/)).toBeNull();
   });
 
-  it("shows club name on its own line when swimmer has a club", () => {
+  it("shows club name when swimmer has a club", () => {
     const withClub: CoachScheduleLessonItem = {
       ...privateItem,
       lesson: {
@@ -79,9 +79,9 @@ describe("CoachLessonRow — club name on schedule", () => {
     };
     renderRow(withClub);
     expect(screen.getByText("NCAP")).toBeInTheDocument();
-    // club name is separate from the swimmer name line
     expect(screen.queryByText(/Morgan \(NCAP\)/)).toBeNull();
-    expect(screen.getByText(/Morgan, 30 min/)).toBeInTheDocument();
+    expect(screen.getByText("Morgan")).toBeInTheDocument();
+    expect(screen.getByText(/30 min/)).toBeInTheDocument();
   });
 
   it("shows both club names for a family lesson with different clubs", () => {
@@ -108,7 +108,7 @@ describe("CoachLessonRow — club name on schedule", () => {
   });
 });
 
-describe("CoachLessonRow — Evaluate buttons", () => {
+describe("CoachLessonRow — Evaluate links", () => {
   it("renders an Evaluate link for a private lesson", () => {
     renderRow(privateItem);
     const link = screen.getByRole("link", { name: "Evaluate Morgan" });
@@ -123,7 +123,7 @@ describe("CoachLessonRow — Evaluate buttons", () => {
     expect(timmyLink).toHaveAttribute("href", `/coach/swimmers/${SWIMMER_B_ID}/evaluate`);
   });
 
-  it("hides Evaluate buttons for a canceled lesson", () => {
+  it("hides Evaluate links for a canceled lesson", () => {
     const canceledItem: CoachScheduleLessonItem = {
       ...privateItem,
       lesson: { ...privateItem.lesson, status: "canceled" },
@@ -132,7 +132,7 @@ describe("CoachLessonRow — Evaluate buttons", () => {
     expect(screen.queryByRole("link", { name: /Evaluate/ })).toBeNull();
   });
 
-  it("hides Evaluate buttons for a declined lesson", () => {
+  it("hides Evaluate links for a declined lesson", () => {
     const declinedItem: CoachScheduleLessonItem = {
       ...privateItem,
       lesson: { ...privateItem.lesson, status: "declined", declinedAt: STARTS_AT },
@@ -141,7 +141,7 @@ describe("CoachLessonRow — Evaluate buttons", () => {
     expect(screen.queryByRole("link", { name: /Evaluate/ })).toBeNull();
   });
 
-  it("shows Evaluate buttons for approved, pending, completed, and no_show lessons", () => {
+  it("shows Evaluate links for approved, pending, completed, and no_show lessons", () => {
     const statuses = ["approved", "pending", "completed", "no_show"] as const;
     for (const status of statuses) {
       const { unmount } = render(
@@ -150,5 +150,13 @@ describe("CoachLessonRow — Evaluate buttons", () => {
       expect(screen.getByRole("link", { name: "Evaluate Morgan" })).toBeInTheDocument();
       unmount();
     }
+  });
+});
+
+describe("CoachLessonRow — Open lesson link", () => {
+  it("renders an Open lesson link pointing to the lesson page", () => {
+    renderRow(privateItem);
+    const link = screen.getByRole("link", { name: "Open lesson" });
+    expect(link).toHaveAttribute("href", `/coach/lessons/${LESSON_ID}`);
   });
 });

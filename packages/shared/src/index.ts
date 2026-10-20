@@ -209,6 +209,9 @@ export type {
   CoachScheduleLessonItem,
   CoachScheduleItem,
   CoachLessonDetail,
+  CoachWeekScheduleQuery,
+  CoachWeekScheduleDay,
+  CoachWeekScheduleResponse,
 } from "./schemas/booking";
 export {
   SlotStateSchema,
@@ -239,6 +242,9 @@ export {
   CoachScheduleLessonItemSchema,
   CoachScheduleItemSchema,
   CoachLessonDetailSchema,
+  CoachWeekScheduleQuerySchema,
+  CoachWeekScheduleDaySchema,
+  CoachWeekScheduleResponseSchema,
 } from "./schemas/booking";
 
 export type {
