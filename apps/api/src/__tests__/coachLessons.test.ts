@@ -1,6 +1,7 @@
 import { vi, describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
 import request from "supertest";
 import pino from "pino";
+import { CoachScheduleItemSchema } from "@swim-app/shared";
 
 // ── IDs ───────────────────────────────────────────────────────────────────────
 
@@ -595,6 +596,70 @@ describe("GET /coach/schedule", () => {
       .get(`/coach/schedule?date=${dateStr}`)
       .set("Authorization", "Bearer token");
     expect(res.status).toBe(422);
+  });
+
+  it("response body matches CoachScheduleItemSchema", async () => {
+    authAsCoach();
+
+    const lessonA = {
+      id: LESSON_ID,
+      householdId: HOUSEHOLD_ID,
+      locationId: LOCATION_ID,
+      locationName: "Egret Park",
+      startsAt: new Date("2025-09-15T21:30:00.000Z"),
+      durationMinutes: 30,
+      type: "private" as const,
+      status: "approved" as const,
+      expiresAt: null as Date | null,
+      approvedAt: new Date("2025-09-14T00:00:00.000Z") as Date | null,
+      declinedAt: null as Date | null,
+      declineReason: null as string | null,
+      movedAt: null as Date | null,
+      previousStartsAt: null as Date | null,
+      createdAt: now,
+    };
+
+    const lessonsOrderBy = vi.fn().mockResolvedValue([lessonA]);
+    const lessonsWhere = vi.fn().mockReturnValue({ orderBy: lessonsOrderBy });
+    const lessonsInnerJoin = vi.fn().mockReturnValue({ where: lessonsWhere });
+    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ innerJoin: lessonsInnerJoin }) });
+
+    const swimmerWhere = vi.fn().mockResolvedValue([
+      { lessonId: LESSON_ID, swimmerId: SWIMMER_ID, firstName: "Alice", lastName: "Smith", clubName: null, otherClubName: null },
+    ]);
+    const swimmerLeftJoin2 = vi.fn().mockReturnValue({ where: swimmerWhere });
+    const swimmerLeftJoin1 = vi.fn().mockReturnValue({ leftJoin: swimmerLeftJoin2 });
+    const swimmerInnerJoin = vi.fn().mockReturnValue({ leftJoin: swimmerLeftJoin1 });
+    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ innerJoin: swimmerInnerJoin }) });
+
+    const configLimit = vi.fn().mockResolvedValue([configRow]);
+    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ limit: configLimit }) });
+    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockResolvedValue([]) }); // travelBufferOverrides
+    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockResolvedValue([]) }); // blockedTimes
+    const existingWhere = vi.fn().mockResolvedValue([
+      { startsAt: lessonA.startsAt, durationMinutes: 30, locationId: LOCATION_ID },
+    ]);
+    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: existingWhere }) });
+    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockResolvedValue([]) }); // availabilitySeasons
+    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockResolvedValue([]) }); // availabilityOverrides
+
+    const poolWhere = vi.fn().mockResolvedValue([]);
+    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: poolWhere }) });
+
+    mockComputeSlots.mockReturnValue([]);
+    mockMergeSlotWindows.mockReturnValue([]);
+
+    const res = await request(app)
+      .get("/coach/schedule?date=2025-09-15")
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(200);
+    const parsed = CoachScheduleItemSchema.array().safeParse(res.body);
+    if (!parsed.success) {
+      const detail = parsed.error.issues.map((issue) => `${issue.path.join(".")} (${issue.message})`).join("; ");
+      throw new Error(`Response did not match CoachScheduleItemSchema: ${detail}`);
+    }
+    expect(parsed.data.some((item) => item.type === "lesson")).toBe(true);
   });
 });
 

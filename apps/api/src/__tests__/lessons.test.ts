@@ -1,6 +1,7 @@
 import { vi, describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
 import request from "supertest";
 import pino from "pino";
+import { UpcomingLessonSchema } from "@swim-app/shared";
 
 // ── IDs ───────────────────────────────────────────────────────────────────────
 
@@ -398,6 +399,51 @@ describe("GET /lessons", () => {
       .set("Authorization", "Bearer token");
 
     expect(res.status).toBe(403);
+  });
+
+  it("response body matches UpcomingLessonSchema", async () => {
+    authAs(parentProfile);
+    mockDbSelect.mockReturnValueOnce(requireUserSelect(parentProfile));
+    mockDbSelect.mockReturnValueOnce(requireHouseholdMemberSelect());
+
+    const lessonJoinRow = {
+      id: LESSON_ID,
+      householdId: HOUSEHOLD_ID,
+      locationId: LOCATION_NAMED_ID,
+      locationName: "Egret Park",
+      startsAt: futureStart,
+      durationMinutes: 30,
+      type: "private" as const,
+      status: "pending" as const,
+      expiresAt: new Date(futureStart.getTime() - 16 * 60 * 60 * 1000),
+      approvedAt: null as Date | null,
+      declinedAt: null as Date | null,
+      declineReason: null as string | null,
+      movedAt: null as Date | null,
+      previousStartsAt: null as Date | null,
+      createdAt: now,
+    };
+    const lessonsLimit = vi.fn().mockResolvedValue([lessonJoinRow]);
+    const lessonsOrderBy = vi.fn().mockReturnValue({ limit: lessonsLimit });
+    const lessonsWhere = vi.fn().mockReturnValue({ orderBy: lessonsOrderBy });
+    const lessonsInnerJoin = vi.fn().mockReturnValue({ where: lessonsWhere });
+    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ innerJoin: lessonsInnerJoin }) });
+
+    const swimWhere = vi.fn().mockResolvedValue([{ lessonId: LESSON_ID, swimmerId: SWIMMER_ID, firstName: "Alice", lastName: "Smith" }]);
+    const swimInnerJoin = vi.fn().mockReturnValue({ where: swimWhere });
+    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ innerJoin: swimInnerJoin }) });
+
+    const res = await request(app)
+      .get("/lessons")
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(200);
+    const parsed = UpcomingLessonSchema.array().safeParse(res.body);
+    if (!parsed.success) {
+      const detail = parsed.error.issues.map((issue) => `${issue.path.join(".")} (${issue.message})`).join("; ");
+      throw new Error(`Response did not match UpcomingLessonSchema: ${detail}`);
+    }
+    expect(parsed.data).toHaveLength(1);
   });
 });
 

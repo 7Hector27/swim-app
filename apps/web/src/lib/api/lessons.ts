@@ -30,7 +30,8 @@ export async function fetchLocations(accessToken: string): Promise<LessonLocatio
     const body: unknown = await response.json();
     const parsed = LessonLocationSchema.array().safeParse(body);
     if (!parsed.success) {
-      console.warn("fetchLocations: 200 response did not match LessonLocationSchema.array()");
+      const detail = parsed.error.issues.map((issue) => `${issue.path.join(".")} (${issue.message})`).join("; ");
+      console.warn(`fetchLocations: response shape mismatch — ${detail}`);
       return [];
     }
     return parsed.data;
@@ -59,7 +60,8 @@ export async function fetchAvailableSlots(
     const body: unknown = await response.json();
     const parsed = AvailableSlotSchema.array().safeParse(body);
     if (!parsed.success) {
-      console.warn("fetchAvailableSlots: 200 response did not match AvailableSlotSchema.array()");
+      const detail = parsed.error.issues.map((issue) => `${issue.path.join(".")} (${issue.message})`).join("; ");
+      console.warn(`fetchAvailableSlots: response shape mismatch — ${detail}`);
       return null;
     }
     return parsed.data;
@@ -80,7 +82,8 @@ export async function coachGetPendingLessons(accessToken: string): Promise<Lesso
     const body: unknown = await response.json();
     const parsed = LessonResponseSchema.array().safeParse(body);
     if (!parsed.success) {
-      console.warn("coachGetPendingLessons: 200 response did not match LessonResponseSchema.array()");
+      const detail = parsed.error.issues.map((issue) => `${issue.path.join(".")} (${issue.message})`).join("; ");
+      console.warn(`coachGetPendingLessons: response shape mismatch — ${detail}`);
       return [];
     }
     return parsed.data;
@@ -105,7 +108,8 @@ export async function fetchCoachSchedule(
     const body: unknown = await response.json();
     const parsed = CoachScheduleItemSchema.array().safeParse(body);
     if (!parsed.success) {
-      console.warn("fetchCoachSchedule: 200 response did not match CoachScheduleItemSchema.array()");
+      const detail = parsed.error.issues.map((issue) => `${issue.path.join(".")} (${issue.message})`).join("; ");
+      console.warn(`fetchCoachSchedule: response shape mismatch — ${detail}`);
       return [];
     }
     return parsed.data;
@@ -127,7 +131,8 @@ export async function fetchCoachLesson(
     const body: unknown = await response.json();
     const parsed = CoachLessonDetailSchema.safeParse(body);
     if (!parsed.success) {
-      console.warn("fetchCoachLesson: 200 response did not match CoachLessonDetailSchema");
+      const detail = parsed.error.issues.map((issue) => `${issue.path.join(".")} (${issue.message})`).join("; ");
+      console.warn(`fetchCoachLesson: response shape mismatch — ${detail}`);
       return null;
     }
     return parsed.data;
@@ -164,7 +169,8 @@ export async function fetchCoachStats(accessToken: string): Promise<CoachStats |
     const body: unknown = await response.json();
     const parsed = CoachStatsSchema.safeParse(body);
     if (!parsed.success) {
-      console.warn("fetchCoachStats: response did not match CoachStatsSchema");
+      const detail = parsed.error.issues.map((issue) => `${issue.path.join(".")} (${issue.message})`).join("; ");
+      console.warn(`fetchCoachStats: response shape mismatch — ${detail}`);
       return null;
     }
     return parsed.data;
@@ -188,7 +194,8 @@ export async function fetchUpcomingLessons(
     const body: unknown = await response.json();
     const parsed = UpcomingLessonSchema.array().safeParse(body);
     if (!parsed.success) {
-      console.warn("fetchUpcomingLessons: 200 response did not match UpcomingLessonSchema.array()");
+      const detail = parsed.error.issues.map((issue) => `${issue.path.join(".")} (${issue.message})`).join("; ");
+      console.warn(`fetchUpcomingLessons: response shape mismatch — ${detail}`);
       return [];
     }
     return parsed.data;
@@ -207,7 +214,8 @@ export async function fetchLesson(accessToken: string, lessonId: string): Promis
     const body: unknown = await response.json();
     const parsed = UpcomingLessonSchema.safeParse(body);
     if (!parsed.success) {
-      console.warn("fetchLesson: 200 response did not match UpcomingLessonSchema");
+      const detail = parsed.error.issues.map((issue) => `${issue.path.join(".")} (${issue.message})`).join("; ");
+      console.warn(`fetchLesson: response shape mismatch — ${detail}`);
       return null;
     }
     return parsed.data;
@@ -226,7 +234,8 @@ export async function fetchPastLessons(accessToken: string): Promise<UpcomingLes
     const body: unknown = await response.json();
     const parsed = UpcomingLessonSchema.array().safeParse(body);
     if (!parsed.success) {
-      console.warn("fetchPastLessons: response did not match UpcomingLessonSchema.array()");
+      const detail = parsed.error.issues.map((issue) => `${issue.path.join(".")} (${issue.message})`).join("; ");
+      console.warn(`fetchPastLessons: response shape mismatch — ${detail}`);
       return [];
     }
     return parsed.data;
@@ -312,14 +321,16 @@ export async function fetchRangeAvailability(
     if (params.view === "week") {
       const parsed = WeekAvailabilityResponseSchema.safeParse(body);
       if (!parsed.success) {
-        console.warn("fetchRangeAvailability: week response did not match WeekAvailabilityResponseSchema");
+        const detail = parsed.error.issues.map((issue) => `${issue.path.join(".")} (${issue.message})`).join("; ");
+        console.warn(`fetchRangeAvailability: week response shape mismatch — ${detail}`);
         return null;
       }
       return parsed.data;
     }
     const parsed = MonthAvailabilityResponseSchema.safeParse(body);
     if (!parsed.success) {
-      console.warn("fetchRangeAvailability: month response did not match MonthAvailabilityResponseSchema");
+      const detail = parsed.error.issues.map((issue) => `${issue.path.join(".")} (${issue.message})`).join("; ");
+      console.warn(`fetchRangeAvailability: month response shape mismatch — ${detail}`);
       return null;
     }
     return parsed.data;
