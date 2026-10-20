@@ -12,7 +12,6 @@ const validSwimmer = {
   birthDate: "2010-05-01",
   sex: "female",
   isPublic: false,
-  publicConsentAt: null,
   createdAt: "2025-01-01T00:00:00.000Z",
   updatedAt: "2025-01-01T00:00:00.000Z",
   clubs: [],

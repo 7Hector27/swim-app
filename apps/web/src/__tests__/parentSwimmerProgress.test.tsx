@@ -20,7 +20,6 @@ const swimmer: ParentSwimmer = {
   birthDate: "2012-01-01",
   sex: "female",
   isPublic: false,
-  publicConsentAt: null,
   createdAt: "2024-01-01T00:00:00.000Z",
   updatedAt: "2024-01-01T00:00:00.000Z",
   clubs: [],

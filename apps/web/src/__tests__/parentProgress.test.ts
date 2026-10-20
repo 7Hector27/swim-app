@@ -20,7 +20,6 @@ const makeSwimmer = (id: string): ParentSwimmer => ({
   birthDate: "2015-06-01",
   sex: "male",
   isPublic: false,
-  publicConsentAt: null,
   createdAt: "2024-01-01T00:00:00.000Z",
   updatedAt: "2024-01-01T00:00:00.000Z",
   clubs: [],
