@@ -12,7 +12,7 @@ import { decryptToken } from "../lib/tokenEncryption";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { validate } from "../middleware/validate";
 import * as googleClient from "../services/googleCalendarClient";
-import { runSyncBatch, syncLessonToGoogle } from "../services/googleCalendarSync";
+import { runLightSyncPass } from "../services/googleCalendarSync";
 
 export const coachCalendarRouter = Router();
 
@@ -143,9 +143,10 @@ coachCalendarRouter.get(
 );
 
 // ── POST /coach/calendar/retry-failed ────────────────────────────────────────
-// Reconciles every lesson currently in calendar_sync_status='sync_failed'.
-// Sequential, 100ms gap between calls. Returns 409 if the integration needs
-// reconnect — retry would just spin up more invalid_grants.
+// Runs a light sync pass: reconciles up to 50 in-window approved/completed
+// lessons whose calendar_sync_status is not_synced or sync_failed. The pass
+// goes through runSyncBatch, so it short-circuits (returns null) when the
+// integration is needs_reconnect or disconnected — surfaced here as a 409.
 
 coachCalendarRouter.post(
   "/calendar/retry-failed",
@@ -156,45 +157,13 @@ coachCalendarRouter.post(
       res.status(503).json({ error: "Google Calendar integration not configured" });
       return;
     }
-    const integrationRows = await db
-      .select()
-      .from(coachCalendarIntegrations)
-      .where(eq(coachCalendarIntegrations.coachProfileId, req.profile.id))
-      .limit(1);
-    const integration = integrationRows[0];
-    if (!integration || integration.status !== "active") {
+
+    const result = await runLightSyncPass(req.profile.id);
+    if (result === null) {
+      // runLightSyncPass short-circuited: no active integration.
       res.status(409).json({ error: "Reconnection required" });
       return;
     }
-
-    const failedRows = await db
-      .select({ id: lessons.id })
-      .from(lessons)
-      .where(eq(lessons.calendarSyncStatus, "sync_failed"));
-
-    let succeeded = 0;
-    let failed = 0;
-    // runSyncBatch sets sync_run_started_at and always clears it in a
-    // finally, so a mid-loop throw never leaves the UI stuck on "Syncing…".
-    await runSyncBatch(req.profile.id, async () => {
-      for (const row of failedRows) {
-        // Per-iteration try/catch keeps one bad lesson from halting the
-        // batch. syncLessonToGoogle shouldn't reject, but defense in depth.
-        try {
-          await syncLessonToGoogle(row.id);
-        } catch (err) {
-          req.log.error({ err, lessonId: row.id }, "retry: per-lesson failure, continuing");
-        }
-        const after = await db
-          .select({ status: lessons.calendarSyncStatus })
-          .from(lessons)
-          .where(eq(lessons.id, row.id))
-          .limit(1);
-        if (after[0]?.status === "synced") succeeded++;
-        else failed++;
-        await sleep(100); // 100ms between Google calls (stay under 500/100s quota)
-      }
-    });
 
     // Audit AFTER the loop with the final counts, not before with no counts.
     // CLAUDE.md's "audit in same tx as the change" rule can't apply here —
@@ -207,21 +176,13 @@ coachCalendarRouter.post(
       coachId: req.profile.id,
       actorId: req.profile.id,
       action: "calendar_sync_retried",
-      payload: { attempted: failedRows.length, succeeded, failed },
+      payload: result,
     });
 
-    const body: RetryAllFailedResponse = {
-      attempted: failedRows.length,
-      succeeded,
-      failed,
-    };
+    const body: RetryAllFailedResponse = result;
     res.json(body);
   }),
 );
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 // ── DELETE /coach/calendar ───────────────────────────────────────────────────
 // Revoke the refresh token at Google, then flip the integration row's status

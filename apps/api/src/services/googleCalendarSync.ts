@@ -246,13 +246,22 @@ async function syncLessonToGoogleInner(lessonId: string): Promise<void> {
 // batch; small enough to finish inside the 2-minute staleness window.
 const LIGHT_PASS_CAP = 50;
 
+export interface LightPassResult {
+  attempted: number;
+  succeeded: number;
+  failed: number;
+}
+
 /**
  * Light pass: reconcile a bounded number of in-window `approved`/`completed`
  * lessons whose `calendar_sync_status` is `not_synced` or `sync_failed`.
  * Used by the manual Retry button and by every cron tick for a cheap
- * drain of transient failures.
+ * drain of transient failures. Returns `null` when the integration is
+ * missing/needs_reconnect/disconnected (nothing ran) so the retry
+ * endpoint can distinguish that from "ran but nothing to do."
  */
-export async function runLightSyncPass(coachProfileId: string): Promise<void> {
+export async function runLightSyncPass(coachProfileId: string): Promise<LightPassResult | null> {
+  let result: LightPassResult | null = null;
   await runSyncBatch(coachProfileId, async () => {
     const windowStart = startOfTodayLA();
     const rows = await db
@@ -267,15 +276,26 @@ export async function runLightSyncPass(coachProfileId: string): Promise<void> {
       )
       .orderBy(asc(lessons.startsAt))
       .limit(LIGHT_PASS_CAP);
+    let succeeded = 0;
+    let failed = 0;
     for (const row of rows) {
       try {
         await syncLessonToGoogle(row.id);
       } catch (err) {
         logger.error({ err, lessonId: row.id }, "light pass: per-lesson failure, continuing");
       }
+      const [after] = await db
+        .select({ status: lessons.calendarSyncStatus })
+        .from(lessons)
+        .where(eq(lessons.id, row.id))
+        .limit(1);
+      if (after?.status === "synced") succeeded++;
+      else failed++;
       await sleep(100);
     }
+    result = { attempted: rows.length, succeeded, failed };
   });
+  return result;
 }
 
 /**
