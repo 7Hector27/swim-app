@@ -18,43 +18,47 @@ The lessons table already has four columns anticipating this feature — `google
 
 ### New table — `coach_calendar_integrations`
 
-One row per coach while connected. Delete on disconnect.
+One row per coach. The row is created on first connect, updated on reconnect, and deleted only on explicit coach-initiated Disconnect. It persists through the `needs_reconnect` state so the dedicated calendar id and settings survive a revoked token.
 
 | Column | Type | Notes |
 |---|---|---|
 | `id` | uuid, PK | `defaultRandom()` |
 | `coach_profile_id` | uuid, FK → `profiles.id`, unique, on delete cascade | Unique → at most one integration per coach |
 | `provider` | text, NOT NULL, default `'google'` | Forward-looking; app only writes `'google'` |
-| `google_calendar_id` | text, NOT NULL | Returned by `calendars.insert` on connect |
-| `google_account_email` | text, NOT NULL | For the status card and audit log |
+| `status` | text, NOT NULL, default `'active'` | CHECK: `'active' \| 'needs_reconnect'`. Non-existence of the row = not connected. |
+| `google_calendar_id` | text, NOT NULL | Returned by `calendars.insert` on first connect; reused on reconnect if the calendar still exists in Google |
+| `google_account_email` | text, NOT NULL | For the status card |
 | `scope` | text, NOT NULL | Record what we requested; alarm if it ever drifts |
 | `refresh_token_ciphertext` | bytea, NOT NULL | AES-256-GCM output |
 | `refresh_token_iv` | bytea, NOT NULL | 12-byte GCM nonce |
 | `refresh_token_tag` | bytea, NOT NULL | 16-byte GCM auth tag |
 | `refresh_token_key_version` | integer, NOT NULL, default `1` | Enables rotation without migration |
-| `connected_at` | timestamptz, NOT NULL, default `now()` | |
+| `connected_at` | timestamptz, NOT NULL, default `now()` | Set on first successful connect; preserved through reconnect |
 | `last_sync_attempted_at` | timestamptz, nullable | Updated on every sync call |
 | `last_sync_succeeded_at` | timestamptz, nullable | Updated only on 2xx |
+| `needs_reconnect_since` | timestamptz, nullable | Set when a refresh returns `invalid_grant`; cleared on successful reconnect |
 | `created_at`, `updated_at` | timestamptz | Standard; `$onUpdateFn` |
 
 Indexes: unique on `coach_profile_id`.
 
 RLS: `.enableRLS()` with no policies (API-only, same as every other table).
 
-### New table — `coach_integration_audit_log`
+### Why no separate integration audit log
 
-Coach-level events don't fit `household_audit_log` (which requires `household_id`). Keep audit history separate rather than loosening the household schema.
+Earlier drafts proposed a `coach_integration_audit_log` table. Dropped. The existing `household_audit_log` can't carry these events — `household_id` is NOT NULL and connect / disconnect / reconnect are coach-level actions with no natural household (a single coach serves many households, and the integration is one-per-coach, not one-per-household). Making `household_id` nullable would misname the table and bleed coach-scoped events into a swimmer/household-centric model that routes already filter on `household_id`. Retry events update a lesson, which does have a household, but splitting one subset of integration events across two tables so the rest can live elsewhere is worse than not writing audit rows at all.
 
-| Column | Type | Notes |
-|---|---|---|
-| `id` | uuid, PK | |
-| `coach_profile_id` | uuid, FK → `profiles.id`, on delete cascade | |
-| `provider` | text, NOT NULL | `'google'` for now |
-| `action` | text, NOT NULL | `'connect'`, `'disconnect'`, `'retry'`, `'backfill_started'`, `'backfill_finished'` |
-| `payload` | jsonb, nullable | e.g. `{"google_account_email": "...", "calendar_id": "...", "failed_count": 3}` — never contains tokens |
-| `created_at` | timestamptz, NOT NULL, default `now()` | |
+Instead, the integration lifecycle is observable from durable row state, with no new table:
 
-Index on `(coach_profile_id, created_at desc)`.
+| Event | How it's observable |
+|---|---|
+| Connect | `coach_calendar_integrations` row exists, `connected_at` set, `status = 'active'` |
+| Disconnect | `coach_calendar_integrations` row absent (deleted in the same transaction that clears lesson sync columns) |
+| Needs reconnect | `coach_calendar_integrations.status = 'needs_reconnect'`, `needs_reconnect_since` set |
+| Reconnect | `status` returned to `'active'`, `needs_reconnect_since` cleared; `updated_at` is the moment |
+| Retry | `lessons.calendar_sync_attempts` increments, `calendar_sync_error` and `last_sync_attempted_at` capture the last outcome |
+| Backfill in progress | Count of `lessons` with `status='approved'`, `starts_at > now()`, `calendar_sync_status IN ('not_synced', 'sync_failed')` |
+
+If an immutable chronological trail is ever required for compliance, revisit by adding a general `integration_audit_log` then — not now.
 
 ### Existing columns reused
 
@@ -67,7 +71,7 @@ On `lessons` (schema.ts:491–494):
 
 ### Migration
 
-One Drizzle migration (`pnpm db:generate --name=google_calendar_integration`): creates the two tables. Snapshot is auto-generated. No custom SQL needed. `docs/data-model.md` gets two new sections placed after `### household_audit_log`.
+One Drizzle migration (`pnpm db:generate --name=google_calendar_integration`): creates `coach_calendar_integrations` with its CHECK on `status`. Snapshot is auto-generated. No custom SQL needed. `docs/data-model.md` gets one new section — `### coach_calendar_integrations` placed after `### household_audit_log` — plus an addendum to `### lessons` noting that the four existing `calendar_*` columns are populated by this feature and listing the allowed `calendar_sync_status` values.
 
 ---
 
@@ -89,13 +93,25 @@ export const GoogleOAuthCallbackQuerySchema = z.object({
 });
 
 export const GoogleCalendarStatusResponseSchema = z.object({
-  connected: z.boolean(),
+  // 'not_connected' = no row; 'active' = healthy; 'needs_reconnect' = token revoked.
+  status: z.enum(["not_connected", "active", "needs_reconnect"]),
   connectedAccountEmail: z.string().email().nullable(),
   connectedAt: z.string().datetime().nullable(),
   googleCalendarId: z.string().nullable(),
   lastSyncAttemptedAt: z.string().datetime().nullable(),
   lastSyncSucceededAt: z.string().datetime().nullable(),
-  failedLessonCount: z.number().int().nonnegative(),
+  needsReconnectSince: z.string().datetime().nullable(),
+  // Counts over the coach's upcoming approved lessons so the card can show "Syncing 3 of 12…".
+  upcomingLessonCount: z.number().int().nonnegative(),
+  syncedCount: z.number().int().nonnegative(),
+  pendingSyncCount: z.number().int().nonnegative(),  // not_synced
+  failedLessonCount: z.number().int().nonnegative(), // sync_failed
+});
+
+// Query filter added to the existing GET /coach/lessons endpoint so the card can
+// list failed-sync lessons without a new endpoint (resolves former open question 4).
+export const CoachLessonsCalendarSyncQuerySchema = z.object({
+  calendarSyncStatus: z.enum(["not_synced", "synced", "sync_failed"]).optional(),
 });
 
 export const RetryLessonSyncParamsSchema = z.object({
@@ -119,12 +135,13 @@ All protected routes use `requireUser` + `requireCoach`. The two OAuth endpoints
 
 | Method | Path | Middleware | Purpose |
 |---|---|---|---|
-| `GET` | `/integrations/google/start` | `requireUser`, `requireCoach`, `validate({ query: GoogleOAuthStartQuerySchema })` | Build Google authorize URL (scope `calendar.app.created`, `access_type=offline`, `prompt=consent`, HMAC-signed `state`), 302 to Google. |
-| `GET` | `/integrations/google/callback` | `validate({ query: GoogleOAuthCallbackQuerySchema })` | Verify state (signature + TTL + coach binding), exchange code, call `calendars.insert`, encrypt refresh token, upsert `coach_calendar_integrations`, insert `connect` audit log, kick off backfill, 302 to `${SITE_URL}${returnTo ?? '/account'}?google=connected`. |
-| `GET` | `/coach/calendar/status` | `requireUser`, `requireCoach`, `validate({})` | Returns `GoogleCalendarStatusResponse`. `failedLessonCount` = `count(*) from lessons where calendar_sync_status='sync_failed'`. |
-| `DELETE` | `/coach/calendar` | `requireUser`, `requireCoach`, `validate({})` | Revoke token at Google, delete the integration row, clear `google_calendar_event_id` and reset `calendar_sync_status` on this coach's future lessons, insert `disconnect` audit log — all in one transaction (except the Google revoke call, which runs before the transaction and is logged if it fails but doesn't block the local delete). |
-| `POST` | `/coach/calendar/lessons/:id/retry` | `requireUser`, `requireCoach`, `validate({ params: RetryLessonSyncParamsSchema })` | Re-run the correct sync op for this lesson's current status. Returns updated lesson status. Logs `retry` audit entry. |
-| `POST` | `/coach/calendar/retry-failed` | `requireUser`, `requireCoach`, `validate({})` | Finds all `sync_failed` lessons and retries each. Returns `RetryAllFailedResponse`. One `retry` audit log row for the batch. |
+| `GET` | `/integrations/google/start` | `requireUser`, `requireCoach`, `validate({ query: GoogleOAuthStartQuerySchema })` | Build Google authorize URL (scope `calendar.app.created`, `access_type=offline`, `prompt=consent`, HMAC-signed `state`), 302 to Google. Used for both initial connect and reconnect — the handler is identical. |
+| `GET` | `/integrations/google/callback` | `validate({ query: GoogleOAuthCallbackQuerySchema })` | Verify state (signature + TTL + coach binding), exchange code. If the coach has an existing integration row (reconnect path), call `calendars.get(googleCalendarId)` — reuse on 2xx, call `calendars.insert` only on 404/410. Upsert the row (set `status='active'`, clear `needs_reconnect_since`, update tokens). Kick off backfill/resync as a non-blocking background task and redirect immediately to `${SITE_URL}${returnTo ?? '/account'}?google=connected`. |
+| `GET` | `/coach/calendar/status` | `requireUser`, `requireCoach`, `validate({})` | Returns `GoogleCalendarStatusResponse` (status enum + counts derived from `lessons`). |
+| `GET` | `/coach/lessons` (existing route, extended) | `requireUser`, `requireCoach`, `validate({ query: CoachLessonsCalendarSyncQuerySchema })` | Add `calendarSyncStatus` filter so the card can list `sync_failed` lessons without a new endpoint. |
+| `DELETE` | `/coach/calendar` | `requireUser`, `requireCoach`, `validate({})` | Revoke token at Google (before the transaction; failure logged but doesn't block). Then in one `db.transaction()`: delete the integration row, clear `google_calendar_event_id`, reset `calendar_sync_status` to `'not_synced'` and zero `calendar_sync_attempts` for this coach's future lessons. The dedicated Google calendar is left intact. |
+| `POST` | `/coach/calendar/lessons/:id/retry` | `requireUser`, `requireCoach`, `validate({ params: RetryLessonSyncParamsSchema })` | Re-run the correct sync op for this lesson's current status. Returns updated lesson status. |
+| `POST` | `/coach/calendar/retry-failed` | `requireUser`, `requireCoach`, `validate({})` | Finds all `sync_failed` lessons and retries each sequentially with a 100ms gap. Returns `RetryAllFailedResponse`. |
 
 **Callback mount.** `app.use("/integrations", integrationsRouter)` mounts in `apps/api/src/app.ts` alongside the other `app.use(...)` lines (schema.ts has no global prefix — confirmed in app.ts). The exact path `/integrations/google/callback` matches the Google Cloud entries.
 
@@ -158,12 +175,22 @@ The `PATCH /lessons/:id` handler already wraps the slot-check and update in `db.
 
 ### Decline — `apps/api/src/routes/coachLessons.ts:586–650`
 
-Only reaches a currently-pending lesson. Since pending lessons don't sync, there is nothing in Google to delete *unless* the lesson was once approved and then force-declined (not possible with current state machine — see open question 3). For v1, call `syncLessonDeleted(id)` defensively: if `google_calendar_event_id` is null, no-op.
+Only reaches a currently-pending lesson under the current state machine (`approved → declined` is not a legal transition). Since pending lessons don't sync, there is nothing in Google to delete. Still call `syncLessonDeleted(id)` defensively: it short-circuits when `google_calendar_event_id` is null, so no HTTP call is made in the normal case, and the handler stays safe if the state machine ever gains an `approved → declined` transition.
+
+### Backfill and reconnect resync
+
+The connect/reconnect callback kicks off a single background task after `res.redirect(...)` returns. The task:
+
+1. Selects `lessons` where this coach's integration is active, `status = 'approved'`, `starts_at > now()`, and `calendar_sync_status IN ('not_synced', 'sync_failed')`.
+2. Calls `syncLessonCreated(id)` for rows with no `google_calendar_event_id`, `syncLessonUpdated(id)` otherwise.
+3. Processes rows sequentially with a 100ms gap between calls.
+
+The status endpoint's counts (`pendingSyncCount`, `syncedCount`, `failedLessonCount`) let the card show "Syncing N of M…" by polling every 3s until `pendingSyncCount` reaches zero. No persistent "in-progress" flag is stored — the counts over the lessons table are the source of truth and already reflect the live state. If the process crashes mid-backfill, the next retry (manual or on next connect) resumes from whatever rows are still `not_synced`.
 
 ### What's deliberately not wired
 
-- Backfill is a one-shot from the connect callback, not a middleware.
-- There is no scheduled resync job in v1. Retries are user-driven.
+- No scheduled resync, cron, or background worker. Sync is triggered by lesson events, by the connect callback (backfill + reconnect resync), or by coach-initiated retry.
+- No queue or message bus. Fire-and-forget via `queueMicrotask` for per-event sync, a simple `async` function for the connect-time loop. This matches the existing codebase (no queues present).
 
 ---
 
@@ -177,7 +204,12 @@ Three layers:
 
 `calendar_sync_attempts` increments on every attempt, including internal retries, so the coach UI can show "attempted N times." No cap in v1 — the coach decides when to stop retrying.
 
-**Token refresh.** The service calls `oauth2Client.refreshAccessToken()` at the start of every sync. Access tokens are not persisted. If the refresh fails with `invalid_grant`, the service writes `calendar_sync_error = "token_revoked"` on the lesson and *also* marks the integration row as needing reconnection (set `last_sync_attempted_at`, log a `retry` audit with payload `{reason: "token_revoked"}`). The UI then shows "Reconnect required" instead of a retry button. Open question 2 covers whether we auto-delete the integration row in that case.
+**Token refresh.** The service calls `oauth2Client.refreshAccessToken()` at the start of every sync. Access tokens are not persisted. If the refresh fails with `invalid_grant` (coach revoked access out-of-band in their Google account), the service does **not** delete the integration row. In one transaction it:
+
+- Sets `coach_calendar_integrations.status = 'needs_reconnect'` and `needs_reconnect_since = now()` on the integration row.
+- Writes `calendar_sync_error = 'token_revoked'` and `calendar_sync_status = 'sync_failed'` on the lesson being synced.
+
+While `status = 'needs_reconnect'`, every sync hook short-circuits before the Google call — no further `invalid_grant`s pile up, no error spam. The retry endpoints also no-op (they return a 409 `{ error: "Reconnection required" }`). The card shows a Reconnect button. Clicking it reuses `/integrations/google/start`; the callback detects the existing row, verifies the calendar still exists (`calendars.get`), and either reuses the existing `google_calendar_id` or calls `calendars.insert` to create a new one if the coach deleted it in Google. On successful reconnect, the row's `status` returns to `'active'`, `needs_reconnect_since` is cleared, and the backfill/resync task sweeps every `sync_failed` and `not_synced` upcoming approved lesson.
 
 ---
 
@@ -185,36 +217,39 @@ Three layers:
 
 New card at `/account`. Content folder: `apps/web/src/content/AccountContent/GoogleCalendarCard/` (`GoogleCalendarCard.tsx`, module CSS, `index.ts`). `AccountContent.tsx` renders it below `EditProfileForm`.
 
-**Disconnected state** — Fraunces heading "Google Calendar", Figtree body "Automatically add approved lessons to your Google Calendar", primary button "Connect Google Calendar" that `GET`s `/integrations/google/start?returnTo=/account`.
+The card renders one of three states, keyed on `status` from the status endpoint.
 
-**Connected state** — same heading, then:
+**`not_connected`** — Fraunces heading "Google Calendar", Figtree body "Automatically add approved lessons to your Google Calendar", primary button "Connect Google Calendar" that `GET`s `/integrations/google/start?returnTo=/account`.
 
-- Connected account email
-- "Connected on {date}"
-- Last sync: "{relative time}" or "Never"
-- If `failedLessonCount > 0`: red chip "N lessons failed to sync" with "Retry all" button
-- Collapsed list of failed lessons with per-row retry — fetched lazily when the chip is expanded; endpoint TBD (open question 4)
-- Secondary "Disconnect" button that opens a confirmation modal (the Axiom Aquatics calendar in Google stays)
+**`active`** — same heading, then:
 
-Styling follows `axiom-aquatics-design` (tokens only, Fraunces/Figtree). Button press feedback follows `emil-design-eng`.
+- Connected account email, `Connected on {date}`, `Last sync: {relative time}` or `Never`.
+- **Syncing banner (transient).** When `pendingSyncCount > 0`, show "Syncing {syncedSinceConnect} of {upcomingLessonCount}…". The card polls `/coach/calendar/status` every 3s while the banner is visible and stops once `pendingSyncCount` reaches zero.
+- **Failed chip.** If `failedLessonCount > 0`, red chip "N lessons failed to sync" with "Retry all" button. Expanding the chip fetches `GET /coach/lessons?calendarSyncStatus=sync_failed` (reuses the existing endpoint — resolved from former open question 4) and renders a short list with per-row retry.
+- Secondary "Disconnect" button opens a confirmation modal. Modal copy: "The 'Axiom Aquatics Lessons' calendar and its events will stay in your Google account. You can delete them yourself if you want."
 
-`actions.ts` in `AccountContent/` gets `connectGoogleCalendar()`, `disconnectGoogleCalendar()`, `retryLessonSync(id)`, `retryAllFailed()` server actions that call the API and `revalidatePath('/account')`.
+**`needs_reconnect`** — same heading, amber alert row: "Google disconnected us — your calendar won't update until you reconnect." Primary button "Reconnect" calls the same `/integrations/google/start` URL (the callback handles both paths). Also shows failed/pending counts so the coach knows what will resync.
+
+Styling follows `axiom-aquatics-design` (tokens only, Fraunces/Figtree). Button press feedback and the syncing banner's enter/exit follow `emil-design-eng`.
+
+`actions.ts` in `AccountContent/` gets `connectGoogleCalendar()`, `disconnectGoogleCalendar()`, `retryLessonSync(id)`, `retryAllFailed()` server actions that call the API and `revalidatePath('/account')`. Status polling is a client component (`"use client"`) that hits a thin API route on the Next app — not a server action — because polling via server actions is expensive and not what they're for.
 
 ---
 
 ## Audit log
 
-Entries written via `db.transaction()` as the row changes:
+No new audit table is added — see **Why no separate integration audit log** above. The existing `household_audit_log` cannot represent connect/disconnect/reconnect (its `household_id` is NOT NULL and these are coach-level events), and splitting integration events across two tables so only `retry` lives in `household_audit_log` would be worse than observing state from the live rows.
 
-| Action | Row changing | Payload |
+The CLAUDE.md rule that an audit insert must share a transaction with the change it records is still honored for every write touching sync state — there just isn't a separate audit row to insert. Each lifecycle event is still transactionally coherent:
+
+| Event | What runs inside `db.transaction()` | Durable record |
 |---|---|---|
-| `connect` | `coach_calendar_integrations` INSERT | `{google_account_email, calendar_id}` |
-| `disconnect` | `coach_calendar_integrations` DELETE + lessons UPDATE | `{google_account_email, lessons_cleared: N}` |
-| `retry` | `lessons` UPDATE (status transition) | `{lesson_id, outcome: 'succeeded'|'failed', error?}` |
-| `backfill_started` | — | `{lesson_count}` (written in connect transaction, before kicking off the async loop) |
-| `backfill_finished` | — | `{succeeded, failed}` (written after the async loop) |
+| Connect / reconnect | Upsert `coach_calendar_integrations` (status, token fields, timestamps) | Row exists, `status='active'`, `connected_at` + `updated_at` |
+| Needs reconnect | UPDATE `coach_calendar_integrations SET status='needs_reconnect', needs_reconnect_since=now()` and the lesson row that triggered it | Integration row's `status` + `needs_reconnect_since`; lesson's `calendar_sync_error='token_revoked'` |
+| Disconnect | DELETE from `coach_calendar_integrations` + bulk UPDATE on `lessons` clearing sync columns | Row absent, lesson columns reset |
+| Retry (single or bulk) | UPDATE on `lessons` sync columns | `calendar_sync_attempts`, `last_sync_*`, `calendar_sync_status`, `calendar_sync_error` all tell the full retry story |
 
-Every write that mutates the integration row or clears lesson sync state is wrapped in `db.transaction(async (tx) => { ... })` with the audit insert inside the same tx, following the CLAUDE.md rule. The *Google-side* API calls happen *before or after* the tx, never inside — see the ADR.
+The *Google-side* API calls happen before or after the transaction, never inside — see the ADR.
 
 ---
 
@@ -225,12 +260,14 @@ Every write that mutates the integration row or clears lesson sync state is wrap
 Vitest with native `vi.mock()` for the `googleapis` client. New file layout under `apps/api/src/__tests__/`:
 
 - `googleCalendarSync.test.ts` — `syncLessonCreated/Updated/Deleted`:
-  - happy path: event body shape matches "Swim lesson: Alex" / "Swim lesson: Alex & Mia", location set, time zone `America/Los_Angeles`, description links to `${SITE_URL}/coach/lessons/[id]`, no parent info in the payload.
-  - no integration row → no-op, no error, no DB write.
+  - Happy path: event body shape matches "Swim lesson: Alex" / "Swim lesson: Alex & Mia", location field set, time zone `America/Los_Angeles`, description is just the deep link `${SITE_URL}/coach/lessons/[id]` (no duration, location name, or parent contact — resolved from former open question 6).
+  - No integration row → no-op, no error, no DB write.
+  - Integration row with `status='needs_reconnect'` → no-op, no Google call made.
   - Google 429 twice → retried, then success. Attempts counter = 3.
   - Google 500 permanent → `sync_failed`, error message captured, attempts incremented.
-  - `invalid_grant` → `token_revoked` error, status `sync_failed`, retry audit written.
-  - `events.delete` returns 404 → treated as success (idempotent delete).
+  - `invalid_grant` → integration row flipped to `needs_reconnect`, lesson `sync_failed` with `calendar_sync_error='token_revoked'`, both writes in one transaction.
+  - `events.delete` returns 404/410 → treated as success (idempotent delete).
+  - `syncLessonDeleted` with null `google_calendar_event_id` → short-circuits, no HTTP call (covers decline path).
 - `googleCalendarAuth.test.ts` — state param:
   - sign + verify round trip with HMAC key.
   - expired state (>10 min) rejected.
@@ -241,25 +278,31 @@ Vitest with native `vi.mock()` for the `googleapis` client. New file layout unde
   - wrong key fails to decrypt.
   - key_version=1 output has IV length 12 and tag length 16.
 - `coachCalendarRoutes.test.ts` — endpoint behavior with the service mocked:
-  - `GET /coach/calendar/status` disconnected vs connected.
-  - `DELETE /coach/calendar` writes audit + clears lessons + revokes.
-  - retry endpoints call the right sync function.
-- `coachLessons.approve.test.ts` (extend existing) — assert `syncLessonCreated` was called *after* `res.json`, booking still succeeds when the service throws.
+  - `GET /coach/calendar/status` returns `not_connected`, `active`, and `needs_reconnect` depending on row state; counts derived from seeded lessons.
+  - `DELETE /coach/calendar` deletes the row + clears lesson sync columns + calls Google revoke.
+  - Retry endpoints return 409 when `status='needs_reconnect'`.
+  - Retry endpoints call the right sync function in the happy path.
+- `coachLessons.approve.test.ts` (extend existing) — assert `syncLessonCreated` was called *after* `res.json`; booking still succeeds when the service throws.
 
 ### Integration tests
 
 Vitest integration config, live local Supabase, Google API mocked at the `googleapis` module boundary (no network). Shared `mockGoogleCalendar()` helper under `apps/api/src/__tests__/integration/helpers/`.
 
 - `coachGoogleCalendar.integration.test.ts`:
-  - full connect flow: start → callback → row written → audit log row present.
-  - connect with pending approved lessons → backfill creates events, `backfill_finished` audit written.
-  - approve → event body sent, lesson row has `event_id` and `synced` status.
-  - reschedule → `events.patch` called with new time, status still `synced`.
-  - cancel → `events.delete` called, `event_id` cleared.
-  - disconnect → Google revoke called, row deleted, audit written, future-lesson sync columns cleared, Google calendar untouched (no `calendars.delete`).
-  - retry failed lesson → status flips from `sync_failed` to `synced`.
-  - approve while disconnected → booking succeeds, no Google call made.
-  - approve with Google 500 → booking succeeds, lesson `sync_failed`, error visible on status endpoint.
+  - Full connect flow: start → callback → row written with `status='active'`.
+  - Connect with pending approved lessons → backfill creates events, all lesson rows reach `calendar_sync_status='synced'`.
+  - Backfill is background: callback redirects within 100ms even when 50 lessons are queued; status counts converge over time.
+  - Approve → event body sent, lesson row has `event_id` and `synced` status.
+  - Reschedule → `events.patch` called with new time, status still `synced`.
+  - Cancel → `events.delete` called, `event_id` cleared.
+  - Decline (pending → declined) → no Google call (defensive no-op in `syncLessonDeleted`).
+  - Disconnect → Google revoke called, row deleted, future-lesson sync columns cleared, Google `calendars.delete` **not** called.
+  - Retry failed lesson → status flips from `sync_failed` to `synced`.
+  - `invalid_grant` on next sync → integration row flipped to `needs_reconnect`, status endpoint reflects it, subsequent retries return 409.
+  - Reconnect with calendar still existing in Google → `calendars.get` returns 2xx, no `calendars.insert` called, same `google_calendar_id` preserved, `status` back to `'active'`, resync re-attempts all `sync_failed`/`not_synced` upcoming approved lessons.
+  - Reconnect with calendar deleted in Google (`calendars.get` → 404) → `calendars.insert` called, `google_calendar_id` updated, resync proceeds.
+  - Approve while disconnected → booking succeeds, no Google call made.
+  - Approve with Google 500 → booking succeeds, lesson `sync_failed`, error visible on status endpoint.
 
 ### Load / quota (manual, pre-launch)
 
@@ -267,16 +310,24 @@ Spot-check: connect, backfill 50 approved lessons, confirm no 429s and total tim
 
 ---
 
-## Open questions
+## Resolved decisions (previously open)
 
-1. **Dev API port.** Google Cloud has `http://localhost:4000/integrations/google/callback` registered, but `apps/api/src/lib/env.ts` defaults `PORT` to 3001. Either (a) change the dev default to 4000, (b) update the Google Cloud entry to 3001, or (c) require `PORT=4000` in the dev-env setup doc. Preferred: (c), smallest blast radius.
-2. **Auto-disconnect on `invalid_grant`?** If the refresh token is revoked out-of-band (coach revokes from Google account page), every sync will fail with `invalid_grant`. Do we auto-delete the integration row and show "Reconnect required," or wait for the coach to click Disconnect? Preferred: auto-delete on first `invalid_grant`, write a `disconnect` audit with `payload.reason = 'token_revoked'`.
-3. **Decline-after-approve path.** Current state machine (schema.ts `lessonStatusEnum`) allows pending → declined and approved → canceled, but not approved → declined. If that's ever added, decline needs to delete the Google event. Confirm the state machine stays as-is, or extend `syncLessonDeleted` to cover decline from any prior status (safe either way).
-4. **How to list failed lessons for the UI.** The status endpoint returns just a count. Do we add `GET /coach/calendar/failed-lessons` returning a short list, or reuse `/coach/lessons` with a `?calendarSyncStatus=sync_failed` filter? Preferred: query param on the existing endpoint — fewer new routes.
-5. **Backfill blocking vs background.** On connect, the callback currently kicks off backfill in `setImmediate` so the redirect is instant. If a coach has 100+ future lessons, the UI will show "connected, 0 synced" for several seconds. Confirm this UX is acceptable; alternative is to block the callback for small N (<10) and background for larger N.
-6. **Event description content.** Spec says "swimmer first names" and "link to /coach/lessons/[id]" with "no parent contact info." Should the description also include duration and location name, or is the Google event's native time + location field enough? Preferred: title + native time + native location field only, so the description is just the deep link.
-7. **Timezone.** Hardcoded `America/Los_Angeles` per spec. If we ever get a coach outside LA, this needs to come from a config column. Not blocking.
-8. **Audit log rename.** `coach_integration_audit_log` is accurate but long. Alternative: `integration_audit_log` (drop `coach_`, since only coaches have integrations today). Preferred: keep `coach_integration_audit_log` — the extra specificity costs nothing and future-proofs if parents ever get integrations (e.g., personal calendar export).
+- **Dev API port.** Google Cloud updated to `http://localhost:3001/integrations/google/callback`, matching `apps/api/src/lib/env.ts`'s `PORT` default. No dev-env override needed.
+- **`invalid_grant` handling.** No auto-disconnect. Flip `coach_calendar_integrations.status` to `'needs_reconnect'`, keep `google_calendar_id` and all settings, stop attempting sync, surface a Reconnect action on the card. Reason: preserves the dedicated calendar id and user intent across a token revoke.
+- **Decline-after-approve.** Current state machine stays as-is (`approved → declined` is not legal). `syncLessonDeleted` is called defensively from decline and short-circuits when `google_calendar_event_id` is null. Reason: smallest change; no state-machine churn and still safe if the transition is ever added.
+- **Listing failed lessons.** Add `calendarSyncStatus` query param to the existing `GET /coach/lessons` instead of a new endpoint. Reason: follows the existing pattern (query filter on an existing list route) and avoids a parallel endpoint.
+- **Backfill blocking vs background.** Always background. Redirect fires immediately; the card shows "Syncing N of M…" by polling the status endpoint. Reason: user decision; also avoids a slow redirect for coaches with lots of upcoming lessons.
+- **Event description content.** Title "Swim lesson: {first names}" + Google's native `start`, `end`, and `location` fields. Description is just the deep link to `/coach/lessons/[id]`. Reason: no parent contact info by rule; everything else is already in the event's structured fields.
+- **Timezone.** Hardcoded `America/Los_Angeles` with a `// TODO: per-coach timezone if we ever expand beyond LA` comment at the one site in `googleCalendarSync.ts` that uses it. Reason: smallest change; no schema column added for a case that doesn't exist today.
+- **Audit log table.** Dropped entirely. See **Why no separate integration audit log** above. Reason: the existing `household_audit_log` can't carry coach-level events (NOT NULL `household_id`), and the integration lifecycle is already observable from durable row state.
+- **Reconnect calendar reuse.** On reconnect, call `calendars.get(googleCalendarId)`. Reuse on 2xx; call `calendars.insert` only on 404/410. Reason: honors the user rule that we reuse the existing calendar when it still exists.
+
+## Still open
+
+Nothing I can resolve without you or Jason. Flagging two UX details to confirm before implementation starts; neither blocks writing code against this plan:
+
+1. **Syncing banner poll cadence.** 3s is a guess. If it feels too chatty on an idle page or too slow after a connect, we tune it. Confirm 3s is a reasonable starting point.
+2. **Reconnect copy.** The amber alert reads "Google disconnected us — your calendar won't update until you reconnect." Jason may want friendlier wording.
 
 ---
 
@@ -288,7 +339,7 @@ Added to `apps/api/src/lib/env.ts` `RawEnvSchema` and `ApiEnv`:
 |---|---|---|---|
 | `GOOGLE_OAUTH_CLIENT_ID` | Yes (prod & dev) | `123...apps.googleusercontent.com` | From Google Cloud OAuth client |
 | `GOOGLE_OAUTH_CLIENT_SECRET` | Yes (prod & dev) | `GOCSPX-...` | Secret for the same client |
-| `GOOGLE_OAUTH_REDIRECT_URI` | Yes | `http://localhost:4000/integrations/google/callback` (dev) / `https://api-dev-9f6d.up.railway.app/integrations/google/callback` (deployed) | Must match a Google Cloud entry exactly |
+| `GOOGLE_OAUTH_REDIRECT_URI` | Yes | `http://localhost:3001/integrations/google/callback` (dev) / `https://api-dev-9f6d.up.railway.app/integrations/google/callback` (deployed) | Must match a Google Cloud entry exactly. The dev URI matches `PORT`'s default of 3001; no override needed. |
 | `GOOGLE_TOKEN_ENCRYPTION_KEY` | Yes | base64, decodes to 32 bytes | AES-256-GCM key. Generate with `openssl rand -base64 32` or `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`. **Losing this key bricks every coach's integration — rotate by adding a `_V2` var, bumping `refresh_token_key_version`, and re-encrypting on next successful token refresh.** |
 | `GOOGLE_OAUTH_STATE_SECRET` | Yes | 32+ random bytes, any encoding | HMAC key for signing the OAuth `state` param. Generate the same way as the encryption key. Distinct from the encryption key so leaking one does not compromise the other. |
 
