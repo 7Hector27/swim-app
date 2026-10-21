@@ -4,7 +4,7 @@
 // syncLessonToGoogle is called directly on seeded lesson rows.
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, ne } from "drizzle-orm";
 
 // Env for OAuth config must be set before importing the service module.
 process.env["GOOGLE_OAUTH_CLIENT_ID"] = "test-client-id";
@@ -64,6 +64,36 @@ let swimmerIds: string[] = [];
 
 async function makeCoach(userId: string): Promise<void> {
   await adminDb().update(profiles).set({ role: "coach" }).where(eq(profiles.id, userId));
+}
+
+// The dev DB may contain a real coach profile (e.g. jason@mail.com). The
+// sync service's `getActiveCoachProfileId` picks arbitrarily when more than
+// one 'coach' profile exists — that's the single-coach assumption baked
+// into the whole feature. Make the test deterministic by demoting any
+// other 'coach' profiles to 'parent' for the duration of this test file.
+// Captures the ids so afterAll can restore the roles.
+let demotedCoachIds: string[] = [];
+async function demoteOtherCoaches(testCoachId: string): Promise<void> {
+  const others = await adminDb()
+    .select({ id: profiles.id })
+    .from(profiles)
+    .where(and(eq(profiles.role, "coach"), ne(profiles.id, testCoachId)));
+  demotedCoachIds = others.map((row) => row.id);
+  if (demotedCoachIds.length > 0) {
+    await adminDb()
+      .update(profiles)
+      .set({ role: "parent" })
+      .where(inArray(profiles.id, demotedCoachIds));
+  }
+}
+async function restoreOtherCoaches(): Promise<void> {
+  if (demotedCoachIds.length > 0) {
+    await adminDb()
+      .update(profiles)
+      .set({ role: "coach" })
+      .where(inArray(profiles.id, demotedCoachIds));
+    demotedCoachIds = [];
+  }
 }
 
 async function seedCoachIntegration(status: "active" | "needs_reconnect" | "disconnected" = "active"): Promise<void> {
@@ -139,6 +169,7 @@ beforeAll(async () => {
   owner = await createTestUser("sync-int-owner");
   coach = await createTestUser("sync-int-coach");
   await makeCoach(coach.userId);
+  await demoteOtherCoaches(coach.userId);
 
   const locs = await adminDb()
     .select({ id: lessonLocations.id })
@@ -174,6 +205,7 @@ afterAll(async () => {
   for (const id of swimmerIds) {
     await adminDb().delete(swimmers).where(eq(swimmers.id, id));
   }
+  await restoreOtherCoaches();
   await coach.cleanup();
   await owner.cleanup();
   await closeAdminDb();
@@ -373,6 +405,43 @@ describe("backfillCoachLessons", () => {
     expect(synced).toContain(stripDashes(futureApprovedB));
     expect(synced).not.toContain(stripDashes(futurePending));
     expect(synced).not.toContain(stripDashes(pastApproved));
+  });
+});
+
+describe("integration-row scoping", () => {
+  it("ignores a 'disconnected' integration row that belongs to another profile", async () => {
+    // Seed a stale disconnected row under the OWNER's profile — that's a
+    // non-coach profile but it still produces a row that the pre-fix
+    // `.limit(1)` would have grabbed in dev data. The coach has no
+    // integration at all.
+    await adminDb().insert(coachCalendarIntegrations).values({
+      coachProfileId: owner.userId,
+      status: "disconnected",
+      googleCalendarId: "stale-other-profile-calendar",
+      googleAccountEmail: "other@example.com",
+      scope: null,
+      refreshTokenCiphertext: null,
+      refreshTokenIv: null,
+      refreshTokenTag: null,
+      refreshTokenKeyVersion: null,
+    });
+
+    const lessonId = await seedLesson({ status: "approved", startsAt: future() });
+
+    await syncLessonToGoogle(lessonId);
+
+    // Must NOT have touched Google with the stale calendar id.
+    expect(googleClient.upsertEvent).not.toHaveBeenCalled();
+
+    // Lesson row is untouched (no attempt).
+    const row = (await adminDb().select().from(lessons).where(eq(lessons.id, lessonId)))[0]!;
+    expect(row.calendarSyncStatus).toBe("not_synced");
+    expect(row.calendarSyncAttempts).toBe(0);
+
+    // Cleanup extra row.
+    await adminDb()
+      .delete(coachCalendarIntegrations)
+      .where(eq(coachCalendarIntegrations.coachProfileId, owner.userId));
   });
 });
 

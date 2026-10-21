@@ -16,6 +16,7 @@ import {
   lessons,
   swimmers,
 } from "../db/schema";
+import { getActiveCoachProfileId } from "../lib/coachProfile";
 import { getEnv } from "../lib/env";
 import { logger } from "../logger";
 import { decryptToken } from "../lib/tokenEncryption";
@@ -34,14 +35,13 @@ export async function syncLessonToGoogle(lessonId: string): Promise<void> {
   const env = getEnv();
   if (!env.googleOAuth) return;
 
+  // loadReconcileContext scopes the integration query to status='active',
+  // so a non-null context means the integration is currently serving writes.
+  // This short-circuit keeps `invalid_grant` storms (after an out-of-band
+  // revoke) from piling up on every lesson row the coach touches.
   const context = await loadReconcileContext(lessonId);
   if (!context) return;
   const { lesson, firstNames, location, integration } = context;
-
-  // Short-circuit when the integration isn't currently serving writes. This
-  // keeps `invalid_grant` storms (after an out-of-band revoke) from piling
-  // up on every lesson row the coach touches.
-  if (integration.status !== "active") return;
 
   const eventId = toGoogleEventId(lesson.id);
   const shouldExist =
@@ -117,11 +117,24 @@ export async function syncLessonToGoogle(lessonId: string): Promise<void> {
  * syncLessonToGoogle is idempotent on the shared event id.
  */
 export async function backfillCoachLessons(coachProfileId: string): Promise<void> {
-  // The current app is single-coach so coachProfileId is informational for
-  // logging; the lessons table has no coach_id column and the single
-  // integration row's existence is enough. We pass the id through so the
-  // log line names the coach and future multi-coach support slots in here.
   try {
+    // Verify the caller's coach actually owns an active integration before
+    // iterating lessons. In a single-coach app this double-checks the
+    // callback's own write committed; in a multi-coach future, this is
+    // the scoping that pairs the lessons we iterate with the coach we're
+    // writing to Google for.
+    const integrationRows = await db
+      .select({ id: coachCalendarIntegrations.id })
+      .from(coachCalendarIntegrations)
+      .where(
+        and(
+          eq(coachCalendarIntegrations.coachProfileId, coachProfileId),
+          eq(coachCalendarIntegrations.status, "active"),
+        ),
+      )
+      .limit(1);
+    if (integrationRows.length === 0) return;
+
     const rows = await db
       .select({ id: lessons.id })
       .from(lessons)
@@ -154,10 +167,23 @@ async function loadReconcileContext(lessonId: string): Promise<ReconcileContext 
   const lesson = lessonRows[0];
   if (!lesson) return null;
 
-  // Single-coach app: there's at most one integration row globally. If a
-  // future multi-coach model lands, this query will need a coach link on
-  // the lesson row to pick the right integration.
-  const integrationRows = await db.select().from(coachCalendarIntegrations).limit(1);
+  // Resolve the coach's profile id and scope the integration lookup to it,
+  // plus `status='active'`. In a single-coach app the resolver just finds
+  // the one coach profile. In a seeded dev DB with stale 'disconnected' or
+  // 'needs_reconnect' rows under other profiles, this prevents picking up
+  // the wrong one — the previous unscoped `.limit(1)` was a real bug.
+  const coachProfileId = await getActiveCoachProfileId();
+  if (!coachProfileId) return null;
+  const integrationRows = await db
+    .select()
+    .from(coachCalendarIntegrations)
+    .where(
+      and(
+        eq(coachCalendarIntegrations.coachProfileId, coachProfileId),
+        eq(coachCalendarIntegrations.status, "active"),
+      ),
+    )
+    .limit(1);
   const integration = integrationRows[0];
   if (!integration) return null;
 
