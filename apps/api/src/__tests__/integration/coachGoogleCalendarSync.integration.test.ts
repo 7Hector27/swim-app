@@ -68,34 +68,82 @@ async function makeCoach(userId: string): Promise<void> {
   await adminDb().update(profiles).set({ role: "coach" }).where(eq(profiles.id, userId));
 }
 
-// The dev DB may contain a real coach profile (e.g. jason@mail.com). The
-// sync service's `getActiveCoachProfileId` picks arbitrarily when more than
-// one 'coach' profile exists — that's the single-coach assumption baked
-// into the whole feature. Make the test deterministic by demoting any
-// other 'coach' profiles to 'parent' for the duration of this test file.
-// Captures the ids so afterAll can restore the roles.
-let demotedCoachIds: string[] = [];
-async function demoteOtherCoaches(testCoachId: string): Promise<void> {
+// The dev DB may contain a real coach profile (e.g. jason@mail.com) with
+// an active integration row and lessons. All three would leak into tests:
+// - The service's getActiveCoachProfileId picks arbitrarily with multiple coaches
+// - The cron picks up every active integration globally
+// - The full/light passes walk all in-window lessons globally
+// Make the test deterministic by pausing any other coach for the duration
+// of this test file. Captures the state so afterAll can restore it.
+interface PausedOther {
+  profileId: string;
+  integrationId: string | null;
+}
+let pausedOthers: PausedOther[] = [];
+async function pauseOtherCoaches(testCoachId: string): Promise<void> {
   const others = await adminDb()
     .select({ id: profiles.id })
     .from(profiles)
     .where(and(eq(profiles.role, "coach"), ne(profiles.id, testCoachId)));
-  demotedCoachIds = others.map((row) => row.id);
-  if (demotedCoachIds.length > 0) {
+  pausedOthers = await Promise.all(
+    others.map(async (row) => {
+      const integ = await adminDb()
+        .select({ id: coachCalendarIntegrations.id })
+        .from(coachCalendarIntegrations)
+        .where(
+          and(
+            eq(coachCalendarIntegrations.coachProfileId, row.id),
+            eq(coachCalendarIntegrations.status, "active"),
+          ),
+        )
+        .limit(1);
+      return { profileId: row.id, integrationId: integ[0]?.id ?? null };
+    }),
+  );
+  if (pausedOthers.length === 0) return;
+  await adminDb()
+    .update(profiles)
+    .set({ role: "parent" })
+    .where(
+      inArray(
+        profiles.id,
+        pausedOthers.map((p) => p.profileId),
+      ),
+    );
+  // Flip integrations to needs_reconnect — reversible with the original
+  // status after the file finishes. Picking needs_reconnect over
+  // disconnected because it doesn't require nulling the token columns.
+  const integrationIds = pausedOthers
+    .map((p) => p.integrationId)
+    .filter((id): id is string => id !== null);
+  if (integrationIds.length > 0) {
     await adminDb()
-      .update(profiles)
-      .set({ role: "parent" })
-      .where(inArray(profiles.id, demotedCoachIds));
+      .update(coachCalendarIntegrations)
+      .set({ status: "needs_reconnect" })
+      .where(inArray(coachCalendarIntegrations.id, integrationIds));
   }
 }
 async function restoreOtherCoaches(): Promise<void> {
-  if (demotedCoachIds.length > 0) {
+  if (pausedOthers.length === 0) return;
+  await adminDb()
+    .update(profiles)
+    .set({ role: "coach" })
+    .where(
+      inArray(
+        profiles.id,
+        pausedOthers.map((p) => p.profileId),
+      ),
+    );
+  const integrationIds = pausedOthers
+    .map((p) => p.integrationId)
+    .filter((id): id is string => id !== null);
+  if (integrationIds.length > 0) {
     await adminDb()
-      .update(profiles)
-      .set({ role: "coach" })
-      .where(inArray(profiles.id, demotedCoachIds));
-    demotedCoachIds = [];
+      .update(coachCalendarIntegrations)
+      .set({ status: "active" })
+      .where(inArray(coachCalendarIntegrations.id, integrationIds));
   }
+  pausedOthers = [];
 }
 
 async function seedCoachIntegration(status: "active" | "needs_reconnect" | "disconnected" = "active"): Promise<void> {
@@ -171,7 +219,7 @@ beforeAll(async () => {
   owner = await createTestUser("sync-int-owner");
   coach = await createTestUser("sync-int-coach");
   await makeCoach(coach.userId);
-  await demoteOtherCoaches(coach.userId);
+  await pauseOtherCoaches(coach.userId);
 
   const locs = await adminDb()
     .select({ id: lessonLocations.id })
@@ -1027,12 +1075,20 @@ describe("background state-change hooks", () => {
     // Give any microtasks a moment to drain.
     await new Promise((resolve) => setTimeout(resolve, 100));
 
-    // Status flipped and the reconcile correctly made no Google call
-    // (short-circuit on !shouldExist && !googleCalendarEventId).
+    // Status flipped and the reconcile correctly made no Google call for
+    // THIS lesson (short-circuit on !shouldExist && !googleCalendarEventId).
+    // The cron also runs a light pass for the test coach's integration,
+    // which may touch other in-window lessons in the dev DB — those are
+    // not the subject of this test.
     const [row] = await adminDb().select().from(lessons).where(eq(lessons.id, lessonId));
     expect(row!.status).toBe("expired");
-    expect(googleClient.upsertEvent).not.toHaveBeenCalled();
-    expect(googleClient.deleteEventIdempotent).not.toHaveBeenCalled();
+    const expiredEventId = stripDashes(lessonId);
+    const upsertIds = vi.mocked(googleClient.upsertEvent).mock.calls.map((c) => c[3]);
+    const deleteIds = vi
+      .mocked(googleClient.deleteEventIdempotent)
+      .mock.calls.map((c) => c[3]);
+    expect(upsertIds).not.toContain(expiredEventId);
+    expect(deleteIds).not.toContain(expiredEventId);
   });
 
   it("lazy expiry on GET /coach/lessons fires the hook per expired lesson", async () => {
@@ -1068,8 +1124,13 @@ describe("background state-change hooks", () => {
 
     const [row] = await adminDb().select().from(lessons).where(eq(lessons.id, lessonId));
     expect(row!.status).toBe("expired");
-    expect(googleClient.upsertEvent).not.toHaveBeenCalled();
-    expect(googleClient.deleteEventIdempotent).not.toHaveBeenCalled();
+    const expiredEventId = stripDashes(lessonId);
+    const upsertIds = vi.mocked(googleClient.upsertEvent).mock.calls.map((c) => c[3]);
+    const deleteIds = vi
+      .mocked(googleClient.deleteEventIdempotent)
+      .mock.calls.map((c) => c[3]);
+    expect(upsertIds).not.toContain(expiredEventId);
+    expect(deleteIds).not.toContain(expiredEventId);
   });
 });
 
@@ -1119,10 +1180,15 @@ describe("full pass covers today + already-synced + strays", () => {
       .set({ calendarSyncStatus: "synced", googleCalendarEventId: eventId })
       .where(eq(lessons.id, lessonId));
 
-    // First pass: Google says "not found" on the patch inside upsert.
-    vi.mocked(googleClient.upsertEvent).mockRejectedValueOnce(
-      Object.assign(new Error("not found"), { code: 404 }),
-    );
+    // First pass: Google says "not found" when we upsert OUR lesson's
+    // event id. Target the mock at THIS specific id — the full pass walks
+    // all in-window lessons globally in a seeded dev DB, and a positional
+    // mock would land on a different lesson.
+    vi.mocked(googleClient.upsertEvent).mockImplementation(async (_env, _tok, _cal, callEventId) => {
+      if (callEventId === eventId) {
+        throw Object.assign(new Error("not found"), { code: 404 });
+      }
+    });
     await runFullSyncPass(coach.userId);
 
     let [row] = await adminDb().select().from(lessons).where(eq(lessons.id, lessonId));
@@ -1130,7 +1196,7 @@ describe("full pass covers today + already-synced + strays", () => {
 
     // Second pass: upsert now succeeds (coach's calendar is reachable
     // again, Google creates a fresh event under the same deterministic id).
-    vi.mocked(googleClient.upsertEvent).mockResolvedValueOnce(undefined);
+    vi.mocked(googleClient.upsertEvent).mockImplementation(async () => {});
     await runFullSyncPass(coach.userId);
 
     [row] = await adminDb().select().from(lessons).where(eq(lessons.id, lessonId));
@@ -1190,5 +1256,115 @@ describe("full pass covers today + already-synced + strays", () => {
 
     expect(googleClient.upsertEvent).not.toHaveBeenCalled();
     expect(googleClient.deleteEventIdempotent).not.toHaveBeenCalled();
+  });
+});
+
+describe("cron tick runs light + 24h full passes", () => {
+  async function waitForLessonStatus(
+    lessonId: string,
+    expected: "synced" | "sync_failed",
+    timeoutMs = 2000,
+  ): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const [row] = await adminDb()
+        .select({ status: lessons.calendarSyncStatus })
+        .from(lessons)
+        .where(eq(lessons.id, lessonId));
+      if (row?.status === expected) return;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    throw new Error(`lesson ${lessonId} did not reach ${expected} within ${timeoutMs}ms`);
+  }
+
+  async function waitForLastFullReconcileAfter(baseline: Date, timeoutMs = 2000): Promise<Date | null> {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const [row] = await adminDb()
+        .select({ last: coachCalendarIntegrations.lastFullReconcileAt })
+        .from(coachCalendarIntegrations)
+        .where(eq(coachCalendarIntegrations.coachProfileId, coach.userId));
+      if (row?.last && row.last.getTime() > baseline.getTime()) return row.last;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    return null;
+  }
+
+  it("a failed lesson and a not_synced lesson both get synced by the next tick's light pass", async () => {
+    await seedCoachIntegration();
+    // Pretend a full pass already ran so this tick runs a LIGHT pass only.
+    await adminDb()
+      .update(coachCalendarIntegrations)
+      .set({ lastFullReconcileAt: new Date() })
+      .where(eq(coachCalendarIntegrations.coachProfileId, coach.userId));
+
+    const failedId = await seedLesson({
+      status: "approved",
+      startsAt: future(24),
+      calendarSyncStatus: "sync_failed",
+    });
+    const notSyncedId = await seedLesson({
+      status: "approved",
+      startsAt: future(48),
+      calendarSyncStatus: "not_synced",
+    });
+
+    const res = await request(app)
+      .post("/internal/cron/tick")
+      .set("cron-secret", process.env["CRON_SECRET"]!);
+    expect(res.status).toBe(200);
+    await waitForLessonStatus(failedId, "synced");
+    await waitForLessonStatus(notSyncedId, "synced");
+  });
+
+  it("a tick skips everything (no Google calls) when the integration is needs_reconnect", async () => {
+    await seedCoachIntegration("needs_reconnect");
+    await seedLesson({
+      status: "approved",
+      startsAt: future(24),
+      calendarSyncStatus: "sync_failed",
+    });
+
+    vi.mocked(googleClient.upsertEvent).mockClear();
+    vi.mocked(googleClient.deleteEventIdempotent).mockClear();
+
+    const res = await request(app)
+      .post("/internal/cron/tick")
+      .set("cron-secret", process.env["CRON_SECRET"]!);
+    expect(res.status).toBe(200);
+    // No active integration → both pass counters are zero.
+    expect(res.body.fullPasses).toBe(0);
+    expect(res.body.lightPasses).toBe(0);
+
+    // Give any scheduled microtasks a moment to prove they didn't run.
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(googleClient.upsertEvent).not.toHaveBeenCalled();
+    expect(googleClient.deleteEventIdempotent).not.toHaveBeenCalled();
+  });
+
+  it("promotes to a full pass when last_full_reconcile_at is >24h old; second tick within 24h runs light only", async () => {
+    await seedCoachIntegration();
+    const stale = new Date(Date.now() - 25 * 60 * 60 * 1000);
+    await adminDb()
+      .update(coachCalendarIntegrations)
+      .set({ lastFullReconcileAt: stale })
+      .where(eq(coachCalendarIntegrations.coachProfileId, coach.userId));
+
+    const res1 = await request(app)
+      .post("/internal/cron/tick")
+      .set("cron-secret", process.env["CRON_SECRET"]!);
+    expect(res1.status).toBe(200);
+    expect(res1.body.fullPasses).toBe(1);
+    expect(res1.body.lightPasses).toBe(0);
+
+    const bumped = await waitForLastFullReconcileAfter(stale);
+    expect(bumped).not.toBeNull();
+
+    const res2 = await request(app)
+      .post("/internal/cron/tick")
+      .set("cron-secret", process.env["CRON_SECRET"]!);
+    expect(res2.status).toBe(200);
+    expect(res2.body.fullPasses).toBe(0);
+    expect(res2.body.lightPasses).toBe(1);
   });
 });
