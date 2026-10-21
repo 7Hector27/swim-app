@@ -316,6 +316,13 @@
       "when": 1792452662718,
       "tag": "0044_burly_ender_wiggin",
       "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1792603756317,
+      "tag": "0045_google_calendar_integration",
+      "breakpoints": true
     }
   ]
 }

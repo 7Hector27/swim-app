@@ -4,7 +4,9 @@ import {
   AnyPgColumn,
   boolean,
   check,
+  customType,
   date,
+  index,
   integer,
   jsonb,
   numeric,
@@ -18,6 +20,14 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+
+// Raw bytes for encrypted token material. Drizzle has no first-class bytea
+// column, so we define it once here and reuse it.
+const bytea = customType<{ data: Buffer; notNull: true; default: false }>({
+  dataType() {
+    return "bytea";
+  },
+});
 
 // ── Skills catalog ────────────────────────────────────────────────────────────
 
@@ -775,6 +785,52 @@ export const coachNotes = pgTable(
   },
   (table) => [
     check("coach_notes_body_not_blank", sql`${table.body} <> ''`),
+  ],
+).enableRLS();
+
+// ── Coach Google Calendar integration + coach audit log ───────────────────────
+
+export const coachCalendarIntegrations = pgTable(
+  "coach_calendar_integrations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    coachProfileId: uuid("coach_profile_id").notNull().references(() => profiles.id, { onDelete: "cascade" }),
+    provider: text("provider").notNull().default("google"),
+    status: text("status").notNull().default("active"),
+    googleCalendarId: text("google_calendar_id").notNull(),
+    googleAccountEmail: text("google_account_email").notNull(),
+    scope: text("scope").notNull(),
+    refreshTokenCiphertext: bytea("refresh_token_ciphertext").notNull(),
+    refreshTokenIv: bytea("refresh_token_iv").notNull(),
+    refreshTokenTag: bytea("refresh_token_tag").notNull(),
+    refreshTokenKeyVersion: integer("refresh_token_key_version").notNull().default(1),
+    connectedAt: timestamp("connected_at", { withTimezone: true }).notNull().defaultNow(),
+    lastSyncAttemptedAt: timestamp("last_sync_attempted_at", { withTimezone: true }),
+    lastSyncSucceededAt: timestamp("last_sync_succeeded_at", { withTimezone: true }),
+    needsReconnectSince: timestamp("needs_reconnect_since", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdateFn(() => new Date()),
+  },
+  (table) => [
+    uniqueIndex("coach_calendar_integrations_coach_profile_uniq").on(table.coachProfileId),
+    check("coach_calendar_integrations_status_valid", sql`${table.status} IN ('active', 'needs_reconnect')`),
+  ],
+).enableRLS();
+
+export const coachAuditLog = pgTable(
+  "coach_audit_log",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    coachId: uuid("coach_id").notNull().references(() => profiles.id, { onDelete: "restrict" }),
+    actorId: uuid("actor_id").notNull().references(() => profiles.id, { onDelete: "restrict" }),
+    action: text("action").notNull(),
+    targetProfileId: uuid("target_profile_id").references(() => profiles.id, { onDelete: "restrict" }),
+    targetSwimmerId: uuid("target_swimmer_id").references(() => swimmers.id, { onDelete: "restrict" }),
+    newRole: householdRoleEnum("new_role"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("coach_audit_log_coach_created_idx").on(table.coachId, table.createdAt.desc()),
   ],
 ).enableRLS();
 
