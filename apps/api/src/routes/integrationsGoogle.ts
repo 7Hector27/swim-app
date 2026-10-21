@@ -15,6 +15,7 @@ import { requireCoach } from "../middleware/requireCoach";
 import { requireUser } from "../middleware/requireUser";
 import { validate } from "../middleware/validate";
 import * as googleClient from "../services/googleCalendarClient";
+import { backfillCoachLessons } from "../services/googleCalendarSync";
 
 export const integrationsGoogleRouter = Router();
 
@@ -197,6 +198,14 @@ integrationsGoogleRouter.get(
     }
 
     res.redirect(buildReturnUrl(siteUrl, returnTo, { google: "connected" }));
+
+    // Backfill in the background after the browser is already on its way to
+    // /account. The card polls the status endpoint and reports progress via
+    // the sync counts (see phase 2.3). Rejections swallowed by the microtask
+    // queue — the service catches its own errors.
+    queueMicrotask(() => {
+      void backfillCoachLessons(coachId);
+    });
   }),
 );
 
