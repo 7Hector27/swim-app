@@ -116,7 +116,7 @@ One row per coach while a Google Calendar integration exists. Created on first c
 | `provider` | `text` | no | `'google'` | Forward-looking; today only `'google'` is written. |
 | `status` | `text` | no | `'active'` | CHECK IN ('active', 'needs_reconnect'). Non-existence of the row = not connected. |
 | `google_calendar_id` | `text` | no | — | Returned by `calendars.insert` on first connect; reused on reconnect if the calendar still exists in Google. |
-| `google_account_email` | `text` | no | — | For the status card. |
+| `google_account_email` | `text` | yes | — | For the status card. Null when Google omitted the id_token or its `email` claim (migration 0046). The card shows "Connected" without an address in that case. |
 | `scope` | `text` | no | — | Record of the OAuth scope granted; alarms if it ever drifts. |
 | `refresh_token_ciphertext` | `bytea` | no | — | AES-256-GCM ciphertext. |
 | `refresh_token_iv` | `bytea` | no | — | 12-byte GCM nonce. |
