@@ -18,21 +18,21 @@ The lessons table already has four columns anticipating this feature — `google
 
 ### New table — `coach_calendar_integrations`
 
-One row per coach. The row is created on first connect, updated on reconnect, and deleted only on explicit coach-initiated Disconnect. It persists through the `needs_reconnect` state so the dedicated calendar id and settings survive a revoked token.
+One row per coach. The row is created on first connect, updated on reconnect, and transitioned to `status='disconnected'` on explicit coach Disconnect — it is **never** deleted by the API. The row persists through both `needs_reconnect` (token revoked out-of-band) and `disconnected` (coach-initiated) so the dedicated calendar id and account email survive and the next connect reuses the same Google calendar.
 
 | Column | Type | Notes |
 |---|---|---|
 | `id` | uuid, PK | `defaultRandom()` |
 | `coach_profile_id` | uuid, FK → `profiles.id`, unique, on delete cascade | Unique → at most one integration per coach |
 | `provider` | text, NOT NULL, default `'google'` | Forward-looking; app only writes `'google'` |
-| `status` | text, NOT NULL, default `'active'` | CHECK: `'active' \| 'needs_reconnect'`. Non-existence of the row = not connected. |
+| `status` | text, NOT NULL, default `'active'` | CHECK: `'active' \| 'needs_reconnect' \| 'disconnected'`. Non-existence of the row = never connected; a `'disconnected'` row maps to "not_connected" on the status endpoint but internally retains `google_calendar_id` for reuse. |
 | `google_calendar_id` | text, NOT NULL | Returned by `calendars.insert` on first connect; reused on reconnect if the calendar still exists in Google |
 | `google_account_email` | text, nullable | For the status card. Null when Google omitted the id_token or its email claim. The card still shows "Connected" without an address in that case — a missing email never fails the OAuth flow. |
-| `scope` | text, NOT NULL | Record what we requested; alarm if it ever drifts |
-| `refresh_token_ciphertext` | bytea, NOT NULL | AES-256-GCM output |
-| `refresh_token_iv` | bytea, NOT NULL | 12-byte GCM nonce |
-| `refresh_token_tag` | bytea, NOT NULL | 16-byte GCM auth tag |
-| `refresh_token_key_version` | integer, NOT NULL, default `1` | Enables rotation without migration |
+| `refresh_token_ciphertext` | bytea, nullable | AES-256-GCM output. Non-null when `status` is `'active'` or `'needs_reconnect'`; nulled on disconnect (see below). |
+| `refresh_token_iv` | bytea, nullable | 12-byte GCM nonce; same nullability as the ciphertext. |
+| `refresh_token_tag` | bytea, nullable | 16-byte GCM auth tag; same nullability as the ciphertext. |
+| `refresh_token_key_version` | integer, nullable | Enables rotation without migration; nulled on disconnect. |
+| `scope` | text, nullable | Scope the coach granted; nulled on disconnect since no refresh token is held. |
 | `connected_at` | timestamptz, NOT NULL, default `now()` | Set on first successful connect; preserved through reconnect |
 | `last_sync_attempted_at` | timestamptz, nullable | Updated on every sync call |
 | `last_sync_succeeded_at` | timestamptz, nullable | Updated only on 2xx |

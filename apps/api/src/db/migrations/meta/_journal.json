@@ -330,6 +330,13 @@
       "when": 1792605917517,
       "tag": "0046_google_calendar_email_nullable",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1792608480566,
+      "tag": "0047_keep_calendar_on_disconnect",
+      "breakpoints": true
     }
   ]
 }

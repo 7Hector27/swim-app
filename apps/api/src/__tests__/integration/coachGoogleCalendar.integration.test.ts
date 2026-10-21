@@ -17,14 +17,23 @@ process.env["GOOGLE_OAUTH_STATE_SECRET"] = "s".repeat(32);
 
 // Mock the Google client wrapper. Tests set behavior per case via the
 // exported `mockClient` object (populated below).
-vi.mock("../../services/googleCalendarClient", () => ({
-  CALENDAR_SCOPE: "https://www.googleapis.com/auth/calendar.app.created",
-  getAuthorizeUrl: vi.fn(),
-  exchangeCodeForTokens: vi.fn(),
-  calendarExists: vi.fn(),
-  createDedicatedCalendar: vi.fn(),
-  revokeToken: vi.fn(),
-}));
+vi.mock("../../services/googleCalendarClient", async () => {
+  // Keep the real `toSafeGoogleError` implementation — it's a pure function
+  // and the catch blocks in the routes rely on it. Only the HTTP-touching
+  // functions are stubbed.
+  const actual = await vi.importActual<typeof import("../../services/googleCalendarClient")>(
+    "../../services/googleCalendarClient",
+  );
+  return {
+    ...actual,
+    CALENDAR_SCOPE: "https://www.googleapis.com/auth/calendar.app.created",
+    getAuthorizeUrl: vi.fn(),
+    exchangeCodeForTokens: vi.fn(),
+    calendarExists: vi.fn(),
+    createDedicatedCalendar: vi.fn(),
+    revokeToken: vi.fn(),
+  };
+});
 
 import { createApp } from "../../app";
 import { coachAuditLog, coachCalendarIntegrations, profiles } from "../../db/schema";
@@ -155,9 +164,9 @@ describe("GET /integrations/google/callback — connect flow", () => {
       googleCalendarId: "mock-google-calendar-id",
       needsReconnectSince: null,
     });
-    expect(rows[0]!.refreshTokenCiphertext.length).toBeGreaterThan(0);
-    expect(rows[0]!.refreshTokenIv.length).toBe(12);
-    expect(rows[0]!.refreshTokenTag.length).toBe(16);
+    expect(rows[0]!.refreshTokenCiphertext!.length).toBeGreaterThan(0);
+    expect(rows[0]!.refreshTokenIv!.length).toBe(12);
+    expect(rows[0]!.refreshTokenTag!.length).toBe(16);
 
     const audit = await adminDb()
       .select()
@@ -404,7 +413,7 @@ describe("DELETE /coach/calendar", () => {
     expect(res.status).toBe(404);
   });
 
-  it("revokes at Google, deletes the row, and writes a calendar_disconnected audit entry", async () => {
+  it("revokes at Google, flips the row to 'disconnected' with cleared tokens, and writes calendar_disconnected", async () => {
     const { encryptToken } = await import("../../lib/tokenEncryption");
     const encrypted = encryptToken("existing-refresh-token", Buffer.from(KEY, "base64"));
     await adminDb().insert(coachCalendarIntegrations).values({
@@ -427,11 +436,23 @@ describe("DELETE /coach/calendar", () => {
     expect(googleClient.revokeToken).toHaveBeenCalledTimes(1);
     expect(googleClient.revokeToken).toHaveBeenCalledWith(expect.anything(), "existing-refresh-token");
 
+    // The row persists; only the token material and scope are cleared, and
+    // the google_calendar_id survives so the next connect can reuse it.
     const rows = await adminDb()
       .select()
       .from(coachCalendarIntegrations)
       .where(eq(coachCalendarIntegrations.coachProfileId, coach.userId));
-    expect(rows).toHaveLength(0);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      status: "disconnected",
+      googleCalendarId: "existing-calendar-id",
+      refreshTokenCiphertext: null,
+      refreshTokenIv: null,
+      refreshTokenTag: null,
+      refreshTokenKeyVersion: null,
+      scope: null,
+      needsReconnectSince: null,
+    });
 
     const audit = await adminDb()
       .select()
@@ -441,7 +462,7 @@ describe("DELETE /coach/calendar", () => {
     expect(audit[0]!.action).toBe("calendar_disconnected");
   });
 
-  it("still deletes the local row when the Google revoke call fails", async () => {
+  it("still flips the row to 'disconnected' when the Google revoke call fails", async () => {
     const { encryptToken } = await import("../../lib/tokenEncryption");
     const encrypted = encryptToken("existing-refresh-token", Buffer.from(KEY, "base64"));
     await adminDb().insert(coachCalendarIntegrations).values({
@@ -466,7 +487,25 @@ describe("DELETE /coach/calendar", () => {
       .select()
       .from(coachCalendarIntegrations)
       .where(eq(coachCalendarIntegrations.coachProfileId, coach.userId));
-    expect(rows).toHaveLength(0);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.status).toBe("disconnected");
+    expect(rows[0]!.refreshTokenCiphertext).toBeNull();
+  });
+
+  it("returns 404 when the integration is already in 'disconnected' state", async () => {
+    // Seed a disconnected row (what a prior disconnect leaves behind).
+    await adminDb().insert(coachCalendarIntegrations).values({
+      coachProfileId: coach.userId,
+      status: "disconnected",
+      googleCalendarId: "existing-calendar-id",
+      googleAccountEmail: "coach-google@example.com",
+    });
+
+    const res = await request(app)
+      .delete("/coach/calendar")
+      .set("Authorization", `Bearer ${coach.accessToken}`);
+    expect(res.status).toBe(404);
+    expect(googleClient.revokeToken).not.toHaveBeenCalled();
   });
 });
 
@@ -520,5 +559,92 @@ describe("status endpoint reflects integration row state", () => {
     expect(res.status).toBe(200);
     expect(res.body.status).toBe("needs_reconnect");
     expect(res.body.needsReconnectSince).toEqual(expect.any(String));
+  });
+
+  it("maps a 'disconnected' row to status='not_connected' on the response (calendar id hidden)", async () => {
+    // Row exists but was disconnected — the UI should see the "not connected"
+    // state and show the Connect button. The server retains the calendar id
+    // internally for reuse on the next connect, but the client never sees it.
+    await adminDb().insert(coachCalendarIntegrations).values({
+      coachProfileId: coach.userId,
+      status: "disconnected",
+      googleCalendarId: "existing-calendar-id",
+      googleAccountEmail: "coach-google@example.com",
+    });
+
+    const res = await request(app)
+      .get("/coach/calendar/status")
+      .set("Authorization", `Bearer ${coach.accessToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      status: "not_connected",
+      connectedAccountEmail: null,
+      googleCalendarId: null,
+      connectedAt: null,
+    });
+  });
+});
+
+describe("connect → disconnect → connect round-trip", () => {
+  it("reuses the same google_calendar_id across the full cycle (no new calendar created on reconnect)", async () => {
+    // First connect — new row, new calendar created.
+    vi.mocked(googleClient.createDedicatedCalendar).mockResolvedValueOnce({
+      id: "the-one-and-only-calendar-id",
+    });
+    const connectState1 = signState(coach.userId, STATE_SECRET);
+    await request(app)
+      .get("/integrations/google/callback")
+      .query({ code: "code-1", state: connectState1 });
+
+    let rows = await adminDb()
+      .select()
+      .from(coachCalendarIntegrations)
+      .where(eq(coachCalendarIntegrations.coachProfileId, coach.userId));
+    expect(rows[0]!.googleCalendarId).toBe("the-one-and-only-calendar-id");
+    expect(rows[0]!.status).toBe("active");
+
+    // Disconnect — row flipped to 'disconnected', calendar id preserved.
+    const disconnectRes = await request(app)
+      .delete("/coach/calendar")
+      .set("Authorization", `Bearer ${coach.accessToken}`);
+    expect(disconnectRes.status).toBe(204);
+
+    rows = await adminDb()
+      .select()
+      .from(coachCalendarIntegrations)
+      .where(eq(coachCalendarIntegrations.coachProfileId, coach.userId));
+    expect(rows[0]!.status).toBe("disconnected");
+    expect(rows[0]!.googleCalendarId).toBe("the-one-and-only-calendar-id");
+
+    // Second connect — calendars.get succeeds, reuse the id, no insert.
+    vi.mocked(googleClient.createDedicatedCalendar).mockClear();
+    vi.mocked(googleClient.calendarExists).mockResolvedValueOnce({ exists: true });
+    const connectState2 = signState(coach.userId, STATE_SECRET);
+    await request(app)
+      .get("/integrations/google/callback")
+      .query({ code: "code-2", state: connectState2 });
+
+    expect(googleClient.calendarExists).toHaveBeenCalledWith(
+      expect.anything(),
+      "access-token-value",
+      "the-one-and-only-calendar-id",
+    );
+    expect(googleClient.createDedicatedCalendar).not.toHaveBeenCalled();
+
+    rows = await adminDb()
+      .select()
+      .from(coachCalendarIntegrations)
+      .where(eq(coachCalendarIntegrations.coachProfileId, coach.userId));
+    expect(rows[0]!.googleCalendarId).toBe("the-one-and-only-calendar-id");
+    expect(rows[0]!.status).toBe("active");
+    expect(rows[0]!.refreshTokenCiphertext).not.toBeNull();
+
+    // Audit trail: connect, disconnect, reconnect.
+    const audit = await adminDb()
+      .select()
+      .from(coachAuditLog)
+      .where(eq(coachAuditLog.coachId, coach.userId));
+    const actions = audit.map((a) => a.action).sort();
+    expect(actions).toEqual(["calendar_connected", "calendar_disconnected", "calendar_reconnected"]);
   });
 });

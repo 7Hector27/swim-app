@@ -22,8 +22,10 @@ import {
 } from "drizzle-orm/pg-core";
 
 // Raw bytes for encrypted token material. Drizzle has no first-class bytea
-// column, so we define it once here and reuse it.
-const bytea = customType<{ data: Buffer; notNull: true; default: false }>({
+// column, so we define it once here and reuse it. Column-level `.notNull()`
+// / nullability controls the inferred type — don't pin `notNull: true` here
+// or every bytea column is forced non-null regardless of its definition.
+const bytea = customType<{ data: Buffer }>({
   dataType() {
     return "bytea";
   },
@@ -799,11 +801,15 @@ export const coachCalendarIntegrations = pgTable(
     status: text("status").notNull().default("active"),
     googleCalendarId: text("google_calendar_id").notNull(),
     googleAccountEmail: text("google_account_email"),
-    scope: text("scope").notNull(),
-    refreshTokenCiphertext: bytea("refresh_token_ciphertext").notNull(),
-    refreshTokenIv: bytea("refresh_token_iv").notNull(),
-    refreshTokenTag: bytea("refresh_token_tag").notNull(),
-    refreshTokenKeyVersion: integer("refresh_token_key_version").notNull().default(1),
+    // Nullable when status='disconnected': disconnect revokes the token at
+    // Google and clears these fields so no stale ciphertext sits around.
+    // The calendar id and status row persist so reconnect can reuse the id
+    // (see ADR 027). On status='active' or 'needs_reconnect' they are set.
+    scope: text("scope"),
+    refreshTokenCiphertext: bytea("refresh_token_ciphertext"),
+    refreshTokenIv: bytea("refresh_token_iv"),
+    refreshTokenTag: bytea("refresh_token_tag"),
+    refreshTokenKeyVersion: integer("refresh_token_key_version"),
     connectedAt: timestamp("connected_at", { withTimezone: true }).notNull().defaultNow(),
     lastSyncAttemptedAt: timestamp("last_sync_attempted_at", { withTimezone: true }),
     lastSyncSucceededAt: timestamp("last_sync_succeeded_at", { withTimezone: true }),
@@ -813,7 +819,10 @@ export const coachCalendarIntegrations = pgTable(
   },
   (table) => [
     uniqueIndex("coach_calendar_integrations_coach_profile_uniq").on(table.coachProfileId),
-    check("coach_calendar_integrations_status_valid", sql`${table.status} IN ('active', 'needs_reconnect')`),
+    check(
+      "coach_calendar_integrations_status_valid",
+      sql`${table.status} IN ('active', 'needs_reconnect', 'disconnected')`,
+    ),
   ],
 ).enableRLS();
 

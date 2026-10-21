@@ -56,12 +56,21 @@ coachCalendarRouter.get(
       return;
     }
 
-    const status: GoogleCalendarStatus = row.status === "needs_reconnect" ? "needs_reconnect" : "active";
+    // 'disconnected' rows look the same to the UI as "not connected" — the
+    // Connect button is shown. The row itself persists only so reconnect can
+    // reuse the dedicated calendar id without creating a fresh calendar in
+    // the coach's Google account. See ADR 027.
+    const status: GoogleCalendarStatus =
+      row.status === "needs_reconnect"
+        ? "needs_reconnect"
+        : row.status === "disconnected"
+          ? "not_connected"
+          : "active";
     const body: GoogleCalendarStatusResponse = {
       status,
-      connectedAccountEmail: row.googleAccountEmail,
-      connectedAt: row.connectedAt.toISOString(),
-      googleCalendarId: row.googleCalendarId,
+      connectedAccountEmail: status === "not_connected" ? null : row.googleAccountEmail,
+      connectedAt: status === "not_connected" ? null : row.connectedAt.toISOString(),
+      googleCalendarId: status === "not_connected" ? null : row.googleCalendarId,
       lastSyncAttemptedAt: row.lastSyncAttemptedAt?.toISOString() ?? null,
       lastSyncSucceededAt: row.lastSyncSucceededAt?.toISOString() ?? null,
       needsReconnectSince: row.needsReconnectSince?.toISOString() ?? null,
@@ -71,10 +80,13 @@ coachCalendarRouter.get(
 );
 
 // ── DELETE /coach/calendar ───────────────────────────────────────────────────
-// Revoke the refresh token at Google, then delete the integration row and
-// write a disconnect audit entry in one transaction. The dedicated Google
-// calendar is left intact — the coach can delete it manually. Phase 1 does
-// not yet clear lesson sync columns because no lessons have been synced yet.
+// Revoke the refresh token at Google, then flip the integration row's status
+// to 'disconnected' and clear the token fields in one transaction. The row
+// (and especially its google_calendar_id) is preserved so the next connect
+// can reuse the dedicated calendar instead of leaving a fresh orphan in the
+// coach's Google account. The dedicated Google calendar itself is left
+// intact. Phase 1 doesn't clear lesson sync columns yet (no lessons have
+// been synced).
 
 coachCalendarRouter.delete(
   "/calendar",
@@ -92,31 +104,39 @@ coachCalendarRouter.delete(
       .where(eq(coachCalendarIntegrations.coachProfileId, req.profile.id))
       .limit(1);
     const row = rows[0];
-    if (!row) {
+    if (!row || row.status === "disconnected") {
+      // Already disconnected (or never connected) → nothing to do.
       res.status(404).json({ error: "No Google Calendar integration to disconnect" });
       return;
     }
 
     // Decrypt the refresh token to revoke it. If decrypt fails (e.g. the key
-    // was rotated incorrectly) we still delete the local row — leaving a
-    // dead integration in place is worse than skipping the revoke.
+    // was rotated incorrectly) we still mark the row disconnected — leaving
+    // a dead integration in place is worse than skipping the revoke.
     let refreshToken: string | undefined;
-    try {
-      refreshToken = decryptToken(
-        {
-          ciphertext: row.refreshTokenCiphertext,
-          iv: row.refreshTokenIv,
-          tag: row.refreshTokenTag,
-          keyVersion: row.refreshTokenKeyVersion,
-        },
-        env.googleOAuth.tokenEncryptionKey,
-      );
-    } catch (err) {
-      req.log.warn({ err }, "disconnect: could not decrypt refresh token, skipping Google revoke");
+    if (
+      row.refreshTokenCiphertext &&
+      row.refreshTokenIv &&
+      row.refreshTokenTag &&
+      row.refreshTokenKeyVersion !== null
+    ) {
+      try {
+        refreshToken = decryptToken(
+          {
+            ciphertext: row.refreshTokenCiphertext,
+            iv: row.refreshTokenIv,
+            tag: row.refreshTokenTag,
+            keyVersion: row.refreshTokenKeyVersion,
+          },
+          env.googleOAuth.tokenEncryptionKey,
+        );
+      } catch (err) {
+        req.log.warn({ err }, "disconnect: could not decrypt refresh token, skipping Google revoke");
+      }
     }
 
     // Revoke outside the transaction. A failure here is logged but does not
-    // block the local delete — the coach's intent is clear and the token
+    // block the local update — the coach's intent is clear and the token
     // will eventually expire on Google's side anyway.
     if (refreshToken) {
       try {
@@ -124,7 +144,7 @@ coachCalendarRouter.delete(
       } catch (err) {
         req.log.warn(
           { googleError: googleClient.toSafeGoogleError(err) },
-          "disconnect: Google revoke failed, continuing with local delete",
+          "disconnect: Google revoke failed, continuing with local update",
         );
       }
     }
@@ -136,7 +156,16 @@ coachCalendarRouter.delete(
         action: "calendar_disconnected",
       });
       await tx
-        .delete(coachCalendarIntegrations)
+        .update(coachCalendarIntegrations)
+        .set({
+          status: "disconnected",
+          refreshTokenCiphertext: null,
+          refreshTokenIv: null,
+          refreshTokenTag: null,
+          refreshTokenKeyVersion: null,
+          scope: null,
+          needsReconnectSince: null,
+        })
         .where(eq(coachCalendarIntegrations.coachProfileId, req.profile.id));
     });
 

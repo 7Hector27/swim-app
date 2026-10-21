@@ -114,14 +114,14 @@ One row per coach while a Google Calendar integration exists. Created on first c
 | `id` | `uuid` | no | `gen_random_uuid()` | Primary key |
 | `coach_profile_id` | `uuid` | no | — | FK → `profiles.id` (cascade on delete). `UNIQUE` → at most one integration per coach. |
 | `provider` | `text` | no | `'google'` | Forward-looking; today only `'google'` is written. |
-| `status` | `text` | no | `'active'` | CHECK IN ('active', 'needs_reconnect'). Non-existence of the row = not connected. |
-| `google_calendar_id` | `text` | no | — | Returned by `calendars.insert` on first connect; reused on reconnect if the calendar still exists in Google. |
+| `status` | `text` | no | `'active'` | CHECK IN ('active', 'needs_reconnect', 'disconnected'). Non-existence of the row = never connected; a `'disconnected'` row maps to not-connected externally but retains the calendar id. |
+| `google_calendar_id` | `text` | no | — | Returned by `calendars.insert` on first connect; reused on reconnect (whether after `needs_reconnect` or `disconnected`) when the calendar still exists in Google. |
 | `google_account_email` | `text` | yes | — | For the status card. Null when Google omitted the id_token or its `email` claim (migration 0046). The card shows "Connected" without an address in that case. |
-| `scope` | `text` | no | — | Record of the OAuth scope granted; alarms if it ever drifts. |
-| `refresh_token_ciphertext` | `bytea` | no | — | AES-256-GCM ciphertext. |
-| `refresh_token_iv` | `bytea` | no | — | 12-byte GCM nonce. |
-| `refresh_token_tag` | `bytea` | no | — | 16-byte GCM auth tag. |
-| `refresh_token_key_version` | `integer` | no | `1` | Enables key rotation without a schema change. |
+| `scope` | `text` | yes | — | OAuth scope granted. Non-null when `status` is `'active'`/`'needs_reconnect'`; nulled on disconnect (migration 0047). |
+| `refresh_token_ciphertext` | `bytea` | yes | — | AES-256-GCM ciphertext. Nulled on disconnect (migration 0047). |
+| `refresh_token_iv` | `bytea` | yes | — | 12-byte GCM nonce. Nulled on disconnect. |
+| `refresh_token_tag` | `bytea` | yes | — | 16-byte GCM auth tag. Nulled on disconnect. |
+| `refresh_token_key_version` | `integer` | yes | — | Enables key rotation. Nulled on disconnect (migration 0047 also drops the default). |
 | `connected_at` | `timestamptz` | no | `now()` | Set on first successful connect; preserved through reconnect. |
 | `last_sync_attempted_at` | `timestamptz` | yes | — | Updated on every sync call. |
 | `last_sync_succeeded_at` | `timestamptz` | yes | — | Updated only on 2xx. |
