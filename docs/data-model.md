@@ -84,6 +84,57 @@ RLS is enabled. Policies TBD.
 
 ---
 
+### `coach_audit_log`
+
+Append-only log of significant coach-level events. Same shape and conventions as `household_audit_log` minus `household_id` plus `coach_id`. Kept general so future coach-level events can share it without a new table. See ADR 027.
+
+| Column | Type | Nullable | Default | Notes |
+|---|---|---|---|---|
+| `id` | `uuid` | no | `gen_random_uuid()` | Primary key |
+| `coach_id` | `uuid` | no | — | FK → `profiles.id` (restrict on delete). The coach the event is about. |
+| `actor_id` | `uuid` | no | — | FK → `profiles.id` (restrict on delete). Profile that performed the action. For integration events, `coach_id = actor_id`. |
+| `action` | `text` | no | — | e.g. `calendar_connected`, `calendar_disconnected`, `calendar_reconnected`, `calendar_sync_retried` |
+| `target_profile_id` | `uuid` | yes | — | FK → `profiles.id` (restrict on delete). Reserved for future use; unused by integration events. |
+| `target_swimmer_id` | `uuid` | yes | — | FK → `swimmers.id` (restrict on delete). Reserved; unused here. |
+| `new_role` | `household_role` | yes | — | Reserved; unused here. |
+| `created_at` | `timestamptz` | no | `now()` | |
+
+Index: `(coach_id, created_at DESC)`.
+
+RLS is enabled. Policies TBD.
+
+---
+
+### `coach_calendar_integrations`
+
+One row per coach while a Google Calendar integration exists. Created on first connect, updated on reconnect, deleted only on explicit coach-initiated disconnect. Persists through the `needs_reconnect` state so the dedicated calendar id and settings survive a revoked token. See ADR 027.
+
+| Column | Type | Nullable | Default | Notes |
+|---|---|---|---|---|
+| `id` | `uuid` | no | `gen_random_uuid()` | Primary key |
+| `coach_profile_id` | `uuid` | no | — | FK → `profiles.id` (cascade on delete). `UNIQUE` → at most one integration per coach. |
+| `provider` | `text` | no | `'google'` | Forward-looking; today only `'google'` is written. |
+| `status` | `text` | no | `'active'` | CHECK IN ('active', 'needs_reconnect'). Non-existence of the row = not connected. |
+| `google_calendar_id` | `text` | no | — | Returned by `calendars.insert` on first connect; reused on reconnect if the calendar still exists in Google. |
+| `google_account_email` | `text` | no | — | For the status card. |
+| `scope` | `text` | no | — | Record of the OAuth scope granted; alarms if it ever drifts. |
+| `refresh_token_ciphertext` | `bytea` | no | — | AES-256-GCM ciphertext. |
+| `refresh_token_iv` | `bytea` | no | — | 12-byte GCM nonce. |
+| `refresh_token_tag` | `bytea` | no | — | 16-byte GCM auth tag. |
+| `refresh_token_key_version` | `integer` | no | `1` | Enables key rotation without a schema change. |
+| `connected_at` | `timestamptz` | no | `now()` | Set on first successful connect; preserved through reconnect. |
+| `last_sync_attempted_at` | `timestamptz` | yes | — | Updated on every sync call. |
+| `last_sync_succeeded_at` | `timestamptz` | yes | — | Updated only on 2xx. |
+| `needs_reconnect_since` | `timestamptz` | yes | — | Set when a refresh returns `invalid_grant`; cleared on successful reconnect. |
+| `created_at` | `timestamptz` | no | `now()` | |
+| `updated_at` | `timestamptz` | no | `now()` | Auto-updated. |
+
+Index: `UNIQUE (coach_profile_id)`.
+
+RLS is enabled. Policies TBD.
+
+---
+
 ### `swimmers`
 
 One row per swimmer. Swimmers are **never hard-deleted** — use `archived_at` to soft-delete.
@@ -336,10 +387,10 @@ One row per lesson booking request.
 | `expires_at` | `timestamptz` | yes | — | `starts_at − 16 h`; null for auto-approved lessons |
 | `moved_at` | `timestamptz` | yes | — | Set when the coach reschedules the lesson. Null for lessons that have never been moved. |
 | `previous_starts_at` | `timestamptz` | yes | — | The original `starts_at` value before the most recent coach-initiated reschedule. Null when `moved_at` is null. |
-| `google_calendar_event_id` | `text` | yes | — | Populated in PR 6 |
+| `google_calendar_event_id` | `text` | yes | — | Event id in the coach's dedicated calendar. Written on sync success; cleared on cancel/decline/disconnect. Populated by the Google Calendar sync feature (ADR 027). |
 | `calendar_sync_status` | `text` | no | `'not_synced'` | CHECK IN ('not_synced', 'synced', 'sync_failed') |
 | `calendar_sync_error` | `text` | yes | — | Last sync error message |
-| `calendar_sync_attempts` | `integer` | no | `0` | |
+| `calendar_sync_attempts` | `integer` | no | `0` | Incremented on every attempt (success or failure). |
 | `created_at` | `timestamptz` | no | `now()` | |
 | `updated_at` | `timestamptz` | no | `now()` | Auto-updated |
 

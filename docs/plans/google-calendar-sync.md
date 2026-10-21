@@ -43,22 +43,38 @@ Indexes: unique on `coach_profile_id`.
 
 RLS: `.enableRLS()` with no policies (API-only, same as every other table).
 
-### Why no separate integration audit log
+### New table — `coach_audit_log`
 
-Earlier drafts proposed a `coach_integration_audit_log` table. Dropped. The existing `household_audit_log` can't carry these events — `household_id` is NOT NULL and connect / disconnect / reconnect are coach-level actions with no natural household (a single coach serves many households, and the integration is one-per-coach, not one-per-household). Making `household_id` nullable would misname the table and bleed coach-scoped events into a swimmer/household-centric model that routes already filter on `household_id`. Retry events update a lesson, which does have a household, but splitting one subset of integration events across two tables so the rest can live elsewhere is worse than not writing audit rows at all.
+A general coach-level audit log, not integration-specific — same shape and conventions as `household_audit_log` minus `household_id` plus `coach_id`. Connect, disconnect, reconnect, and retry all write a row here inside the same `db.transaction()` as the state change they record, per CLAUDE.md's audit rule. Future coach-level events (e.g. a coach impersonating a parent, bulk roster edits) land in this table too.
 
-Instead, the integration lifecycle is observable from durable row state, with no new table:
+| Column | Type | Notes |
+|---|---|---|
+| `id` | uuid, PK, `defaultRandom()` | |
+| `coach_id` | uuid, NOT NULL, FK → `profiles.id` (restrict on delete) | The coach the event is about. |
+| `actor_id` | uuid, NOT NULL, FK → `profiles.id` (restrict on delete) | Profile that performed the action. For integration events the coach acts on themselves, so `coach_id = actor_id`. Kept distinct for future coach-on-coach or admin actions. |
+| `action` | text, NOT NULL | For this plan: `'calendar_connected'`, `'calendar_disconnected'`, `'calendar_reconnected'`, `'calendar_sync_retried'`. |
+| `target_profile_id` | uuid, nullable, FK → `profiles.id` (restrict) | Kept for parity with `household_audit_log`; unused by integration events. |
+| `target_swimmer_id` | uuid, nullable, FK → `swimmers.id` (restrict) | Same. Unused here. |
+| `new_role` | `household_role`, nullable | Same. Unused here. |
+| `created_at` | timestamptz, NOT NULL, default `now()` | |
 
-| Event | How it's observable |
+Index on `(coach_id, created_at desc)` to make the "when did this coach do X?" query cheap.
+
+RLS: `.enableRLS()` with no policies (API-only).
+
+**No `payload` column.** `household_audit_log` has none; we match its conventions. The lesson a retry targeted is recoverable from the lesson row's `calendar_sync_attempts`, `last_sync_attempted_at`, and `calendar_sync_error`. If a future event ever needs a payload, add the column with a migration.
+
+### Integration lifecycle beyond the audit log
+
+The audit log is the chronological record. The *current* state is still observable from live rows, which the API and UI read directly:
+
+| State | Live source |
 |---|---|
-| Connect | `coach_calendar_integrations` row exists, `connected_at` set, `status = 'active'` |
-| Disconnect | `coach_calendar_integrations` row absent (deleted in the same transaction that clears lesson sync columns) |
-| Needs reconnect | `coach_calendar_integrations.status = 'needs_reconnect'`, `needs_reconnect_since` set |
-| Reconnect | `status` returned to `'active'`, `needs_reconnect_since` cleared; `updated_at` is the moment |
-| Retry | `lessons.calendar_sync_attempts` increments, `calendar_sync_error` and `last_sync_attempted_at` capture the last outcome |
+| Connected | `coach_calendar_integrations` row with `status='active'` |
+| Needs reconnect | `coach_calendar_integrations.status='needs_reconnect'`, `needs_reconnect_since` set |
+| Not connected | No `coach_calendar_integrations` row |
+| Last retry outcome per lesson | `lessons.calendar_sync_attempts`, `calendar_sync_error`, `last_sync_attempted_at` |
 | Backfill in progress | Count of `lessons` with `status='approved'`, `starts_at > now()`, `calendar_sync_status IN ('not_synced', 'sync_failed')` |
-
-If an immutable chronological trail is ever required for compliance, revisit by adding a general `integration_audit_log` then — not now.
 
 ### Existing columns reused
 
@@ -71,7 +87,7 @@ On `lessons` (schema.ts:491–494):
 
 ### Migration
 
-One Drizzle migration (`pnpm db:generate --name=google_calendar_integration`): creates `coach_calendar_integrations` with its CHECK on `status`. Snapshot is auto-generated. No custom SQL needed. `docs/data-model.md` gets one new section — `### coach_calendar_integrations` placed after `### household_audit_log` — plus an addendum to `### lessons` noting that the four existing `calendar_*` columns are populated by this feature and listing the allowed `calendar_sync_status` values.
+One Drizzle migration (`pnpm db:generate --name=google_calendar_integration`): creates `coach_calendar_integrations` (with its CHECK on `status`) and `coach_audit_log`. Snapshot is auto-generated. No custom SQL needed. `docs/data-model.md` gets two new sections — `### coach_calendar_integrations` and `### coach_audit_log` placed after `### household_audit_log` — plus an addendum to `### lessons` noting that the four existing `calendar_*` columns are populated by this feature and listing the allowed `calendar_sync_status` values.
 
 ---
 
@@ -228,7 +244,7 @@ The card renders one of three states, keyed on `status` from the status endpoint
 - **Failed chip.** If `failedLessonCount > 0`, red chip "N lessons failed to sync" with "Retry all" button. Expanding the chip fetches `GET /coach/lessons?calendarSyncStatus=sync_failed` (reuses the existing endpoint — resolved from former open question 4) and renders a short list with per-row retry.
 - Secondary "Disconnect" button opens a confirmation modal. Modal copy: "The 'Axiom Aquatics Lessons' calendar and its events will stay in your Google account. You can delete them yourself if you want."
 
-**`needs_reconnect`** — same heading, amber alert row: "Google disconnected us — your calendar won't update until you reconnect." Primary button "Reconnect" calls the same `/integrations/google/start` URL (the callback handles both paths). Also shows failed/pending counts so the coach knows what will resync.
+**`needs_reconnect`** — same heading, amber alert row: "Google Calendar needs to be reconnected. New lessons won't show up on your calendar until you reconnect." Primary button "Reconnect" calls the same `/integrations/google/start` URL (the callback handles both paths). Also shows failed/pending counts so the coach knows what will resync.
 
 Styling follows `axiom-aquatics-design` (tokens only, Fraunces/Figtree). Button press feedback and the syncing banner's enter/exit follow `emil-design-eng`.
 
@@ -238,18 +254,17 @@ Styling follows `axiom-aquatics-design` (tokens only, Fraunces/Figtree). Button 
 
 ## Audit log
 
-No new audit table is added — see **Why no separate integration audit log** above. The existing `household_audit_log` cannot represent connect/disconnect/reconnect (its `household_id` is NOT NULL and these are coach-level events), and splitting integration events across two tables so only `retry` lives in `household_audit_log` would be worse than observing state from the live rows.
+Writes to `coach_audit_log` happen in the same `db.transaction()` as the state change they record, matching the rule in CLAUDE.md.
 
-The CLAUDE.md rule that an audit insert must share a transaction with the change it records is still honored for every write touching sync state — there just isn't a separate audit row to insert. Each lifecycle event is still transactionally coherent:
-
-| Event | What runs inside `db.transaction()` | Durable record |
+| Event | Inside the transaction | Audit row |
 |---|---|---|
-| Connect / reconnect | Upsert `coach_calendar_integrations` (status, token fields, timestamps) | Row exists, `status='active'`, `connected_at` + `updated_at` |
-| Needs reconnect | UPDATE `coach_calendar_integrations SET status='needs_reconnect', needs_reconnect_since=now()` and the lesson row that triggered it | Integration row's `status` + `needs_reconnect_since`; lesson's `calendar_sync_error='token_revoked'` |
-| Disconnect | DELETE from `coach_calendar_integrations` + bulk UPDATE on `lessons` clearing sync columns | Row absent, lesson columns reset |
-| Retry (single or bulk) | UPDATE on `lessons` sync columns | `calendar_sync_attempts`, `last_sync_*`, `calendar_sync_status`, `calendar_sync_error` all tell the full retry story |
+| Connect | INSERT into `coach_calendar_integrations` (first time) | `action='calendar_connected'`, `actor_id = coach_id` |
+| Reconnect | UPDATE on `coach_calendar_integrations` (status back to `'active'`, tokens refreshed, `needs_reconnect_since` cleared) | `action='calendar_reconnected'`, `actor_id = coach_id` |
+| Needs reconnect (token revoked) | UPDATE `coach_calendar_integrations SET status='needs_reconnect', needs_reconnect_since=now()` + the lesson row that triggered it | No audit row — this is a system-detected failure, not a coach action. The lifecycle is captured by `needs_reconnect_since` on the row. |
+| Disconnect | DELETE from `coach_calendar_integrations` + bulk UPDATE on `lessons` clearing sync columns | `action='calendar_disconnected'`, `actor_id = coach_id`. Written **before** the DELETE so the FK on `coach_id` still points at a live profile row (and `coach_id` is intentionally NOT a FK to the integration row). |
+| Retry (per lesson, single or bulk) | UPDATE on `lessons` sync columns | One `action='calendar_sync_retried'` row per retry invocation. |
 
-The *Google-side* API calls happen before or after the transaction, never inside — see the ADR.
+Google-side API calls (token exchange, `calendars.insert`, `events.*`, revoke) happen *outside* the transaction — before for calls whose output we commit (connect/reconnect), after for calls that only mirror a committed decision (disconnect's revoke). This keeps every DB transaction short and never blocks a lock on an HTTP round-trip.
 
 ---
 
@@ -289,17 +304,18 @@ Vitest with native `vi.mock()` for the `googleapis` client. New file layout unde
 Vitest integration config, live local Supabase, Google API mocked at the `googleapis` module boundary (no network). Shared `mockGoogleCalendar()` helper under `apps/api/src/__tests__/integration/helpers/`.
 
 - `coachGoogleCalendar.integration.test.ts`:
-  - Full connect flow: start → callback → row written with `status='active'`.
+  - Full connect flow: start → callback → integration row written with `status='active'`; one `coach_audit_log` row written with `action='calendar_connected'` in the same transaction.
+  - Audit transactionality: when the integration INSERT fails (seed a conflicting row), the `coach_audit_log` INSERT rolls back too — no orphan audit row.
   - Connect with pending approved lessons → backfill creates events, all lesson rows reach `calendar_sync_status='synced'`.
   - Backfill is background: callback redirects within 100ms even when 50 lessons are queued; status counts converge over time.
   - Approve → event body sent, lesson row has `event_id` and `synced` status.
   - Reschedule → `events.patch` called with new time, status still `synced`.
   - Cancel → `events.delete` called, `event_id` cleared.
   - Decline (pending → declined) → no Google call (defensive no-op in `syncLessonDeleted`).
-  - Disconnect → Google revoke called, row deleted, future-lesson sync columns cleared, Google `calendars.delete` **not** called.
+  - Disconnect → Google revoke called, row deleted, future-lesson sync columns cleared, Google `calendars.delete` **not** called; `coach_audit_log` row with `action='calendar_disconnected'` written in the same transaction as the DELETE.
   - Retry failed lesson → status flips from `sync_failed` to `synced`.
   - `invalid_grant` on next sync → integration row flipped to `needs_reconnect`, status endpoint reflects it, subsequent retries return 409.
-  - Reconnect with calendar still existing in Google → `calendars.get` returns 2xx, no `calendars.insert` called, same `google_calendar_id` preserved, `status` back to `'active'`, resync re-attempts all `sync_failed`/`not_synced` upcoming approved lessons.
+  - Reconnect with calendar still existing in Google → `calendars.get` returns 2xx, no `calendars.insert` called, same `google_calendar_id` preserved, `status` back to `'active'`, resync re-attempts all `sync_failed`/`not_synced` upcoming approved lessons; `coach_audit_log` row with `action='calendar_reconnected'` written in the same transaction.
   - Reconnect with calendar deleted in Google (`calendars.get` → 404) → `calendars.insert` called, `google_calendar_id` updated, resync proceeds.
   - Approve while disconnected → booking succeeds, no Google call made.
   - Approve with Google 500 → booking succeeds, lesson `sync_failed`, error visible on status endpoint.
@@ -319,15 +335,15 @@ Spot-check: connect, backfill 50 approved lessons, confirm no 429s and total tim
 - **Backfill blocking vs background.** Always background. Redirect fires immediately; the card shows "Syncing N of M…" by polling the status endpoint. Reason: user decision; also avoids a slow redirect for coaches with lots of upcoming lessons.
 - **Event description content.** Title "Swim lesson: {first names}" + Google's native `start`, `end`, and `location` fields. Description is just the deep link to `/coach/lessons/[id]`. Reason: no parent contact info by rule; everything else is already in the event's structured fields.
 - **Timezone.** Hardcoded `America/Los_Angeles` with a `// TODO: per-coach timezone if we ever expand beyond LA` comment at the one site in `googleCalendarSync.ts` that uses it. Reason: smallest change; no schema column added for a case that doesn't exist today.
-- **Audit log table.** Dropped entirely. See **Why no separate integration audit log** above. Reason: the existing `household_audit_log` can't carry coach-level events (NOT NULL `household_id`), and the integration lifecycle is already observable from durable row state.
+- **Audit log table.** Added `coach_audit_log` — general coach-level audit log following `household_audit_log` conventions (minus `household_id`, plus `coach_id`). Connect, disconnect, reconnect, and retry each write a row inside the same transaction as the state change. Reason: user decision; preserves an immutable chronological trail without stretching `household_audit_log`'s shape to cover a coach-level domain.
 - **Reconnect calendar reuse.** On reconnect, call `calendars.get(googleCalendarId)`. Reuse on 2xx; call `calendars.insert` only on 404/410. Reason: honors the user rule that we reuse the existing calendar when it still exists.
 
 ## Still open
 
-Nothing I can resolve without you or Jason. Flagging two UX details to confirm before implementation starts; neither blocks writing code against this plan:
+- **Syncing banner poll cadence.** Decided: poll `/coach/calendar/status` every 3s, only while the card shows the syncing state, and stop as soon as `pendingSyncCount` reaches zero. The card doesn't poll in the `active`-steady or `not_connected` or `needs_reconnect` states.
+- **Reconnect copy.** Decided: "Google Calendar needs to be reconnected. New lessons won't show up on your calendar until you reconnect."
 
-1. **Syncing banner poll cadence.** 3s is a guess. If it feels too chatty on an idle page or too slow after a connect, we tune it. Confirm 3s is a reasonable starting point.
-2. **Reconnect copy.** The amber alert reads "Google disconnected us — your calendar won't update until you reconnect." Jason may want friendlier wording.
+Nothing remaining that needs Jason or me to decide.
 
 ---
 
