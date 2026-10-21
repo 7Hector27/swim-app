@@ -408,6 +408,71 @@ describe("backfillCoachLessons", () => {
   });
 });
 
+describe("reconcile loop on concurrent state change", () => {
+  it("a cancel that commits during a reschedule's Google call leaves no event in Google", async () => {
+    await seedCoachIntegration();
+    const lessonId = await seedLesson({
+      status: "approved",
+      startsAt: future(24),
+      googleCalendarEventId: null,
+    });
+
+    // The first pass sees status='approved' and tries to upsert. While that
+    // upsert is in flight, a concurrent cancel flips the lesson to
+    // 'canceled'. We simulate that by having the mocked upsertEvent perform
+    // the DB write before resolving.
+    let upsertCalls = 0;
+    vi.mocked(googleClient.upsertEvent).mockImplementation(async (_env, _tok, _cal, _id, _body) => {
+      upsertCalls++;
+      // Only flip to canceled on the first pass to prove the loop recovers.
+      if (upsertCalls === 1) {
+        await adminDb()
+          .update(lessons)
+          .set({ status: "canceled", canceledAt: new Date(), canceledBy: owner.userId })
+          .where(eq(lessons.id, lessonId));
+      }
+    });
+
+    await syncLessonToGoogle(lessonId);
+
+    // Pass 1 upserted (now-stale) and detected drift; pass 2 saw status=canceled
+    // and deleted. Net Google state: no event.
+    expect(googleClient.upsertEvent).toHaveBeenCalledTimes(1);
+    expect(googleClient.deleteEventIdempotent).toHaveBeenCalledTimes(1);
+
+    const row = (await adminDb().select().from(lessons).where(eq(lessons.id, lessonId)))[0]!;
+    expect(row.status).toBe("canceled");
+    expect(row.calendarSyncStatus).toBe("synced"); // Google matches the current (canceled) state
+    expect(row.googleCalendarEventId).toBeNull();
+  });
+
+  it("gives up after 3 passes when state keeps changing and marks the lesson sync_failed", async () => {
+    await seedCoachIntegration();
+    const lessonId = await seedLesson({
+      status: "approved",
+      startsAt: future(24),
+      googleCalendarEventId: null,
+    });
+
+    // Every Google call bumps the lesson's startsAt by 1 hour, so each
+    // re-read sees drift and the loop keeps going.
+    vi.mocked(googleClient.upsertEvent).mockImplementation(async () => {
+      await adminDb()
+        .update(lessons)
+        .set({ startsAt: new Date(Date.now() + Math.random() * 1_000_000 + 2 * 86_400_000) })
+        .where(eq(lessons.id, lessonId));
+    });
+
+    await syncLessonToGoogle(lessonId);
+
+    // 3 upserts (one per pass) then give up.
+    expect(googleClient.upsertEvent).toHaveBeenCalledTimes(3);
+    const row = (await adminDb().select().from(lessons).where(eq(lessons.id, lessonId)))[0]!;
+    expect(row.calendarSyncStatus).toBe("sync_failed");
+    expect(row.calendarSyncError).toContain("reconcile_unstable");
+  });
+});
+
 describe("null token guard on active row", () => {
   it("flips to needs_reconnect, marks the lesson sync_failed, and does not throw an unhandled rejection", async () => {
     // Insert an "active" integration with null token columns — a shape no

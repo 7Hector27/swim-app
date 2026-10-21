@@ -26,6 +26,16 @@ import * as googleClient from "./googleCalendarClient";
 // TODO: per-coach timezone if we ever expand beyond LA.
 const LESSON_TIME_ZONE = "America/Los_Angeles";
 
+// Max reconcile passes before giving up. A single Google call happens per
+// pass. If the lesson row's visible state changes while that call is in
+// flight (a concurrent reschedule or cancel), we loop and reconcile against
+// the new state. Three passes is enough to absorb a one-off race; four
+// means something upstream is thrashing the row and we should surface
+// instead of chasing it. The deterministic event id makes every pass safe:
+// upsert overwrites and delete is idempotent, so an intermediate stale
+// write is corrected on the next pass with no permanent harm.
+const MAX_RECONCILE_PASSES = 3;
+
 /**
  * Read the lesson's current state and make Google match it. Idempotent;
  * safe to call from any number of paths or in rapid succession. Errors are
@@ -35,101 +45,161 @@ export async function syncLessonToGoogle(lessonId: string): Promise<void> {
   const env = getEnv();
   if (!env.googleOAuth) return;
 
-  // loadReconcileContext scopes the integration query to status='active',
-  // so a non-null context means the integration is currently serving writes.
-  // This short-circuit keeps `invalid_grant` storms (after an out-of-band
-  // revoke) from piling up on every lesson row the coach touches.
-  const context = await loadReconcileContext(lessonId);
-  if (!context) return;
-  const { lesson, firstNames, location, integration } = context;
+  // Remembered across loop iterations so the "exhausted passes" failure
+  // branch can still find the right coach to log + attribute the failure.
+  let coachProfileIdForFailure: string | null = null;
 
-  const eventId = toGoogleEventId(lesson.id);
-  const shouldExist =
-    lesson.status === "approved" && lesson.startsAt.getTime() > Date.now();
+  for (let pass = 1; pass <= MAX_RECONCILE_PASSES; pass++) {
+    // loadReconcileContext scopes the integration query to status='active',
+    // so a non-null context means the integration is currently serving
+    // writes. This short-circuit keeps `invalid_grant` storms (after an
+    // out-of-band revoke) from piling up on every lesson row the coach
+    // touches.
+    const context = await loadReconcileContext(lessonId);
+    if (!context) return;
+    const { lesson, firstNames, location, integration } = context;
+    coachProfileIdForFailure = integration.coachProfileId;
 
-  // Nothing to do when the lesson has never been pushed and no event is
-  // expected (pending/declined/canceled/etc. that was never approved).
-  if (!shouldExist && !lesson.googleCalendarEventId) {
-    return;
-  }
+    // Snapshot the fields that drive the Google event body. If any of these
+    // changes between now and the end of the Google call, we re-reconcile.
+    const snapshot = {
+      status: lesson.status,
+      startsAtMs: lesson.startsAt.getTime(),
+      durationMinutes: lesson.durationMinutes,
+      locationId: lesson.locationId,
+    };
 
-  // Token columns are nullable in the schema — a bad migration, a manual
-  // DB edit, or a half-applied disconnect could leave status='active' with
-  // null cipher material. Treat that as needs_reconnect rather than
-  // dereferencing a null and surfacing an unhandled rejection on the
-  // microtask queue.
-  if (
-    integration.refreshTokenCiphertext === null ||
-    integration.refreshTokenIv === null ||
-    integration.refreshTokenTag === null ||
-    integration.refreshTokenKeyVersion === null
-  ) {
-    logger.warn(
-      {
-        googleError: googleClient.toSafeGoogleError(
-          new Error("integration row is active but has null token columns"),
-        ),
-        lessonId: lesson.id,
-      },
-      "google sync: active integration with missing token material",
-    );
-    await markNeedsReconnect(lesson.id, integration.coachProfileId);
-    return;
-  }
+    const eventId = toGoogleEventId(lesson.id);
+    const shouldExist =
+      lesson.status === "approved" && lesson.startsAt.getTime() > Date.now();
 
-  let accessToken: string;
-  try {
-    const refreshToken = decryptToken(
-      {
-        ciphertext: integration.refreshTokenCiphertext,
-        iv: integration.refreshTokenIv,
-        tag: integration.refreshTokenTag,
-        keyVersion: integration.refreshTokenKeyVersion,
-      },
-      env.googleOAuth.tokenEncryptionKey,
-    );
-    const refreshed = await googleClient.refreshAccessToken(env.googleOAuth, refreshToken);
-    accessToken = refreshed.accessToken;
-  } catch (err) {
-    if (err instanceof googleClient.GoogleInvalidGrantError) {
+    // Nothing to do when the lesson has never been pushed and no event is
+    // expected (pending/declined/canceled/etc. that was never approved).
+    if (!shouldExist && !lesson.googleCalendarEventId) {
+      return;
+    }
+
+    // Token columns are nullable in the schema — a bad migration, a manual
+    // DB edit, or a half-applied disconnect could leave status='active' with
+    // null cipher material. Treat that as needs_reconnect rather than
+    // dereferencing a null and surfacing an unhandled rejection.
+    if (
+      integration.refreshTokenCiphertext === null ||
+      integration.refreshTokenIv === null ||
+      integration.refreshTokenTag === null ||
+      integration.refreshTokenKeyVersion === null
+    ) {
+      logger.warn(
+        {
+          googleError: googleClient.toSafeGoogleError(
+            new Error("integration row is active but has null token columns"),
+          ),
+          lessonId: lesson.id,
+        },
+        "google sync: active integration with missing token material",
+      );
       await markNeedsReconnect(lesson.id, integration.coachProfileId);
       return;
     }
-    await markLessonSyncFailed(lesson.id, integration.coachProfileId, "token_refresh_failed", err);
-    return;
+
+    let accessToken: string;
+    try {
+      const refreshToken = decryptToken(
+        {
+          ciphertext: integration.refreshTokenCiphertext,
+          iv: integration.refreshTokenIv,
+          tag: integration.refreshTokenTag,
+          keyVersion: integration.refreshTokenKeyVersion,
+        },
+        env.googleOAuth.tokenEncryptionKey,
+      );
+      const refreshed = await googleClient.refreshAccessToken(env.googleOAuth, refreshToken);
+      accessToken = refreshed.accessToken;
+    } catch (err) {
+      if (err instanceof googleClient.GoogleInvalidGrantError) {
+        await markNeedsReconnect(lesson.id, integration.coachProfileId);
+        return;
+      }
+      await markLessonSyncFailed(lesson.id, integration.coachProfileId, "token_refresh_failed", err);
+      return;
+    }
+
+    try {
+      if (shouldExist) {
+        const body: googleClient.CalendarEventBody = {
+          summary: buildSummary(firstNames),
+          description: `${env.siteUrl}/coach/lessons/${lesson.id}`,
+          location: formatLocation(location),
+          startIso: lesson.startsAt.toISOString(),
+          endIso: new Date(
+            lesson.startsAt.getTime() + lesson.durationMinutes * 60_000,
+          ).toISOString(),
+          timeZone: LESSON_TIME_ZONE,
+        };
+        await googleClient.upsertEvent(
+          env.googleOAuth,
+          accessToken,
+          integration.googleCalendarId,
+          eventId,
+          body,
+        );
+        // Persist the event id immediately so a drift pass that transitions
+        // to !shouldExist can see there's an event to delete. markLessonSynced
+        // at the end rewrites this to the same value — a cheap redundancy.
+        await db
+          .update(lessons)
+          .set({ googleCalendarEventId: eventId })
+          .where(eq(lessons.id, lesson.id));
+      } else {
+        await googleClient.deleteEventIdempotent(
+          env.googleOAuth,
+          accessToken,
+          integration.googleCalendarId,
+          eventId,
+        );
+        await db
+          .update(lessons)
+          .set({ googleCalendarEventId: null })
+          .where(eq(lessons.id, lesson.id));
+      }
+    } catch (err) {
+      await markLessonSyncFailed(lesson.id, integration.coachProfileId, "google_api_error", err);
+      return;
+    }
+
+    // Re-read the lesson. If the key fields changed while the Google call
+    // was in flight, our write is stale — loop and reconcile the new state.
+    const laterRows = await db
+      .select()
+      .from(lessons)
+      .where(eq(lessons.id, lessonId))
+      .limit(1);
+    const later = laterRows[0];
+    if (!later) return;
+    const drifted =
+      later.status !== snapshot.status ||
+      later.startsAt.getTime() !== snapshot.startsAtMs ||
+      later.durationMinutes !== snapshot.durationMinutes ||
+      later.locationId !== snapshot.locationId;
+
+    if (!drifted) {
+      await markLessonSynced(lesson.id, integration.coachProfileId, {
+        googleCalendarEventId: shouldExist ? eventId : null,
+      });
+      return;
+    }
+    // else: loop and reconcile against `later` on the next pass.
   }
 
-  try {
-    if (shouldExist) {
-      const body: googleClient.CalendarEventBody = {
-        summary: buildSummary(firstNames),
-        description: `${env.siteUrl}/coach/lessons/${lesson.id}`,
-        location: formatLocation(location),
-        startIso: lesson.startsAt.toISOString(),
-        endIso: new Date(
-          lesson.startsAt.getTime() + lesson.durationMinutes * 60_000,
-        ).toISOString(),
-        timeZone: LESSON_TIME_ZONE,
-      };
-      await googleClient.upsertEvent(
-        env.googleOAuth,
-        accessToken,
-        integration.googleCalendarId,
-        eventId,
-        body,
-      );
-      await markLessonSynced(lesson.id, integration.coachProfileId, { googleCalendarEventId: eventId });
-    } else {
-      await googleClient.deleteEventIdempotent(
-        env.googleOAuth,
-        accessToken,
-        integration.googleCalendarId,
-        eventId,
-      );
-      await markLessonSynced(lesson.id, integration.coachProfileId, { googleCalendarEventId: null });
-    }
-  } catch (err) {
-    await markLessonSyncFailed(lesson.id, integration.coachProfileId, "google_api_error", err);
+  // Three passes and state is still moving. Surface it so the coach can see
+  // the row in the failed-sync chip and retry when the thrashing stops.
+  if (coachProfileIdForFailure !== null) {
+    await markLessonSyncFailed(
+      lessonId,
+      coachProfileIdForFailure,
+      "reconcile_unstable",
+      new Error(`lesson state changed on each of ${MAX_RECONCILE_PASSES} reconcile passes`),
+    );
   }
 }
 
