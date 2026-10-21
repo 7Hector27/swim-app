@@ -630,6 +630,11 @@ lessonsRouter.post(
     };
 
     res.status(201).json(responseBody);
+    // A new booking can be created directly in status='approved' when the
+    // household's auto-approval rule fires (ADR 021). The reconcile is a
+    // no-op for pending bookings but required for auto-approved ones, so
+    // fire the microtask unconditionally — mirrors the other lesson routes.
+    queueMicrotask(() => { void syncLessonToGoogle(newLesson.id); });
   }),
 );
 

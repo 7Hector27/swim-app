@@ -35,6 +35,7 @@ import request from "supertest";
 
 import { createApp } from "../../app";
 import {
+  availabilitySeasons,
   coachAuditLog,
   coachCalendarIntegrations,
   lessonLocations,
@@ -724,5 +725,125 @@ describe("runs can't get stuck", () => {
       await adminDb().select().from(lessons).where(eq(lessons.id, toApprove))
     )[0]!;
     expect(approvedRow.calendarSyncStatus).toBe("synced");
+  });
+});
+
+/**
+ * Regression test for the bug diagnosed against the live dev DB:
+ * POST /lessons was missing the sync hook. When a household's auto-approval
+ * rule (ADR 021) caused a booking to be created directly in status='approved'
+ * — the exact data shape of the stuck lesson in production
+ * (calendar_sync_attempts=0, no error, no event id) — Google was never
+ * called. Approve/decline/reschedule/cancel all had the hook; create did
+ * not. This test exercises the auto-approval path end-to-end.
+ */
+describe("POST /lessons regression: auto-approved bookings must sync", () => {
+  async function withAllDaysEnabled<T>(fn: () => Promise<T>): Promise<T> {
+    const seasons = await adminDb().select().from(availabilitySeasons);
+    const originals = seasons.map((season) => ({ id: season.id, teachesDays: season.teachesDays }));
+    for (const season of seasons) {
+      await adminDb()
+        .update(availabilitySeasons)
+        .set({ teachesDays: [1, 2, 3, 4, 5, 6, 7] })
+        .where(eq(availabilitySeasons.id, season.id));
+    }
+    try {
+      return await fn();
+    } finally {
+      for (const original of originals) {
+        await adminDb()
+          .update(availabilitySeasons)
+          .set({ teachesDays: original.teachesDays })
+          .where(eq(availabilitySeasons.id, original.id));
+      }
+    }
+  }
+
+  async function findFirstAvailableSlot(token: string, locId: string): Promise<string> {
+    for (let weekOffset = 0; weekOffset < 10; weekOffset++) {
+      const weekDate = new Date(Date.now() + weekOffset * 7 * 24 * 60 * 60 * 1000)
+        .toISOString()
+        .slice(0, 10);
+      const res = await request(app)
+        .get("/lessons/available-range")
+        .set("Authorization", `Bearer ${token}`)
+        .query({ view: "week", date: weekDate, durationMinutes: "30", locationId: locId });
+      if (res.status !== 200) continue;
+      const body = res.body as { days: Array<{ slots: Array<{ startsAt: string; state: string }> }> };
+      for (const day of body.days) {
+        for (const slot of day.slots) {
+          if (slot.state === "available") return slot.startsAt;
+        }
+      }
+    }
+    throw new Error("No available slot found within 10 weeks");
+  }
+
+  it("auto-approved POST /lessons fires syncLessonToGoogle (not stuck at not_synced, attempts=0)", async () => {
+    await seedCoachIntegration();
+
+    // Give the owner's household a prior approved lesson at the same
+    // location so the ADR 021 gate flips the next booking to auto-approved
+    // instead of pending. This is exactly the shape of the stuck production
+    // lesson: household + location where prior approvals exist.
+    const priorApprovedId = await seedLesson({
+      status: "approved",
+      startsAt: future(24 * 60), // very far future so it doesn't eat our target slot
+    });
+
+    await withAllDaysEnabled(async () => {
+      const slot = await findFirstAvailableSlot(owner.accessToken, locationId);
+
+      const bookingRes = await request(app)
+        .post("/lessons")
+        .set("Authorization", `Bearer ${owner.accessToken}`)
+        .send({ locationId, startsAt: slot, durationMinutes: 30, swimmerIds: [swimmerIds[0]] });
+
+      expect(bookingRes.status).toBe(201);
+      // Prior-approved rule → booking auto-approved on create.
+      expect(bookingRes.body.status).toBe("approved");
+      const newLessonId = bookingRes.body.id as string;
+
+      // The hook queues a microtask after res.json; poll until the lesson
+      // row flips to synced instead of guessing a fixed delay (CI jitter).
+      // Caps at ~1s total; if the hook were missing we'd time out here with
+      // a clear assertion failure that names the exact bug.
+      const expectedEventId = stripDashes(newLessonId);
+      let synced = false;
+      for (let attempt = 0; attempt < 50; attempt++) {
+        const [current] = await adminDb()
+          .select({ status: lessons.calendarSyncStatus })
+          .from(lessons)
+          .where(eq(lessons.id, newLessonId));
+        if (current?.status === "synced") {
+          synced = true;
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      expect(synced).toBe(true);
+
+      // Google was called with the deterministic event id for the new booking.
+      const eventIds = vi
+        .mocked(googleClient.upsertEvent)
+        .mock.calls.map((call) => call[3]);
+      expect(eventIds).toContain(expectedEventId);
+
+      // Lesson row reached synced state (attempts >= 1, not stuck at 0).
+      const row = (
+        await adminDb().select().from(lessons).where(eq(lessons.id, newLessonId))
+      )[0]!;
+      expect(row.calendarSyncStatus).toBe("synced");
+      expect(row.calendarSyncAttempts).toBeGreaterThanOrEqual(1);
+      expect(row.googleCalendarEventId).toBe(stripDashes(newLessonId));
+
+      // Cleanup the booking so it doesn't collide with later tests.
+      await adminDb()
+        .delete(lessonSwimmers)
+        .where(inArray(lessonSwimmers.lessonId, [newLessonId, priorApprovedId]));
+      await adminDb()
+        .delete(lessons)
+        .where(inArray(lessons.id, [newLessonId, priorApprovedId]));
+    });
   });
 });
