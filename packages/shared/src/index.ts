@@ -32,6 +32,7 @@ export type {
   GoogleOAuthCallbackQuery,
   GoogleCalendarStatus,
   GoogleCalendarStatusResponse,
+  RetryAllFailedResponse,
 } from "./schemas/googleCalendar";
 export {
   GoogleOAuthStartQuerySchema,
@@ -148,6 +149,7 @@ export type {
   ApproveLessonBody,
   DeclineLessonBody,
   CoachListLessonsQuery,
+  CalendarSyncStatus,
   AvailableSlot,
   UpcomingLessonsQuery,
   UpcomingLesson,
@@ -183,6 +185,7 @@ export {
   ApproveLessonBodySchema,
   DeclineLessonBodySchema,
   CoachListLessonsQuerySchema,
+  CalendarSyncStatusSchema,
   AvailableSlotSchema,
   UpcomingLessonsQuerySchema,
   UpcomingLessonsCountResponseSchema,

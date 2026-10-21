@@ -468,6 +468,9 @@ coachLessonsRouter.get(
         sql`date_trunc('day', ${lessons.startsAt} AT TIME ZONE 'America/Los_Angeles') = ${query.date}::date`,
       );
     }
+    if (query.calendarSyncStatus !== undefined) {
+      filters.push(eq(lessons.calendarSyncStatus, query.calendarSyncStatus));
+    }
 
     const lessonRows = await db
       .select()

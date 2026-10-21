@@ -1,20 +1,53 @@
 import { Router } from "express";
-import { eq } from "drizzle-orm";
+import { and, count, eq, gt } from "drizzle-orm";
 import {
   type GoogleCalendarStatus,
   type GoogleCalendarStatusResponse,
+  type RetryAllFailedResponse,
 } from "@swim-app/shared";
 import { db } from "../db/client";
-import { coachAuditLog, coachCalendarIntegrations } from "../db/schema";
+import { coachAuditLog, coachCalendarIntegrations, lessons } from "../db/schema";
 import { getEnv } from "../lib/env";
 import { decryptToken } from "../lib/tokenEncryption";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { validate } from "../middleware/validate";
 import * as googleClient from "../services/googleCalendarClient";
+import { syncLessonToGoogle } from "../services/googleCalendarSync";
 
 export const coachCalendarRouter = Router();
 
 // ── GET /coach/calendar/status ───────────────────────────────────────────────
+
+const ZERO_COUNTS = {
+  upcomingLessonCount: 0,
+  syncedCount: 0,
+  pendingSyncCount: 0,
+  failedLessonCount: 0,
+};
+
+async function computeSyncCounts(): Promise<typeof ZERO_COUNTS> {
+  // Counts over upcoming approved lessons. The single-coach app has no
+  // coach_id column on lessons; a future multi-coach model would scope
+  // these counts to the integration's coach_profile_id.
+  const upcomingApproved = and(eq(lessons.status, "approved"), gt(lessons.startsAt, new Date()));
+  const rows = await db
+    .select({
+      status: lessons.calendarSyncStatus,
+      total: count(),
+    })
+    .from(lessons)
+    .where(upcomingApproved)
+    .groupBy(lessons.calendarSyncStatus);
+
+  const result = { ...ZERO_COUNTS };
+  for (const row of rows) {
+    result.upcomingLessonCount += Number(row.total);
+    if (row.status === "synced") result.syncedCount = Number(row.total);
+    else if (row.status === "not_synced") result.pendingSyncCount = Number(row.total);
+    else if (row.status === "sync_failed") result.failedLessonCount = Number(row.total);
+  }
+  return result;
+}
 
 coachCalendarRouter.get(
   "/calendar/status",
@@ -30,6 +63,7 @@ coachCalendarRouter.get(
         lastSyncAttemptedAt: null,
         lastSyncSucceededAt: null,
         needsReconnectSince: null,
+        ...ZERO_COUNTS,
       };
       res.json(body);
       return;
@@ -51,6 +85,7 @@ coachCalendarRouter.get(
         lastSyncAttemptedAt: null,
         lastSyncSucceededAt: null,
         needsReconnectSince: null,
+        ...ZERO_COUNTS,
       };
       res.json(body);
       return;
@@ -66,6 +101,7 @@ coachCalendarRouter.get(
         : row.status === "disconnected"
           ? "not_connected"
           : "active";
+    const counts = status === "not_connected" ? ZERO_COUNTS : await computeSyncCounts();
     const body: GoogleCalendarStatusResponse = {
       status,
       connectedAccountEmail: status === "not_connected" ? null : row.googleAccountEmail,
@@ -74,10 +110,82 @@ coachCalendarRouter.get(
       lastSyncAttemptedAt: row.lastSyncAttemptedAt?.toISOString() ?? null,
       lastSyncSucceededAt: row.lastSyncSucceededAt?.toISOString() ?? null,
       needsReconnectSince: row.needsReconnectSince?.toISOString() ?? null,
+      ...counts,
     };
     res.json(body);
   }),
 );
+
+// ── POST /coach/calendar/retry-failed ────────────────────────────────────────
+// Reconciles every lesson currently in calendar_sync_status='sync_failed'.
+// Sequential, 100ms gap between calls. Returns 409 if the integration needs
+// reconnect — retry would just spin up more invalid_grants.
+
+coachCalendarRouter.post(
+  "/calendar/retry-failed",
+  validate({}),
+  asyncHandler(async (req, res) => {
+    const env = getEnv();
+    if (!env.googleOAuth) {
+      res.status(503).json({ error: "Google Calendar integration not configured" });
+      return;
+    }
+    const integrationRows = await db
+      .select()
+      .from(coachCalendarIntegrations)
+      .where(eq(coachCalendarIntegrations.coachProfileId, req.profile.id))
+      .limit(1);
+    const integration = integrationRows[0];
+    if (!integration || integration.status !== "active") {
+      res.status(409).json({ error: "Reconnection required" });
+      return;
+    }
+
+    const failedRows = await db
+      .select({ id: lessons.id })
+      .from(lessons)
+      .where(eq(lessons.calendarSyncStatus, "sync_failed"));
+
+    // Insert the audit row up-front so the retry attempt is recorded even
+    // if the loop crashes (CLAUDE.md: audit writes share a transaction with
+    // the change — the per-lesson reconcile writes its own lesson-row
+    // transactions, so a single retry audit for the whole batch is wrapped
+    // alongside the first state the retry endpoint can meaningfully claim).
+    await db.transaction(async (tx) => {
+      await tx.insert(coachAuditLog).values({
+        coachId: req.profile.id,
+        actorId: req.profile.id,
+        action: "calendar_sync_retried",
+      });
+    });
+
+    let succeeded = 0;
+    let failed = 0;
+    for (const row of failedRows) {
+      await syncLessonToGoogle(row.id);
+      // Read back the lesson's new status to count outcomes.
+      const after = await db
+        .select({ status: lessons.calendarSyncStatus })
+        .from(lessons)
+        .where(eq(lessons.id, row.id))
+        .limit(1);
+      if (after[0]?.status === "synced") succeeded++;
+      else failed++;
+      await sleep(100); // 100ms between Google calls (stay under 500/100s quota)
+    }
+
+    const body: RetryAllFailedResponse = {
+      attempted: failedRows.length,
+      succeeded,
+      failed,
+    };
+    res.json(body);
+  }),
+);
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 // ── DELETE /coach/calendar ───────────────────────────────────────────────────
 // Revoke the refresh token at Google, then flip the integration row's status

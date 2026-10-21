@@ -2,10 +2,6 @@ import { z } from "zod";
 
 /**
  * Shared schemas for the Google Calendar coach integration (ADR 027).
- *
- * Phase 1 only exposes OAuth start, OAuth callback, status, and disconnect.
- * Retry and the failed-lessons list are intentionally out of scope here —
- * they are added by a later phase.
  */
 
 export const GoogleOAuthStartQuerySchema = z.object({
@@ -50,5 +46,18 @@ export const GoogleCalendarStatusResponseSchema = z.object({
   lastSyncAttemptedAt: z.string().datetime().nullable(),
   lastSyncSucceededAt: z.string().datetime().nullable(),
   needsReconnectSince: z.string().datetime().nullable(),
+  // Counts over this coach's upcoming approved lessons so the card can
+  // show "Syncing N of M…" during backfill and a "N failed to sync" chip.
+  upcomingLessonCount: z.number().int().nonnegative(),
+  syncedCount: z.number().int().nonnegative(),
+  pendingSyncCount: z.number().int().nonnegative(), // not_synced
+  failedLessonCount: z.number().int().nonnegative(), // sync_failed
 });
 export type GoogleCalendarStatusResponse = z.infer<typeof GoogleCalendarStatusResponseSchema>;
+
+export const RetryAllFailedResponseSchema = z.object({
+  attempted: z.number().int().nonnegative(),
+  succeeded: z.number().int().nonnegative(),
+  failed: z.number().int().nonnegative(),
+});
+export type RetryAllFailedResponse = z.infer<typeof RetryAllFailedResponseSchema>;
