@@ -231,18 +231,18 @@ git push -u origin dev
 
 **`main`** (prod):
 - Require pull request before merging
-- Require status checks: `Typecheck`, `Lint`, `Test`, `API integration tests`
+- Require status checks: `Typecheck, lint, test, build`, `API integration tests`
 - Require branches to be up to date before merging
 - Do not allow force pushes
 - Do not allow deletions
 
 **`dev`**:
 - Require pull request before merging (so dev always matches a reviewed PR)
-- Require the same status checks as `main`
+- No required status checks — PRs into `dev` do not trigger GitHub Actions. The local pre-push hook ([§4e](#4e-local-pre-push-checks-and-ci-split)) is the gate for `dev`.
 - Allow force push: **off**
 - Allow deletions: **off**
 
-Direct pushes to `dev` by maintainers can stay allowed if we want to hotfix the dev env without a PR — your call.
+Direct pushes to `dev` by maintainers can stay allowed if we want to hotfix the dev env without a PR — your call. The pre-push hook still runs on direct pushes.
 
 ### 4c. Secrets
 
@@ -265,6 +265,37 @@ File is committed on this branch. Steps:
 3. `pnpm install --frozen-lockfile`
 4. `pnpm db:migrate` with `DATABASE_URL=${{ secrets.DEV_DATABASE_URL }}`
 5. `pnpm db:sync-catalog` with the same env
+
+### 4e. Local pre-push checks and CI split
+
+Correctness checks run locally on every push via a husky pre-push hook; GitHub Actions only re-runs them for PRs into `main`. This keeps the dev loop cheap in Actions minutes while still gating prod merges.
+
+**Local (husky `.husky/pre-push`)** — runs on every `git push`, including pushes to feature branches and `dev`:
+
+1. `pnpm typecheck`
+2. `pnpm lint`
+3. `pnpm test`
+4. `pnpm --filter web build`
+
+Steps run in order and stop at the first failure, printing which step failed. Never bypass with `--no-verify`. Integration tests are **not** in the hook (they need the local Supabase stack); run `pnpm test:integration` yourself before opening a PR.
+
+**GitHub Actions** — only for PRs into `main`:
+
+| Workflow | Trigger | What it runs |
+| --- | --- | --- |
+| `pr-checks.yml` | `pull_request` into `main` (opened, synchronize, reopened, ready_for_review) | typecheck + lint + test + web build, one job |
+| `integration.yml` | same | `pnpm test:integration` against a fresh local Supabase stack |
+| `dev-migrations.yml` | push to `dev` | migrations + catalog sync against hosted dev — unchanged |
+
+Both PR workflows skip drafts, cancel superseded runs via `concurrency`, and timeout per job to cap minutes.
+
+**Typical flow:**
+
+1. Branch off `dev`, commit, push → pre-push hook runs locally. No Actions.
+2. Open PR into `dev`. No Actions. Review by eye; merge.
+3. Push to `dev` → `dev-migrations.yml` runs migrations against hosted dev.
+4. Open PR from `dev` into `main` → `pr-checks.yml` + `integration.yml` run as required status checks.
+5. Merge to `main` → operator runs prod migrations manually ([§8](#8-prod-differences)).
 
 ---
 

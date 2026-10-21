@@ -32,6 +32,10 @@ pnpm db:migrate       # apply pending migrations
 pnpm db:sync-catalog  # upsert skills catalog reference data (idempotent; run after catalog edits)
 ```
 
+## Workflow rules
+
+Never push with `--no-verify`. The pre-push hook is the CI for `dev`. Run `pnpm test:integration` locally before opening a PR.
+
 ## Architecture
 
 **Packages**
