@@ -30,7 +30,7 @@ export default function ThemeLogo({
         alt={alt}
         width={width ?? 40}
         height={height ?? 40}
-        className={className}
+        className={`h-auto ${className ?? ""}`.trim()}
       />
     );
   }
@@ -44,7 +44,7 @@ export default function ThemeLogo({
           alt={alt}
           width={40}
           height={40}
-          className="tablet:hidden"
+          className="h-auto tablet:hidden"
         />
         {/* Lockup on tablet+ */}
         {onDark ? (
@@ -54,7 +54,7 @@ export default function ThemeLogo({
             aria-hidden
             width={width ?? 140}
             height={height ?? 40}
-            className="hidden tablet:block"
+            className="h-auto hidden tablet:block"
           />
         ) : (
           <span className={styles.lockupWrap}>
@@ -64,7 +64,7 @@ export default function ThemeLogo({
               aria-hidden
               width={width ?? 140}
               height={height ?? 40}
-              className={`hidden tablet:block ${styles.light}`}
+              className={`h-auto hidden tablet:block ${styles.light}`}
             />
             <Image
               src="/logos/axiom-aquatics-lockup-dark.webp"
@@ -72,7 +72,7 @@ export default function ThemeLogo({
               aria-hidden
               width={width ?? 140}
               height={height ?? 40}
-              className={`hidden tablet:block ${styles.dark}`}
+              className={`h-auto hidden tablet:block ${styles.dark}`}
             />
           </span>
         )}
@@ -88,7 +88,7 @@ export default function ThemeLogo({
         alt={alt}
         width={width ?? 140}
         height={height ?? 40}
-        className={className}
+        className={`h-auto ${className ?? ""}`.trim()}
       />
     );
   }
@@ -100,7 +100,7 @@ export default function ThemeLogo({
         alt={alt}
         width={width ?? 140}
         height={height ?? 40}
-        className={styles.light}
+        className={`h-auto ${styles.light}`}
       />
       <Image
         src="/logos/axiom-aquatics-lockup-dark.webp"
@@ -108,7 +108,7 @@ export default function ThemeLogo({
         aria-hidden
         width={width ?? 140}
         height={height ?? 40}
-        className={styles.dark}
+        className={`h-auto ${styles.dark}`}
       />
     </span>
   );
