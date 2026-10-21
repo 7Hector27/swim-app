@@ -195,8 +195,17 @@ function buildSummary(firstNames: string[]): string {
 }
 
 function formatLocation(location: typeof lessonLocations.$inferSelect): string {
-  // The Google event's native `location` field accepts a free-form string;
-  // Google Maps uses this for the "View map" link.
+  // Home pools (non-null householdId on lesson_locations) are a specific
+  // family's private residential address. We do not push residential
+  // addresses to a third-party (Google) under an event's `location` field —
+  // the risk is a privacy question for parents, and this exact rule is
+  // pending Jason and the kids'-data legal review. See ADR 027 and
+  // docs/accounts.md. Named pools (null householdId) are public venues and
+  // keep the full address so Google Maps gives the coach the "View map"
+  // link they expect.
+  if (location.householdId !== null) {
+    return `${location.name} — ${location.city}, ${location.state}`;
+  }
   return `${location.name} — ${location.address}, ${location.city}, ${location.state} ${location.zip}`;
 }
 
