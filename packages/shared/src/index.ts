@@ -27,6 +27,19 @@ export { HealthQuerySchema, HealthResponseSchema } from "./schemas/health";
 export type { MeResponse, PatchMeBody, CoachPingResponse } from "./schemas/profile";
 export { MeResponseSchema, PatchMeBodySchema, CoachPingResponseSchema } from "./schemas/profile";
 
+export type {
+  GoogleOAuthStartQuery,
+  GoogleOAuthCallbackQuery,
+  GoogleCalendarStatus,
+  GoogleCalendarStatusResponse,
+} from "./schemas/googleCalendar";
+export {
+  GoogleOAuthStartQuerySchema,
+  GoogleOAuthCallbackQuerySchema,
+  GoogleCalendarStatusSchema,
+  GoogleCalendarStatusResponseSchema,
+} from "./schemas/googleCalendar";
+
 export type { SignUpBody, LoginBody } from "./schemas/auth";
 export { SignUpBodySchema, LoginBodySchema } from "./schemas/auth";
 

@@ -14,6 +14,7 @@
     "db:sync-catalog": "tsx src/db/scripts/syncCatalog.ts"
   },
   "dependencies": {
+    "@googleapis/calendar": "^20.1.0",
     "@supabase/supabase-js": "^2.117.2",
     "@swim-app/shared": "workspace:*",
     "cors": "^2.8.5",
@@ -21,6 +22,7 @@
     "drizzle-orm": "^0.43.1",
     "express": "^4.21.2",
     "express-rate-limit": "^8.7.1",
+    "google-auth-library": "^11.3.1",
     "helmet": "^8.0.0",
     "pino": "^9.6.0",
     "pino-http": "^10.4.0",

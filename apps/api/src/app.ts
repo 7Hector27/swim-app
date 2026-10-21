@@ -23,6 +23,7 @@ import { lessonsRouter } from "./routes/lessons";
 import { internalRouter } from "./routes/internal";
 import { parentProgressRouter } from "./routes/parentProgress";
 import { coachRouter } from "./routes/coach";
+import { integrationsGoogleRouter } from "./routes/integrationsGoogle";
 import { leaderboardRouter } from "./routes/leaderboard";
 import {
   calculateAge,
@@ -188,6 +189,11 @@ export function createApp(logger: Logger) {
   app.use("/locations", locationsRouter);
   app.use("/lessons", lessonsRouter);
   app.use("/internal", internalRouter);
+  // /integrations/google/callback must be at exactly that path (registered
+  // in Google Cloud OAuth settings). Mounted outside /coach because the
+  // callback is hit by a browser redirect from Google and must be reachable
+  // without a Bearer token — state verification binds it to a coach instead.
+  app.use("/integrations", integrationsGoogleRouter);
   app.use("/coach", coachRouter);
   app.use(leaderboardRouter);
 
