@@ -147,6 +147,78 @@ export async function revokeToken(env: GoogleOAuthEnv, token: string): Promise<v
   await client.revokeToken(token);
 }
 
+export interface SafeGoogleError {
+  message: string;
+  status: number | undefined;
+  googleErrorCode: string | undefined;
+}
+
+/**
+ * Flatten a gaxios/google-auth-library error into a safe shape for logging.
+ *
+ * `googleapis` errors carry a `.config` object (headers like `Authorization`,
+ * request body with the auth code, URL + params), `.request`, and `.response`
+ * trees that bleed secrets into logs. This helper picks the three fields we
+ * actually need — status code, Google's `error` string, and a short message —
+ * and drops everything else. The raw error object is never returned.
+ *
+ * `message` is `.response.data.error_description` first (most useful), then
+ * `.message`, then `String(err)`. Known secret-shaped substrings are
+ * belt-and-suspenders scrubbed in case Google ever echoes the auth code back
+ * in `error_description`.
+ */
+export function toSafeGoogleError(err: unknown): SafeGoogleError {
+  // Null/undefined/primitives short-circuit — they can't carry secret-shaped
+  // config either, and `err.message` would TypeError on undefined.
+  if (err === null || err === undefined) {
+    return { message: String(err), status: undefined, googleErrorCode: undefined };
+  }
+  if (typeof err !== "object" && !(err instanceof Error)) {
+    return { message: String(err), status: undefined, googleErrorCode: undefined };
+  }
+  const anyErr = err as {
+    message?: unknown;
+    code?: unknown;
+    status?: unknown;
+    response?: { status?: unknown; data?: { error?: unknown; error_description?: unknown } };
+  };
+  const status =
+    typeof anyErr.status === "number"
+      ? anyErr.status
+      : typeof anyErr.response?.status === "number"
+        ? anyErr.response.status
+        : typeof anyErr.code === "number"
+          ? anyErr.code
+          : undefined;
+  const googleErrorCode =
+    typeof anyErr.response?.data?.error === "string" ? anyErr.response.data.error : undefined;
+  const rawMessage =
+    (typeof anyErr.response?.data?.error_description === "string"
+      ? anyErr.response.data.error_description
+      : undefined) ??
+    (typeof anyErr.message === "string" ? anyErr.message : undefined) ??
+    (err instanceof Error ? err.message : String(err));
+
+  return {
+    message: scrubSecretShapedTokens(rawMessage),
+    status,
+    googleErrorCode,
+  };
+}
+
+// Belt-and-suspenders: Google error messages shouldn't contain the auth code
+// or a Bearer token, but if they ever do, replace them with [REDACTED] rather
+// than letting the string reach a log sink. Patterns match long base64url
+// strings in Bearer headers and `code=` query fragments.
+function scrubSecretShapedTokens(input: string): string {
+  // Bearer tokens: `Bearer <alnum/.-_~+/>`
+  // Auth codes: `code=<alnum/.-_~+/>` — includes `%` so URL-encoded forms
+  // (code=4%2F0AY…) are matched too.
+  return input
+    .replace(/Bearer\s+[A-Za-z0-9._~+/-]{10,}/g, "Bearer [REDACTED]")
+    .replace(/\bcode=[A-Za-z0-9._~+/%-]{10,}/g, "code=[REDACTED]");
+}
+
 function buildOAuth2Client(env: GoogleOAuthEnv) {
   return new googleAuth.OAuth2(env.clientId, env.clientSecret, env.redirectUri);
 }

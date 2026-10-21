@@ -106,7 +106,10 @@ integrationsGoogleRouter.get(
     try {
       tokens = await googleClient.exchangeCodeForTokens(env.googleOAuth, query.code);
     } catch (err) {
-      req.log.error({ err, coachId }, "google callback: token exchange failed");
+      req.log.error(
+        { googleError: googleClient.toSafeGoogleError(err), coachId },
+        "google callback: token exchange failed",
+      );
       errorRedirect();
       return;
     }
@@ -141,7 +144,10 @@ integrationsGoogleRouter.get(
         googleCalendarId = created.id;
       }
     } catch (err) {
-      req.log.error({ err, coachId }, "google callback: calendar provisioning failed");
+      req.log.error(
+        { googleError: googleClient.toSafeGoogleError(err), coachId },
+        "google callback: calendar provisioning failed",
+      );
       errorRedirect();
       return;
     }

@@ -122,7 +122,10 @@ coachCalendarRouter.delete(
       try {
         await googleClient.revokeToken(env.googleOAuth, refreshToken);
       } catch (err) {
-        req.log.warn({ err }, "disconnect: Google revoke failed, continuing with local delete");
+        req.log.warn(
+          { googleError: googleClient.toSafeGoogleError(err) },
+          "disconnect: Google revoke failed, continuing with local delete",
+        );
       }
     }
 
