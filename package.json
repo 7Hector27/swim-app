@@ -2,6 +2,7 @@
   "name": "swim-app",
   "private": true,
   "scripts": {
+    "prepare": "husky",
     "predev": "pnpm --filter api exec tsx src/db/predev.ts",
     "dev": "concurrently -n web,api -c blue,green \"pnpm --filter web dev\" \"pnpm --filter api dev\"",
     "typecheck": "pnpm -r typecheck",
@@ -24,6 +25,7 @@
     "eslint-config-prettier": "^10.1.2",
     "eslint-plugin-react-hooks": "^7.1.1",
     "globals": "^17.13.0",
+    "husky": "^9.1.7",
     "prettier": "^3.5.3",
     "supabase": "^2.120.0",
     "typescript-eslint": "^8.30.1"
