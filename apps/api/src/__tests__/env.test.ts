@@ -56,6 +56,11 @@ describe("parseEnv", () => {
       SITE_URL: "https://app.example.com",
       CORS_ORIGINS: "https://app.example.com",
       CRON_SECRET: "a".repeat(32),
+      GOOGLE_OAUTH_CLIENT_ID: "client-id",
+      GOOGLE_OAUTH_CLIENT_SECRET: "client-secret",
+      GOOGLE_OAUTH_REDIRECT_URI: "https://api.example.com/integrations/google/callback",
+      GOOGLE_TOKEN_ENCRYPTION_KEY: Buffer.alloc(32, 7).toString("base64"),
+      GOOGLE_OAUTH_STATE_SECRET: "s".repeat(32),
     };
 
     it("accepts a complete production env", () => {
@@ -130,6 +135,135 @@ describe("parseEnv", () => {
       expect(message).toMatch(/CORS_ORIGINS/);
       expect(message).toMatch(/SITE_URL/);
       expect(message).toMatch(/CRON_SECRET/);
+    });
+  });
+});
+
+describe("parseEnv — Google OAuth integration", () => {
+  const validKey = Buffer.alloc(32, 7).toString("base64");
+  const validStateSecret = "s".repeat(32);
+  const fullGoogle = {
+    GOOGLE_OAUTH_CLIENT_ID: "client-id",
+    GOOGLE_OAUTH_CLIENT_SECRET: "client-secret",
+    GOOGLE_OAUTH_REDIRECT_URI: "http://localhost:3001/integrations/google/callback",
+    GOOGLE_TOKEN_ENCRYPTION_KEY: validKey,
+    GOOGLE_OAUTH_STATE_SECRET: validStateSecret,
+  };
+
+  it("returns googleOAuth=undefined in dev when no vars are set", () => {
+    const env = parseEnv({ ...baseEnv });
+    expect(env.googleOAuth).toBeUndefined();
+  });
+
+  it("returns googleOAuth=undefined in dev when some vars are missing", () => {
+    const partial = { ...fullGoogle } as Record<string, string>;
+    delete partial.GOOGLE_OAUTH_CLIENT_SECRET;
+    const env = parseEnv({ ...baseEnv, ...partial });
+    expect(env.googleOAuth).toBeUndefined();
+  });
+
+  it("returns a populated googleOAuth in dev when all five vars are valid", () => {
+    const env = parseEnv({ ...baseEnv, ...fullGoogle });
+    expect(env.googleOAuth).toBeDefined();
+    expect(env.googleOAuth?.clientId).toBe("client-id");
+    expect(env.googleOAuth?.tokenEncryptionKey.length).toBe(32);
+    expect(env.googleOAuth?.stateSecret).toBe(validStateSecret);
+  });
+
+  it("returns googleOAuth=undefined in dev when the encryption key decodes to the wrong length", () => {
+    const env = parseEnv({
+      ...baseEnv,
+      ...fullGoogle,
+      GOOGLE_TOKEN_ENCRYPTION_KEY: Buffer.alloc(16, 1).toString("base64"),
+    });
+    expect(env.googleOAuth).toBeUndefined();
+  });
+
+  it("returns googleOAuth=undefined in dev when the state secret is too short", () => {
+    const env = parseEnv({ ...baseEnv, ...fullGoogle, GOOGLE_OAUTH_STATE_SECRET: "short" });
+    expect(env.googleOAuth).toBeUndefined();
+  });
+
+  describe("in production", () => {
+    const prodBase = {
+      ...baseEnv,
+      NODE_ENV: "production",
+      SITE_URL: "https://app.example.com",
+      CORS_ORIGINS: "https://app.example.com",
+      CRON_SECRET: "a".repeat(32),
+      ...fullGoogle,
+      GOOGLE_OAUTH_REDIRECT_URI: "https://api.example.com/integrations/google/callback",
+    };
+
+    it("accepts a complete production env with Google vars", () => {
+      const env = parseEnv(prodBase);
+      expect(env.googleOAuth).toBeDefined();
+    });
+
+    it("rejects a missing GOOGLE_OAUTH_CLIENT_ID in production", () => {
+      const raw = { ...prodBase } as Record<string, string>;
+      delete raw.GOOGLE_OAUTH_CLIENT_ID;
+      let caught: unknown;
+      try {
+        parseEnv(raw);
+      } catch (err) {
+        caught = err;
+      }
+      expect(caught).toBeInstanceOf(EnvValidationError);
+      expect((caught as EnvValidationError).issues.join("\n")).toMatch(/GOOGLE_OAUTH_CLIENT_ID/);
+    });
+
+    it("rejects a localhost GOOGLE_OAUTH_REDIRECT_URI in production", () => {
+      let caught: unknown;
+      try {
+        parseEnv({ ...prodBase, GOOGLE_OAUTH_REDIRECT_URI: "http://localhost:3001/integrations/google/callback" });
+      } catch (err) {
+        caught = err;
+      }
+      expect(caught).toBeInstanceOf(EnvValidationError);
+      expect((caught as EnvValidationError).issues.join("\n")).toMatch(
+        /GOOGLE_OAUTH_REDIRECT_URI.*localhost/,
+      );
+    });
+
+    it("rejects an http (non-https) GOOGLE_OAUTH_REDIRECT_URI in production", () => {
+      let caught: unknown;
+      try {
+        parseEnv({ ...prodBase, GOOGLE_OAUTH_REDIRECT_URI: "http://api.example.com/integrations/google/callback" });
+      } catch (err) {
+        caught = err;
+      }
+      expect(caught).toBeInstanceOf(EnvValidationError);
+      expect((caught as EnvValidationError).issues.join("\n")).toMatch(/GOOGLE_OAUTH_REDIRECT_URI/);
+    });
+
+    it("rejects a GOOGLE_TOKEN_ENCRYPTION_KEY that decodes to the wrong length", () => {
+      let caught: unknown;
+      try {
+        parseEnv({
+          ...prodBase,
+          GOOGLE_TOKEN_ENCRYPTION_KEY: Buffer.alloc(16, 1).toString("base64"),
+        });
+      } catch (err) {
+        caught = err;
+      }
+      expect(caught).toBeInstanceOf(EnvValidationError);
+      expect((caught as EnvValidationError).issues.join("\n")).toMatch(
+        /GOOGLE_TOKEN_ENCRYPTION_KEY.*32 bytes/,
+      );
+    });
+
+    it("rejects a GOOGLE_OAUTH_STATE_SECRET shorter than 32 characters", () => {
+      let caught: unknown;
+      try {
+        parseEnv({ ...prodBase, GOOGLE_OAUTH_STATE_SECRET: "short" });
+      } catch (err) {
+        caught = err;
+      }
+      expect(caught).toBeInstanceOf(EnvValidationError);
+      expect((caught as EnvValidationError).issues.join("\n")).toMatch(
+        /GOOGLE_OAUTH_STATE_SECRET.*32 characters/,
+      );
     });
   });
 });
