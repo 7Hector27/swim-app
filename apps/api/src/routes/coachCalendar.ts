@@ -146,19 +146,6 @@ coachCalendarRouter.post(
       .from(lessons)
       .where(eq(lessons.calendarSyncStatus, "sync_failed"));
 
-    // Insert the audit row up-front so the retry attempt is recorded even
-    // if the loop crashes (CLAUDE.md: audit writes share a transaction with
-    // the change — the per-lesson reconcile writes its own lesson-row
-    // transactions, so a single retry audit for the whole batch is wrapped
-    // alongside the first state the retry endpoint can meaningfully claim).
-    await db.transaction(async (tx) => {
-      await tx.insert(coachAuditLog).values({
-        coachId: req.profile.id,
-        actorId: req.profile.id,
-        action: "calendar_sync_retried",
-      });
-    });
-
     let succeeded = 0;
     let failed = 0;
     for (const row of failedRows) {
@@ -173,6 +160,20 @@ coachCalendarRouter.post(
       else failed++;
       await sleep(100); // 100ms between Google calls (stay under 500/100s quota)
     }
+
+    // Audit AFTER the loop with the final counts, not before with no counts.
+    // CLAUDE.md's "audit in same tx as the change" rule can't apply here —
+    // this audit records the outcome of many independent per-lesson
+    // transactions interleaved with HTTP calls to Google that we cannot hold
+    // open under a lock. ADR 027 documents the deviation. If the server
+    // crashes mid-loop, the lesson rows themselves record what did and
+    // didn't flip to 'synced', so the audit row's absence is recoverable.
+    await db.insert(coachAuditLog).values({
+      coachId: req.profile.id,
+      actorId: req.profile.id,
+      action: "calendar_sync_retried",
+      payload: { attempted: failedRows.length, succeeded, failed },
+    });
 
     const body: RetryAllFailedResponse = {
       attempted: failedRows.length,

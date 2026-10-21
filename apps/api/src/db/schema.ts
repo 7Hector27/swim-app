@@ -836,6 +836,11 @@ export const coachAuditLog = pgTable(
     targetProfileId: uuid("target_profile_id").references(() => profiles.id, { onDelete: "restrict" }),
     targetSwimmerId: uuid("target_swimmer_id").references(() => swimmers.id, { onDelete: "restrict" }),
     newRole: householdRoleEnum("new_role"),
+    // Opaque JSON payload for events whose shape doesn't fit the shared
+    // target_*/new_role columns. Added in migration 0048 for the bulk-retry
+    // audit row's attempted/succeeded/failed counts. Keep usage sparse —
+    // this column is a convenience, not a durable schema contract.
+    payload: jsonb("payload"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [

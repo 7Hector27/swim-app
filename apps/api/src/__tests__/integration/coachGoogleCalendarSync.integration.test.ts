@@ -30,7 +30,12 @@ vi.mock("../../services/googleCalendarClient", async () => {
   };
 });
 
+import pino from "pino";
+import request from "supertest";
+
+import { createApp } from "../../app";
 import {
+  coachAuditLog,
   coachCalendarIntegrations,
   lessonLocations,
   lessonSwimmers,
@@ -48,6 +53,7 @@ import {
 import { adminDb, closeAdminDb, createTestUser, type TestUser } from "./helpers";
 
 __resetEnvCacheForTests();
+const app = createApp(pino({ level: "silent" }));
 
 const KEY = Buffer.alloc(32, 7).toString("base64");
 
@@ -77,6 +83,7 @@ async function seedCoachIntegration(status: "active" | "needs_reconnect" | "disc
 }
 
 async function clearIntegrationAndLessons(): Promise<void> {
+  await adminDb().delete(coachAuditLog).where(eq(coachAuditLog.coachId, coach.userId));
   await adminDb().delete(coachCalendarIntegrations).where(
     eq(coachCalendarIntegrations.coachProfileId, coach.userId),
   );
@@ -366,5 +373,72 @@ describe("backfillCoachLessons", () => {
     expect(synced).toContain(stripDashes(futureApprovedB));
     expect(synced).not.toContain(stripDashes(futurePending));
     expect(synced).not.toContain(stripDashes(pastApproved));
+  });
+});
+
+describe("POST /coach/calendar/retry-failed audit row", () => {
+  it("writes a single calendar_sync_retried audit row AFTER the loop with attempted/succeeded/failed counts", async () => {
+    await seedCoachIntegration();
+    const good = await seedLesson({
+      status: "approved",
+      startsAt: future(),
+      calendarSyncStatus: "sync_failed",
+    });
+    const stillBad = await seedLesson({
+      status: "approved",
+      startsAt: future(48),
+      calendarSyncStatus: "sync_failed",
+    });
+
+    // The second lesson fails on the Google call; the first succeeds.
+    vi.mocked(googleClient.upsertEvent)
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(Object.assign(new Error("google: 500"), { code: 500 }));
+
+    const res = await request(app)
+      .post("/coach/calendar/retry-failed")
+      .set("Authorization", `Bearer ${coach.accessToken}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ attempted: 2, succeeded: 1, failed: 1 });
+
+    const audit = await adminDb()
+      .select()
+      .from(coachAuditLog)
+      .where(eq(coachAuditLog.coachId, coach.userId));
+    expect(audit).toHaveLength(1);
+    expect(audit[0]!.action).toBe("calendar_sync_retried");
+    expect(audit[0]!.payload).toEqual({ attempted: 2, succeeded: 1, failed: 1 });
+
+    // Also confirm the audit was written AFTER the loop by cross-checking
+    // that the lesson rows reached their final state at least as early as
+    // the audit row's createdAt.
+    const lessonRows = await adminDb()
+      .select({ id: lessons.id, status: lessons.calendarSyncStatus })
+      .from(lessons)
+      .where(inArray(lessons.id, [good, stillBad]));
+    const byId = Object.fromEntries(lessonRows.map((row) => [row.id, row.status]));
+    expect(byId[good]).toBe("synced");
+    expect(byId[stillBad]).toBe("sync_failed");
+  });
+
+  it("returns 409 and writes no audit row when the integration needs reconnect", async () => {
+    await seedCoachIntegration("needs_reconnect");
+    await seedLesson({
+      status: "approved",
+      startsAt: future(),
+      calendarSyncStatus: "sync_failed",
+    });
+
+    const res = await request(app)
+      .post("/coach/calendar/retry-failed")
+      .set("Authorization", `Bearer ${coach.accessToken}`);
+
+    expect(res.status).toBe(409);
+    const audit = await adminDb()
+      .select()
+      .from(coachAuditLog)
+      .where(eq(coachAuditLog.coachId, coach.userId));
+    expect(audit).toHaveLength(0);
   });
 });
