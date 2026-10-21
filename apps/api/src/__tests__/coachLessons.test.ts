@@ -211,8 +211,9 @@ describe("GET /coach/lessons", () => {
   it("returns lessons list", async () => {
     authAsCoach();
 
-    // lazy-expiry update
-    const updateWhere = vi.fn().mockResolvedValue([]);
+    // lazy-expiry update: .update().set().where().returning()
+    const updateReturning = vi.fn().mockResolvedValue([]);
+    const updateWhere = vi.fn().mockReturnValue({ returning: updateReturning });
     const updateSet = vi.fn().mockReturnValue({ where: updateWhere });
     mockDbUpdate.mockReturnValueOnce({ set: updateSet });
 
@@ -434,8 +435,9 @@ describe("lazy expiry in GET /coach/lessons", () => {
 
     const expiredRow = { ...pendingLessonRow, status: "expired" as const };
 
-    // lazy-expiry update
-    const updateWhere = vi.fn().mockResolvedValue([{ id: LESSON_ID }]);
+    // lazy-expiry update: .update().set().where().returning()
+    const updateReturning = vi.fn().mockResolvedValue([{ id: LESSON_ID }]);
+    const updateWhere = vi.fn().mockReturnValue({ returning: updateReturning });
     const updateSet = vi.fn().mockReturnValue({ where: updateWhere });
     mockDbUpdate.mockReturnValueOnce({ set: updateSet });
 

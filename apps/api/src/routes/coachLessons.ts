@@ -449,10 +449,18 @@ coachLessonsRouter.get(
     // Lazy expiry safety net: expire any pending lessons past their deadline
     // in case the cron hasn't run recently.
     const now = new Date();
-    await db
+    const expiredRows = await db
       .update(lessons)
       .set({ status: "expired" })
-      .where(and(eq(lessons.status, "pending"), lt(lessons.expiresAt, now)));
+      .where(and(eq(lessons.status, "pending"), lt(lessons.expiresAt, now)))
+      .returning({ id: lessons.id });
+    // Reconcile Google Calendar for each expired lesson. Pending lessons
+    // normally have no event in Google so the service short-circuits; the
+    // hook catches the edge case where a lesson got synced then rolled
+    // back to pending and now expires.
+    for (const row of expiredRows) {
+      queueMicrotask(() => { void syncLessonToGoogle(row.id); });
+    }
 
     const filters = [];
     if (query.status !== undefined) {

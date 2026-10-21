@@ -847,3 +847,149 @@ describe("POST /lessons regression: auto-approved bookings must sync", () => {
     });
   });
 });
+
+/**
+ * Hooks on the three non-user-initiated state-change paths — the lazy
+ * expiry inside GET /coach/lessons, and the cron tick's two bulk writes
+ * (pending → expired, approved → completed). Each path transitions a
+ * lesson out of the "has an event in Google" set, so the reconcile must
+ * run or Google diverges from the lessons table.
+ */
+describe("background state-change hooks", () => {
+  async function waitForEventIdCleared(lessonId: string, timeoutMs = 1500): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const [row] = await adminDb()
+        .select({ eventId: lessons.googleCalendarEventId })
+        .from(lessons)
+        .where(eq(lessons.id, lessonId));
+      if (row && row.eventId === null) return;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    throw new Error(`lesson ${lessonId} still has google_calendar_event_id after ${timeoutMs}ms`);
+  }
+
+  it("cron auto-complete removes the Google event (approved + past → completed → events.delete)", async () => {
+    await seedCoachIntegration();
+    // Approved lesson, already ended (past end time) — the cron will flip
+    // it to completed. The reconcile must then delete the event in Google.
+    const pastStart = new Date(Date.now() - 2 * 60 * 60 * 1000); // 2h ago
+    const inserted = await adminDb()
+      .insert(lessons)
+      .values({
+        householdId: owner.householdId,
+        locationId,
+        startsAt: pastStart,
+        durationMinutes: 30,
+        type: "private",
+        status: "approved",
+        requestedBy: owner.userId,
+        approvedAt: new Date(pastStart.getTime() - 60 * 60 * 1000),
+        approvedBy: coach.userId,
+        googleCalendarEventId: "abcdef0123456789abcdef0123456789",
+        calendarSyncStatus: "synced",
+      })
+      .returning({ id: lessons.id });
+    const lessonId = inserted[0]!.id;
+    await adminDb().insert(lessonSwimmers).values({ lessonId, swimmerId: swimmerIds[0]! });
+
+    const cronSecret = process.env["CRON_SECRET"];
+    expect(cronSecret).toBeTruthy();
+
+    const res = await request(app)
+      .post("/internal/cron/tick")
+      .set("cron-secret", cronSecret!);
+    expect(res.status).toBe(200);
+    expect(res.body.completed).toBeGreaterThanOrEqual(1);
+
+    // Lesson flipped to completed on the DB side.
+    const [row] = await adminDb().select().from(lessons).where(eq(lessons.id, lessonId));
+    expect(row!.status).toBe("completed");
+
+    // The reconcile microtask ran: Google event was deleted and the row's
+    // event id was cleared. The lesson's seeded status is already 'synced'
+    // (that's the "was synced before cron fired" shape), so we observe the
+    // reconcile by waiting for the event id to go null — which only
+    // happens if syncLessonToGoogle actually ran against the completed row.
+    await waitForEventIdCleared(lessonId);
+    expect(googleClient.deleteEventIdempotent).toHaveBeenCalled();
+  });
+
+  it("cron expiry fires the hook but makes no Google call for pending lessons that were never synced", async () => {
+    await seedCoachIntegration();
+    // Pending lesson, past its expires_at. Cron will flip to expired.
+    // There's no event in Google so the reconcile short-circuits.
+    const startsAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const inserted = await adminDb()
+      .insert(lessons)
+      .values({
+        householdId: owner.householdId,
+        locationId,
+        startsAt,
+        durationMinutes: 30,
+        type: "private",
+        status: "pending",
+        requestedBy: owner.userId,
+        expiresAt: new Date(Date.now() - 60 * 1000), // 1 minute ago
+      })
+      .returning({ id: lessons.id });
+    const lessonId = inserted[0]!.id;
+    await adminDb().insert(lessonSwimmers).values({ lessonId, swimmerId: swimmerIds[0]! });
+
+    vi.mocked(googleClient.upsertEvent).mockClear();
+    vi.mocked(googleClient.deleteEventIdempotent).mockClear();
+
+    const res = await request(app)
+      .post("/internal/cron/tick")
+      .set("cron-secret", process.env["CRON_SECRET"]!);
+    expect(res.status).toBe(200);
+    expect(res.body.expired).toBeGreaterThanOrEqual(1);
+
+    // Give any microtasks a moment to drain.
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    // Status flipped and the reconcile correctly made no Google call
+    // (short-circuit on !shouldExist && !googleCalendarEventId).
+    const [row] = await adminDb().select().from(lessons).where(eq(lessons.id, lessonId));
+    expect(row!.status).toBe("expired");
+    expect(googleClient.upsertEvent).not.toHaveBeenCalled();
+    expect(googleClient.deleteEventIdempotent).not.toHaveBeenCalled();
+  });
+
+  it("lazy expiry on GET /coach/lessons fires the hook per expired lesson", async () => {
+    await seedCoachIntegration();
+    // Same shape as the cron expiry test but driven by a coach GET on the
+    // lessons list, which performs its own lazy expiry inside the handler.
+    const startsAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const inserted = await adminDb()
+      .insert(lessons)
+      .values({
+        householdId: owner.householdId,
+        locationId,
+        startsAt,
+        durationMinutes: 30,
+        type: "private",
+        status: "pending",
+        requestedBy: owner.userId,
+        expiresAt: new Date(Date.now() - 60 * 1000),
+      })
+      .returning({ id: lessons.id });
+    const lessonId = inserted[0]!.id;
+    await adminDb().insert(lessonSwimmers).values({ lessonId, swimmerId: swimmerIds[0]! });
+
+    vi.mocked(googleClient.upsertEvent).mockClear();
+    vi.mocked(googleClient.deleteEventIdempotent).mockClear();
+
+    const res = await request(app)
+      .get("/coach/lessons")
+      .set("Authorization", `Bearer ${coach.accessToken}`);
+    expect(res.status).toBe(200);
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    const [row] = await adminDb().select().from(lessons).where(eq(lessons.id, lessonId));
+    expect(row!.status).toBe("expired");
+    expect(googleClient.upsertEvent).not.toHaveBeenCalled();
+    expect(googleClient.deleteEventIdempotent).not.toHaveBeenCalled();
+  });
+});

@@ -7,6 +7,7 @@ import { validate } from "../middleware/validate";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { getEnv } from "../lib/env";
 import { chargeLessonComplete } from "../lib/lessonApproval";
+import { syncLessonToGoogle } from "../services/googleCalendarSync";
 import type { RequestHandler } from "express";
 
 export const internalRouter = Router();
@@ -73,6 +74,19 @@ internalRouter.post(
     // Stubs: notifications (PR 7) and charges (PR 8).
     for (const row of completed) {
       chargeLessonComplete(row.id);
+    }
+
+    // Reconcile Google Calendar for every lesson whose status just changed.
+    // Expired pending lessons normally have no event (reconcile short-
+    // circuits). Completed lessons DO have events and the service removes
+    // them so the coach's Google state matches the plan's "approved and
+    // upcoming → event; else → delete" rule. Microtasks run after the
+    // response, independent of the HTTP request lifecycle.
+    for (const row of expired) {
+      queueMicrotask(() => { void syncLessonToGoogle(row.id); });
+    }
+    for (const row of completed) {
+      queueMicrotask(() => { void syncLessonToGoogle(row.id); });
     }
 
     req.log.info({ expiredCount: expired.length, completedCount: completed.length }, "cron/tick");
