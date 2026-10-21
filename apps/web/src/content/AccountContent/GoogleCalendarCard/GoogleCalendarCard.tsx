@@ -3,6 +3,7 @@ import type { GoogleCalendarStatusResponse } from "@swim-app/shared";
 import Button from "@/components/Button";
 
 import { connectGoogleCalendar, disconnectGoogleCalendar } from "../actions";
+import SyncingState from "./SyncingState";
 
 interface GoogleCalendarCardProps {
   status: GoogleCalendarStatusResponse;
@@ -92,6 +93,7 @@ function Active({ status }: { status: GoogleCalendarStatusResponse }) {
           Connected on {formatDate(status.connectedAt)}
         </p>
       )}
+      <SyncingState initial={status} />
       <form action={disconnectGoogleCalendar}>
         <Button type="submit" variant="outline">
           Disconnect

@@ -38,6 +38,26 @@ export async function connectGoogleCalendar(): Promise<void> {
   redirect(body.authorizeUrl);
 }
 
+export async function retryAllFailedGoogleCalendarSync(): Promise<void> {
+  const supabase = await createClient();
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) {
+    redirect("/api/signout");
+  }
+  try {
+    await fetch(`${process.env.NEXT_PUBLIC_API_URL}/coach/calendar/retry-failed`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+    });
+  } catch {
+    // Fire-and-forget: the card refetches status and the user sees the new
+    // counts; nothing special to surface on a transient fetch error.
+  }
+  revalidatePath("/account");
+}
+
 export async function disconnectGoogleCalendar(): Promise<void> {
   const supabase = await createClient();
   const { data } = await supabase.auth.getSession();
