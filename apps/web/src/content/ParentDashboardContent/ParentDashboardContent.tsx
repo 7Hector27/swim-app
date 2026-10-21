@@ -22,7 +22,7 @@ interface Props {
 export default async function ParentDashboardContent({ profile, accessToken, bookedLessonId, rescheduledLessonId, rescheduledFrom }: Props) {
   const firstName = profile.fullName?.trim().split(/\s+/)[0] ?? "there";
   const hasPhone = !!(profile.phone && profile.phone.length > 0);
-  const [swimmers, upcomingLessons, upcomingCount, household, bookedLesson, rescheduledLesson] = await Promise.all([
+  const [swimmers, upcomingLessonsRaw, upcomingCount, household, bookedLesson, rescheduledLesson] = await Promise.all([
     fetchSwimmers(accessToken),
     fetchUpcomingLessons(accessToken, { limit: 3 }),
     fetchUpcomingLessonsCount(accessToken),
@@ -30,6 +30,7 @@ export default async function ParentDashboardContent({ profile, accessToken, boo
     bookedLessonId ? fetchLesson(accessToken, bookedLessonId) : Promise.resolve(null),
     rescheduledLessonId ? fetchLesson(accessToken, rescheduledLessonId) : Promise.resolve(null),
   ]);
+  const upcomingLessons = upcomingLessonsRaw ?? [];
   const today = todayLA();
   const showFinishSetup = !hasPhone;
   const nextLesson = upcomingLessons[0];
