@@ -109,8 +109,9 @@ export const GoogleOAuthCallbackQuerySchema = z.object({
 });
 
 export const GoogleCalendarStatusResponseSchema = z.object({
-  // 'not_connected' = no row; 'active' = healthy; 'needs_reconnect' = token revoked.
-  status: z.enum(["not_connected", "active", "needs_reconnect"]),
+  // 'not_configured' = env vars missing; 'not_connected' = no row (or disconnected);
+  // 'active' = healthy; 'needs_reconnect' = token revoked out-of-band.
+  status: z.enum(["not_configured", "not_connected", "active", "needs_reconnect"]),
   connectedAccountEmail: z.string().email().nullable(),
   connectedAt: z.string().datetime().nullable(),
   googleCalendarId: z.string().nullable(),
@@ -163,45 +164,69 @@ All protected routes use `requireUser` + `requireCoach`. The two OAuth endpoints
 
 ---
 
-## Where sync hooks into existing paths
+## Reconcile design
 
-The service module lives at `apps/api/src/services/googleCalendarSync.ts` and exports:
+The service module `apps/api/src/services/googleCalendarSync.ts` exports exactly one function:
 
 ```ts
-syncLessonCreated(lessonId: string): Promise<void>   // approve
-syncLessonUpdated(lessonId: string): Promise<void>   // reschedule
-syncLessonDeleted(lessonId: string): Promise<void>   // cancel + decline
+syncLessonToGoogle(lessonId: string): Promise<void>
 ```
 
-Each loads the lesson + swimmers + location, finds the coach's integration row (bails silently if the coach is not connected), refreshes the access token, calls the Google API, and updates `lessons.calendar_sync_status`, `calendar_sync_error`, `calendar_sync_attempts`, `google_calendar_event_id`.
+It reads the lesson's current state and makes Google match it — no verb-per-caller split. Approve, reschedule, cancel, decline, retry, and backfill all call the same function. This eliminates "created vs updated vs deleted" branching at the call site and prevents the race where two overlapping events on the same lesson (e.g. coach cancels mid-retry) produce inconsistent calendar state.
 
-The three functions are called **after** the lesson DB write commits and **after** `res.json()` returns — fire-and-forget via `queueMicrotask` or `setImmediate`. Errors are caught inside the service; they never surface to the response.
+**Desired state is computed from the lesson row:**
+- `status = 'approved'` AND `starts_at > now()` → event should exist with current title/time/location.
+- Everything else (`pending`, `declined`, `canceled`, `expired`, `no_show`, `completed`, or lesson row missing) → event should NOT exist.
 
-### Approve — `apps/api/src/routes/coachLessons.ts:526–584`
+**Deterministic event id.** The Google event id is the lesson UUID with dashes stripped (32 hex chars, inside Google's accepted id charset). This makes every operation idempotent:
 
-Already has a stub call `syncCalendarApproved(updated.id)` on line 550. Replace with `queueMicrotask(() => syncLessonCreated(updated.id))` after `res.json(body)`. Status transition: `not_synced` → `synced` (sets `google_calendar_event_id`) or `sync_failed`.
+- Insert attempt sees a 409 "exists" → the service does a `patch` with the current state instead.
+- Delete of an id that was never created → 404/410, treated as success.
+- Backfill or retry can run twice in a row with no risk of duplicate events.
 
-### Reschedule — `apps/api/src/routes/lessons.ts:786–1000+`
+**Flow inside `syncLessonToGoogle(lessonId)`:**
 
-The `PATCH /lessons/:id` handler already wraps the slot-check and update in `db.transaction()` (line 898). After the transaction commits and the response is sent, call `syncLessonUpdated(id)` — but only if the updated lesson is in status `approved` (reschedules of pending lessons don't sync; reschedules that happen to change status handle themselves). If `google_calendar_event_id` is null (e.g., sync was failing), fall back to `syncLessonCreated`.
+1. Load lesson + swimmers (ordered by first_name) + location + the single coach's integration row.
+2. If no integration row, or `status IN ('needs_reconnect', 'disconnected')` → no-op, no DB write (short-circuit stops the invalid_grant storm when a token is revoked out-of-band).
+3. Compute desired state (see above). Determine the event id = `lesson.id.replace(/-/g, '')`.
+4. Refresh the access token.
+   - If the refresh throws `invalid_grant`, in **one** `db.transaction()`: set the integration row's `status='needs_reconnect'` + `needs_reconnect_since=now()`, and set the lesson row's `calendar_sync_status='sync_failed'` + `calendar_sync_error='token_revoked'` + increment `calendar_sync_attempts`. Return.
+5. If desired state is "event should exist":
+   - Try `events.insert(calendarId, { id, …body })`.
+   - On 409: `events.patch(calendarId, id, { …body })`. Treat as success.
+   - On 2xx: proceed.
+   - On other failure: write `sync_failed` + error, return.
+6. If desired state is "event should not exist":
+   - If `google_calendar_event_id` is null AND there was no prior sync → no-op (the row was never pushed).
+   - Else `events.delete(calendarId, id)`. 404/410 treated as success.
+7. On overall success, in one UPDATE on the lesson row: `calendar_sync_status='synced'`, `calendar_sync_error=null`, `calendar_sync_attempts++`, `last_sync_*` set, and `google_calendar_event_id` set to `id` (or null if we deleted).
 
-### Cancel — `apps/api/src/routes/lessons.ts:729–784`
+Errors inside the service are caught and translated to row updates — they never bubble back to the HTTP handler that scheduled the call.
 
-`DELETE /lessons/:id` sets status to `canceled`. After the response, call `syncLessonDeleted(id)`. The service calls `events.delete` on the stored event id, then clears `google_calendar_event_id` and sets status to `synced` (meaning Google matches our state — the event is gone from both). If delete returns 404 or 410, treat as success.
+## Where the reconcile hooks into existing paths
 
-### Decline — `apps/api/src/routes/coachLessons.ts:586–650`
+Each lesson-mutating route handler, after `res.json()` returns, schedules `queueMicrotask(() => syncLessonToGoogle(lessonId))`. The booking write is already committed, so the microtask runs on a clean state. If the service throws (it shouldn't; it catches internally), the microtask's rejection is swallowed by Node and does not affect the response.
 
-Only reaches a currently-pending lesson under the current state machine (`approved → declined` is not a legal transition). Since pending lessons don't sync, there is nothing in Google to delete. Still call `syncLessonDeleted(id)` defensively: it short-circuits when `google_calendar_event_id` is null, so no HTTP call is made in the normal case, and the handler stays safe if the state machine ever gains an `approved → declined` transition.
+| Route | File | What triggers the reconcile |
+|---|---|---|
+| Approve | `coachLessons.ts` `PATCH /coach/lessons/:id/approve` | After `res.json(body)` |
+| Decline | `coachLessons.ts` `PATCH /coach/lessons/:id/decline` | After `res.json(responseBody)` — safe no-op in practice because the lesson is still pending |
+| Reschedule | `lessons.ts` `PATCH /lessons/:id` (parent and coach) | After `res.json(body)` |
+| Cancel | `lessons.ts` `DELETE /lessons/:id` (parent and coach) | After `res.json(body)` |
+| Backfill / reconnect | `integrationsGoogle.ts` callback | After `res.redirect(...)` — iterates lessons and calls reconcile with a 100ms gap |
+| Manual retry | `coachCalendar.ts` `POST /coach/calendar/retry-failed` | Called synchronously per lesson, same 100ms gap |
+
+Approve already has a stub `syncCalendarApproved(updated.id)` call in the current source — the phase-2 commit replaces it with the microtask call to the reconcile function.
 
 ### Backfill and reconnect resync
 
-The connect/reconnect callback kicks off a single background task after `res.redirect(...)` returns. The task:
+The connect/reconnect callback kicks off one background task after `res.redirect(...)` returns:
 
-1. Selects `lessons` where this coach's integration is active, `status = 'approved'`, `starts_at > now()`, and `calendar_sync_status IN ('not_synced', 'sync_failed')`.
-2. Calls `syncLessonCreated(id)` for rows with no `google_calendar_event_id`, `syncLessonUpdated(id)` otherwise.
-3. Processes rows sequentially with a 100ms gap between calls.
+1. Select `lessons` where this coach's integration is active, `status = 'approved'`, `starts_at > now()`, and `calendar_sync_status IN ('not_synced', 'sync_failed')`.
+2. Call `syncLessonToGoogle(id)` on each row.
+3. Sequential, 100ms gap between calls (Google quota ≈ 500 req/100s per project).
 
-The status endpoint's counts (`pendingSyncCount`, `syncedCount`, `failedLessonCount`) let the card show "Syncing N of M…" by polling every 3s until `pendingSyncCount` reaches zero. No persistent "in-progress" flag is stored — the counts over the lessons table are the source of truth and already reflect the live state. If the process crashes mid-backfill, the next retry (manual or on next connect) resumes from whatever rows are still `not_synced`.
+The status endpoint's counts (`upcomingLessonCount`, `syncedCount`, `pendingSyncCount`, `failedLessonCount`) let the card show "Syncing N of M…" by polling every 3s until `pendingSyncCount` reaches zero. No persistent "in-progress" flag — the lesson table's counts are the source of truth. If the process crashes mid-backfill, the next retry (manual or on next connect) resumes from whatever rows are still `not_synced`.
 
 ### What's deliberately not wired
 
@@ -274,15 +299,17 @@ Google-side API calls (token exchange, `calendars.insert`, `events.*`, revoke) h
 
 Vitest with native `vi.mock()` for the `googleapis` client. New file layout under `apps/api/src/__tests__/`:
 
-- `googleCalendarSync.test.ts` — `syncLessonCreated/Updated/Deleted`:
-  - Happy path: event body shape matches "Swim lesson: Alex" / "Swim lesson: Alex & Mia", location field set, time zone `America/Los_Angeles`, description is just the deep link `${SITE_URL}/coach/lessons/[id]` (no duration, location name, or parent contact — resolved from former open question 6).
+- `googleCalendarSync.test.ts` — `syncLessonToGoogle`:
+  - Happy path (approved + upcoming, first sync): `events.insert` called with id = lesson UUID without dashes, event body matches "Swim lesson: Alex" / "Swim lesson: Alex & Mia", location field set, time zone `America/Los_Angeles`, description is the deep link `${SITE_URL}/coach/lessons/[id]` (no duration, location name, or parent contact).
+  - 409 on insert → `events.patch` called with same id; final `calendar_sync_status='synced'`, no duplicate event.
+  - Reschedule (lesson row changes starts_at, already has event id): insert returns 409 → patch; new time in the patch body.
+  - Cancel (status = canceled, has event id): `events.delete` called; `google_calendar_event_id` cleared.
+  - Approve → cancel in rapid succession (both scheduled): both reconcile calls succeed; final Google state = no event.
+  - Pending lesson: no Google call. Past approved lesson: no Google call.
   - No integration row → no-op, no error, no DB write.
-  - Integration row with `status='needs_reconnect'` → no-op, no Google call made.
-  - Google 429 twice → retried, then success. Attempts counter = 3.
-  - Google 500 permanent → `sync_failed`, error message captured, attempts incremented.
-  - `invalid_grant` → integration row flipped to `needs_reconnect`, lesson `sync_failed` with `calendar_sync_error='token_revoked'`, both writes in one transaction.
-  - `events.delete` returns 404/410 → treated as success (idempotent delete).
-  - `syncLessonDeleted` with null `google_calendar_event_id` → short-circuits, no HTTP call (covers decline path).
+  - `status='needs_reconnect'` or `status='disconnected'` → no-op, no Google call.
+  - `events.delete` returns 404/410 → treated as success.
+  - `invalid_grant` on refresh → integration row flipped to `needs_reconnect`, lesson `sync_failed` with `calendar_sync_error='token_revoked'`, both writes in one transaction.
 - `googleCalendarAuth.test.ts` — state param:
   - sign + verify round trip with HMAC key.
   - expired state (>10 min) rejected.
@@ -303,15 +330,16 @@ Vitest with native `vi.mock()` for the `googleapis` client. New file layout unde
 
 Vitest integration config, live local Supabase, Google API mocked at the `googleapis` module boundary (no network). Shared `mockGoogleCalendar()` helper under `apps/api/src/__tests__/integration/helpers/`.
 
-- `coachGoogleCalendar.integration.test.ts`:
-  - Full connect flow: start → callback → integration row written with `status='active'`; one `coach_audit_log` row written with `action='calendar_connected'` in the same transaction.
-  - Audit transactionality: when the integration INSERT fails (seed a conflicting row), the `coach_audit_log` INSERT rolls back too — no orphan audit row.
-  - Connect with pending approved lessons → backfill creates events, all lesson rows reach `calendar_sync_status='synced'`.
-  - Backfill is background: callback redirects within 100ms even when 50 lessons are queued; status counts converge over time.
-  - Approve → event body sent, lesson row has `event_id` and `synced` status.
-  - Reschedule → `events.patch` called with new time, status still `synced`.
-  - Cancel → `events.delete` called, `event_id` cleared.
-  - Decline (pending → declined) → no Google call (defensive no-op in `syncLessonDeleted`).
+- `coachGoogleCalendar.integration.test.ts` (phase 1 cases already covered: connect, callback with bad state, disconnect, needs_reconnect, audit rows). Phase 2 adds a lesson-sync test file:
+- `coachGoogleCalendarSync.integration.test.ts` — all cases call the real reconcile service against a vi.mocked Google client:
+  - Approve → `events.insert` called with id = lesson UUID without dashes; lesson row has `google_calendar_event_id` and `synced` status.
+  - Reschedule → `events.insert` called again with same id → 409 → `events.patch` with new time. Lesson row still `synced`.
+  - Cancel → `events.delete` called with the deterministic id; `google_calendar_event_id` cleared.
+  - Decline (pending → declined) → no Google call.
+  - Approve then cancel → final Google state has no event, lesson row `synced` with `google_calendar_event_id=null`.
+  - Retry after transient 500: first attempt fails, retry endpoint re-runs reconcile and succeeds. Only one event id exists in Google (no duplicate).
+  - `invalid_grant` → integration flipped to `needs_reconnect`, retry endpoint returns 409 with `error: "Reconnection required"`.
+  - Backfill on connect: seed 3 approved+upcoming, 1 pending, 1 past approved → backfill reconciles 3 events, skips the pending and past rows.
   - Disconnect → Google revoke called, row deleted, future-lesson sync columns cleared, Google `calendars.delete` **not** called; `coach_audit_log` row with `action='calendar_disconnected'` written in the same transaction as the DELETE.
   - Retry failed lesson → status flips from `sync_failed` to `synced`.
   - `invalid_grant` on next sync → integration row flipped to `needs_reconnect`, status endpoint reflects it, subsequent retries return 409.
