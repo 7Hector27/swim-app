@@ -71,7 +71,7 @@ export default async function RootLayout({
   const showsTabBar = isSignedIn && (role === "parent" || role === "coach");
 
   return (
-    <html lang="en" className={`${fraunces.variable} ${figtree.variable}`} suppressHydrationWarning>
+    <html lang="en" className={`${fraunces.variable} ${figtree.variable}`} suppressHydrationWarning data-scroll-behavior="smooth">
       <body className="min-h-screen flex flex-col bg-background text-text antialiased">
         <Providers isSignedIn={isSignedIn} userName={userName} role={role} isViewer={isViewer}>
           <NavController />
