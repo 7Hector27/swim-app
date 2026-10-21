@@ -8,7 +8,7 @@
 
 ## Overview
 
-One-way sync from this app to the coach's Google Calendar. On connect, the API creates a dedicated "Axiom Aquatics Lessons" calendar under scope `calendar.app.created` and writes only to it. Approved lessons create events; reschedules patch them; cancels and declines delete them. Pending lessons do not sync. Sync is a side effect: booking writes never block on, roll back from, or wait for Google.
+One-way sync from this app to the coach's Google Calendar. On connect, the API creates a dedicated "Axiom Aquatics Lessons" calendar under scope `calendar.app.created` and writes only to it. The authorize URL also requests `openid` and `email` so Google returns an id_token whose `email` claim we display on the status card — both are non-sensitive OpenID Connect scopes and neither widens calendar access. Approved lessons create events; reschedules patch them; cancels and declines delete them. Pending lessons do not sync. Sync is a side effect: booking writes never block on, roll back from, or wait for Google.
 
 The lessons table already has four columns anticipating this feature — `google_calendar_event_id`, `calendar_sync_status`, `calendar_sync_error`, `calendar_sync_attempts` — plus a CHECK constraint on the status enum. The plan reuses them.
 
@@ -27,7 +27,7 @@ One row per coach. The row is created on first connect, updated on reconnect, an
 | `provider` | text, NOT NULL, default `'google'` | Forward-looking; app only writes `'google'` |
 | `status` | text, NOT NULL, default `'active'` | CHECK: `'active' \| 'needs_reconnect'`. Non-existence of the row = not connected. |
 | `google_calendar_id` | text, NOT NULL | Returned by `calendars.insert` on first connect; reused on reconnect if the calendar still exists in Google |
-| `google_account_email` | text, NOT NULL | For the status card |
+| `google_account_email` | text, nullable | For the status card. Null when Google omitted the id_token or its email claim. The card still shows "Connected" without an address in that case — a missing email never fails the OAuth flow. |
 | `scope` | text, NOT NULL | Record what we requested; alarm if it ever drifts |
 | `refresh_token_ciphertext` | bytea, NOT NULL | AES-256-GCM output |
 | `refresh_token_iv` | bytea, NOT NULL | 12-byte GCM nonce |

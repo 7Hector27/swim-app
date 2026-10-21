@@ -798,7 +798,7 @@ export const coachCalendarIntegrations = pgTable(
     provider: text("provider").notNull().default("google"),
     status: text("status").notNull().default("active"),
     googleCalendarId: text("google_calendar_id").notNull(),
-    googleAccountEmail: text("google_account_email").notNull(),
+    googleAccountEmail: text("google_account_email"),
     scope: text("scope").notNull(),
     refreshTokenCiphertext: bytea("refresh_token_ciphertext").notNull(),
     refreshTokenIv: bytea("refresh_token_iv").notNull(),

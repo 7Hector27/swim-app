@@ -163,12 +163,13 @@ describe("GET /integrations/google/callback — connect flow", () => {
     expect(googleClient.calendarExists).not.toHaveBeenCalled();
   });
 
-  it("rejects an invalid state parameter and writes nothing", async () => {
+  it("redirects to /account?google=error on an invalid state and writes nothing", async () => {
     const res = await request(app)
       .get("/integrations/google/callback")
       .query({ code: "auth-code", state: "not-a-signed-state" });
-    expect(res.status).toBe(400);
-    expect(res.text).toMatch(/invalid or expired/i);
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toContain("/account");
+    expect(res.headers.location).toContain("google=error");
 
     const rows = await adminDb()
       .select()
@@ -182,19 +183,106 @@ describe("GET /integrations/google/callback — connect flow", () => {
     expect(audit).toHaveLength(0);
   });
 
-  it("redirects with google=cancelled when the user denies consent", async () => {
+  it("redirects to /account?google=error when the user denies consent", async () => {
     const state = signState(coach.userId, STATE_SECRET);
     const res = await request(app)
       .get("/integrations/google/callback")
       .query({ state, error: "access_denied" });
     expect(res.status).toBe(302);
-    expect(res.headers.location).toContain("google=cancelled");
+    expect(res.headers.location).toContain("/account");
+    expect(res.headers.location).toContain("google=error");
 
     const rows = await adminDb()
       .select()
       .from(coachCalendarIntegrations)
       .where(eq(coachCalendarIntegrations.coachProfileId, coach.userId));
     expect(rows).toHaveLength(0);
+  });
+
+  it("redirects to /account?google=error when Google itself returns an error", async () => {
+    const state = signState(coach.userId, STATE_SECRET);
+    const res = await request(app)
+      .get("/integrations/google/callback")
+      .query({ state, error: "server_error", error_description: "temporarily unavailable" });
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toContain("google=error");
+  });
+
+  it("redirects to /account?google=error when the token exchange throws", async () => {
+    vi.mocked(googleClient.exchangeCodeForTokens).mockRejectedValueOnce(
+      new Error("google: invalid_grant"),
+    );
+    const state = signState(coach.userId, STATE_SECRET);
+    const res = await request(app)
+      .get("/integrations/google/callback")
+      .query({ code: "auth-code", state });
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toContain("google=error");
+
+    const rows = await adminDb()
+      .select()
+      .from(coachCalendarIntegrations)
+      .where(eq(coachCalendarIntegrations.coachProfileId, coach.userId));
+    expect(rows).toHaveLength(0);
+    const audit = await adminDb()
+      .select()
+      .from(coachAuditLog)
+      .where(eq(coachAuditLog.coachId, coach.userId));
+    expect(audit).toHaveLength(0);
+  });
+
+  it("redirects to /account?google=error when calendar creation throws", async () => {
+    vi.mocked(googleClient.createDedicatedCalendar).mockRejectedValueOnce(
+      new Error("google: 500"),
+    );
+    const state = signState(coach.userId, STATE_SECRET);
+    const res = await request(app)
+      .get("/integrations/google/callback")
+      .query({ code: "auth-code", state });
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toContain("google=error");
+
+    const rows = await adminDb()
+      .select()
+      .from(coachCalendarIntegrations)
+      .where(eq(coachCalendarIntegrations.coachProfileId, coach.userId));
+    expect(rows).toHaveLength(0);
+  });
+
+  it("completes the connection when Google returns no id_token email (realistic response shape)", async () => {
+    // This is what Google returns for the common configurations where no
+    // id_token is issued — the shape that broke the real-world flow before
+    // the fix. The mock mirrors the structure precisely: no email field.
+    vi.mocked(googleClient.exchangeCodeForTokens).mockResolvedValueOnce({
+      refreshToken: "refresh-token-value",
+      accessToken: "access-token-value",
+      email: null,
+      scope: "openid email https://www.googleapis.com/auth/calendar.app.created",
+    });
+
+    const state = signState(coach.userId, STATE_SECRET);
+    const res = await request(app)
+      .get("/integrations/google/callback")
+      .query({ code: "auth-code", state });
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toContain("google=connected");
+
+    const rows = await adminDb()
+      .select()
+      .from(coachCalendarIntegrations)
+      .where(eq(coachCalendarIntegrations.coachProfileId, coach.userId));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.googleAccountEmail).toBeNull();
+    expect(rows[0]!.status).toBe("active");
+
+    // The status endpoint reflects the null email so the card can show
+    // "Connected" without an address.
+    const statusRes = await request(app)
+      .get("/coach/calendar/status")
+      .set("Authorization", `Bearer ${coach.accessToken}`);
+    expect(statusRes.status).toBe(200);
+    expect(statusRes.body.status).toBe("active");
+    expect(statusRes.body.connectedAccountEmail).toBeNull();
   });
 });
 
@@ -280,7 +368,11 @@ describe("GET /integrations/google/callback — reconnect flow", () => {
     const res = await request(app)
       .get("/integrations/google/callback")
       .query({ code: "auth-code", state });
-    expect(res.status).toBeGreaterThanOrEqual(500);
+    // The DB write is now caught and redirected to /account?google=error so
+    // the coach doesn't see a raw error page. The rollback behavior is the
+    // same — nothing committed.
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toContain("google=error");
 
     const rows = await adminDb()
       .select()

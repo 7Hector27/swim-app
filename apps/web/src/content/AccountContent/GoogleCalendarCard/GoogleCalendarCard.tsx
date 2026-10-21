@@ -6,9 +6,13 @@ import { connectGoogleCalendar, disconnectGoogleCalendar } from "../actions";
 
 interface GoogleCalendarCardProps {
   status: GoogleCalendarStatusResponse;
+  // When true, the page was loaded with ?google=error — show a friendly
+  // "couldn't connect" message. The user can retry via the primary button
+  // without reloading first.
+  connectError: boolean;
 }
 
-export default function GoogleCalendarCard({ status }: GoogleCalendarCardProps) {
+export default function GoogleCalendarCard({ status, connectError }: GoogleCalendarCardProps) {
   // The parent AccountContent is responsible for hiding this card when
   // status.status === 'not_configured'; render guards here are belt-and-
   // suspenders in case a future caller forgets.
@@ -25,6 +29,12 @@ export default function GoogleCalendarCard({ status }: GoogleCalendarCardProps) 
       >
         Google Calendar
       </h2>
+
+      {connectError && (
+        <p role="alert" className="text-sm text-danger">
+          Couldn&rsquo;t connect Google Calendar. Try again.
+        </p>
+      )}
 
       {status.status === "not_connected" && <NotConnected />}
       {status.status === "active" && <Active status={status} />}
@@ -47,12 +57,19 @@ function NotConnected() {
 }
 
 function Active({ status }: { status: GoogleCalendarStatusResponse }) {
+  // Email is nullable when Google didn't return an id_token (or returned
+  // one without an email claim). The connection is still fine; we just
+  // show a generic "Connected" line without an address.
   return (
     <>
-      <div className="flex flex-col gap-1">
-        <p className="text-sm font-semibold text-text-secondary">Connected account</p>
-        <p className="text-text">{status.connectedAccountEmail}</p>
-      </div>
+      {status.connectedAccountEmail ? (
+        <div className="flex flex-col gap-1">
+          <p className="text-sm font-semibold text-text-secondary">Connected account</p>
+          <p className="text-text">{status.connectedAccountEmail}</p>
+        </div>
+      ) : (
+        <p className="text-text">Connected</p>
+      )}
       {status.connectedAt && (
         <p className="text-xs text-text-secondary">
           Connected on {formatDate(status.connectedAt)}

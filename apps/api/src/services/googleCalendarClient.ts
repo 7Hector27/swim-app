@@ -12,6 +12,13 @@ import type { GoogleOAuthEnv } from "../lib/env";
 // client created, never the coach's primary or other calendars.
 export const CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.app.created";
 
+// Two non-sensitive scopes we also request so Google returns an id_token
+// with the signed-in account's email. Used only to display "Connected as
+// <email>" on the status card. Neither widens calendar or data access.
+// Both are OpenID Connect scopes — no Google-sensitive scope review needed.
+export const OPENID_SCOPE = "openid";
+export const EMAIL_SCOPE = "email";
+
 // Timezone passed when creating the dedicated calendar. Hardcoded for now;
 // see docs/plans/google-calendar-sync.md "Resolved decisions" > Timezone.
 // TODO: per-coach timezone if we ever expand beyond LA.
@@ -23,7 +30,11 @@ export interface ExchangedTokens {
   refreshToken: string;
   accessToken: string;
   // Email from the ID token; used only for display on the status card.
-  email: string;
+  // Null when Google omitted an id_token or the id_token lacked an email
+  // claim (e.g. a workspace account with the email scope stripped). Missing
+  // email is non-fatal — the status card shows "Connected" without an
+  // address instead of 500-ing the entire callback.
+  email: string | null;
   // Space-delimited scope string Google returned, so the API can detect
   // scope drift (e.g. coach manually added a broader scope later).
   scope: string;
@@ -39,9 +50,11 @@ export function getAuthorizeUrl(env: GoogleOAuthEnv, state: string): string {
   return client.generateAuthUrl({
     access_type: "offline",
     prompt: "consent",
-    scope: [CALENDAR_SCOPE],
-    // openid+email are needed to populate the Google account email on the
-    // status card. They don't widen calendar access.
+    // openid + email are non-sensitive OpenID Connect scopes we add so Google
+    // returns an id_token whose `email` claim we display on the status card.
+    // Neither widens access to calendars or other data. calendar.app.created
+    // stays the single sensitive scope.
+    scope: [OPENID_SCOPE, EMAIL_SCOPE, CALENDAR_SCOPE],
     include_granted_scopes: true,
     state,
   });
@@ -49,9 +62,9 @@ export function getAuthorizeUrl(env: GoogleOAuthEnv, state: string): string {
 
 /**
  * Exchange an authorization code for tokens and pull the account email out
- * of the ID token. Throws if Google returns an error or omits a refresh
- * token (which only happens when the user previously consented and we
- * forgot to pass `prompt=consent` — guarded above).
+ * of the ID token. Throws if Google returns an error or omits a refresh or
+ * access token. Missing email is NOT fatal — it just comes back null and
+ * the status card hides the "Connected as <email>" line.
  */
 export async function exchangeCodeForTokens(
   env: GoogleOAuthEnv,
@@ -65,10 +78,7 @@ export async function exchangeCodeForTokens(
   if (!tokens.access_token) {
     throw new Error("google: token response missing access_token");
   }
-  const email = extractEmailFromIdToken(tokens.id_token);
-  if (!email) {
-    throw new Error("google: id_token did not contain an email claim");
-  }
+  const email = extractEmailFromIdToken(tokens.id_token) ?? null;
   return {
     refreshToken: tokens.refresh_token,
     accessToken: tokens.access_token,

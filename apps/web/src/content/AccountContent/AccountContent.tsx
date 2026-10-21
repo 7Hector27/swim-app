@@ -10,9 +10,16 @@ import { logout } from "./actions";
 interface AccountContentProps {
   profile: MeResponse;
   googleCalendarStatus: GoogleCalendarStatusResponse | null;
+  // True when the account page was loaded with ?google=error after a failed
+  // OAuth callback. Rendered as an inline message above the card actions.
+  googleConnectError: boolean;
 }
 
-export default function AccountContent({ profile, googleCalendarStatus }: AccountContentProps) {
+export default function AccountContent({
+  profile,
+  googleCalendarStatus,
+  googleConnectError,
+}: AccountContentProps) {
   // Hide the card entirely when the API hasn't been configured for Google
   // (dev without env vars, or an API deploy that doesn't support it) and
   // for parents — only coaches get the integration.
@@ -43,7 +50,9 @@ export default function AccountContent({ profile, googleCalendarStatus }: Accoun
             initialPhone={profile.phone}
           />
 
-          {showCalendarCard && <GoogleCalendarCard status={googleCalendarStatus} />}
+          {showCalendarCard && (
+            <GoogleCalendarCard status={googleCalendarStatus} connectError={googleConnectError} />
+          )}
 
           <form action={logout}>
             <Button type="submit" variant="outline">

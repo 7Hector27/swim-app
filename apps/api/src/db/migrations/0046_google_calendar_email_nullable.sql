@@ -1,0 +1,1 @@
+ALTER TABLE "coach_calendar_integrations" ALTER COLUMN "google_account_email" DROP NOT NULL;
