@@ -21,7 +21,11 @@ export default function GoogleCalendarCard({ status, connectError }: GoogleCalen
   return (
     <section
       aria-labelledby="google-calendar-card-heading"
-      className="flex flex-col gap-4 rounded-card border border-border bg-card p-5"
+      // No `bg-card` here — that token is `#1D2440` in light mode (dark navy)
+      // and is meant for cards sitting on a dark `bg-section`. On /account the
+      // whole page is on `bg-background`, so the section inherits that and the
+      // page-level text tokens (`text-heading`, `text-text`, …) stay readable.
+      className="flex flex-col gap-4 rounded-card border border-border p-5"
     >
       <h2
         id="google-calendar-card-heading"
