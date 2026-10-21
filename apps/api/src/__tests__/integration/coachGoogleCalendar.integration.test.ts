@@ -41,6 +41,23 @@ const app = createApp(logger);
 const STATE_SECRET = "s".repeat(32);
 const KEY = Buffer.alloc(32, 7).toString("base64");
 
+// Every callback redirect — success or failure — must land on a fully
+// absolute web URL whose origin matches SITE_URL. A regression where some
+// branch used `res.redirect("/account?...")` with a bare path would silently
+// pass against a .toContain("/account") check, so these helpers parse the
+// Location header into a URL and enforce origin + path + param.
+const EXPECTED_WEB_ORIGIN = new URL(process.env["SITE_URL"] ?? "http://localhost:3000").origin;
+
+function expectCallbackRedirect(location: unknown, googleParam: "connected" | "error"): void {
+  expect(typeof location).toBe("string");
+  // Fails cleanly on relative paths — new URL() of "/account?x" throws.
+  expect(() => new URL(location as string)).not.toThrow();
+  const url = new URL(location as string);
+  expect(url.origin).toBe(EXPECTED_WEB_ORIGIN);
+  expect(url.pathname).toBe("/account");
+  expect(url.searchParams.get("google")).toBe(googleParam);
+}
+
 let coach: TestUser;
 
 async function makeCoach(userId: string): Promise<void> {
@@ -125,8 +142,7 @@ describe("GET /integrations/google/callback — connect flow", () => {
       .get("/integrations/google/callback")
       .query({ code: "auth-code-value", state });
     expect(res.status).toBe(302);
-    expect(res.headers.location).toContain("/account");
-    expect(res.headers.location).toContain("google=connected");
+    expectCallbackRedirect(res.headers.location, "connected");
 
     const rows = await adminDb()
       .select()
@@ -168,8 +184,7 @@ describe("GET /integrations/google/callback — connect flow", () => {
       .get("/integrations/google/callback")
       .query({ code: "auth-code", state: "not-a-signed-state" });
     expect(res.status).toBe(302);
-    expect(res.headers.location).toContain("/account");
-    expect(res.headers.location).toContain("google=error");
+    expectCallbackRedirect(res.headers.location, "error");
 
     const rows = await adminDb()
       .select()
@@ -189,8 +204,7 @@ describe("GET /integrations/google/callback — connect flow", () => {
       .get("/integrations/google/callback")
       .query({ state, error: "access_denied" });
     expect(res.status).toBe(302);
-    expect(res.headers.location).toContain("/account");
-    expect(res.headers.location).toContain("google=error");
+    expectCallbackRedirect(res.headers.location, "error");
 
     const rows = await adminDb()
       .select()
@@ -205,7 +219,7 @@ describe("GET /integrations/google/callback — connect flow", () => {
       .get("/integrations/google/callback")
       .query({ state, error: "server_error", error_description: "temporarily unavailable" });
     expect(res.status).toBe(302);
-    expect(res.headers.location).toContain("google=error");
+    expectCallbackRedirect(res.headers.location, "error");
   });
 
   it("redirects to /account?google=error when the token exchange throws", async () => {
@@ -217,7 +231,7 @@ describe("GET /integrations/google/callback — connect flow", () => {
       .get("/integrations/google/callback")
       .query({ code: "auth-code", state });
     expect(res.status).toBe(302);
-    expect(res.headers.location).toContain("google=error");
+    expectCallbackRedirect(res.headers.location, "error");
 
     const rows = await adminDb()
       .select()
@@ -240,7 +254,7 @@ describe("GET /integrations/google/callback — connect flow", () => {
       .get("/integrations/google/callback")
       .query({ code: "auth-code", state });
     expect(res.status).toBe(302);
-    expect(res.headers.location).toContain("google=error");
+    expectCallbackRedirect(res.headers.location, "error");
 
     const rows = await adminDb()
       .select()
@@ -265,7 +279,7 @@ describe("GET /integrations/google/callback — connect flow", () => {
       .get("/integrations/google/callback")
       .query({ code: "auth-code", state });
     expect(res.status).toBe(302);
-    expect(res.headers.location).toContain("google=connected");
+    expectCallbackRedirect(res.headers.location, "connected");
 
     const rows = await adminDb()
       .select()
@@ -372,7 +386,7 @@ describe("GET /integrations/google/callback — reconnect flow", () => {
     // the coach doesn't see a raw error page. The rollback behavior is the
     // same — nothing committed.
     expect(res.status).toBe(302);
-    expect(res.headers.location).toContain("google=error");
+    expectCallbackRedirect(res.headers.location, "error");
 
     const rows = await adminDb()
       .select()
