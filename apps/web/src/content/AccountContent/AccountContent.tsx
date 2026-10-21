@@ -1,16 +1,26 @@
-import type { MeResponse } from "@swim-app/shared";
+import type { GoogleCalendarStatusResponse, MeResponse } from "@swim-app/shared";
 
 import Button from "@/components/Button";
 import { capitalizeFirst } from "@/lib/capitalizeFirst";
 
 import EditProfileForm from "./EditProfileForm";
+import GoogleCalendarCard from "./GoogleCalendarCard";
 import { logout } from "./actions";
 
 interface AccountContentProps {
   profile: MeResponse;
+  googleCalendarStatus: GoogleCalendarStatusResponse | null;
 }
 
-export default function AccountContent({ profile }: AccountContentProps) {
+export default function AccountContent({ profile, googleCalendarStatus }: AccountContentProps) {
+  // Hide the card entirely when the API hasn't been configured for Google
+  // (dev without env vars, or an API deploy that doesn't support it) and
+  // for parents — only coaches get the integration.
+  const showCalendarCard =
+    profile.role === "coach" &&
+    googleCalendarStatus !== null &&
+    googleCalendarStatus.status !== "not_configured";
+
   return (
     <div className="flex flex-col flex-1">
       <main className="flex-1 px-page py-16">
@@ -32,6 +42,8 @@ export default function AccountContent({ profile }: AccountContentProps) {
             initialFullName={profile.fullName}
             initialPhone={profile.phone}
           />
+
+          {showCalendarCard && <GoogleCalendarCard status={googleCalendarStatus} />}
 
           <form action={logout}>
             <Button type="submit" variant="outline">
