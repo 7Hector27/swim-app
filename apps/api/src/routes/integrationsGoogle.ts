@@ -15,7 +15,7 @@ import { requireCoach } from "../middleware/requireCoach";
 import { requireUser } from "../middleware/requireUser";
 import { validate } from "../middleware/validate";
 import * as googleClient from "../services/googleCalendarClient";
-import { backfillCoachLessons } from "../services/googleCalendarSync";
+import { runFullSyncPass } from "../services/googleCalendarSync";
 
 export const integrationsGoogleRouter = Router();
 
@@ -202,9 +202,13 @@ integrationsGoogleRouter.get(
     // Backfill in the background after the browser is already on its way to
     // /account. The card polls the status endpoint and reports progress via
     // the sync counts (see phase 2.3). Rejections swallowed by the microtask
-    // queue — the service catches its own errors.
+    // queue — the service catches its own errors. Full pass walks the
+    // whole in-window set (approved/completed + any stray event ids) so
+    // Google and the DB match after we've been disconnected. On
+    // success, the service writes last_full_reconcile_at so the cron
+    // knows when to run the next full pass.
     queueMicrotask(() => {
-      void backfillCoachLessons(coachId);
+      void runFullSyncPass(coachId);
     });
   }),
 );

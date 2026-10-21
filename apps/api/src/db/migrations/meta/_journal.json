@@ -351,6 +351,13 @@
       "when": 1792617266793,
       "tag": "0049_sync_run_started_at",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1792622660493,
+      "tag": "0050_last_full_reconcile_at",
+      "breakpoints": true
     }
   ]
 }

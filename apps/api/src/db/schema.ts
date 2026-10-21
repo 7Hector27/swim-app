@@ -813,6 +813,10 @@ export const coachCalendarIntegrations = pgTable(
     connectedAt: timestamp("connected_at", { withTimezone: true }).notNull().defaultNow(),
     lastSyncAttemptedAt: timestamp("last_sync_attempted_at", { withTimezone: true }),
     lastSyncSucceededAt: timestamp("last_sync_succeeded_at", { withTimezone: true }),
+    // Set when a full sync pass finishes successfully. The cron tick reads
+    // this to decide whether to promote its light pass to a full pass
+    // (when > 24 hours old). See ADR 027.
+    lastFullReconcileAt: timestamp("last_full_reconcile_at", { withTimezone: true }),
     needsReconnectSince: timestamp("needs_reconnect_since", { withTimezone: true }),
     // Set when a backfill or retry run starts, cleared in a finally block
     // when it ends (crash or normal). The status endpoint treats a value

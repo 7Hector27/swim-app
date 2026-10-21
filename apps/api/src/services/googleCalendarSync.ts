@@ -6,7 +6,7 @@
 // and parent paths), the backfill loop, and the manual retry endpoint call
 // the single reconcile function exported here.
 
-import { and, asc, eq, gt, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNotNull, or, sql } from "drizzle-orm";
 
 import { db } from "../db/client";
 import {
@@ -241,38 +241,105 @@ async function syncLessonToGoogleInner(lessonId: string): Promise<void> {
   }
 }
 
+// Light pass cap — a worst-case retry burst shouldn't burn through
+// Google's user quota in one tick. 50 lessons × 100ms gap = ~5s per
+// batch; small enough to finish inside the 2-minute staleness window.
+const LIGHT_PASS_CAP = 50;
+
 /**
- * Backfill / resync loop. Reconciles every upcoming approved lesson whose
- * `calendar_sync_status` is `not_synced` or `sync_failed` for the given
- * coach, with a 100ms gap between calls to stay under Google quotas. Safe
- * to call concurrently with lesson-event microtasks because each call to
- * syncLessonToGoogle is idempotent on the shared event id.
+ * Light pass: reconcile a bounded number of in-window `approved`/`completed`
+ * lessons whose `calendar_sync_status` is `not_synced` or `sync_failed`.
+ * Used by the manual Retry button and by every cron tick for a cheap
+ * drain of transient failures.
  */
-export async function backfillCoachLessons(coachProfileId: string): Promise<void> {
+export async function runLightSyncPass(coachProfileId: string): Promise<void> {
   await runSyncBatch(coachProfileId, async () => {
+    const windowStart = startOfTodayLA();
     const rows = await db
       .select({ id: lessons.id })
       .from(lessons)
       .where(
         and(
-          eq(lessons.status, "approved"),
-          gt(lessons.startsAt, new Date()),
+          gte(lessons.startsAt, windowStart),
+          inArray(lessons.status, ["approved", "completed"]),
           inArray(lessons.calendarSyncStatus, ["not_synced", "sync_failed"]),
         ),
       )
-      .orderBy(asc(lessons.startsAt));
+      .orderBy(asc(lessons.startsAt))
+      .limit(LIGHT_PASS_CAP);
     for (const row of rows) {
-      // Per-iteration try/catch keeps one bad lesson from halting the run.
-      // syncLessonToGoogle shouldn't reject (its own try/catch handles the
-      // uncaught paths), but defense in depth matters here.
       try {
         await syncLessonToGoogle(row.id);
       } catch (err) {
-        logger.error({ err, lessonId: row.id }, "backfill: per-lesson failure, continuing");
+        logger.error({ err, lessonId: row.id }, "light pass: per-lesson failure, continuing");
       }
       await sleep(100);
     }
   });
+}
+
+/**
+ * Full pass: reconcile every in-window `approved`/`completed` lesson,
+ * regardless of `calendar_sync_status`, PLUS every in-window lesson that
+ * still carries a `google_calendar_event_id` (so stray events on
+ * canceled/declined/expired rows get removed). Used on connect/reconnect
+ * and from the cron tick when `last_full_reconcile_at` is >24h old.
+ *
+ * On success, writes `last_full_reconcile_at = now()` to the integration
+ * row so the cron can decide when to run the next full pass.
+ */
+export async function runFullSyncPass(coachProfileId: string): Promise<void> {
+  let completed = false;
+  await runSyncBatch(coachProfileId, async () => {
+    const windowStart = startOfTodayLA();
+    const rows = await db
+      .select({ id: lessons.id })
+      .from(lessons)
+      .where(
+        and(
+          gte(lessons.startsAt, windowStart),
+          or(
+            inArray(lessons.status, ["approved", "completed"]),
+            isNotNull(lessons.googleCalendarEventId),
+          ),
+        ),
+      )
+      .orderBy(asc(lessons.startsAt));
+    for (const row of rows) {
+      try {
+        await syncLessonToGoogle(row.id);
+      } catch (err) {
+        logger.error({ err, lessonId: row.id }, "full pass: per-lesson failure, continuing");
+      }
+      await sleep(100);
+    }
+    completed = true;
+  });
+  if (completed) {
+    await db
+      .update(coachCalendarIntegrations)
+      .set({ lastFullReconcileAt: new Date() })
+      .where(eq(coachCalendarIntegrations.coachProfileId, coachProfileId));
+  }
+}
+
+// Start of today in America/Los_Angeles, as a Date in UTC. We format the
+// LA date, prepend 00:00, parse back — the Intl API doesn't give us a
+// direct "LA midnight as UTC" shortcut, and this is the only call site.
+function startOfTodayLA(): Date {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Los_Angeles",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const year = parts.find((part) => part.type === "year")!.value;
+  const month = parts.find((part) => part.type === "month")!.value;
+  const day = parts.find((part) => part.type === "day")!.value;
+  // Interpret the LA calendar date as a UTC-offset-aware ISO. LA is UTC-7
+  // or UTC-8; use a half-step 12h earlier to be safe across DST — the
+  // date_parse will land on today-LA-start regardless.
+  return new Date(`${year}-${month}-${day}T00:00:00-08:00`);
 }
 
 /**

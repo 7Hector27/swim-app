@@ -48,7 +48,8 @@ import { __resetEnvCacheForTests } from "../../lib/env";
 import { encryptToken } from "../../lib/tokenEncryption";
 import * as googleClient from "../../services/googleCalendarClient";
 import {
-  backfillCoachLessons,
+  runFullSyncPass,
+  runLightSyncPass,
   syncLessonToGoogle,
 } from "../../services/googleCalendarSync";
 import { adminDb, closeAdminDb, createTestUser, type TestUser } from "./helpers";
@@ -395,24 +396,26 @@ describe("syncLessonToGoogle — invalid_grant", () => {
   });
 });
 
-describe("backfillCoachLessons", () => {
-  it("picks up upcoming approved lessons and skips pending and past rows", async () => {
+describe("runFullSyncPass", () => {
+  // The full pass walks all in-window lessons globally (single-coach app;
+  // no coach_id column on lessons). In a seeded dev DB there may be
+  // other coaches' lessons too — we assert containment, not exact length.
+  it("picks up in-window approved lessons and skips pending (no event id) and before-window rows", async () => {
     await seedCoachIntegration();
     const futureApprovedA = await seedLesson({ status: "approved", startsAt: future(24) });
     const futureApprovedB = await seedLesson({ status: "approved", startsAt: future(48) });
     const futurePending = await seedLesson({ status: "pending", startsAt: future(72) });
-    const pastApproved = await seedLesson({ status: "approved", startsAt: past(24) });
+    const beforeWindowApproved = await seedLesson({ status: "approved", startsAt: past(24) });
 
-    await backfillCoachLessons(coach.userId);
+    await runFullSyncPass(coach.userId);
 
     const synced = vi
       .mocked(googleClient.upsertEvent)
       .mock.calls.map((call) => call[3]);
-    expect(synced).toHaveLength(2);
     expect(synced).toContain(stripDashes(futureApprovedA));
     expect(synced).toContain(stripDashes(futureApprovedB));
     expect(synced).not.toContain(stripDashes(futurePending));
-    expect(synced).not.toContain(stripDashes(pastApproved));
+    expect(synced).not.toContain(stripDashes(beforeWindowApproved));
   });
 });
 
@@ -634,23 +637,25 @@ describe("runs can't get stuck", () => {
     )[0]!;
   }
 
-  it("a backfill where one lesson's reconcile throws still finishes and clears syncRunStartedAt", async () => {
+  it("a full pass where one lesson's reconcile throws still finishes and clears syncRunStartedAt", async () => {
     await seedCoachIntegration();
     const a = await seedLesson({ status: "approved", startsAt: future(24) });
     const b = await seedLesson({ status: "approved", startsAt: future(48) });
     const c = await seedLesson({ status: "approved", startsAt: future(72) });
 
-    // Make the SECOND Google call throw. The service's inner try/catch
-    // marks the lesson sync_failed; the backfill loop keeps going.
+    // Target the throw at lesson b specifically — the full pass walks all
+    // in-window lessons (including any from other coaches in a seeded dev
+    // DB), so a positional mock chain wouldn't line up with our three
+    // seeded rows. Match on the deterministic event id instead.
+    const bEventId = stripDashes(b);
     const boom = Object.assign(new Error("boom"), { code: 500 });
-    vi.mocked(googleClient.upsertEvent)
-      .mockResolvedValueOnce(undefined)
-      .mockRejectedValueOnce(boom)
-      .mockResolvedValueOnce(undefined);
+    vi.mocked(googleClient.upsertEvent).mockImplementation(async (_env, _tok, _cal, eventId) => {
+      if (eventId === bEventId) throw boom;
+    });
 
-    await backfillCoachLessons(coach.userId);
+    await runFullSyncPass(coach.userId);
 
-    // All three lessons reached a terminal state — not stuck at not_synced.
+    // All three of OUR lessons reached a terminal state — not stuck at not_synced.
     const rows = await adminDb()
       .select({ id: lessons.id, status: lessons.calendarSyncStatus })
       .from(lessons)
@@ -1063,6 +1068,126 @@ describe("background state-change hooks", () => {
 
     const [row] = await adminDb().select().from(lessons).where(eq(lessons.id, lessonId));
     expect(row!.status).toBe("expired");
+    expect(googleClient.upsertEvent).not.toHaveBeenCalled();
+    expect(googleClient.deleteEventIdempotent).not.toHaveBeenCalled();
+  });
+});
+
+describe("full pass covers today + already-synced + strays", () => {
+  it("connect reconciles a lesson from earlier today AND an already-synced future lesson", async () => {
+    await seedCoachIntegration();
+    // Earlier today in LA — within the sync window — approved, never synced.
+    // Use a timestamp 1 hour before "now" so it's still today-LA.
+    const earlierTodayStart = new Date(Date.now() - 60 * 60 * 1000);
+    const earlierTodayId = await seedLesson({
+      status: "approved",
+      startsAt: earlierTodayStart,
+      calendarSyncStatus: "not_synced",
+    });
+    // Future lesson already synced — the OLD backfill would skip it. The
+    // full pass must still reconcile it to prove Google matches the DB.
+    const futureSyncedId = await seedLesson({ status: "approved", startsAt: future(24) });
+    await adminDb()
+      .update(lessons)
+      .set({
+        calendarSyncStatus: "synced",
+        googleCalendarEventId: stripDashes(futureSyncedId),
+      })
+      .where(eq(lessons.id, futureSyncedId));
+
+    await runFullSyncPass(coach.userId);
+
+    const synced = vi
+      .mocked(googleClient.upsertEvent)
+      .mock.calls.map((call) => call[3]);
+    expect(synced).toContain(stripDashes(earlierTodayId));
+    expect(synced).toContain(stripDashes(futureSyncedId));
+  });
+
+  it("full pass recreates an event the coach deleted in Google (mock errors on patch)", async () => {
+    // "Deleted in Google" presents to our code as a 404 on patch after the
+    // 409-fallback inside upsertEvent. We model the whole upsertEvent as
+    // throwing a 404 once; the service marks it sync_failed. The *next*
+    // full-pass invocation sees sync_failed with event id still set and
+    // re-upserts cleanly. The event is "recreated" via re-insert (upsert
+    // starts with insert; if 404 cleaned the id in Google, insert succeeds).
+    await seedCoachIntegration();
+    const lessonId = await seedLesson({ status: "approved", startsAt: future(24) });
+    const eventId = stripDashes(lessonId);
+    await adminDb()
+      .update(lessons)
+      .set({ calendarSyncStatus: "synced", googleCalendarEventId: eventId })
+      .where(eq(lessons.id, lessonId));
+
+    // First pass: Google says "not found" on the patch inside upsert.
+    vi.mocked(googleClient.upsertEvent).mockRejectedValueOnce(
+      Object.assign(new Error("not found"), { code: 404 }),
+    );
+    await runFullSyncPass(coach.userId);
+
+    let [row] = await adminDb().select().from(lessons).where(eq(lessons.id, lessonId));
+    expect(row!.calendarSyncStatus).toBe("sync_failed");
+
+    // Second pass: upsert now succeeds (coach's calendar is reachable
+    // again, Google creates a fresh event under the same deterministic id).
+    vi.mocked(googleClient.upsertEvent).mockResolvedValueOnce(undefined);
+    await runFullSyncPass(coach.userId);
+
+    [row] = await adminDb().select().from(lessons).where(eq(lessons.id, lessonId));
+    expect(row!.calendarSyncStatus).toBe("synced");
+    expect(row!.googleCalendarEventId).toBe(eventId);
+  });
+
+  it("full pass deletes a stray event id left on a canceled lesson in the window", async () => {
+    await seedCoachIntegration();
+    // Approved → synced → canceled, but the service was down so the
+    // event id was never cleared. Full pass must find it via the
+    // "event_id IS NOT NULL" branch and delete the Google event.
+    const lessonId = await seedLesson({
+      status: "canceled",
+      startsAt: future(24),
+      calendarSyncStatus: "synced",
+    });
+    await adminDb()
+      .update(lessons)
+      .set({ googleCalendarEventId: stripDashes(lessonId) })
+      .where(eq(lessons.id, lessonId));
+
+    await runFullSyncPass(coach.userId);
+
+    expect(googleClient.deleteEventIdempotent).toHaveBeenCalledTimes(1);
+    const [row] = await adminDb().select().from(lessons).where(eq(lessons.id, lessonId));
+    expect(row!.googleCalendarEventId).toBeNull();
+  });
+
+  it("full pass sets last_full_reconcile_at on success", async () => {
+    await seedCoachIntegration();
+    const before = (
+      await adminDb()
+        .select({ last: coachCalendarIntegrations.lastFullReconcileAt })
+        .from(coachCalendarIntegrations)
+        .where(eq(coachCalendarIntegrations.coachProfileId, coach.userId))
+    )[0]!.last;
+    expect(before).toBeNull();
+
+    await runFullSyncPass(coach.userId);
+
+    const after = (
+      await adminDb()
+        .select({ last: coachCalendarIntegrations.lastFullReconcileAt })
+        .from(coachCalendarIntegrations)
+        .where(eq(coachCalendarIntegrations.coachProfileId, coach.userId))
+    )[0]!.last;
+    expect(after).not.toBeNull();
+    expect(after!.getTime()).toBeGreaterThan(Date.now() - 60_000);
+  });
+
+  it("full pass short-circuits when integration is needs_reconnect", async () => {
+    await seedCoachIntegration("needs_reconnect");
+    await seedLesson({ status: "approved", startsAt: future(24) });
+
+    await runFullSyncPass(coach.userId);
+
     expect(googleClient.upsertEvent).not.toHaveBeenCalled();
     expect(googleClient.deleteEventIdempotent).not.toHaveBeenCalled();
   });
