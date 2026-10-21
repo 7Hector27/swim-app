@@ -49,3 +49,9 @@ Items that require human sign-off before the app goes live. Engineering items go
 
 - [ ] Public leaderboard routes are covered in the lawyer review before launch.
 - [ ] Confirm that only swimmers with `is_public = true` appear in all leaderboard queries; spot-check the API and any cached/rendered output.
+
+---
+
+## Integrations
+
+- [ ] Rate limit `/integrations/*` routes (especially the unauthenticated `/integrations/google/callback`) at the edge or in Express. HMAC state verification fails fast, but a lazy limit (e.g. 60 req/min per IP) keeps a tight-loop attacker from using the endpoint as a free compute drain. See ADR 027.
