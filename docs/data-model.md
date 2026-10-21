@@ -125,6 +125,7 @@ One row per coach while a Google Calendar integration exists. Created on first c
 | `connected_at` | `timestamptz` | no | `now()` | Set on first successful connect; preserved through reconnect. |
 | `last_sync_attempted_at` | `timestamptz` | yes | — | Updated on every sync call. |
 | `last_sync_succeeded_at` | `timestamptz` | yes | — | Updated only on 2xx. |
+| `last_full_reconcile_at` | `timestamptz` | yes | — | Set when a full sync pass completes. The cron tick promotes a tick's light pass to a full pass when this is >24h old. Migration 0050. |
 | `needs_reconnect_since` | `timestamptz` | yes | — | Set when a refresh returns `invalid_grant`; cleared on successful reconnect. |
 | `created_at` | `timestamptz` | no | `now()` | |
 | `updated_at` | `timestamptz` | no | `now()` | Auto-updated. |

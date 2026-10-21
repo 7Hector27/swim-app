@@ -34,8 +34,9 @@ One row per coach. The row is created on first connect, updated on reconnect, an
 | `refresh_token_key_version` | integer, nullable | Enables rotation without migration; nulled on disconnect. |
 | `scope` | text, nullable | Scope the coach granted; nulled on disconnect since no refresh token is held. |
 | `connected_at` | timestamptz, NOT NULL, default `now()` | Set on first successful connect; preserved through reconnect |
-| `last_sync_attempted_at` | timestamptz, nullable | Updated on every sync call |
+| `last_sync_attempted_at` | timestamptz, nullable | Updated on every sync call (per-lesson and batch) |
 | `last_sync_succeeded_at` | timestamptz, nullable | Updated only on 2xx |
+| `last_full_reconcile_at` | timestamptz, nullable | Set when a full sync pass completes. The cron tick uses this to decide whether to run a full pass (if >24h old) or a light pass on each invocation. Migration 0050. |
 | `needs_reconnect_since` | timestamptz, nullable | Set when a refresh returns `invalid_grant`; cleared on successful reconnect |
 | `created_at`, `updated_at` | timestamptz | Standard; `$onUpdateFn` |
 
@@ -153,12 +154,12 @@ All protected routes use `requireUser` + `requireCoach`. The two OAuth endpoints
 | Method | Path | Middleware | Purpose |
 |---|---|---|---|
 | `GET` | `/integrations/google/start` | `requireUser`, `requireCoach`, `validate({ query: GoogleOAuthStartQuerySchema })` | Build Google authorize URL (scope `calendar.app.created`, `access_type=offline`, `prompt=consent`, HMAC-signed `state`), 302 to Google. Used for both initial connect and reconnect — the handler is identical. |
-| `GET` | `/integrations/google/callback` | `validate({ query: GoogleOAuthCallbackQuerySchema })` | Verify state (signature + TTL + coach binding), exchange code. If the coach has an existing integration row (reconnect path), call `calendars.get(googleCalendarId)` — reuse on 2xx, call `calendars.insert` only on 404/410. Upsert the row (set `status='active'`, clear `needs_reconnect_since`, update tokens). Kick off backfill/resync as a non-blocking background task and redirect immediately to `${SITE_URL}${returnTo ?? '/account'}?google=connected`. |
+| `GET` | `/integrations/google/callback` | `validate({ query: GoogleOAuthCallbackQuerySchema })` | Verify state (signature + TTL + coach binding), exchange code. If the coach has an existing integration row (reconnect path), call `calendars.get(googleCalendarId)` — reuse on 2xx, call `calendars.insert` only on 404/410. Upsert the row (set `status='active'`, clear `needs_reconnect_since`, update tokens). Kick off a **full sync pass** as a non-blocking background task and redirect immediately to `${SITE_URL}${returnTo ?? '/account'}?google=connected`. |
 | `GET` | `/coach/calendar/status` | `requireUser`, `requireCoach`, `validate({})` | Returns `GoogleCalendarStatusResponse` (status enum + counts derived from `lessons`). |
 | `GET` | `/coach/lessons` (existing route, extended) | `requireUser`, `requireCoach`, `validate({ query: CoachLessonsCalendarSyncQuerySchema })` | Add `calendarSyncStatus` filter so the card can list `sync_failed` lessons without a new endpoint. |
 | `DELETE` | `/coach/calendar` | `requireUser`, `requireCoach`, `validate({})` | Revoke token at Google (before the transaction; failure logged but doesn't block). Then in one `db.transaction()`: delete the integration row, clear `google_calendar_event_id`, reset `calendar_sync_status` to `'not_synced'` and zero `calendar_sync_attempts` for this coach's future lessons. The dedicated Google calendar is left intact. |
 | `POST` | `/coach/calendar/lessons/:id/retry` | `requireUser`, `requireCoach`, `validate({ params: RetryLessonSyncParamsSchema })` | Re-run the correct sync op for this lesson's current status. Returns updated lesson status. |
-| `POST` | `/coach/calendar/retry-failed` | `requireUser`, `requireCoach`, `validate({})` | Finds all `sync_failed` lessons and retries each sequentially with a 100ms gap. Returns `RetryAllFailedResponse`. |
+| `POST` | `/coach/calendar/retry-failed` | `requireUser`, `requireCoach`, `validate({})` | Runs a **light sync pass** — reconciles up to 50 in-window `approved`/`completed` lessons whose `calendar_sync_status` is `not_synced` or `sync_failed`. Sequential, 100ms gap. Returns `RetryAllFailedResponse`. Returns 409 if the integration needs reconnect. |
 
 **Callback mount.** `app.use("/integrations", integrationsRouter)` mounts in `apps/api/src/app.ts` alongside the other `app.use(...)` lines (schema.ts has no global prefix — confirmed in app.ts). The exact path `/integrations/google/callback` matches the Google Cloud entries.
 
@@ -175,7 +176,7 @@ syncLessonToGoogle(lessonId: string): Promise<void>
 It reads the lesson's current state and makes Google match it — no verb-per-caller split. Approve, reschedule, cancel, decline, retry, and backfill all call the same function. This eliminates "created vs updated vs deleted" branching at the call site and prevents the race where two overlapping events on the same lesson (e.g. coach cancels mid-retry) produce inconsistent calendar state.
 
 **Desired state is computed from the lesson row:**
-- `status IN ('approved', 'completed')` → event should exist with current title/time/location. The event is kept whether the lesson is upcoming OR past, so the coach retains history on their Google calendar after a lesson finishes and the cron auto-completes it.
+- `status IN ('approved', 'completed')` → event should exist with current title/time/location. The event is kept whether the lesson is upcoming OR past, so the coach retains history on their Google calendar after a lesson finishes and the cron auto-completes it. **Time is never a factor** — a lesson's `starts_at` doesn't gate whether the event exists; only its status does.
 - Everything else (`pending`, `declined`, `canceled`, `expired`, `no_show`, or lesson row missing) → event should NOT exist.
 
 **Deterministic event id.** The Google event id is the lesson UUID with dashes stripped (32 hex chars, inside Google's accepted id charset). This makes every operation idempotent:
@@ -218,15 +219,32 @@ Each lesson-mutating route handler, after `res.json()` returns, schedules `queue
 
 Approve already has a stub `syncCalendarApproved(updated.id)` call in the current source — the phase-2 commit replaces it with the microtask call to the reconcile function.
 
-### Backfill and reconnect resync
+### Sync passes: full and light
 
-The connect/reconnect callback kicks off one background task after `res.redirect(...)` returns:
+The service exposes two batch functions, both wrapped in `runSyncBatch` so none can get stuck:
 
-1. Select `lessons` where this coach's integration is active, `status = 'approved'`, `starts_at > now()`, and `calendar_sync_status IN ('not_synced', 'sync_failed')`. **Backfill is deliberately scoped to upcoming approved lessons only** — we don't backfill events into the past when a coach connects for the first time (or reconnects after a long gap) because the user has no expectation of history before they opted in. Per-lesson reconcile is still fine with past approved/completed lessons (keeps the event if it exists, creates it if the coach was synced before the lesson ended and the row drifts).
-2. Call `syncLessonToGoogle(id)` on each row.
-3. Sequential, 100ms gap between calls (Google quota ≈ 500 req/100s per project).
+- **`runFullSyncPass(coachProfileId)`** — reconciles every lesson in the sync window that is `approved` or `completed`, **regardless of `calendar_sync_status`**, PLUS any lesson in the window that still has a `google_calendar_event_id` (so stray events on a `canceled`/`declined`/etc. row get deleted). This is the "trust nothing" pass: on each lesson in scope, call `syncLessonToGoogle(id)` so Google is proven to match the DB. On success, sets `coach_calendar_integrations.last_full_reconcile_at = now()`.
+- **`runLightSyncPass(coachProfileId)`** — reconciles only lessons in the window where `status IN ('approved', 'completed')` AND `calendar_sync_status IN ('not_synced', 'sync_failed')`. Capped at 50 lessons per run. This is the "cheap catch-up" pass that drains the retry/pending queue without touching rows Google already matches.
 
-The status endpoint's counts (`upcomingLessonCount`, `syncedCount`, `pendingSyncCount`, `failedLessonCount`) let the card show "Syncing N of M…" by polling every 3s until `pendingSyncCount` reaches zero. No persistent "in-progress" flag — the lesson table's counts are the source of truth. If the process crashes mid-backfill, the next retry (manual or on next connect) resumes from whatever rows are still `not_synced`.
+**Sync window** = `starts_at >= start_of_today_in_LA`. Both passes work only on lessons starting today or later, so a brand-new or long-reconnected coach doesn't retroactively populate their Google calendar with months of history they didn't opt in to.
+
+**Which pass runs where:**
+
+| Trigger | Pass | Why |
+|---|---|---|
+| Connect callback | Full | First-ever sync — trust nothing, prove-fit every lesson in the window |
+| Reconnect callback | Full | Something may have changed in Google while we were disconnected |
+| Manual Retry (card + endpoint) | Light | Coach is asking us to retry failures; no need to touch things that already match |
+| Cron tick (every 5 min) | Light | Cheap drain of transient failures |
+| Cron tick, when `last_full_reconcile_at` is >24h old | Full | Catch drift (events deleted in Google, rows that silently went stale) without a dedicated cron |
+
+Every pass:
+- Short-circuits when the integration is `needs_reconnect` or `disconnected` (via `runSyncBatch`'s active-only lookup).
+- Processes lessons sequentially with a 100ms gap between calls (Google quota ≈ 500 req/100s per project).
+- Catches per-lesson errors inside the loop so one bad row doesn't halt the batch.
+- Clears `sync_run_started_at` in `finally` even on crash.
+
+The status endpoint's `syncRunInProgress` boolean is set from `sync_run_started_at` with a 2-minute staleness window, so a crashed API self-heals and the UI stops polling. If a run crashed mid-batch, the next trigger (user retry, next tick) resumes from whatever rows are still `not_synced` or `sync_failed`.
 
 ### What's deliberately not wired
 
@@ -235,22 +253,28 @@ The status endpoint's counts (`upcomingLessonCount`, `syncedCount`, `pendingSync
 
 ---
 
-## Retries
+## Retries and error classification
 
 Three layers:
 
-1. **In-call retry (automatic).** Each API call to Google retries up to 2 times on 429 (rate limited) and 5xx, with exponential backoff of 500ms, 2000ms. 4xx other than 429 don't retry. Timeouts (6s) count as a retriable failure.
-2. **Status-visible retry (manual).** `POST /coach/calendar/lessons/:id/retry` re-runs the right sync op. The coach UI exposes this per failed row.
-3. **Bulk retry (manual).** `POST /coach/calendar/retry-failed` iterates all `sync_failed` lessons. Sequential, not parallel, with a 100ms gap between calls to stay under Google quotas (~500 req/100s per project).
+1. **Reconcile loop (automatic).** `syncLessonToGoogle` runs up to 3 passes per invocation to absorb concurrent state changes; see "Reconcile design" above.
+2. **Light pass (automatic + manual).** Every cron tick runs a light pass that drains up to 50 `sync_failed` / `not_synced` lessons in the window. The manual Retry button on the account card does the same via `POST /coach/calendar/retry-failed`.
+3. **Full pass (automatic).** On every connect/reconnect, and from the cron tick when `last_full_reconcile_at` is >24h old. Walks every in-window `approved`/`completed` lesson plus any stray `google_calendar_event_id` to resynchronize Google with the DB after drift.
 
-`calendar_sync_attempts` increments on every attempt, including internal retries, so the coach UI can show "attempted N times." No cap in v1 — the coach decides when to stop retrying.
+`calendar_sync_attempts` increments on every attempt so the coach UI can show "attempted N times" if we add that later. No cap — the retry chip never gives up.
 
-**Token refresh.** The service calls `oauth2Client.refreshAccessToken()` at the start of every sync. Access tokens are not persisted. If the refresh fails with `invalid_grant` (coach revoked access out-of-band in their Google account), the service does **not** delete the integration row. In one transaction it:
+**Error classification.** The service distinguishes four kinds of Google error:
 
-- Sets `coach_calendar_integrations.status = 'needs_reconnect'` and `needs_reconnect_since = now()` on the integration row.
-- Writes `calendar_sync_error = 'token_revoked'` and `calendar_sync_status = 'sync_failed'` on the lesson being synced.
+| Error source | Example | Lesson row | Integration row |
+|---|---|---|---|
+| `invalid_grant` on refresh | Coach revoked access out-of-band | `sync_failed`, `error='token_revoked'` | `status='needs_reconnect'`, `needs_reconnect_since=now()` |
+| 403 (rate limit variant) or 429 | Google quota pushback | `sync_failed`, `error='google_api_error: …'` | **Unchanged** (stays `active`) — the next pass retries |
+| Other 4xx / 5xx | Bad request shape, Google 500 | `sync_failed`, `error='google_api_error: …'` | **Unchanged** |
+| Unexpected throw inside the service | Bug in our own code | `sync_failed`, `error='unexpected_error: …'` | **Unchanged** |
 
-While `status = 'needs_reconnect'`, every sync hook short-circuits before the Google call — no further `invalid_grant`s pile up, no error spam. The retry endpoints also no-op (they return a 409 `{ error: "Reconnection required" }`). The card shows a Reconnect button. Clicking it reuses `/integrations/google/start`; the callback detects the existing row, verifies the calendar still exists (`calendars.get`), and either reuses the existing `google_calendar_id` or calls `calendars.insert` to create a new one if the coach deleted it in Google. On successful reconnect, the row's `status` returns to `'active'`, `needs_reconnect_since` is cleared, and the backfill/resync task sweeps every `sync_failed` and `not_synced` upcoming approved lesson.
+Only `invalid_grant` flips the integration into `needs_reconnect`. In particular, 403 (`rateLimitExceeded` or `userRateLimitExceeded`) and 429 are explicitly treated as retryable: the lesson is marked failed for the next pass but the integration stays active, so the retry button and the next cron tick can clear the queue once Google's quota recovers.
+
+While `status = 'needs_reconnect'`, every sync batch short-circuits before the Google call — no further `invalid_grant`s pile up. The retry endpoints return 409 `{ error: "Reconnection required" }`. The card shows a Reconnect button. On successful reconnect, the row's `status` returns to `'active'` and the callback runs a full pass.
 
 ---
 
