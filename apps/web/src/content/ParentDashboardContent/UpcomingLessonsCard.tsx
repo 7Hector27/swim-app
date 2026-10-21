@@ -5,9 +5,10 @@ import LessonStatusBadge from "@/components/LessonStatusBadge";
 
 interface Props {
   lessons: UpcomingLesson[];
+  total: number;
 }
 
-export default function UpcomingLessonsCard({ lessons }: Props) {
+export default function UpcomingLessonsCard({ lessons, total }: Props) {
   if (lessons.length === 0) {
     return (
       <div className="rounded-card border border-border p-5 tablet:p-6">
@@ -27,7 +28,17 @@ export default function UpcomingLessonsCard({ lessons }: Props) {
 
   return (
     <div className="rounded-card border border-border p-5 tablet:p-6">
-      <h2 className="text-xl text-heading mb-1">Upcoming lessons</h2>
+      <div className="flex items-baseline justify-between mb-1">
+        <h2 className="text-xl text-heading">Upcoming lessons ({total})</h2>
+        {total > lessons.length && (
+          <Link
+            href="/dashboard/lessons"
+            className="text-sm font-semibold text-link hover:text-link-hover transition-colors duration-150"
+          >
+            See all
+          </Link>
+        )}
+      </div>
       <div className="divide-y divide-border">
         {lessons.map((lesson) => (
           <LessonRow key={lesson.id} lesson={lesson} />

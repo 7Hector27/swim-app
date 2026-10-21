@@ -29,7 +29,7 @@ const baseLesson: UpcomingLesson = {
 
 describe("UpcomingLessonsCard — empty state", () => {
   it("shows empty message and book link when no lessons", () => {
-    render(<UpcomingLessonsCard lessons={[]} />);
+    render(<UpcomingLessonsCard lessons={[]} total={0} />);
     expect(screen.getByText(/No upcoming lessons booked yet/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Book a lesson/i })).toBeInTheDocument();
   });
@@ -37,13 +37,13 @@ describe("UpcomingLessonsCard — empty state", () => {
 
 describe("UpcomingLessonsCard — lesson row", () => {
   it("renders day-of-week and date number for the lesson", () => {
-    render(<UpcomingLessonsCard lessons={[baseLesson]} />);
+    render(<UpcomingLessonsCard lessons={[baseLesson]} total={1} />);
     expect(screen.getByText("MON")).toBeInTheDocument();
     expect(screen.getByText("19")).toBeInTheDocument();
   });
 
   it("renders time range with en-dash", () => {
-    render(<UpcomingLessonsCard lessons={[baseLesson]} />);
+    render(<UpcomingLessonsCard lessons={[baseLesson]} total={1} />);
     // 4:00 – 4:30 PM
     const timeEl = screen.getByText(/4:00/);
     expect(timeEl.textContent).toMatch(/–/);
@@ -51,17 +51,17 @@ describe("UpcomingLessonsCard — lesson row", () => {
   });
 
   it("renders location name", () => {
-    render(<UpcomingLessonsCard lessons={[baseLesson]} />);
+    render(<UpcomingLessonsCard lessons={[baseLesson]} total={1} />);
     expect(screen.getByText("Egret Park")).toBeInTheDocument();
   });
 
   it("renders swimmer first name", () => {
-    render(<UpcomingLessonsCard lessons={[baseLesson]} />);
+    render(<UpcomingLessonsCard lessons={[baseLesson]} total={1} />);
     expect(screen.getByText("Alex")).toBeInTheDocument();
   });
 
   it("whole card is a link to the lesson detail page", () => {
-    render(<UpcomingLessonsCard lessons={[baseLesson]} />);
+    render(<UpcomingLessonsCard lessons={[baseLesson]} total={1} />);
     const links = screen.getAllByRole("link");
     const lessonLink = links.find(
       (el) => (el as HTMLAnchorElement).href?.includes(`/dashboard/lessons/${LESSON_ID}`),
@@ -70,14 +70,39 @@ describe("UpcomingLessonsCard — lesson row", () => {
   });
 
   it("shows no status badge for approved lessons", () => {
-    render(<UpcomingLessonsCard lessons={[baseLesson]} />);
+    render(<UpcomingLessonsCard lessons={[baseLesson]} total={1} />);
     expect(screen.queryByText("Confirmed")).not.toBeInTheDocument();
     expect(screen.queryByText("Waiting for Jason")).not.toBeInTheDocument();
   });
 
   it("shows 'Waiting for Jason' badge for pending lessons", () => {
     const pendingLesson: UpcomingLesson = { ...baseLesson, status: "pending", approvedAt: null };
-    render(<UpcomingLessonsCard lessons={[pendingLesson]} />);
+    render(<UpcomingLessonsCard lessons={[pendingLesson]} total={1} />);
     expect(screen.getByText("Waiting for Jason")).toBeInTheDocument();
+  });
+});
+
+describe("UpcomingLessonsCard — total count and See all", () => {
+  it("shows total count in heading", () => {
+    render(<UpcomingLessonsCard lessons={[baseLesson, baseLesson, baseLesson]} total={17} />);
+    expect(screen.getByRole("heading", { level: 2 })).toHaveTextContent("Upcoming lessons (17)");
+  });
+
+  it("shows 'See all' link when total exceeds shown lessons", () => {
+    render(<UpcomingLessonsCard lessons={[baseLesson, baseLesson, baseLesson]} total={17} />);
+    const seeAll = screen.getByRole("link", { name: /See all/i });
+    expect(seeAll).toBeInTheDocument();
+    expect((seeAll as HTMLAnchorElement).href).toContain("/dashboard/lessons");
+  });
+
+  it("hides 'See all' when shown lessons equals total (no more exist)", () => {
+    render(<UpcomingLessonsCard lessons={[baseLesson, baseLesson]} total={2} />);
+    expect(screen.queryByRole("link", { name: /See all/i })).not.toBeInTheDocument();
+  });
+
+  it("heading count matches the API total, not the number of rows shown", () => {
+    render(<UpcomingLessonsCard lessons={[baseLesson]} total={9} />);
+    expect(screen.getByRole("heading", { level: 2 })).toHaveTextContent("(9)");
+    expect(screen.queryByText("(1)")).not.toBeInTheDocument();
   });
 });

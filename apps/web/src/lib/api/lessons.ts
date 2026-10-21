@@ -9,6 +9,7 @@ import {
   LessonResponseSchema,
   MonthAvailabilityResponseSchema,
   UpcomingLessonSchema,
+  UpcomingLessonsCountResponseSchema,
   WeekAvailabilityResponseSchema,
   type AvailableSlot,
   type CoachLessonDetail,
@@ -208,10 +209,15 @@ export async function fetchCoachStats(accessToken: string): Promise<CoachStats |
 
 export async function fetchUpcomingLessons(
   accessToken: string,
+  params?: { limit?: number; offset?: number },
 ): Promise<UpcomingLesson[]> {
   try {
+    const searchParams = new URLSearchParams();
+    if (params?.limit !== undefined) searchParams.set("limit", String(params.limit));
+    if (params?.offset !== undefined) searchParams.set("offset", String(params.offset));
+    const qs = searchParams.size > 0 ? `?${searchParams.toString()}` : "";
     const response = await fetch(
-      `${process.env.NEXT_PUBLIC_API_URL}/lessons`,
+      `${process.env.NEXT_PUBLIC_API_URL}/lessons${qs}`,
       {
         headers: { Authorization: `Bearer ${accessToken}` },
         cache: "no-store",
@@ -228,6 +234,22 @@ export async function fetchUpcomingLessons(
     return parsed.data;
   } catch {
     return [];
+  }
+}
+
+export async function fetchUpcomingLessonsCount(accessToken: string): Promise<number | null> {
+  try {
+    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/lessons/count`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      cache: "no-store",
+    });
+    if (!response.ok) return null;
+    const body: unknown = await response.json();
+    const parsed = UpcomingLessonsCountResponseSchema.safeParse(body);
+    if (!parsed.success) return null;
+    return parsed.data.count;
+  } catch {
+    return null;
   }
 }
 

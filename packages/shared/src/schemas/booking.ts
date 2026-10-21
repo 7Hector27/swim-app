@@ -214,9 +214,19 @@ export const UpcomingLessonsQuerySchema = z.object({
     .transform((value) => parseInt(value, 10))
     .pipe(z.number().int().min(1).max(50))
     .optional(),
+  offset: z
+    .string()
+    .transform((value) => parseInt(value, 10))
+    .pipe(z.number().int().min(0))
+    .optional(),
   filter: z.enum(["upcoming", "past"]).optional(),
 });
 export type UpcomingLessonsQuery = z.infer<typeof UpcomingLessonsQuerySchema>;
+
+export const UpcomingLessonsCountResponseSchema = z.object({
+  count: z.number().int().min(0),
+});
+export type UpcomingLessonsCountResponse = z.infer<typeof UpcomingLessonsCountResponseSchema>;
 
 export const UpcomingLessonSchema = LessonResponseSchema.omit({ householdId: true }).extend({
   locationName: z.string(),
