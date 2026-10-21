@@ -175,8 +175,8 @@ syncLessonToGoogle(lessonId: string): Promise<void>
 It reads the lesson's current state and makes Google match it — no verb-per-caller split. Approve, reschedule, cancel, decline, retry, and backfill all call the same function. This eliminates "created vs updated vs deleted" branching at the call site and prevents the race where two overlapping events on the same lesson (e.g. coach cancels mid-retry) produce inconsistent calendar state.
 
 **Desired state is computed from the lesson row:**
-- `status = 'approved'` AND `starts_at > now()` → event should exist with current title/time/location.
-- Everything else (`pending`, `declined`, `canceled`, `expired`, `no_show`, `completed`, or lesson row missing) → event should NOT exist.
+- `status IN ('approved', 'completed')` → event should exist with current title/time/location. The event is kept whether the lesson is upcoming OR past, so the coach retains history on their Google calendar after a lesson finishes and the cron auto-completes it.
+- Everything else (`pending`, `declined`, `canceled`, `expired`, `no_show`, or lesson row missing) → event should NOT exist.
 
 **Deterministic event id.** The Google event id is the lesson UUID with dashes stripped (32 hex chars, inside Google's accepted id charset). This makes every operation idempotent:
 
@@ -222,7 +222,7 @@ Approve already has a stub `syncCalendarApproved(updated.id)` call in the curren
 
 The connect/reconnect callback kicks off one background task after `res.redirect(...)` returns:
 
-1. Select `lessons` where this coach's integration is active, `status = 'approved'`, `starts_at > now()`, and `calendar_sync_status IN ('not_synced', 'sync_failed')`.
+1. Select `lessons` where this coach's integration is active, `status = 'approved'`, `starts_at > now()`, and `calendar_sync_status IN ('not_synced', 'sync_failed')`. **Backfill is deliberately scoped to upcoming approved lessons only** — we don't backfill events into the past when a coach connects for the first time (or reconnects after a long gap) because the user has no expectation of history before they opted in. Per-lesson reconcile is still fine with past approved/completed lessons (keeps the event if it exists, creates it if the coach was synced before the lesson ended and the row drifts).
 2. Call `syncLessonToGoogle(id)` on each row.
 3. Sequential, 100ms gap between calls (Google quota ≈ 500 req/100s per project).
 

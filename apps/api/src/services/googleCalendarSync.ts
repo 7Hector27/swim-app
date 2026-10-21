@@ -101,8 +101,15 @@ async function syncLessonToGoogleInner(lessonId: string): Promise<void> {
     };
 
     const eventId = toGoogleEventId(lesson.id);
+    // An event should exist in Google whenever the lesson is in a state
+    // the coach wants to see on their calendar — approved or completed.
+    // Completed lessons stay on the coach's calendar as history; the cron
+    // auto-complete transition and a retry run after the lesson's end
+    // time both preserve the event. Deletion is reserved for lessons that
+    // genuinely shouldn't appear: declined, canceled, expired, no_show,
+    // or a lesson row that no longer exists (handled above via null context).
     const shouldExist =
-      lesson.status === "approved" && lesson.startsAt.getTime() > Date.now();
+      lesson.status === "approved" || lesson.status === "completed";
 
     // Nothing to do when the lesson has never been pushed and no event is
     // expected (pending/declined/canceled/etc. that was never approved).

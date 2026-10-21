@@ -343,13 +343,20 @@ describe("syncLessonToGoogle — idempotency and skip conditions", () => {
     expect(after.calendarSyncAttempts).toBe(before.calendarSyncAttempts);
   });
 
-  it("skips past approved lessons (no Google call)", async () => {
+  it("creates/updates the event for a past approved lesson (approved is approved, upcoming or not)", async () => {
+    // Rule change: shouldExist is `status IN ('approved', 'completed')` with
+    // no time gate. A past approved lesson should still have a Google event
+    // because the coach wants history on their calendar. See ADR 027.
     await seedCoachIntegration();
     const lessonId = await seedLesson({ status: "approved", startsAt: past() });
 
     await syncLessonToGoogle(lessonId);
 
-    expect(googleClient.upsertEvent).not.toHaveBeenCalled();
+    expect(googleClient.upsertEvent).toHaveBeenCalledTimes(1);
+    expect(googleClient.deleteEventIdempotent).not.toHaveBeenCalled();
+    const row = (await adminDb().select().from(lessons).where(eq(lessons.id, lessonId)))[0]!;
+    expect(row.calendarSyncStatus).toBe("synced");
+    expect(row.googleCalendarEventId).toBe(stripDashes(lessonId));
   });
 
   it("skips entirely when the integration row is in needs_reconnect", async () => {
@@ -856,23 +863,24 @@ describe("POST /lessons regression: auto-approved bookings must sync", () => {
  * run or Google diverges from the lessons table.
  */
 describe("background state-change hooks", () => {
-  async function waitForEventIdCleared(lessonId: string, timeoutMs = 1500): Promise<void> {
+  async function waitForUpsertCall(expectedEventId: string, timeoutMs = 1500): Promise<void> {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
-      const [row] = await adminDb()
-        .select({ eventId: lessons.googleCalendarEventId })
-        .from(lessons)
-        .where(eq(lessons.id, lessonId));
-      if (row && row.eventId === null) return;
+      const seen = vi
+        .mocked(googleClient.upsertEvent)
+        .mock.calls.map((call) => call[3]);
+      if (seen.includes(expectedEventId)) return;
       await new Promise((resolve) => setTimeout(resolve, 20));
     }
-    throw new Error(`lesson ${lessonId} still has google_calendar_event_id after ${timeoutMs}ms`);
+    throw new Error(`upsertEvent never called with event id ${expectedEventId} within ${timeoutMs}ms`);
   }
 
-  it("cron auto-complete removes the Google event (approved + past → completed → events.delete)", async () => {
+  it("cron auto-complete KEEPS the Google event (approved + past → completed → events.patch via upsert, no delete)", async () => {
     await seedCoachIntegration();
-    // Approved lesson, already ended (past end time) — the cron will flip
-    // it to completed. The reconcile must then delete the event in Google.
+    // Approved lesson, already ended — the cron will flip it to completed.
+    // Per the corrected rule (ADR 027), the event must stay on the coach's
+    // calendar as history. The reconcile fires an upsert (409-then-patch),
+    // never a delete.
     const pastStart = new Date(Date.now() - 2 * 60 * 60 * 1000); // 2h ago
     const inserted = await adminDb()
       .insert(lessons)
@@ -886,15 +894,24 @@ describe("background state-change hooks", () => {
         requestedBy: owner.userId,
         approvedAt: new Date(pastStart.getTime() - 60 * 60 * 1000),
         approvedBy: coach.userId,
-        googleCalendarEventId: "abcdef0123456789abcdef0123456789",
         calendarSyncStatus: "synced",
       })
       .returning({ id: lessons.id });
     const lessonId = inserted[0]!.id;
+    const expectedEventId = stripDashes(lessonId);
+    // Mirror the deterministic event id the service uses so the pre-cron
+    // row shape matches reality (prior sync wrote this exact id).
+    await adminDb()
+      .update(lessons)
+      .set({ googleCalendarEventId: expectedEventId })
+      .where(eq(lessons.id, lessonId));
     await adminDb().insert(lessonSwimmers).values({ lessonId, swimmerId: swimmerIds[0]! });
 
     const cronSecret = process.env["CRON_SECRET"];
     expect(cronSecret).toBeTruthy();
+
+    vi.mocked(googleClient.upsertEvent).mockClear();
+    vi.mocked(googleClient.deleteEventIdempotent).mockClear();
 
     const res = await request(app)
       .post("/internal/cron/tick")
@@ -902,17 +919,74 @@ describe("background state-change hooks", () => {
     expect(res.status).toBe(200);
     expect(res.body.completed).toBeGreaterThanOrEqual(1);
 
-    // Lesson flipped to completed on the DB side.
     const [row] = await adminDb().select().from(lessons).where(eq(lessons.id, lessonId));
     expect(row!.status).toBe("completed");
 
-    // The reconcile microtask ran: Google event was deleted and the row's
-    // event id was cleared. The lesson's seeded status is already 'synced'
-    // (that's the "was synced before cron fired" shape), so we observe the
-    // reconcile by waiting for the event id to go null — which only
-    // happens if syncLessonToGoogle actually ran against the completed row.
-    await waitForEventIdCleared(lessonId);
-    expect(googleClient.deleteEventIdempotent).toHaveBeenCalled();
+    // The microtask ran: upsert was called (keeps the event in Google).
+    // No delete call. The row's event id is unchanged.
+    await waitForUpsertCall(expectedEventId);
+    expect(googleClient.deleteEventIdempotent).not.toHaveBeenCalled();
+    const [after] = await adminDb()
+      .select({ eventId: lessons.googleCalendarEventId })
+      .from(lessons)
+      .where(eq(lessons.id, lessonId));
+    expect(after!.eventId).toBe(expectedEventId);
+  });
+
+  it("retry on an approved lesson whose end time has passed does NOT delete the event", async () => {
+    // The retry endpoint iterates every sync_failed lesson. Before the
+    // rule fix, a sync_failed lesson whose end time had passed would be
+    // deleted on retry because shouldExist was gated on starts_at > now().
+    // Now the deterministic path is upsert (keeps the event).
+    await seedCoachIntegration();
+    const pastStart = new Date(Date.now() - 3 * 60 * 60 * 1000);
+    const inserted = await adminDb()
+      .insert(lessons)
+      .values({
+        householdId: owner.householdId,
+        locationId,
+        startsAt: pastStart,
+        durationMinutes: 30,
+        type: "private",
+        status: "approved",
+        requestedBy: owner.userId,
+        approvedAt: new Date(pastStart.getTime() - 60 * 60 * 1000),
+        approvedBy: coach.userId,
+        calendarSyncStatus: "sync_failed",
+        calendarSyncError: "google: 500",
+      })
+      .returning({ id: lessons.id });
+    const lessonId = inserted[0]!.id;
+    const expectedEventId = stripDashes(lessonId);
+    await adminDb()
+      .update(lessons)
+      .set({ googleCalendarEventId: expectedEventId })
+      .where(eq(lessons.id, lessonId));
+    await adminDb().insert(lessonSwimmers).values({ lessonId, swimmerId: swimmerIds[0]! });
+
+    vi.mocked(googleClient.upsertEvent).mockClear();
+    vi.mocked(googleClient.deleteEventIdempotent).mockClear();
+
+    const retryRes = await request(app)
+      .post("/coach/calendar/retry-failed")
+      .set("Authorization", `Bearer ${coach.accessToken}`);
+    expect(retryRes.status).toBe(200);
+
+    // Retry called upsert for the past approved lesson, NOT delete.
+    const upsertIds = vi
+      .mocked(googleClient.upsertEvent)
+      .mock.calls.map((call) => call[3]);
+    expect(upsertIds).toContain(expectedEventId);
+    expect(googleClient.deleteEventIdempotent).not.toHaveBeenCalled();
+    const [after] = await adminDb()
+      .select({
+        eventId: lessons.googleCalendarEventId,
+        status: lessons.calendarSyncStatus,
+      })
+      .from(lessons)
+      .where(eq(lessons.id, lessonId));
+    expect(after!.eventId).toBe(expectedEventId);
+    expect(after!.status).toBe("synced");
   });
 
   it("cron expiry fires the hook but makes no Google call for pending lessons that were never synced", async () => {
