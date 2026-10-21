@@ -53,14 +53,38 @@ export async function syncLessonToGoogle(lessonId: string): Promise<void> {
     return;
   }
 
+  // Token columns are nullable in the schema — a bad migration, a manual
+  // DB edit, or a half-applied disconnect could leave status='active' with
+  // null cipher material. Treat that as needs_reconnect rather than
+  // dereferencing a null and surfacing an unhandled rejection on the
+  // microtask queue.
+  if (
+    integration.refreshTokenCiphertext === null ||
+    integration.refreshTokenIv === null ||
+    integration.refreshTokenTag === null ||
+    integration.refreshTokenKeyVersion === null
+  ) {
+    logger.warn(
+      {
+        googleError: googleClient.toSafeGoogleError(
+          new Error("integration row is active but has null token columns"),
+        ),
+        lessonId: lesson.id,
+      },
+      "google sync: active integration with missing token material",
+    );
+    await markNeedsReconnect(lesson.id, integration.coachProfileId);
+    return;
+  }
+
   let accessToken: string;
   try {
     const refreshToken = decryptToken(
       {
-        ciphertext: integration.refreshTokenCiphertext!,
-        iv: integration.refreshTokenIv!,
-        tag: integration.refreshTokenTag!,
-        keyVersion: integration.refreshTokenKeyVersion ?? 1,
+        ciphertext: integration.refreshTokenCiphertext,
+        iv: integration.refreshTokenIv,
+        tag: integration.refreshTokenTag,
+        keyVersion: integration.refreshTokenKeyVersion,
       },
       env.googleOAuth.tokenEncryptionKey,
     );

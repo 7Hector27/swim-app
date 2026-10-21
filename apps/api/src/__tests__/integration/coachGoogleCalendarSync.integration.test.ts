@@ -408,6 +408,45 @@ describe("backfillCoachLessons", () => {
   });
 });
 
+describe("null token guard on active row", () => {
+  it("flips to needs_reconnect, marks the lesson sync_failed, and does not throw an unhandled rejection", async () => {
+    // Insert an "active" integration with null token columns — a shape no
+    // normal code path produces, but a manual DB edit or a half-applied
+    // migration could.
+    await adminDb().insert(coachCalendarIntegrations).values({
+      coachProfileId: coach.userId,
+      status: "active",
+      googleCalendarId: "test-calendar-id",
+      googleAccountEmail: "coach@example.com",
+      scope: null,
+      refreshTokenCiphertext: null,
+      refreshTokenIv: null,
+      refreshTokenTag: null,
+      refreshTokenKeyVersion: null,
+    });
+    const lessonId = await seedLesson({ status: "approved", startsAt: future() });
+
+    // Must not reject out of the microtask queue.
+    await expect(syncLessonToGoogle(lessonId)).resolves.toBeUndefined();
+
+    expect(googleClient.refreshAccessToken).not.toHaveBeenCalled();
+    expect(googleClient.upsertEvent).not.toHaveBeenCalled();
+
+    const integration = (
+      await adminDb()
+        .select()
+        .from(coachCalendarIntegrations)
+        .where(eq(coachCalendarIntegrations.coachProfileId, coach.userId))
+    )[0]!;
+    expect(integration.status).toBe("needs_reconnect");
+    expect(integration.needsReconnectSince).not.toBeNull();
+
+    const lesson = (await adminDb().select().from(lessons).where(eq(lessons.id, lessonId)))[0]!;
+    expect(lesson.calendarSyncStatus).toBe("sync_failed");
+    expect(lesson.calendarSyncError).toBe("token_revoked");
+  });
+});
+
 describe("integration-row scoping", () => {
   it("ignores a 'disconnected' integration row that belongs to another profile", async () => {
     // Seed a stale disconnected row under the OWNER's profile — that's a
