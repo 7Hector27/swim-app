@@ -71,7 +71,13 @@ vi.mock("../lib/lessonApproval", () => ({
   notifyLessonApproved: vi.fn(),
   notifyLessonDeclined: vi.fn(),
   chargeLessonComplete: vi.fn(),
-  syncCalendarApproved: vi.fn(),
+}));
+
+// Keep the lesson-sync reconcile from running during unit tests — it would
+// try to hit the DB on a microtask after each response. Integration tests
+// cover the real behavior.
+vi.mock("../services/googleCalendarSync", () => ({
+  syncLessonToGoogle: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("../lib/slots", () => ({

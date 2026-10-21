@@ -40,7 +40,8 @@ import {
 import { validate } from "../middleware/validate";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { mapConfigRow } from "../lib/availabilityMappers";
-import { notifyLessonApproved, notifyLessonDeclined, syncCalendarApproved } from "../lib/lessonApproval";
+import { notifyLessonApproved, notifyLessonDeclined } from "../lib/lessonApproval";
+import { syncLessonToGoogle } from "../services/googleCalendarSync";
 import { computeAvailableSlots, mergeSlotWindows } from "../lib/slots";
 import { z } from "zod";
 
@@ -547,7 +548,6 @@ coachLessonsRouter.patch(
       return;
     }
 
-    syncCalendarApproved(updated.id);
     notifyLessonApproved(updated.id);
 
     // Fetch swimmers for response.
@@ -580,6 +580,10 @@ coachLessonsRouter.patch(
     };
 
     res.json(body);
+    // Reconcile Google Calendar in the background after the response. The
+    // service catches its own errors; any rejection here is swallowed by
+    // the microtask queue and never affects the booking.
+    queueMicrotask(() => { void syncLessonToGoogle(updated.id); });
   }),
 );
 
@@ -646,6 +650,11 @@ coachLessonsRouter.patch(
     };
 
     res.json(responseBody);
+    // Reconcile Google Calendar in the background. For a decline the lesson
+    // is pending and has no event id, so this is a safe no-op in practice;
+    // the hook stays here so the state machine can grow approved→declined
+    // later without a code change.
+    queueMicrotask(() => { void syncLessonToGoogle(updated.id); });
   }),
 );
 

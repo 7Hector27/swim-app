@@ -81,7 +81,10 @@ vi.mock("../lib/lessonApproval", () => ({
   notifyLessonDeclined: vi.fn(),
   notifyCoachOfChange: vi.fn(),
   chargeLessonComplete: vi.fn(),
-  syncCalendarApproved: vi.fn(),
+}));
+
+vi.mock("../services/googleCalendarSync", () => ({
+  syncLessonToGoogle: vi.fn().mockResolvedValue(undefined),
 }));
 
 import { createApp } from "../app";

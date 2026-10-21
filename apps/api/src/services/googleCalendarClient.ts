@@ -147,6 +147,121 @@ export async function revokeToken(env: GoogleOAuthEnv, token: string): Promise<v
   await client.revokeToken(token);
 }
 
+/**
+ * Signals that Google rejected the refresh token (`invalid_grant`). Callers
+ * use this to decide whether to flip the integration row to `needs_reconnect`
+ * vs. recording an ordinary `sync_failed` on the lesson.
+ */
+export class GoogleInvalidGrantError extends Error {
+  constructor(message = "google: invalid_grant") {
+    super(message);
+    this.name = "GoogleInvalidGrantError";
+  }
+}
+
+/**
+ * Refresh an access token using a stored refresh token. Throws
+ * `GoogleInvalidGrantError` when Google returns `invalid_grant` (coach
+ * revoked out-of-band), otherwise lets gaxios errors propagate.
+ */
+export async function refreshAccessToken(
+  env: GoogleOAuthEnv,
+  refreshToken: string,
+): Promise<{ accessToken: string }> {
+  const client = buildOAuth2Client(env);
+  client.setCredentials({ refresh_token: refreshToken });
+  try {
+    const { credentials } = await client.refreshAccessToken();
+    if (!credentials.access_token) {
+      throw new Error("google: refreshAccessToken returned no access_token");
+    }
+    return { accessToken: credentials.access_token };
+  } catch (err: unknown) {
+    const safe = toSafeGoogleError(err);
+    if (safe.googleErrorCode === "invalid_grant") {
+      throw new GoogleInvalidGrantError(safe.message);
+    }
+    throw err;
+  }
+}
+
+export interface CalendarEventBody {
+  summary: string;
+  description: string;
+  location: string;
+  startIso: string;
+  endIso: string;
+  timeZone: string;
+}
+
+/**
+ * Create or update an event. Idempotent via the caller-supplied event id:
+ * if `events.insert` returns 409 (event already exists for this id) we fall
+ * through to `events.patch` with the same body. Any other error propagates.
+ */
+export async function upsertEvent(
+  env: GoogleOAuthEnv,
+  accessToken: string,
+  calendarId: string,
+  eventId: string,
+  body: CalendarEventBody,
+): Promise<void> {
+  const api = buildCalendarApi(env, accessToken);
+  const requestBody = {
+    id: eventId,
+    summary: body.summary,
+    description: body.description,
+    location: body.location,
+    start: { dateTime: body.startIso, timeZone: body.timeZone },
+    end: { dateTime: body.endIso, timeZone: body.timeZone },
+  };
+  try {
+    await api.events.insert({ calendarId, requestBody });
+    return;
+  } catch (err: unknown) {
+    const status = (err as { code?: number; status?: number }).code ?? (err as { status?: number }).status;
+    if (status !== 409) throw err;
+  }
+  // 409 → event already exists for this id. Update it instead.
+  await api.events.patch({
+    calendarId,
+    eventId,
+    requestBody: {
+      summary: body.summary,
+      description: body.description,
+      location: body.location,
+      start: { dateTime: body.startIso, timeZone: body.timeZone },
+      end: { dateTime: body.endIso, timeZone: body.timeZone },
+    },
+  });
+}
+
+/**
+ * Delete an event by id. Idempotent: 404 (never existed) and 410 (already
+ * gone) are treated as success. Any other error propagates.
+ */
+export async function deleteEventIdempotent(
+  env: GoogleOAuthEnv,
+  accessToken: string,
+  calendarId: string,
+  eventId: string,
+): Promise<void> {
+  const api = buildCalendarApi(env, accessToken);
+  try {
+    await api.events.delete({ calendarId, eventId });
+  } catch (err: unknown) {
+    const status = (err as { code?: number; status?: number }).code ?? (err as { status?: number }).status;
+    if (status === 404 || status === 410) return;
+    throw err;
+  }
+}
+
+function buildCalendarApi(env: GoogleOAuthEnv, accessToken: string) {
+  const client = buildOAuth2Client(env);
+  client.setCredentials({ access_token: accessToken });
+  return calendarApi({ version: "v3", auth: client });
+}
+
 export interface SafeGoogleError {
   message: string;
   status: number | undefined;
