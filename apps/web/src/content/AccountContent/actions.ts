@@ -29,11 +29,11 @@ export async function connectGoogleCalendar(): Promise<void> {
     // 503 = integration not configured; anything else is an unexpected error.
     // Redirect back to /account; the status card will reflect reality.
     revalidatePath("/account");
-    redirect("/account?google=start_failed");
+    redirect("/account?google=error");
   }
   const body = (await response.json()) as { authorizeUrl?: unknown };
   if (typeof body.authorizeUrl !== "string") {
-    redirect("/account?google=start_failed");
+    redirect("/account?google=error");
   }
   redirect(body.authorizeUrl);
 }
@@ -46,12 +46,21 @@ export async function disconnectGoogleCalendar(): Promise<void> {
     redirect("/api/signout");
   }
 
-  await fetch(`${process.env.NEXT_PUBLIC_API_URL}/coach/calendar`, {
-    method: "DELETE",
-    headers: { Authorization: `Bearer ${token}` },
-    cache: "no-store",
-  });
+  let ok = false;
+  try {
+    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/coach/calendar`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+    });
+    ok = response.ok;
+  } catch {
+    ok = false;
+  }
   revalidatePath("/account");
+  if (!ok) {
+    redirect("/account?google=disconnect_error");
+  }
 }
 
 export async function updateProfile(

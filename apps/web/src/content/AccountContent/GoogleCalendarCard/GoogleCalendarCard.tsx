@@ -10,9 +10,17 @@ interface GoogleCalendarCardProps {
   // "couldn't connect" message. The user can retry via the primary button
   // without reloading first.
   connectError: boolean;
+  // When true, the page was loaded with ?google=disconnect_error — the
+  // DELETE /coach/calendar call failed. The card remains in whatever state
+  // the server reports and shows a retry hint.
+  disconnectError: boolean;
 }
 
-export default function GoogleCalendarCard({ status, connectError }: GoogleCalendarCardProps) {
+export default function GoogleCalendarCard({
+  status,
+  connectError,
+  disconnectError,
+}: GoogleCalendarCardProps) {
   // The parent AccountContent is responsible for hiding this card when
   // status.status === 'not_configured'; render guards here are belt-and-
   // suspenders in case a future caller forgets.
@@ -37,6 +45,11 @@ export default function GoogleCalendarCard({ status, connectError }: GoogleCalen
       {connectError && (
         <p role="alert" className="text-sm text-danger">
           Couldn&rsquo;t connect Google Calendar. Try again.
+        </p>
+      )}
+      {disconnectError && (
+        <p role="alert" className="text-sm text-danger">
+          Couldn&rsquo;t disconnect Google Calendar. Try again.
         </p>
       )}
 

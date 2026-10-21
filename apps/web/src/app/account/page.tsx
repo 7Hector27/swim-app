@@ -22,11 +22,13 @@ export default async function AccountPage({ searchParams }: AccountPageProps) {
   const resolvedParams = await searchParams;
   const googleParam = Array.isArray(resolvedParams.google) ? resolvedParams.google[0] : resolvedParams.google;
   const googleConnectError = googleParam === "error";
+  const googleDisconnectError = googleParam === "disconnect_error";
   return (
     <AccountContent
       profile={auth.profile}
       googleCalendarStatus={googleCalendarStatus}
       googleConnectError={googleConnectError}
+      googleDisconnectError={googleDisconnectError}
     />
   );
 }
