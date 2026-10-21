@@ -1,5 +1,5 @@
 import { type RequestHandler, Router } from "express";
-import { and, asc, desc, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import type {
   AvailableSlot,
   AvailableSlotsQuery,
@@ -70,6 +70,7 @@ lessonsRouter.get(
     const now = new Date();
     const filter = query.filter ?? "upcoming";
     const limit = query.limit ?? 20;
+    const offset = query.offset ?? 0;
 
     const selectShape = {
       id: lessons.id,
@@ -96,11 +97,12 @@ lessonsRouter.get(
           .where(
             and(
               eq(lessons.householdId, householdId),
-              sql`${lessons.startsAt} < ${now.toISOString()}`,
+              sql`${lessons.startsAt} + ${lessons.durationMinutes} * interval '1 minute' <= ${now.toISOString()}::timestamptz`,
             ),
           )
           .orderBy(desc(lessons.startsAt))
           .limit(limit)
+          .offset(offset)
       : await db
           .select(selectShape)
           .from(lessons)
@@ -109,11 +111,12 @@ lessonsRouter.get(
             and(
               eq(lessons.householdId, householdId),
               inArray(lessons.status, ["pending", "approved"]),
-              sql`${lessons.startsAt} >= ${now.toISOString()}`,
+              sql`${lessons.startsAt} + ${lessons.durationMinutes} * interval '1 minute' > ${now.toISOString()}::timestamptz`,
             ),
           )
           .orderBy(asc(lessons.startsAt))
-          .limit(limit);
+          .limit(limit)
+          .offset(offset);
 
     const lessonIds = lessonRows.map((row) => row.id);
 
@@ -626,6 +629,30 @@ lessonsRouter.post(
     };
 
     res.status(201).json(responseBody);
+  }),
+);
+
+// ── GET /lessons/count ───────────────────────────────────────────────────────
+
+lessonsRouter.get(
+  "/count",
+  requireParent,
+  requireHouseholdMember,
+  validate({}),
+  asyncHandler(async (req, res) => {
+    const { householdId } = req;
+    const now = new Date();
+    const rows = await db
+      .select({ count: count() })
+      .from(lessons)
+      .where(
+        and(
+          eq(lessons.householdId, householdId),
+          inArray(lessons.status, ["pending", "approved"]),
+          sql`${lessons.startsAt} + ${lessons.durationMinutes} * interval '1 minute' > ${now.toISOString()}::timestamptz`,
+        ),
+      );
+    res.json({ count: Number(rows[0]?.count ?? 0) });
   }),
 );
 

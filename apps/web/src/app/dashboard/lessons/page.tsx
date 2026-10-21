@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import ParentLessonsContent from "@/content/ParentLessonsContent";
 import { requireAuth } from "@/lib/requireAuth";
 import { fetchUpcomingLessons, fetchPastLessons } from "@/lib/api/lessons";
+import { PAGE_SIZE } from "@/content/ParentLessonsContent/constants";
 
 export const metadata: Metadata = { title: "Lessons · Axiom Aquatics" };
 
@@ -12,10 +13,19 @@ export default async function ParentLessonsPage() {
   if (!auth) redirect("/login");
   if (auth.profile.role !== "parent") redirect("/dashboard");
 
-  const [upcoming, past] = await Promise.all([
-    fetchUpcomingLessons(auth.accessToken),
+  const [upcomingRaw, past] = await Promise.all([
+    fetchUpcomingLessons(auth.accessToken, { limit: PAGE_SIZE + 1 }),
     fetchPastLessons(auth.accessToken),
   ]);
 
-  return <ParentLessonsContent upcoming={upcoming} past={past} />;
+  if (upcomingRaw === null) {
+    return (
+      <p className="text-danger p-8">Couldn&apos;t load your lessons. Refresh to try again.</p>
+    );
+  }
+
+  const initialHasMore = upcomingRaw.length > PAGE_SIZE;
+  const initialLessons = initialHasMore ? upcomingRaw.slice(0, PAGE_SIZE) : upcomingRaw;
+
+  return <ParentLessonsContent initialLessons={initialLessons} initialHasMore={initialHasMore} past={past} />;
 }

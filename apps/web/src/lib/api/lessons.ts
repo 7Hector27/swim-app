@@ -9,6 +9,7 @@ import {
   LessonResponseSchema,
   MonthAvailabilityResponseSchema,
   UpcomingLessonSchema,
+  UpcomingLessonsCountResponseSchema,
   WeekAvailabilityResponseSchema,
   type AvailableSlot,
   type CoachLessonDetail,
@@ -208,26 +209,59 @@ export async function fetchCoachStats(accessToken: string): Promise<CoachStats |
 
 export async function fetchUpcomingLessons(
   accessToken: string,
-): Promise<UpcomingLesson[]> {
+  params?: { limit?: number; offset?: number },
+): Promise<UpcomingLesson[] | null> {
   try {
+    const searchParams = new URLSearchParams();
+    if (params?.limit !== undefined) searchParams.set("limit", String(params.limit));
+    if (params?.offset !== undefined) searchParams.set("offset", String(params.offset));
+    const qs = searchParams.size > 0 ? `?${searchParams.toString()}` : "";
     const response = await fetch(
-      `${process.env.NEXT_PUBLIC_API_URL}/lessons`,
+      `${process.env.NEXT_PUBLIC_API_URL}/lessons${qs}`,
       {
         headers: { Authorization: `Bearer ${accessToken}` },
         cache: "no-store",
       },
     );
-    if (!response.ok) return [];
+    if (!response.ok) {
+      console.error(`fetchUpcomingLessons: non-2xx response — ${response.status}`);
+      return null;
+    }
     const body: unknown = await response.json();
     const parsed = UpcomingLessonSchema.array().safeParse(body);
     if (!parsed.success) {
       const detail = parsed.error.issues.map((issue) => `${issue.path.join(".")} (${issue.message})`).join("; ");
-      console.warn(`fetchUpcomingLessons: response shape mismatch — ${detail}`);
-      return [];
+      console.error(`fetchUpcomingLessons: response shape mismatch — ${detail}`);
+      return null;
     }
     return parsed.data;
-  } catch {
-    return [];
+  } catch (error) {
+    console.error("fetchUpcomingLessons: network error —", error);
+    return null;
+  }
+}
+
+export async function fetchUpcomingLessonsCount(accessToken: string): Promise<number | null> {
+  try {
+    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/lessons/count`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      cache: "no-store",
+    });
+    if (!response.ok) {
+      console.error(`fetchUpcomingLessonsCount: non-2xx response — ${response.status}`);
+      return null;
+    }
+    const body: unknown = await response.json();
+    const parsed = UpcomingLessonsCountResponseSchema.safeParse(body);
+    if (!parsed.success) {
+      const detail = parsed.error.issues.map((issue) => `${issue.path.join(".")} (${issue.message})`).join("; ");
+      console.error(`fetchUpcomingLessonsCount: response shape mismatch — ${detail}`);
+      return null;
+    }
+    return parsed.data.count;
+  } catch (error) {
+    console.error("fetchUpcomingLessonsCount: network error —", error);
+    return null;
   }
 }
 

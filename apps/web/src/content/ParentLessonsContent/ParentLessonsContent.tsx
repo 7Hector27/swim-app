@@ -1,13 +1,47 @@
+"use client";
+
+import { useState, useTransition } from "react";
 import Link from "next/link";
 
 import type { UpcomingLesson } from "@swim-app/shared";
+import LessonStatusBadge from "@/components/LessonStatusBadge";
+
+import { loadMoreUpcomingLessons } from "./actions";
+import { groupLessonsByWeek, todayMondayLA } from "./weekGroups";
+import { PAGE_SIZE } from "./constants";
 
 interface Props {
-  upcoming: UpcomingLesson[];
+  initialLessons: UpcomingLesson[];
+  initialHasMore: boolean;
   past: UpcomingLesson[];
 }
 
-export default function ParentLessonsContent({ upcoming, past }: Props) {
+export default function ParentLessonsContent({ initialLessons, initialHasMore, past }: Props) {
+  const [lessons, setLessons] = useState(initialLessons);
+  const [hasMore, setHasMore] = useState(initialHasMore);
+  const [offset, setOffset] = useState(PAGE_SIZE);
+  const [loadError, setLoadError] = useState(false);
+  const [isPending, startTransition] = useTransition();
+  const [todayMonday] = useState(() => todayMondayLA());
+
+  function handleShowMore() {
+    setLoadError(false);
+    startTransition(async () => {
+      const result = await loadMoreUpcomingLessons(offset);
+      if (result === null) {
+        setLoadError(true);
+        return;
+      }
+      const gotMore = result.length > PAGE_SIZE;
+      const newLessons = gotMore ? result.slice(0, PAGE_SIZE) : result;
+      setLessons((prev) => [...prev, ...newLessons]);
+      setHasMore(gotMore);
+      setOffset((prev) => prev + PAGE_SIZE);
+    });
+  }
+
+  const groups = groupLessonsByWeek(lessons, todayMonday);
+
   return (
     <div className="flex flex-col flex-1 bg-background">
       <main id="main-content" className="flex-1">
@@ -15,15 +49,46 @@ export default function ParentLessonsContent({ upcoming, past }: Props) {
           <h1 className="text-3xl tablet:text-4xl text-heading mb-8">Lessons</h1>
 
           <section className="mb-10">
-            <h2 className="text-xl text-heading mb-4">Upcoming</h2>
-            {upcoming.length === 0 ? (
+            <h2 className="text-xl text-heading mb-6">Upcoming</h2>
+            {groups.length === 0 ? (
               <p className="text-sm text-text-secondary">No upcoming lessons booked.</p>
             ) : (
-              <ul className="flex flex-col gap-3">
-                {upcoming.map((lesson) => (
-                  <LessonRow key={lesson.id} lesson={lesson} />
+              <div className="flex flex-col gap-8">
+                {groups.map((group) => (
+                  <div key={group.monday}>
+                    <h3 className="text-sm font-semibold text-text-secondary mb-3">{group.label}</h3>
+                    <ul className="flex flex-col gap-3">
+                      {group.lessons.map((lesson) => (
+                        <LessonRow key={lesson.id} lesson={lesson} />
+                      ))}
+                    </ul>
+                  </div>
                 ))}
-              </ul>
+              </div>
+            )}
+
+            {loadError ? (
+              <p className="mt-6 text-sm text-danger">
+                Failed to load more lessons.{" "}
+                <button
+                  type="button"
+                  onClick={handleShowMore}
+                  className="font-semibold underline hover:opacity-80"
+                >
+                  Try again
+                </button>
+              </p>
+            ) : hasMore && (
+              <div className="mt-6">
+                <button
+                  type="button"
+                  onClick={handleShowMore}
+                  disabled={isPending}
+                  className="inline-flex items-center justify-center rounded-button border-2 border-button-outline text-button-outline font-bold text-sm px-5 h-11 transition-colors duration-150 hover:opacity-80 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isPending ? "Loading…" : "Show more"}
+                </button>
+              </div>
             )}
           </section>
 
@@ -63,7 +128,7 @@ function LessonRow({ lesson }: { lesson: UpcomingLesson }) {
           </p>
         </div>
         <div className="flex items-center gap-3 flex-shrink-0 ml-4">
-          <StatusBadge status={lesson.status} />
+          <LessonStatusBadge status={lesson.status} viewer="parent" />
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
             <path
               d="M6 4l4 4-4 4"
@@ -76,28 +141,6 @@ function LessonRow({ lesson }: { lesson: UpcomingLesson }) {
         </div>
       </Link>
     </li>
-  );
-}
-
-function StatusBadge({ status }: { status: UpcomingLesson["status"] }) {
-  if (status === "approved") {
-    return (
-      <span className="inline-flex items-center rounded-full text-xs font-semibold px-2.5 py-1 bg-success/10 text-success">
-        Confirmed
-      </span>
-    );
-  }
-  if (status === "canceled" || status === "declined" || status === "expired" || status === "no_show") {
-    return (
-      <span className="inline-flex items-center rounded-full text-xs font-semibold px-2.5 py-1 bg-danger/10 text-danger">
-        {status === "canceled" ? "Canceled" : status === "declined" ? "Declined" : status === "no_show" ? "No show" : "Expired"}
-      </span>
-    );
-  }
-  return (
-    <span className="inline-flex items-center rounded-full text-xs font-semibold px-2.5 py-1 bg-surface-soft text-text-secondary border border-border">
-      Pending
-    </span>
   );
 }
 

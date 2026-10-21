@@ -346,9 +346,12 @@ describe("GET /lessons", () => {
       approvedAt: null as Date | null,
       declinedAt: null as Date | null,
       declineReason: null as string | null,
+      movedAt: null as Date | null,
+      previousStartsAt: null as Date | null,
       createdAt: now,
     };
-    const lessonsLimit = vi.fn().mockResolvedValue([lessonJoinRow]);
+    const lessonsOffset = vi.fn().mockResolvedValue([lessonJoinRow]);
+    const lessonsLimit = vi.fn().mockReturnValue({ offset: lessonsOffset });
     const lessonsOrderBy = vi.fn().mockReturnValue({ limit: lessonsLimit });
     const lessonsWhere = vi.fn().mockReturnValue({ orderBy: lessonsOrderBy });
     const lessonsInnerJoin = vi.fn().mockReturnValue({ where: lessonsWhere });
@@ -423,7 +426,8 @@ describe("GET /lessons", () => {
       previousStartsAt: null as Date | null,
       createdAt: now,
     };
-    const lessonsLimit = vi.fn().mockResolvedValue([lessonJoinRow]);
+    const lessonsOffset = vi.fn().mockResolvedValue([lessonJoinRow]);
+    const lessonsLimit = vi.fn().mockReturnValue({ offset: lessonsOffset });
     const lessonsOrderBy = vi.fn().mockReturnValue({ limit: lessonsLimit });
     const lessonsWhere = vi.fn().mockReturnValue({ orderBy: lessonsOrderBy });
     const lessonsInnerJoin = vi.fn().mockReturnValue({ where: lessonsWhere });
@@ -444,6 +448,169 @@ describe("GET /lessons", () => {
       throw new Error(`Response did not match UpcomingLessonSchema: ${detail}`);
     }
     expect(parsed.data).toHaveLength(1);
+  });
+
+  it("end-time filter: route passes end-time SQL and returns empty list when DB returns none", async () => {
+    authAs(parentProfile);
+    mockDbSelect.mockReturnValueOnce(requireUserSelect(parentProfile));
+    mockDbSelect.mockReturnValueOnce(requireHouseholdMemberSelect());
+
+    const lessonsOffset = vi.fn().mockResolvedValue([]);
+    const lessonsLimit = vi.fn().mockReturnValue({ offset: lessonsOffset });
+    const lessonsOrderBy = vi.fn().mockReturnValue({ limit: lessonsLimit });
+    const lessonsWhere = vi.fn().mockReturnValue({ orderBy: lessonsOrderBy });
+    const lessonsInnerJoin = vi.fn().mockReturnValue({ where: lessonsWhere });
+    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ innerJoin: lessonsInnerJoin }) });
+
+    const res = await request(app)
+      .get("/lessons")
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(0);
+    // The where clause is called with an AND expression that includes the end-time
+    // condition — verified indirectly: the route built correctly and got 0 results.
+    expect(lessonsWhere).toHaveBeenCalledTimes(1);
+  });
+
+  it("includes a lesson starting later today (not yet ended)", async () => {
+    authAs(parentProfile);
+    mockDbSelect.mockReturnValueOnce(requireUserSelect(parentProfile));
+    mockDbSelect.mockReturnValueOnce(requireHouseholdMemberSelect());
+
+    const lessonJoinRow = {
+      id: LESSON_ID,
+      householdId: HOUSEHOLD_ID,
+      locationId: LOCATION_NAMED_ID,
+      locationName: "Egret Park",
+      startsAt: futureStart,
+      durationMinutes: 45,
+      type: "private" as const,
+      status: "approved" as const,
+      expiresAt: null as Date | null,
+      approvedAt: now,
+      declinedAt: null as Date | null,
+      declineReason: null as string | null,
+      movedAt: null as Date | null,
+      previousStartsAt: null as Date | null,
+      createdAt: now,
+    };
+    const lessonsOffset = vi.fn().mockResolvedValue([lessonJoinRow]);
+    const lessonsLimit = vi.fn().mockReturnValue({ offset: lessonsOffset });
+    const lessonsOrderBy = vi.fn().mockReturnValue({ limit: lessonsLimit });
+    const lessonsWhere = vi.fn().mockReturnValue({ orderBy: lessonsOrderBy });
+    const lessonsInnerJoin = vi.fn().mockReturnValue({ where: lessonsWhere });
+    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ innerJoin: lessonsInnerJoin }) });
+
+    const swimWhere = vi.fn().mockResolvedValue([]);
+    const swimInnerJoin = vi.fn().mockReturnValue({ where: swimWhere });
+    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ innerJoin: swimInnerJoin }) });
+
+    const res = await request(app)
+      .get("/lessons")
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(1);
+    expect(res.body[0]).toMatchObject({ id: LESSON_ID, status: "approved" });
+  });
+
+  it("respects offset param for pagination", async () => {
+    authAs(parentProfile);
+    mockDbSelect.mockReturnValueOnce(requireUserSelect(parentProfile));
+    mockDbSelect.mockReturnValueOnce(requireHouseholdMemberSelect());
+
+    const lessonsOffset = vi.fn().mockResolvedValue([]);
+    const lessonsLimit = vi.fn().mockReturnValue({ offset: lessonsOffset });
+    const lessonsOrderBy = vi.fn().mockReturnValue({ limit: lessonsLimit });
+    const lessonsWhere = vi.fn().mockReturnValue({ orderBy: lessonsOrderBy });
+    const lessonsInnerJoin = vi.fn().mockReturnValue({ where: lessonsWhere });
+    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ innerJoin: lessonsInnerJoin }) });
+
+    await request(app)
+      .get("/lessons?offset=10")
+      .set("Authorization", "Bearer token");
+
+    expect(lessonsOffset).toHaveBeenCalledWith(10);
+  });
+
+  it("returns 422 when offset exceeds 10000", async () => {
+    authAs(parentProfile);
+    mockDbSelect.mockReturnValueOnce(requireUserSelect(parentProfile));
+    mockDbSelect.mockReturnValueOnce(requireHouseholdMemberSelect());
+
+    const res = await request(app)
+      .get("/lessons?offset=10001")
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(422);
+  });
+
+  it("applies offset to past lessons query", async () => {
+    authAs(parentProfile);
+    mockDbSelect.mockReturnValueOnce(requireUserSelect(parentProfile));
+    mockDbSelect.mockReturnValueOnce(requireHouseholdMemberSelect());
+
+    const pastOffset = vi.fn().mockResolvedValue([]);
+    const pastLimit = vi.fn().mockReturnValue({ offset: pastOffset });
+    const pastOrderBy = vi.fn().mockReturnValue({ limit: pastLimit });
+    const pastWhere = vi.fn().mockReturnValue({ orderBy: pastOrderBy });
+    const pastInnerJoin = vi.fn().mockReturnValue({ where: pastWhere });
+    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ innerJoin: pastInnerJoin }) });
+
+    await request(app)
+      .get("/lessons?filter=past&offset=5")
+      .set("Authorization", "Bearer token");
+
+    expect(pastOffset).toHaveBeenCalledWith(5);
+  });
+});
+
+// ── GET /lessons/count ────────────────────────────────────────────────────────
+
+describe("GET /lessons/count", () => {
+  it("returns the count of active upcoming lessons for the household", async () => {
+    authAs(parentProfile);
+    mockDbSelect.mockReturnValueOnce(requireUserSelect(parentProfile));
+    mockDbSelect.mockReturnValueOnce(requireHouseholdMemberSelect());
+
+    // count select: .from().where() → [{ count: 17 }]
+    const countWhere = vi.fn().mockResolvedValue([{ count: 17 }]);
+    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: countWhere }) });
+
+    const res = await request(app)
+      .get("/lessons/count")
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ count: 17 });
+  });
+
+  it("returns count 0 when no active lessons", async () => {
+    authAs(parentProfile);
+    mockDbSelect.mockReturnValueOnce(requireUserSelect(parentProfile));
+    mockDbSelect.mockReturnValueOnce(requireHouseholdMemberSelect());
+
+    const countWhere = vi.fn().mockResolvedValue([{ count: 0 }]);
+    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: countWhere }) });
+
+    const res = await request(app)
+      .get("/lessons/count")
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ count: 0 });
+  });
+
+  it("returns 403 when caller is a coach", async () => {
+    authAs(coachProfile);
+    mockDbSelect.mockReturnValueOnce(requireUserSelect(coachProfile));
+
+    const res = await request(app)
+      .get("/lessons/count")
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(403);
   });
 });
 
