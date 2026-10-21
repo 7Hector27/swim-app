@@ -1368,3 +1368,71 @@ describe("cron tick runs light + 24h full passes", () => {
     expect(res2.body.lightPasses).toBe(1);
   });
 });
+
+describe("retryable Google errors (403/429) never flip the integration", () => {
+  it("a 429 from Google marks the lesson sync_failed and leaves the integration active", async () => {
+    await seedCoachIntegration();
+    const lessonId = await seedLesson({ status: "approved", startsAt: future(24) });
+
+    // Target the 429 at THIS lesson so other dev-DB rows the full/light
+    // pass may touch don't absorb the mocked rejection.
+    const targetEventId = stripDashes(lessonId);
+    vi.mocked(googleClient.upsertEvent).mockImplementation(async (_env, _tok, _cal, callEventId) => {
+      if (callEventId === targetEventId) {
+        throw Object.assign(new Error("Rate Limit Exceeded"), {
+          code: 429,
+          response: { status: 429, data: { error: "rateLimitExceeded" } },
+        });
+      }
+    });
+
+    await syncLessonToGoogle(lessonId);
+
+    // Lesson is marked sync_failed with the retryable reason tag so the
+    // next light pass sweeps it up.
+    const [lessonRow] = await adminDb()
+      .select()
+      .from(lessons)
+      .where(eq(lessons.id, lessonId));
+    expect(lessonRow!.calendarSyncStatus).toBe("sync_failed");
+    expect(lessonRow!.calendarSyncError).toMatch(/^rate_limited:/);
+
+    // Integration stays active — a quota pushback is not a token revoke.
+    const [integration] = await adminDb()
+      .select()
+      .from(coachCalendarIntegrations)
+      .where(eq(coachCalendarIntegrations.coachProfileId, coach.userId));
+    expect(integration!.status).toBe("active");
+    expect(integration!.needsReconnectSince).toBeNull();
+  });
+
+  it("a 403 from Google is also retryable (same reason tag, integration stays active)", async () => {
+    await seedCoachIntegration();
+    const lessonId = await seedLesson({ status: "approved", startsAt: future(24) });
+
+    const targetEventId = stripDashes(lessonId);
+    vi.mocked(googleClient.upsertEvent).mockImplementation(async (_env, _tok, _cal, callEventId) => {
+      if (callEventId === targetEventId) {
+        throw Object.assign(new Error("User Rate Limit Exceeded"), {
+          code: 403,
+          response: { status: 403, data: { error: "userRateLimitExceeded" } },
+        });
+      }
+    });
+
+    await syncLessonToGoogle(lessonId);
+
+    const [lessonRow] = await adminDb()
+      .select()
+      .from(lessons)
+      .where(eq(lessons.id, lessonId));
+    expect(lessonRow!.calendarSyncStatus).toBe("sync_failed");
+    expect(lessonRow!.calendarSyncError).toMatch(/^rate_limited:/);
+
+    const [integration] = await adminDb()
+      .select()
+      .from(coachCalendarIntegrations)
+      .where(eq(coachCalendarIntegrations.coachProfileId, coach.userId));
+    expect(integration!.status).toBe("active");
+  });
+});

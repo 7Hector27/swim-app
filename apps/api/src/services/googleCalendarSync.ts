@@ -201,7 +201,12 @@ async function syncLessonToGoogleInner(lessonId: string): Promise<void> {
           .where(eq(lessons.id, lesson.id));
       }
     } catch (err) {
-      await markLessonSyncFailed(lesson.id, integration.coachProfileId, "google_api_error", err);
+      // 403 (rateLimitExceeded / userRateLimitExceeded) and 429 are
+      // retryable: mark the lesson failed for the next pass, keep the
+      // integration active. Only invalid_grant on refresh flips to
+      // needs_reconnect (handled in the refresh try/catch above).
+      const reasonTag = isRetryableGoogleHttpError(err) ? "rate_limited" : "google_api_error";
+      await markLessonSyncFailed(lesson.id, integration.coachProfileId, reasonTag, err);
       return;
     }
 
@@ -562,6 +567,18 @@ async function markNeedsReconnect(lessonId: string, coachProfileId: string): Pro
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * HTTP 403 and 429 from Google are retryable: 403 covers `rateLimitExceeded`
+ * and `userRateLimitExceeded` (Calendar API uses 403 for quota, not just
+ * permission errors), and 429 is the explicit "too many requests." Both
+ * should mark the lesson sync_failed so the next light pass retries it,
+ * never flip the integration to needs_reconnect.
+ */
+function isRetryableGoogleHttpError(err: unknown): boolean {
+  const safe = googleClient.toSafeGoogleError(err);
+  return safe.status === 403 || safe.status === 429;
 }
 
 /** Exposed for tests. */
