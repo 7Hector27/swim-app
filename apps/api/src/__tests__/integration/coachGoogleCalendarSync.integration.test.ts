@@ -49,7 +49,6 @@ import { encryptToken } from "../../lib/tokenEncryption";
 import * as googleClient from "../../services/googleCalendarClient";
 import {
   runFullSyncPass,
-  runLightSyncPass,
   syncLessonToGoogle,
 } from "../../services/googleCalendarSync";
 import { adminDb, closeAdminDb, createTestUser, type TestUser } from "./helpers";

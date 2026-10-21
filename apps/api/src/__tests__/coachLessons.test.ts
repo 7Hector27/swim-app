@@ -378,6 +378,17 @@ describe("POST /internal/cron/tick", () => {
     expect(res.status).toBe(401);
   });
 
+  // After the state-change transaction, the cron queries active
+  // coach_calendar_integrations to schedule light/full sync passes.
+  // Unit tests mock the DB entirely, so stub that select to return no
+  // active integrations (nothing to schedule).
+  function mockNoActiveIntegrations(): void {
+    const integrationWhere = vi.fn().mockResolvedValue([]);
+    mockDbSelect.mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({ where: integrationWhere }),
+    });
+  }
+
   it("expires pending lessons past their deadline", async () => {
     const expiredRow = { id: LESSON_ID };
     mockDbTransaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) => {
@@ -396,6 +407,7 @@ describe("POST /internal/cron/tick", () => {
       };
       return callback(tx);
     });
+    mockNoActiveIntegrations();
 
     const res = await request(app)
       .post("/internal/cron/tick")
@@ -416,6 +428,7 @@ describe("POST /internal/cron/tick", () => {
       };
       return callback(tx);
     });
+    mockNoActiveIntegrations();
 
     const res = await request(app)
       .post("/internal/cron/tick")
