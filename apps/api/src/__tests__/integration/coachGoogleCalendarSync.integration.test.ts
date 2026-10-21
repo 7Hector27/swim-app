@@ -1164,13 +1164,15 @@ describe("full pass covers today + already-synced + strays", () => {
     expect(synced).toContain(stripDashes(futureSyncedId));
   });
 
-  it("full pass recreates an event the coach deleted in Google (mock errors on patch)", async () => {
-    // "Deleted in Google" presents to our code as a 404 on patch after the
-    // 409-fallback inside upsertEvent. We model the whole upsertEvent as
-    // throwing a 404 once; the service marks it sync_failed. The *next*
-    // full-pass invocation sees sync_failed with event id still set and
-    // re-upserts cleanly. The event is "recreated" via re-insert (upsert
-    // starts with insert; if 404 cleaned the id in Google, insert succeeds).
+  it("a transient upsert failure is recovered by the next full pass (sync_failed → synced)", async () => {
+    // Scenario: upsertEvent throws once (any transient server error), the
+    // service marks the lesson sync_failed. On the next full-pass
+    // invocation the row still has its event id; upsert succeeds and the
+    // lesson flips back to synced. The hand-deleted event case (Google
+    // soft-deletes to status='cancelled', insert returns 409, fallback
+    // patch restores status='confirmed') is covered at the client level
+    // in src/__tests__/upsertEvent.test.ts where the real Google-API
+    // body shape can be inspected.
     await seedCoachIntegration();
     const lessonId = await seedLesson({ status: "approved", startsAt: future(24) });
     const eventId = stripDashes(lessonId);

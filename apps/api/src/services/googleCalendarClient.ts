@@ -198,6 +198,12 @@ export interface CalendarEventBody {
  * Create or update an event. Idempotent via the caller-supplied event id:
  * if `events.insert` returns 409 (event already exists for this id) we fall
  * through to `events.patch` with the same body. Any other error propagates.
+ *
+ * Both bodies include `status: "confirmed"`. Google soft-deletes events: a
+ * hand-deleted event becomes `status: "cancelled"` under the same id, so
+ * `events.insert` returns 409 and the fallback patch would otherwise leave
+ * the event invisible. Setting status on every write restores a cancelled
+ * event and is a no-op on an already-confirmed one.
  */
 export async function upsertEvent(
   env: GoogleOAuthEnv,
@@ -209,6 +215,7 @@ export async function upsertEvent(
   const api = buildCalendarApi(env, accessToken);
   const requestBody = {
     id: eventId,
+    status: "confirmed",
     summary: body.summary,
     description: body.description,
     location: body.location,
@@ -222,11 +229,13 @@ export async function upsertEvent(
     const status = (err as { code?: number; status?: number }).code ?? (err as { status?: number }).status;
     if (status !== 409) throw err;
   }
-  // 409 → event already exists for this id. Update it instead.
+  // 409 → event already exists for this id (possibly in `cancelled` state
+  // after a hand-delete). Patch with status=confirmed un-cancels it.
   await api.events.patch({
     calendarId,
     eventId,
     requestBody: {
+      status: "confirmed",
       summary: body.summary,
       description: body.description,
       location: body.location,
