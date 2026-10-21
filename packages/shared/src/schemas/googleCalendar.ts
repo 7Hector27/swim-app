@@ -52,6 +52,12 @@ export const GoogleCalendarStatusResponseSchema = z.object({
   syncedCount: z.number().int().nonnegative(),
   pendingSyncCount: z.number().int().nonnegative(), // not_synced
   failedLessonCount: z.number().int().nonnegative(), // sync_failed
+  // Server-authoritative: true while a backfill or retry run is in flight.
+  // The UI uses this to drive the syncing banner — NOT pendingSyncCount,
+  // which can be stuck when a run crashed. The server returns false when
+  // the run's sync_run_started_at marker is older than 2 minutes with no
+  // fresh progress, treating a crashed/restarted API as a finished run.
+  syncRunInProgress: z.boolean(),
 });
 export type GoogleCalendarStatusResponse = z.infer<typeof GoogleCalendarStatusResponseSchema>;
 

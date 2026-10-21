@@ -814,6 +814,12 @@ export const coachCalendarIntegrations = pgTable(
     lastSyncAttemptedAt: timestamp("last_sync_attempted_at", { withTimezone: true }),
     lastSyncSucceededAt: timestamp("last_sync_succeeded_at", { withTimezone: true }),
     needsReconnectSince: timestamp("needs_reconnect_since", { withTimezone: true }),
+    // Set when a backfill or retry run starts, cleared in a finally block
+    // when it ends (crash or normal). The status endpoint treats a value
+    // older than 2 minutes with no fresh last_sync_attempted_at progress
+    // as a crashed run and reports the run as not in progress so the UI
+    // stops polling and shows the Retry button again. See ADR 027.
+    syncRunStartedAt: timestamp("sync_run_started_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdateFn(() => new Date()),
   },

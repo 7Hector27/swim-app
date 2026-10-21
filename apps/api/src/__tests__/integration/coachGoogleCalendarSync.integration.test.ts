@@ -615,3 +615,114 @@ describe("POST /coach/calendar/retry-failed audit row", () => {
     expect(audit).toHaveLength(0);
   });
 });
+
+describe("runs can't get stuck", () => {
+  async function readIntegration() {
+    return (
+      await adminDb()
+        .select()
+        .from(coachCalendarIntegrations)
+        .where(eq(coachCalendarIntegrations.coachProfileId, coach.userId))
+    )[0]!;
+  }
+
+  it("a backfill where one lesson's reconcile throws still finishes and clears syncRunStartedAt", async () => {
+    await seedCoachIntegration();
+    const a = await seedLesson({ status: "approved", startsAt: future(24) });
+    const b = await seedLesson({ status: "approved", startsAt: future(48) });
+    const c = await seedLesson({ status: "approved", startsAt: future(72) });
+
+    // Make the SECOND Google call throw. The service's inner try/catch
+    // marks the lesson sync_failed; the backfill loop keeps going.
+    const boom = Object.assign(new Error("boom"), { code: 500 });
+    vi.mocked(googleClient.upsertEvent)
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(boom)
+      .mockResolvedValueOnce(undefined);
+
+    await backfillCoachLessons(coach.userId);
+
+    // All three lessons reached a terminal state — not stuck at not_synced.
+    const rows = await adminDb()
+      .select({ id: lessons.id, status: lessons.calendarSyncStatus })
+      .from(lessons)
+      .where(inArray(lessons.id, [a, b, c]));
+    const byId = Object.fromEntries(rows.map((row) => [row.id, row.status]));
+    expect(byId[a]).toBe("synced");
+    expect(byId[b]).toBe("sync_failed");
+    expect(byId[c]).toBe("synced");
+
+    // finally cleared the run marker.
+    expect((await readIntegration()).syncRunStartedAt).toBeNull();
+  });
+
+  it("recovers a stale syncRunStartedAt (>2 minutes) by returning syncRunInProgress=false", async () => {
+    await seedCoachIntegration();
+    const threeMinAgo = new Date(Date.now() - 3 * 60 * 1000);
+    await adminDb()
+      .update(coachCalendarIntegrations)
+      .set({ syncRunStartedAt: threeMinAgo, lastSyncAttemptedAt: threeMinAgo })
+      .where(eq(coachCalendarIntegrations.coachProfileId, coach.userId));
+
+    const res = await request(app)
+      .get("/coach/calendar/status")
+      .set("Authorization", `Bearer ${coach.accessToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe("active");
+    expect(res.body.syncRunInProgress).toBe(false);
+  });
+
+  it("reports syncRunInProgress=true while started_at is set and recent", async () => {
+    await seedCoachIntegration();
+    await adminDb()
+      .update(coachCalendarIntegrations)
+      .set({ syncRunStartedAt: new Date(), lastSyncAttemptedAt: new Date() })
+      .where(eq(coachCalendarIntegrations.coachProfileId, coach.userId));
+
+    const res = await request(app)
+      .get("/coach/calendar/status")
+      .set("Authorization", `Bearer ${coach.accessToken}`);
+    expect(res.body.syncRunInProgress).toBe(true);
+  });
+
+  it("per-lesson sync runs immediately even when a run marker is set (not queued behind the batch)", async () => {
+    await seedCoachIntegration();
+    // Pretend a backfill is currently in flight.
+    await adminDb()
+      .update(coachCalendarIntegrations)
+      .set({ syncRunStartedAt: new Date(), lastSyncAttemptedAt: new Date() })
+      .where(eq(coachCalendarIntegrations.coachProfileId, coach.userId));
+
+    const lessonId = await seedLesson({ status: "approved", startsAt: future(24) });
+    await syncLessonToGoogle(lessonId);
+
+    expect(googleClient.upsertEvent).toHaveBeenCalledTimes(1);
+    const row = (await adminDb().select().from(lessons).where(eq(lessons.id, lessonId)))[0]!;
+    expect(row.calendarSyncStatus).toBe("synced");
+  });
+
+  it("cancelling one lesson doesn't block a later approve from syncing", async () => {
+    await seedCoachIntegration();
+    const toCancel = await seedLesson({
+      status: "approved",
+      startsAt: future(24),
+      googleCalendarEventId: null,
+    });
+
+    await adminDb()
+      .update(lessons)
+      .set({ status: "canceled", canceledAt: new Date(), canceledBy: owner.userId })
+      .where(eq(lessons.id, toCancel));
+    await syncLessonToGoogle(toCancel);
+
+    vi.mocked(googleClient.upsertEvent).mockClear();
+    const toApprove = await seedLesson({ status: "approved", startsAt: future(48) });
+    await syncLessonToGoogle(toApprove);
+
+    expect(googleClient.upsertEvent).toHaveBeenCalledTimes(1);
+    const approvedRow = (
+      await adminDb().select().from(lessons).where(eq(lessons.id, toApprove))
+    )[0]!;
+    expect(approvedRow.calendarSyncStatus).toBe("synced");
+  });
+});

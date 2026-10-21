@@ -38,10 +38,41 @@ const MAX_RECONCILE_PASSES = 3;
 
 /**
  * Read the lesson's current state and make Google match it. Idempotent;
- * safe to call from any number of paths or in rapid succession. Errors are
- * caught and translated to row updates — the caller never needs a try/catch.
+ * safe to call from any number of paths or in rapid succession. This
+ * function MUST NOT reject — callers routinely invoke it via
+ * `queueMicrotask(() => void syncLessonToGoogle(id))` where a rejection
+ * disappears into Node's unhandledRejection channel and the lesson row
+ * silently stays `not_synced` with no feedback to the user. Every uncaught
+ * error path falls through to markLessonSyncFailed, or to a last-resort
+ * best-effort update if the fallback itself throws.
  */
 export async function syncLessonToGoogle(lessonId: string): Promise<void> {
+  try {
+    await syncLessonToGoogleInner(lessonId);
+  } catch (err) {
+    // Any error reaching here is a bug (an uncaught code path inside the
+    // reconcile loop). Mark the lesson sync_failed with best effort so the
+    // UI surfaces it, and swallow — a microtask rejection is useless to
+    // anyone. We can't call markLessonSyncFailed without a coachProfileId,
+    // so write directly to the lesson row.
+    logger.error({ err, lessonId }, "google sync: uncaught error in reconcile");
+    try {
+      await db
+        .update(lessons)
+        .set({
+          calendarSyncStatus: "sync_failed",
+          calendarSyncError: `unexpected_error: ${googleClient.toSafeGoogleError(err).message}`.slice(0, 500),
+          calendarSyncAttempts: sql`${lessons.calendarSyncAttempts} + 1`,
+        })
+        .where(eq(lessons.id, lessonId));
+    } catch (innerErr) {
+      // Even the fallback write failed. Give up and log — Node won't crash.
+      logger.error({ err: innerErr, lessonId }, "google sync: fallback write also failed");
+    }
+  }
+}
+
+async function syncLessonToGoogleInner(lessonId: string): Promise<void> {
   const env = getEnv();
   if (!env.googleOAuth) return;
 
@@ -211,24 +242,7 @@ export async function syncLessonToGoogle(lessonId: string): Promise<void> {
  * syncLessonToGoogle is idempotent on the shared event id.
  */
 export async function backfillCoachLessons(coachProfileId: string): Promise<void> {
-  try {
-    // Verify the caller's coach actually owns an active integration before
-    // iterating lessons. In a single-coach app this double-checks the
-    // callback's own write committed; in a multi-coach future, this is
-    // the scoping that pairs the lessons we iterate with the coach we're
-    // writing to Google for.
-    const integrationRows = await db
-      .select({ id: coachCalendarIntegrations.id })
-      .from(coachCalendarIntegrations)
-      .where(
-        and(
-          eq(coachCalendarIntegrations.coachProfileId, coachProfileId),
-          eq(coachCalendarIntegrations.status, "active"),
-        ),
-      )
-      .limit(1);
-    if (integrationRows.length === 0) return;
-
+  await runSyncBatch(coachProfileId, async () => {
     const rows = await db
       .select({ id: lessons.id })
       .from(lessons)
@@ -241,13 +255,68 @@ export async function backfillCoachLessons(coachProfileId: string): Promise<void
       )
       .orderBy(asc(lessons.startsAt));
     for (const row of rows) {
-      await syncLessonToGoogle(row.id);
+      // Per-iteration try/catch keeps one bad lesson from halting the run.
+      // syncLessonToGoogle shouldn't reject (its own try/catch handles the
+      // uncaught paths), but defense in depth matters here.
+      try {
+        await syncLessonToGoogle(row.id);
+      } catch (err) {
+        logger.error({ err, lessonId: row.id }, "backfill: per-lesson failure, continuing");
+      }
       await sleep(100);
     }
+  });
+}
+
+/**
+ * Wraps a sync batch (backfill or retry) with a server-side "run in
+ * progress" marker on the integration row. The marker is set before the
+ * batch starts and cleared in a finally block when it ends — even on
+ * crash. The status endpoint also treats a marker older than 2 minutes
+ * with no fresh progress as a stale run from a crashed API, so a server
+ * restart mid-batch self-heals on the next status read.
+ *
+ * Returns silently if the coach has no active integration — this double-
+ * checks the caller's own write committed.
+ */
+async function runSyncBatch(
+  coachProfileId: string,
+  work: () => Promise<void>,
+): Promise<void> {
+  const integrationRows = await db
+    .select({ id: coachCalendarIntegrations.id })
+    .from(coachCalendarIntegrations)
+    .where(
+      and(
+        eq(coachCalendarIntegrations.coachProfileId, coachProfileId),
+        eq(coachCalendarIntegrations.status, "active"),
+      ),
+    )
+    .limit(1);
+  if (integrationRows.length === 0) return;
+
+  await db
+    .update(coachCalendarIntegrations)
+    .set({ syncRunStartedAt: new Date() })
+    .where(eq(coachCalendarIntegrations.coachProfileId, coachProfileId));
+
+  try {
+    await work();
   } catch (err) {
-    logger.error({ err, coachProfileId }, "backfill: unexpected failure");
+    // The inner loop should have caught per-lesson errors — anything that
+    // reaches here is from the surrounding setup, not from a per-lesson
+    // sync. Log and continue to the finally so the run marker is cleared.
+    logger.error({ err, coachProfileId }, "sync batch: unexpected failure");
+  } finally {
+    await db
+      .update(coachCalendarIntegrations)
+      .set({ syncRunStartedAt: null })
+      .where(eq(coachCalendarIntegrations.coachProfileId, coachProfileId));
   }
 }
+
+/** Exported so the retry endpoint can share the exact run-marker behaviour. */
+export { runSyncBatch };
 
 interface ReconcileContext {
   lesson: typeof lessons.$inferSelect;

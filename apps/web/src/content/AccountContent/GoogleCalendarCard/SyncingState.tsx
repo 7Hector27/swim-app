@@ -14,14 +14,19 @@ interface SyncingStateProps {
 
 /**
  * The counts portion of the active calendar card: syncing banner (poll
- * every 3s only while pending > 0, stop when done per ADR 027) and the
- * failed chip with a Retry button. Everything else on the card is server-
- * rendered — this is the one piece that needs to react in real time
- * during backfill without a page reload.
+ * every 3s only while the server reports a run in progress, stop when
+ * done per ADR 027) and the failed chip with a Retry button. Everything
+ * else on the card is server-rendered — this is the one piece that needs
+ * to react in real time during backfill without a page reload.
+ *
+ * The banner is driven by status.syncRunInProgress (server-authoritative),
+ * NOT by pendingSyncCount. If a run crashed mid-flight, pending lessons
+ * stay at not_synced forever and would pin the banner; the server marks
+ * the run finished after 2 minutes of no progress so the UI recovers.
  */
 export default function SyncingState({ initial }: SyncingStateProps) {
   const [status, setStatus] = useState(initial);
-  const isSyncing = status.pendingSyncCount > 0;
+  const isSyncing = status.syncRunInProgress;
 
   useEffect(() => {
     if (!isSyncing) return;

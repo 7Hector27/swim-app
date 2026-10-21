@@ -12,7 +12,7 @@ import { decryptToken } from "../lib/tokenEncryption";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { validate } from "../middleware/validate";
 import * as googleClient from "../services/googleCalendarClient";
-import { syncLessonToGoogle } from "../services/googleCalendarSync";
+import { runSyncBatch, syncLessonToGoogle } from "../services/googleCalendarSync";
 
 export const coachCalendarRouter = Router();
 
@@ -49,6 +49,27 @@ async function computeSyncCounts(): Promise<typeof ZERO_COUNTS> {
   return result;
 }
 
+// A sync batch is "in progress" when its started_at is set AND recent.
+// 2-minute staleness window: if the batch wrote the started_at but then
+// the API crashed (or `finally` didn't run for some other reason), the
+// UI stops polling and shows the Retry button again. Fresh progress
+// (lastSyncAttemptedAt) extends the window — a slow backfill shouldn't
+// time out.
+const SYNC_RUN_STALE_MS = 2 * 60 * 1000;
+
+function isSyncRunInProgress(
+  startedAt: Date | null,
+  lastProgressAt: Date | null,
+  nowMs: number = Date.now(),
+): boolean {
+  if (!startedAt) return false;
+  const mostRecent = Math.max(
+    startedAt.getTime(),
+    lastProgressAt?.getTime() ?? 0,
+  );
+  return nowMs - mostRecent <= SYNC_RUN_STALE_MS;
+}
+
 coachCalendarRouter.get(
   "/calendar/status",
   validate({}),
@@ -64,6 +85,7 @@ coachCalendarRouter.get(
         lastSyncSucceededAt: null,
         needsReconnectSince: null,
         ...ZERO_COUNTS,
+        syncRunInProgress: false,
       };
       res.json(body);
       return;
@@ -86,6 +108,7 @@ coachCalendarRouter.get(
         lastSyncSucceededAt: null,
         needsReconnectSince: null,
         ...ZERO_COUNTS,
+        syncRunInProgress: false,
       };
       res.json(body);
       return;
@@ -102,6 +125,8 @@ coachCalendarRouter.get(
           ? "not_connected"
           : "active";
     const counts = status === "not_connected" ? ZERO_COUNTS : await computeSyncCounts();
+    const syncRunInProgress =
+      status === "active" && isSyncRunInProgress(row.syncRunStartedAt, row.lastSyncAttemptedAt);
     const body: GoogleCalendarStatusResponse = {
       status,
       connectedAccountEmail: status === "not_connected" ? null : row.googleAccountEmail,
@@ -111,6 +136,7 @@ coachCalendarRouter.get(
       lastSyncSucceededAt: row.lastSyncSucceededAt?.toISOString() ?? null,
       needsReconnectSince: row.needsReconnectSince?.toISOString() ?? null,
       ...counts,
+      syncRunInProgress,
     };
     res.json(body);
   }),
@@ -148,18 +174,27 @@ coachCalendarRouter.post(
 
     let succeeded = 0;
     let failed = 0;
-    for (const row of failedRows) {
-      await syncLessonToGoogle(row.id);
-      // Read back the lesson's new status to count outcomes.
-      const after = await db
-        .select({ status: lessons.calendarSyncStatus })
-        .from(lessons)
-        .where(eq(lessons.id, row.id))
-        .limit(1);
-      if (after[0]?.status === "synced") succeeded++;
-      else failed++;
-      await sleep(100); // 100ms between Google calls (stay under 500/100s quota)
-    }
+    // runSyncBatch sets sync_run_started_at and always clears it in a
+    // finally, so a mid-loop throw never leaves the UI stuck on "Syncing…".
+    await runSyncBatch(req.profile.id, async () => {
+      for (const row of failedRows) {
+        // Per-iteration try/catch keeps one bad lesson from halting the
+        // batch. syncLessonToGoogle shouldn't reject, but defense in depth.
+        try {
+          await syncLessonToGoogle(row.id);
+        } catch (err) {
+          req.log.error({ err, lessonId: row.id }, "retry: per-lesson failure, continuing");
+        }
+        const after = await db
+          .select({ status: lessons.calendarSyncStatus })
+          .from(lessons)
+          .where(eq(lessons.id, row.id))
+          .limit(1);
+        if (after[0]?.status === "synced") succeeded++;
+        else failed++;
+        await sleep(100); // 100ms between Google calls (stay under 500/100s quota)
+      }
+    });
 
     // Audit AFTER the loop with the final counts, not before with no counts.
     // CLAUDE.md's "audit in same tx as the change" rule can't apply here —
