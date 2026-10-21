@@ -217,7 +217,7 @@ export const UpcomingLessonsQuerySchema = z.object({
   offset: z
     .string()
     .transform((value) => parseInt(value, 10))
-    .pipe(z.number().int().min(0))
+    .pipe(z.number().int().min(0).max(10000))
     .optional(),
   filter: z.enum(["upcoming", "past"]).optional(),
 });

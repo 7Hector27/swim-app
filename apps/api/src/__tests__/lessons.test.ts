@@ -533,6 +533,37 @@ describe("GET /lessons", () => {
 
     expect(lessonsOffset).toHaveBeenCalledWith(10);
   });
+
+  it("returns 422 when offset exceeds 10000", async () => {
+    authAs(parentProfile);
+    mockDbSelect.mockReturnValueOnce(requireUserSelect(parentProfile));
+    mockDbSelect.mockReturnValueOnce(requireHouseholdMemberSelect());
+
+    const res = await request(app)
+      .get("/lessons?offset=10001")
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(422);
+  });
+
+  it("applies offset to past lessons query", async () => {
+    authAs(parentProfile);
+    mockDbSelect.mockReturnValueOnce(requireUserSelect(parentProfile));
+    mockDbSelect.mockReturnValueOnce(requireHouseholdMemberSelect());
+
+    const pastOffset = vi.fn().mockResolvedValue([]);
+    const pastLimit = vi.fn().mockReturnValue({ offset: pastOffset });
+    const pastOrderBy = vi.fn().mockReturnValue({ limit: pastLimit });
+    const pastWhere = vi.fn().mockReturnValue({ orderBy: pastOrderBy });
+    const pastInnerJoin = vi.fn().mockReturnValue({ where: pastWhere });
+    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ innerJoin: pastInnerJoin }) });
+
+    await request(app)
+      .get("/lessons?filter=past&offset=5")
+      .set("Authorization", "Bearer token");
+
+    expect(pastOffset).toHaveBeenCalledWith(5);
+  });
 });
 
 // ── GET /lessons/count ────────────────────────────────────────────────────────

@@ -102,6 +102,7 @@ lessonsRouter.get(
           )
           .orderBy(desc(lessons.startsAt))
           .limit(limit)
+          .offset(offset)
       : await db
           .select(selectShape)
           .from(lessons)

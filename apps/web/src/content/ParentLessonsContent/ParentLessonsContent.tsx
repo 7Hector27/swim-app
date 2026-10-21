@@ -8,8 +8,7 @@ import LessonStatusBadge from "@/components/LessonStatusBadge";
 
 import { loadMoreUpcomingLessons } from "./actions";
 import { groupLessonsByWeek, todayMondayLA } from "./weekGroups";
-
-const PAGE_SIZE = 10;
+import { PAGE_SIZE } from "./constants";
 
 interface Props {
   initialLessons: UpcomingLesson[];
@@ -68,11 +67,18 @@ export default function ParentLessonsContent({ initialLessons, initialHasMore, p
               </div>
             )}
 
-            {loadError && (
-              <p className="mt-6 text-sm text-danger">Failed to load more lessons. Please try again.</p>
-            )}
-
-            {hasMore && (
+            {loadError ? (
+              <p className="mt-6 text-sm text-danger">
+                Failed to load more lessons.{" "}
+                <button
+                  type="button"
+                  onClick={handleShowMore}
+                  className="font-semibold underline hover:opacity-80"
+                >
+                  Try again
+                </button>
+              </p>
+            ) : hasMore && (
               <div className="mt-6">
                 <button
                   type="button"

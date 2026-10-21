@@ -210,7 +210,7 @@ export async function fetchCoachStats(accessToken: string): Promise<CoachStats |
 export async function fetchUpcomingLessons(
   accessToken: string,
   params?: { limit?: number; offset?: number },
-): Promise<UpcomingLesson[]> {
+): Promise<UpcomingLesson[] | null> {
   try {
     const searchParams = new URLSearchParams();
     if (params?.limit !== undefined) searchParams.set("limit", String(params.limit));
@@ -223,17 +223,21 @@ export async function fetchUpcomingLessons(
         cache: "no-store",
       },
     );
-    if (!response.ok) return [];
+    if (!response.ok) {
+      console.error(`fetchUpcomingLessons: non-2xx response — ${response.status}`);
+      return null;
+    }
     const body: unknown = await response.json();
     const parsed = UpcomingLessonSchema.array().safeParse(body);
     if (!parsed.success) {
       const detail = parsed.error.issues.map((issue) => `${issue.path.join(".")} (${issue.message})`).join("; ");
-      console.warn(`fetchUpcomingLessons: response shape mismatch — ${detail}`);
-      return [];
+      console.error(`fetchUpcomingLessons: response shape mismatch — ${detail}`);
+      return null;
     }
     return parsed.data;
-  } catch {
-    return [];
+  } catch (error) {
+    console.error("fetchUpcomingLessons: network error —", error);
+    return null;
   }
 }
 
@@ -243,12 +247,20 @@ export async function fetchUpcomingLessonsCount(accessToken: string): Promise<nu
       headers: { Authorization: `Bearer ${accessToken}` },
       cache: "no-store",
     });
-    if (!response.ok) return null;
+    if (!response.ok) {
+      console.error(`fetchUpcomingLessonsCount: non-2xx response — ${response.status}`);
+      return null;
+    }
     const body: unknown = await response.json();
     const parsed = UpcomingLessonsCountResponseSchema.safeParse(body);
-    if (!parsed.success) return null;
+    if (!parsed.success) {
+      const detail = parsed.error.issues.map((issue) => `${issue.path.join(".")} (${issue.message})`).join("; ");
+      console.error(`fetchUpcomingLessonsCount: response shape mismatch — ${detail}`);
+      return null;
+    }
     return parsed.data.count;
-  } catch {
+  } catch (error) {
+    console.error("fetchUpcomingLessonsCount: network error —", error);
     return null;
   }
 }

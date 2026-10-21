@@ -1,6 +1,9 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
 
 import type { UpcomingLesson } from "@swim-app/shared";
+import { UpcomingLessonsQuerySchema } from "@swim-app/shared";
+
+import { PAGE_SIZE } from "../content/ParentLessonsContent/constants";
 
 const { mockRedirect, mockRequireAuth, mockFetchUpcomingLessons } = vi.hoisted(() => ({
   mockRedirect: vi.fn(),
@@ -33,6 +36,7 @@ const makeLesson = (id: string, startsAt: string, status: UpcomingLesson["status
 });
 
 const auth = { profile: { role: "parent" as const, fullName: "Parent A", phone: null, ageAttestedAt: "", createdAt: "", updatedAt: "" }, accessToken: "tok" };
+const coachAuth = { profile: { role: "coach" as const, fullName: "Coach Jason", phone: null, ageAttestedAt: "", createdAt: "", updatedAt: "" }, accessToken: "coach-tok" };
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -86,10 +90,32 @@ describe("loadMoreUpcomingLessons", () => {
     expect(result).toEqual(lessons);
   });
 
-  it("returns null (empty array from fetch) when no lessons remain", async () => {
+  it("returns an empty array when no lessons remain", async () => {
     mockFetchUpcomingLessons.mockResolvedValue([]);
     const result = await loadMoreUpcomingLessons(100);
     expect(result).toEqual([]);
+  });
+
+  it("returns null when fetchUpcomingLessons returns null (fetch failure)", async () => {
+    mockFetchUpcomingLessons.mockResolvedValue(null);
+    const result = await loadMoreUpcomingLessons(10);
+    expect(result).toBeNull();
+  });
+
+  it("redirects to /dashboard when called by a coach", async () => {
+    mockRequireAuth.mockResolvedValue(coachAuth);
+    mockRedirect.mockImplementationOnce(() => { throw new Error("NEXT_REDIRECT"); });
+    await expect(loadMoreUpcomingLessons(10)).rejects.toThrow("NEXT_REDIRECT");
+    expect(mockRedirect).toHaveBeenCalledWith("/dashboard");
+    expect(mockFetchUpcomingLessons).not.toHaveBeenCalled();
+  });
+});
+
+describe("UpcomingLessonsQuerySchema PAGE_SIZE compatibility", () => {
+  it("accepts limit: PAGE_SIZE + 1 so the sentinel fetch fits within the API cap", () => {
+    const result = UpcomingLessonsQuerySchema.safeParse({ limit: String(PAGE_SIZE + 1) });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.limit).toBe(PAGE_SIZE + 1);
   });
 });
 
