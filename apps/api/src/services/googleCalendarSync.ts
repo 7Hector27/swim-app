@@ -291,11 +291,10 @@ export async function runLightSyncPass(coachProfileId: string): Promise<LightPas
     let succeeded = 0;
     let failed = 0;
     for (const row of rows) {
-      try {
-        await syncLessonToGoogle(row.id);
-      } catch (err) {
-        logger.error({ err, lessonId: row.id }, "light pass: per-lesson failure, continuing");
-      }
+      // syncLessonToGoogle never rejects (its own catch swallows every
+      // error path and writes sync_failed instead). The per-lesson
+      // outcome is read from the lesson row below.
+      await syncLessonToGoogle(row.id);
       const [after] = await db
         .select({ status: lessons.calendarSyncStatus })
         .from(lessons)
@@ -342,11 +341,8 @@ export async function runFullSyncPass(
       .orderBy(asc(lessons.startsAt))
       .limit(maxRows);
     for (const row of rows) {
-      try {
-        await syncLessonToGoogle(row.id);
-      } catch (err) {
-        logger.error({ err, lessonId: row.id }, "full pass: per-lesson failure, continuing");
-      }
+      // syncLessonToGoogle never rejects — see note in runLightSyncPass.
+      await syncLessonToGoogle(row.id);
       await sleep(100);
     }
     completed = true;
