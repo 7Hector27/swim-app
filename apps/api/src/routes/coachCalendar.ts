@@ -278,6 +278,12 @@ coachCalendarRouter.delete(
           refreshTokenTag: null,
           refreshTokenKeyVersion: null,
           scope: null,
+          // Clear the coach's Google account email too. We only need it to
+          // show "Connected as <email>" (active) or "Reconnect <email>"
+          // (needs_reconnect). After an explicit disconnect, retaining
+          // the personal address serves no purpose and the next connect
+          // will refresh it from Google's id_token.
+          googleAccountEmail: null,
           needsReconnectSince: null,
         })
         .where(eq(coachCalendarIntegrations.coachProfileId, req.profile.id));

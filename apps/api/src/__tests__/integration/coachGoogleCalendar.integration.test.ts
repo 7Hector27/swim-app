@@ -446,6 +446,11 @@ describe("DELETE /coach/calendar", () => {
     expect(rows[0]).toMatchObject({
       status: "disconnected",
       googleCalendarId: "existing-calendar-id",
+      // The coach's personal Google address is cleared on disconnect.
+      // We only retain it while there's a reason to display it (active
+      // or needs_reconnect); after an explicit disconnect it serves
+      // no purpose.
+      googleAccountEmail: null,
       refreshTokenCiphertext: null,
       refreshTokenIv: null,
       refreshTokenTag: null,
@@ -559,6 +564,9 @@ describe("status endpoint reflects integration row state", () => {
     expect(res.status).toBe(200);
     expect(res.body.status).toBe("needs_reconnect");
     expect(res.body.needsReconnectSince).toEqual(expect.any(String));
+    // The email stays visible on needs_reconnect so the Reconnect UI
+    // can show the coach which Google account to re-authorize.
+    expect(res.body.connectedAccountEmail).toBe("coach-google@example.com");
   });
 
   it("maps a 'disconnected' row to status='not_connected' on the response (calendar id hidden)", async () => {
