@@ -52,8 +52,6 @@ export interface EnqueueLessonEmailInput {
 
 interface IcsDecision {
   method: IcsMethod | null;
-  sequenceSnapshot: number | null;
-  shouldIncrementCounter: boolean;
   shouldMarkInviteSent: boolean;
 }
 
@@ -218,36 +216,16 @@ export async function enqueueLessonEmail(
 
 function decideIcs(event: LessonEmailEvent, calendarInviteSentAt: Date | null): IcsDecision {
   if (REQUEST_EVENTS.has(event)) {
-    return {
-      method: "REQUEST",
-      sequenceSnapshot: null,
-      shouldIncrementCounter: true,
-      shouldMarkInviteSent: true,
-    };
+    return { method: "REQUEST", shouldMarkInviteSent: true };
   }
   if (CANCEL_IF_PRIOR_INVITE_EVENTS.has(event)) {
     if (calendarInviteSentAt) {
-      return {
-        method: "CANCEL",
-        sequenceSnapshot: null,
-        shouldIncrementCounter: true,
-        shouldMarkInviteSent: false,
-      };
+      return { method: "CANCEL", shouldMarkInviteSent: false };
     }
-    return {
-      method: null,
-      sequenceSnapshot: null,
-      shouldIncrementCounter: false,
-      shouldMarkInviteSent: false,
-    };
+    return { method: null, shouldMarkInviteSent: false };
   }
   // booking_requested, or any future event with no invite semantics.
-  return {
-    method: null,
-    sequenceSnapshot: null,
-    shouldIncrementCounter: false,
-    shouldMarkInviteSent: false,
-  };
+  return { method: null, shouldMarkInviteSent: false };
 }
 
 async function nextOutboxSequence(tx: Tx, lessonId: string, event: LessonEmailEvent): Promise<number> {
