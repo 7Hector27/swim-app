@@ -66,11 +66,27 @@ Written **inside the same `db.transaction()`** as the lesson insert and the `les
 
 ### Email outbox payload
 
-Per ADR 028, `lesson_email_outbox` payloads carry whatever the template needs. The `lesson_confirmed` payload shape gains a field:
+Per ADR 028, `lesson_email_outbox` payloads carry whatever the template needs. The `LessonEmailPayload` interface gains a field:
 
-- `initiatedBy: 'parent' | 'coach'`
+- `initiatedBy: 'parent' | 'coach' | null`
 
-The `lesson_confirmed` React Email template reads this and renders coach-initiated copy when it is `'coach'`. All other fields of the payload are unchanged. This is a Zod schema change in `packages/shared` (`LessonConfirmedPayloadSchema`), not a database schema change — the outbox row's `payload` column is already `jsonb`.
+For `lesson_confirmed` events, `initiatedBy` is `'coach'` when a coach booked and `'parent'` when a parent did. For every other event the field is `null` (the field is only read by `LessonConfirmed.tsx`). The template renders coach-scheduled copy when it is `'coach'`. This is an API-internal type change (`apps/api/src/services/emails/types.ts`), not a database schema change — the outbox row's `payload` column is already `jsonb`.
+
+### Durations
+
+The lesson-duration enum (`30 | 45 | 60`) is inlined as `z.union([z.literal(30), z.literal(45), z.literal(60)])` in four places in `packages/shared/src/schemas/booking.ts` today. Phase 1 extracts it into a single shared schema and reuses it everywhere, including this feature's new body:
+
+```ts
+export const LESSON_DURATION_MINUTES = [30, 45, 60] as const;
+export const LessonDurationMinutesSchema = z.union([
+  z.literal(30),
+  z.literal(45),
+  z.literal(60),
+]);
+export type LessonDurationMinutes = z.infer<typeof LessonDurationMinutesSchema>;
+```
+
+`CoachCreateLessonBodySchema.durationMinutes` uses `LessonDurationMinutesSchema`, as do the four existing inlined schemas (`CreateLessonBodySchema`, `LessonResponseSchema`, `UpdateLessonBodySchema`, `AvailableSlotsQuerySchema`). No new hardcoded `30 | 45 | 60` is introduced by this feature.
 
 ---
 
