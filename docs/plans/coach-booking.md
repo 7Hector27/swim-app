@@ -41,8 +41,10 @@ Mobile-first; Jason uses this on the pool deck.
 **No new columns on `lessons`.** The existing shape covers it:
 
 - `status = 'approved'`, `approved_at = now()`, `approved_by = <coach profile id>` (non-null, per ADR 021).
-- `requested_by = <coach profile id>`. The coach is the requester. The audit-log row below is the authoritative "booked by coach" signal; callers who need to tell the two mechanisms apart (parent vs. coach) join `requested_by → profiles.role`.
+- `requested_by = <coach profile id>`. The coach is the requester. The audit-log row below is the authoritative "booked by coach" signal; callers who need to tell the two mechanisms apart (parent vs. coach) can join `requested_by → profiles.role`.
 - `expires_at = null` (same as any auto-approved booking).
+
+**`lessons.requested_by` read audit.** Nothing in `apps/api/src/` (routes, services, lib), nothing in `apps/web/src/`, and nothing in `packages/shared/src/` reads `lessons.requested_by`. The only writer is `POST /lessons` at `apps/api/src/routes/lessons.ts:580`. The column is not surfaced in any response schema, not joined into any read query, and not referenced by any outbox-write or Google-sync code path. No code assumes the requester is a household member, because no code reads the column at all. Writing a coach profile id here therefore cannot break any existing read path — a prerequisite the plan was correct to call out even though it turned out trivially satisfied. Tests seed the column with the owner's profile id, which stays the common case for parent bookings; the new coach path will write the coach's profile id with no downstream consequence.
 
 **One new column on `household_audit_log`:** `payload jsonb` (nullable). See the "Audit log" subsection below. One-line migration generated via `pnpm db:generate`.
 
