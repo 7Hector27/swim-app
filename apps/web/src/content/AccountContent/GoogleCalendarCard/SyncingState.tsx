@@ -10,7 +10,12 @@ interface SyncingStateProps {
   initial: GoogleCalendarStatusResponse;
 }
 
-type RetryTone = "success" | "warning" | "error";
+// Two tones only. The design system has no amber/warning token
+// (needs_reconnect, a true warning state, also renders in text-danger),
+// so a third tone would collapse to text-danger at render anyway. If a
+// warning token is added later, "partial success" is where it belongs
+// — see formatRetryResult.
+type RetryTone = "success" | "error";
 interface RetryResult {
   message: string;
   tone: RetryTone;
@@ -195,6 +200,6 @@ function formatRetryResult(body: RetryAllFailedResponse): RetryResult {
   const noun = body.failed === 1 ? "lesson" : "lessons";
   return {
     message: `${body.failed} ${noun} still couldn\u2019t sync.`,
-    tone: "warning",
+    tone: "error",
   };
 }
