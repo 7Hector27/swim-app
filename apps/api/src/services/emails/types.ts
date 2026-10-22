@@ -15,7 +15,8 @@ export type LessonEmailStatus =
   | "sent"
   | "failed"
   | "skipped"
-  | "superseded";
+  | "superseded"
+  | "abandoned";
 
 export type IcsMethod = "REQUEST" | "CANCEL";
 

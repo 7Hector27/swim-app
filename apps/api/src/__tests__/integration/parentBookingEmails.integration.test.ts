@@ -35,7 +35,7 @@ import {
   __resetSenderTransportForTests,
   __setSenderTransportForTests,
 } from "../../services/emails/sender";
-import { drainLessonEmailOutbox } from "../../services/emails/drain";
+import { drainLessonEmailOutbox, scrubLessonEmailPayloads } from "../../services/emails/drain";
 import type { EmailTransport, TransportResult, TransportSendOptions } from "../../services/emails/transport";
 import { db } from "../../db/client";
 import { __resetEnvCacheForTests } from "../../lib/env";
@@ -384,6 +384,155 @@ describe("sender — parallel send + cron drain race", () => {
     const row = await readOutboxRow(outboxId);
     expect(row?.status).toBe("sent");
     expect(transport.sends).toHaveLength(1);
+  });
+});
+
+describe("drain — abandon failed rows after retry window", () => {
+  it("a failed row older than 7 days is marked abandoned and no longer retried", async () => {
+    const lessonId = await seedLesson({ status: "pending" });
+    const outboxId = await db.transaction(async (tx) =>
+      enqueueLessonEmail(tx, {
+        lessonId,
+        event: "booking_requested",
+        actorRole: "parent",
+      }),
+    );
+    // Push the row into 'failed' and backdate created_at past the 7-day
+    // retry window so the drain sees it as aged out.
+    const ancient = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);
+    await adminDb()
+      .update(lessonEmailOutbox)
+      .set({
+        status: "failed",
+        createdAt: ancient,
+        attempts: 11,
+        lastError: "resend_5xx:test",
+      })
+      .where(eq(lessonEmailOutbox.id, outboxId));
+
+    const result = await drainLessonEmailOutbox();
+    expect(result.abandoned).toBeGreaterThanOrEqual(1);
+
+    const row = await readOutboxRow(outboxId);
+    expect(row?.status).toBe("abandoned");
+    expect(row?.claimedUntil).toBeNull();
+    // The drain never calls transport on an abandoned row.
+    expect(
+      transport.sends.filter((send) => send.options.idempotencyKey === outboxId),
+    ).toHaveLength(0);
+  });
+
+  it("a recent failed row (< 7 days) is NOT abandoned and remains in the retry queue", async () => {
+    const lessonId = await seedLesson({ status: "pending" });
+    const outboxId = await db.transaction(async (tx) =>
+      enqueueLessonEmail(tx, {
+        lessonId,
+        event: "booking_requested",
+        actorRole: "parent",
+      }),
+    );
+    // Failed yesterday — well inside the retry window.
+    const yesterday = new Date(Date.now() - 1 * 24 * 60 * 60 * 1000);
+    await adminDb()
+      .update(lessonEmailOutbox)
+      .set({
+        status: "failed",
+        createdAt: yesterday,
+        attempts: 3,
+        // next_attempt_at in the future so the drain's send pass skips it
+        // too — we're only validating the abandon pass doesn't flip it.
+        nextAttemptAt: new Date(Date.now() + 60 * 60 * 1000),
+        lastError: "resend_5xx:test",
+      })
+      .where(eq(lessonEmailOutbox.id, outboxId));
+
+    await drainLessonEmailOutbox();
+    const row = await readOutboxRow(outboxId);
+    expect(row?.status).toBe("failed");
+  });
+});
+
+describe("retention scrub — payload purge after 30 days", () => {
+  it("scrubs sent, skipped, superseded, AND abandoned rows older than 30 days", async () => {
+    const terminalStatuses = ["sent", "skipped", "superseded", "abandoned"] as const;
+    const outboxIds: Record<(typeof terminalStatuses)[number], string> = {
+      sent: "",
+      skipped: "",
+      superseded: "",
+      abandoned: "",
+    };
+    const ancient = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000);
+
+    for (const status of terminalStatuses) {
+      const lessonId = await seedLesson({ status: "pending" });
+      const outboxId = await db.transaction(async (tx) =>
+        enqueueLessonEmail(tx, {
+          lessonId,
+          event: "booking_requested",
+          actorRole: "parent",
+        }),
+      );
+      await adminDb()
+        .update(lessonEmailOutbox)
+        .set({
+          status,
+          sentAt: status === "sent" ? ancient : null,
+          lastAttemptAt: ancient,
+          createdAt: ancient,
+        })
+        .where(eq(lessonEmailOutbox.id, outboxId));
+      // Nudge updatedAt back too — the scrub coalesces sent_at /
+      // last_attempt_at / updated_at.
+      await adminDb()
+        .update(lessonEmailOutbox)
+        .set({ updatedAt: ancient })
+        .where(eq(lessonEmailOutbox.id, outboxId));
+      outboxIds[status] = outboxId;
+    }
+
+    const result = await scrubLessonEmailPayloads();
+    expect(result.scrubbed).toBeGreaterThanOrEqual(4);
+
+    for (const status of terminalStatuses) {
+      const row = await readOutboxRow(outboxIds[status]);
+      const payload = row?.payload as Record<string, unknown> | null;
+      expect(payload).toBeDefined();
+      expect(payload).not.toBeNull();
+      expect(payload).not.toHaveProperty("swimmerFirstNames");
+      expect(payload).toHaveProperty("_scrubbed_at");
+      // Status and audit trail preserved.
+      expect(row?.status).toBe(status);
+    }
+  });
+
+  it("does not scrub pending, sending, or failed rows regardless of age", async () => {
+    const ancient = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000);
+    const lessonId = await seedLesson({ status: "pending" });
+    const outboxId = await db.transaction(async (tx) =>
+      enqueueLessonEmail(tx, {
+        lessonId,
+        event: "booking_requested",
+        actorRole: "parent",
+      }),
+    );
+    await adminDb()
+      .update(lessonEmailOutbox)
+      .set({
+        status: "failed",
+        createdAt: ancient,
+        lastAttemptAt: ancient,
+        updatedAt: ancient,
+        // Keep next_attempt_at far in the future so the drain's send pass
+        // doesn't touch this row during the test. We're only exercising
+        // the scrub; the abandon pass below is tested separately.
+        nextAttemptAt: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000),
+      })
+      .where(eq(lessonEmailOutbox.id, outboxId));
+
+    await scrubLessonEmailPayloads();
+    const row = await readOutboxRow(outboxId);
+    const payload = row?.payload as Record<string, unknown>;
+    expect(payload).toHaveProperty("swimmerFirstNames");
   });
 });
 

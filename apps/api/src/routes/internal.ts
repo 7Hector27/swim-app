@@ -158,7 +158,7 @@ internalRouter.post(
     // older than 30 days, preserving the structured status/timestamps for
     // audit while releasing swimmer names and addresses. Both are capped
     // internally so they fit in a cron tick.
-    let emailDrainResult = { drained: 0 };
+    let emailDrainResult = { drained: 0, abandoned: 0 };
     let emailScrubResult = { scrubbed: 0 };
     try {
       emailDrainResult = await drainLessonEmailOutbox();
@@ -184,6 +184,7 @@ internalRouter.post(
         fullPasses,
         lightPasses,
         emailDrained: emailDrainResult.drained,
+        emailAbandoned: emailDrainResult.abandoned,
         emailScrubbed: emailScrubResult.scrubbed,
       },
       "cron/tick",
@@ -195,6 +196,7 @@ internalRouter.post(
       fullPasses,
       lightPasses,
       emailDrained: emailDrainResult.drained,
+      emailAbandoned: emailDrainResult.abandoned,
       emailScrubbed: emailScrubResult.scrubbed,
     });
   }),

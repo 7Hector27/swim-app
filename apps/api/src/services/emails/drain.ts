@@ -19,10 +19,17 @@ const SCRUB_LIMIT_PER_TICK = 500;
 
 const SCRUB_AGE_DAYS = 30;
 
+// A 'failed' row older than this becomes terminal ('abandoned'). The drain
+// stops retrying it and the row's payload is purged by the 30-day scrub.
+// Without this, failed rows would hold swimmer first names and (for
+// home-pool lessons) full residential addresses indefinitely.
+const ABANDON_AGE_DAYS = 7;
+
 const log = rootLogger.child({ component: "lesson-email-drain" });
 
 export interface DrainResult {
   drained: number;
+  abandoned: number;
 }
 
 export interface ScrubResult {
@@ -31,6 +38,29 @@ export interface ScrubResult {
 
 export async function drainLessonEmailOutbox(): Promise<DrainResult> {
   const now = new Date();
+
+  // Mark aged-out failed rows terminal before the drain picks them up.
+  // They stop retrying and become scrub candidates on the next pass.
+  const abandonCutoff = new Date(now.getTime() - ABANDON_AGE_DAYS * 24 * 60 * 60 * 1000);
+  const abandonedRows = await db
+    .update(lessonEmailOutbox)
+    .set({
+      status: "abandoned",
+      lastError: sql`coalesce(${lessonEmailOutbox.lastError}, 'abandoned_after_retry_window')`,
+      claimedUntil: null,
+    })
+    .where(
+      and(
+        eq(lessonEmailOutbox.status, "failed"),
+        lt(lessonEmailOutbox.createdAt, abandonCutoff),
+      ),
+    )
+    .returning({ id: lessonEmailOutbox.id });
+  const abandoned = abandonedRows.length;
+  if (abandoned > 0) {
+    log.info({ abandoned }, "lesson-email rows abandoned after retry window");
+  }
+
   const rows = await db
     .select({ id: lessonEmailOutbox.id })
     .from(lessonEmailOutbox)
@@ -65,7 +95,7 @@ export async function drainLessonEmailOutbox(): Promise<DrainResult> {
       );
     }
   }
-  return { drained };
+  return { drained, abandoned };
 }
 
 export async function scrubLessonEmailPayloads(): Promise<ScrubResult> {
@@ -82,7 +112,7 @@ export async function scrubLessonEmailPayloads(): Promise<ScrubResult> {
     .from(lessonEmailOutbox)
     .where(
       and(
-        inArray(lessonEmailOutbox.status, ["sent", "skipped", "superseded"]),
+        inArray(lessonEmailOutbox.status, ["sent", "skipped", "superseded", "abandoned"]),
         lt(
           sql`coalesce(${lessonEmailOutbox.sentAt}, ${lessonEmailOutbox.lastAttemptAt}, ${lessonEmailOutbox.updatedAt})`,
           cutoff,

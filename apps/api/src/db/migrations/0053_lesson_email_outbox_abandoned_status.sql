@@ -1,0 +1,2 @@
+ALTER TABLE "lesson_email_outbox" DROP CONSTRAINT "lesson_email_outbox_status_valid";--> statement-breakpoint
+ALTER TABLE "lesson_email_outbox" ADD CONSTRAINT "lesson_email_outbox_status_valid" CHECK ("lesson_email_outbox"."status" IN ('pending', 'sending', 'sent', 'failed', 'skipped', 'superseded', 'abandoned'));

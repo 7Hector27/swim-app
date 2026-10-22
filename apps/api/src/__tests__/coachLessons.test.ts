@@ -95,7 +95,7 @@ vi.mock("../services/emails/sender", () => ({
 // The cron tick calls the outbox drain + scrub; stub them so the unit
 // test doesn't hit the DB. Integration tests cover the real flow.
 vi.mock("../services/emails/drain", () => ({
-  drainLessonEmailOutbox: vi.fn().mockResolvedValue({ drained: 0 }),
+  drainLessonEmailOutbox: vi.fn().mockResolvedValue({ drained: 0, abandoned: 0 }),
   scrubLessonEmailPayloads: vi.fn().mockResolvedValue({ scrubbed: 0 }),
 }));
 
@@ -396,7 +396,7 @@ describe("POST /internal/cron/tick", () => {
     // Re-apply the drain + scrub mocks so the handler's `await … .drained`
     // and `.scrubbed` reads see concrete objects instead of undefined.
     const drainModule = await import("../services/emails/drain");
-    vi.mocked(drainModule.drainLessonEmailOutbox).mockResolvedValue({ drained: 0 });
+    vi.mocked(drainModule.drainLessonEmailOutbox).mockResolvedValue({ drained: 0, abandoned: 0 });
     vi.mocked(drainModule.scrubLessonEmailPayloads).mockResolvedValue({ scrubbed: 0 });
   });
 

@@ -910,8 +910,12 @@ export const lessonEmailOutbox = pgTable(
     // reason, actor type ('coach'|'parent'). Freezing means a later edit
     // on the lesson row never retroactively repaints a scheduled email.
     payload: jsonb("payload").notNull(),
-    // 'pending' | 'sending' | 'sent' | 'failed' | 'skipped' | 'superseded'.
-    // 'sent'/'skipped'/'superseded' are terminal.
+    // 'pending' | 'sending' | 'sent' | 'failed' | 'skipped' | 'superseded' |
+    // 'abandoned'. 'sent'/'skipped'/'superseded'/'abandoned' are terminal.
+    // 'abandoned' is the terminal state the drain assigns to a 'failed' row
+    // that has aged out (7 days since created_at) — the drain stops retrying
+    // and the payload becomes a scrub candidate alongside sent/skipped/
+    // superseded. See docs/plans/parent-booking-emails.md.
     status: text("status").notNull().default("pending"),
     attempts: integer("attempts").notNull().default(0),
     // Non-null only while status='sending'. Set to now() + 2 minutes by the
@@ -941,7 +945,7 @@ export const lessonEmailOutbox = pgTable(
     ),
     check(
       "lesson_email_outbox_status_valid",
-      sql`${table.status} IN ('pending', 'sending', 'sent', 'failed', 'skipped', 'superseded')`,
+      sql`${table.status} IN ('pending', 'sending', 'sent', 'failed', 'skipped', 'superseded', 'abandoned')`,
     ),
     check(
       "lesson_email_outbox_ics_pair",

@@ -44,7 +44,7 @@ The transactional outbox. One row per email event per lesson. Written inside the
 | `ics_method` | `text` | yes | — | `'REQUEST'`, `'CANCEL'`, or NULL. NULL means "attach no `.ics`" — used for `booking_requested`, `request_declined`-without-prior-invite, `request_expired`-without-prior-invite. Set at write time from the lesson's state so it's frozen alongside the payload. |
 | `ics_sequence` | `integer` | yes | — | Value to put in the `.ics` `SEQUENCE:` field. Snapshot of `lessons.calendar_sequence` at write time. Null when `ics_method` is null. |
 | `payload` | `jsonb` | no | — | Frozen render inputs: swimmer first names, LA-formatted date + time, location name + address (whole address OK for home pools — the email only goes to that household), deep link to `/dashboard/lessons/:id`, previous `starts_at` for reschedule, decline reason if present, who initiated the change (`'coach'` or `'parent'`). Freezing means a later edit on the lesson row never retroactively repaints a scheduled email. |
-| `status` | `text` | no | `'pending'` | CHECK: `'pending' \| 'sending' \| 'sent' \| 'failed' \| 'skipped' \| 'superseded'`. `'sending'` is the claimed-but-not-yet-finished state (see "Claim before sending" below). `'skipped'` means the sender resolved zero deliverable recipients at send time — i.e. no profile in `recipient_profile_ids` had both `email` and `email_verified_at` set. `'superseded'` is a terminal "do not send" state applied by the pre-send guard when a newer outbox row for the same lesson has already shipped or the lesson's start time is in the past. `'sent'`, `'skipped'`, and `'superseded'` are terminal; `'pending'`, `'sending'` (if its claim has expired), and `'failed'` are picked up by the drain. |
+| `status` | `text` | no | `'pending'` | CHECK: `'pending' \| 'sending' \| 'sent' \| 'failed' \| 'skipped' \| 'superseded' \| 'abandoned'`. `'sending'` is the claimed-but-not-yet-finished state (see "Claim before sending" below). `'skipped'` means the sender resolved zero deliverable recipients at send time — i.e. no profile in `recipient_profile_ids` had both `email` and `email_verified_at` set. `'superseded'` is a terminal "do not send" state applied by the pre-send guard when a newer outbox row for the same lesson has already shipped or the lesson's start time is in the past. `'abandoned'` is the terminal state the drain assigns to a `'failed'` row 7 days after `created_at` — the row stops retrying and its payload is purged by the 30-day scrub. `'sent'`, `'skipped'`, `'superseded'`, and `'abandoned'` are terminal; `'pending'`, `'sending'` (if its claim has expired), and `'failed'` are picked up by the drain. |
 | `attempts` | `integer` | no | `0` | Increments on every sender attempt that reaches the transport call. Capped only by patience: the drain keeps trying while backoff allows. |
 | `claimed_until` | `timestamptz` | yes | — | Non-null only while the row is `status='sending'`. Set to `now() + interval '2 minutes'` when the sender claims the row; the drain treats any `'sending'` row whose claim has expired as recoverable (another sender crashed mid-send) and re-claims it. Cleared when the row transitions to a terminal state. |
 | `last_error` | `text` | yes | — | Short error summary (transport status + reason). Never includes email bodies, names, or addresses so logs stay clean per `docs/accounts.md`. |
@@ -448,7 +448,7 @@ Extend `POST /internal/cron/tick` with a scrub pass that runs at the end of each
 ```sql
 UPDATE lesson_email_outbox
 SET payload = jsonb_build_object('_scrubbed_at', now())
-WHERE status IN ('sent', 'skipped', 'superseded')
+WHERE status IN ('sent', 'skipped', 'superseded', 'abandoned')
   AND coalesce(sent_at, last_attempt_at, updated_at) < now() - interval '30 days'
   AND payload ? 'swimmerFirstNames'   -- idempotent guard: do not re-scrub
 LIMIT 500;
@@ -456,7 +456,8 @@ LIMIT 500;
 
 - The row's `status`, `attempts`, `provider_message_id`, `sent_at`, and timestamps are preserved as the auditable trail. Only `payload` is scrubbed — the PII-bearing bit.
 - 30 days was chosen to give a reasonable debugging window (parent reports "I never got the email about my Nov lesson" is still answerable from the row's structured fields and the Resend dashboard id), while keeping the retention tight enough that an unreviewed data-request complaint doesn't surface 6-month-old addresses.
-- `'failed'` rows and `'pending'`/`'sending'` rows are **not** scrubbed — they need their payload to retry.
+- `'abandoned'` rows are scrubbed too — once the drain gives up on retrying a `'failed'` row (7 days after `created_at`), the payload becomes a 30-day scrub candidate alongside the other terminal states.
+- `'failed'` rows and `'pending'`/`'sending'` rows are **not** scrubbed — they need their payload to retry. (A `'failed'` row that would otherwise sit forever is promoted to `'abandoned'` by the drain after 7 days; see the drain pseudocode above.)
 - Idempotent via the `payload ? 'swimmerFirstNames'` guard. A scrubbed row's payload is just the scrub timestamp.
 - Capped at 500 rows per tick to avoid long transactions during normal operation. A one-time backfill after launch is a trivial loop over the same statement.
 
