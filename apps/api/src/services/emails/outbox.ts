@@ -262,6 +262,14 @@ async function resolveCoachFirstName(tx: Tx): Promise<string | null> {
   return firstSpace < 0 ? trimmed : trimmed.slice(0, firstSpace);
 }
 
+// Returns the next (lesson_id, event) occurrence counter. No explicit lock
+// is needed on this read: every outbox write happens inside a transaction
+// that has already taken `SELECT ... FOR UPDATE` on the lesson row (see
+// the start of enqueueLessonEmail), and every lesson-mutating route holds
+// the same row lock. That serializes all outbox writes PER LESSON, so two
+// concurrent callers can never read `max(sequence)` for the same lesson
+// and race. The `UNIQUE (lesson_id, event, sequence)` constraint is the
+// backstop for any unexpected path that bypasses the lesson lock.
 async function nextOutboxSequence(tx: Tx, lessonId: string, event: LessonEmailEvent): Promise<number> {
   const rows = await tx
     .select({ max: sql<number | null>`max(${lessonEmailOutbox.sequence})` })
