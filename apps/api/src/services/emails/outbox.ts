@@ -16,9 +16,9 @@ import {
   lessonLocations,
   lessonSwimmers,
   lessons,
-  profiles,
   swimmers,
 } from "../../db/schema";
+import { getActiveCoachProfile } from "../../lib/coachProfile";
 import { getEnv } from "../../lib/env";
 import { buildDeepLink, formatLessonTimeDisplay } from "./format";
 import type {
@@ -164,11 +164,12 @@ export async function enqueueLessonEmail(
     );
   }
 
-  // Resolve the coach's first name once at write time. Single-coach app, so
-  // the first non-disabled coach profile wins. Snapshotting into the payload
+  // Resolve the coach's first name once at write time via the shared helper
+  // (same one Google Calendar sync uses). Snapshotting into the payload
   // means a rename or role change later never retroactively repaints a
   // scheduled email, and the renderer stays a pure function of the payload.
-  const coachFirstName = await resolveCoachFirstName(tx);
+  // When multi-coach lands, the fix lives in lib/coachProfile.ts alone.
+  const coachFirstName = (await getActiveCoachProfile())?.firstName ?? null;
 
   const endsAt = new Date(describeStartsAt.getTime() + describeDurationMinutes * 60_000);
   const siteUrl = getEnv().siteUrl;
@@ -243,23 +244,6 @@ function decideIcs(event: LessonEmailEvent, calendarInviteSentAt: Date | null): 
   }
   // booking_requested, or any future event with no invite semantics.
   return { method: null, shouldMarkInviteSent: false };
-}
-
-// Pulls the first non-disabled coach's first name from profiles.full_name
-// ("Jason Smith" → "Jason"). Returns null if no coach is on file or if
-// full_name is unset; the renderer substitutes "The coach".
-async function resolveCoachFirstName(tx: Tx): Promise<string | null> {
-  const rows = await tx
-    .select({ fullName: profiles.fullName })
-    .from(profiles)
-    .where(and(eq(profiles.role, "coach"), sql`${profiles.disabledAt} IS NULL`))
-    .limit(1);
-  const fullName = rows[0]?.fullName;
-  if (!fullName) return null;
-  const trimmed = fullName.trim();
-  if (trimmed.length === 0) return null;
-  const firstSpace = trimmed.indexOf(" ");
-  return firstSpace < 0 ? trimmed : trimmed.slice(0, firstSpace);
 }
 
 // Returns the next (lesson_id, event) occurrence counter. No explicit lock
