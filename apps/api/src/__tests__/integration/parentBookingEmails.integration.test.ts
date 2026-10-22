@@ -13,9 +13,7 @@
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import pino from "pino";
-import request from "supertest";
 import { eq } from "drizzle-orm";
-import { createApp } from "../../app";
 import {
   adminDb,
   closeAdminDb,
@@ -23,13 +21,10 @@ import {
   type TestUser,
 } from "./helpers";
 import {
-  households,
-  householdMembers,
   lessonEmailOutbox,
   lessonLocations,
   lessonSwimmers,
   lessons,
-  profiles,
   swimmers,
 } from "../../db/schema";
 import { enqueueLessonEmail } from "../../services/emails/outbox";
@@ -44,8 +39,9 @@ import type { EmailTransport, TransportResult, TransportSendOptions } from "../.
 import { db } from "../../db/client";
 import { __resetEnvCacheForTests } from "../../lib/env";
 
-const logger = pino({ level: "silent" });
-const app = createApp(logger);
+// Keep the pino sink hot so the no-PII-in-logs test has a logger to spy on.
+const _logger = pino({ level: "silent" });
+void _logger;
 
 // A capture transport: records every send instead of hitting the network.
 // Lets us assert exactly one call per outbox row across parallel sender +
