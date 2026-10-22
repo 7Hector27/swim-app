@@ -14,6 +14,8 @@ One row per authenticated user. Created automatically by the `on_auth_user_creat
 | `phone` | `text` | yes | — | |
 | `age_attested_at` | `timestamptz` | yes | — | Set when a parent attests they are 18+ |
 | `disabled_at` | `timestamptz` | yes | — | Soft-disable; non-null means account is inactive |
+| `email` | `text` | yes | — | Mirror of `auth.users.email`, kept in sync by the `on_auth_user_created` and `on_auth_user_updated` triggers. Read-only from app code; the API uses this for parent-email recipient resolution. See ADR 028. |
+| `email_verified_at` | `timestamptz` | yes | — | Mirror of `auth.users.email_confirmed_at`. Non-null means the parent completed email verification. The booking-email sender only sends to profiles where this is non-null. |
 | `created_at` | `timestamptz` | no | `now()` | |
 | `updated_at` | `timestamptz` | no | `now()` | Updated automatically on any change |
 
@@ -100,6 +102,44 @@ Append-only log of significant coach-level events. Same shape and conventions as
 | `created_at` | `timestamptz` | no | `now()` | |
 
 Index: `(coach_id, created_at DESC)`.
+
+RLS is enabled. Policies TBD.
+
+---
+
+### `lesson_email_outbox`
+
+Transactional outbox for parent-facing booking emails. One row per state transition per lesson, written inside the same `db.transaction()` as the lesson change (CLAUDE.md's audit-log rule). Drained by the post-commit microtask sender and the `POST /internal/cron/tick` drain. See ADR 028.
+
+| Column | Type | Nullable | Default | Notes |
+|---|---|---|---|---|
+| `id` | `uuid` | no | `gen_random_uuid()` | Primary key |
+| `lesson_id` | `uuid` | no | — | FK → `lessons.id` (`ON DELETE RESTRICT`). |
+| `event` | `text` | no | — | CHECK IN (`booking_requested`, `lesson_confirmed`, `request_declined`, `request_expired`, `lesson_canceled`, `lesson_rescheduled`). |
+| `sequence` | `integer` | no | — | Per-(`lesson_id`, `event`) occurrence counter. The `(lesson_id, event, sequence)` triple is the natural dedup key. |
+| `recipient_profile_ids` | `uuid[]` | no | — | Snapshot of household owner + manager profile ids at write time. Email verification re-checked at send time. |
+| `ics_method` | `text` | yes | — | `REQUEST`, `CANCEL`, or NULL. NULL means "no `.ics` attached" — used for `booking_requested` and decline/expire from pending. Paired with `ics_sequence` (both or neither). |
+| `ics_sequence` | `integer` | yes | — | Snapshot of `lessons.calendar_sequence` at write time. First REQUEST ships 0. |
+| `payload` | `jsonb` | no | — | Frozen render inputs (swimmer first names, LA-formatted date/time, location, deep link, etc). Scrubbed to `{_scrubbed_at}` by the cron retention pass once the row is terminal and >30 days old. |
+| `status` | `text` | no | `'pending'` | CHECK IN (`pending`, `sending`, `sent`, `failed`, `skipped`, `superseded`). `sent`/`skipped`/`superseded` are terminal. |
+| `attempts` | `integer` | no | `0` | Incremented on every attempt that reaches the transport call. |
+| `claimed_until` | `timestamptz` | yes | — | Non-null only while `status='sending'`. Set to `now() + interval '2 minutes'`; expired claims are recoverable by the next cron tick. |
+| `last_error` | `text` | yes | — | Short transport error summary. No names, addresses, or email bodies. |
+| `last_attempt_at` | `timestamptz` | yes | — | Set on every attempt. |
+| `next_attempt_at` | `timestamptz` | no | `now()` | Backoff schedule. On failure the sender sets this to `now() + min(2^attempts, 30) minutes`. |
+| `sent_at` | `timestamptz` | yes | — | Set once on first 2xx. |
+| `provider_message_id` | `text` | yes | — | Resend returned id. Null when SMTP (Mailpit) is in use. |
+| `created_at` | `timestamptz` | no | `now()` | |
+| `updated_at` | `timestamptz` | no | `now()` | Auto-updated |
+
+Constraints:
+- `UNIQUE (lesson_id, event, sequence)` — dedup key.
+- CHECK: `(ics_method IS NULL) = (ics_sequence IS NULL)`.
+- CHECK: `(status = 'sending') = (claimed_until IS NOT NULL)`.
+
+Indexes:
+- Partial index on `(next_attempt_at)` `WHERE status IN ('pending','failed','sending')` — the drain hot path.
+- `(lesson_id, created_at DESC)` for debugging.
 
 RLS is enabled. Policies TBD.
 
@@ -393,6 +433,8 @@ One row per lesson booking request.
 | `calendar_sync_status` | `text` | no | `'not_synced'` | CHECK IN ('not_synced', 'synced', 'sync_failed') |
 | `calendar_sync_error` | `text` | yes | — | Last sync error message |
 | `calendar_sync_attempts` | `integer` | no | `0` | Incremented on every attempt (success or failure). |
+| `calendar_sequence` | `integer` | no | `0` | **Next** `.ics` `SEQUENCE:` value to issue for this lesson, per RFC 5545. Snapshot into `lesson_email_outbox.ics_sequence` and then incremented inside the same lesson transaction. First `REQUEST` ships `SEQUENCE:0`. See ADR 028. |
+| `calendar_invite_sent_at` | `timestamptz` | yes | — | Set to `now()` the first time an outbox row with `ics_method='REQUEST'` is written. Lets the cancel/decline/expire paths decide whether a `METHOD:CANCEL` `.ics` is required (prior invite went out) or no `.ics` (never confirmed). Never cleared. |
 | `created_at` | `timestamptz` | no | `now()` | |
 | `updated_at` | `timestamptz` | no | `now()` | Auto-updated |
 

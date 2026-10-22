@@ -132,6 +132,12 @@ export const profiles = pgTable(
     phone: text("phone"),
     ageAttestedAt: timestamp("age_attested_at", { withTimezone: true }),
     disabledAt: timestamp("disabled_at", { withTimezone: true }),
+    // Mirrors of auth.users.email and auth.users.email_confirmed_at kept in
+    // sync by the on_auth_user_created and on_auth_user_updated triggers so
+    // the API runtime can resolve recipients without the service-role key.
+    // See ADR 028. Treat as derived state — don't write from app code.
+    email: text("email"),
+    emailVerifiedAt: timestamp("email_verified_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -504,6 +510,15 @@ export const lessons = pgTable("lessons", {
   calendarSyncStatus: text("calendar_sync_status").notNull().default("not_synced"),
   calendarSyncError: text("calendar_sync_error"),
   calendarSyncAttempts: integer("calendar_sync_attempts").notNull().default(0),
+  // The next .ics SEQUENCE value to issue for this lesson, per RFC 5545.
+  // Outbox writes snapshot the current value into lesson_email_outbox.ics_sequence
+  // and then increment this counter by 1 in the same transaction. First
+  // REQUEST ships SEQUENCE:0. See ADR 028.
+  calendarSequence: integer("calendar_sequence").notNull().default(0),
+  // Set to now() the first time an outbox row with ics_method='REQUEST' is
+  // written. Lets the cancel/decline/expire paths decide whether to emit a
+  // METHOD:CANCEL (prior invite went out) or no .ics (never confirmed).
+  calendarInviteSentAt: timestamp("calendar_invite_sent_at", { withTimezone: true }),
   movedAt: timestamp("moved_at", { withTimezone: true }),
   previousStartsAt: timestamp("previous_starts_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -855,6 +870,94 @@ export const coachAuditLog = pgTable(
   },
   (table) => [
     index("coach_audit_log_coach_created_idx").on(table.coachId, table.createdAt.desc()),
+  ],
+).enableRLS();
+
+// ── Parent booking emails outbox (ADR 028) ──────────────────────────────────
+
+// Transactional outbox for parent-facing booking emails. One row per state
+// transition per lesson. Written inside the same db.transaction() as the
+// lesson change it records (CLAUDE.md's audit-log rule), drained by the
+// post-commit microtask sender and the POST /internal/cron/tick drain. The
+// (lesson_id, event, sequence) unique key prevents duplicate rows; the
+// claim-before-send protocol (claimed_until + status='sending') prevents
+// duplicate sends. See docs/plans/parent-booking-emails.md.
+export const lessonEmailOutbox = pgTable(
+  "lesson_email_outbox",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    lessonId: uuid("lesson_id").notNull().references(() => lessons.id, { onDelete: "restrict" }),
+    // One of: 'booking_requested', 'lesson_confirmed', 'request_declined',
+    // 'request_expired', 'lesson_canceled', 'lesson_rescheduled'.
+    event: text("event").notNull(),
+    // Per-(lesson_id, event) occurrence counter. First lesson_rescheduled
+    // for a given lesson is 1, next is 2, etc. The (lesson_id, event,
+    // sequence) triple is the row's natural dedup key.
+    sequence: integer("sequence").notNull(),
+    // Snapshot of the household's owner + manager profile ids at write
+    // time. Email verification is re-checked at send time via the join on
+    // profiles.email + profiles.email_verified_at.
+    recipientProfileIds: uuid("recipient_profile_ids").array().notNull(),
+    // 'REQUEST' | 'CANCEL' | NULL. NULL means "no .ics attached" (used for
+    // booking_requested, decline-from-pending, expire-from-pending). Set
+    // at write time; frozen alongside the payload.
+    icsMethod: text("ics_method"),
+    // Snapshot of lessons.calendar_sequence at write time. Null iff
+    // ics_method is null.
+    icsSequence: integer("ics_sequence"),
+    // Frozen render inputs: swimmer first names, LA-formatted date+time,
+    // location, deep link, previous starts_at for reschedule, decline
+    // reason, actor type ('coach'|'parent'). Freezing means a later edit
+    // on the lesson row never retroactively repaints a scheduled email.
+    payload: jsonb("payload").notNull(),
+    // 'pending' | 'sending' | 'sent' | 'failed' | 'skipped' | 'superseded'.
+    // 'sent'/'skipped'/'superseded' are terminal.
+    status: text("status").notNull().default("pending"),
+    attempts: integer("attempts").notNull().default(0),
+    // Non-null only while status='sending'. Set to now() + 2 minutes by the
+    // sender's claim transaction; expired claims are recoverable by the
+    // drain on the next cron tick.
+    claimedUntil: timestamp("claimed_until", { withTimezone: true }),
+    // Short error summary (transport status + reason). Never includes names,
+    // addresses, or email bodies — see docs/accounts.md logging rules.
+    lastError: text("last_error"),
+    lastAttemptAt: timestamp("last_attempt_at", { withTimezone: true }),
+    // Backoff schedule for retries. On failure the sender sets this to
+    // now() + min(2^attempts, 30) minutes. The drain picks rows where
+    // next_attempt_at < now().
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).notNull().defaultNow(),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    // Resend's returned id. Null when SMTP (Mailpit) is in use. For audit
+    // only; no webhook ingestion in v1.
+    providerMessageId: text("provider_message_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdateFn(() => new Date()),
+  },
+  (table) => [
+    unique("lesson_email_outbox_lesson_event_sequence_uniq").on(table.lessonId, table.event, table.sequence),
+    check(
+      "lesson_email_outbox_event_valid",
+      sql`${table.event} IN ('booking_requested', 'lesson_confirmed', 'request_declined', 'request_expired', 'lesson_canceled', 'lesson_rescheduled')`,
+    ),
+    check(
+      "lesson_email_outbox_status_valid",
+      sql`${table.status} IN ('pending', 'sending', 'sent', 'failed', 'skipped', 'superseded')`,
+    ),
+    check(
+      "lesson_email_outbox_ics_pair",
+      sql`(${table.icsMethod} IS NULL) = (${table.icsSequence} IS NULL)`,
+    ),
+    check(
+      "lesson_email_outbox_claim_pair",
+      sql`(${table.status} = 'sending') = (${table.claimedUntil} IS NOT NULL)`,
+    ),
+    // Partial index on (next_attempt_at) for the drain's hot path. Includes
+    // 'sending' because an expired-claim row is a drain candidate.
+    index("lesson_email_outbox_drain_idx")
+      .on(table.nextAttemptAt)
+      .where(sql`status IN ('pending', 'failed', 'sending')`),
+    // Debugging: the full timeline of emails for one lesson.
+    index("lesson_email_outbox_lesson_created_idx").on(table.lessonId, table.createdAt.desc()),
   ],
 ).enableRLS();
 
