@@ -121,7 +121,7 @@ Transactional outbox for parent-facing booking emails. One row per state transit
 | `ics_method` | `text` | yes | — | `REQUEST`, `CANCEL`, or NULL. NULL means "no `.ics` attached" — used for `booking_requested` and decline/expire from pending. Paired with `ics_sequence` (both or neither). |
 | `ics_sequence` | `integer` | yes | — | Snapshot of `lessons.calendar_sequence` at write time. First REQUEST ships 0. |
 | `payload` | `jsonb` | no | — | Frozen render inputs (swimmer first names, LA-formatted date/time, location, deep link, etc). Scrubbed to `{_scrubbed_at}` by the cron retention pass once the row is terminal and >30 days old. |
-| `status` | `text` | no | `'pending'` | CHECK IN (`pending`, `sending`, `sent`, `failed`, `skipped`, `superseded`). `sent`/`skipped`/`superseded` are terminal. |
+| `status` | `text` | no | `'pending'` | CHECK IN (`pending`, `sending`, `sent`, `failed`, `skipped`, `superseded`, `abandoned`). `sent`, `skipped`, `superseded`, and `abandoned` are terminal. `abandoned` is assigned by the drain to a `failed` row 7 days after `created_at` so retries stop and the payload becomes a 30-day scrub candidate alongside the other terminal states (migration 0053). |
 | `attempts` | `integer` | no | `0` | Incremented on every attempt that reaches the transport call. |
 | `claimed_until` | `timestamptz` | yes | — | Non-null only while `status='sending'`. Set to `now() + interval '2 minutes'`; expired claims are recoverable by the next cron tick. |
 | `last_error` | `text` | yes | — | Short transport error summary. No names, addresses, or email bodies. |
