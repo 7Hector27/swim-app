@@ -12,6 +12,7 @@ import {
 } from "./helpers";
 import {
   availabilitySeasons,
+  lessonEmailOutbox,
   lessonLocations,
   lessonSwimmers,
   lessons,
@@ -68,6 +69,8 @@ beforeAll(async () => {
 
 afterEach(async () => {
   for (const lessonId of lessonIdsToClean) {
+    // Outbox rows FK lessons.id with ON DELETE RESTRICT (ADR 028).
+    await adminDb().delete(lessonEmailOutbox).where(eq(lessonEmailOutbox.lessonId, lessonId));
     await adminDb().delete(lessonSwimmers).where(eq(lessonSwimmers.lessonId, lessonId));
     await adminDb().delete(lessons).where(eq(lessons.id, lessonId));
   }

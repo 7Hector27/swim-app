@@ -12,6 +12,7 @@ import {
 import {
   availabilityConfig,
   availabilitySeasons,
+  lessonEmailOutbox,
   lessonLocations,
   lessonSwimmers,
   lessons,
@@ -111,6 +112,16 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (swimmerId) {
+    // Outbox rows reference lessons with ON DELETE RESTRICT (ADR 028).
+    const ownerLessonIds = await adminDb()
+      .select({ id: lessons.id })
+      .from(lessons)
+      .where(eq(lessons.householdId, owner.householdId));
+    if (ownerLessonIds.length > 0) {
+      await adminDb()
+        .delete(lessonEmailOutbox)
+        .where(inArray(lessonEmailOutbox.lessonId, ownerLessonIds.map((row) => row.id)));
+    }
     await adminDb().delete(lessonSwimmers).where(eq(lessonSwimmers.swimmerId, swimmerId));
     await adminDb().delete(lessons).where(eq(lessons.householdId, owner.householdId));
     await adminDb().delete(swimmers).where(eq(swimmers.id, swimmerId));
@@ -149,7 +160,10 @@ describe("PATCH /lessons/:id coach reschedule (integration)", () => {
       expect(res.status).toBe(422);
       expect(res.body.error).toBe("slot_unavailable");
 
-      // Cleanup
+      // Cleanup — outbox rows first (ON DELETE RESTRICT on lesson_id).
+      await adminDb()
+        .delete(lessonEmailOutbox)
+        .where(inArray(lessonEmailOutbox.lessonId, [lessonAId, lessonBId]));
       await adminDb()
         .delete(lessonSwimmers)
         .where(inArray(lessonSwimmers.lessonId, [lessonAId, lessonBId]));
@@ -214,8 +228,11 @@ describe("PATCH /lessons/:id coach reschedule (integration)", () => {
       expect(res.status).toBe(422);
       expect(res.body.error).toBe("slot_unavailable");
 
-      // Cleanup fake lessons, then lesson Y.
+      // Cleanup fake lessons, then lesson Y. Outbox rows first.
       const allIds = [...fakeLessonIds, lessonYId];
+      await adminDb()
+        .delete(lessonEmailOutbox)
+        .where(inArray(lessonEmailOutbox.lessonId, allIds));
       await adminDb()
         .delete(lessonSwimmers)
         .where(and(inArray(lessonSwimmers.lessonId, allIds)));

@@ -48,6 +48,8 @@ export async function drainLessonEmailOutbox(): Promise<DrainResult> {
     )
     .orderBy(asc(lessonEmailOutbox.nextAttemptAt))
     .limit(DRAIN_LIMIT_PER_TICK);
+  // `now` is passed as a Date → drizzle serializes it via the postgres-js
+  // param path; no Date-to-string manual cast needed.
 
   let drained = 0;
   for (const row of rows) {
@@ -71,11 +73,13 @@ export async function scrubLessonEmailPayloads(): Promise<ScrubResult> {
   // Target: terminal rows older than 30 days whose payload still carries
   // render inputs. The jsonb `? 'swimmerFirstNames'` operator keeps the
   // pass idempotent — a second run touches no rows.
-  const result = await db
-    .update(lessonEmailOutbox)
-    .set({
-      payload: sql`jsonb_build_object('_scrubbed_at', now())`,
-    })
+  //
+  // SELECT the ids first with LIMIT applied, then UPDATE those exact ids.
+  // Doing it this way avoids wedging a correlated subquery inside the
+  // UPDATE's WHERE clause.
+  const candidateRows = await db
+    .select({ id: lessonEmailOutbox.id })
+    .from(lessonEmailOutbox)
     .where(
       and(
         inArray(lessonEmailOutbox.status, ["sent", "skipped", "superseded"]),
@@ -84,17 +88,19 @@ export async function scrubLessonEmailPayloads(): Promise<ScrubResult> {
           cutoff,
         ),
         sql`${lessonEmailOutbox.payload} ? 'swimmerFirstNames'`,
-        // Belt-and-suspenders cap in case Postgres doesn't short-circuit
-        // on the jsonb operator for a huge historical backlog.
-        sql`${lessonEmailOutbox.id} IN (
-          SELECT id FROM ${lessonEmailOutbox}
-          WHERE status IN ('sent','skipped','superseded')
-            AND coalesce(sent_at, last_attempt_at, updated_at) < ${cutoff}
-            AND payload ? 'swimmerFirstNames'
-          LIMIT ${SCRUB_LIMIT_PER_TICK}
-        )`,
       ),
     )
-    .returning({ id: lessonEmailOutbox.id });
-  return { scrubbed: result.length };
+    .limit(SCRUB_LIMIT_PER_TICK);
+
+  if (candidateRows.length === 0) {
+    return { scrubbed: 0 };
+  }
+
+  const ids = candidateRows.map((row) => row.id);
+  await db
+    .update(lessonEmailOutbox)
+    .set({ payload: sql`jsonb_build_object('_scrubbed_at', now())` })
+    .where(inArray(lessonEmailOutbox.id, ids));
+
+  return { scrubbed: ids.length };
 }

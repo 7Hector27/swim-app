@@ -158,8 +158,24 @@ internalRouter.post(
     // older than 30 days, preserving the structured status/timestamps for
     // audit while releasing swimmer names and addresses. Both are capped
     // internally so they fit in a cron tick.
-    const emailDrainResult = await drainLessonEmailOutbox();
-    const emailScrubResult = await scrubLessonEmailPayloads();
+    let emailDrainResult = { drained: 0 };
+    let emailScrubResult = { scrubbed: 0 };
+    try {
+      emailDrainResult = await drainLessonEmailOutbox();
+    } catch (err) {
+      req.log.error(
+        { err: err instanceof Error ? err.message : String(err) },
+        "cron/tick email drain failed",
+      );
+    }
+    try {
+      emailScrubResult = await scrubLessonEmailPayloads();
+    } catch (err) {
+      req.log.error(
+        { err: err instanceof Error ? err.message : String(err) },
+        "cron/tick email scrub failed",
+      );
+    }
 
     req.log.info(
       {

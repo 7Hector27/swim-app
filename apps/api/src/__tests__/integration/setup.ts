@@ -56,3 +56,13 @@ assertLocalhost(INTEGRATION_DATABASE_URL);
 // db/client.ts reads DATABASE_URL at import time, so we must set it before any
 // test file imports the app.
 process.env["DATABASE_URL"] = INTEGRATION_DATABASE_URL;
+
+// Parent booking emails sender (ADR 028). Integration tests inject a test
+// transport via __setSenderTransportForTests, but the env parser still
+// needs EMAIL_TRANSPORT + EMAIL_FROM so that getEnv().email is non-null.
+// APP_ENV defaults to 'local' which permits any domain here.
+process.env["APP_ENV"] ??= "local";
+process.env["EMAIL_TRANSPORT"] ??= "smtp";
+process.env["EMAIL_FROM"] ??= "Axiom Aquatics Test <lessons@test.local>";
+process.env["EMAIL_SMTP_HOST"] ??= "127.0.0.1";
+process.env["EMAIL_SMTP_PORT"] ??= "54325";

@@ -16,7 +16,7 @@
 // The function never throws. Any error becomes a row update with
 // last_error set and claimed_until cleared.
 
-import { and, eq, inArray, isNotNull, lt, or, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, isNotNull, lt, or, sql } from "drizzle-orm";
 import { db } from "../../db/client";
 import { lessonEmailOutbox, lessons, profiles } from "../../db/schema";
 import { getEnv } from "../../lib/env";
@@ -189,6 +189,7 @@ interface ClaimedRow {
 }
 
 async function claimRow(outboxId: string): Promise<ClaimedRow | null> {
+  const nowAtClaim = new Date();
   return await db.transaction(async (tx) => {
     const rows = await tx
       .select({
@@ -211,7 +212,7 @@ async function claimRow(outboxId: string): Promise<ClaimedRow | null> {
             inArray(lessonEmailOutbox.status, ["pending", "failed"]),
             and(
               eq(lessonEmailOutbox.status, "sending"),
-              lt(lessonEmailOutbox.claimedUntil, sql`now()`),
+              lt(lessonEmailOutbox.claimedUntil, nowAtClaim),
             ),
           ),
         ),
@@ -256,7 +257,7 @@ async function evaluateSupersede(row: ClaimedRow): Promise<SupersedeReason | nul
       and(
         eq(lessonEmailOutbox.lessonId, row.lessonId),
         isNotNull(lessonEmailOutbox.sentAt),
-        sql`${lessonEmailOutbox.createdAt} > ${row.createdAt}`,
+        gt(lessonEmailOutbox.createdAt, row.createdAt),
       ),
     )
     .limit(1);

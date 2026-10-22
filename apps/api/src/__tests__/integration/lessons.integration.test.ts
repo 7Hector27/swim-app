@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import pino from "pino";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { createApp } from "../../app";
 import {
   adminDb,
@@ -12,6 +12,7 @@ import {
 } from "./helpers";
 import {
   availabilitySeasons,
+  lessonEmailOutbox,
   lessonLocations,
   lessonSwimmers,
   lessons,
@@ -84,6 +85,16 @@ beforeAll(async () => {
 afterAll(async () => {
   // Clean up lessons + lesson_swimmers (cascade) then swimmers.
   if (swimmerId) {
+    // lesson_email_outbox FKs lessons.id with ON DELETE RESTRICT (ADR 028).
+    const ownerLessonIds = await adminDb()
+      .select({ id: lessons.id })
+      .from(lessons)
+      .where(eq(lessons.householdId, owner.householdId));
+    if (ownerLessonIds.length > 0) {
+      await adminDb()
+        .delete(lessonEmailOutbox)
+        .where(inArray(lessonEmailOutbox.lessonId, ownerLessonIds.map((row) => row.id)));
+    }
     await adminDb().delete(lessonSwimmers).where(eq(lessonSwimmers.swimmerId, swimmerId));
     await adminDb().delete(lessons).where(eq(lessons.householdId, owner.householdId));
     await adminDb().delete(swimmers).where(eq(swimmers.id, swimmerId));
@@ -208,7 +219,17 @@ describe("POST /lessons (integration)", () => {
 
         expect(failBody.error).toBe("slot_unavailable");
 
-        // Clean up lessons created in this test.
+        // Clean up lessons created in this test — outbox rows first because
+        // of the ON DELETE RESTRICT FK (ADR 028).
+        const concLessonIds = await adminDb()
+          .select({ id: lessons.id })
+          .from(lessons)
+          .where(inArray(lessons.householdId, [owner2.householdId, owner.householdId]));
+        if (concLessonIds.length > 0) {
+          await adminDb()
+            .delete(lessonEmailOutbox)
+            .where(inArray(lessonEmailOutbox.lessonId, concLessonIds.map((row) => row.id)));
+        }
         await adminDb().delete(lessons).where(eq(lessons.householdId, owner2.householdId));
         await adminDb().delete(lessons).where(eq(lessons.householdId, owner.householdId));
         await adminDb().delete(swimmers).where(eq(swimmers.id, swimmerId2));
