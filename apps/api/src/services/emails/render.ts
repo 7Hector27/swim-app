@@ -37,28 +37,20 @@ export async function renderEmail(
   payload: LessonEmailPayload,
 ): Promise<RenderedEmail> {
   const subject = `${SUBJECT_PREFIX[event]}: ${payload.startsAtLocalDisplay}`;
-  const env = tryGetEmailEnv();
+  // SITE_URL is required by env.ts (defaulted to localhost in local, pinned
+  // to a non-localhost URL in dev/prod), so getEnv() either returns a usable
+  // siteUrl or throws at boot. No silent fallback here — a misconfigured
+  // env should surface at the sender's catch, not get buried behind a
+  // hardcoded production URL baked into email bodies.
+  const env = getEnv();
   const siteUrl = env.siteUrl;
-  const replyToEmail = env.replyTo;
+  const replyToEmail = env.email?.replyTo ?? null;
   const element = selectTemplate(event, payload, siteUrl, replyToEmail);
   const [html, text] = await Promise.all([
     renderReactEmail(element),
     renderReactEmail(element, { plainText: true }),
   ]);
   return { subject, text, html };
-}
-
-// Resolve siteUrl + replyTo from env. In the (hopefully never) case where
-// getEnv() throws (misconfigured env in a code path that still called the
-// renderer), fall back to safe placeholders — a half-rendered email is
-// better than a half-rendered crash on the drain path.
-function tryGetEmailEnv(): { siteUrl: string; replyTo: string | null } {
-  try {
-    const env = getEnv();
-    return { siteUrl: env.siteUrl, replyTo: env.email?.replyTo ?? null };
-  } catch {
-    return { siteUrl: "https://app.axiomaquatics.io", replyTo: null };
-  }
 }
 
 function selectTemplate(
