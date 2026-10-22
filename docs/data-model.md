@@ -107,7 +107,7 @@ RLS is enabled. Policies TBD.
 
 ### `coach_calendar_integrations`
 
-One row per coach while a Google Calendar integration exists. Created on first connect, updated on reconnect, deleted only on explicit coach-initiated disconnect. Persists through the `needs_reconnect` state so the dedicated calendar id and settings survive a revoked token. See ADR 027.
+One row per coach while a Google Calendar integration exists. Created on first connect, updated on reconnect, and preserved through disconnect as `status = 'disconnected'` (token material cleared, calendar id retained for the next connect). Persists through the `needs_reconnect` state too so the dedicated calendar id and settings survive a revoked token. The row is only deleted via a `coach_profile_id` FK cascade when the profile itself is deleted. See ADR 027.
 
 | Column | Type | Nullable | Default | Notes |
 |---|---|---|---|---|
@@ -116,7 +116,7 @@ One row per coach while a Google Calendar integration exists. Created on first c
 | `provider` | `text` | no | `'google'` | Forward-looking; today only `'google'` is written. |
 | `status` | `text` | no | `'active'` | CHECK IN ('active', 'needs_reconnect', 'disconnected'). Non-existence of the row = never connected; a `'disconnected'` row maps to not-connected externally but retains the calendar id. |
 | `google_calendar_id` | `text` | no | — | Returned by `calendars.insert` on first connect; reused on reconnect (whether after `needs_reconnect` or `disconnected`) when the calendar still exists in Google. |
-| `google_account_email` | `text` | yes | — | For the status card. Null when Google omitted the id_token or its `email` claim (migration 0046). The card shows "Connected" without an address in that case. |
+| `google_account_email` | `text` | yes | — | For the status card. Null when Google omitted the id_token or its `email` claim (migration 0046). Also nulled on disconnect — only needed while the UI shows "Connected as *email*" (active) or "Reconnect *email*" (needs_reconnect). |
 | `scope` | `text` | yes | — | OAuth scope granted. Non-null when `status` is `'active'`/`'needs_reconnect'`; nulled on disconnect (migration 0047). |
 | `refresh_token_ciphertext` | `bytea` | yes | — | AES-256-GCM ciphertext. Nulled on disconnect (migration 0047). |
 | `refresh_token_iv` | `bytea` | yes | — | 12-byte GCM nonce. Nulled on disconnect. |
@@ -126,6 +126,7 @@ One row per coach while a Google Calendar integration exists. Created on first c
 | `last_sync_attempted_at` | `timestamptz` | yes | — | Updated on every sync call. |
 | `last_sync_succeeded_at` | `timestamptz` | yes | — | Updated only on 2xx. |
 | `last_full_reconcile_at` | `timestamptz` | yes | — | Set when a full sync pass completes. The cron tick promotes a tick's light pass to a full pass when this is >24h old. Migration 0050. |
+| `sync_run_started_at` | `timestamptz` | yes | — | Set when a backfill or retry run starts, cleared in a `finally` block when it ends (crash or normal). The status endpoint reports `syncRunInProgress=false` when this is older than 2 minutes with no fresh `last_sync_attempted_at` progress, OR older than 10 minutes regardless of progress (hard cutoff), so a crashed/stuck run doesn't pin the UI's syncing banner. Migration 0049. |
 | `needs_reconnect_since` | `timestamptz` | yes | — | Set when a refresh returns `invalid_grant`; cleared on successful reconnect. |
 | `created_at` | `timestamptz` | no | `now()` | |
 | `updated_at` | `timestamptz` | no | `now()` | Auto-updated. |
