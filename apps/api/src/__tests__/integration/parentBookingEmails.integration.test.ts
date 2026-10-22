@@ -387,6 +387,34 @@ describe("sender — parallel send + cron drain race", () => {
   });
 });
 
+describe("sender — APP_ENV=local may skip when no transport is configured", () => {
+  it("marks the row 'skipped' with last_error='transport_not_configured' and never calls transport", async () => {
+    // Simulate the local no-op path by setting the sender's transport to null.
+    // On local, parseEnv returns email=undefined when EMAIL_TRANSPORT is unset,
+    // and the sender's getTransport() memoizes null.
+    __setSenderTransportForTests(null);
+    try {
+      const lessonId = await seedLesson({ status: "pending" });
+      const outboxId = await db.transaction(async (tx) =>
+        enqueueLessonEmail(tx, {
+          lessonId,
+          event: "booking_requested",
+          actorRole: "parent",
+        }),
+      );
+      await sendLessonEmailOutboxRow(outboxId);
+
+      const row = await readOutboxRow(outboxId);
+      expect(row?.status).toBe("skipped");
+      expect(row?.lastError).toBe("transport_not_configured");
+      expect(transport.sends).toHaveLength(0);
+    } finally {
+      // Restore the capture transport for subsequent tests.
+      __setSenderTransportForTests(transport);
+    }
+  });
+});
+
 describe("outbox write — declineReason length cap", () => {
   it("caps payload.declineReason at the shared max length even if a caller bypasses the request schema", async () => {
     const { DECLINE_REASON_MAX_LENGTH } = await import("@swim-app/shared");

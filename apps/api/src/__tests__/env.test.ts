@@ -203,6 +203,18 @@ describe("parseEnv — APP_ENV=prod", () => {
     expectIssue({ ...prodDeployBase, EMAIL_TRANSPORT: "smtp" }, /EMAIL_TRANSPORT/);
   });
 
+  it("rejects a missing EMAIL_TRANSPORT (no default to 'resend')", () => {
+    const raw = { ...prodDeployBase } as Record<string, string | undefined>;
+    delete raw.EMAIL_TRANSPORT;
+    expectIssue(raw, /EMAIL_TRANSPORT.*required/);
+  });
+
+  it("rejects a missing EMAIL_FROM", () => {
+    const raw = { ...prodDeployBase } as Record<string, string | undefined>;
+    delete raw.EMAIL_FROM;
+    expectIssue(raw, /EMAIL_FROM.*required/);
+  });
+
   it("accepts EMAIL_FROM in a subdomain of send.axiomaquatics.io", () => {
     const env = parseEnv({
       ...prodDeployBase,
@@ -224,6 +236,18 @@ describe("parseEnv — APP_ENV=dev", () => {
     const raw = { ...devDeployBase } as Record<string, string | undefined>;
     delete raw.RESEND_API_KEY;
     expectIssue(raw, /RESEND_API_KEY/);
+  });
+
+  it("rejects a missing EMAIL_TRANSPORT on dev", () => {
+    const raw = { ...devDeployBase } as Record<string, string | undefined>;
+    delete raw.EMAIL_TRANSPORT;
+    expectIssue(raw, /EMAIL_TRANSPORT.*required/);
+  });
+
+  it("rejects a missing EMAIL_FROM on dev", () => {
+    const raw = { ...devDeployBase } as Record<string, string | undefined>;
+    delete raw.EMAIL_FROM;
+    expectIssue(raw, /EMAIL_FROM.*required/);
   });
 
   it("rejects a localhost SITE_URL on dev as well as prod", () => {

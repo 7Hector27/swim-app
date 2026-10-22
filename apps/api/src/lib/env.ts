@@ -271,8 +271,9 @@ function parseEmailEnv(parsed: RawParsedEnv): EmailEnv | undefined {
 
 function validateEmailForDeployed(parsed: RawParsedEnv): string[] {
   const issues: string[] = [];
-  const transport = parsed.EMAIL_TRANSPORT ?? "resend";
-  if (transport !== "resend") {
+  if (!parsed.EMAIL_TRANSPORT) {
+    issues.push("EMAIL_TRANSPORT: required and must be 'resend' when APP_ENV is 'dev' or 'prod'");
+  } else if (parsed.EMAIL_TRANSPORT !== "resend") {
     issues.push("EMAIL_TRANSPORT: must be 'resend' when APP_ENV is 'dev' or 'prod'");
   }
   if (!parsed.EMAIL_FROM) {
@@ -284,8 +285,10 @@ function validateEmailForDeployed(parsed: RawParsedEnv): string[] {
       `EMAIL_FROM: must use the ${PROD_EMAIL_DOMAIN} domain when APP_ENV=prod (the Resend-verified sending domain)`,
     );
   }
-  if (!parsed.RESEND_API_KEY || !parsed.RESEND_API_KEY.startsWith("re_")) {
-    issues.push("RESEND_API_KEY: required and must start with 're_' when APP_ENV is 'dev' or 'prod'");
+  if (parsed.EMAIL_TRANSPORT === "resend") {
+    if (!parsed.RESEND_API_KEY || !parsed.RESEND_API_KEY.startsWith("re_")) {
+      issues.push("RESEND_API_KEY: required and must start with 're_' when APP_ENV is 'dev' or 'prod'");
+    }
   }
   return issues;
 }
