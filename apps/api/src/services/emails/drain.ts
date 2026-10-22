@@ -113,10 +113,10 @@ export async function scrubLessonEmailPayloads(): Promise<ScrubResult> {
     .where(
       and(
         inArray(lessonEmailOutbox.status, ["sent", "skipped", "superseded", "abandoned"]),
-        lt(
-          sql`coalesce(${lessonEmailOutbox.sentAt}, ${lessonEmailOutbox.lastAttemptAt}, ${lessonEmailOutbox.updatedAt})`,
-          cutoff,
-        ),
+        // coalesce(...) is a bare SQL expression with no column context,
+        // so postgres-js can't infer how to serialize the Date on its
+        // own — cast to text ISO so the comparison runs in SQL.
+        sql`coalesce(${lessonEmailOutbox.sentAt}, ${lessonEmailOutbox.lastAttemptAt}, ${lessonEmailOutbox.updatedAt}) < ${cutoff.toISOString()}::timestamptz`,
         sql`${lessonEmailOutbox.payload} ? 'swimmerFirstNames'`,
       ),
     )
