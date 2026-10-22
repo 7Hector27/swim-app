@@ -1,4 +1,5 @@
 import { Router } from "express";
+import rateLimit from "express-rate-limit";
 import { eq } from "drizzle-orm";
 import {
   GoogleOAuthCallbackQuerySchema,
@@ -18,6 +19,25 @@ import * as googleClient from "../services/googleCalendarClient";
 import { runFullSyncPass } from "../services/googleCalendarSync";
 
 export const integrationsGoogleRouter = Router();
+
+// Shields both /integrations/google/start (coach-authenticated but still
+// amplifiable per IP) and /integrations/google/callback (public per
+// Google's OAuth redirect requirement — the only non-authenticated
+// endpoint on the API). Same window + limit as leaderboard: 60 requests
+// per minute, keyed by the limiter's default (IP), with the standard
+// draft-7 rate-limit headers. In normal use a coach hits start → Google
+// → callback once per connect/reconnect, so 60/min is enormous headroom.
+// An abusive client would burn Google OAuth quota and generate DB
+// writes; capping both at 60/min is the mitigation docs/launch-checklist
+// previously flagged for deferred handling.
+const integrationsLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 60,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: { error: "Too many requests, please try again later" },
+});
+integrationsGoogleRouter.use(integrationsLimiter);
 
 // ── GET /integrations/google/start ───────────────────────────────────────────
 // Returns the Google authorize URL as JSON. The caller (a web app server
