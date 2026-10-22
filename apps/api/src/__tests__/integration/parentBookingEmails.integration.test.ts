@@ -111,7 +111,6 @@ beforeAll(async () => {
 afterAll(async () => {
   __resetSenderTransportForTests();
   if (swimmerId) {
-    await adminDb().delete(lessonEmailOutbox).where(eq(lessonEmailOutbox.lessonId, swimmerId)); // no-op; cleaned by lessonId per lesson below
     const lessonRows = await adminDb()
       .select({ id: lessons.id })
       .from(lessons)
