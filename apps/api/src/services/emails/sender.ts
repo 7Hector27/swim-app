@@ -261,19 +261,44 @@ async function claimRow(outboxId: string): Promise<ClaimedRow | null> {
 type SupersedeReason = "newer_sent_row" | "past_start_time";
 
 async function evaluateSupersede(row: ClaimedRow): Promise<SupersedeReason | null> {
-  // Newer-already-sent check: applies to every event, including CANCEL.
-  const newerSent = await db
-    .select({ id: lessonEmailOutbox.id })
-    .from(lessonEmailOutbox)
-    .where(
-      and(
-        eq(lessonEmailOutbox.lessonId, row.lessonId),
-        isNotNull(lessonEmailOutbox.sentAt),
-        gt(lessonEmailOutbox.createdAt, row.createdAt),
-      ),
-    )
-    .limit(1);
-  if (newerSent[0]) return "newer_sent_row";
+  // Newer-already-sent check.
+  //
+  // For non-CANCEL rows: any newer sent row for the same lesson supersedes
+  // this one — the follow-up already told the parent the current state.
+  //
+  // For CANCEL rows: only a later REQUEST (strictly higher ics_sequence)
+  // supersedes. A plain content email like booking_requested can arrive AFTER
+  // a CANCEL (approved→pending reschedule emits CANCEL for the old slot plus
+  // booking_requested for the new one) and must NOT prevent the CANCEL from
+  // delivering — otherwise the stale invite stays in the parent's calendar.
+  if (row.icsMethod === "CANCEL") {
+    const newerRequestSent = await db
+      .select({ id: lessonEmailOutbox.id })
+      .from(lessonEmailOutbox)
+      .where(
+        and(
+          eq(lessonEmailOutbox.lessonId, row.lessonId),
+          isNotNull(lessonEmailOutbox.sentAt),
+          eq(lessonEmailOutbox.icsMethod, "REQUEST"),
+          gt(lessonEmailOutbox.icsSequence, row.icsSequence ?? -1),
+        ),
+      )
+      .limit(1);
+    if (newerRequestSent[0]) return "newer_sent_row";
+  } else {
+    const newerSent = await db
+      .select({ id: lessonEmailOutbox.id })
+      .from(lessonEmailOutbox)
+      .where(
+        and(
+          eq(lessonEmailOutbox.lessonId, row.lessonId),
+          isNotNull(lessonEmailOutbox.sentAt),
+          gt(lessonEmailOutbox.createdAt, row.createdAt),
+        ),
+      )
+      .limit(1);
+    if (newerSent[0]) return "newer_sent_row";
+  }
 
   // Past-start-time check: CANCEL rows are exempt — their job is to clean
   // a stale invite out of the calendar, and a late CANCEL is still correct.

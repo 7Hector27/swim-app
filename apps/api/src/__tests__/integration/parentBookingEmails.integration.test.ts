@@ -303,6 +303,102 @@ describe("sender — pre-send supersede guard", () => {
     expect(row?.status).toBe("sent");
     expect(transport.sends).toHaveLength(1);
   });
+
+  it("CANCEL row is NOT superseded by a later non-invite email (approved→pending reschedule)", async () => {
+    // The approved→pending reschedule path emits two rows for the same
+    // lesson: a lesson_canceled describing the old approved slot (with
+    // ics_method=CANCEL because an invite had gone out), and a
+    // booking_requested for the new pending slot (ics_method=NULL). The
+    // booking_requested row is created AFTER the cancel row and may send
+    // first. The cancel must still deliver so the stale invite is removed
+    // from the parent's calendar.
+    const lessonId = await seedLesson({
+      status: "approved",
+      calendarInviteSentAt: new Date(),
+      calendarSequence: 1,
+    });
+
+    const cancelOutboxId = await db.transaction(async (tx) =>
+      enqueueLessonEmail(tx, {
+        lessonId,
+        event: "lesson_canceled",
+        actorRole: "parent",
+      }),
+    );
+
+    // Flip the lesson back to pending, then write the booking_requested row.
+    await adminDb()
+      .update(lessons)
+      .set({ status: "pending", canceledAt: null, canceledBy: null })
+      .where(eq(lessons.id, lessonId));
+    const bookingRequestedOutboxId = await db.transaction(async (tx) =>
+      enqueueLessonEmail(tx, {
+        lessonId,
+        event: "booking_requested",
+        actorRole: "parent",
+      }),
+    );
+
+    // Send the booking_requested row first.
+    await sendLessonEmailOutboxRow(bookingRequestedOutboxId);
+    const bookingRow = await readOutboxRow(bookingRequestedOutboxId);
+    expect(bookingRow?.status).toBe("sent");
+
+    // Then send the CANCEL row — it must still deliver.
+    await sendLessonEmailOutboxRow(cancelOutboxId);
+    const cancelRow = await readOutboxRow(cancelOutboxId);
+    expect(cancelRow?.status).toBe("sent");
+    expect(cancelRow?.icsMethod).toBe("CANCEL");
+
+    const cancelSends = transport.sends.filter(
+      (send) => send.options.idempotencyKey === cancelOutboxId,
+    );
+    expect(cancelSends).toHaveLength(1);
+    expect(cancelSends[0]?.options.ics?.method).toBe("CANCEL");
+  });
+
+  it("CANCEL row IS superseded by a later REQUEST (strictly higher ics_sequence)", async () => {
+    // Two REQUEST rows in a row (approve, then a reschedule that re-sends
+    // REQUEST at sequence 2). The follow-up REQUEST superseding an earlier
+    // CANCEL at sequence 1 means the parent's calendar already has the
+    // right invite; a stray delayed CANCEL would delete the lesson from
+    // their calendar incorrectly.
+    const lessonId = await seedLesson({
+      status: "canceled",
+      calendarInviteSentAt: new Date(),
+      calendarSequence: 1,
+    });
+    const cancelOutboxId = await db.transaction(async (tx) =>
+      enqueueLessonEmail(tx, {
+        lessonId,
+        event: "lesson_canceled",
+        actorRole: "coach",
+      }),
+    );
+    // Simulate a later REQUEST already shipped at ics_sequence=2.
+    const laterRequest = await db.transaction(async (tx) =>
+      enqueueLessonEmail(tx, {
+        lessonId,
+        event: "lesson_rescheduled",
+        actorRole: "coach",
+      }),
+    );
+    await adminDb()
+      .update(lessonEmailOutbox)
+      .set({
+        status: "sent",
+        sentAt: new Date(),
+        claimedUntil: null,
+      })
+      .where(eq(lessonEmailOutbox.id, laterRequest));
+
+    await sendLessonEmailOutboxRow(cancelOutboxId);
+    const cancelRow = await readOutboxRow(cancelOutboxId);
+    expect(cancelRow?.status).toBe("superseded");
+    expect(
+      transport.sends.filter((send) => send.options.idempotencyKey === cancelOutboxId),
+    ).toHaveLength(0);
+  });
 });
 
 describe("sender — zero deliverable recipients", () => {
