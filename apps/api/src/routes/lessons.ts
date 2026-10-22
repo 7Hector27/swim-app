@@ -596,6 +596,11 @@ lessonsRouter.post(
         lessonId: inserted.id,
         event: inserted.status === "approved" ? "lesson_confirmed" : "booking_requested",
         actorRole: "parent",
+        // initiatedBy is only read by LessonConfirmed; passing it on both
+        // branches is harmless and keeps the semantic ("parent made this
+        // booking") true for both the auto-approved and future-approved
+        // audit trail.
+        initiatedBy: "parent",
       });
 
       return { lesson: inserted, outboxId };

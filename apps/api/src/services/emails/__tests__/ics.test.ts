@@ -31,6 +31,7 @@ const basePayload: LessonEmailPayload = {
   declineReason: null,
   expiresAtLocalDisplay: null,
   coachFirstName: "Jason",
+  initiatedBy: null,
 };
 
 const fixedNow = new Date("2026-10-20T15:00:00.000Z");

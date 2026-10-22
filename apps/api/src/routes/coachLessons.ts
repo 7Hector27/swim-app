@@ -587,11 +587,14 @@ coachLessonsRouter.patch(
       if (!row) return null;
 
       // Parent booking email outbox (ADR 028): CONFIRMED with METHOD:REQUEST
-      // .ics. Snapshot-then-increments lessons.calendar_sequence.
+      // .ics. Snapshot-then-increments lessons.calendar_sequence. The parent
+      // created the lesson originally; the coach is only approving it here,
+      // so initiatedBy stays 'parent'.
       const outboxId = await enqueueLessonEmail(tx, {
         lessonId: row.id,
         event: "lesson_confirmed",
         actorRole: "coach",
+        initiatedBy: "parent",
       });
 
       return { row, outboxId };
@@ -1112,12 +1115,13 @@ coachLessonsRouter.post(
         },
       });
 
-      // Outbox row — same transaction. actorRole='coach' tells the
-      // LessonConfirmed template to render coach-scheduled copy (item 9).
+      // Outbox row — same transaction. initiatedBy='coach' tells the
+      // LessonConfirmed template to render coach-scheduled copy.
       const outboxId = await enqueueLessonEmail(tx, {
         lessonId: inserted.id,
         event: "lesson_confirmed",
         actorRole: "coach",
+        initiatedBy: "coach",
       });
 
       return { lesson: inserted, outboxId };

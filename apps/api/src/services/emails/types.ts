@@ -74,4 +74,10 @@ export interface LessonEmailPayload {
   declineReason: string | null;
   // booking_requested only. Null for everything else.
   expiresAtLocalDisplay: string | null;
+  // Who initiated the lesson itself (not who caused the current state
+  // transition — that's `actorRole`). Set for `lesson_confirmed`: 'parent'
+  // when a parent booked, 'coach' when a coach booked (ADR 029). The
+  // LessonConfirmed template branches on this to render coach-scheduled
+  // copy. Null on every other event.
+  initiatedBy: "parent" | "coach" | null;
 }
