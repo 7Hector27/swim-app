@@ -39,3 +39,11 @@ jobs:
       - run: pnpm lint
       - run: pnpm test
       - run: pnpm --filter web build
+        env:
+          # Placeholders so apps/web/src/lib/env.ts passes schema validation
+          # at `next build` time. These values are not called at build; the
+          # build only needs them to parse as URLs / non-empty strings.
+          NEXT_PUBLIC_API_URL: http://localhost:3001
+          NEXT_PUBLIC_SITE_URL: http://localhost:3000
+          NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ci-placeholder-publishable-key

@@ -57,11 +57,23 @@ assertLocalhost(INTEGRATION_DATABASE_URL);
 // test file imports the app.
 process.env["DATABASE_URL"] = INTEGRATION_DATABASE_URL;
 
+// Test defaults for env vars that the API would otherwise read from the
+// developer's local .env. Set only when unset so a real .env or CI-provided
+// value still wins. These exist so the integration suite runs identically
+// locally and in CI without depending on a developer's .env being present.
+//
+// APP_ENV=local keeps env.ts's lenient branch (CORS, SITE_URL localhost,
+// Google OAuth, prod email-domain pin are all optional). CRON_SECRET is
+// used directly by the cron-tick integration tests to sign the request
+// header; env.ts treats it as optional under APP_ENV=local but a value is
+// required for the test's own assertions.
+process.env["APP_ENV"] ??= "local";
+process.env["SITE_URL"] ??= "http://localhost:3000";
+process.env["CRON_SECRET"] ??= "test-cron-secret-aaaaaaaaaaaaaaaaaa";
+
 // Parent booking emails sender (ADR 028). Integration tests inject a test
 // transport via __setSenderTransportForTests, but the env parser still
 // needs EMAIL_TRANSPORT + EMAIL_FROM so that getEnv().email is non-null.
-// APP_ENV defaults to 'local' which permits any domain here.
-process.env["APP_ENV"] ??= "local";
 process.env["EMAIL_TRANSPORT"] ??= "smtp";
 process.env["EMAIL_FROM"] ??= "Axiom Aquatics Test <lessons@test.local>";
 process.env["EMAIL_SMTP_HOST"] ??= "127.0.0.1";
