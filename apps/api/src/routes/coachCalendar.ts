@@ -50,12 +50,20 @@ async function computeSyncCounts(): Promise<typeof ZERO_COUNTS> {
 }
 
 // A sync batch is "in progress" when its started_at is set AND recent.
-// 2-minute staleness window: if the batch wrote the started_at but then
-// the API crashed (or `finally` didn't run for some other reason), the
-// UI stops polling and shows the Retry button again. Fresh progress
+// 2-minute inactivity window: if the batch wrote the started_at but no
+// per-lesson progress has landed for 2 minutes, assume the API crashed
+// (or `finally` didn't run) and let the UI stop polling. Fresh progress
 // (lastSyncAttemptedAt) extends the window — a slow backfill shouldn't
-// time out.
-const SYNC_RUN_STALE_MS = 2 * 60 * 1000;
+// time out mid-run.
+//
+// Hard cutoff: regardless of lastSyncAttemptedAt, a run whose
+// sync_run_started_at is older than 10 minutes is considered stale.
+// This caps the inactivity-window extension so a buggy loop that
+// stamps progress forever can't pin the UI's syncing banner. 10m is
+// well above the biggest realistic batch (FULL_PASS_CAP=500 × 100ms
+// sleep ≈ 50s even assuming all failures surface instantly).
+const SYNC_RUN_INACTIVITY_MS = 2 * 60 * 1000;
+const SYNC_RUN_HARD_CUTOFF_MS = 10 * 60 * 1000;
 
 function isSyncRunInProgress(
   startedAt: Date | null,
@@ -63,11 +71,12 @@ function isSyncRunInProgress(
   nowMs: number = Date.now(),
 ): boolean {
   if (!startedAt) return false;
+  if (nowMs - startedAt.getTime() > SYNC_RUN_HARD_CUTOFF_MS) return false;
   const mostRecent = Math.max(
     startedAt.getTime(),
     lastProgressAt?.getTime() ?? 0,
   );
-  return nowMs - mostRecent <= SYNC_RUN_STALE_MS;
+  return nowMs - mostRecent <= SYNC_RUN_INACTIVITY_MS;
 }
 
 coachCalendarRouter.get(

@@ -716,7 +716,7 @@ describe("runs can't get stuck", () => {
     expect((await readIntegration()).syncRunStartedAt).toBeNull();
   });
 
-  it("recovers a stale syncRunStartedAt (>2 minutes) by returning syncRunInProgress=false", async () => {
+  it("recovers a stale syncRunStartedAt (>2 minutes with no fresh progress) by returning syncRunInProgress=false", async () => {
     await seedCoachIntegration();
     const threeMinAgo = new Date(Date.now() - 3 * 60 * 1000);
     await adminDb()
@@ -729,6 +729,25 @@ describe("runs can't get stuck", () => {
       .set("Authorization", `Bearer ${coach.accessToken}`);
     expect(res.status).toBe(200);
     expect(res.body.status).toBe("active");
+    expect(res.body.syncRunInProgress).toBe(false);
+  });
+
+  it("hard-cutoff: syncRunStartedAt older than 10 minutes is stale regardless of fresh lastSyncAttemptedAt", async () => {
+    // Regression guard for the 10-minute hard cutoff. Without it, a buggy
+    // loop stamping lastSyncAttemptedAt on every iteration could extend
+    // the 2-minute inactivity window forever and pin the UI's banner.
+    await seedCoachIntegration();
+    const elevenMinAgo = new Date(Date.now() - 11 * 60 * 1000);
+    const now = new Date();
+    await adminDb()
+      .update(coachCalendarIntegrations)
+      .set({ syncRunStartedAt: elevenMinAgo, lastSyncAttemptedAt: now })
+      .where(eq(coachCalendarIntegrations.coachProfileId, coach.userId));
+
+    const res = await request(app)
+      .get("/coach/calendar/status")
+      .set("Authorization", `Bearer ${coach.accessToken}`);
+    expect(res.status).toBe(200);
     expect(res.body.syncRunInProgress).toBe(false);
   });
 
@@ -1247,6 +1266,22 @@ describe("full pass covers today + already-synced + strays", () => {
     )[0]!.last;
     expect(after).not.toBeNull();
     expect(after!.getTime()).toBeGreaterThan(Date.now() - 60_000);
+  });
+
+  it("stops at the configured maxRows cap even when more in-window lessons exist", async () => {
+    await seedCoachIntegration();
+    // Seed 5 approved lessons so the window has at least 5 reconcilable
+    // rows (plus whatever the dev DB already carries from other
+    // households). Cap the pass at 3 — upsertEvent must be called
+    // exactly maxRows times regardless of total in-window volume.
+    const starts = [24, 48, 72, 96, 120].map((hours) => future(hours));
+    for (const start of starts) {
+      await seedLesson({ status: "approved", startsAt: start });
+    }
+
+    await runFullSyncPass(coach.userId, 3);
+
+    expect(vi.mocked(googleClient.upsertEvent)).toHaveBeenCalledTimes(3);
   });
 
   it("full pass short-circuits when integration is needs_reconnect", async () => {

@@ -251,6 +251,13 @@ async function syncLessonToGoogleInner(lessonId: string): Promise<void> {
 // batch; small enough to finish inside the 2-minute staleness window.
 const LIGHT_PASS_CAP = 50;
 
+// Full pass cap — bounded for the same reasons as the light pass cap,
+// but larger because the full pass is the system of record for drift:
+// it's what un-cancels hand-deleted Google events and cleans up stray
+// event ids. 500 lessons × 100ms gap = ~50s per batch, well within
+// the hard stale-run cutoff of 10 minutes.
+const FULL_PASS_CAP = 500;
+
 export interface LightPassResult {
   attempted: number;
   succeeded: number;
@@ -313,7 +320,10 @@ export async function runLightSyncPass(coachProfileId: string): Promise<LightPas
  * On success, writes `last_full_reconcile_at = now()` to the integration
  * row so the cron can decide when to run the next full pass.
  */
-export async function runFullSyncPass(coachProfileId: string): Promise<void> {
+export async function runFullSyncPass(
+  coachProfileId: string,
+  maxRows: number = FULL_PASS_CAP,
+): Promise<void> {
   let completed = false;
   await runSyncBatch(coachProfileId, async () => {
     const windowStart = startOfTodayLA();
@@ -329,7 +339,8 @@ export async function runFullSyncPass(coachProfileId: string): Promise<void> {
           ),
         ),
       )
-      .orderBy(asc(lessons.startsAt));
+      .orderBy(asc(lessons.startsAt))
+      .limit(maxRows);
     for (const row of rows) {
       try {
         await syncLessonToGoogle(row.id);
