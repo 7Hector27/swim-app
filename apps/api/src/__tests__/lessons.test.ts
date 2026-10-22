@@ -91,6 +91,10 @@ vi.mock("../services/emails/outbox", () => ({
   enqueueLessonEmail: vi.fn().mockResolvedValue("outbox-id-stub"),
 }));
 
+vi.mock("../services/emails/sender", () => ({
+  sendLessonEmailOutboxRow: vi.fn().mockResolvedValue(undefined),
+}));
+
 import { createApp } from "../app";
 
 const logger = pino({ level: "silent" });

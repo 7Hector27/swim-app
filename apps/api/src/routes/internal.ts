@@ -13,6 +13,7 @@ import {
   syncLessonToGoogle,
 } from "../services/googleCalendarSync";
 import { enqueueLessonEmail } from "../services/emails/outbox";
+import { sendLessonEmailOutboxRow } from "../services/emails/sender";
 import type { RequestHandler } from "express";
 
 // Promote the per-tick light pass to a full pass when last_full_reconcile_at
@@ -53,7 +54,7 @@ internalRouter.post(
   asyncHandler(async (req, res) => {
     const now = new Date();
 
-    const { expired, completed } = await db.transaction(async (tx) => {
+    const { expired, completed, expiredEmailOutboxIds } = await db.transaction(async (tx) => {
       // Pass 1: expire pending lessons past their deadline.
       const expiredRows = await tx
         .update(lessons)
@@ -70,12 +71,15 @@ internalRouter.post(
       // the expiry UPDATE so an email can never be lost between commit and
       // scheduling. The sender's supersede guard will drop any stragglers
       // if the lesson's starts_at has already passed by send time.
+      const emailOutboxIds: string[] = [];
       for (const row of expiredRows) {
-        await enqueueLessonEmail(tx, {
-          lessonId: row.id,
-          event: "request_expired",
-          actorRole: "system",
-        });
+        emailOutboxIds.push(
+          await enqueueLessonEmail(tx, {
+            lessonId: row.id,
+            event: "request_expired",
+            actorRole: "system",
+          }),
+        );
       }
 
       // Pass 2: auto-complete approved lessons whose end time has passed.
@@ -93,7 +97,7 @@ internalRouter.post(
       // No outbox row for auto-complete — parents don't get a "lesson
       // completed" email in v1 (out of scope per docs/plans/parent-booking-emails.md).
 
-      return { expired: expiredRows, completed: completedRows };
+      return { expired: expiredRows, completed: completedRows, expiredEmailOutboxIds: emailOutboxIds };
     });
 
     // Stubs: notifications (PR 7) and charges (PR 8).
@@ -112,6 +116,12 @@ internalRouter.post(
     }
     for (const row of completed) {
       queueMicrotask(() => { void syncLessonToGoogle(row.id); });
+    }
+    // Fire-and-forget parent-email sends for freshly expired lessons.
+    // Any that fail or get superseded land in the outbox drain on the
+    // next tick (phase 1 item 6).
+    for (const outboxId of expiredEmailOutboxIds) {
+      queueMicrotask(() => { void sendLessonEmailOutboxRow(outboxId); });
     }
 
     // Schedule a batch sync pass for every active coach integration. The

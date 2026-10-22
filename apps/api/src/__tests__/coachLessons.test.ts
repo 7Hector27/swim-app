@@ -86,6 +86,12 @@ vi.mock("../services/emails/outbox", () => ({
   enqueueLessonEmail: vi.fn().mockResolvedValue("outbox-id-stub"),
 }));
 
+// Keep the post-commit email sender from running in unit tests — it would
+// try to hit the DB on a microtask after each response.
+vi.mock("../services/emails/sender", () => ({
+  sendLessonEmailOutboxRow: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock("../lib/slots", () => ({
   computeAvailableSlots: mockComputeSlots,
   mergeSlotWindows: mockMergeSlotWindows,

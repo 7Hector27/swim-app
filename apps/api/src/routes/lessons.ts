@@ -43,6 +43,7 @@ import { mapConfigRow, mapSeasonRow, mapOverrideRow } from "../lib/availabilityM
 import { needsApproval, notifyBookingCreated, notifyCoachOfChange } from "../lib/lessonApproval";
 import { syncLessonToGoogle } from "../services/googleCalendarSync";
 import { enqueueLessonEmail } from "../services/emails/outbox";
+import { sendLessonEmailOutboxRow } from "../services/emails/sender";
 import { isActiveSwimmer } from "../db/queries";
 
 export const lessonsRouter = Router();
@@ -591,28 +592,29 @@ lessonsRouter.post(
 
       // Parent booking email outbox (ADR 028). Auto-approved bookings get
       // the confirmed email directly; never a request-received email on top.
-      await enqueueLessonEmail(tx, {
+      const outboxId = await enqueueLessonEmail(tx, {
         lessonId: inserted.id,
         event: inserted.status === "approved" ? "lesson_confirmed" : "booking_requested",
         actorRole: "parent",
       });
 
-      return inserted;
+      return { lesson: inserted, outboxId };
     });
 
     if (!newLesson) {
       res.status(422).json({ error: "slot_unavailable" });
       return;
     }
+    const { lesson: committedLesson, outboxId: committedOutboxId } = newLesson;
 
-    notifyBookingCreated(newLesson.id, newLesson.status === "approved");
+    notifyBookingCreated(committedLesson.id, committedLesson.status === "approved");
 
     // Fetch swimmers for response.
     const swimmerResponseRows = await db
       .select({ swimmerId: lessonSwimmers.swimmerId, firstName: swimmers.firstName, lastName: swimmers.lastName })
       .from(lessonSwimmers)
       .innerJoin(swimmers, eq(lessonSwimmers.swimmerId, swimmers.id))
-      .where(eq(lessonSwimmers.lessonId, newLesson.id));
+      .where(eq(lessonSwimmers.lessonId, committedLesson.id));
 
     const lessonSwimmerList: LessonSwimmer[] = swimmerResponseRows.map((row) => ({
       swimmerId: row.swimmerId,
@@ -621,21 +623,21 @@ lessonsRouter.post(
     }));
 
     const responseBody: LessonResponse = {
-      id: newLesson.id,
-      householdId: newLesson.householdId,
-      locationId: newLesson.locationId,
-      startsAt: newLesson.startsAt.toISOString(),
-      durationMinutes: newLesson.durationMinutes as 30 | 45 | 60,
-      type: newLesson.type,
-      status: newLesson.status,
+      id: committedLesson.id,
+      householdId: committedLesson.householdId,
+      locationId: committedLesson.locationId,
+      startsAt: committedLesson.startsAt.toISOString(),
+      durationMinutes: committedLesson.durationMinutes as 30 | 45 | 60,
+      type: committedLesson.type,
+      status: committedLesson.status,
       swimmers: lessonSwimmerList,
-      expiresAt: newLesson.expiresAt?.toISOString() ?? null,
-      approvedAt: newLesson.approvedAt?.toISOString() ?? null,
+      expiresAt: committedLesson.expiresAt?.toISOString() ?? null,
+      approvedAt: committedLesson.approvedAt?.toISOString() ?? null,
       declinedAt: null,
       declineReason: null,
       movedAt: null,
       previousStartsAt: null,
-      createdAt: newLesson.createdAt.toISOString(),
+      createdAt: committedLesson.createdAt.toISOString(),
     };
 
     res.status(201).json(responseBody);
@@ -643,7 +645,11 @@ lessonsRouter.post(
     // household's auto-approval rule fires (ADR 021). The reconcile is a
     // no-op for pending bookings but required for auto-approved ones, so
     // fire the microtask unconditionally — mirrors the other lesson routes.
-    queueMicrotask(() => { void syncLessonToGoogle(newLesson.id); });
+    queueMicrotask(() => { void syncLessonToGoogle(committedLesson.id); });
+    // Parent booking email — post-commit sender. The sender's claim lease
+    // + Resend Idempotency-Key keep this safe against the cron drain
+    // racing on the same row.
+    queueMicrotask(() => { void sendLessonEmailOutboxRow(committedOutboxId); });
   }),
 );
 
@@ -788,7 +794,7 @@ lessonsRouter.delete(
       return;
     }
 
-    await db.transaction(async (tx) => {
+    const cancelOutboxId = await db.transaction(async (tx) => {
       await tx
         .update(lessons)
         .set({ status: "canceled", canceledAt: new Date(), canceledBy: profileId })
@@ -796,7 +802,7 @@ lessonsRouter.delete(
 
       // Parent booking email outbox (ADR 028). Writes CANCEL .ics iff a
       // prior invite was issued; sends a plain-content email otherwise.
-      await enqueueLessonEmail(tx, {
+      return await enqueueLessonEmail(tx, {
         lessonId: id,
         event: "lesson_canceled",
         actorRole: isCoach ? "coach" : "parent",
@@ -808,6 +814,7 @@ lessonsRouter.delete(
     // Reconcile Google Calendar after the response. For a cancel this will
     // delete the event if one exists; a never-synced lesson is a safe no-op.
     queueMicrotask(() => { void syncLessonToGoogle(id); });
+    queueMicrotask(() => { void sendLessonEmailOutboxRow(cancelOutboxId); });
   }),
 );
 
@@ -1022,39 +1029,47 @@ lessonsRouter.patch(
       // Every other reschedule emits one lesson_rescheduled row.
       const droppedTrust =
         existingLesson!.status === "approved" && newStatus === "pending";
+      const outboxIds: string[] = [];
       if (droppedTrust) {
-        await enqueueLessonEmail(tx, {
-          lessonId: id,
-          event: "lesson_canceled",
-          actorRole: isCoach ? "coach" : "parent",
-          describe: {
-            startsAt: existingLesson!.startsAt,
-            durationMinutes: existingLesson!.durationMinutes,
-            locationId: existingLesson!.locationId,
-            expiresAt: existingLesson!.expiresAt,
-          },
-        });
-        await enqueueLessonEmail(tx, {
-          lessonId: id,
-          event: "booking_requested",
-          actorRole: isCoach ? "coach" : "parent",
-        });
+        outboxIds.push(
+          await enqueueLessonEmail(tx, {
+            lessonId: id,
+            event: "lesson_canceled",
+            actorRole: isCoach ? "coach" : "parent",
+            describe: {
+              startsAt: existingLesson!.startsAt,
+              durationMinutes: existingLesson!.durationMinutes,
+              locationId: existingLesson!.locationId,
+              expiresAt: existingLesson!.expiresAt,
+            },
+          }),
+        );
+        outboxIds.push(
+          await enqueueLessonEmail(tx, {
+            lessonId: id,
+            event: "booking_requested",
+            actorRole: isCoach ? "coach" : "parent",
+          }),
+        );
       } else {
-        await enqueueLessonEmail(tx, {
-          lessonId: id,
-          event: "lesson_rescheduled",
-          actorRole: isCoach ? "coach" : "parent",
-          previousStartsAt: existingLesson!.startsAt,
-        });
+        outboxIds.push(
+          await enqueueLessonEmail(tx, {
+            lessonId: id,
+            event: "lesson_rescheduled",
+            actorRole: isCoach ? "coach" : "parent",
+            previousStartsAt: existingLesson!.startsAt,
+          }),
+        );
       }
 
-      return updated;
+      return { updated, outboxIds };
     });
 
     if (!updatedLesson) {
       res.status(422).json({ error: "slot_unavailable" });
       return;
     }
+    const rescheduleOutboxIds = updatedLesson.outboxIds;
 
     notifyCoachOfChange(id);
 
@@ -1067,6 +1082,9 @@ lessonsRouter.patch(
     // either role path, and transparently handles the status transitions a
     // parent reschedule can trigger (approved → pending re-check).
     queueMicrotask(() => { void syncLessonToGoogle(id); });
+    for (const outboxId of rescheduleOutboxIds) {
+      queueMicrotask(() => { void sendLessonEmailOutboxRow(outboxId); });
+    }
   }),
 );
 
