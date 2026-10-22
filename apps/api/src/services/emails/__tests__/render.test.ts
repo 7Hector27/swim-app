@@ -30,6 +30,7 @@ const basePayload: LessonEmailPayload = {
   previousStartsAtLocalDisplay: null,
   declineReason: null,
   expiresAtLocalDisplay: null,
+  coachFirstName: "Jason",
 };
 
 describe("renderEmail — subjects", () => {

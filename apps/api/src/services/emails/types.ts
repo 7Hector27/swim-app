@@ -64,6 +64,11 @@ export interface LessonEmailPayload {
   // Reschedule only. ISO + display. Null for everything else.
   previousStartsAtUtc: string | null;
   previousStartsAtLocalDisplay: string | null;
+  // Coach's first name, snapshotted from profiles.full_name at outbox-write
+  // time. Used throughout the templates ("Jason canceled this lesson") so
+  // a later rename doesn't retroactively repaint a scheduled email. Null
+  // falls back to "The coach" in the renderer.
+  coachFirstName: string | null;
   // Decline only. Null when the coach didn't give a reason, or event !=
   // request_declined.
   declineReason: string | null;
