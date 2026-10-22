@@ -387,6 +387,29 @@ describe("sender — parallel send + cron drain race", () => {
   });
 });
 
+describe("outbox write — declineReason length cap", () => {
+  it("caps payload.declineReason at the shared max length even if a caller bypasses the request schema", async () => {
+    const { DECLINE_REASON_MAX_LENGTH } = await import("@swim-app/shared");
+    const lessonId = await seedLesson({
+      status: "declined",
+      calendarInviteSentAt: new Date(),
+      calendarSequence: 1,
+    });
+    const oversized = "x".repeat(DECLINE_REASON_MAX_LENGTH + 200);
+    const outboxId = await db.transaction(async (tx) =>
+      enqueueLessonEmail(tx, {
+        lessonId,
+        event: "request_declined",
+        actorRole: "coach",
+        declineReason: oversized,
+      }),
+    );
+    const row = await readOutboxRow(outboxId);
+    const payload = row?.payload as { declineReason: string };
+    expect(payload.declineReason).toHaveLength(DECLINE_REASON_MAX_LENGTH);
+  });
+});
+
 describe("drain — abandon failed rows after retry window", () => {
   it("a failed row older than 7 days is marked abandoned and no longer retried", async () => {
     const lessonId = await seedLesson({ status: "pending" });

@@ -7,6 +7,7 @@
 
 import { and, eq, inArray, sql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
+import { DECLINE_REASON_MAX_LENGTH } from "@swim-app/shared";
 
 import * as schema from "../../db/schema";
 import {
@@ -187,7 +188,15 @@ export async function enqueueLessonEmail(
     previousStartsAtLocalDisplay: input.previousStartsAt
       ? formatLessonTimeDisplay(input.previousStartsAt)
       : null,
-    declineReason: input.declineReason ?? null,
+    // Belt-and-braces cap. The request-level schema already bounds this,
+    // but writing to the outbox is a persistence boundary — anything that
+    // bypasses the schema (future callers, migrations, backfills) must not
+    // park an unbounded blob of coach-entered text in payload.declineReason,
+    // which lives up to 30 days before the retention scrub.
+    declineReason:
+      input.declineReason != null
+        ? input.declineReason.slice(0, DECLINE_REASON_MAX_LENGTH)
+        : null,
     expiresAtLocalDisplay:
       input.event === "booking_requested" && describeExpiresAt
         ? formatLessonTimeDisplay(describeExpiresAt)
