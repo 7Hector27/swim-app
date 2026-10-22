@@ -79,6 +79,13 @@ async function syncLessonToGoogleInner(lessonId: string): Promise<void> {
   // Remembered across loop iterations so the "exhausted passes" failure
   // branch can still find the right coach to log + attribute the failure.
   let coachProfileIdForFailure: string | null = null;
+  // Remembered across loop iterations: set to true after this call has
+  // run upsertEvent at least once. Needed because we don't persist the
+  // googleCalendarEventId mid-loop anymore — a drift that flips the
+  // lesson to !shouldExist between an upsert and the final write
+  // would otherwise look exactly like a lesson that was never pushed,
+  // and the short-circuit below would leave a stray event in Google.
+  let upsertedInThisCall = false;
 
   for (let pass = 1; pass <= MAX_RECONCILE_PASSES; pass++) {
     // loadReconcileContext scopes the integration query to status='active',
@@ -111,9 +118,16 @@ async function syncLessonToGoogleInner(lessonId: string): Promise<void> {
     const shouldExist =
       lesson.status === "approved" || lesson.status === "completed";
 
-    // Nothing to do when the lesson has never been pushed and no event is
-    // expected (pending/declined/canceled/etc. that was never approved).
-    if (!shouldExist && !lesson.googleCalendarEventId) {
+    // Nothing to do when the lesson has never been pushed in this call,
+    // has no DB record of an event, and shouldn't exist in Google. This
+    // catches the common cases where the hook fires but there's nothing
+    // to clean up: pending → declined, pending → expired, pending →
+    // canceled before approval. The `upsertedInThisCall` guard keeps
+    // the drift race correct — if an earlier iteration of this loop
+    // ran upsertEvent and state flipped to !shouldExist before we
+    // committed anything, we still need to delete the event we just
+    // created in Google even though no column records its id.
+    if (!shouldExist && !lesson.googleCalendarEventId && !upsertedInThisCall) {
       return;
     }
 
@@ -181,13 +195,12 @@ async function syncLessonToGoogleInner(lessonId: string): Promise<void> {
           eventId,
           body,
         );
-        // Persist the event id immediately so a drift pass that transitions
-        // to !shouldExist can see there's an event to delete. markLessonSynced
-        // at the end rewrites this to the same value — a cheap redundancy.
-        await db
-          .update(lessons)
-          .set({ googleCalendarEventId: eventId })
-          .where(eq(lessons.id, lesson.id));
+        // No intermediate write. The event id is deterministic from the
+        // lesson id (toGoogleEventId); markLessonSynced below is the
+        // sole writer of googleCalendarEventId. The flag survives into
+        // the next loop iteration so a drift to !shouldExist still
+        // triggers the cleanup delete.
+        upsertedInThisCall = true;
       } else {
         await googleClient.deleteEventIdempotent(
           env.googleOAuth,
