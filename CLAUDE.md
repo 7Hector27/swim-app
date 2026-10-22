@@ -36,6 +36,16 @@ pnpm db:sync-catalog  # upsert skills catalog reference data (idempotent; run af
 
 Never push with `--no-verify`. The pre-push hook is the CI for `dev`. Run `pnpm test:integration` locally before opening a PR.
 
+Never run any of these without asking first — they can destroy uncommitted work:
+
+- `git reset --hard`
+- `git checkout -- .` or `git checkout -- <path>` (anything that discards working-tree changes)
+- `git clean -f` / `git clean -fd`
+- `git stash` (even nominally reversible — stashes get lost; always just commit instead)
+- `git checkout <older-commit>` for any "let me see if the test passed before" bisect. Ask instead; I'll do it.
+
+If an obstacle looks like it needs one of these, stop and ask.
+
 ## Architecture
 
 **Packages**
