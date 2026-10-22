@@ -62,7 +62,19 @@ function getTransport(): EmailTransport | null {
     cachedTransport = null;
     return null;
   }
-  cachedTransport = createTransport(emailEnv);
+  const transport = createTransport(emailEnv);
+  if (!transport) {
+    // Deployed envs can't reach here — env.ts rejects a resend transport
+    // without RESEND_API_KEY and a smtp transport without host/port. Only
+    // APP_ENV=local can land here, by picking a transport but omitting the
+    // credential (e.g. EMAIL_TRANSPORT=resend without RESEND_API_KEY).
+    // The memoized `null` means the warning fires exactly once per boot.
+    log.warn(
+      { transport: emailEnv.transport },
+      "lesson-email createTransport returned null (missing credential for the chosen transport)",
+    );
+  }
+  cachedTransport = transport;
   return cachedTransport;
 }
 
