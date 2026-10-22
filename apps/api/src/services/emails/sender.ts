@@ -178,6 +178,10 @@ async function sendInner(outboxId: string): Promise<void> {
   }
 
   await finalizeFailed(outboxId, result.error?.kind ?? "unexpected", result.errorMessage);
+  // Don't echo result.errorMessage into the log line — Resend's error
+  // messages sometimes include the recipient address or body fragments,
+  // and the DB row's last_error already preserves the full detail for
+  // debugging. errorKind is enough for triage.
   log.warn(
     {
       outboxId,
@@ -186,7 +190,6 @@ async function sendInner(outboxId: string): Promise<void> {
       transport: emailEnv.transport,
       attempts: claimed.attempts + 1,
       errorKind: result.error?.kind,
-      lastError: result.errorMessage,
     },
     "lesson-email send failed",
   );
