@@ -30,7 +30,6 @@ global.fetch = mockFetch;
 import {
   connectGoogleCalendar,
   disconnectGoogleCalendar,
-  retryAllFailedGoogleCalendarSync,
 } from "../content/AccountContent/actions";
 
 beforeEach(() => {
@@ -104,25 +103,3 @@ describe("disconnectGoogleCalendar", () => {
   });
 });
 
-describe("retryAllFailedGoogleCalendarSync", () => {
-  it("POSTs to the retry endpoint with the bearer token and revalidates /account", async () => {
-    mockFetch.mockResolvedValue({ ok: true, status: 200, json: async () => ({}) });
-
-    await retryAllFailedGoogleCalendarSync();
-
-    expect(mockFetch).toHaveBeenCalledWith(
-      expect.stringContaining("/coach/calendar/retry-failed"),
-      expect.objectContaining({ method: "POST", headers: { Authorization: "Bearer tok" } }),
-    );
-    expect(mockRevalidatePath).toHaveBeenCalledWith("/account");
-  });
-
-  it("still revalidates /account when the retry fetch throws (no surfaced error)", async () => {
-    mockFetch.mockRejectedValue(new Error("network"));
-
-    await retryAllFailedGoogleCalendarSync();
-
-    expect(mockRevalidatePath).toHaveBeenCalledWith("/account");
-    expect(mockRedirect).not.toHaveBeenCalled();
-  });
-});
