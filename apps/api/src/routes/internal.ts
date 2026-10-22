@@ -14,6 +14,7 @@ import {
 } from "../services/googleCalendarSync";
 import { enqueueLessonEmail } from "../services/emails/outbox";
 import { sendLessonEmailOutboxRow } from "../services/emails/sender";
+import { drainLessonEmailOutbox, scrubLessonEmailPayloads } from "../services/emails/drain";
 import type { RequestHandler } from "express";
 
 // Promote the per-tick light pass to a full pass when last_full_reconcile_at
@@ -151,8 +152,24 @@ internalRouter.post(
       }
     }
 
+    // Parent booking email outbox drain + retention (ADR 028). The drain
+    // picks up any pending / failed / expired-claim rows and finalizes
+    // them sequentially. The scrub pass nulls payload on terminal rows
+    // older than 30 days, preserving the structured status/timestamps for
+    // audit while releasing swimmer names and addresses. Both are capped
+    // internally so they fit in a cron tick.
+    const emailDrainResult = await drainLessonEmailOutbox();
+    const emailScrubResult = await scrubLessonEmailPayloads();
+
     req.log.info(
-      { expiredCount: expired.length, completedCount: completed.length, fullPasses, lightPasses },
+      {
+        expiredCount: expired.length,
+        completedCount: completed.length,
+        fullPasses,
+        lightPasses,
+        emailDrained: emailDrainResult.drained,
+        emailScrubbed: emailScrubResult.scrubbed,
+      },
       "cron/tick",
     );
 
@@ -161,6 +178,8 @@ internalRouter.post(
       completed: completed.length,
       fullPasses,
       lightPasses,
+      emailDrained: emailDrainResult.drained,
+      emailScrubbed: emailScrubResult.scrubbed,
     });
   }),
 );
