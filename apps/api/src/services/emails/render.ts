@@ -11,6 +11,7 @@ import type { LessonEmailEvent, LessonEmailPayload } from "./types";
 export interface RenderedEmail {
   subject: string;
   text: string;
+  html?: string;
 }
 
 const SUBJECT_PREFIX: Record<LessonEmailEvent, string> = {

@@ -21,9 +21,10 @@ import { db } from "../../db/client";
 import { lessonEmailOutbox, lessons, profiles } from "../../db/schema";
 import { getEnv } from "../../lib/env";
 import { logger as rootLogger } from "../../logger";
+import { buildIcs } from "./ics";
 import { renderEmail } from "./render";
-import { createTransport, type EmailTransport, type TransportError } from "./transport";
-import type { LessonEmailEvent, LessonEmailPayload } from "./types";
+import { createTransport, type EmailTransport, type IcsAttachment, type TransportError } from "./transport";
+import type { IcsMethod, LessonEmailEvent, LessonEmailPayload } from "./types";
 
 // 2-minute claim lease. Covers Resend's p99 latency with ample headroom;
 // a longer-than-expected send gets a second worker to re-claim the row
@@ -124,7 +125,8 @@ async function sendInner(outboxId: string): Promise<void> {
 
   // ─── Step 4: render ───────────────────────────────────────────────────
   const payload = claimed.payload as LessonEmailPayload;
-  const { subject, text } = renderEmail(claimed.event, payload);
+  const rendered = renderEmail(claimed.event, payload);
+  const ics = buildIcsAttachment(claimed.icsMethod, claimed.icsSequence, payload);
 
   // ─── Step 5: transport ────────────────────────────────────────────────
   const emailEnv = getEnv().email!;
@@ -132,8 +134,10 @@ async function sendInner(outboxId: string): Promise<void> {
     from: emailEnv.from,
     replyTo: emailEnv.replyTo,
     to: deliverable,
-    subject,
-    text,
+    subject: rendered.subject,
+    text: rendered.text,
+    ...(rendered.html && { html: rendered.html }),
+    ...(ics && { ics }),
     idempotencyKey: outboxId,
   });
 
@@ -178,9 +182,20 @@ interface ClaimedRow {
   event: LessonEmailEvent;
   recipientProfileIds: string[];
   icsMethod: "REQUEST" | "CANCEL" | null;
+  icsSequence: number | null;
   payload: unknown;
   attempts: number;
   createdAt: Date;
+}
+
+function buildIcsAttachment(
+  method: IcsMethod | null,
+  sequence: number | null,
+  payload: LessonEmailPayload,
+): IcsAttachment | null {
+  if (method === null || sequence === null) return null;
+  const built = buildIcs({ method, sequence, payload });
+  return { filename: built.filename, content: built.body, method };
 }
 
 async function claimRow(outboxId: string): Promise<ClaimedRow | null> {
@@ -193,6 +208,7 @@ async function claimRow(outboxId: string): Promise<ClaimedRow | null> {
         event: lessonEmailOutbox.event,
         recipientProfileIds: lessonEmailOutbox.recipientProfileIds,
         icsMethod: lessonEmailOutbox.icsMethod,
+        icsSequence: lessonEmailOutbox.icsSequence,
         payload: lessonEmailOutbox.payload,
         status: lessonEmailOutbox.status,
         attempts: lessonEmailOutbox.attempts,
@@ -234,6 +250,7 @@ async function claimRow(outboxId: string): Promise<ClaimedRow | null> {
       event: row.event as LessonEmailEvent,
       recipientProfileIds: row.recipientProfileIds,
       icsMethod: (row.icsMethod ?? null) as "REQUEST" | "CANCEL" | null,
+      icsSequence: row.icsSequence,
       payload: row.payload,
       attempts: row.attempts,
       createdAt: row.createdAt,

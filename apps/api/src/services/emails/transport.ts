@@ -11,12 +11,27 @@ import { Resend } from "resend";
 import nodemailer, { type Transporter } from "nodemailer";
 import type { EmailEnv } from "../../lib/env";
 
+export interface IcsAttachment {
+  // "invite.ics" (REQUEST) or "cancel.ics" (CANCEL).
+  filename: string;
+  // The raw .ics body (CRLF-terminated per RFC 5545).
+  content: string;
+  // The .ics method, surfaced into the attachment's Content-Type so Gmail
+  // and Apple Mail render the invite preview card.
+  method: "REQUEST" | "CANCEL";
+}
+
 export interface TransportSendOptions {
   from: string;
   replyTo: string | undefined;
   to: string[];
   subject: string;
   text: string;
+  html?: string;
+  // Optional .ics attachment. The transport sets content-type to
+  // `text/calendar; method=REQUEST|CANCEL; charset=UTF-8` so Gmail renders
+  // the invite card and calendar clients consume the SEQUENCE properly.
+  ics?: IcsAttachment;
   // The outbox row id. Passed as Resend's Idempotency-Key; included in
   // SMTP's Message-ID header for traceability.
   idempotencyKey: string;
@@ -56,7 +71,20 @@ export class ResendTransport implements EmailTransport {
           to: opts.to,
           subject: opts.subject,
           text: opts.text,
+          ...(opts.html && { html: opts.html }),
           ...(opts.replyTo && { replyTo: opts.replyTo }),
+          ...(opts.ics && {
+            attachments: [
+              {
+                filename: opts.ics.filename,
+                content: Buffer.from(opts.ics.content, "utf-8").toString("base64"),
+                // Resend's attachments API carries contentType per spec,
+                // so set the full text/calendar line including method so
+                // Gmail renders the invite preview card.
+                contentType: `text/calendar; method=${opts.ics.method}; charset=UTF-8`,
+              },
+            ],
+          }),
         },
         { idempotencyKey: opts.idempotencyKey },
       );
@@ -133,7 +161,19 @@ export class SmtpTransport implements EmailTransport {
         to: opts.to.join(", "),
         subject: opts.subject,
         text: opts.text,
+        ...(opts.html && { html: opts.html }),
         ...(opts.replyTo && { replyTo: opts.replyTo }),
+        ...(opts.ics && {
+          attachments: [
+            {
+              filename: opts.ics.filename,
+              content: opts.ics.content,
+              // charset=UTF-8 so Gmail renders the invite card. method=…
+              // tells calendar clients how to treat the SEQUENCE.
+              contentType: `text/calendar; method=${opts.ics.method}; charset=UTF-8`,
+            },
+          ],
+        }),
         headers: {
           // Carries the outbox id to the Mailpit UI for traceability.
           "X-Idempotency-Key": opts.idempotencyKey,
