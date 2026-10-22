@@ -348,23 +348,50 @@ export async function runFullSyncPass(coachProfileId: string): Promise<void> {
   }
 }
 
-// Start of today in America/Los_Angeles, as a Date in UTC. We format the
-// LA date, prepend 00:00, parse back — the Intl API doesn't give us a
-// direct "LA midnight as UTC" shortcut, and this is the only call site.
-function startOfTodayLA(): Date {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Los_Angeles",
+// Start of today in America/Los_Angeles, returned as a UTC Date. Looks up
+// LA's current UTC offset (which is -07:00 during PDT and -08:00 during
+// PST) from Intl rather than hardcoding either side — a hardcoded -08:00
+// landed the window 1 hour too late every PDT day, silently excluding
+// lessons starting 00:00–01:00 LA from the sync window.
+//
+// The `now` parameter is for tests; production callers pass nothing and
+// get `new Date()`.
+function startOfTodayLA(now: Date = new Date()): Date {
+  const laDateParts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: LESSON_TIME_ZONE,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
-  }).formatToParts(new Date());
-  const year = parts.find((part) => part.type === "year")!.value;
-  const month = parts.find((part) => part.type === "month")!.value;
-  const day = parts.find((part) => part.type === "day")!.value;
-  // Interpret the LA calendar date as a UTC-offset-aware ISO. LA is UTC-7
-  // or UTC-8; use a half-step 12h earlier to be safe across DST — the
-  // date_parse will land on today-LA-start regardless.
-  return new Date(`${year}-${month}-${day}T00:00:00-08:00`);
+  }).formatToParts(now);
+  const year = Number(laDateParts.find((part) => part.type === "year")!.value);
+  const month = Number(laDateParts.find((part) => part.type === "month")!.value);
+  const day = Number(laDateParts.find((part) => part.type === "day")!.value);
+
+  // Probe LA's offset at a UTC instant guaranteed to fall on the same LA
+  // calendar date and at least an hour from either DST transition. LA is
+  // UTC-7 or UTC-8, so UTC 08:00 maps to LA 00:00 (PST) or LA 01:00 (PDT) —
+  // same LA calendar day in both cases. DST begins at LA 02:00 PST (10:00
+  // UTC) and ends at LA 02:00 PDT (09:00 UTC), both strictly after 08:00
+  // UTC, so a probe at 08:00 reads the offset that applies at LA midnight.
+  const probe = new Date(Date.UTC(year, month - 1, day, 8, 0, 0));
+  const offsetName = new Intl.DateTimeFormat("en-US", {
+    timeZone: LESSON_TIME_ZONE,
+    timeZoneName: "longOffset",
+  })
+    .formatToParts(probe)
+    .find((part) => part.type === "timeZoneName")!.value;
+  const match = /GMT([+-])(\d{2}):(\d{2})/.exec(offsetName);
+  if (!match) {
+    throw new Error(`unexpected tz offset format for ${LESSON_TIME_ZONE}: ${offsetName}`);
+  }
+  const sign = match[1] === "+" ? 1 : -1;
+  const offsetMs = sign * (Number(match[2]) * 60 + Number(match[3])) * 60 * 1000;
+
+  // LA midnight expressed as UTC. For PST (offsetMs = -28800000) this is
+  // the UTC midnight of the LA calendar date + 8h = 08:00 UTC. For PDT
+  // (-25200000) it's + 7h = 07:00 UTC.
+  const utcMidnightSameCalendarDate = Date.UTC(year, month - 1, day, 0, 0, 0);
+  return new Date(utcMidnightSameCalendarDate - offsetMs);
 }
 
 /**
@@ -586,4 +613,5 @@ export const __test = {
   toGoogleEventId,
   buildSummary,
   formatLocation,
+  startOfTodayLA,
 };
