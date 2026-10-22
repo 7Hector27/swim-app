@@ -316,6 +316,48 @@
       "when": 1792452662718,
       "tag": "0044_burly_ender_wiggin",
       "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1792603756317,
+      "tag": "0045_google_calendar_integration",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1792605917517,
+      "tag": "0046_google_calendar_email_nullable",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1792608480566,
+      "tag": "0047_keep_calendar_on_disconnect",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1792613950926,
+      "tag": "0048_coach_audit_log_payload",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1792617266793,
+      "tag": "0049_sync_run_started_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1792622660493,
+      "tag": "0050_last_full_reconcile_at",
+      "breakpoints": true
     }
   ]
 }

@@ -71,7 +71,13 @@ vi.mock("../lib/lessonApproval", () => ({
   notifyLessonApproved: vi.fn(),
   notifyLessonDeclined: vi.fn(),
   chargeLessonComplete: vi.fn(),
-  syncCalendarApproved: vi.fn(),
+}));
+
+// Keep the lesson-sync reconcile from running during unit tests — it would
+// try to hit the DB on a microtask after each response. Integration tests
+// cover the real behavior.
+vi.mock("../services/googleCalendarSync", () => ({
+  syncLessonToGoogle: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("../lib/slots", () => ({
@@ -205,8 +211,9 @@ describe("GET /coach/lessons", () => {
   it("returns lessons list", async () => {
     authAsCoach();
 
-    // lazy-expiry update
-    const updateWhere = vi.fn().mockResolvedValue([]);
+    // lazy-expiry update: .update().set().where().returning()
+    const updateReturning = vi.fn().mockResolvedValue([]);
+    const updateWhere = vi.fn().mockReturnValue({ returning: updateReturning });
     const updateSet = vi.fn().mockReturnValue({ where: updateWhere });
     mockDbUpdate.mockReturnValueOnce({ set: updateSet });
 
@@ -371,6 +378,17 @@ describe("POST /internal/cron/tick", () => {
     expect(res.status).toBe(401);
   });
 
+  // After the state-change transaction, the cron queries active
+  // coach_calendar_integrations to schedule light/full sync passes.
+  // Unit tests mock the DB entirely, so stub that select to return no
+  // active integrations (nothing to schedule).
+  function mockNoActiveIntegrations(): void {
+    const integrationWhere = vi.fn().mockResolvedValue([]);
+    mockDbSelect.mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({ where: integrationWhere }),
+    });
+  }
+
   it("expires pending lessons past their deadline", async () => {
     const expiredRow = { id: LESSON_ID };
     mockDbTransaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) => {
@@ -389,6 +407,7 @@ describe("POST /internal/cron/tick", () => {
       };
       return callback(tx);
     });
+    mockNoActiveIntegrations();
 
     const res = await request(app)
       .post("/internal/cron/tick")
@@ -409,6 +428,7 @@ describe("POST /internal/cron/tick", () => {
       };
       return callback(tx);
     });
+    mockNoActiveIntegrations();
 
     const res = await request(app)
       .post("/internal/cron/tick")
@@ -428,8 +448,9 @@ describe("lazy expiry in GET /coach/lessons", () => {
 
     const expiredRow = { ...pendingLessonRow, status: "expired" as const };
 
-    // lazy-expiry update
-    const updateWhere = vi.fn().mockResolvedValue([{ id: LESSON_ID }]);
+    // lazy-expiry update: .update().set().where().returning()
+    const updateReturning = vi.fn().mockResolvedValue([{ id: LESSON_ID }]);
+    const updateWhere = vi.fn().mockReturnValue({ returning: updateReturning });
     const updateSet = vi.fn().mockReturnValue({ where: updateWhere });
     mockDbUpdate.mockReturnValueOnce({ set: updateSet });
 

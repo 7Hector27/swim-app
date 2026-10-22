@@ -1,0 +1,1 @@
+ALTER TABLE "coach_audit_log" ADD COLUMN "payload" jsonb;

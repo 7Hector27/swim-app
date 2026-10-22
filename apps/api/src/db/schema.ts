@@ -4,7 +4,9 @@ import {
   AnyPgColumn,
   boolean,
   check,
+  customType,
   date,
+  index,
   integer,
   jsonb,
   numeric,
@@ -18,6 +20,16 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+
+// Raw bytes for encrypted token material. Drizzle has no first-class bytea
+// column, so we define it once here and reuse it. Column-level `.notNull()`
+// / nullability controls the inferred type — don't pin `notNull: true` here
+// or every bytea column is forced non-null regardless of its definition.
+const bytea = customType<{ data: Buffer }>({
+  dataType() {
+    return "bytea";
+  },
+});
 
 // ── Skills catalog ────────────────────────────────────────────────────────────
 
@@ -775,6 +787,74 @@ export const coachNotes = pgTable(
   },
   (table) => [
     check("coach_notes_body_not_blank", sql`${table.body} <> ''`),
+  ],
+).enableRLS();
+
+// ── Coach Google Calendar integration + coach audit log ───────────────────────
+
+export const coachCalendarIntegrations = pgTable(
+  "coach_calendar_integrations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    coachProfileId: uuid("coach_profile_id").notNull().references(() => profiles.id, { onDelete: "cascade" }),
+    provider: text("provider").notNull().default("google"),
+    status: text("status").notNull().default("active"),
+    googleCalendarId: text("google_calendar_id").notNull(),
+    googleAccountEmail: text("google_account_email"),
+    // Nullable when status='disconnected': disconnect revokes the token at
+    // Google and clears these fields so no stale ciphertext sits around.
+    // The calendar id and status row persist so reconnect can reuse the id
+    // (see ADR 027). On status='active' or 'needs_reconnect' they are set.
+    scope: text("scope"),
+    refreshTokenCiphertext: bytea("refresh_token_ciphertext"),
+    refreshTokenIv: bytea("refresh_token_iv"),
+    refreshTokenTag: bytea("refresh_token_tag"),
+    refreshTokenKeyVersion: integer("refresh_token_key_version"),
+    connectedAt: timestamp("connected_at", { withTimezone: true }).notNull().defaultNow(),
+    lastSyncAttemptedAt: timestamp("last_sync_attempted_at", { withTimezone: true }),
+    lastSyncSucceededAt: timestamp("last_sync_succeeded_at", { withTimezone: true }),
+    // Set when a full sync pass finishes successfully. The cron tick reads
+    // this to decide whether to promote its light pass to a full pass
+    // (when > 24 hours old). See ADR 027.
+    lastFullReconcileAt: timestamp("last_full_reconcile_at", { withTimezone: true }),
+    needsReconnectSince: timestamp("needs_reconnect_since", { withTimezone: true }),
+    // Set when a backfill or retry run starts, cleared in a finally block
+    // when it ends (crash or normal). The status endpoint treats a value
+    // older than 2 minutes with no fresh last_sync_attempted_at progress
+    // as a crashed run and reports the run as not in progress so the UI
+    // stops polling and shows the Retry button again. See ADR 027.
+    syncRunStartedAt: timestamp("sync_run_started_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdateFn(() => new Date()),
+  },
+  (table) => [
+    uniqueIndex("coach_calendar_integrations_coach_profile_uniq").on(table.coachProfileId),
+    check(
+      "coach_calendar_integrations_status_valid",
+      sql`${table.status} IN ('active', 'needs_reconnect', 'disconnected')`,
+    ),
+  ],
+).enableRLS();
+
+export const coachAuditLog = pgTable(
+  "coach_audit_log",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    coachId: uuid("coach_id").notNull().references(() => profiles.id, { onDelete: "restrict" }),
+    actorId: uuid("actor_id").notNull().references(() => profiles.id, { onDelete: "restrict" }),
+    action: text("action").notNull(),
+    targetProfileId: uuid("target_profile_id").references(() => profiles.id, { onDelete: "restrict" }),
+    targetSwimmerId: uuid("target_swimmer_id").references(() => swimmers.id, { onDelete: "restrict" }),
+    newRole: householdRoleEnum("new_role"),
+    // Opaque JSON payload for events whose shape doesn't fit the shared
+    // target_*/new_role columns. Added in migration 0048 for the bulk-retry
+    // audit row's attempted/succeeded/failed counts. Keep usage sparse —
+    // this column is a convenience, not a durable schema contract.
+    payload: jsonb("payload"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("coach_audit_log_coach_created_idx").on(table.coachId, table.createdAt.desc()),
   ],
 ).enableRLS();
 

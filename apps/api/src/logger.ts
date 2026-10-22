@@ -11,10 +11,8 @@ export const logger = pino({
   },
   serializers: {
     req(req) {
-      // Redact invite tokens from the URL so raw tokens never appear in logs.
-      // Tokens are 43-char base64url strings; match /invites/<token>[/...].
       const rawUrl = (req.url as string | undefined) ?? "";
-      const url = rawUrl.replace(/^(\/invites\/)([A-Za-z0-9_-]{20,})(\/|$)/, "$1[redacted]$3");
+      const url = sanitizeUrl(rawUrl);
       return {
         id: req.id as unknown,
         method: req.method as unknown,
@@ -24,3 +22,21 @@ export const logger = pino({
     },
   },
 });
+
+// URL redactions applied before any request/response ever reaches a log sink.
+// Add new rules here instead of sprinkling them across route handlers.
+function sanitizeUrl(url: string): string {
+  // Invite tokens are 20+ char base64url strings embedded in the path.
+  let out = url.replace(/^(\/invites\/)([A-Za-z0-9_-]{20,})(\/|$)/, "$1[redacted]$3");
+
+  // Google OAuth callback: both ?code and ?state are high-value secrets. The
+  // code is a one-time grant redeemable for a refresh token; the state is the
+  // signed CSRF binding. Replace values but keep the keys so log readers can
+  // still see the shape of the request.
+  if (out.startsWith("/integrations/google/callback")) {
+    out = out.replace(/([?&])code=[^&]*/gi, "$1code=[redacted]");
+    out = out.replace(/([?&])state=[^&]*/gi, "$1state=[redacted]");
+  }
+
+  return out;
+}

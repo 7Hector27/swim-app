@@ -193,10 +193,17 @@ export const DeclineLessonBodySchema = z.object({
 });
 export type DeclineLessonBody = z.infer<typeof DeclineLessonBodySchema>;
 
+export const CalendarSyncStatusSchema = z.enum(["not_synced", "synced", "sync_failed"]);
+export type CalendarSyncStatus = z.infer<typeof CalendarSyncStatusSchema>;
+
 export const CoachListLessonsQuerySchema = z.object({
   status: LessonStatusSchema.optional(),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   householdId: z.string().uuid().optional(),
+  // Filter by Google Calendar sync state. Added for the "N lessons failed to
+  // sync" chip on the coach account card (ADR 027). Does not change the
+  // existing shape of a lesson response.
+  calendarSyncStatus: CalendarSyncStatusSchema.optional(),
 });
 export type CoachListLessonsQuery = z.infer<typeof CoachListLessonsQuerySchema>;
 

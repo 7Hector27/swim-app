@@ -1,0 +1,1 @@
+ALTER TABLE "coach_calendar_integrations" ADD COLUMN "sync_run_started_at" timestamp with time zone;

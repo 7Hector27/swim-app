@@ -41,6 +41,7 @@ import { classifyDaySlots, computeAvailableSlots, getDateInLA, getISODayOfWeek }
 import { effectiveHours } from "../lib/effectiveHours";
 import { mapConfigRow, mapSeasonRow, mapOverrideRow } from "../lib/availabilityMappers";
 import { needsApproval, notifyBookingCreated, notifyCoachOfChange } from "../lib/lessonApproval";
+import { syncLessonToGoogle } from "../services/googleCalendarSync";
 import { isActiveSwimmer } from "../db/queries";
 
 export const lessonsRouter = Router();
@@ -629,6 +630,11 @@ lessonsRouter.post(
     };
 
     res.status(201).json(responseBody);
+    // A new booking can be created directly in status='approved' when the
+    // household's auto-approval rule fires (ADR 021). The reconcile is a
+    // no-op for pending bookings but required for auto-approved ones, so
+    // fire the microtask unconditionally — mirrors the other lesson routes.
+    queueMicrotask(() => { void syncLessonToGoogle(newLesson.id); });
   }),
 );
 
@@ -780,6 +786,9 @@ lessonsRouter.delete(
 
     notifyCoachOfChange(id);
     res.status(204).end();
+    // Reconcile Google Calendar after the response. For a cancel this will
+    // delete the event if one exists; a never-synced lesson is a safe no-op.
+    queueMicrotask(() => { void syncLessonToGoogle(id); });
   }),
 );
 
@@ -1000,6 +1009,10 @@ lessonsRouter.patch(
       : await loadLessonWithSwimmers(id, existingLesson.householdId);
     if (!result) { res.status(404).json({ error: "Lesson not found" }); return; }
     res.json(result);
+    // Reconcile Google Calendar after the response. Covers reschedule from
+    // either role path, and transparently handles the status transitions a
+    // parent reschedule can trigger (approved → pending re-check).
+    queueMicrotask(() => { void syncLessonToGoogle(id); });
   }),
 );
 
