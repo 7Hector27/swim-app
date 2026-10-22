@@ -245,7 +245,16 @@ coachCalendarRouter.delete(
           env.googleOAuth.tokenEncryptionKey,
         );
       } catch (err) {
-        req.log.warn({ err }, "disconnect: could not decrypt refresh token, skipping Google revoke");
+        // Log a shaped reason + the error's message string only, never
+        // the raw error object. Standard Node crypto errors
+        // ("Unsupported state or unable to authenticate data") don't
+        // carry key material, but a future Node version or library
+        // change could attach properties we don't want in logs. Mirrors
+        // the pattern used for Google API errors (see toSafeGoogleError).
+        req.log.warn(
+          { reason: "decrypt_failed", errorMessage: err instanceof Error ? err.message : String(err) },
+          "disconnect: could not decrypt refresh token, skipping Google revoke",
+        );
       }
     }
 
