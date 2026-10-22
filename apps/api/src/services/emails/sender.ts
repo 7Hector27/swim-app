@@ -125,7 +125,7 @@ async function sendInner(outboxId: string): Promise<void> {
 
   // ─── Step 4: render ───────────────────────────────────────────────────
   const payload = claimed.payload as LessonEmailPayload;
-  const rendered = renderEmail(claimed.event, payload);
+  const rendered = await renderEmail(claimed.event, payload);
   const ics = buildIcsAttachment(claimed.icsMethod, claimed.icsSequence, payload);
 
   // ─── Step 5: transport ────────────────────────────────────────────────
