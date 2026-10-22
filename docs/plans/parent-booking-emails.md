@@ -10,7 +10,7 @@
 
 Every state change on a booking that matters to a parent — request received, confirmed, declined, expired, canceled, rescheduled — produces one transactional email to the household's owners and managers. Delivery is decoupled from the booking write via an outbox table: the same `db.transaction()` that mutates the lesson inserts a `lesson_email_outbox` row. A sender fires right after commit for low-latency delivery, and the existing `POST /internal/cron/tick` drains failed or still-pending rows on every invocation. The outbox is the durability guarantee — nothing is sent inside the booking transaction, and nothing can be lost by a crash between commit and send.
 
-Transport is Resend's API on the dev deploy and in production (sharing the already-verified `send.axiomaquatics.io` domain), and SMTP to the local Supabase stack's Mailpit when running locally. A new `APP_ENV` env var (`local` | `dev` | `prod`) drives environment-gated behavior — crucially, `APP_ENV=dev` requires `EMAIL_ALLOWLIST` to be set and non-empty as a fail-safe so the dev deploy can never email the whole user base, and `APP_ENV=prod` rejects any `EMAIL_ALLOWLIST`. Confirmed and rescheduled emails attach an `.ics` invite (`METHOD:REQUEST`) with a deterministic UID per lesson and a monotonically increasing `SEQUENCE` starting at 0; canceled, declined-after-approval, and expired-after-approval send `METHOD:CANCEL` with the same UID. Templates are built with React Email and ship as HTML + plain-text alternatives.
+Transport is Resend's API on the dev deploy and in production (sharing the already-verified `send.axiomaquatics.io` domain), and SMTP to the local Supabase stack's Mailpit when running locally. A new `APP_ENV` env var (`local` | `dev` | `prod`) drives environment-gated behavior — on dev and prod the sender resolves recipients from `profiles` where `email_verified_at` is non-null, so a parent needs to have confirmed their email before any booking email can reach them. Confirmed and rescheduled emails attach an `.ics` invite (`METHOD:REQUEST`) with a deterministic UID per lesson and a monotonically increasing `SEQUENCE` starting at 0; canceled, declined-after-approval, and expired-after-approval send `METHOD:CANCEL` with the same UID. Templates are built with React Email and ship as HTML + plain-text alternatives.
 
 This is scope-limited to parent-facing email. Coach alerts, web push, and SMS are explicitly out of scope and will come later.
 
@@ -44,7 +44,7 @@ The transactional outbox. One row per email event per lesson. Written inside the
 | `ics_method` | `text` | yes | — | `'REQUEST'`, `'CANCEL'`, or NULL. NULL means "attach no `.ics`" — used for `booking_requested`, `request_declined`-without-prior-invite, `request_expired`-without-prior-invite. Set at write time from the lesson's state so it's frozen alongside the payload. |
 | `ics_sequence` | `integer` | yes | — | Value to put in the `.ics` `SEQUENCE:` field. Snapshot of `lessons.calendar_sequence` at write time. Null when `ics_method` is null. |
 | `payload` | `jsonb` | no | — | Frozen render inputs: swimmer first names, LA-formatted date + time, location name + address (whole address OK for home pools — the email only goes to that household), deep link to `/dashboard/lessons/:id`, previous `starts_at` for reschedule, decline reason if present, who initiated the change (`'coach'` or `'parent'`). Freezing means a later edit on the lesson row never retroactively repaints a scheduled email. |
-| `status` | `text` | no | `'pending'` | CHECK: `'pending' \| 'sending' \| 'sent' \| 'failed' \| 'skipped' \| 'superseded'`. `'sending'` is the claimed-but-not-yet-finished state (see "Claim before sending" below). `'skipped'` means the sender resolved zero deliverable recipients (e.g. nobody has a verified email, or the allowlist stripped the list to empty). `'superseded'` is a terminal "do not send" state applied by the pre-send guard when a newer outbox row for the same lesson has already shipped or the lesson's start time is in the past. `'sent'`, `'skipped'`, and `'superseded'` are terminal; `'pending'`, `'sending'` (if its claim has expired), and `'failed'` are picked up by the drain. |
+| `status` | `text` | no | `'pending'` | CHECK: `'pending' \| 'sending' \| 'sent' \| 'failed' \| 'skipped' \| 'superseded'`. `'sending'` is the claimed-but-not-yet-finished state (see "Claim before sending" below). `'skipped'` means the sender resolved zero deliverable recipients at send time — i.e. no profile in `recipient_profile_ids` had both `email` and `email_verified_at` set. `'superseded'` is a terminal "do not send" state applied by the pre-send guard when a newer outbox row for the same lesson has already shipped or the lesson's start time is in the past. `'sent'`, `'skipped'`, and `'superseded'` are terminal; `'pending'`, `'sending'` (if its claim has expired), and `'failed'` are picked up by the drain. |
 | `attempts` | `integer` | no | `0` | Increments on every sender attempt that reaches the transport call. Capped only by patience: the drain keeps trying while backoff allows. |
 | `claimed_until` | `timestamptz` | yes | — | Non-null only while the row is `status='sending'`. Set to `now() + interval '2 minutes'` when the sender claims the row; the drain treats any `'sending'` row whose claim has expired as recoverable (another sender crashed mid-send) and re-claims it. Cleared when the row transitions to a terminal state. |
 | `last_error` | `text` | yes | — | Short error summary (transport status + reason). Never includes email bodies, names, or addresses so logs stay clean per `docs/accounts.md`. |
@@ -177,7 +177,7 @@ Single entry point used by both the post-commit microtask and the cron drain. Th
 
    If either condition flips the row, `UPDATE … SET status='superseded', claimed_until=NULL, last_error='superseded:<reason>'` and return. Supersede is terminal — no retry.
 
-3. **Resolve recipients.** `SELECT email FROM profiles WHERE id = ANY(:recipient_profile_ids) AND email IS NOT NULL AND email_verified_at IS NOT NULL`. If `EMAIL_ALLOWLIST` is non-empty (dev only — see env rules), filter to the intersection. If the resolved list is empty → `status='skipped'`, `claimed_until=NULL`, `last_error='no_deliverable_recipients'`, commit, return. (`'skipped'` is terminal.)
+3. **Resolve recipients.** `SELECT email FROM profiles WHERE id = ANY(:recipient_profile_ids) AND email IS NOT NULL AND email_verified_at IS NOT NULL`. If the resolved list is empty → `status='skipped'`, `claimed_until=NULL`, `last_error='no_deliverable_recipients'`, commit, return. (`'skipped'` is terminal.)
 
 4. **Render.** React Email → `{ subject, html, text }`. Build the `.ics` body from `payload` + `ics_method` + `ics_sequence`.
 
@@ -203,7 +203,7 @@ The transport layer returns a tagged error. The finalize step (6) uses it to dec
 | SMTP connection error (Mailpit down locally) | `status='failed'`, re-queued. Treated as transient. |
 | Unexpected exception inside the sender | caught at the top of the function, row updated the same as a transport failure with `last_error='unexpected: …'`. The claim is released so the row doesn't sit in `'sending'` until the 2-minute timeout. |
 | Pre-send guard supersede | `status='superseded'`, terminal (step 2). |
-| Zero deliverable recipients (verified-email filter or allowlist intersection empty) | `status='skipped'`, terminal. The dev deploy never flips to `'failed'` just because the allowlist excludes a row's recipients. |
+| Zero deliverable recipients (no profile in the household has `email_verified_at` set) | `status='skipped'`, terminal. The row never flips to `'failed'` just because no household member has verified their email yet. |
 
 No cap on attempts; the row keeps retrying every tick until it succeeds, supersedes, or is retention-purged. The failed-row dashboard query is `WHERE status='failed' AND attempts > 10`; if that count ever grows the on-call runs manual triage.
 
@@ -383,7 +383,7 @@ Added to `apps/api/src/lib/env.ts` `RawEnvSchema` and `ApiEnv`. The plan does no
 
 ### `APP_ENV` — explicit environment, not derived from `NODE_ENV`
 
-`apps/api/src/lib/env.ts` today gates its stricter prod-only validations on `NODE_ENV === "production"`. That worked when "production" meant "live prod only," but the Railway dev service also runs `NODE_ENV=production` by convention — Railway sets it that way to get the production flavor of the Node runtime and of library builds, not as a signal about which deployment this is. Keying environment-sensitive behavior on `NODE_ENV` therefore conflates the dev deploy with prod, which is exactly the failure mode an allowlist would hide: the dev service passes "production" validation, has no allowlist, and happily emails every seeded parent.
+`apps/api/src/lib/env.ts` today gates its stricter prod-only validations on `NODE_ENV === "production"`. That worked when "production" meant "live prod only," but the Railway dev service also runs `NODE_ENV=production` by convention — Railway sets it that way to get the production flavor of the Node runtime and of library builds, not as a signal about which deployment this is. We need the sender to know whether the deployment is dev or prod (for future per-env policy) separately from the Node build mode.
 
 Introduce an explicit **`APP_ENV`** var with values `local` | `dev` | `prod`. Every piece of email behavior is keyed on `APP_ENV`, not `NODE_ENV`. `NODE_ENV` continues to drive the Node/library build flavor and nothing else. The migration plan for `env.ts`:
 
@@ -402,7 +402,8 @@ Introduce an explicit **`APP_ENV`** var with values `local` | `dev` | `prod`. Ev
 | `RESEND_API_KEY` | `APP_ENV` ∈ {`dev`, `prod`} | `re_…` | Required when `EMAIL_TRANSPORT=resend`. |
 | `EMAIL_SMTP_HOST` | `APP_ENV=local`, `test` | `127.0.0.1` | Required when `EMAIL_TRANSPORT=smtp`. |
 | `EMAIL_SMTP_PORT` | `APP_ENV=local`, `test` | `54325` | Required when `EMAIL_TRANSPORT=smtp`. Supabase Mailpit's SMTP listener is disabled by default; we uncomment `smtp_port = 54325` in `supabase/config.toml` as part of the implementation PR. |
-| `EMAIL_ALLOWLIST` | **required when `APP_ENV=dev`**, forbidden when `APP_ENV=prod`, ignored when `APP_ENV=local` | `me@example.com,coach@example.com` | Comma-separated. When set, the sender filters each row's recipient list to the intersection; empty intersection flips the row to `status='skipped'` with a log line. The dev-required rule is a fail-safe: no plausible dev-service configuration should ever email the full user base, so missing `EMAIL_ALLOWLIST` in `APP_ENV=dev` is a parse error, not a quiet default. Local goes to Mailpit regardless; `APP_ENV=local` ignores the var entirely. |
+
+The sender does **not** carry a recipient allowlist. On dev and prod the only gate between an outbox row and a send is `profiles.email_verified_at` being non-null — a parent has to have confirmed their email with Supabase before any booking email reaches them. Local goes to Mailpit regardless.
 
 ### Validation rules in `env.ts`
 
@@ -410,12 +411,10 @@ Introduce an explicit **`APP_ENV`** var with values `local` | `dev` | `prod`. Ev
 - `APP_ENV=prod`:
   - `EMAIL_TRANSPORT=resend` required.
   - `RESEND_API_KEY` present and starts with `re_`.
-  - `EMAIL_ALLOWLIST` must be empty / absent — parse error otherwise.
   - `EMAIL_FROM` must use the `send.axiomaquatics.io` domain (or any explicitly verified prod domain, enforced via a simple suffix check).
 - `APP_ENV=dev`:
   - `EMAIL_TRANSPORT=resend` required.
   - `RESEND_API_KEY` present and starts with `re_`.
-  - `EMAIL_ALLOWLIST` **required and non-empty** — parse error otherwise. This is the dev-service fail-safe.
 - `APP_ENV=local` and `test`: all three transport vars may be absent — the API still boots; sender logs a one-time warning and marks every row `status='skipped'` so writes don't accumulate.
 
 ---
@@ -490,8 +489,7 @@ Vitest, pure logic, no DB. All email dispatch mocked at the transport boundary (
   - Decline template with and without `declineReason`.
 - `recipientResolution.test.ts`
   - Seeded profiles with mixed email verification states → only verified emails come back.
-  - `EMAIL_ALLOWLIST` filters correctly; empty intersection → zero recipients.
-  - A household with no verified-email owners/managers → zero recipients.
+  - A household with no verified-email owners/managers → zero recipients → `status='skipped'`.
 - `sender.test.ts`
   - Happy path: row goes `pending → sending → sent`, `provider_message_id` populated, `claimed_until` cleared.
   - 429 → `failed`, `next_attempt_at` set to backoff, `attempts++`, `claimed_until` cleared.
@@ -515,10 +513,8 @@ Vitest, pure logic, no DB. All email dispatch mocked at the transport boundary (
   - Scrub pass skips `'failed'`/`'pending'`/`'sending'` rows regardless of age.
   - Scrub pass is idempotent (second run does not re-scrub or clobber `_scrubbed_at`).
 - Env parsing (`env.test.ts`, extend existing)
-  - `APP_ENV=prod` + non-empty `EMAIL_ALLOWLIST` → parse error.
-  - `APP_ENV=dev` + missing `EMAIL_ALLOWLIST` → parse error (the fail-safe).
-  - `APP_ENV=dev` + non-empty `EMAIL_ALLOWLIST` → parse succeeds.
   - `APP_ENV=prod` + `EMAIL_TRANSPORT=resend` + missing `RESEND_API_KEY` → parse error.
+  - `APP_ENV=dev` + missing `RESEND_API_KEY` → parse error.
   - `APP_ENV=local` with no email vars → parse succeeds, sender uses `skipped` fallback.
   - `APP_ENV=prod` + `EMAIL_FROM` not using `send.axiomaquatics.io` → parse error.
 
@@ -541,7 +537,7 @@ New file `parentBookingEmails.integration.test.ts`:
 - Dedup under retry: fail the first send, re-run the cron tick 3 times with the mock still failing, assert exactly 3 rows in the transport mock history for the same `outbox_id` and that each attempt carried the same `Idempotency-Key`.
 - **Supersede by newer sent row:** approve a lesson (row A), stub a Resend 5xx so row A stays `pending`. Reschedule the same lesson (row B); let row B send successfully. Then drain the queue and assert row A flips to `superseded` instead of sending, and no `invite.ics` for the old slot ever leaves the transport.
 - **Supersede by past start time:** seed an approved lesson with `starts_at = now() - 1 hour` and an outbox row with `ics_method='REQUEST'`. Drain → row is `superseded`, no transport call. Repeat with `ics_method='CANCEL'` → row **sends** (start-time exemption).
-- Allowlist on dev: set `APP_ENV=dev` + `EMAIL_ALLOWLIST=stub@example.com`, write an outbox row whose recipients don't match, run the sender, assert `status='skipped'` and the transport was not called.
+- Zero deliverable recipients: clear `profiles.email_verified_at` on the household's only member, write an outbox row, run the sender, assert `status='skipped'` and the transport was not called.
 - Transaction atomicity: wrap `POST /coach/lessons/:id/approve` in a seam that forces the outbox INSERT to raise, assert the lesson row stayed `pending` (both the status update and the outbox insert rolled back together). This is the critical correctness test for the ADR.
 - `.ics` UID / SEQUENCE across a full lifecycle: approve → reschedule → cancel. Assert exactly three outbox rows, the UID is identical and matches `<lesson id>@axiomaquatics.io`, `ics_sequence` values are `0, 1, 2`, methods are `REQUEST, REQUEST, CANCEL`, `lessons.calendar_sequence` ends at `3`.
 - **Sequential drain cadence:** seed 10 pending rows, run `POST /internal/cron/tick` with a transport mock that records call-start timestamps. Assert that the drain's transport calls do not overlap (each start is after the previous end). Confirms the "await each" discipline over `Promise.all`.
@@ -554,7 +550,7 @@ New file `parentBookingEmails.integration.test.ts`:
 Documented in `docs/plans/parent-booking-emails.md` (this file) and the PR description:
 
 1. `pnpm db:up` → confirm Mailpit is reachable at `http://127.0.0.1:54324`. Uncomment `smtp_port = 54325` in `supabase/config.toml` and restart if not already done.
-2. Set `.env.local` for the API: `APP_ENV=local`, `EMAIL_TRANSPORT=smtp`, `EMAIL_SMTP_HOST=127.0.0.1`, `EMAIL_SMTP_PORT=54325`, `EMAIL_FROM=Axiom Aquatics <lessons@send.axiomaquatics.io>`, `EMAIL_ALLOWLIST=` (unset).
+2. Set `.env.local` for the API: `APP_ENV=local`, `EMAIL_TRANSPORT=smtp`, `EMAIL_SMTP_HOST=127.0.0.1`, `EMAIL_SMTP_PORT=54325`, `EMAIL_FROM=Axiom Aquatics <lessons@send.axiomaquatics.io>`.
 3. `pnpm dev`. Sign in as a seeded parent with `email_verified_at` set in `profiles`.
 4. Submit a booking at a new location → confirm the `booking_requested` email appears in the Mailpit UI with the right subject and no `.ics`.
 5. Approve as the coach → confirm the `lesson_confirmed` email arrives with `invite.ics` attached. Open the attachment in Apple Mail (macOS) or paste the body into an Outlook-compatible preview to confirm the invite installs.

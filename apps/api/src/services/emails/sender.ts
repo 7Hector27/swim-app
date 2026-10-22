@@ -6,7 +6,7 @@
 // 1. Claim the row with FOR UPDATE SKIP LOCKED (status='sending', 2min lease).
 // 2. Pre-send supersede guard (newer sent row, past start time with CANCEL
 //    exemption).
-// 3. Resolve recipients via the profiles.email mirror; apply allowlist.
+// 3. Resolve recipients via the profiles.email mirror.
 // 4. Render subject + text body (phase 1 is plain text; phase 2 adds HTML + .ics).
 // 5. Call the transport outside any DB transaction, with the outbox id as
 //    the Idempotency-Key.
@@ -106,12 +106,7 @@ async function sendInner(outboxId: string): Promise<void> {
   }
 
   // ─── Step 3: recipient resolution ─────────────────────────────────────
-  const recipients = await resolveRecipients(claimed.recipientProfileIds);
-  const allowlist = getEnv().email?.allowlist ?? [];
-  const deliverable = allowlist.length === 0
-    ? recipients
-    : recipients.filter((addr) => allowlist.includes(addr.toLowerCase()));
-
+  const deliverable = await resolveRecipients(claimed.recipientProfileIds);
   if (deliverable.length === 0) {
     await finalizeSkipped(outboxId, "no_deliverable_recipients");
     log.info(
@@ -119,7 +114,7 @@ async function sendInner(outboxId: string): Promise<void> {
         outboxId,
         lessonId: claimed.lessonId,
         event: claimed.event,
-        resolvedCount: recipients.length,
+        resolvedCount: 0,
         deliverableCount: 0,
       },
       "skipped (no deliverable recipients)",

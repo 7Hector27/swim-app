@@ -6,8 +6,8 @@
 //    lesson transaction back.
 // 4. Pre-send supersede: lesson.starts_at in the past → superseded for a
 //    REQUEST row; CANCEL rows still send.
-// 5. EMAIL_ALLOWLIST dev fail-safe: a non-matching recipient flips the row
-//    to skipped and never hits the transport.
+// 5. Zero deliverable recipients (no household member has a verified email)
+//    flips the row to skipped and never hits the transport.
 // 6. Parallel sender + cron drain on the same row → exactly one transport call.
 // 7. No PII in sender logs.
 
@@ -25,6 +25,7 @@ import {
   lessonLocations,
   lessonSwimmers,
   lessons,
+  profiles,
   swimmers,
 } from "../../db/schema";
 import { enqueueLessonEmail } from "../../services/emails/outbox";
@@ -305,17 +306,15 @@ describe("sender — pre-send supersede guard", () => {
   });
 });
 
-describe("sender — EMAIL_ALLOWLIST fail-safe", () => {
-  it("non-matching recipient flips the row to skipped and never hits the transport", async () => {
-    // Simulate APP_ENV=dev's required allowlist by overriding the env's
-    // cached email.allowlist in place. The parser only enforces non-empty
-    // allowlist when APP_ENV=dev at boot; here we're testing runtime
-    // filter behavior.
-    const { getEnv } = await import("../../lib/env");
-    const email = getEnv().email;
-    expect(email).toBeDefined();
-    const originalAllowlist = email!.allowlist;
-    email!.allowlist = ["allowed@test.local"];
+describe("sender — zero deliverable recipients", () => {
+  it("a row whose household has no verified-email members flips to skipped and never hits the transport", async () => {
+    // Clear the verified email on the owner so the recipient resolver
+    // returns an empty list. The row has to end at `skipped` (terminal,
+    // no retry) with last_error noting no deliverable recipients.
+    await adminDb()
+      .update(profiles)
+      .set({ emailVerifiedAt: null })
+      .where(eq(profiles.id, owner.userId));
 
     try {
       const lessonId = await seedLesson({ status: "pending" });
@@ -333,7 +332,10 @@ describe("sender — EMAIL_ALLOWLIST fail-safe", () => {
       expect(row?.lastError).toContain("no_deliverable_recipients");
       expect(transport.sends).toHaveLength(0);
     } finally {
-      email!.allowlist = originalAllowlist;
+      await adminDb()
+        .update(profiles)
+        .set({ emailVerifiedAt: new Date() })
+        .where(eq(profiles.id, owner.userId));
     }
   });
 });

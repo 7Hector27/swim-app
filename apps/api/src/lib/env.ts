@@ -9,8 +9,7 @@ import { z } from "zod";
 // We deliberately do NOT key behavior on NODE_ENV. Railway's dev service runs
 // NODE_ENV=production too (that's how Railway selects the production build
 // flavor of the Node runtime and of library bundles); inferring environment
-// from NODE_ENV would conflate the dev deploy with prod, which is exactly the
-// mode the EMAIL_ALLOWLIST fail-safe is designed to prevent. See ADR 028.
+// from NODE_ENV would conflate the dev deploy with prod. See ADR 028.
 //
 // Two parse surfaces: `parseEnv` validates everything the HTTP server needs;
 // `parseDbEnv` validates only the DB connection string. DB-only scripts
@@ -63,7 +62,6 @@ const RawEnvSchema = z.object({
   RESEND_API_KEY: z.string().optional(),
   EMAIL_SMTP_HOST: z.string().optional(),
   EMAIL_SMTP_PORT: z.coerce.number().int().positive().optional(),
-  EMAIL_ALLOWLIST: z.string().optional(),
 });
 
 export interface GoogleOAuthEnv {
@@ -81,10 +79,6 @@ export interface EmailEnv {
   resendApiKey: string | undefined;
   smtpHost: string | undefined;
   smtpPort: number | undefined;
-  // Dev-only fail-safe. Empty array means "no filtering" (prod, or local
-  // without the var set). Non-empty means the sender filters each row's
-  // resolved recipient list to the intersection.
-  allowlist: string[];
 }
 
 export interface ApiEnv {
@@ -108,8 +102,8 @@ export interface ApiEnv {
 export function parseEnv(raw: Record<string, string | undefined>): ApiEnv {
   // Fail-safe: a deployed server (NODE_ENV=production, which is Railway's
   // default) that forgets to set APP_ENV would otherwise silently fall
-  // through to local defaults — lenient CORS, no CRON_SECRET, no email
-  // allowlist. Refuse to boot with a specific error instead.
+  // through to local defaults — lenient CORS, no CRON_SECRET, email env
+  // treated as optional. Refuse to boot with a specific error instead.
   if (raw.NODE_ENV === "production" && !raw.APP_ENV) {
     throw new EnvValidationError([
       "APP_ENV: must be set explicitly when NODE_ENV=production (one of 'dev' or 'prod'). " +
@@ -252,14 +246,6 @@ function validateGoogleOAuthForDeployed(parsed: RawParsedEnv): string[] {
   return issues;
 }
 
-function parseAllowlist(raw: string | undefined): string[] {
-  if (!raw) return [];
-  return raw
-    .split(",")
-    .map((entry) => entry.trim().toLowerCase())
-    .filter(Boolean);
-}
-
 function parseEmailEnv(parsed: RawParsedEnv): EmailEnv | undefined {
   // Local without a transport set: sender becomes a no-op.
   if (parsed.APP_ENV === "local" && !parsed.EMAIL_TRANSPORT) {
@@ -280,7 +266,6 @@ function parseEmailEnv(parsed: RawParsedEnv): EmailEnv | undefined {
     resendApiKey: parsed.RESEND_API_KEY,
     smtpHost: parsed.EMAIL_SMTP_HOST,
     smtpPort: parsed.EMAIL_SMTP_PORT,
-    allowlist: parseAllowlist(parsed.EMAIL_ALLOWLIST),
   };
 }
 
@@ -301,18 +286,6 @@ function validateEmailForDeployed(parsed: RawParsedEnv): string[] {
   }
   if (!parsed.RESEND_API_KEY || !parsed.RESEND_API_KEY.startsWith("re_")) {
     issues.push("RESEND_API_KEY: required and must start with 're_' when APP_ENV is 'dev' or 'prod'");
-  }
-  if (parsed.APP_ENV === "prod") {
-    if (parsed.EMAIL_ALLOWLIST && parsed.EMAIL_ALLOWLIST.trim().length > 0) {
-      issues.push("EMAIL_ALLOWLIST: must be empty / absent when APP_ENV=prod");
-    }
-  } else {
-    // APP_ENV=dev
-    if (parseAllowlist(parsed.EMAIL_ALLOWLIST).length === 0) {
-      issues.push(
-        "EMAIL_ALLOWLIST: must be set and non-empty when APP_ENV=dev (fail-safe so the dev service can never email the full user base)",
-      );
-    }
   }
   return issues;
 }

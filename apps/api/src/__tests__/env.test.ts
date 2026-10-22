@@ -40,7 +40,6 @@ const devDeployBase = {
   SITE_URL: "https://dev.axiomaquatics.io",
   CORS_ORIGINS: "https://dev.axiomaquatics.io",
   GOOGLE_OAUTH_REDIRECT_URI: "https://api-dev.axiomaquatics.io/integrations/google/callback",
-  EMAIL_ALLOWLIST: "me@example.com,coach@example.com",
 };
 
 function expectIssue(raw: Record<string, string | undefined>, pattern: RegExp): EnvValidationError {
@@ -117,7 +116,6 @@ describe("parseEnv — APP_ENV=prod", () => {
     expect(env.cronSecret).toBe("a".repeat(32));
     expect(env.email).toBeDefined();
     expect(env.email?.transport).toBe("resend");
-    expect(env.email?.allowlist).toEqual([]);
   });
 
   it("rejects empty CORS_ORIGINS", () => {
@@ -184,13 +182,6 @@ describe("parseEnv — APP_ENV=prod", () => {
     );
   });
 
-  it("rejects a non-empty EMAIL_ALLOWLIST (fail-safe against staging gate left on)", () => {
-    expectIssue(
-      { ...prodDeployBase, EMAIL_ALLOWLIST: "me@example.com" },
-      /EMAIL_ALLOWLIST.*must be empty/,
-    );
-  });
-
   it("rejects an EMAIL_FROM that doesn't use send.axiomaquatics.io", () => {
     expectIssue(
       { ...prodDeployBase, EMAIL_FROM: "lessons@elsewhere.example.com" },
@@ -225,21 +216,8 @@ describe("parseEnv — APP_ENV=dev", () => {
   it("accepts a complete dev env", () => {
     const env = parseEnv(devDeployBase);
     expect(env.appEnv).toBe("dev");
-    expect(env.email?.allowlist).toEqual(["me@example.com", "coach@example.com"]);
-  });
-
-  it("rejects a missing EMAIL_ALLOWLIST (fail-safe so dev can never email everyone)", () => {
-    const raw = { ...devDeployBase } as Record<string, string | undefined>;
-    delete raw.EMAIL_ALLOWLIST;
-    expectIssue(raw, /EMAIL_ALLOWLIST.*must be set and non-empty when APP_ENV=dev/);
-  });
-
-  it("rejects an empty EMAIL_ALLOWLIST", () => {
-    expectIssue({ ...devDeployBase, EMAIL_ALLOWLIST: "" }, /EMAIL_ALLOWLIST/);
-  });
-
-  it("rejects an all-whitespace / comma-only EMAIL_ALLOWLIST", () => {
-    expectIssue({ ...devDeployBase, EMAIL_ALLOWLIST: " , , " }, /EMAIL_ALLOWLIST/);
+    expect(env.email).toBeDefined();
+    expect(env.email?.transport).toBe("resend");
   });
 
   it("rejects a missing RESEND_API_KEY on dev as well as prod", () => {
