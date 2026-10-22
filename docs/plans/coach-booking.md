@@ -315,42 +315,24 @@ Layout mirrors the parent `BookCalendarContent` so the components can be shared:
 
 ## Test plan
 
-### Unit tests (API)
+Each behavior gets one test. Integration-first — tests go in `apps/api/src/__tests__/integration/coachBooking.integration.test.ts` using the existing `createApp(logger)` + `createTestUser` harness. No new test framework (vitest, supertest, pino are already present). A behavior that can be covered equally well by a unit test and an integration test gets the integration one.
 
-In `apps/api/src/__tests__/coachLessons.test.ts` under a new `describe("POST /coach/lessons", ...)` block, using the existing `createApp(logger)` + silent-pino setup and the integration DB (same pattern as the current coach-lesson tests):
+The ten behaviors (one test each):
 
-- **Lesson created with status `approved` immediately.** No pending step; `approved_at` is set; `approved_by === coach.id` (non-null, distinct from system auto-approval); `expires_at === null`; `requested_by === coach.id`.
-- **Audit row written in the same transaction.** Insert `household_audit_log` row has `action = 'lesson_booked_by_coach'`, correct `household_id`, `actor_id`, and `payload`.
-- **Audit row rollback.** Mock `householdAuditLog` insert to throw; assert the lesson row and the `lesson_swimmers` rows are also absent (transaction rolled back).
-- **Siblings must share a household.** Request with two swimmers from different households → 422 `swimmers_not_in_household`.
-- **Archived swimmers rejected.** Request including an archived swimmer → 422 `swimmers_not_in_household` (the active-filter catches it).
-- **Home pool must belong to the booked household.** Pass another household's home pool id → 422 `not_this_households_home_pool`.
-- **Trust is created for subsequent bookings.** After a coach-booked approved lesson, `needsApproval(householdId, locationId)` returns `false`.
-- **Window checks apply when `overrideWindow === false`.** Outside hours / too soon / too far all return 422.
-- **Override skips window checks.** Same inputs with `overrideWindow: true` → 201. The audit payload's `override` field reflects which specific warnings fired.
-- **Overlap is never allowed, even under override.** Create an approved lesson at 4 PM at pool A. Submit a coach booking at 4:15 PM at pool B with `overrideWindow: true` and all warnings acknowledged → 422 `slot_unavailable`. Then same instant at the same pool → also 422.
-- **Advisory day lock serializes.** Fire two `POST /coach/lessons` requests at the same slot in parallel; exactly one succeeds, the other returns 422 `slot_unavailable`. (The lock-fairness test already covers the mechanism via `POST /lessons`; this test confirms the coach path uses the same key.)
-- **Outbox row written in the same transaction.** After a successful insert, exactly one `lesson_email_outbox` row exists for the lesson with `event = 'lesson_confirmed'`, `ics_method = 'REQUEST'`, `payload.initiatedBy = 'coach'`.
-- **Calendar hook fires.** Spy on `syncLessonToGoogle`; after `res.json()`, the microtask runs with the new lesson id. (Pattern already used in `apps/api/src/__tests__/lessons.test.ts`.)
+1. **Approved immediately, with `approved_by` set.** Coach booking returns 201. Row: `status='approved'`, `approved_at` set, `approved_by === coach.id` (non-null — distinct from system auto-approval per ADR 021), `expires_at === null`, `requested_by === coach.id`.
+2. **Audit row + outbox row written in the same transaction as the lesson insert.** After the response, exactly one `household_audit_log` row exists with `action='lesson_booked_by_coach'`, correct `household_id`, `actor_id`, and `payload`; exactly one `lesson_email_outbox` row exists with `event='lesson_confirmed'`, `ics_method='REQUEST'`, `payload.initiatedBy='coach'`.
+3. **Transactional rollback.** Mock `enqueueLessonEmail` to throw mid-transaction (same pattern used in `parentBookingEmails.integration.test.ts`); assert zero `lessons`, zero `lesson_swimmers`, zero `household_audit_log` rows for that attempt.
+4. **Direct time overlap is always rejected, even with override.** Pre-insert an approved lesson at pool A at 4 PM. Coach submits `POST /coach/lessons` for 4:15 PM at pool B with `overrideWindow: true` and every warning acknowledged → 422 `slot_unavailable`. (One test covers both same- and different-location overlap by picking the different-location case; same-location is a strict subset.)
+5. **Unacknowledged warnings return 409.** Submit a lesson at 2 AM (outside hours) with `overrideWindow: false` → 409 `warnings_not_acknowledged` with `warnings.outsideHours === true`. Re-submit same body with `overrideWindow: true` and `acknowledgedWarnings.outsideHours: true` → 201.
+6. **Window checks apply without override.** Separate test for the `overrideWindow: false` + warning path only (the override-true path is covered by test 5's second half and test 4). Submit a lesson inside the 16-hour notice window with `overrideWindow: false` → 409 with `warnings.insideNoticeWindow === true`.
+7. **Siblings must share a household.** Request with one swimmer from the booked household and one from a different household → 422 `swimmers_not_in_household`.
+8. **Archived swimmers and foreign home pools are rejected.** Two assertions in one test, both quick: archived-swimmer submission → 422 `swimmers_not_in_household`; another household's home-pool id → 422 `not_this_households_home_pool`.
+9. **Trust created for later parent bookings and calendar hook fires.** One happy-path test covers both: coach books for an untrusted household at a never-used pool → 201 → verify `calendar_sync_status` eventually leaves `not_synced` (spy on `syncLessonToGoogle` to confirm the microtask fired, same pattern as existing lesson tests). Parent `POST /lessons` for the same pool → row is `approved`, not `pending`.
+10. **Parent can cancel a coach-booked lesson.** After step 9's coach booking, parent `DELETE /lessons/:id` returns 204. The lesson row is `canceled`. One `lesson_email_outbox` row with `event='lesson_canceled'` exists (parent's cancel transaction wrote it). Reschedule is not re-tested here — it uses the same `PATCH /lessons/:id` handler already covered by `coachLessons.integration.test.ts`.
 
-### Integration tests
+Tests 4 and 5 are the only ones that need the override machinery. Tests 1, 2, 3, 9, 10 need a real DB (outbox rows + transaction rollback). Tests 6, 7, 8 could be unit-tested but go integration anyway so the whole feature exercises one harness. No separate unit-test file is added in phase 1.
 
-In `apps/api/src/__tests__/integration/` (requires `pnpm db:up`):
-
-- **Full happy path.** Coach books a lesson for an untrusted household at a new pool → row is `approved`, outbox row drains, `.ics` attachment carries `METHOD:REQUEST` and `SEQUENCE:0`, calendar sync writes a Google event id, audit row is in place. Then parent attempts a second booking at the same pool via `POST /lessons` → auto-approves (trust created).
-- **Overlap under high concurrency.** Two concurrent coach `POST /coach/lessons` calls for the same slot. Exactly one commits; the other returns `slot_unavailable`. No duplicate outbox rows.
-- **Parent can cancel a coach-booked lesson.** After a coach booking, parent `DELETE /lessons/:id` succeeds, outbox row for `lesson_canceled` written in the cancel's transaction, Google event deleted on microtask. (Confirms the parent path treats coach-booked lessons like any other.)
-- **Parent can reschedule a coach-booked lesson.** `PATCH /lessons/:id` with new `startsAt` works the same, including the honor-system edit path.
-
-### UI tests
-
-Playwright or vitest-browser once the feature is wired, covering:
-
-- Entry from `/coach/schedule` lands on the screen with no pre-fill.
-- Entry from `/coach/swimmers/[id]` lands on screen 2 with that swimmer and their household pre-selected.
-- Household search finds a household by swimmer first name.
-- Custom-time warnings render for each override reason.
-- Direct time-overlap error disables Confirm regardless of override state.
+Phase 2 (UI) adds its own browser-level tests when the screens exist — out of scope here.
 
 ---
 
