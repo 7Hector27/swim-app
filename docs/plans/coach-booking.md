@@ -213,17 +213,26 @@ Both are reconcile-safe: `syncLessonToGoogle` already handles approved lessons i
 
 ### `GET /coach/households?q=<string>` (lightweight support endpoint)
 
-The household picker needs to search households by family name or by any swimmer's name. We can add a thin endpoint:
+The household picker needs to find a family when the coach types a swimmer's first name, a swimmer's last name, a member's full name, or the household's own name. Full-text isn't justified at Jason's roster size, so the query is a **case-insensitive contains match** (`ILIKE '%' || :q || '%'`) across these four columns via a `UNION` on household ids:
+
+- `swimmers.first_name`
+- `swimmers.last_name`
+- `profiles.full_name` (joined through `household_members`)
+- `households.name`
+
+A household matches if ANY of the four produces a hit for ANY of its members/swimmers. Prefix-only would miss "Smith" when a coach types "mi"; concatenation ("Alex Rivers") would miss matching last-name-only queries because of word-boundary noise — a per-column `ILIKE %q%` is both simpler and gives the right UX for a small roster.
 
 ```ts
 GET /coach/households?q=<search>&limit=20
 ```
 
-Returns `{ householdId, householdName, swimmers: [{ id, firstName, lastName, archivedAt }] }[]` matching households where any member's `profiles.full_name` or any swimmer's `first_name`/`last_name` matches the query (case-insensitive ILIKE prefix match on the whole concatenation; narrow enough for Jason's roster size without needing full-text).
+Returns `{ householdId, householdName, memberFullNames: string[], swimmers: [{ id, firstName, lastName, archivedAt }], homePoolLocationId: string | null }[]` ordered by `households.name` ascending.
 
-Archived swimmers are still returned so the UI can show "N archived" and skip them from the swimmer-pick step. The home pool is loaded on a per-household lookup in the next step (or inlined if cheap).
+The response includes archived swimmers so the UI can grey them in the swimmer-pick step. Home pool id is included so the location step can preselect "Home pool" without a second request.
 
 Zod schemas: `CoachHouseholdSearchQuerySchema`, `CoachHouseholdSearchResultSchema`. Both in `packages/shared/src/schemas/booking.ts`, exported from the package index.
+
+Minimum query length: 2 characters. A 0- or 1-character search returns an empty array (not an error) — the UI shouldn't spam the API on each keystroke, and a one-letter contains match would return the whole roster.
 
 ---
 
