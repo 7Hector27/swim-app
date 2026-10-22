@@ -1,0 +1,71 @@
+// Internal types for the lesson email outbox. Not exported through
+// @swim-app/shared — these are API-only. See ADR 028.
+
+export type LessonEmailEvent =
+  | "booking_requested"
+  | "lesson_confirmed"
+  | "request_declined"
+  | "request_expired"
+  | "lesson_canceled"
+  | "lesson_rescheduled";
+
+export type LessonEmailStatus =
+  | "pending"
+  | "sending"
+  | "sent"
+  | "failed"
+  | "skipped"
+  | "superseded";
+
+export type IcsMethod = "REQUEST" | "CANCEL";
+
+// Who performed the state change that triggered this email. Shapes the
+// body copy ("Jason moved this lesson" vs "A household member canceled…").
+export type EmailActorRole = "coach" | "parent" | "system";
+
+export interface LessonEmailLocation {
+  id: string;
+  name: string;
+  address: string;
+  city: string;
+  state: string;
+  zip: string;
+  // True when the location is a specific household's residence. The whole
+  // address is safe for this email because the recipients are that same
+  // household — unlike the ADR 027 Google Calendar carve-out.
+  isHomePool: boolean;
+}
+
+// Frozen render inputs. Written into lesson_email_outbox.payload at outbox
+// write time; a later edit on the lesson row never retroactively repaints a
+// scheduled email. Phase 1 uses this to render a plain-text body; phase 2
+// consumes the same shape in React Email templates + the .ics builder.
+export interface LessonEmailPayload {
+  // Keyed to the lesson for render-time look-ups (deep link, ics UID).
+  lessonId: string;
+  // Full ISO strings. The renderer formats to LA display using
+  // startsAtLocalDisplay/endsAtLocalDisplay below.
+  startsAtUtc: string;
+  endsAtUtc: string;
+  durationMinutes: number;
+  // Pre-formatted LA display strings so the renderer doesn't need to carry
+  // timezone logic. Example: "Sat, Nov 1, 2026 at 10:30 AM".
+  startsAtLocalDisplay: string;
+  endsAtLocalDisplay: string;
+  // First names only — never last names, birth dates, or notes. See
+  // docs/accounts.md.
+  swimmerFirstNames: string[];
+  location: LessonEmailLocation;
+  // Absolute deep link to the lesson detail in the web app. Example:
+  // https://dev.axiomaquatics.io/dashboard/lessons/<uuid>
+  deepLink: string;
+  actorRole: EmailActorRole;
+  // Reschedule only. ISO + display. Null for everything else.
+  previousStartsAtUtc: string | null;
+  previousStartsAtLocalDisplay: string | null;
+  // Decline only. Null when the coach didn't give a reason, or event !=
+  // request_declined.
+  declineReason: string | null;
+  // booking_requested only. Null for everything else.
+  expiresAtLocalDisplay: string | null;
+}

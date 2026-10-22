@@ -12,6 +12,7 @@ import {
   runLightSyncPass,
   syncLessonToGoogle,
 } from "../services/googleCalendarSync";
+import { enqueueLessonEmail } from "../services/emails/outbox";
 import type { RequestHandler } from "express";
 
 // Promote the per-tick light pass to a full pass when last_full_reconcile_at
@@ -65,6 +66,18 @@ internalRouter.post(
         )
         .returning({ id: lessons.id });
 
+      // Parent booking email outbox write (ADR 028): same transaction as
+      // the expiry UPDATE so an email can never be lost between commit and
+      // scheduling. The sender's supersede guard will drop any stragglers
+      // if the lesson's starts_at has already passed by send time.
+      for (const row of expiredRows) {
+        await enqueueLessonEmail(tx, {
+          lessonId: row.id,
+          event: "request_expired",
+          actorRole: "system",
+        });
+      }
+
       // Pass 2: auto-complete approved lessons whose end time has passed.
       const completedRows = await tx
         .update(lessons)
@@ -76,6 +89,9 @@ internalRouter.post(
           ),
         )
         .returning({ id: lessons.id });
+
+      // No outbox row for auto-complete — parents don't get a "lesson
+      // completed" email in v1 (out of scope per docs/plans/parent-booking-emails.md).
 
       return { expired: expiredRows, completed: completedRows };
     });

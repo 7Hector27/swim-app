@@ -42,6 +42,7 @@ import { effectiveHours } from "../lib/effectiveHours";
 import { mapConfigRow, mapSeasonRow, mapOverrideRow } from "../lib/availabilityMappers";
 import { needsApproval, notifyBookingCreated, notifyCoachOfChange } from "../lib/lessonApproval";
 import { syncLessonToGoogle } from "../services/googleCalendarSync";
+import { enqueueLessonEmail } from "../services/emails/outbox";
 import { isActiveSwimmer } from "../db/queries";
 
 export const lessonsRouter = Router();
@@ -588,6 +589,14 @@ lessonsRouter.post(
         body.swimmerIds.map((swimmerId) => ({ lessonId: inserted.id, swimmerId })),
       );
 
+      // Parent booking email outbox (ADR 028). Auto-approved bookings get
+      // the confirmed email directly; never a request-received email on top.
+      await enqueueLessonEmail(tx, {
+        lessonId: inserted.id,
+        event: inserted.status === "approved" ? "lesson_confirmed" : "booking_requested",
+        actorRole: "parent",
+      });
+
       return inserted;
     });
 
@@ -779,10 +788,20 @@ lessonsRouter.delete(
       return;
     }
 
-    await db
-      .update(lessons)
-      .set({ status: "canceled", canceledAt: new Date(), canceledBy: profileId })
-      .where(eq(lessons.id, id));
+    await db.transaction(async (tx) => {
+      await tx
+        .update(lessons)
+        .set({ status: "canceled", canceledAt: new Date(), canceledBy: profileId })
+        .where(eq(lessons.id, id));
+
+      // Parent booking email outbox (ADR 028). Writes CANCEL .ics iff a
+      // prior invite was issued; sends a plain-content email otherwise.
+      await enqueueLessonEmail(tx, {
+        lessonId: id,
+        event: "lesson_canceled",
+        actorRole: isCoach ? "coach" : "parent",
+      });
+    });
 
     notifyCoachOfChange(id);
     res.status(204).end();
@@ -994,7 +1013,42 @@ lessonsRouter.patch(
         .where(eq(lessons.id, id))
         .returning();
 
-      return updatedRows[0] ?? null;
+      const updated = updatedRows[0];
+      if (!updated) return null;
+
+      // Parent booking email outbox (ADR 028). The approved→pending
+      // parent-reschedule case emits TWO rows so the old invite is cleaned
+      // out of the calendar app and the new slot is announced as pending.
+      // Every other reschedule emits one lesson_rescheduled row.
+      const droppedTrust =
+        existingLesson!.status === "approved" && newStatus === "pending";
+      if (droppedTrust) {
+        await enqueueLessonEmail(tx, {
+          lessonId: id,
+          event: "lesson_canceled",
+          actorRole: isCoach ? "coach" : "parent",
+          describe: {
+            startsAt: existingLesson!.startsAt,
+            durationMinutes: existingLesson!.durationMinutes,
+            locationId: existingLesson!.locationId,
+            expiresAt: existingLesson!.expiresAt,
+          },
+        });
+        await enqueueLessonEmail(tx, {
+          lessonId: id,
+          event: "booking_requested",
+          actorRole: isCoach ? "coach" : "parent",
+        });
+      } else {
+        await enqueueLessonEmail(tx, {
+          lessonId: id,
+          event: "lesson_rescheduled",
+          actorRole: isCoach ? "coach" : "parent",
+          previousStartsAt: existingLesson!.startsAt,
+        });
+      }
+
+      return updated;
     });
 
     if (!updatedLesson) {

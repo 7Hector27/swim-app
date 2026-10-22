@@ -87,6 +87,10 @@ vi.mock("../services/googleCalendarSync", () => ({
   syncLessonToGoogle: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock("../services/emails/outbox", () => ({
+  enqueueLessonEmail: vi.fn().mockResolvedValue("outbox-id-stub"),
+}));
+
 import { createApp } from "../app";
 
 const logger = pino({ level: "silent" });
