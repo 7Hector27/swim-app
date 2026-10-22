@@ -7,14 +7,66 @@ const baseEnv = {
   SUPABASE_PUBLISHABLE_KEY: "anon-key",
 };
 
-describe("parseEnv", () => {
-  it("accepts a minimal dev env with defaults", () => {
+const validGoogleKey = Buffer.alloc(32, 7).toString("base64");
+const validGoogleStateSecret = "s".repeat(32);
+const fullGoogle = {
+  GOOGLE_OAUTH_CLIENT_ID: "client-id",
+  GOOGLE_OAUTH_CLIENT_SECRET: "client-secret",
+  GOOGLE_OAUTH_REDIRECT_URI: "http://localhost:3001/integrations/google/callback",
+  GOOGLE_TOKEN_ENCRYPTION_KEY: validGoogleKey,
+  GOOGLE_OAUTH_STATE_SECRET: validGoogleStateSecret,
+};
+
+const prodDeployBase = {
+  ...baseEnv,
+  NODE_ENV: "production",
+  APP_ENV: "prod",
+  SITE_URL: "https://app.axiomaquatics.io",
+  CORS_ORIGINS: "https://app.axiomaquatics.io",
+  CRON_SECRET: "a".repeat(32),
+  GOOGLE_OAUTH_CLIENT_ID: "client-id",
+  GOOGLE_OAUTH_CLIENT_SECRET: "client-secret",
+  GOOGLE_OAUTH_REDIRECT_URI: "https://api.axiomaquatics.io/integrations/google/callback",
+  GOOGLE_TOKEN_ENCRYPTION_KEY: validGoogleKey,
+  GOOGLE_OAUTH_STATE_SECRET: validGoogleStateSecret,
+  EMAIL_TRANSPORT: "resend",
+  EMAIL_FROM: "Axiom Aquatics <lessons@send.axiomaquatics.io>",
+  RESEND_API_KEY: "re_test_key",
+};
+
+const devDeployBase = {
+  ...prodDeployBase,
+  APP_ENV: "dev",
+  SITE_URL: "https://dev.axiomaquatics.io",
+  CORS_ORIGINS: "https://dev.axiomaquatics.io",
+  GOOGLE_OAUTH_REDIRECT_URI: "https://api-dev.axiomaquatics.io/integrations/google/callback",
+  EMAIL_ALLOWLIST: "me@example.com,coach@example.com",
+};
+
+function expectIssue(raw: Record<string, string | undefined>, pattern: RegExp): EnvValidationError {
+  let caught: unknown;
+  try {
+    parseEnv(raw);
+  } catch (err) {
+    caught = err;
+  }
+  expect(caught).toBeInstanceOf(EnvValidationError);
+  const message = (caught as EnvValidationError).issues.join("\n");
+  expect(message).toMatch(pattern);
+  return caught as EnvValidationError;
+}
+
+describe("parseEnv — base + local", () => {
+  it("accepts a minimal local env with defaults", () => {
     const env = parseEnv({ ...baseEnv });
     expect(env.nodeEnv).toBe("development");
+    expect(env.appEnv).toBe("local");
     expect(env.port).toBe(3001);
     expect(env.siteUrl).toBe("http://localhost:3000");
     expect(env.corsOrigins).toEqual([]);
     expect(env.trustProxy).toBe(0);
+    expect(env.email).toBeUndefined();
+    expect(env.googleOAuth).toBeUndefined();
   });
 
   it("parses CORS_ORIGINS as a comma-separated, trimmed list", () => {
@@ -32,13 +84,13 @@ describe("parseEnv", () => {
   });
 
   it("fails with a clear message when DATABASE_URL is missing", () => {
-    const raw = { ...baseEnv } as Record<string, string>;
+    const raw = { ...baseEnv } as Record<string, string | undefined>;
     delete raw.DATABASE_URL;
     expect(() => parseEnv(raw)).toThrow(/DATABASE_URL/);
   });
 
   it("fails with a clear message when SUPABASE_URL is missing", () => {
-    const raw = { ...baseEnv } as Record<string, string>;
+    const raw = { ...baseEnv } as Record<string, string | undefined>;
     delete raw.SUPABASE_URL;
     expect(() => parseEnv(raw)).toThrow(/SUPABASE_URL/);
   });
@@ -49,128 +101,238 @@ describe("parseEnv", () => {
     );
   });
 
-  describe("in production", () => {
-    const prodBase = {
-      ...baseEnv,
-      NODE_ENV: "production",
-      SITE_URL: "https://app.example.com",
-      CORS_ORIGINS: "https://app.example.com",
-      CRON_SECRET: "a".repeat(32),
-      GOOGLE_OAUTH_CLIENT_ID: "client-id",
-      GOOGLE_OAUTH_CLIENT_SECRET: "client-secret",
-      GOOGLE_OAUTH_REDIRECT_URI: "https://api.example.com/integrations/google/callback",
-      GOOGLE_TOKEN_ENCRYPTION_KEY: Buffer.alloc(32, 7).toString("base64"),
-      GOOGLE_OAUTH_STATE_SECRET: "s".repeat(32),
-    };
-
-    it("accepts a complete production env", () => {
-      const env = parseEnv(prodBase);
-      expect(env.nodeEnv).toBe("production");
-      expect(env.corsOrigins).toEqual(["https://app.example.com"]);
-      expect(env.cronSecret).toBe("a".repeat(32));
-    });
-
-    it("rejects empty CORS_ORIGINS and names the variable", () => {
-      let caught: unknown;
-      try {
-        parseEnv({ ...prodBase, CORS_ORIGINS: "" });
-      } catch (err) {
-        caught = err;
-      }
-      expect(caught).toBeInstanceOf(EnvValidationError);
-      expect((caught as EnvValidationError).issues.join("\n")).toMatch(/CORS_ORIGINS/);
-    });
-
-    it("rejects a localhost SITE_URL and names the variable", () => {
-      let caught: unknown;
-      try {
-        parseEnv({ ...prodBase, SITE_URL: "http://localhost:3000" });
-      } catch (err) {
-        caught = err;
-      }
-      expect(caught).toBeInstanceOf(EnvValidationError);
-      expect((caught as EnvValidationError).issues.join("\n")).toMatch(/SITE_URL/);
-    });
-
-    it("rejects a missing CRON_SECRET and names the variable", () => {
-      const raw = { ...prodBase } as Record<string, string>;
-      delete raw.CRON_SECRET;
-      let caught: unknown;
-      try {
-        parseEnv(raw);
-      } catch (err) {
-        caught = err;
-      }
-      expect(caught).toBeInstanceOf(EnvValidationError);
-      expect((caught as EnvValidationError).issues.join("\n")).toMatch(/CRON_SECRET/);
-    });
-
-    it("rejects a CRON_SECRET shorter than 32 characters", () => {
-      let caught: unknown;
-      try {
-        parseEnv({ ...prodBase, CRON_SECRET: "a".repeat(31) });
-      } catch (err) {
-        caught = err;
-      }
-      expect(caught).toBeInstanceOf(EnvValidationError);
-      expect((caught as EnvValidationError).issues.join("\n")).toMatch(
-        /CRON_SECRET.*at least 32 characters/,
-      );
-    });
-
-    it("reports every failing variable in one error", () => {
-      const raw = { ...prodBase, CORS_ORIGINS: "", SITE_URL: "http://localhost:3000" } as Record<
-        string,
-        string
-      >;
-      delete raw.CRON_SECRET;
-      let caught: unknown;
-      try {
-        parseEnv(raw);
-      } catch (err) {
-        caught = err;
-      }
-      expect(caught).toBeInstanceOf(EnvValidationError);
-      const message = (caught as EnvValidationError).message;
-      expect(message).toMatch(/CORS_ORIGINS/);
-      expect(message).toMatch(/SITE_URL/);
-      expect(message).toMatch(/CRON_SECRET/);
-    });
+  it("refuses to boot when NODE_ENV=production without APP_ENV (fail-safe)", () => {
+    expectIssue(
+      { ...baseEnv, NODE_ENV: "production" },
+      /APP_ENV: must be set explicitly when NODE_ENV=production/,
+    );
   });
 });
 
-describe("parseEnv — Google OAuth integration", () => {
-  const validKey = Buffer.alloc(32, 7).toString("base64");
-  const validStateSecret = "s".repeat(32);
-  const fullGoogle = {
-    GOOGLE_OAUTH_CLIENT_ID: "client-id",
-    GOOGLE_OAUTH_CLIENT_SECRET: "client-secret",
-    GOOGLE_OAUTH_REDIRECT_URI: "http://localhost:3001/integrations/google/callback",
-    GOOGLE_TOKEN_ENCRYPTION_KEY: validKey,
-    GOOGLE_OAUTH_STATE_SECRET: validStateSecret,
-  };
+describe("parseEnv — APP_ENV=prod", () => {
+  it("accepts a complete prod env", () => {
+    const env = parseEnv(prodDeployBase);
+    expect(env.appEnv).toBe("prod");
+    expect(env.corsOrigins).toEqual(["https://app.axiomaquatics.io"]);
+    expect(env.cronSecret).toBe("a".repeat(32));
+    expect(env.email).toBeDefined();
+    expect(env.email?.transport).toBe("resend");
+    expect(env.email?.allowlist).toEqual([]);
+  });
 
-  it("returns googleOAuth=undefined in dev when no vars are set", () => {
+  it("rejects empty CORS_ORIGINS", () => {
+    expectIssue({ ...prodDeployBase, CORS_ORIGINS: "" }, /CORS_ORIGINS/);
+  });
+
+  it("rejects a localhost SITE_URL", () => {
+    expectIssue({ ...prodDeployBase, SITE_URL: "http://localhost:3000" }, /SITE_URL/);
+  });
+
+  it("rejects a missing CRON_SECRET", () => {
+    const raw = { ...prodDeployBase } as Record<string, string | undefined>;
+    delete raw.CRON_SECRET;
+    expectIssue(raw, /CRON_SECRET/);
+  });
+
+  it("rejects a CRON_SECRET shorter than 32 characters", () => {
+    expectIssue(
+      { ...prodDeployBase, CRON_SECRET: "a".repeat(31) },
+      /CRON_SECRET.*at least 32 characters/,
+    );
+  });
+
+  it("rejects a missing GOOGLE_OAUTH_CLIENT_ID", () => {
+    const raw = { ...prodDeployBase } as Record<string, string | undefined>;
+    delete raw.GOOGLE_OAUTH_CLIENT_ID;
+    expectIssue(raw, /GOOGLE_OAUTH_CLIENT_ID/);
+  });
+
+  it("rejects a localhost GOOGLE_OAUTH_REDIRECT_URI", () => {
+    expectIssue(
+      {
+        ...prodDeployBase,
+        GOOGLE_OAUTH_REDIRECT_URI: "http://localhost:3001/integrations/google/callback",
+      },
+      /GOOGLE_OAUTH_REDIRECT_URI.*localhost/,
+    );
+  });
+
+  it("rejects an http GOOGLE_OAUTH_REDIRECT_URI", () => {
+    expectIssue(
+      {
+        ...prodDeployBase,
+        GOOGLE_OAUTH_REDIRECT_URI: "http://api.axiomaquatics.io/integrations/google/callback",
+      },
+      /GOOGLE_OAUTH_REDIRECT_URI/,
+    );
+  });
+
+  it("rejects a GOOGLE_TOKEN_ENCRYPTION_KEY of the wrong length", () => {
+    expectIssue(
+      {
+        ...prodDeployBase,
+        GOOGLE_TOKEN_ENCRYPTION_KEY: Buffer.alloc(16, 1).toString("base64"),
+      },
+      /GOOGLE_TOKEN_ENCRYPTION_KEY.*32 bytes/,
+    );
+  });
+
+  it("rejects a GOOGLE_OAUTH_STATE_SECRET shorter than 32 characters", () => {
+    expectIssue(
+      { ...prodDeployBase, GOOGLE_OAUTH_STATE_SECRET: "short" },
+      /GOOGLE_OAUTH_STATE_SECRET.*32 characters/,
+    );
+  });
+
+  it("rejects a non-empty EMAIL_ALLOWLIST (fail-safe against staging gate left on)", () => {
+    expectIssue(
+      { ...prodDeployBase, EMAIL_ALLOWLIST: "me@example.com" },
+      /EMAIL_ALLOWLIST.*must be empty/,
+    );
+  });
+
+  it("rejects an EMAIL_FROM that doesn't use send.axiomaquatics.io", () => {
+    expectIssue(
+      { ...prodDeployBase, EMAIL_FROM: "lessons@elsewhere.example.com" },
+      /EMAIL_FROM.*send\.axiomaquatics\.io/,
+    );
+  });
+
+  it("rejects a missing RESEND_API_KEY", () => {
+    const raw = { ...prodDeployBase } as Record<string, string | undefined>;
+    delete raw.RESEND_API_KEY;
+    expectIssue(raw, /RESEND_API_KEY/);
+  });
+
+  it("rejects a RESEND_API_KEY that doesn't start with re_", () => {
+    expectIssue({ ...prodDeployBase, RESEND_API_KEY: "not-prefixed" }, /RESEND_API_KEY/);
+  });
+
+  it("rejects a non-resend EMAIL_TRANSPORT", () => {
+    expectIssue({ ...prodDeployBase, EMAIL_TRANSPORT: "smtp" }, /EMAIL_TRANSPORT/);
+  });
+
+  it("accepts EMAIL_FROM in a subdomain of send.axiomaquatics.io", () => {
+    const env = parseEnv({
+      ...prodDeployBase,
+      EMAIL_FROM: "lessons@mail.send.axiomaquatics.io",
+    });
+    expect(env.email?.from).toContain("mail.send.axiomaquatics.io");
+  });
+});
+
+describe("parseEnv — APP_ENV=dev", () => {
+  it("accepts a complete dev env", () => {
+    const env = parseEnv(devDeployBase);
+    expect(env.appEnv).toBe("dev");
+    expect(env.email?.allowlist).toEqual(["me@example.com", "coach@example.com"]);
+  });
+
+  it("rejects a missing EMAIL_ALLOWLIST (fail-safe so dev can never email everyone)", () => {
+    const raw = { ...devDeployBase } as Record<string, string | undefined>;
+    delete raw.EMAIL_ALLOWLIST;
+    expectIssue(raw, /EMAIL_ALLOWLIST.*must be set and non-empty when APP_ENV=dev/);
+  });
+
+  it("rejects an empty EMAIL_ALLOWLIST", () => {
+    expectIssue({ ...devDeployBase, EMAIL_ALLOWLIST: "" }, /EMAIL_ALLOWLIST/);
+  });
+
+  it("rejects an all-whitespace / comma-only EMAIL_ALLOWLIST", () => {
+    expectIssue({ ...devDeployBase, EMAIL_ALLOWLIST: " , , " }, /EMAIL_ALLOWLIST/);
+  });
+
+  it("rejects a missing RESEND_API_KEY on dev as well as prod", () => {
+    const raw = { ...devDeployBase } as Record<string, string | undefined>;
+    delete raw.RESEND_API_KEY;
+    expectIssue(raw, /RESEND_API_KEY/);
+  });
+
+  it("rejects a localhost SITE_URL on dev as well as prod", () => {
+    expectIssue({ ...devDeployBase, SITE_URL: "http://localhost:3000" }, /SITE_URL/);
+  });
+
+  it("accepts an EMAIL_FROM at any verified domain (dev doesn't pin the domain)", () => {
+    const env = parseEnv({
+      ...devDeployBase,
+      EMAIL_FROM: "lessons@send.axiomaquatics.io",
+    });
+    expect(env.email?.from).toContain("send.axiomaquatics.io");
+  });
+});
+
+describe("parseEnv — APP_ENV=local + email configuration", () => {
+  it("returns email=undefined when no transport is set in local", () => {
+    const env = parseEnv({ ...baseEnv });
+    expect(env.email).toBeUndefined();
+  });
+
+  it("returns a populated email config when local sets smtp + from", () => {
+    const env = parseEnv({
+      ...baseEnv,
+      EMAIL_TRANSPORT: "smtp",
+      EMAIL_FROM: "Axiom Aquatics <lessons@send.axiomaquatics.io>",
+      EMAIL_SMTP_HOST: "127.0.0.1",
+      EMAIL_SMTP_PORT: "54325",
+    });
+    expect(env.email).toBeDefined();
+    expect(env.email?.transport).toBe("smtp");
+    expect(env.email?.smtpHost).toBe("127.0.0.1");
+    expect(env.email?.smtpPort).toBe(54325);
+  });
+
+  it("accepts an EMAIL_FROM at any domain in local", () => {
+    const env = parseEnv({
+      ...baseEnv,
+      EMAIL_TRANSPORT: "smtp",
+      EMAIL_FROM: "lessons@local.test",
+    });
+    expect(env.email?.from).toContain("local.test");
+  });
+
+  it("reports multiple failing variables in one error", () => {
+    const raw = {
+      ...prodDeployBase,
+      CORS_ORIGINS: "",
+      SITE_URL: "http://localhost:3000",
+    } as Record<string, string | undefined>;
+    delete raw.CRON_SECRET;
+    let caught: unknown;
+    try {
+      parseEnv(raw);
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(EnvValidationError);
+    const message = (caught as EnvValidationError).message;
+    expect(message).toMatch(/CORS_ORIGINS/);
+    expect(message).toMatch(/SITE_URL/);
+    expect(message).toMatch(/CRON_SECRET/);
+  });
+});
+
+describe("parseEnv — Google OAuth (local branch)", () => {
+  it("returns googleOAuth=undefined in local when no vars are set", () => {
     const env = parseEnv({ ...baseEnv });
     expect(env.googleOAuth).toBeUndefined();
   });
 
-  it("returns googleOAuth=undefined in dev when some vars are missing", () => {
-    const partial = { ...fullGoogle } as Record<string, string>;
+  it("returns googleOAuth=undefined in local when some vars are missing", () => {
+    const partial = { ...fullGoogle } as Record<string, string | undefined>;
     delete partial.GOOGLE_OAUTH_CLIENT_SECRET;
     const env = parseEnv({ ...baseEnv, ...partial });
     expect(env.googleOAuth).toBeUndefined();
   });
 
-  it("returns a populated googleOAuth in dev when all five vars are valid", () => {
+  it("returns a populated googleOAuth in local when all five vars are valid", () => {
     const env = parseEnv({ ...baseEnv, ...fullGoogle });
     expect(env.googleOAuth).toBeDefined();
     expect(env.googleOAuth?.clientId).toBe("client-id");
     expect(env.googleOAuth?.tokenEncryptionKey.length).toBe(32);
-    expect(env.googleOAuth?.stateSecret).toBe(validStateSecret);
+    expect(env.googleOAuth?.stateSecret).toBe(validGoogleStateSecret);
   });
 
-  it("returns googleOAuth=undefined in dev when the encryption key decodes to the wrong length", () => {
+  it("returns googleOAuth=undefined when the encryption key decodes to the wrong length", () => {
     const env = parseEnv({
       ...baseEnv,
       ...fullGoogle,
@@ -179,99 +341,14 @@ describe("parseEnv — Google OAuth integration", () => {
     expect(env.googleOAuth).toBeUndefined();
   });
 
-  it("returns googleOAuth=undefined in dev when the state secret is too short", () => {
+  it("returns googleOAuth=undefined when the state secret is too short", () => {
     const env = parseEnv({ ...baseEnv, ...fullGoogle, GOOGLE_OAUTH_STATE_SECRET: "short" });
     expect(env.googleOAuth).toBeUndefined();
-  });
-
-  describe("in production", () => {
-    const prodBase = {
-      ...baseEnv,
-      NODE_ENV: "production",
-      SITE_URL: "https://app.example.com",
-      CORS_ORIGINS: "https://app.example.com",
-      CRON_SECRET: "a".repeat(32),
-      ...fullGoogle,
-      GOOGLE_OAUTH_REDIRECT_URI: "https://api.example.com/integrations/google/callback",
-    };
-
-    it("accepts a complete production env with Google vars", () => {
-      const env = parseEnv(prodBase);
-      expect(env.googleOAuth).toBeDefined();
-    });
-
-    it("rejects a missing GOOGLE_OAUTH_CLIENT_ID in production", () => {
-      const raw = { ...prodBase } as Record<string, string>;
-      delete raw.GOOGLE_OAUTH_CLIENT_ID;
-      let caught: unknown;
-      try {
-        parseEnv(raw);
-      } catch (err) {
-        caught = err;
-      }
-      expect(caught).toBeInstanceOf(EnvValidationError);
-      expect((caught as EnvValidationError).issues.join("\n")).toMatch(/GOOGLE_OAUTH_CLIENT_ID/);
-    });
-
-    it("rejects a localhost GOOGLE_OAUTH_REDIRECT_URI in production", () => {
-      let caught: unknown;
-      try {
-        parseEnv({ ...prodBase, GOOGLE_OAUTH_REDIRECT_URI: "http://localhost:3001/integrations/google/callback" });
-      } catch (err) {
-        caught = err;
-      }
-      expect(caught).toBeInstanceOf(EnvValidationError);
-      expect((caught as EnvValidationError).issues.join("\n")).toMatch(
-        /GOOGLE_OAUTH_REDIRECT_URI.*localhost/,
-      );
-    });
-
-    it("rejects an http (non-https) GOOGLE_OAUTH_REDIRECT_URI in production", () => {
-      let caught: unknown;
-      try {
-        parseEnv({ ...prodBase, GOOGLE_OAUTH_REDIRECT_URI: "http://api.example.com/integrations/google/callback" });
-      } catch (err) {
-        caught = err;
-      }
-      expect(caught).toBeInstanceOf(EnvValidationError);
-      expect((caught as EnvValidationError).issues.join("\n")).toMatch(/GOOGLE_OAUTH_REDIRECT_URI/);
-    });
-
-    it("rejects a GOOGLE_TOKEN_ENCRYPTION_KEY that decodes to the wrong length", () => {
-      let caught: unknown;
-      try {
-        parseEnv({
-          ...prodBase,
-          GOOGLE_TOKEN_ENCRYPTION_KEY: Buffer.alloc(16, 1).toString("base64"),
-        });
-      } catch (err) {
-        caught = err;
-      }
-      expect(caught).toBeInstanceOf(EnvValidationError);
-      expect((caught as EnvValidationError).issues.join("\n")).toMatch(
-        /GOOGLE_TOKEN_ENCRYPTION_KEY.*32 bytes/,
-      );
-    });
-
-    it("rejects a GOOGLE_OAUTH_STATE_SECRET shorter than 32 characters", () => {
-      let caught: unknown;
-      try {
-        parseEnv({ ...prodBase, GOOGLE_OAUTH_STATE_SECRET: "short" });
-      } catch (err) {
-        caught = err;
-      }
-      expect(caught).toBeInstanceOf(EnvValidationError);
-      expect((caught as EnvValidationError).issues.join("\n")).toMatch(
-        /GOOGLE_OAUTH_STATE_SECRET.*32 characters/,
-      );
-    });
   });
 });
 
 describe("parseDbEnv", () => {
   it("accepts an env with only DATABASE_URL set", () => {
-    // DB-only scripts (migrate, seed, catalog sync) must not require the full
-    // API env — they run in CI with just a connection string.
     const env = parseDbEnv({ DATABASE_URL: "postgres://user:pass@localhost:5432/db" });
     expect(env.databaseUrl).toBe("postgres://user:pass@localhost:5432/db");
   });
