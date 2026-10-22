@@ -20,7 +20,7 @@ Today the only booking path is a parent submitting a request from their account.
 
 **Approved immediately, no pending step.** The lesson is written as `status = 'approved'`, `approved_by = <coach profile id>` (non-null, which ADR 021 reserves for coach approval as opposed to system auto-approval), `approved_at = now()`, `expires_at = null`. `requested_by = <coach profile id>` — the coach is the requester. No new column on `lessons`; the "booked by coach" signal is the audit-log row described below plus the role of the `requested_by` profile.
 
-**Audit log in the same transaction.** Each coach booking writes a `household_audit_log` row with `action = 'lesson_booked_by_coach'`, `actor_id = <coach>`, `household_id = <booked family>`, and a `payload` jsonb carrying `{ lessonId, locationId, startsAt, durationMinutes, swimmerIds, override }`. The row is inserted inside the same `db.transaction()` as the lesson insert and the `lesson_swimmers` inserts, per CLAUDE.md's standing rule. If any of the three writes fails the whole thing rolls back.
+**Audit log in the same transaction.** Each coach booking writes a `household_audit_log` row with `action = 'lesson_booked_by_coach'`, `actor_id = <coach>`, `household_id = <booked family>`, and a `payload` jsonb carrying `{ lessonId, locationId, startsAt, durationMinutes, swimmerIds, override }` where `override` is the **server-computed** warnings object (not the client's acknowledgement set) — or `null` if no warnings fired. The row is inserted inside the same `db.transaction()` as the lesson insert and the `lesson_swimmers` inserts, per CLAUDE.md's standing rule. If any of the three writes fails the whole thing rolls back. A one-line migration adds the `payload jsonb` column to `household_audit_log` — mirrors `coach_audit_log.payload` from migration 0048.
 
 **Trust counts.** A coach-booked approved lesson satisfies ADR 021's approval gate at that pool for that household. `needsApproval(householdId, locationId)` already checks `status IN ('approved', 'completed')` without inspecting `approved_by`, so this falls out of the existing predicate — no code change. Spelling it out here because it's a real policy decision: Jason booking a lesson for a new household counts the same as auto-approving their second booking at a pool he's already taught them at.
 
@@ -31,11 +31,18 @@ Today the only booking path is a parent submitting a request from their account.
 - **Hard reject: time overlap with another pending or approved lesson, at any location.** A single coach cannot be in two places at once. This is enforced by a `startsAt < existingEnd AND existingStartsAt < newEnd` predicate inside the transaction, after the advisory lock, and is not skippable by any flag. Direct overlap always returns `422 slot_unavailable`.
 - **Warning: outside teaching hours.** Skippable with `overrideWindow: true` and a UI acknowledgment.
 - **Warning: inside the 16-hour notice window.** Same.
+- **Warning: max-advance (`bookingMaxAdvanceWeeks`) exceeded.** Same — a coach booking the fall semester in May is unusual but not impossible.
 - **Warning: travel-buffer insufficient between back-to-back lessons at different pools.** Jason may accept a shorter buffer.
 - **Warning: daily lesson-minute cap exceeded.** Jason may teach more than `maxDailyLessonMinutes` on that day.
 - **Warning: overlaps a blocked time Jason set himself.** The blocked time stays in place; the lesson lands on top of it.
 
-Each warning the coach acknowledged is recorded on the audit log's `payload.override` object so an override can be audited later. Hard rejects do not need a payload — the lesson doesn't exist.
+**Warning computation lives on the server.** The client sends `overrideWindow: boolean` plus an `acknowledgedWarnings` object listing which warnings the coach was shown and accepted. The server recomputes every warning from the live request + DB state. If any warning is true and either `overrideWindow` is false OR the warning is not in the acknowledgement set, the server returns `409 warnings_not_acknowledged` with the full server-computed list. The audit log's `payload.override` object records the server-computed flags, never the client's acknowledgement set — a client cannot fabricate an "I don't need to acknowledge" state, and cannot evade the audit of a warning that genuinely applies. See the plan's step 5 for the full validation order.
+
+Reasons the server owns the computation rather than trusting the client to send a boolean "this is an override":
+
+- A client that can self-report "no warnings fired" can bypass the audit. The server-computed path makes override auditing a non-negotiable byproduct of the submission.
+- Warnings depend on live DB state (travel buffer, daily cap, blocked times). The client can only approximate; the authoritative check must be server-side anyway. Having the server also *tell the client which warnings exist* keeps the two sides consistent without a schema negotiation.
+- Separating `overrideWindow` (intent) from `acknowledgedWarnings` (specific checkboxes) lets the UI show per-warning text that matches exactly what the audit will record.
 
 **Emails use the existing `lesson_confirmed` event with an `initiatedBy` payload field.** No new outbox event, no new email template file. The `lesson_confirmed` React Email template (per ADR 028) reads `payload.initiatedBy` and branches its copy: for `'coach'` it says "Jason scheduled a lesson for you" and for `'parent'` it keeps the current "Your lesson is confirmed." All other fields of the payload are unchanged. The outbox row is written inside the same transaction as the lesson, per ADR 028's rule. `.ics` method is `REQUEST`, `SEQUENCE` is `0` for a new lesson (ADR 028's monotonic counter semantics).
 

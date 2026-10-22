@@ -32,6 +32,7 @@ Mobile-first; Jason uses this on the pool deck.
 - Emails: the family gets the existing `lesson_confirmed` outbox event with the `.ics` invite. Copy varies on `initiatedBy = 'coach'` so the body says "Jason scheduled a lesson for you" rather than "Your lesson is confirmed." No new outbox event, no new template file — only a payload field and a conditional in the existing template.
 - Calendar sync fires after commit via the standard `queueMicrotask(() => void syncLessonToGoogle(id))` hook. This path is added to the list of lesson-change paths in ADR 027 and ADR 028.
 - Custom-time override: time overlap with any existing pending/approved lesson is a **hard reject** (the advisory day lock plus the same slot-overlap check as parent booking). Travel-buffer and daily-cap violations show warnings the coach can accept and submit. Outside teaching hours and inside the 16-hour notice window are warnings. The UI makes the warning explicit before confirming.
+- **The server is the sole computer of override warnings.** The client sends `overrideWindow: boolean` plus an `acknowledgedWarnings` object describing which warnings the coach already saw-and-accepted. The server recomputes every warning from the request against the live DB state and returns `409 warnings_not_acknowledged` with the list of newly-computed warnings if the client's acknowledgement set is missing any of them. The audit log records the server-computed flags, never the client's — a client cannot "pre-acknowledge" a warning that doesn't actually apply, and cannot avoid auditing a warning that does.
 
 ---
 
@@ -42,6 +43,8 @@ Mobile-first; Jason uses this on the pool deck.
 - `status = 'approved'`, `approved_at = now()`, `approved_by = <coach profile id>` (non-null, per ADR 021).
 - `requested_by = <coach profile id>`. The coach is the requester. The audit-log row below is the authoritative "booked by coach" signal; callers who need to tell the two mechanisms apart (parent vs. coach) join `requested_by → profiles.role`.
 - `expires_at = null` (same as any auto-approved booking).
+
+**One new column on `household_audit_log`:** `payload jsonb` (nullable). See the "Audit log" subsection below. One-line migration generated via `pnpm db:generate`.
 
 **No new column on `profiles`.**
 
@@ -55,7 +58,9 @@ A new `action` value on the existing `household_audit_log` table:
 - `actor_id = <coach profile id>`
 - `household_id = <booked household id>`
 - `target_swimmer_id`: null — the junction `lesson_swimmers` carries the swimmer list; the audit log has only one `target_swimmer_id` column and we don't want to pick one of several siblings. The lesson id is in `payload` instead.
-- `payload` (jsonb, already on `household_audit_log` for other events): `{ lessonId, locationId, startsAt, durationMinutes, swimmerIds: uuid[], override: null | { outsideHours: boolean, insideNoticeWindow: boolean, travelBufferViolated: boolean, dailyCapExceeded: boolean, blockedTimeOverlap: boolean } }`.
+- `payload` (jsonb — see migration note): `{ lessonId, locationId, startsAt, durationMinutes, swimmerIds: uuid[], override: null | { outsideHours: boolean, insideNoticeWindow: boolean, maxAdvanceExceeded: boolean, travelBufferViolated: boolean, dailyCapExceeded: boolean, blockedTimeOverlap: boolean } }`. **The booleans are the server-computed flags**, not the client's acknowledgements — the server never trusts the client to self-report which warnings fired. `override` is `null` for a submission that triggered zero warnings, otherwise the full object with each flag at its true/false server value.
+
+**Migration required.** `household_audit_log` has no `payload jsonb` column today (unlike `coach_audit_log`, which added one in migration 0048 for the retry-batch summary). Phase 1 adds the column via `pnpm db:generate`. One line, nullable, no backfill needed. Mirrors the exact shape of `coach_audit_log.payload` so the two audit tables stay consistent.
 
 Written **inside the same `db.transaction()`** as the lesson insert and the `lesson_swimmers` inserts. If any of the three writes fail, the whole thing rolls back — CLAUDE.md rule.
 
@@ -78,39 +83,59 @@ Lives in `apps/api/src/routes/coachLessons.ts`. Follows the standard middleware 
 Request body (new Zod schema in `packages/shared/src/schemas/booking.ts`, exported from `packages/shared/src/index.ts`):
 
 ```ts
+export const CoachBookingWarningsSchema = z.object({
+  outsideHours: z.boolean().default(false),
+  insideNoticeWindow: z.boolean().default(false),
+  maxAdvanceExceeded: z.boolean().default(false),
+  travelBufferViolated: z.boolean().default(false),
+  dailyCapExceeded: z.boolean().default(false),
+  blockedTimeOverlap: z.boolean().default(false),
+});
+export type CoachBookingWarnings = z.infer<typeof CoachBookingWarningsSchema>;
+
 export const CoachCreateLessonBodySchema = z.object({
   householdId: z.string().uuid(),
   swimmerIds: z.array(z.string().uuid()).min(1).max(4),
   locationId: z.string().uuid(),
   startsAt: z.string().datetime({ offset: true }),
-  durationMinutes: z.union([z.literal(30), z.literal(45), z.literal(60)]),
-  // When true, skip the teaching-hours and min-advance checks; still re-check
-  // slot overlap under the advisory day lock. The specific warnings the coach
-  // acknowledged are recorded on the audit-log payload so we can audit coach
-  // overrides later.
+  durationMinutes: LessonDurationMinutesSchema,
+  // When true, the server allows the lesson to land even if the submission
+  // triggers one or more non-overlap warnings. Each warning must still appear
+  // in `acknowledgedWarnings` set to true — overrideWindow=true alone does
+  // not suppress acknowledgment; it only tells the server "I was prepared to
+  // see warnings." When overrideWindow=false, any warning causes 409.
   overrideWindow: z.boolean().default(false),
-  acknowledgedWarnings: z.object({
-    outsideHours: z.boolean().default(false),
-    insideNoticeWindow: z.boolean().default(false),
-    travelBufferViolated: z.boolean().default(false),
-    dailyCapExceeded: z.boolean().default(false),
-    blockedTimeOverlap: z.boolean().default(false),
-  }).default({}),
+  acknowledgedWarnings: CoachBookingWarningsSchema.default({}),
 });
 export type CoachCreateLessonBody = z.infer<typeof CoachCreateLessonBodySchema>;
 ```
 
-Response: existing `LessonResponseSchema` with `status === 'approved'`. 201 on success.
+`LessonDurationMinutesSchema` is the shared duration schema introduced alongside this feature (see Item 3 — "Durations come from the shared schema").
+
+Response on success: existing `LessonResponseSchema` with `status === 'approved'`, HTTP 201.
+
+Response on unacknowledged warnings: HTTP 409 with body `{ error: 'warnings_not_acknowledged', warnings: CoachBookingWarnings }`. The `warnings` object carries exactly the server-computed flags — the UI uses it to render the warning card the coach must then re-submit with acknowledged.
 
 #### Validation ordering (pre-transaction)
 
 1. **Household exists.** `households` lookup by `householdId`. 404 if missing. (The requested swimmers must belong to this household — a sibling-mix prevention check that mirrors ADR 029's "siblings never mix families".)
-2. **Swimmers belong to the household and are active.** `swimmers.household_id = householdId AND archived_at IS NULL AND id IN (:swimmerIds)`. 422 `swimmers_not_in_household` if any swimmer is missing, archived, or belongs to a different household. 422 `too_many_swimmers` if `> 4`. (The `type` enum caps at 4; the Zod schema enforces 1–4 before this check.)
+2. **Swimmers belong to the household and are active.** `swimmers.household_id = householdId AND archived_at IS NULL AND id IN (:swimmerIds)`. 422 `swimmers_not_in_household` if any swimmer is missing, archived, or belongs to a different household. (The Zod schema caps the array at 4 and the `type` enum does the same, so no separate `too_many_swimmers` error path is needed.)
 3. **Location exists and is accessible.** `lesson_locations` lookup. If `household_id IS NOT NULL`, it must equal the booked household's id. 422 `not_this_households_home_pool` otherwise. Inactive locations rejected.
 4. **Lesson type.** `swimmerIds.length === 1 ? 'private' : 'family'`.
-5. **Teaching-hours / min-advance window.**
-   - If `overrideWindow === false`: enforce `effectiveHours(laDateStr).length > 0`, enforce `startsAt >= now + bookingMinAdvanceHours`, enforce `startsAt <= now + bookingMaxAdvanceWeeks` — same errors as parent booking (`not_a_lesson_day`, `too_soon`, `too_far`).
-   - If `overrideWindow === true`: skip all three. Record which were violated in the audit-log payload so the override is auditable later.
+5. **Compute override warnings on the server.** Independent of `overrideWindow`, the handler computes a `CoachBookingWarnings` object from the request and the current DB state:
+   - `outsideHours` = `effectiveHours(laDateStr).length === 0 || the slot's wall-clock is outside today's teaching window`.
+   - `insideNoticeWindow` = `startsAt < now + bookingMinAdvanceHours`.
+   - `maxAdvanceExceeded` = `startsAt > now + bookingMaxAdvanceWeeks`.
+   - `travelBufferViolated` = another pending/approved lesson at a different pool is within its travel-buffer-minutes of this slot.
+   - `dailyCapExceeded` = adding this lesson's minutes to the LA-day's existing lesson minutes would exceed `maxDailyLessonMinutes`.
+   - `blockedTimeOverlap` = the slot's time range overlaps any row in `blocked_times`.
+
+   Then:
+   - If **every** computed warning is `false`: proceed to the transaction (whether `overrideWindow` is true or false — it's a no-op in this case).
+   - If **any** computed warning is `true` and `overrideWindow === false`: 409 `warnings_not_acknowledged` with the server-computed warnings object. The audit log is NOT written for a 409 — nothing landed.
+   - If **any** computed warning is `true` and `overrideWindow === true`: for each `true` warning, verify `acknowledgedWarnings[warning] === true`. If any true warning is not acknowledged → 409 `warnings_not_acknowledged` with the full server-computed warnings object (not just the missing ones; the UI needs the full picture to re-render the acknowledgement card). If every true warning is acknowledged → proceed to the transaction and persist the server-computed warnings object as `payload.override` on the audit row.
+
+Note: nothing in step 5 is skippable client-side. There is no "I don't want warnings computed" switch — the client's `overrideWindow` is a question ("may I proceed if there ARE warnings?"), not an answer ("there aren't any").
 
 #### Transaction (same shape as parent booking)
 
@@ -144,12 +169,14 @@ await db.transaction(async (tx) => {
 
   await tx.insert(lessonSwimmers).values(swimmerIds.map((id) => ({ lessonId: inserted.id, swimmerId: id })));
 
-  // Audit log — SAME transaction (CLAUDE.md rule).
+  // Audit log — SAME transaction (CLAUDE.md rule). `overrideFlags` is the
+  // SERVER-computed warnings object, not what the client sent, and is null
+  // if no warnings fired for this submission.
   await tx.insert(householdAuditLog).values({
     householdId, actorId: coachProfileId,
     action: "lesson_booked_by_coach",
     payload: { lessonId: inserted.id, locationId, startsAt, durationMinutes,
-               swimmerIds, override: overrideFlags },
+               swimmerIds, override: serverComputedWarningsOrNull },
   });
 
   // Outbox row — SAME transaction (ADR 028 rule).
@@ -302,7 +329,7 @@ Playwright or vitest-browser once the feature is wired, covering:
 
 ## Rollout and migration
 
-- No database migration required. (The `household_audit_log.payload` jsonb column exists today; the new `action` string is a free value, not an enum.)
+- One migration (generated): `household_audit_log` gains a nullable `payload jsonb` column, mirroring `coach_audit_log.payload` from migration 0048. No backfill. The new `action` string is a free value, not an enum, so no enum alteration is required.
 - No new env vars.
 - No feature flag — the feature ships behind coach role already.
 - Stacked on `feature/parent-booking-emails`: once that merges, this plan's ADR 028 updates (adding this path to the "every lesson-change path writes an outbox row" list) land cleanly. Until it merges, this branch cannot be tested end-to-end for email delivery; integration tests on the outbox row insert still work because the table exists in the parent branch.
