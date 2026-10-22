@@ -19,7 +19,7 @@
 import { and, eq, gt, inArray, isNotNull, lt, or, sql } from "drizzle-orm";
 import { db } from "../../db/client";
 import { lessonEmailOutbox, lessons, profiles } from "../../db/schema";
-import { getEnv } from "../../lib/env";
+import { __resetEnvCacheForTests, getEnv } from "../../lib/env";
 import { logger as rootLogger } from "../../logger";
 import { buildIcs } from "./ics";
 import { renderEmail } from "./render";
@@ -41,8 +41,14 @@ const log = rootLogger.child({ component: "lesson-email-sender" });
 // without email vars configured is a valid no-op mode.
 let cachedTransport: EmailTransport | null | undefined;
 
+// Resets BOTH the sender's memoized transport AND the api env cache. The
+// two are coupled: the transport is built from `getEnv().email`, so a test
+// that mutates email env vars and only clears the transport cache would
+// get a stale transport rebuilt from the stale env. Keep them in lockstep
+// here so a future test can't forget the second reset.
 export function __resetSenderTransportForTests(): void {
   cachedTransport = undefined;
+  __resetEnvCacheForTests();
 }
 
 export function __setSenderTransportForTests(transport: EmailTransport | null): void {
