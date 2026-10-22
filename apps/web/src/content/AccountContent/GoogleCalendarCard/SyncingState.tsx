@@ -194,8 +194,13 @@ function formatRetryResult(body: RetryAllFailedResponse): RetryResult {
     return { message: "No lessons needed retrying.", tone: "success" };
   }
   if (body.failed === 0) {
-    const noun = body.succeeded === 1 ? "lesson" : "lessons";
-    return { message: `All ${body.succeeded} ${noun} synced.`, tone: "success" };
+    // Singular reads "1 lesson synced." (no "All"); plural reads
+    // "All N lessons synced." so the number carries weight.
+    const message =
+      body.succeeded === 1
+        ? "1 lesson synced."
+        : `All ${body.succeeded} lessons synced.`;
+    return { message, tone: "success" };
   }
   const noun = body.failed === 1 ? "lesson" : "lessons";
   return {

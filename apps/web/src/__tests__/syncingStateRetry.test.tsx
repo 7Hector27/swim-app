@@ -117,6 +117,25 @@ describe("SyncingState Retry — instant success", () => {
     });
   });
 
+  it("shows '1 lesson synced.' (singular, no 'All') when only one lesson was retried", async () => {
+    const retryBody: RetryAllFailedResponse = { attempted: 1, succeeded: 1, failed: 0 };
+    const afterStatus = initialStatus({ failedLessonCount: 0, syncedCount: 1, syncRunInProgress: false });
+    mockFetch.mockImplementation((url: string, init?: RequestInit) => {
+      if (url.includes("/retry-failed") && init?.method === "POST") {
+        return Promise.resolve(okJson(retryBody));
+      }
+      if (url.includes("/status")) {
+        return Promise.resolve(okJson(afterStatus));
+      }
+      return Promise.reject(new Error(`unexpected fetch: ${url}`));
+    });
+
+    render(<SyncingState initial={initialStatus()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    expect(await screen.findByText("1 lesson synced.")).toBeInTheDocument();
+  });
+
   it("shows 'N still couldn't sync' when some lessons remained failed after retry", async () => {
     const retryBody: RetryAllFailedResponse = { attempted: 3, succeeded: 1, failed: 2 };
     const afterStatus = initialStatus({ failedLessonCount: 2, syncedCount: 1, syncRunInProgress: false });
