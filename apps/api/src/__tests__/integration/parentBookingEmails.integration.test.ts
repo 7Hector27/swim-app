@@ -587,6 +587,115 @@ describe("retention scrub — payload purge after 30 days", () => {
   });
 });
 
+describe("ics lifecycle — approve, reschedule, cancel", () => {
+  it("same UID across the lesson's life; SEQUENCE 0, 1, 2; methods REQUEST, REQUEST, CANCEL", async () => {
+    // Start as pending, flip through approve → reschedule → cancel, writing
+    // one outbox row per transition the way the real routes do. Then
+    // inspect each row's ics_method, ics_sequence, and the resulting .ics
+    // body's UID + SEQUENCE line.
+    const { buildIcs, ICS_UID_DOMAIN } = await import("../../services/emails/ics");
+    const lessonId = await seedLesson({ status: "pending" });
+
+    // Approve: mimic PATCH /coach/lessons/:id/approve.
+    const outboxApprove = await db.transaction(async (tx) => {
+      await tx
+        .update(lessons)
+        .set({ status: "approved", approvedAt: new Date() })
+        .where(eq(lessons.id, lessonId));
+      return enqueueLessonEmail(tx, {
+        lessonId,
+        event: "lesson_confirmed",
+        actorRole: "coach",
+      });
+    });
+
+    // Reschedule: mimic the approved-stays-approved coach reschedule path.
+    const previousStartsAt = (await adminDb()
+      .select({ startsAt: lessons.startsAt })
+      .from(lessons)
+      .where(eq(lessons.id, lessonId))
+      .limit(1))[0]?.startsAt;
+    const outboxReschedule = await db.transaction(async (tx) => {
+      const newStart = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+      await tx
+        .update(lessons)
+        .set({ startsAt: newStart, movedAt: new Date(), previousStartsAt })
+        .where(eq(lessons.id, lessonId));
+      return enqueueLessonEmail(tx, {
+        lessonId,
+        event: "lesson_rescheduled",
+        actorRole: "coach",
+        previousStartsAt: previousStartsAt ?? null,
+      });
+    });
+
+    // Cancel: mimic DELETE /lessons/:id when a prior REQUEST exists.
+    const outboxCancel = await db.transaction(async (tx) => {
+      await tx
+        .update(lessons)
+        .set({ status: "canceled", canceledAt: new Date(), canceledBy: owner.userId })
+        .where(eq(lessons.id, lessonId));
+      return enqueueLessonEmail(tx, {
+        lessonId,
+        event: "lesson_canceled",
+        actorRole: "coach",
+      });
+    });
+
+    const [approve, reschedule, cancel] = await Promise.all([
+      readOutboxRow(outboxApprove),
+      readOutboxRow(outboxReschedule),
+      readOutboxRow(outboxCancel),
+    ]);
+
+    expect(approve?.icsMethod).toBe("REQUEST");
+    expect(approve?.icsSequence).toBe(0);
+    expect(reschedule?.icsMethod).toBe("REQUEST");
+    expect(reschedule?.icsSequence).toBe(1);
+    expect(cancel?.icsMethod).toBe("CANCEL");
+    expect(cancel?.icsSequence).toBe(2);
+
+    // Lesson's calendar_sequence ends at 3 (the "next value to issue").
+    const lessonAfter = (await adminDb()
+      .select({ cs: lessons.calendarSequence })
+      .from(lessons)
+      .where(eq(lessons.id, lessonId))
+      .limit(1))[0];
+    expect(lessonAfter?.cs).toBe(3);
+
+    // Build the three .ics bodies and verify the UID is identical and
+    // the SEQUENCE values line up with the row's ics_sequence.
+    const built = [
+      buildIcs({
+        method: "REQUEST",
+        sequence: approve!.icsSequence!,
+        payload: approve!.payload as never,
+      }),
+      buildIcs({
+        method: "REQUEST",
+        sequence: reschedule!.icsSequence!,
+        payload: reschedule!.payload as never,
+      }),
+      buildIcs({
+        method: "CANCEL",
+        sequence: cancel!.icsSequence!,
+        payload: cancel!.payload as never,
+      }),
+    ];
+    const expectedUid = `${lessonId}@${ICS_UID_DOMAIN}`;
+    for (const b of built) {
+      expect(b.uid).toBe(expectedUid);
+      expect(b.body).toContain(`UID:${expectedUid}`);
+    }
+    expect(built[0]!.body).toContain("SEQUENCE:0");
+    expect(built[0]!.body).toContain("METHOD:REQUEST");
+    expect(built[1]!.body).toContain("SEQUENCE:1");
+    expect(built[1]!.body).toContain("METHOD:REQUEST");
+    expect(built[2]!.body).toContain("SEQUENCE:2");
+    expect(built[2]!.body).toContain("METHOD:CANCEL");
+  });
+});
+
 describe("sender — PII-free logging", () => {
   it("captured sender logs during a full send contain no swimmer first names, decline reasons, or emails", async () => {
     // Attach a sink logger to capture every log line emitted during the
