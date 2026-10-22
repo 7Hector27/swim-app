@@ -216,12 +216,12 @@ describe("ConfirmBookingDialog warnings + 409 flow", () => {
         summary={summary}
         warnings={null}
         isSubmitting={false}
-        errorMessage="That slot was just taken. Close this dialog and pick a new time."
+        errorMessage="That time isn't available anymore. Pick another one."
         onCancel={onCancel}
         onSubmit={vi.fn()}
       />,
     );
-    expect(screen.getByText(/slot was just taken/i, { exact: false })).toBeInTheDocument();
+    expect(screen.getByText(/isn't available anymore/i, { exact: false })).toBeInTheDocument();
     expect(onCancel).not.toHaveBeenCalled();
   });
 });

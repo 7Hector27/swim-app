@@ -198,7 +198,7 @@ const ERROR_CODE_MESSAGES: Record<string, string> = {
   not_a_lesson_day: "That day isn't available for lessons.",
   too_soon: "That slot is less than 16 hours away — to book, please text Jason.",
   too_far: "You can only book lessons up to 10 weeks in advance.",
-  slot_unavailable: "That slot was just taken. Please pick another time.",
+  slot_unavailable: "That time isn't available anymore. Pick another one.",
 };
 
 export function firstAvailableDayInWeek(

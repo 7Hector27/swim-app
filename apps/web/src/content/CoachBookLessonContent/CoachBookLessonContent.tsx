@@ -163,7 +163,7 @@ export default function CoachBookLessonContent({
     }
     if (result.kind === "slot_unavailable") {
       setSubmitError(
-        "That slot was just taken by another booking. Close this dialog and pick a new time.",
+        "That time isn't available anymore. Pick another one.",
       );
       return;
     }

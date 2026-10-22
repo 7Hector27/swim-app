@@ -261,6 +261,101 @@ export function computeAvailableSlots(params: SlotParams): Slot[] {
     .sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
 }
 
+// Explains WHY a specific slot (startsAt + durationMinutes + locationId) is not
+// available. Called from the recheck inside POST /lessons and PATCH /lessons/:id
+// after computeAvailableSlots has already returned no match, so one of these
+// reasons is guaranteed to fire. The order mirrors the filter order inside
+// computeAvailableSlots; the first reason encountered wins.
+export type SlotRejectionReason =
+  | "not_a_lesson_day"
+  | "outside_teaching_hours"
+  | "occupied"
+  | "travel_buffer_violated"
+  | "blocked_time"
+  | "google_calendar_busy"
+  | "daily_cap_exceeded"
+  | "too_soon"
+  | "too_far";
+
+export function diagnoseSlotRejection(
+  params: SlotParams,
+  slotStartMs: number,
+): SlotRejectionReason {
+  const {
+    date,
+    durationMinutes,
+    locationId,
+    existingLessons,
+    blockedTimes,
+    travelBufferOverrides,
+    config,
+    seasons,
+    overrides,
+    gcalBusyTimes,
+    nowUtc,
+  } = params;
+
+  const slotEndMs = slotStartMs + durationMinutes * MIN_MS;
+  const windows = resolveWindows(date, seasons, overrides, config);
+  if (windows.length === 0) return "not_a_lesson_day";
+
+  const insideWindow = windows.some(
+    ([wStart, wEnd]) => slotStartMs >= wStart && slotEndMs <= wEnd,
+  );
+  if (!insideWindow) return "outside_teaching_hours";
+
+  for (const lesson of existingLessons) {
+    const lessonStart = lesson.startsAt.getTime();
+    const lessonEnd = lessonStart + lesson.durationMinutes * MIN_MS;
+    if (slotStartMs < lessonEnd && slotEndMs > lessonStart) {
+      return "occupied";
+    }
+  }
+
+  for (const lesson of existingLessons) {
+    if (lesson.locationId === locationId) continue;
+    const lessonStart = lesson.startsAt.getTime();
+    const lessonEnd = lessonStart + lesson.durationMinutes * MIN_MS;
+    const bufAfterMs = getTravelBufferMs(lesson.locationId, locationId, travelBufferOverrides);
+    const bufBeforeMs = getTravelBufferMs(locationId, lesson.locationId, travelBufferOverrides);
+    if (bufAfterMs > 0 && slotStartMs < lessonEnd + bufAfterMs && slotEndMs > lessonEnd) {
+      return "travel_buffer_violated";
+    }
+    if (bufBeforeMs > 0 && slotStartMs < lessonStart && slotEndMs > lessonStart - bufBeforeMs) {
+      return "travel_buffer_violated";
+    }
+  }
+
+  for (const bt of blockedTimes) {
+    if (slotStartMs < bt.endsAt.getTime() && slotEndMs > bt.startsAt.getTime()) {
+      return "blocked_time";
+    }
+  }
+
+  for (const gbt of gcalBusyTimes) {
+    if (slotStartMs < gbt.endsAt.getTime() && slotEndMs > gbt.startsAt.getTime()) {
+      return "google_calendar_busy";
+    }
+  }
+
+  const committedMinutes = existingLessons
+    .filter((lesson) => getDateInLA(lesson.startsAt) === date)
+    .reduce((sum, lesson) => sum + lesson.durationMinutes, 0);
+  if (committedMinutes + durationMinutes > config.maxDailyLessonMinutes) {
+    return "daily_cap_exceeded";
+  }
+
+  const minStartMs = nowUtc.getTime() + config.bookingMinAdvanceHours * 60 * MIN_MS;
+  const maxStartMs =
+    nowUtc.getTime() + config.bookingMaxAdvanceWeeks * 7 * 24 * 60 * MIN_MS;
+  if (slotStartMs < minStartMs) return "too_soon";
+  if (slotStartMs > maxStartMs) return "too_far";
+
+  // Fall-through: unlikely but keeps the type total. Treat as outside hours
+  // (e.g. a slot not on a 15-min boundary inside the window).
+  return "outside_teaching_hours";
+}
+
 export function classifyDaySlots(params: SlotParams): SlotWithState[] {
   const {
     date,

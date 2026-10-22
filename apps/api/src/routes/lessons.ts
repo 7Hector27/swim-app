@@ -37,7 +37,7 @@ import { requireHouseholdMember } from "../middleware/requireHouseholdMember";
 import { requireHouseholdRole } from "../middleware/requireHouseholdRole";
 import { validate } from "../middleware/validate";
 import { asyncHandler } from "../middleware/asyncHandler";
-import { classifyDaySlots, computeAvailableSlots, getDateInLA, getISODayOfWeek } from "../lib/slots";
+import { classifyDaySlots, computeAvailableSlots, diagnoseSlotRejection, getDateInLA, getISODayOfWeek } from "../lib/slots";
 import { effectiveHours } from "../lib/effectiveHours";
 import { mapConfigRow, mapSeasonRow, mapOverrideRow } from "../lib/availabilityMappers";
 import { needsApproval, notifyBookingCreated, notifyCoachOfChange } from "../lib/lessonApproval";
@@ -529,7 +529,7 @@ lessonsRouter.post(
           .where(inArray(lessons.status, ["pending", "approved"])),
       ]);
 
-      const availableSlots = computeAvailableSlots({
+      const slotParams = {
         date: laDateStr,
         durationMinutes: body.durationMinutes,
         locationId: body.locationId,
@@ -549,20 +549,17 @@ lessonsRouter.post(
         overrides,
         gcalBusyTimes: [],
         nowUtc,
-      });
+      };
+      const availableSlots = computeAvailableSlots(slotParams);
 
       const slotAvailable = availableSlots.some(
         (slot) => slot.startsAt.getTime() === startsAt.getTime(),
       );
 
       if (!slotAvailable) {
-        return null;
+        const reason = diagnoseSlotRejection(slotParams, startsAt.getTime());
+        return { rejected: true as const, reason };
       }
-
-      // Check lesson_days — computeAvailableSlots already does this, but we
-      // want a specific error code for it vs. a general slot_unavailable.
-      // If slot not available, could be because the day is invalid or the slot
-      // is taken; we handle both as slot_unavailable per plan.
 
       const approval = await needsApproval(householdId, body.locationId, tx);
       const type = body.swimmerIds.length === 1 ? "private" : "family";
@@ -606,7 +603,18 @@ lessonsRouter.post(
       return { lesson: inserted, outboxId };
     });
 
-    if (!newLesson) {
+    if ("rejected" in newLesson) {
+      req.log.warn(
+        {
+          event: "slot_unavailable",
+          route: "POST /lessons",
+          reason: newLesson.reason,
+          startsAt: startsAt.toISOString(),
+          durationMinutes: body.durationMinutes,
+          locationId: body.locationId,
+        },
+        "slot rejected on booking recheck",
+      );
       res.status(422).json({ error: "slot_unavailable" });
       return;
     }
@@ -920,12 +928,15 @@ lessonsRouter.patch(
       }
     }
 
-    // For honor-system edits (no new startsAt), shift the slot-check clock backward
-    // so the existing time appears inside the booking window to computeAvailableSlots.
-    // Coach can also pick near-future slots — use epoch to open all teaching-hour slots.
-    const nowForSlotCheck = isCoach
-      ? new Date(0)
-      : body.startsAt !== undefined
+    // Shift the slot-check clock so computeAvailableSlots' booking advance
+    // window (minStartMs/maxStartMs) brackets newStartsAt instead of filtering
+    // it out. Needed for two cases:
+    //   - Honor-system parent edits (no new startsAt) — keep the existing time inside the window.
+    //   - Coach reschedules — bypass both min and max advance so any teaching-hour slot is reachable.
+    // Previously the coach branch used new Date(0), which shifted maxStartMs to
+    // March 1970 and filtered every real slot out of the recheck.
+    const nowForSlotCheck =
+      !isCoach && body.startsAt !== undefined
         ? nowUtc
         : new Date(newStartsAt.getTime() - (config.bookingMinAdvanceHours + 1) * 60 * 60 * 1000);
 
@@ -953,7 +964,7 @@ lessonsRouter.patch(
           .where(and(inArray(lessons.status, ["pending", "approved"]), ne(lessons.id, id))),
       ]);
 
-      const availableSlots = computeAvailableSlots({
+      const slotParams = {
         date: laDateStr,
         durationMinutes: newDurationMinutes,
         locationId: newLocationId,
@@ -973,13 +984,17 @@ lessonsRouter.patch(
         overrides,
         gcalBusyTimes: [],
         nowUtc: nowForSlotCheck,
-      });
+      };
+      const availableSlots = computeAvailableSlots(slotParams);
 
       const slotAvailable = availableSlots.some(
         (slot) => slot.startsAt.getTime() === newStartsAt.getTime(),
       );
 
-      if (!slotAvailable) return null;
+      if (!slotAvailable) {
+        const reason = diagnoseSlotRejection(slotParams, newStartsAt.getTime());
+        return { rejected: true as const, reason };
+      }
 
       let newStatus = existingLesson!.status;
       let newApprovedAt: Date | null = existingLesson!.approvedAt;
@@ -1070,7 +1085,22 @@ lessonsRouter.patch(
       return { updated, outboxIds };
     });
 
-    if (!updatedLesson) {
+    if (!updatedLesson || "rejected" in updatedLesson) {
+      if (updatedLesson && "rejected" in updatedLesson) {
+        req.log.warn(
+          {
+            event: "slot_unavailable",
+            route: "PATCH /lessons/:id",
+            reason: updatedLesson.reason,
+            lessonId: id,
+            role: isCoach ? "coach" : "parent",
+            startsAt: newStartsAt.toISOString(),
+            durationMinutes: newDurationMinutes,
+            locationId: newLocationId,
+          },
+          "slot rejected on reschedule recheck",
+        );
+      }
       res.status(422).json({ error: "slot_unavailable" });
       return;
     }
