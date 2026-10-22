@@ -379,6 +379,13 @@
       "when": 1792696632088,
       "tag": "0053_lesson_email_outbox_abandoned_status",
       "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1792703666360,
+      "tag": "0054_household_audit_log_payload",
+      "breakpoints": true
     }
   ]
 }

@@ -162,6 +162,14 @@ export type {
   ScheduleOpenSlotItem,
   CoachStats,
   UpdateLessonBody,
+  LessonDurationMinutes,
+  CoachBookingWarnings,
+  CoachCreateLessonBody,
+  CoachCreateLessonWarningsResponse,
+  CoachHouseholdSearchQuery,
+  CoachHouseholdSearchSwimmer,
+  CoachHouseholdSearchResult,
+  CoachHouseholdSearchResponse,
 } from "./schemas/booking";
 export {
   LessonLocationSchema,
@@ -199,6 +207,16 @@ export {
   CoachStatsSchema,
   UpdateLessonBodySchema,
   DECLINE_REASON_MAX_LENGTH,
+  LESSON_DURATION_MINUTES,
+  LessonDurationMinutesSchema,
+  CoachBookingWarningsSchema,
+  CoachCreateLessonBodySchema,
+  CoachCreateLessonWarningsResponseSchema,
+  COACH_HOUSEHOLD_SEARCH_MIN_LENGTH,
+  CoachHouseholdSearchQuerySchema,
+  CoachHouseholdSearchSwimmerSchema,
+  CoachHouseholdSearchResultSchema,
+  CoachHouseholdSearchResponseSchema,
 } from "./schemas/booking";
 export type {
   SlotState,

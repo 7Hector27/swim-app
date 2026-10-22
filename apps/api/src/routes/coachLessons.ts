@@ -1,6 +1,13 @@
 import { Router } from "express";
-import { and, asc, desc, eq, inArray, lt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, lt, or, sql } from "drizzle-orm";
 import type {
+  CoachBookingWarnings,
+  CoachCreateLessonBody,
+  CoachCreateLessonWarningsResponse,
+  CoachHouseholdSearchQuery,
+  CoachHouseholdSearchResponse,
+  CoachHouseholdSearchResult,
+  CoachHouseholdSearchSwimmer,
   CoachLessonDetail,
   CoachLessonSwimmer,
   CoachListLessonsQuery,
@@ -15,6 +22,9 @@ import type {
   LessonSwimmer,
 } from "@swim-app/shared";
 import {
+  COACH_HOUSEHOLD_SEARCH_MIN_LENGTH,
+  CoachCreateLessonBodySchema,
+  CoachHouseholdSearchQuerySchema,
   CoachListLessonsQuerySchema,
   CoachScheduleQuerySchema,
   CoachWeekScheduleQuerySchema,
@@ -28,7 +38,9 @@ import {
   blockedTimes,
   clubs,
   coachNotes,
+  householdAuditLog,
   householdMembers,
+  households,
   lessonLocations,
   lessonSwimmers,
   lessons,
@@ -39,8 +51,9 @@ import {
 } from "../db/schema";
 import { validate } from "../middleware/validate";
 import { asyncHandler } from "../middleware/asyncHandler";
-import { mapConfigRow } from "../lib/availabilityMappers";
-import { notifyLessonApproved, notifyLessonDeclined } from "../lib/lessonApproval";
+import { mapConfigRow, mapSeasonRow, mapOverrideRow } from "../lib/availabilityMappers";
+import { effectiveHours } from "../lib/effectiveHours";
+import { notifyBookingCreated, notifyLessonApproved, notifyLessonDeclined } from "../lib/lessonApproval";
 import { syncLessonToGoogle } from "../services/googleCalendarSync";
 import { enqueueLessonEmail } from "../services/emails/outbox";
 import { sendLessonEmailOutboxRow } from "../services/emails/sender";
@@ -889,3 +902,524 @@ coachLessonsRouter.get(
     res.json(notes);
   }),
 );
+
+// ── POST /coach/lessons ───────────────────────────────────────────────────────
+// Coach-booked lessons (ADR 029). Approved immediately, no pending step.
+// `approved_by` is the coach's profile id (non-null — distinct from system
+// auto-approval where approved_by=null per ADR 021). Writes a household
+// audit row + an outbox row + the lesson in one transaction under the same
+// advisory day lock as parent booking.
+
+coachLessonsRouter.post(
+  "/lessons",
+  validate({ body: CoachCreateLessonBodySchema }),
+  asyncHandler(async (req, res) => {
+    const body = req.body as CoachCreateLessonBody;
+    const coachProfileId = req.profile.id;
+    const startsAt = new Date(body.startsAt);
+    const nowUtc = new Date();
+
+    // ── Household exists ──────────────────────────────────────────────────────
+    const householdRows = await db
+      .select({ id: households.id })
+      .from(households)
+      .where(eq(households.id, body.householdId))
+      .limit(1);
+    if (!householdRows[0]) {
+      res.status(404).json({ error: "Household not found" });
+      return;
+    }
+
+    // ── Swimmers belong to the household and are active ───────────────────────
+    const swimmerRows = await db
+      .select({ id: swimmers.id, householdId: swimmers.householdId, archivedAt: swimmers.archivedAt })
+      .from(swimmers)
+      .where(inArray(swimmers.id, body.swimmerIds));
+
+    if (swimmerRows.length !== body.swimmerIds.length) {
+      res.status(422).json({ error: "swimmers_not_in_household" });
+      return;
+    }
+    const allInHousehold = swimmerRows.every(
+      (row) => row.householdId === body.householdId && row.archivedAt === null,
+    );
+    if (!allInHousehold) {
+      res.status(422).json({ error: "swimmers_not_in_household" });
+      return;
+    }
+
+    // ── Location exists and is accessible ─────────────────────────────────────
+    const locationRows = await db
+      .select({ id: lessonLocations.id, householdId: lessonLocations.householdId })
+      .from(lessonLocations)
+      .where(and(eq(lessonLocations.id, body.locationId), eq(lessonLocations.isActive, true)))
+      .limit(1);
+    const location = locationRows[0];
+    if (!location) {
+      res.status(422).json({ error: "Location not found or inactive" });
+      return;
+    }
+    if (location.householdId !== null && location.householdId !== body.householdId) {
+      res.status(422).json({ error: "not_this_households_home_pool" });
+      return;
+    }
+
+    // ── Derive LA calendar date (for the lock key and the hours check) ───────
+    const laDateParts = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/Los_Angeles",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(startsAt);
+    const getPart = (type: string) => laDateParts.find((p) => p.type === type)?.value ?? "";
+    const laDateStr = `${getPart("year")}-${getPart("month")}-${getPart("day")}`;
+
+    // ── Fetch availability data for warning computation ───────────────────────
+    const [configRows, seasonRows, overrideRows, blockedRows, bufferRows, existingLessonRows] =
+      await Promise.all([
+        db.select().from(availabilityConfig).limit(1),
+        db.select().from(availabilitySeasons),
+        db.select().from(availabilityOverrides),
+        db.select().from(blockedTimes),
+        db.select().from(travelBufferOverrides),
+        db
+          .select({
+            startsAt: lessons.startsAt,
+            durationMinutes: lessons.durationMinutes,
+            locationId: lessons.locationId,
+          })
+          .from(lessons)
+          .where(inArray(lessons.status, ["pending", "approved"])),
+      ]);
+    const config = configRows[0];
+    if (!config) {
+      res.status(503).json({ error: "Availability config not found" });
+      return;
+    }
+    const seasons = seasonRows.map(mapSeasonRow);
+    const overrides = overrideRows.map(mapOverrideRow);
+
+    // ── Server-computed override warnings ─────────────────────────────────────
+    // The server is the sole authority on what fired. The client's
+    // `acknowledgedWarnings` is a question ("I'm OK with these"), never
+    // an answer ("there aren't any").
+    const warnings = computeCoachBookingWarnings({
+      startsAt,
+      durationMinutes: body.durationMinutes,
+      locationId: body.locationId,
+      laDateStr,
+      nowUtc,
+      config,
+      seasons,
+      overrides,
+      blocked: blockedRows,
+      buffers: bufferRows,
+      existingLessons: existingLessonRows,
+    });
+
+    const anyWarning = (Object.values(warnings) as boolean[]).some((flag) => flag);
+
+    if (anyWarning) {
+      if (!body.overrideWindow) {
+        const resp: CoachCreateLessonWarningsResponse = {
+          error: "warnings_not_acknowledged",
+          warnings,
+        };
+        res.status(409).json(resp);
+        return;
+      }
+      // overrideWindow=true: every TRUE warning must be acknowledged.
+      const unacknowledged = (Object.keys(warnings) as (keyof CoachBookingWarnings)[]).some(
+        (key) => warnings[key] && !body.acknowledgedWarnings[key],
+      );
+      if (unacknowledged) {
+        const resp: CoachCreateLessonWarningsResponse = {
+          error: "warnings_not_acknowledged",
+          warnings,
+        };
+        res.status(409).json(resp);
+        return;
+      }
+    }
+
+    // ── Transact: advisory lock → overlap check → insert ──────────────────────
+    const result = await db.transaction(async (tx) => {
+      // Same lock key as POST /lessons so parent + coach writes serialize.
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtext(${"lesson-day:" + laDateStr}))`,
+      );
+
+      // Re-fetch existing lessons inside the lock. Hard reject on any time
+      // overlap at any location — Jason cannot be in two places at once.
+      // This is independent of the slot engine's travel-buffer/daily-cap
+      // behavior (those are warnings, not hard rejects).
+      const freshExisting = await tx
+        .select({
+          startsAt: lessons.startsAt,
+          durationMinutes: lessons.durationMinutes,
+          locationId: lessons.locationId,
+        })
+        .from(lessons)
+        .where(inArray(lessons.status, ["pending", "approved"]));
+
+      const newStartMs = startsAt.getTime();
+      const newEndMs = newStartMs + body.durationMinutes * 60_000;
+      const overlaps = freshExisting.some((row) => {
+        const existingStartMs = row.startsAt.getTime();
+        const existingEndMs = existingStartMs + row.durationMinutes * 60_000;
+        return newStartMs < existingEndMs && existingStartMs < newEndMs;
+      });
+      if (overlaps) return null;
+
+      const type: "private" | "family" = body.swimmerIds.length === 1 ? "private" : "family";
+      const now = new Date();
+
+      const insertedRows = await tx
+        .insert(lessons)
+        .values({
+          householdId: body.householdId,
+          locationId: body.locationId,
+          startsAt,
+          durationMinutes: body.durationMinutes,
+          type,
+          status: "approved",
+          requestedBy: coachProfileId,
+          approvedAt: now,
+          approvedBy: coachProfileId,
+          expiresAt: null,
+        })
+        .returning();
+      const inserted = insertedRows[0]!;
+
+      await tx.insert(lessonSwimmers).values(
+        body.swimmerIds.map((swimmerId) => ({ lessonId: inserted.id, swimmerId })),
+      );
+
+      // Audit row — SAME transaction as the lesson insert (CLAUDE.md rule).
+      // `override` holds the SERVER-computed warnings for this submission,
+      // or null when no warning fired. Never the client's acknowledgement set.
+      await tx.insert(householdAuditLog).values({
+        householdId: body.householdId,
+        actorId: coachProfileId,
+        action: "lesson_booked_by_coach",
+        payload: {
+          lessonId: inserted.id,
+          locationId: body.locationId,
+          startsAt: startsAt.toISOString(),
+          durationMinutes: body.durationMinutes,
+          swimmerIds: body.swimmerIds,
+          override: anyWarning ? warnings : null,
+        },
+      });
+
+      // Outbox row — same transaction. actorRole='coach' tells the
+      // LessonConfirmed template to render coach-scheduled copy (item 9).
+      const outboxId = await enqueueLessonEmail(tx, {
+        lessonId: inserted.id,
+        event: "lesson_confirmed",
+        actorRole: "coach",
+      });
+
+      return { lesson: inserted, outboxId };
+    });
+
+    if (!result) {
+      res.status(422).json({ error: "slot_unavailable" });
+      return;
+    }
+    const { lesson: committed, outboxId } = result;
+
+    notifyBookingCreated(committed.id, true);
+
+    // Response: fetch swimmers for the response body.
+    const swimmerResponseRows = await db
+      .select({ swimmerId: lessonSwimmers.swimmerId, firstName: swimmers.firstName, lastName: swimmers.lastName })
+      .from(lessonSwimmers)
+      .innerJoin(swimmers, eq(lessonSwimmers.swimmerId, swimmers.id))
+      .where(eq(lessonSwimmers.lessonId, committed.id));
+
+    const responseBody: LessonResponse = {
+      id: committed.id,
+      householdId: committed.householdId,
+      locationId: committed.locationId,
+      startsAt: committed.startsAt.toISOString(),
+      durationMinutes: committed.durationMinutes as 30 | 45 | 60,
+      type: committed.type,
+      status: committed.status,
+      swimmers: swimmerResponseRows.map((row) => ({
+        swimmerId: row.swimmerId,
+        firstName: row.firstName,
+        lastName: row.lastName,
+      } as LessonSwimmer)),
+      expiresAt: null,
+      approvedAt: committed.approvedAt?.toISOString() ?? null,
+      declinedAt: null,
+      declineReason: null,
+      movedAt: null,
+      previousStartsAt: null,
+      createdAt: committed.createdAt.toISOString(),
+    };
+
+    res.status(201).json(responseBody);
+    // Fire-and-forget: Google Calendar sync (ADR 027) + outbox sender (ADR 028).
+    queueMicrotask(() => { void syncLessonToGoogle(committed.id); });
+    queueMicrotask(() => { void sendLessonEmailOutboxRow(outboxId); });
+  }),
+);
+
+// ── GET /coach/households ─────────────────────────────────────────────────────
+// Search households by swimmer name, member name, or household name.
+// Case-insensitive contains across four columns via a UNION on household ids.
+// Short queries (< 2 chars) return []; this is UX, not an error.
+
+coachLessonsRouter.get(
+  "/households",
+  validate({ query: CoachHouseholdSearchQuerySchema }),
+  asyncHandler(async (req, res) => {
+    const query = req.query as unknown as CoachHouseholdSearchQuery;
+    const q = query.q.trim();
+    const limit = query.limit ?? 20;
+
+    if (q.length < COACH_HOUSEHOLD_SEARCH_MIN_LENGTH) {
+      res.json([] as CoachHouseholdSearchResponse);
+      return;
+    }
+
+    const pattern = `%${q}%`;
+
+    // Collect household ids whose swimmer/member/household name contains q.
+    // Four small ILIKE queries beat one giant UNION ALL for readability at
+    // Jason's roster size; the DB plans each as an indexed table scan.
+    const [swimmerHits, memberHits, householdHits] = await Promise.all([
+      db
+        .select({ householdId: swimmers.householdId })
+        .from(swimmers)
+        .where(
+          or(
+            sql`${swimmers.firstName} ILIKE ${pattern}`,
+            sql`${swimmers.lastName} ILIKE ${pattern}`,
+          ),
+        ),
+      db
+        .select({ householdId: householdMembers.householdId })
+        .from(householdMembers)
+        .innerJoin(profiles, eq(profiles.id, householdMembers.profileId))
+        .where(sql`${profiles.fullName} ILIKE ${pattern}`),
+      db
+        .select({ householdId: households.id })
+        .from(households)
+        .where(sql`${households.name} ILIKE ${pattern}`),
+    ]);
+
+    const matchingIds = Array.from(
+      new Set<string>([
+        ...swimmerHits.map((row) => row.householdId),
+        ...memberHits.map((row) => row.householdId),
+        ...householdHits.map((row) => row.householdId),
+      ]),
+    );
+    if (matchingIds.length === 0) {
+      res.json([] as CoachHouseholdSearchResponse);
+      return;
+    }
+
+    const topIds = matchingIds.slice(0, limit);
+
+    // Fetch each matched household's name, member full names, swimmers, and
+    // its active home-pool location id (if any) in parallel.
+    const [householdRows, memberRows, swimmerDetailRows, homePoolRows] = await Promise.all([
+      db
+        .select({ id: households.id, name: households.name })
+        .from(households)
+        .where(inArray(households.id, topIds))
+        .orderBy(asc(households.name)),
+      db
+        .select({ householdId: householdMembers.householdId, fullName: profiles.fullName })
+        .from(householdMembers)
+        .innerJoin(profiles, eq(profiles.id, householdMembers.profileId))
+        .where(inArray(householdMembers.householdId, topIds)),
+      db
+        .select({
+          id: swimmers.id,
+          householdId: swimmers.householdId,
+          firstName: swimmers.firstName,
+          lastName: swimmers.lastName,
+          archivedAt: swimmers.archivedAt,
+        })
+        .from(swimmers)
+        .where(inArray(swimmers.householdId, topIds))
+        .orderBy(asc(swimmers.firstName)),
+      db
+        .select({ id: lessonLocations.id, householdId: lessonLocations.householdId })
+        .from(lessonLocations)
+        .where(
+          and(
+            inArray(lessonLocations.householdId, topIds),
+            eq(lessonLocations.isActive, true),
+          ),
+        ),
+    ]);
+
+    const membersByHousehold = new Map<string, string[]>();
+    for (const row of memberRows) {
+      const list = membersByHousehold.get(row.householdId) ?? [];
+      if (row.fullName) list.push(row.fullName);
+      membersByHousehold.set(row.householdId, list);
+    }
+
+    const swimmersByHousehold = new Map<string, CoachHouseholdSearchSwimmer[]>();
+    for (const row of swimmerDetailRows) {
+      const list = swimmersByHousehold.get(row.householdId) ?? [];
+      list.push({
+        id: row.id,
+        firstName: row.firstName,
+        lastName: row.lastName,
+        archivedAt: row.archivedAt ? row.archivedAt.toISOString() : null,
+      });
+      swimmersByHousehold.set(row.householdId, list);
+    }
+
+    const homePoolByHousehold = new Map<string, string>();
+    for (const row of homePoolRows) {
+      if (row.householdId) homePoolByHousehold.set(row.householdId, row.id);
+    }
+
+    const results: CoachHouseholdSearchResult[] = householdRows.map((row) => ({
+      householdId: row.id,
+      householdName: row.name,
+      memberFullNames: membersByHousehold.get(row.id) ?? [],
+      swimmers: swimmersByHousehold.get(row.id) ?? [],
+      homePoolLocationId: homePoolByHousehold.get(row.id) ?? null,
+    }));
+
+    res.json(results satisfies CoachHouseholdSearchResponse);
+  }),
+);
+
+// ── Coach booking warning computation ─────────────────────────────────────────
+
+interface ComputeWarningsInput {
+  startsAt: Date;
+  durationMinutes: 30 | 45 | 60;
+  locationId: string;
+  laDateStr: string;
+  nowUtc: Date;
+  config: typeof availabilityConfig.$inferSelect;
+  seasons: ReturnType<typeof mapSeasonRow>[];
+  overrides: ReturnType<typeof mapOverrideRow>[];
+  blocked: (typeof blockedTimes.$inferSelect)[];
+  buffers: (typeof travelBufferOverrides.$inferSelect)[];
+  existingLessons: Array<{ startsAt: Date; durationMinutes: number; locationId: string }>;
+}
+
+// Computes every warning the ADR describes. Does NOT compute hard overlap —
+// that's enforced inside the transaction under the advisory lock, since the
+// data can change between warning computation and insert.
+function computeCoachBookingWarnings(input: ComputeWarningsInput): CoachBookingWarnings {
+  const {
+    startsAt,
+    durationMinutes,
+    locationId,
+    laDateStr,
+    nowUtc,
+    config,
+    seasons,
+    overrides,
+    blocked,
+    buffers,
+    existingLessons,
+  } = input;
+
+  const startMs = startsAt.getTime();
+  const endMs = startMs + durationMinutes * 60_000;
+  const nowMs = nowUtc.getTime();
+
+  // outsideHours: no teaching window on this LA day, OR the slot's LA
+  // wall-clock range doesn't fit entirely inside one of the day's windows.
+  const hoursWindows = effectiveHours(laDateStr, seasons, overrides, {
+    defaultTeachesDays: config.defaultTeachesDays,
+    defaultStartTime: config.defaultStartTime,
+    defaultEndTime: config.defaultEndTime,
+  });
+  let outsideHours = false;
+  if (hoursWindows.length === 0) {
+    outsideHours = true;
+  } else {
+    const laTimeParts = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/Los_Angeles",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    }).formatToParts(startsAt);
+    const hour = laTimeParts.find((p) => p.type === "hour")?.value ?? "00";
+    const minute = laTimeParts.find((p) => p.type === "minute")?.value ?? "00";
+    const startMinutes = parseInt(hour, 10) * 60 + parseInt(minute, 10);
+    const endMinutes = startMinutes + durationMinutes;
+    outsideHours = !hoursWindows.some((win) => {
+      const [startH, startM] = win.start.split(":").map((n) => parseInt(n, 10));
+      const [endH, endM] = win.end.split(":").map((n) => parseInt(n, 10));
+      const winStart = (startH ?? 0) * 60 + (startM ?? 0);
+      const winEnd = (endH ?? 0) * 60 + (endM ?? 0);
+      return startMinutes >= winStart && endMinutes <= winEnd;
+    });
+  }
+
+  // insideNoticeWindow: start is sooner than bookingMinAdvanceHours from now.
+  const minAdvanceMs = nowMs + config.bookingMinAdvanceHours * 60 * 60 * 1000;
+  const insideNoticeWindow = startMs < minAdvanceMs;
+
+  // maxAdvanceExceeded: start is further out than bookingMaxAdvanceWeeks.
+  const maxAdvanceMs = nowMs + config.bookingMaxAdvanceWeeks * 7 * 24 * 60 * 60 * 1000;
+  const maxAdvanceExceeded = startMs > maxAdvanceMs;
+
+  // travelBufferViolated: another lesson at a different pool is within its
+  // configured travel-buffer-minutes window of this slot's start or end.
+  const DEFAULT_BUFFER_MINUTES = 30;
+  const bufferMinutes = (from: string, to: string): number => {
+    if (from === to) return 0;
+    const override = buffers.find((row) => row.fromLocationId === from && row.toLocationId === to);
+    return override?.bufferMinutes ?? DEFAULT_BUFFER_MINUTES;
+  };
+  const travelBufferViolated = existingLessons.some((row) => {
+    if (row.locationId === locationId) return false;
+    const existingStart = row.startsAt.getTime();
+    const existingEnd = existingStart + row.durationMinutes * 60_000;
+    const bufAfterMs = bufferMinutes(row.locationId, locationId) * 60_000;
+    const bufBeforeMs = bufferMinutes(locationId, row.locationId) * 60_000;
+    // Buffer-after-existing collides with the new slot start.
+    if (startMs < existingEnd + bufAfterMs && startMs >= existingEnd) return true;
+    // Buffer-before-existing collides with the new slot end.
+    if (endMs > existingStart - bufBeforeMs && endMs <= existingStart) return true;
+    return false;
+  });
+
+  // dailyCapExceeded: existing lessons' minutes on this LA day + this one
+  // exceed maxDailyLessonMinutes.
+  const laDayMinutes = existingLessons
+    .filter((row) => {
+      const parts = new Intl.DateTimeFormat("en-US", {
+        timeZone: "America/Los_Angeles",
+        year: "numeric", month: "2-digit", day: "2-digit",
+      }).formatToParts(row.startsAt);
+      const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+      return `${get("year")}-${get("month")}-${get("day")}` === laDateStr;
+    })
+    .reduce((sum, row) => sum + row.durationMinutes, 0);
+  const dailyCapExceeded = laDayMinutes + durationMinutes > config.maxDailyLessonMinutes;
+
+  // blockedTimeOverlap: slot time range overlaps any blocked_times row.
+  const blockedTimeOverlap = blocked.some((row) => {
+    const bStart = row.startsAt.getTime();
+    const bEnd = row.endsAt.getTime();
+    return startMs < bEnd && bStart < endMs;
+  });
+
+  return {
+    outsideHours,
+    insideNoticeWindow,
+    maxAdvanceExceeded,
+    travelBufferViolated,
+    dailyCapExceeded,
+    blockedTimeOverlap,
+  };
+}
