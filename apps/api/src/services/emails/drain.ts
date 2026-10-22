@@ -25,6 +25,11 @@ const SCRUB_AGE_DAYS = 30;
 // home-pool lessons) full residential addresses indefinitely.
 const ABANDON_AGE_DAYS = 7;
 
+// Per-tick cap on the abandon UPDATE. Mirrors the scrub cap — a one-time
+// large sweep after launch should spread across several ticks instead of
+// holding a heavy table lock in one statement.
+const ABANDON_LIMIT_PER_TICK = 500;
+
 const log = rootLogger.child({ component: "lesson-email-drain" });
 
 export interface DrainResult {
@@ -41,23 +46,33 @@ export async function drainLessonEmailOutbox(): Promise<DrainResult> {
 
   // Mark aged-out failed rows terminal before the drain picks them up.
   // They stop retrying and become scrub candidates on the next pass.
+  //
+  // SELECT ids with LIMIT first, then UPDATE those exact ids, so a backlog
+  // of thousands of aged-out rows (e.g. a one-time sweep after a bug fix)
+  // spreads over several ticks instead of holding a heavy table lock.
   const abandonCutoff = new Date(now.getTime() - ABANDON_AGE_DAYS * 24 * 60 * 60 * 1000);
-  const abandonedRows = await db
-    .update(lessonEmailOutbox)
-    .set({
-      status: "abandoned",
-      lastError: sql`coalesce(${lessonEmailOutbox.lastError}, 'abandoned_after_retry_window')`,
-      claimedUntil: null,
-    })
+  const abandonCandidates = await db
+    .select({ id: lessonEmailOutbox.id })
+    .from(lessonEmailOutbox)
     .where(
       and(
         eq(lessonEmailOutbox.status, "failed"),
         lt(lessonEmailOutbox.createdAt, abandonCutoff),
       ),
     )
-    .returning({ id: lessonEmailOutbox.id });
-  const abandoned = abandonedRows.length;
-  if (abandoned > 0) {
+    .limit(ABANDON_LIMIT_PER_TICK);
+  let abandoned = 0;
+  if (abandonCandidates.length > 0) {
+    const abandonIds = abandonCandidates.map((row) => row.id);
+    await db
+      .update(lessonEmailOutbox)
+      .set({
+        status: "abandoned",
+        lastError: sql`coalesce(${lessonEmailOutbox.lastError}, 'abandoned_after_retry_window')`,
+        claimedUntil: null,
+      })
+      .where(inArray(lessonEmailOutbox.id, abandonIds));
+    abandoned = abandonIds.length;
     log.info({ abandoned }, "lesson-email rows abandoned after retry window");
   }
 
