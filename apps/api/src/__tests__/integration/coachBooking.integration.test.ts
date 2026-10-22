@@ -644,6 +644,41 @@ describe("POST /coach/lessons (integration)", () => {
       await wipeHouseholdBookingArtifacts(ownerA.householdId);
     });
   });
+
+  it("11. start_in_past is a hard reject, not acknowledgeable with override", async () => {
+    // One hour ago. Not reachable from the UI (its date/time pickers won't
+    // offer past values), but the API must still reject out-of-band attempts
+    // regardless of overrideWindow + acknowledgements.
+    const pastStart = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const res = await request(app)
+      .post("/coach/lessons")
+      .set("Authorization", `Bearer ${coach.accessToken}`)
+      .send({
+        householdId: ownerA.householdId,
+        swimmerIds: [swimmerAId],
+        locationId,
+        startsAt: pastStart,
+        durationMinutes: 30,
+        overrideWindow: true,
+        acknowledgedWarnings: {
+          outsideHours: true,
+          insideNoticeWindow: true,
+          maxAdvanceExceeded: true,
+          travelBufferViolated: true,
+          dailyCapExceeded: true,
+          blockedTimeOverlap: true,
+        },
+      });
+    expect(res.status).toBe(422);
+    expect(res.body.error).toBe("start_in_past");
+
+    // No lesson, no audit, no outbox row for this attempt.
+    const lessonRows = await adminDb()
+      .select({ id: lessons.id })
+      .from(lessons)
+      .where(eq(lessons.householdId, ownerA.householdId));
+    expect(lessonRows).toHaveLength(0);
+  });
 });
 
 // Keep this reference so unused-import lint doesn't bark. The symbol is

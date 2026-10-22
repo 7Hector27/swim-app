@@ -58,6 +58,7 @@ const TEST_SWIMMER = {
   sex: "male" as const,
   isPublic: false,
   birthDate: "2013-01-01",
+  householdId: "00000000-0000-0000-0000-000000000ff0",
   currentLeagues: [],
   clubs: [],
   members: [{ fullName: "Jane Smith", phone: "555-1234" }],

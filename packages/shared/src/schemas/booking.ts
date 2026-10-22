@@ -666,8 +666,12 @@ export type CoachCreateLessonWarningsResponse = z.infer<
 
 export const COACH_HOUSEHOLD_SEARCH_MIN_LENGTH = 2;
 
+// Either `q` (contains search across swimmer/member/household name) or
+// `householdId` (direct lookup for the /coach/book pre-fill path from
+// /coach/swimmers/[id]). Both set: householdId wins. Neither set: empty.
 export const CoachHouseholdSearchQuerySchema = z.object({
-  q: z.string().trim(),
+  q: z.string().trim().optional(),
+  householdId: z.string().uuid().optional(),
   limit: z
     .string()
     .transform((value) => parseInt(value, 10))

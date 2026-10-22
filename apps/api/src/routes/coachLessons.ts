@@ -922,6 +922,14 @@ coachLessonsRouter.post(
     const startsAt = new Date(body.startsAt);
     const nowUtc = new Date();
 
+    // ── Hard reject: start in the past ────────────────────────────────────────
+    // Not acknowledgeable. Lessons that would already be underway or over
+    // cannot be booked, regardless of overrideWindow.
+    if (startsAt.getTime() <= nowUtc.getTime()) {
+      res.status(422).json({ error: "start_in_past" });
+      return;
+    }
+
     // ── Household exists ──────────────────────────────────────────────────────
     const householdRows = await db
       .select({ id: households.id })
@@ -1181,53 +1189,59 @@ coachLessonsRouter.get(
   validate({ query: CoachHouseholdSearchQuerySchema }),
   asyncHandler(async (req, res) => {
     const query = req.query as unknown as CoachHouseholdSearchQuery;
-    const q = query.q.trim();
     const limit = query.limit ?? 20;
 
-    if (q.length < COACH_HOUSEHOLD_SEARCH_MIN_LENGTH) {
-      res.json([] as CoachHouseholdSearchResponse);
-      return;
-    }
+    // Resolve the set of matching household ids. Two paths:
+    // - householdId filter → direct lookup, used by /coach/book's pre-fill
+    //   from /coach/swimmers/[id]. Bypasses the min-query-length rule.
+    // - q filter → contains search across swimmer/member/household name.
+    let topIds: string[];
+    if (query.householdId !== undefined) {
+      topIds = [query.householdId];
+    } else {
+      const q = (query.q ?? "").trim();
+      if (q.length < COACH_HOUSEHOLD_SEARCH_MIN_LENGTH) {
+        res.json([] as CoachHouseholdSearchResponse);
+        return;
+      }
+      const pattern = `%${q}%`;
 
-    const pattern = `%${q}%`;
-
-    // Collect household ids whose swimmer/member/household name contains q.
-    // Four small ILIKE queries beat one giant UNION ALL for readability at
-    // Jason's roster size; the DB plans each as an indexed table scan.
-    const [swimmerHits, memberHits, householdHits] = await Promise.all([
-      db
-        .select({ householdId: swimmers.householdId })
-        .from(swimmers)
-        .where(
-          or(
-            sql`${swimmers.firstName} ILIKE ${pattern}`,
-            sql`${swimmers.lastName} ILIKE ${pattern}`,
+      // Four small ILIKE queries beat one giant UNION ALL for readability at
+      // Jason's roster size; the DB plans each as an indexed table scan.
+      const [swimmerHits, memberHits, householdHits] = await Promise.all([
+        db
+          .select({ householdId: swimmers.householdId })
+          .from(swimmers)
+          .where(
+            or(
+              sql`${swimmers.firstName} ILIKE ${pattern}`,
+              sql`${swimmers.lastName} ILIKE ${pattern}`,
+            ),
           ),
-        ),
-      db
-        .select({ householdId: householdMembers.householdId })
-        .from(householdMembers)
-        .innerJoin(profiles, eq(profiles.id, householdMembers.profileId))
-        .where(sql`${profiles.fullName} ILIKE ${pattern}`),
-      db
-        .select({ householdId: households.id })
-        .from(households)
-        .where(sql`${households.name} ILIKE ${pattern}`),
-    ]);
+        db
+          .select({ householdId: householdMembers.householdId })
+          .from(householdMembers)
+          .innerJoin(profiles, eq(profiles.id, householdMembers.profileId))
+          .where(sql`${profiles.fullName} ILIKE ${pattern}`),
+        db
+          .select({ householdId: households.id })
+          .from(households)
+          .where(sql`${households.name} ILIKE ${pattern}`),
+      ]);
 
-    const matchingIds = Array.from(
-      new Set<string>([
-        ...swimmerHits.map((row) => row.householdId),
-        ...memberHits.map((row) => row.householdId),
-        ...householdHits.map((row) => row.householdId),
-      ]),
-    );
-    if (matchingIds.length === 0) {
-      res.json([] as CoachHouseholdSearchResponse);
-      return;
+      const matchingIds = Array.from(
+        new Set<string>([
+          ...swimmerHits.map((row) => row.householdId),
+          ...memberHits.map((row) => row.householdId),
+          ...householdHits.map((row) => row.householdId),
+        ]),
+      );
+      if (matchingIds.length === 0) {
+        res.json([] as CoachHouseholdSearchResponse);
+        return;
+      }
+      topIds = matchingIds.slice(0, limit);
     }
-
-    const topIds = matchingIds.slice(0, limit);
 
     // Fetch each matched household's name, member full names, swimmers, and
     // its active home-pool location id (if any) in parallel.

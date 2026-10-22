@@ -269,6 +269,7 @@ coachSwimmersRouter.get(
       isPublic: swimmer.isPublic,
       createdAt: toISO(swimmer.createdAt),
       updatedAt: toISO(swimmer.updatedAt),
+      householdId: swimmer.householdId,
       clubs: clubRows.map(mapClub),
       currentLeagues: regRows.map((row) => row.league),
       members: memberRows,
