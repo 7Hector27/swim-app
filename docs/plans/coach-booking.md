@@ -363,11 +363,15 @@ Playwright or vitest-browser once the feature is wired, covering:
 
 ---
 
-## Open questions for Jason
+## Resolved (previously open)
 
-1. **Max-advance-weeks under override.** The 10-week forward cap is a parent-facing rule meant to prevent speculative bookings. Should coach custom-time be able to bypass it (same warning treatment) or should it stay a hard reject? Current plan: warning.
-2. **Blocked_times under override.** Jason adds blocked_times himself (holidays, Calendly). If he tries to book a coach-created lesson over one, should the UI block it hard, warn and let him proceed, or silently delete the blocked_time? Current plan: warning (he can proceed and the blocked time still shows on his schedule view).
-3. **Audit payload override detail.** Is the five-field `{outsideHours, insideNoticeWindow, travelBufferViolated, dailyCapExceeded, blockedTimeOverlap}` payload the right granularity, or does Jason want a free-text "reason" field he types when overriding? A reason field is a quick addition but it's PII/noise if nobody reads it.
-4. **Swimmer picker when the roster is huge.** The household search returns up to 20 households by prefix match; swimmer-only families with ten kids won't exist in practice, but if a household has >8 swimmers the chip row needs a scroll affordance. Confirm Jason's largest household size so we size the picker right.
-5. **Google-sync event summary for coach-booked lessons.** Current ADR 027 ships `"Swim lesson: <first>"` for all lessons. Coach-booked lessons are no different in Google's view — same title. Confirm Jason doesn't want a visual tell (e.g., prefix "📘 Swim lesson:") so he can scan the calendar for lessons he booked vs. parent-booked. Current plan: no tell.
-6. **Entry from a parent-facing surface?** We explicitly said coach-only, but if a parent asks Jason to book during a lesson, does he always use the coach surface, or does he sometimes want a shortcut from the parent's lesson detail page while impersonating? Current plan: no impersonation; coach-only entry points.
+- **Max-advance-weeks is an acknowledgeable warning.** Treated the same as the other window warnings — the server computes `maxAdvanceExceeded`, the coach acknowledges it, the audit log records it. No hard reject beyond direct time overlap.
+- **Blocked_times are an acknowledgeable warning.** Jason can book over a blocked time; the blocked time stays in place on his schedule view. No silent deletion.
+- **No free-text override reason.** The structured server-computed warnings object is the audit record. A free-text field is redundant for the audit purpose and a mild PII footgun. If a reason-column need materializes later, it's an additive migration.
+- **Swimmer chip row wraps.** The UI uses a flex-wrap chip row rather than a horizontal scroller. Confirmed the biggest household in Jason's roster today has four siblings; wrap stays legible well past that.
+- **No Google Calendar title tell for coach-booked lessons.** Event summary stays `"Swim lesson: <first>"` for both coach- and parent-booked lessons (per ADR 027). Jason has his own audit log in-app if he wants a "who booked what" view.
+- **No impersonation entry point.** Coach-only entry points on `/coach/schedule` and `/coach/swimmers/[id]`. The parent-facing lesson detail does not expose a "book another" shortcut for the coach; Jason uses the coach surface regardless.
+
+## Open question for Jason
+
+**Does the custom-time override belong in phase 1 at all?** Everything above assumes Jason wants the ability to book outside his teaching hours and inside the 16-hour notice window on day one. The override surface is also the biggest piece of custom UX in this feature: the warnings card, the acknowledgement checkboxes, the server-side warning computation, and the audit payload all exist in service of this one path. If Jason's actual pool-deck workflow stays inside the normal booking window ("I'll book you Thursday at 4"), we could ship phase 1 without the override — the server would still compute the warnings but return a hard 422 on any non-zero warning, and the UI would omit the "Pick a custom time" link. Phase 2 adds the override surface. Needs confirmation before building.
