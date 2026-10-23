@@ -896,11 +896,13 @@ apps/api/src/__tests__/balance.test.ts                       new
 
 ---
 
-## PR 9 — Recurring lessons
+## PR 9 — Batch booking (manual + weekly repeat)
 
-**Moved to [docs/plans/recurring-lessons.md](./recurring-lessons.md).**
+**Moved to [docs/plans/batch-booking.md](./batch-booking.md).** See [ADR 030](../decisions/030-parent-batch-booking.md).
 
-That plan supersedes the earlier stub here. It covers both recurring lessons (as a `lesson_series` rule that generates real `lessons` rows inside a cron-extended booking window, with per-occurrence and this-and-future changes, series-level approval, and one series email with a multi-event `.ics`) and the smaller multi-lesson batch flow. Blocked on open questions for Jason listed at the top of that document.
+Parents book 2–10 lessons in one submission, in two modes: `manual` (explicit list of start times) or `weekly` (first time + weeks count, capped by `bookingMaxAdvanceWeeks`). One household, one swimmer set, one pool, one duration per batch. All-or-nothing transaction with per-day advisory locks. One summary email with a multi-`VEVENT` `.ics` instead of N per-lesson emails. Coach "approve all pending in a batch" is a convenience path.
+
+An earlier, heavier design using a `lesson_series` rule with cron-extended generation and this-and-future changes is shelved at [docs/plans/recurring-lessons.md](./recurring-lessons.md) for reference only.
 
 ---
 
@@ -939,7 +941,8 @@ apps/web/src/content/CoachDashboardContent/CoachDashboardContent.tsx   remove an
 
 | Item | Status |
 |---|---|
-| Recurring weekly lessons | See [docs/plans/recurring-lessons.md](./recurring-lessons.md); blocked on open questions |
+| Multi-lesson batch (incl. weekly repeat) | Plan at [docs/plans/batch-booking.md](./batch-booking.md); ADR [030](../decisions/030-parent-batch-booking.md) |
+| Open-ended recurring rule (`lesson_series`) | Shelved; see [docs/plans/recurring-lessons.md](./recurring-lessons.md) for reference |
 | 3-sibling package details and pricing | TBD; PR 8 seeds a disabled placeholder |
 | No-show fee policy | Not specified; current plan charges $0 for no-shows |
 | Balance visibility for managers/viewers | Flagged for Jason to confirm (currently owner-only) |
