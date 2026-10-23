@@ -70,7 +70,7 @@ function getLaOffsetMs(date: Date): number {
 }
 
 // Converts a wall-clock date+time in America/Los_Angeles to a UTC Date.
-function laToUtc(dateStr: string, timeStr: string): Date {
+export function laToUtc(dateStr: string, timeStr: string): Date {
   const year = Number(dateStr.slice(0, 4));
   const month = Number(dateStr.slice(5, 7));
   const day = Number(dateStr.slice(8, 10));

@@ -3,6 +3,13 @@ import { and, asc, count, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import type {
   AvailableSlot,
   AvailableSlotsQuery,
+  BatchConflictPick,
+  BatchPickState,
+  BatchPreviewBody,
+  BatchPreviewPick,
+  BatchPreviewResponse,
+  BatchSubmitBody,
+  BatchSubmitSuccessResponse,
   CreateLessonBody,
   DayAvailability,
   DayState,
@@ -17,14 +24,28 @@ import type {
   WeekAvailabilityResponse,
   WeekDayAvailability,
 } from "@swim-app/shared";
-import { AvailableSlotsQuerySchema, CreateLessonBodySchema, HOUSEHOLD_ROLE_RANK, RangeAvailabilityQuerySchema, UpdateLessonBodySchema, UpcomingLessonsQuerySchema } from "@swim-app/shared";
+import {
+  AvailableSlotsQuerySchema,
+  BatchPreviewBodySchema,
+  BatchSubmitBodySchema,
+  BATCH_LESSON_MAX,
+  BATCH_LESSON_MIN,
+  CreateLessonBodySchema,
+  HOUSEHOLD_ROLE_RANK,
+  RangeAvailabilityQuerySchema,
+  UpdateLessonBodySchema,
+  UpcomingLessonsQuerySchema,
+} from "@swim-app/shared";
 import { db } from "../db/client";
 import {
   availabilityConfig,
   availabilityOverrides,
   availabilitySeasons,
   blockedTimes,
+  bookingBatches,
+  householdAuditLog,
   householdMembers,
+  lessonEmailOutbox,
   lessonLocations,
   lessonSwimmers,
   lessons,
@@ -38,6 +59,12 @@ import { requireHouseholdRole } from "../middleware/requireHouseholdRole";
 import { validate } from "../middleware/validate";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { classifyDaySlots, computeAvailableSlots, diagnoseSlotRejection, getDateInLA, getISODayOfWeek } from "../lib/slots";
+import {
+  applyWeeklyOverridesAndSkips,
+  expandWeeklyCandidates,
+  slotRejectionToPickState,
+  type Candidate,
+} from "../lib/batchCandidates";
 import { effectiveHours } from "../lib/effectiveHours";
 import { mapConfigRow, mapSeasonRow, mapOverrideRow } from "../lib/availabilityMappers";
 import { needsApproval, notifyBookingCreated, notifyCoachOfChange } from "../lib/lessonApproval";
@@ -674,6 +701,606 @@ lessonsRouter.post(
     // + Resend Idempotency-Key keep this safe against the cron drain
     // racing on the same row.
     queueMicrotask(() => { void sendLessonEmailOutboxRow(committedOutboxId); });
+  }),
+);
+
+// ── POST /lessons/batch/preview ───────────────────────────────────────────────
+
+interface BatchContext {
+  config: typeof availabilityConfig.$inferSelect;
+  seasons: ReturnType<typeof mapSeasonRow>[];
+  overrides: ReturnType<typeof mapOverrideRow>[];
+  blocked: { startsAt: Date; endsAt: Date }[];
+  buffers: { fromLocationId: string; toLocationId: string; bufferMinutes: number }[];
+  dbLessons: { startsAt: Date; durationMinutes: number; locationId: string }[];
+  nowUtc: Date;
+}
+
+function classifyBatchPick(
+  candidate: Candidate,
+  allCandidates: Candidate[],
+  locationId: string,
+  durationMinutes: 30 | 45 | 60,
+  ctx: BatchContext,
+): { state: BatchPickState; reason?: string } {
+  const startsAtMs = candidate.startsAt.getTime();
+  const nowMs = ctx.nowUtc.getTime();
+  const minAdvMs = ctx.config.bookingMinAdvanceHours * 60 * 60 * 1000;
+  const maxAdvMs = ctx.config.bookingMaxAdvanceWeeks * 7 * 24 * 60 * 60 * 1000;
+
+  if (startsAtMs < nowMs) return { state: "past", reason: "too_soon" };
+  if (startsAtMs > nowMs + maxAdvMs) return { state: "not_open_yet", reason: "too_far" };
+  if (startsAtMs < nowMs + minAdvMs) return { state: "too_soon", reason: "too_soon" };
+
+  const laDate = getDateInLA(candidate.startsAt);
+  const otherFoldIn = allCandidates
+    .filter((other) => other.index !== candidate.index)
+    .map((other) => ({
+      startsAt: other.startsAt,
+      durationMinutes,
+      locationId,
+    }));
+  const slotParams = {
+    date: laDate,
+    durationMinutes,
+    locationId,
+    existingLessons: [...ctx.dbLessons, ...otherFoldIn],
+    blockedTimes: ctx.blocked,
+    travelBufferOverrides: ctx.buffers,
+    config: mapConfigRow(ctx.config),
+    seasons: ctx.seasons,
+    overrides: ctx.overrides,
+    gcalBusyTimes: [],
+    nowUtc: ctx.nowUtc,
+  };
+  const availableSlots = computeAvailableSlots(slotParams);
+  const matches = availableSlots.some((slot) => slot.startsAt.getTime() === startsAtMs);
+  if (matches) return { state: "available" };
+
+  const reason = diagnoseSlotRejection(slotParams, startsAtMs);
+  let state = slotRejectionToPickState(reason);
+  // Promote generic unavailability to conflicts_batch when the overlap is
+  // specifically with another pick in the same submission.
+  if (state === "unavailable") {
+    const myEnd = startsAtMs + durationMinutes * 60_000;
+    const overlapsAnotherPick = otherFoldIn.some((other) => {
+      const otherEnd = other.startsAt.getTime() + other.durationMinutes * 60_000;
+      return startsAtMs < otherEnd && myEnd > other.startsAt.getTime();
+    });
+    if (overlapsAnotherPick) state = "conflicts_batch";
+  }
+  return { state, reason };
+}
+
+function suggestionsForPick(
+  candidate: Candidate,
+  allCandidates: Candidate[],
+  locationId: string,
+  durationMinutes: 30 | 45 | 60,
+  ctx: BatchContext,
+): { startsAt: string }[] {
+  const laDate = getDateInLA(candidate.startsAt);
+  const otherFoldIn = allCandidates
+    .filter((other) => other.index !== candidate.index)
+    .map((other) => ({
+      startsAt: other.startsAt,
+      durationMinutes,
+      locationId,
+    }));
+  const slotParams = {
+    date: laDate,
+    durationMinutes,
+    locationId,
+    existingLessons: [...ctx.dbLessons, ...otherFoldIn],
+    blockedTimes: ctx.blocked,
+    travelBufferOverrides: ctx.buffers,
+    config: mapConfigRow(ctx.config),
+    seasons: ctx.seasons,
+    overrides: ctx.overrides,
+    gcalBusyTimes: [],
+    nowUtc: ctx.nowUtc,
+  };
+  const available = computeAvailableSlots(slotParams);
+  const targetMs = candidate.startsAt.getTime();
+  return available
+    .map((slot) => ({ startsAt: slot.startsAt, delta: Math.abs(slot.startsAt.getTime() - targetMs) }))
+    .sort((a, b) => a.delta - b.delta)
+    .slice(0, 3)
+    .map((entry) => ({ startsAt: entry.startsAt.toISOString() }));
+}
+
+async function assertBatchHouseholdAndSwimmers(
+  body: { householdId: string; swimmerIds: string[]; locationId: string },
+  callerHouseholdId: string,
+): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
+  if (body.householdId !== callerHouseholdId) {
+    return { ok: false, status: 403, error: "Forbidden" };
+  }
+  const swimmerRows = await db
+    .select({ id: swimmers.id, householdId: swimmers.householdId })
+    .from(swimmers)
+    .where(and(isActiveSwimmer, inArray(swimmers.id, body.swimmerIds)));
+  if (swimmerRows.length !== body.swimmerIds.length) {
+    return { ok: false, status: 422, error: "One or more swimmers not found or archived" };
+  }
+  if (swimmerRows.some((swimmer) => swimmer.householdId !== callerHouseholdId)) {
+    return { ok: false, status: 422, error: "All swimmers must belong to your household" };
+  }
+  const locationRows = await db
+    .select({ id: lessonLocations.id, householdId: lessonLocations.householdId })
+    .from(lessonLocations)
+    .where(and(eq(lessonLocations.id, body.locationId), eq(lessonLocations.isActive, true)))
+    .limit(1);
+  const location = locationRows[0];
+  if (!location) {
+    return { ok: false, status: 422, error: "Location not found or inactive" };
+  }
+  if (location.householdId !== null && location.householdId !== callerHouseholdId) {
+    return { ok: false, status: 403, error: "not_your_home_pool" };
+  }
+  return { ok: true };
+}
+
+lessonsRouter.post(
+  "/batch/preview",
+  requireParent,
+  requireHouseholdMember,
+  requireHouseholdRole("manager"),
+  validate({ body: BatchPreviewBodySchema }),
+  asyncHandler(async (req, res) => {
+    const body = req.body as BatchPreviewBody;
+    const { householdId } = req;
+    const nowUtc = new Date();
+
+    const guard = await assertBatchHouseholdAndSwimmers(body, householdId);
+    if (!guard.ok) {
+      res.status(guard.status).json({ error: guard.error });
+      return;
+    }
+
+    const [configRows, seasonRows, overrideRows, blockedRows, bufferRows, existingLessonRows] =
+      await Promise.all([
+        db.select().from(availabilityConfig).limit(1),
+        db.select().from(availabilitySeasons),
+        db.select().from(availabilityOverrides),
+        db.select().from(blockedTimes),
+        db.select().from(travelBufferOverrides),
+        db
+          .select({
+            startsAt: lessons.startsAt,
+            durationMinutes: lessons.durationMinutes,
+            locationId: lessons.locationId,
+          })
+          .from(lessons)
+          .where(inArray(lessons.status, ["pending", "approved"])),
+      ]);
+    const config = configRows[0];
+    if (!config) {
+      res.status(503).json({ error: "Availability config not found" });
+      return;
+    }
+
+    const ctx: BatchContext = {
+      config,
+      seasons: seasonRows.map(mapSeasonRow),
+      overrides: overrideRows.map(mapOverrideRow),
+      blocked: blockedRows.map((row) => ({ startsAt: row.startsAt, endsAt: row.endsAt })),
+      buffers: bufferRows.map((row) => ({
+        fromLocationId: row.fromLocationId,
+        toLocationId: row.toLocationId,
+        bufferMinutes: row.bufferMinutes,
+      })),
+      dbLessons: existingLessonRows.map((row) => ({
+        startsAt: row.startsAt,
+        durationMinutes: row.durationMinutes,
+        locationId: row.locationId,
+      })),
+      nowUtc,
+    };
+
+    const candidates: Candidate[] = body.mode === "manual"
+      ? body.picks.map((pick, index) => ({ index, startsAt: new Date(pick.startsAt) }))
+      : expandWeeklyCandidates({
+          weekdays: body.weekdays,
+          timeOfDay: body.timeOfDay,
+          startDate: body.startDate,
+          weeks: body.weeks,
+        });
+
+    const approvalRequired = await needsApproval(householdId, body.locationId, db);
+
+    const picks: BatchPreviewPick[] = candidates.map((candidate) => {
+      const classified = classifyBatchPick(
+        candidate,
+        candidates,
+        body.locationId,
+        body.durationMinutes,
+        ctx,
+      );
+      const base: BatchPreviewPick = {
+        index: candidate.index,
+        startsAt: candidate.startsAt.toISOString(),
+        state: classified.state,
+      };
+      if (classified.state === "available") return base;
+      if (classified.reason) base.reason = classified.reason;
+      // Suggestions only when the day has an open teaching window at all.
+      // past / too_soon / not_open_yet are not time-of-day failures, so no
+      // same-day replacements will help — omit the suggestions field.
+      const suggestable: BatchPickState[] = [
+        "unavailable",
+        "outside_hours",
+        "blocked_time",
+        "day_closed",
+        "conflicts_batch",
+      ];
+      if (suggestable.includes(classified.state)) {
+        const suggestions = suggestionsForPick(
+          candidate,
+          candidates,
+          body.locationId,
+          body.durationMinutes,
+          ctx,
+        );
+        if (suggestions.length > 0) base.suggestions = suggestions;
+      }
+      return base;
+    });
+
+    const response: BatchPreviewResponse = {
+      needsApproval: approvalRequired,
+      picks,
+    };
+    res.json(response);
+  }),
+);
+
+// ── POST /lessons/batch ───────────────────────────────────────────────────────
+
+lessonsRouter.post(
+  "/batch",
+  requireParent,
+  requireHouseholdMember,
+  requireHouseholdRole("manager"),
+  validate({ body: BatchSubmitBodySchema }),
+  asyncHandler(async (req, res) => {
+    const body = req.body as BatchSubmitBody;
+    const { householdId } = req;
+    const profileId = req.profile.id;
+    const nowUtc = new Date();
+
+    const guard = await assertBatchHouseholdAndSwimmers(body, householdId);
+    if (!guard.ok) {
+      res.status(guard.status).json({ error: guard.error });
+      return;
+    }
+
+    // Compute final picks after applying weekly skips + overrides.
+    let finalPicks: Candidate[];
+    if (body.mode === "manual") {
+      finalPicks = body.picks.map((pick, index) => ({ index, startsAt: new Date(pick.startsAt) }));
+    } else {
+      const expanded = expandWeeklyCandidates({
+        weekdays: body.weekdays,
+        timeOfDay: body.timeOfDay,
+        startDate: body.startDate,
+        weeks: body.weeks,
+      });
+      finalPicks = applyWeeklyOverridesAndSkips(expanded, body.overrides, body.skips);
+    }
+
+    if (finalPicks.length < BATCH_LESSON_MIN) {
+      res.status(422).json({ error: "picks_underflow" });
+      return;
+    }
+    if (finalPicks.length > BATCH_LESSON_MAX) {
+      res.status(422).json({ error: "picks_overflow" });
+      return;
+    }
+
+    const [configRows, seasonRows, overrideRowsFetch] = await Promise.all([
+      db.select().from(availabilityConfig).limit(1),
+      db.select().from(availabilitySeasons),
+      db.select().from(availabilityOverrides),
+    ]);
+    const config = configRows[0];
+    if (!config) {
+      res.status(503).json({ error: "Availability config not found" });
+      return;
+    }
+    const seasons = seasonRows.map(mapSeasonRow);
+    const overrides = overrideRowsFetch.map(mapOverrideRow);
+
+    // Ascending unique LA dates for the deterministic lock order.
+    const uniqueDates = Array.from(
+      new Set(finalPicks.map((pick) => getDateInLA(pick.startsAt))),
+    ).sort();
+    const picksAsc = [...finalPicks].sort(
+      (a, b) => a.startsAt.getTime() - b.startsAt.getTime(),
+    );
+
+    const result = await db.transaction(async (tx) => {
+      const batchRows = await tx
+        .insert(bookingBatches)
+        .values(
+          body.mode === "weekly"
+            ? {
+                householdId,
+                createdBy: profileId,
+                mode: "weekly" as const,
+                weeklyWeekdays: body.weekdays,
+                weeklyTimeOfDay: body.timeOfDay,
+                weeklyStartDate: body.startDate,
+                weeklyWeeks: body.weeks,
+              }
+            : {
+                householdId,
+                createdBy: profileId,
+                mode: "manual" as const,
+              },
+        )
+        .returning();
+      const batch = batchRows[0]!;
+
+      for (const laDate of uniqueDates) {
+        await tx.execute(
+          sql`SELECT pg_advisory_xact_lock(hashtext(${"lesson-day:" + laDate}))`,
+        );
+      }
+
+      const [blockedRows, bufferRows, existingLessonRows] = await Promise.all([
+        tx.select().from(blockedTimes),
+        tx.select().from(travelBufferOverrides),
+        tx
+          .select({
+            startsAt: lessons.startsAt,
+            durationMinutes: lessons.durationMinutes,
+            locationId: lessons.locationId,
+          })
+          .from(lessons)
+          .where(inArray(lessons.status, ["pending", "approved"])),
+      ]);
+
+      const ctx: BatchContext = {
+        config,
+        seasons,
+        overrides,
+        blocked: blockedRows.map((row) => ({ startsAt: row.startsAt, endsAt: row.endsAt })),
+        buffers: bufferRows.map((row) => ({
+          fromLocationId: row.fromLocationId,
+          toLocationId: row.toLocationId,
+          bufferMinutes: row.bufferMinutes,
+        })),
+        dbLessons: existingLessonRows.map((row) => ({
+          startsAt: row.startsAt,
+          durationMinutes: row.durationMinutes,
+          locationId: row.locationId,
+        })),
+        nowUtc,
+      };
+
+      const conflicts: BatchConflictPick[] = [];
+      for (const pick of picksAsc) {
+        const classified = classifyBatchPick(
+          pick,
+          picksAsc,
+          body.locationId,
+          body.durationMinutes,
+          ctx,
+        );
+        if (classified.state !== "available") {
+          const conflict: BatchConflictPick = {
+            index: pick.index,
+            startsAt: pick.startsAt.toISOString(),
+            state: classified.state,
+          };
+          if (classified.reason) conflict.reason = classified.reason;
+          conflicts.push(conflict);
+        }
+      }
+      if (conflicts.length > 0) {
+        return { kind: "conflicts" as const, conflicts };
+      }
+
+      const approvalRequired = await needsApproval(householdId, body.locationId, tx);
+      const type: "private" | "family" = body.swimmerIds.length === 1 ? "private" : "family";
+      const now = new Date();
+      const sixteenHoursMs = 16 * 60 * 60 * 1000;
+
+      const insertedLessons = await tx
+        .insert(lessons)
+        .values(
+          picksAsc.map((pick) => ({
+            householdId,
+            locationId: body.locationId,
+            startsAt: pick.startsAt,
+            durationMinutes: body.durationMinutes,
+            type,
+            status: (approvalRequired ? "pending" : "approved") as "pending" | "approved",
+            requestedBy: profileId,
+            batchId: batch.id,
+            ...(approvalRequired
+              ? { expiresAt: new Date(pick.startsAt.getTime() - sixteenHoursMs) }
+              : { approvedAt: now, approvedBy: null }),
+          })),
+        )
+        .returning();
+
+      await tx.insert(lessonSwimmers).values(
+        insertedLessons.flatMap((lesson) =>
+          body.swimmerIds.map((swimmerId) => ({ lessonId: lesson.id, swimmerId })),
+        ),
+      );
+
+      // Approved lessons: snapshot calendar_sequence (0) into the payload and
+      // bump to 1 for the next REQUEST, set calendar_invite_sent_at.
+      const approvedLessonIds = insertedLessons
+        .filter((lesson) => lesson.status === "approved")
+        .map((lesson) => lesson.id);
+      if (approvedLessonIds.length > 0) {
+        await tx
+          .update(lessons)
+          .set({
+            calendarSequence: sql`${lessons.calendarSequence} + 1` as unknown as number,
+            calendarInviteSentAt: now,
+          })
+          .where(inArray(lessons.id, approvedLessonIds));
+      }
+
+      const recipientRows = await tx
+        .select({ profileId: householdMembers.profileId })
+        .from(householdMembers)
+        .where(
+          and(
+            eq(householdMembers.householdId, householdId),
+            inArray(householdMembers.role, ["owner", "manager"]),
+          ),
+        );
+      const recipientProfileIds = recipientRows.map((row) => row.profileId);
+
+      const swimmerNameRows = await tx
+        .select({ firstName: swimmers.firstName })
+        .from(swimmers)
+        .where(inArray(swimmers.id, body.swimmerIds))
+        .orderBy(swimmers.firstName);
+      const swimmerFirstNames = swimmerNameRows.map((row) => row.firstName);
+
+      const locationRows = await tx
+        .select({
+          id: lessonLocations.id,
+          name: lessonLocations.name,
+          address: lessonLocations.address,
+          city: lessonLocations.city,
+          state: lessonLocations.state,
+          zip: lessonLocations.zip,
+          householdId: lessonLocations.householdId,
+        })
+        .from(lessonLocations)
+        .where(eq(lessonLocations.id, body.locationId))
+        .limit(1);
+      const location = locationRows[0]!;
+
+      const batchPayload = {
+        batchId: batch.id,
+        mode: body.mode,
+        ...(body.mode === "weekly"
+          ? {
+              weekly: {
+                weekdays: body.weekdays,
+                timeOfDay: body.timeOfDay,
+                startDate: body.startDate,
+                weeks: body.weeks,
+              },
+            }
+          : {}),
+        location: {
+          id: location.id,
+          name: location.name,
+          address: location.address,
+          city: location.city,
+          state: location.state,
+          zip: location.zip,
+          isHomePool: location.householdId !== null,
+        },
+        durationMinutes: body.durationMinutes,
+        swimmerFirstNames,
+        // Each lesson entry includes its snapshotted calendar_sequence. The
+        // sender re-reads the live lessons table at send time and filters out
+        // any lesson whose status / sequence has drifted (ADR 030 send-time
+        // filter). Approved lessons' sequences were just bumped from 0 → 1
+        // above, so the snapshot here captures the invite number that just
+        // went out (0).
+        lessons: insertedLessons.map((lesson) => ({
+          lessonId: lesson.id,
+          startsAtUtc: lesson.startsAt.toISOString(),
+          durationMinutes: lesson.durationMinutes,
+          status: lesson.status,
+          calendarSequence: lesson.status === "approved" ? 0 : 0,
+        })),
+      };
+
+      const outboxInsert = await tx
+        .insert(lessonEmailOutbox)
+        .values({
+          batchId: batch.id,
+          lessonId: null,
+          event: "batch_booked",
+          sequence: 0,
+          recipientProfileIds,
+          icsMethod: null,
+          icsSequence: null,
+          payload: batchPayload,
+        })
+        .returning({ id: lessonEmailOutbox.id });
+      const outboxId = outboxInsert[0]!.id;
+
+      await tx.insert(householdAuditLog).values({
+        householdId,
+        actorId: profileId,
+        action: "lesson_batch_booked",
+        payload: {
+          batchId: batch.id,
+          mode: body.mode,
+          locationId: body.locationId,
+          durationMinutes: body.durationMinutes,
+          swimmerIds: body.swimmerIds,
+          picks: insertedLessons.map((lesson) => ({
+            lessonId: lesson.id,
+            startsAt: lesson.startsAt.toISOString(),
+            status: lesson.status,
+          })),
+          ...(body.mode === "weekly"
+            ? {
+                weekly: {
+                  weekdays: body.weekdays,
+                  timeOfDay: body.timeOfDay,
+                  startDate: body.startDate,
+                  weeks: body.weeks,
+                },
+              }
+            : {}),
+        },
+      });
+
+      return {
+        kind: "ok" as const,
+        batch,
+        lessons: insertedLessons,
+        outboxId,
+      };
+    });
+
+    if (result.kind === "conflicts") {
+      req.log.warn(
+        { event: "picks_conflict", route: "POST /lessons/batch", conflicts: result.conflicts },
+        "batch rejected on recheck",
+      );
+      res.status(422).json({ error: "picks_conflict", conflicts: result.conflicts });
+      return;
+    }
+
+    for (const lesson of result.lessons) {
+      if (lesson.status === "approved") {
+        queueMicrotask(() => {
+          void syncLessonToGoogle(lesson.id);
+        });
+      }
+    }
+    queueMicrotask(() => {
+      void sendLessonEmailOutboxRow(result.outboxId);
+    });
+
+    const confirmedCount = result.lessons.filter((lesson) => lesson.status === "approved").length;
+    const pendingCount = result.lessons.filter((lesson) => lesson.status === "pending").length;
+
+    const response: BatchSubmitSuccessResponse = {
+      batchId: result.batch.id,
+      mode: body.mode,
+      lessonIds: result.lessons.map((lesson) => lesson.id),
+      confirmedCount,
+      pendingCount,
+    };
+    res.status(201).json(response);
   }),
 );
 

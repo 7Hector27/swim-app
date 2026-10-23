@@ -713,4 +713,183 @@ export const CoachHouseholdSearchResultSchema = z.object({
 export type CoachHouseholdSearchResult = z.infer<typeof CoachHouseholdSearchResultSchema>;
 
 export const CoachHouseholdSearchResponseSchema = z.array(CoachHouseholdSearchResultSchema);
+
+// ── Batch booking (ADR 030) ──────────────────────────────────────────────────
+
+// A batch is 2 to 20 lessons submitted together through POST /lessons/batch
+// (parents only). Manual mode supplies the explicit start times; weekly mode
+// supplies a weekday set, a time of day, a start date, and a week count.
+export const BATCH_LESSON_MIN = 2;
+export const BATCH_LESSON_MAX = 20;
+
+export const BatchModeSchema = z.enum(["manual", "weekly"]);
+export type BatchMode = z.infer<typeof BatchModeSchema>;
+
+export const BatchPickSchema = z.object({
+  startsAt: z.string().datetime({ offset: true }),
+});
+export type BatchPick = z.infer<typeof BatchPickSchema>;
+
+// Shape of each returned pick in the preview response. `index` is the
+// stable position inside the full candidate list (manual: picks array
+// index; weekly: expanded index 0..weekdays.length*weeks-1).
+export const BatchPickStateSchema = z.enum([
+  "available",
+  "unavailable",
+  "too_soon",
+  "past",
+  "not_open_yet",
+  "outside_hours",
+  "blocked_time",
+  "day_closed",
+  "conflicts_batch",
+]);
+export type BatchPickState = z.infer<typeof BatchPickStateSchema>;
+
+export const BatchPickSuggestionSchema = z.object({
+  startsAt: z.string().datetime({ offset: true }),
+});
+
+export const BatchPreviewPickSchema = z.object({
+  index: z.number().int().nonnegative(),
+  startsAt: z.string().datetime({ offset: true }),
+  state: BatchPickStateSchema,
+  reason: z.string().optional(),
+  suggestions: z.array(BatchPickSuggestionSchema).max(3).optional(),
+});
+export type BatchPreviewPick = z.infer<typeof BatchPreviewPickSchema>;
+
+// Each pick's startsAt in manual picks must be unique — duplicates are a
+// client bug, not a silent dedupe.
+function picksHaveDistinctStarts(
+  picks: { startsAt: string }[],
+): boolean {
+  return new Set(picks.map((p) => p.startsAt)).size === picks.length;
+}
+
+// Discriminated-union members must be raw ZodObjects. The cross-field
+// invariants (manual picks are distinct; weekly expands to [MIN, MAX]
+// lessons; weekdays are unique) live in a shared `superRefine` applied to
+// the union below.
+const batchManualBase = z.object({
+  mode: z.literal("manual"),
+  householdId: z.string().uuid(),
+  locationId: z.string().uuid(),
+  durationMinutes: LessonDurationMinutesSchema,
+  swimmerIds: z.array(z.string().uuid()).min(1).max(4),
+  picks: z.array(BatchPickSchema).min(BATCH_LESSON_MIN).max(BATCH_LESSON_MAX),
+});
+
+const batchWeeklyBase = z.object({
+  mode: z.literal("weekly"),
+  householdId: z.string().uuid(),
+  locationId: z.string().uuid(),
+  durationMinutes: LessonDurationMinutesSchema,
+  swimmerIds: z.array(z.string().uuid()).min(1).max(4),
+  // ISO weekday numbers: 1=Mon … 7=Sun. One or more; uniqueness enforced below.
+  weekdays: z.array(z.number().int().min(1).max(7)).min(1).max(7),
+  // Local America/Los_Angeles time, zero-padded. Example: "16:30".
+  timeOfDay: z.string().regex(/^\d{2}:\d{2}$/, "timeOfDay must be HH:MM"),
+  // LA calendar date of the first candidate week. Example: "2026-11-02".
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "startDate must be YYYY-MM-DD"),
+  weeks: z.number().int().min(1).max(BATCH_LESSON_MAX),
+});
+
+function applyBatchInvariants(
+  body:
+    | z.infer<typeof batchManualBase>
+    | (z.infer<typeof batchWeeklyBase> & { overrides?: unknown; skips?: unknown }),
+  ctx: z.RefinementCtx,
+): void {
+  if (body.mode === "manual") {
+    if (!picksHaveDistinctStarts(body.picks)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["picks"],
+        message: "picks must have distinct startsAt values",
+      });
+    }
+    return;
+  }
+  // weekly
+  if (new Set(body.weekdays).size !== body.weekdays.length) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["weekdays"],
+      message: "weekdays must be unique",
+    });
+  }
+  const expanded = body.weekdays.length * body.weeks;
+  if (expanded < BATCH_LESSON_MIN) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["weeks"],
+      message: `A batch must have at least ${BATCH_LESSON_MIN} lessons.`,
+    });
+  }
+  if (expanded > BATCH_LESSON_MAX) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["weeks"],
+      message: `A batch cannot have more than ${BATCH_LESSON_MAX} lessons.`,
+    });
+  }
+}
+
+// Preview body. For weekly mode the server expands candidates from the four
+// fields and runs the slot engine for each.
+export const BatchPreviewBodySchema = z.discriminatedUnion("mode", [
+  batchManualBase,
+  batchWeeklyBase,
+]).superRefine(applyBatchInvariants);
+export type BatchPreviewBody = z.infer<typeof BatchPreviewBodySchema>;
+
+export const BatchPreviewResponseSchema = z.object({
+  needsApproval: z.boolean(),
+  picks: z.array(BatchPreviewPickSchema),
+});
+export type BatchPreviewResponse = z.infer<typeof BatchPreviewResponseSchema>;
+
+// Submit body. Manual mode submits the same shape as preview. Weekly mode
+// adds `overrides` (per-expanded-index replacement startsAt) and `skips`
+// (indexes to drop).
+export const BatchWeeklyOverrideSchema = z.object({
+  index: z.number().int().nonnegative(),
+  startsAt: z.string().datetime({ offset: true }),
+});
+export type BatchWeeklyOverride = z.infer<typeof BatchWeeklyOverrideSchema>;
+
+const batchWeeklySubmitBase = batchWeeklyBase.extend({
+  overrides: z.array(BatchWeeklyOverrideSchema).max(BATCH_LESSON_MAX).default([]),
+  skips: z.array(z.number().int().nonnegative()).max(BATCH_LESSON_MAX).default([]),
+});
+
+export const BatchSubmitBodySchema = z.discriminatedUnion("mode", [
+  batchManualBase,
+  batchWeeklySubmitBase,
+]).superRefine(applyBatchInvariants);
+export type BatchSubmitBody = z.infer<typeof BatchSubmitBodySchema>;
+
+export const BatchSubmitSuccessResponseSchema = z.object({
+  batchId: z.string().uuid(),
+  mode: BatchModeSchema,
+  lessonIds: z.array(z.string().uuid()),
+  confirmedCount: z.number().int().nonnegative(),
+  pendingCount: z.number().int().nonnegative(),
+});
+export type BatchSubmitSuccessResponse = z.infer<typeof BatchSubmitSuccessResponseSchema>;
+
+export const BatchConflictPickSchema = z.object({
+  index: z.number().int().nonnegative(),
+  startsAt: z.string().datetime({ offset: true }),
+  state: BatchPickStateSchema,
+  reason: z.string().optional(),
+});
+export type BatchConflictPick = z.infer<typeof BatchConflictPickSchema>;
+
+export const BatchSubmitConflictResponseSchema = z.object({
+  error: z.literal("picks_conflict"),
+  conflicts: z.array(BatchConflictPickSchema).min(1),
+});
+export type BatchSubmitConflictResponse = z.infer<typeof BatchSubmitConflictResponseSchema>;
 export type CoachHouseholdSearchResponse = z.infer<typeof CoachHouseholdSearchResponseSchema>;
