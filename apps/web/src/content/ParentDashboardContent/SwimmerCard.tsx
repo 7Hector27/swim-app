@@ -163,7 +163,7 @@ export default function SwimmerCard({
           View progress
         </a>
         <a
-          href={`/dashboard/swimmers/${id}/edit`}
+          href={`/dashboard/swimmers/${id}`}
           className="rounded-button border-2 border-button-outline text-button-outline font-bold text-sm h-11 flex items-center justify-center transition-opacity hover:opacity-90"
         >
           View profile

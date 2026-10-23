@@ -4,12 +4,12 @@ import { useActionState, useMemo } from "react";
 
 import type { Club, HouseholdRole, ParentSwimmer } from "@swim-app/shared";
 
+import PublicToggleSection from "@/components/PublicToggleSection";
 import SwimmerForm from "@/components/SwimmerForm";
 
 import { editSwimmer } from "./actions";
 import { toClubInputs } from "./helpers";
 import type { EditSwimmerState } from "./helpers";
-import PublicToggleSection from "./PublicToggleSection";
 
 const initialState: EditSwimmerState = { status: "idle" };
 

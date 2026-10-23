@@ -129,3 +129,24 @@ export const MeetSwimsResponseSchema = z.object({
   personalBests: z.array(PersonalBestSchema),
 });
 export type MeetSwimsResponse = z.infer<typeof MeetSwimsResponseSchema>;
+
+// ── Parent personal best ──────────────────────────────────────────────────────
+
+// Parent-facing personal best: same best-time logic as the coach side, with
+// the meet date and name joined on so parents can see where a PB was swum.
+// Practice swims are excluded, matching the coach PB computation.
+export const ParentPersonalBestSchema = z.object({
+  eventDistance: z.number().int().positive(),
+  eventStroke: SwimStrokeSchema,
+  course: CourseSchema,
+  timeHundredths: z.number().int(),
+  timeString: z.string(),
+  meetDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+  meetName: z.string().nullable(),
+});
+export type ParentPersonalBest = z.infer<typeof ParentPersonalBestSchema>;
+
+export const ParentPersonalBestsResponseSchema = z.object({
+  personalBests: z.array(ParentPersonalBestSchema),
+});
+export type ParentPersonalBestsResponse = z.infer<typeof ParentPersonalBestsResponseSchema>;

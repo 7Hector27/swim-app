@@ -50,7 +50,7 @@ describe("SwimmerCard", () => {
   it("view profile link points to the correct page", () => {
     render(<SwimmerCard {...baseProps} />);
     const link = screen.getByRole("link", { name: /view profile/i });
-    expect(link).toHaveAttribute("href", "/dashboard/swimmers/swimmer-abc/edit");
+    expect(link).toHaveAttribute("href", "/dashboard/swimmers/swimmer-abc");
   });
 
   it("overflow menu is hidden initially", () => {
