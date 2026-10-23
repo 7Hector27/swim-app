@@ -42,6 +42,8 @@ import { asyncHandler } from "../middleware/asyncHandler";
 import { mapConfigRow } from "../lib/availabilityMappers";
 import { notifyLessonApproved, notifyLessonDeclined } from "../lib/lessonApproval";
 import { syncLessonToGoogle } from "../services/googleCalendarSync";
+import { enqueueLessonEmail } from "../services/emails/outbox";
+import { sendLessonEmailOutboxRow } from "../services/emails/sender";
 import { computeAvailableSlots, mergeSlotWindows } from "../lib/slots";
 import { z } from "zod";
 
@@ -447,19 +449,39 @@ coachLessonsRouter.get(
     const query = req.query as unknown as CoachListLessonsQuery;
 
     // Lazy expiry safety net: expire any pending lessons past their deadline
-    // in case the cron hasn't run recently.
+    // in case the cron hasn't run recently. The outbox write for each
+    // expired lesson lives in the same transaction so neither the status
+    // change nor the parent email can be lost mid-flight (ADR 028).
     const now = new Date();
-    const expiredRows = await db
-      .update(lessons)
-      .set({ status: "expired" })
-      .where(and(eq(lessons.status, "pending"), lt(lessons.expiresAt, now)))
-      .returning({ id: lessons.id });
+    const { expired: expiredRows, outboxIds: expiredOutboxIds } = await db.transaction(
+      async (tx) => {
+        const rows = await tx
+          .update(lessons)
+          .set({ status: "expired" })
+          .where(and(eq(lessons.status, "pending"), lt(lessons.expiresAt, now)))
+          .returning({ id: lessons.id });
+        const ids: string[] = [];
+        for (const row of rows) {
+          ids.push(
+            await enqueueLessonEmail(tx, {
+              lessonId: row.id,
+              event: "request_expired",
+              actorRole: "system",
+            }),
+          );
+        }
+        return { expired: rows, outboxIds: ids };
+      },
+    );
     // Reconcile Google Calendar for each expired lesson. Pending lessons
     // normally have no event in Google so the service short-circuits; the
     // hook catches the edge case where a lesson got synced then rolled
     // back to pending and now expires.
     for (const row of expiredRows) {
       queueMicrotask(() => { void syncLessonToGoogle(row.id); });
+    }
+    for (const outboxId of expiredOutboxIds) {
+      queueMicrotask(() => { void sendLessonEmailOutboxRow(outboxId); });
     }
 
     const filters = [];
@@ -542,13 +564,28 @@ coachLessonsRouter.patch(
     const { id } = req.params as { id: string };
     const now = new Date();
 
-    const rows = await db
-      .update(lessons)
-      .set({ status: "approved", approvedAt: now, approvedBy: req.profile.id })
-      .where(and(eq(lessons.id, id), eq(lessons.status, "pending")))
-      .returning();
+    const approveResult = await db.transaction(async (tx) => {
+      const rows = await tx
+        .update(lessons)
+        .set({ status: "approved", approvedAt: now, approvedBy: req.profile.id })
+        .where(and(eq(lessons.id, id), eq(lessons.status, "pending")))
+        .returning();
+      const row = rows[0];
+      if (!row) return null;
 
-    const updated = rows[0];
+      // Parent booking email outbox (ADR 028): CONFIRMED with METHOD:REQUEST
+      // .ics. Snapshot-then-increments lessons.calendar_sequence.
+      const outboxId = await enqueueLessonEmail(tx, {
+        lessonId: row.id,
+        event: "lesson_confirmed",
+        actorRole: "coach",
+      });
+
+      return { row, outboxId };
+    });
+
+    const updated = approveResult?.row;
+    const approveOutboxId = approveResult?.outboxId;
     if (!updated) {
       const existing = await db.select({ status: lessons.status }).from(lessons).where(eq(lessons.id, id)).limit(1);
       if (!existing[0]) {
@@ -595,6 +632,9 @@ coachLessonsRouter.patch(
     // service catches its own errors; any rejection here is swallowed by
     // the microtask queue and never affects the booking.
     queueMicrotask(() => { void syncLessonToGoogle(updated.id); });
+    if (approveOutboxId) {
+      queueMicrotask(() => { void sendLessonEmailOutboxRow(approveOutboxId); });
+    }
   }),
 );
 
@@ -608,18 +648,35 @@ coachLessonsRouter.patch(
     const body = req.body as DeclineLessonBody;
     const now = new Date();
 
-    const rows = await db
-      .update(lessons)
-      .set({
-        status: "declined",
-        declinedAt: now,
-        declinedBy: req.profile.id,
-        ...(body.reason !== undefined && { declineReason: body.reason }),
-      })
-      .where(and(eq(lessons.id, id), eq(lessons.status, "pending")))
-      .returning();
+    const declineResult = await db.transaction(async (tx) => {
+      const rows = await tx
+        .update(lessons)
+        .set({
+          status: "declined",
+          declinedAt: now,
+          declinedBy: req.profile.id,
+          ...(body.reason !== undefined && { declineReason: body.reason }),
+        })
+        .where(and(eq(lessons.id, id), eq(lessons.status, "pending")))
+        .returning();
+      const row = rows[0];
+      if (!row) return null;
 
-    const updated = rows[0];
+      // Parent booking email outbox (ADR 028). Today the state machine only
+      // allows decline from pending, so this never emits a CANCEL .ics; the
+      // enqueue helper handles the approved→declined future case defensively.
+      const outboxId = await enqueueLessonEmail(tx, {
+        lessonId: row.id,
+        event: "request_declined",
+        actorRole: "coach",
+        declineReason: body.reason ?? null,
+      });
+
+      return { row, outboxId };
+    });
+
+    const updated = declineResult?.row;
+    const declineOutboxId = declineResult?.outboxId;
     if (!updated) {
       const existing = await db.select({ status: lessons.status }).from(lessons).where(eq(lessons.id, id)).limit(1);
       if (!existing[0]) {
@@ -666,6 +723,9 @@ coachLessonsRouter.patch(
     // the hook stays here so the state machine can grow approved→declined
     // later without a code change.
     queueMicrotask(() => { void syncLessonToGoogle(updated.id); });
+    if (declineOutboxId) {
+      queueMicrotask(() => { void sendLessonEmailOutboxRow(declineOutboxId); });
+    }
   }),
 );
 

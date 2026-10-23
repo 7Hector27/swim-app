@@ -38,6 +38,7 @@ import {
   availabilitySeasons,
   coachAuditLog,
   coachCalendarIntegrations,
+  lessonEmailOutbox,
   lessonLocations,
   lessonSwimmers,
   lessons,
@@ -174,6 +175,9 @@ async function clearIntegrationAndLessons(): Promise<void> {
     .where(eq(lessons.householdId, owner.householdId));
   if (householdLessons.length > 0) {
     const ids = householdLessons.map((row) => row.id);
+    // lesson_email_outbox FKs lessons.id with ON DELETE RESTRICT (ADR 028),
+    // so clear outbox rows first.
+    await adminDb().delete(lessonEmailOutbox).where(inArray(lessonEmailOutbox.lessonId, ids));
     await adminDb().delete(lessonSwimmers).where(inArray(lessonSwimmers.lessonId, ids));
     await adminDb().delete(lessons).where(inArray(lessons.id, ids));
   }
@@ -916,6 +920,9 @@ describe("POST /lessons regression: auto-approved bookings must sync", () => {
       expect(row.googleCalendarEventId).toBe(stripDashes(newLessonId));
 
       // Cleanup the booking so it doesn't collide with later tests.
+      await adminDb()
+        .delete(lessonEmailOutbox)
+        .where(inArray(lessonEmailOutbox.lessonId, [newLessonId, priorApprovedId]));
       await adminDb()
         .delete(lessonSwimmers)
         .where(inArray(lessonSwimmers.lessonId, [newLessonId, priorApprovedId]));

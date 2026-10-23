@@ -1,17 +1,32 @@
 import { z } from "zod";
 
-// Required vars have no default. Dev-friendly defaults apply when NODE_ENV is
-// not "production" so `pnpm dev` still works with a bare .env. In production
-// the additional refinements below require explicit values for anything that
-// would otherwise fall back to localhost or be silently empty.
+// Required vars have no default. Dev-friendly defaults apply when APP_ENV is
+// `local` so `pnpm dev` still works with a bare .env. Deployed environments
+// (`APP_ENV=dev` and `APP_ENV=prod`) share the strict validation surface —
+// CORS, non-localhost SITE_URL, CRON_SECRET, Google OAuth, and (per ADR 028)
+// transactional email configuration.
 //
-// Two parse surfaces: `parseEnv` validates everything the HTTP server needs
-// (Supabase keys, CORS, cron, etc.); `parseDbEnv` validates only the DB
-// connection string. DB-only scripts (migrate, seed, catalog sync) and
-// `db/client.ts` go through the smaller surface so operators can run
-// migrations without setting unrelated API vars.
+// We deliberately do NOT key behavior on NODE_ENV. Railway's dev service runs
+// NODE_ENV=production too (that's how Railway selects the production build
+// flavor of the Node runtime and of library bundles); inferring environment
+// from NODE_ENV would conflate the dev deploy with prod. See ADR 028.
+//
+// Two parse surfaces: `parseEnv` validates everything the HTTP server needs;
+// `parseDbEnv` validates only the DB connection string. DB-only scripts
+// (migrate, seed, catalog sync) and `db/client.ts` go through the smaller
+// surface so operators can run migrations without setting unrelated API vars.
 
 const LOCALHOST_RE = /^https?:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/i;
+
+// Loose RFC 5322 check: either `local@domain` or `Display Name <local@domain>`.
+// We validate structure, not deliverability — the transport layer catches
+// bad addresses at send time.
+const EMAIL_ADDR_RE =
+  /^(?:[^<>]*<\s*([^\s@]+@[^\s@]+\.[^\s@]+)\s*>|([^\s@]+@[^\s@]+\.[^\s@]+))$/;
+
+// Resend's prod-verified sending domain. EMAIL_FROM must use this (or a
+// subdomain) when APP_ENV=prod so a misconfigured From can't ship.
+const PROD_EMAIL_DOMAIN = "send.axiomaquatics.io";
 
 const DbEnvSchema = z.object({
   DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
@@ -23,6 +38,9 @@ export interface DbEnv {
 
 const RawEnvSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+  // Explicit environment. See the module doc comment on why this is not
+  // inferred from NODE_ENV.
+  APP_ENV: z.enum(["local", "dev", "prod"]).default("local"),
   PORT: z.coerce.number().int().positive().default(3001),
   DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
   SUPABASE_URL: z.string().url("SUPABASE_URL must be a valid URL"),
@@ -31,27 +49,41 @@ const RawEnvSchema = z.object({
   SITE_URL: z.string().url("SITE_URL must be a valid URL").default("http://localhost:3000"),
   CORS_ORIGINS: z.string().default(""),
   CRON_SECRET: z.string().optional(),
-  // Google Calendar integration (ADR 027). All four are optional at parse time;
-  // when any is missing the integration reports "not configured" and the UI
-  // hides the connect card. Prod-only refinements below enforce real values.
+  // Google Calendar integration (ADR 027).
   GOOGLE_OAUTH_CLIENT_ID: z.string().optional(),
   GOOGLE_OAUTH_CLIENT_SECRET: z.string().optional(),
   GOOGLE_OAUTH_REDIRECT_URI: z.string().optional(),
   GOOGLE_TOKEN_ENCRYPTION_KEY: z.string().optional(),
   GOOGLE_OAUTH_STATE_SECRET: z.string().optional(),
+  // Parent booking emails (ADR 028).
+  EMAIL_TRANSPORT: z.enum(["resend", "smtp"]).optional(),
+  EMAIL_FROM: z.string().optional(),
+  EMAIL_REPLY_TO: z.string().optional(),
+  RESEND_API_KEY: z.string().optional(),
+  EMAIL_SMTP_HOST: z.string().optional(),
+  EMAIL_SMTP_PORT: z.coerce.number().int().positive().optional(),
 });
 
 export interface GoogleOAuthEnv {
   clientId: string;
   clientSecret: string;
   redirectUri: string;
-  // Decoded 32-byte AES-256 key. Base64 input; validated length at parse time.
   tokenEncryptionKey: Buffer;
   stateSecret: string;
 }
 
+export interface EmailEnv {
+  transport: "resend" | "smtp";
+  from: string;
+  replyTo: string | undefined;
+  resendApiKey: string | undefined;
+  smtpHost: string | undefined;
+  smtpPort: number | undefined;
+}
+
 export interface ApiEnv {
   nodeEnv: "development" | "test" | "production";
+  appEnv: "local" | "dev" | "prod";
   port: number;
   databaseUrl: string;
   supabaseUrl: string;
@@ -60,12 +92,25 @@ export interface ApiEnv {
   siteUrl: string;
   corsOrigins: string[];
   cronSecret: string | undefined;
-  // Non-null when all five Google env vars are set and pass validation.
-  // Routes and services treat `undefined` as "integration disabled, hide UI".
   googleOAuth: GoogleOAuthEnv | undefined;
+  // Undefined when APP_ENV=local AND no EMAIL_TRANSPORT is set — the sender
+  // becomes a no-op in that case so writes don't accumulate. Non-null on dev
+  // and prod (parser enforces).
+  email: EmailEnv | undefined;
 }
 
 export function parseEnv(raw: Record<string, string | undefined>): ApiEnv {
+  // Fail-safe: a deployed server (NODE_ENV=production, which is Railway's
+  // default) that forgets to set APP_ENV would otherwise silently fall
+  // through to local defaults — lenient CORS, no CRON_SECRET, email env
+  // treated as optional. Refuse to boot with a specific error instead.
+  if (raw.NODE_ENV === "production" && !raw.APP_ENV) {
+    throw new EnvValidationError([
+      "APP_ENV: must be set explicitly when NODE_ENV=production (one of 'dev' or 'prod'). " +
+        "This prevents a deployed server from silently inheriting local defaults.",
+    ]);
+  }
+
   const result = RawEnvSchema.safeParse(raw);
   if (!result.success) {
     throw new EnvValidationError(formatZodError(result.error));
@@ -76,24 +121,26 @@ export function parseEnv(raw: Record<string, string | undefined>): ApiEnv {
     .filter(Boolean);
 
   const googleOAuth = parseGoogleOAuthEnv(parsed);
+  const email = parseEmailEnv(parsed);
 
-  if (parsed.NODE_ENV === "production") {
+  const isDeployed = parsed.APP_ENV === "dev" || parsed.APP_ENV === "prod";
+  if (isDeployed) {
     const issues: string[] = [];
     if (corsOrigins.length === 0) {
       issues.push(
-        "CORS_ORIGINS: must be a non-empty, comma-separated list of allowed origins in production",
+        "CORS_ORIGINS: must be a non-empty, comma-separated list of allowed origins when APP_ENV is 'dev' or 'prod'",
       );
     }
     if (LOCALHOST_RE.test(parsed.SITE_URL)) {
-      issues.push("SITE_URL: must not point to localhost in production");
+      issues.push("SITE_URL: must not point to localhost when APP_ENV is 'dev' or 'prod'");
     }
     if (!parsed.CRON_SECRET || parsed.CRON_SECRET.length < 32) {
-      issues.push("CRON_SECRET: must be set and at least 32 characters in production");
+      issues.push(
+        "CRON_SECRET: must be set and at least 32 characters when APP_ENV is 'dev' or 'prod'",
+      );
     }
-    // In production the Google integration is required. If any of the five
-    // vars is missing or malformed, surface a specific error instead of
-    // silently disabling the integration.
-    issues.push(...validateGoogleOAuthForProduction(parsed));
+    issues.push(...validateGoogleOAuthForDeployed(parsed));
+    issues.push(...validateEmailForDeployed(parsed));
     if (issues.length > 0) {
       throw new EnvValidationError(issues);
     }
@@ -101,6 +148,7 @@ export function parseEnv(raw: Record<string, string | undefined>): ApiEnv {
 
   return {
     nodeEnv: parsed.NODE_ENV,
+    appEnv: parsed.APP_ENV,
     port: parsed.PORT,
     databaseUrl: parsed.DATABASE_URL,
     supabaseUrl: parsed.SUPABASE_URL,
@@ -110,19 +158,15 @@ export function parseEnv(raw: Record<string, string | undefined>): ApiEnv {
     corsOrigins,
     cronSecret: parsed.CRON_SECRET,
     googleOAuth,
+    email,
   };
 }
 
 type RawParsedEnv = z.infer<typeof RawEnvSchema>;
 
-// Returns the decoded key only if the input is valid base64 and decodes to
-// exactly 32 bytes; otherwise undefined. Caller decides what to do with that.
 function tryDecodeEncryptionKey(input: string): Buffer | undefined {
   try {
     const buf = Buffer.from(input, "base64");
-    // Reject inputs that silently truncate: re-encoding must match (ignoring
-    // padding). This also catches arbitrary non-base64 text, which Node
-    // otherwise accepts and returns garbage for.
     if (buf.length !== 32) return undefined;
     const roundTrip = buf.toString("base64").replace(/=+$/, "");
     const normalized = input.replace(/=+$/, "");
@@ -133,13 +177,21 @@ function tryDecodeEncryptionKey(input: string): Buffer | undefined {
   }
 }
 
-// Non-production: return the parsed oauth config if ALL five vars are
-// present and valid; otherwise undefined and the integration is disabled.
-// In production the caller runs validateGoogleOAuthForProduction first and
-// throws, so by the time we reach here all five are guaranteed valid.
 function parseGoogleOAuthEnv(parsed: RawParsedEnv): GoogleOAuthEnv | undefined {
-  const { GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET, GOOGLE_OAUTH_REDIRECT_URI, GOOGLE_TOKEN_ENCRYPTION_KEY, GOOGLE_OAUTH_STATE_SECRET } = parsed;
-  if (!GOOGLE_OAUTH_CLIENT_ID || !GOOGLE_OAUTH_CLIENT_SECRET || !GOOGLE_OAUTH_REDIRECT_URI || !GOOGLE_TOKEN_ENCRYPTION_KEY || !GOOGLE_OAUTH_STATE_SECRET) {
+  const {
+    GOOGLE_OAUTH_CLIENT_ID,
+    GOOGLE_OAUTH_CLIENT_SECRET,
+    GOOGLE_OAUTH_REDIRECT_URI,
+    GOOGLE_TOKEN_ENCRYPTION_KEY,
+    GOOGLE_OAUTH_STATE_SECRET,
+  } = parsed;
+  if (
+    !GOOGLE_OAUTH_CLIENT_ID ||
+    !GOOGLE_OAUTH_CLIENT_SECRET ||
+    !GOOGLE_OAUTH_REDIRECT_URI ||
+    !GOOGLE_TOKEN_ENCRYPTION_KEY ||
+    !GOOGLE_OAUTH_STATE_SECRET
+  ) {
     return undefined;
   }
   const key = tryDecodeEncryptionKey(GOOGLE_TOKEN_ENCRYPTION_KEY);
@@ -154,27 +206,101 @@ function parseGoogleOAuthEnv(parsed: RawParsedEnv): GoogleOAuthEnv | undefined {
   };
 }
 
-function validateGoogleOAuthForProduction(parsed: RawParsedEnv): string[] {
+function validateGoogleOAuthForDeployed(parsed: RawParsedEnv): string[] {
   const issues: string[] = [];
-  const { GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET, GOOGLE_OAUTH_REDIRECT_URI, GOOGLE_TOKEN_ENCRYPTION_KEY, GOOGLE_OAUTH_STATE_SECRET } = parsed;
-  if (!GOOGLE_OAUTH_CLIENT_ID) issues.push("GOOGLE_OAUTH_CLIENT_ID: required in production");
-  if (!GOOGLE_OAUTH_CLIENT_SECRET) issues.push("GOOGLE_OAUTH_CLIENT_SECRET: required in production");
+  const {
+    GOOGLE_OAUTH_CLIENT_ID,
+    GOOGLE_OAUTH_CLIENT_SECRET,
+    GOOGLE_OAUTH_REDIRECT_URI,
+    GOOGLE_TOKEN_ENCRYPTION_KEY,
+    GOOGLE_OAUTH_STATE_SECRET,
+  } = parsed;
+  if (!GOOGLE_OAUTH_CLIENT_ID)
+    issues.push("GOOGLE_OAUTH_CLIENT_ID: required when APP_ENV is 'dev' or 'prod'");
+  if (!GOOGLE_OAUTH_CLIENT_SECRET)
+    issues.push("GOOGLE_OAUTH_CLIENT_SECRET: required when APP_ENV is 'dev' or 'prod'");
   if (!GOOGLE_OAUTH_REDIRECT_URI) {
-    issues.push("GOOGLE_OAUTH_REDIRECT_URI: required in production");
-  } else if (!GOOGLE_OAUTH_REDIRECT_URI.startsWith("https://") || LOCALHOST_RE.test(GOOGLE_OAUTH_REDIRECT_URI)) {
-    issues.push("GOOGLE_OAUTH_REDIRECT_URI: must be an https URL and not point to localhost in production");
+    issues.push("GOOGLE_OAUTH_REDIRECT_URI: required when APP_ENV is 'dev' or 'prod'");
+  } else if (
+    !GOOGLE_OAUTH_REDIRECT_URI.startsWith("https://") ||
+    LOCALHOST_RE.test(GOOGLE_OAUTH_REDIRECT_URI)
+  ) {
+    issues.push(
+      "GOOGLE_OAUTH_REDIRECT_URI: must be an https URL and not point to localhost when APP_ENV is 'dev' or 'prod'",
+    );
   }
   if (!GOOGLE_TOKEN_ENCRYPTION_KEY) {
-    issues.push("GOOGLE_TOKEN_ENCRYPTION_KEY: required in production");
+    issues.push("GOOGLE_TOKEN_ENCRYPTION_KEY: required when APP_ENV is 'dev' or 'prod'");
   } else if (!tryDecodeEncryptionKey(GOOGLE_TOKEN_ENCRYPTION_KEY)) {
-    issues.push("GOOGLE_TOKEN_ENCRYPTION_KEY: must be base64 that decodes to exactly 32 bytes (generate with `openssl rand -base64 32`)");
+    issues.push(
+      "GOOGLE_TOKEN_ENCRYPTION_KEY: must be base64 that decodes to exactly 32 bytes (generate with `openssl rand -base64 32`)",
+    );
   }
   if (!GOOGLE_OAUTH_STATE_SECRET) {
-    issues.push("GOOGLE_OAUTH_STATE_SECRET: required in production");
+    issues.push("GOOGLE_OAUTH_STATE_SECRET: required when APP_ENV is 'dev' or 'prod'");
   } else if (GOOGLE_OAUTH_STATE_SECRET.length < 32) {
-    issues.push("GOOGLE_OAUTH_STATE_SECRET: must be at least 32 characters in production");
+    issues.push(
+      "GOOGLE_OAUTH_STATE_SECRET: must be at least 32 characters when APP_ENV is 'dev' or 'prod'",
+    );
   }
   return issues;
+}
+
+function parseEmailEnv(parsed: RawParsedEnv): EmailEnv | undefined {
+  // Local without a transport set: sender becomes a no-op.
+  if (parsed.APP_ENV === "local" && !parsed.EMAIL_TRANSPORT) {
+    return undefined;
+  }
+  const transport: "resend" | "smtp" =
+    parsed.EMAIL_TRANSPORT ?? (parsed.APP_ENV === "local" ? "smtp" : "resend");
+  if (!parsed.EMAIL_FROM) {
+    // Dev/prod: validateEmailForDeployed will surface this. Local with
+    // explicit transport but no from: return undefined so the sender
+    // treats this as "not configured."
+    return undefined;
+  }
+  return {
+    transport,
+    from: parsed.EMAIL_FROM,
+    replyTo: parsed.EMAIL_REPLY_TO,
+    resendApiKey: parsed.RESEND_API_KEY,
+    smtpHost: parsed.EMAIL_SMTP_HOST,
+    smtpPort: parsed.EMAIL_SMTP_PORT,
+  };
+}
+
+function validateEmailForDeployed(parsed: RawParsedEnv): string[] {
+  const issues: string[] = [];
+  if (!parsed.EMAIL_TRANSPORT) {
+    issues.push("EMAIL_TRANSPORT: required and must be 'resend' when APP_ENV is 'dev' or 'prod'");
+  } else if (parsed.EMAIL_TRANSPORT !== "resend") {
+    issues.push("EMAIL_TRANSPORT: must be 'resend' when APP_ENV is 'dev' or 'prod'");
+  }
+  if (!parsed.EMAIL_FROM) {
+    issues.push("EMAIL_FROM: required when APP_ENV is 'dev' or 'prod'");
+  } else if (!EMAIL_ADDR_RE.test(parsed.EMAIL_FROM)) {
+    issues.push("EMAIL_FROM: must be a valid RFC 5322 address (e.g. 'Name <local@domain>')");
+  } else if (parsed.APP_ENV === "prod" && !fromUsesDomain(parsed.EMAIL_FROM, PROD_EMAIL_DOMAIN)) {
+    issues.push(
+      `EMAIL_FROM: must use the ${PROD_EMAIL_DOMAIN} domain when APP_ENV=prod (the Resend-verified sending domain)`,
+    );
+  }
+  if (parsed.EMAIL_TRANSPORT === "resend") {
+    if (!parsed.RESEND_API_KEY || !parsed.RESEND_API_KEY.startsWith("re_")) {
+      issues.push("RESEND_API_KEY: required and must start with 're_' when APP_ENV is 'dev' or 'prod'");
+    }
+  }
+  return issues;
+}
+
+function fromUsesDomain(from: string, domain: string): boolean {
+  const match = EMAIL_ADDR_RE.exec(from);
+  if (!match) return false;
+  const addr = match[1] ?? match[2] ?? "";
+  const idx = addr.lastIndexOf("@");
+  if (idx < 0) return false;
+  const host = addr.slice(idx + 1).toLowerCase();
+  return host === domain.toLowerCase() || host.endsWith("." + domain.toLowerCase());
 }
 
 export class EnvValidationError extends Error {
@@ -216,7 +342,6 @@ export function getDbEnv(): DbEnv {
   return cachedDb;
 }
 
-// Testing hook: lets a test reset the cached env so a fresh parse happens.
 export function __resetEnvCacheForTests(): void {
   cached = undefined;
   cachedDb = undefined;

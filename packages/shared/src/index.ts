@@ -198,6 +198,7 @@ export {
   ScheduleOpenSlotItemSchema,
   CoachStatsSchema,
   UpdateLessonBodySchema,
+  DECLINE_REASON_MAX_LENGTH,
 } from "./schemas/booking";
 export type {
   SlotState,

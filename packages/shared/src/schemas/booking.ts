@@ -188,8 +188,17 @@ export type LessonResponse = z.infer<typeof LessonResponseSchema>;
 export const ApproveLessonBodySchema = z.object({});
 export type ApproveLessonBody = z.infer<typeof ApproveLessonBodySchema>;
 
+// Max length for a coach-entered decline reason. Enforced at the API
+// boundary (request validation) AND at the outbox-write layer, so a
+// future caller that bypasses the schema can't park an unbounded blob of
+// text in lesson_email_outbox.payload.declineReason. 500 characters is
+// generous for a short note while bounding incidental PII (names,
+// contact info a coach might type) that would otherwise persist for the
+// 30-day retention window.
+export const DECLINE_REASON_MAX_LENGTH = 500;
+
 export const DeclineLessonBodySchema = z.object({
-  reason: z.string().optional(),
+  reason: z.string().max(DECLINE_REASON_MAX_LENGTH).optional(),
 });
 export type DeclineLessonBody = z.infer<typeof DeclineLessonBodySchema>;
 

@@ -80,6 +80,25 @@ vi.mock("../services/googleCalendarSync", () => ({
   syncLessonToGoogle: vi.fn().mockResolvedValue(undefined),
 }));
 
+// Stub the outbox write for unit tests. Integration tests exercise the
+// real transactional insert; here we only want the route handlers to run.
+vi.mock("../services/emails/outbox", () => ({
+  enqueueLessonEmail: vi.fn().mockResolvedValue("outbox-id-stub"),
+}));
+
+// Keep the post-commit email sender from running in unit tests — it would
+// try to hit the DB on a microtask after each response.
+vi.mock("../services/emails/sender", () => ({
+  sendLessonEmailOutboxRow: vi.fn().mockResolvedValue(undefined),
+}));
+
+// The cron tick calls the outbox drain + scrub; stub them so the unit
+// test doesn't hit the DB. Integration tests cover the real flow.
+vi.mock("../services/emails/drain", () => ({
+  drainLessonEmailOutbox: vi.fn().mockResolvedValue({ drained: 0, abandoned: 0 }),
+  scrubLessonEmailPayloads: vi.fn().mockResolvedValue({ scrubbed: 0 }),
+}));
+
 vi.mock("../lib/slots", () => ({
   computeAvailableSlots: mockComputeSlots,
   mergeSlotWindows: mockMergeSlotWindows,
@@ -211,11 +230,14 @@ describe("GET /coach/lessons", () => {
   it("returns lessons list", async () => {
     authAsCoach();
 
-    // lazy-expiry update: .update().set().where().returning()
+    // Lazy-expiry transaction. The handler wraps the UPDATE in a tx so the
+    // outbox write for any expired lesson commits atomically.
     const updateReturning = vi.fn().mockResolvedValue([]);
     const updateWhere = vi.fn().mockReturnValue({ returning: updateReturning });
     const updateSet = vi.fn().mockReturnValue({ where: updateWhere });
-    mockDbUpdate.mockReturnValueOnce({ set: updateSet });
+    mockDbTransaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) =>
+      callback({ update: vi.fn().mockReturnValue({ set: updateSet }) }),
+    );
 
     // lessons query
     const orderBy = vi.fn().mockResolvedValue([pendingLessonRow]);
@@ -260,7 +282,9 @@ describe("PATCH /coach/lessons/:id/approve", () => {
     const returning = vi.fn().mockResolvedValue([approvedRow]);
     const where = vi.fn().mockReturnValue({ returning });
     const set = vi.fn().mockReturnValue({ where });
-    mockDbUpdate.mockReturnValueOnce({ set });
+    mockDbTransaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) =>
+      callback({ update: vi.fn().mockReturnValue({ set }) }),
+    );
 
     // swimmer fetch for response
     const swimWhere = vi.fn().mockResolvedValue([{ swimmerId: SWIMMER_ID, firstName: "Alice", lastName: "Smith" }]);
@@ -283,7 +307,9 @@ describe("PATCH /coach/lessons/:id/approve", () => {
     const returning = vi.fn().mockResolvedValue([]);
     const where = vi.fn().mockReturnValue({ returning });
     const set = vi.fn().mockReturnValue({ where });
-    mockDbUpdate.mockReturnValueOnce({ set });
+    mockDbTransaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) =>
+      callback({ update: vi.fn().mockReturnValue({ set }) }),
+    );
 
     // existence check also returns nothing
     const existWhere = vi.fn().mockResolvedValue([]);
@@ -326,7 +352,9 @@ describe("PATCH /coach/lessons/:id/decline", () => {
     const returning = vi.fn().mockResolvedValue([declinedRow]);
     const where = vi.fn().mockReturnValue({ returning });
     const set = vi.fn().mockReturnValue({ where });
-    mockDbUpdate.mockReturnValueOnce({ set });
+    mockDbTransaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) =>
+      callback({ update: vi.fn().mockReturnValue({ set }) }),
+    );
 
     // swimmer fetch
     const swimWhere = vi.fn().mockResolvedValue([{ swimmerId: SWIMMER_ID, firstName: "Alice", lastName: "Smith" }]);
@@ -364,6 +392,12 @@ describe("POST /internal/cron/tick", () => {
     process.env["CRON_SECRET"] = "test-cron-secret";
     const { __resetEnvCacheForTests } = await import("../lib/env");
     __resetEnvCacheForTests();
+    // vi.resetAllMocks() wipes implementations set in vi.mock() factories.
+    // Re-apply the drain + scrub mocks so the handler's `await … .drained`
+    // and `.scrubbed` reads see concrete objects instead of undefined.
+    const drainModule = await import("../services/emails/drain");
+    vi.mocked(drainModule.drainLessonEmailOutbox).mockResolvedValue({ drained: 0, abandoned: 0 });
+    vi.mocked(drainModule.scrubLessonEmailPayloads).mockResolvedValue({ scrubbed: 0 });
   });
 
   it("returns 401 without CRON_SECRET header", async () => {
@@ -448,11 +482,14 @@ describe("lazy expiry in GET /coach/lessons", () => {
 
     const expiredRow = { ...pendingLessonRow, status: "expired" as const };
 
-    // lazy-expiry update: .update().set().where().returning()
+    // Lazy-expiry update now runs inside a transaction so the outbox
+    // write for expired lessons commits atomically.
     const updateReturning = vi.fn().mockResolvedValue([{ id: LESSON_ID }]);
     const updateWhere = vi.fn().mockReturnValue({ returning: updateReturning });
     const updateSet = vi.fn().mockReturnValue({ where: updateWhere });
-    mockDbUpdate.mockReturnValueOnce({ set: updateSet });
+    mockDbTransaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) =>
+      callback({ update: vi.fn().mockReturnValue({ set: updateSet }) }),
+    );
 
     // lessons query returns the now-expired row
     const orderBy = vi.fn().mockResolvedValue([expiredRow]);
