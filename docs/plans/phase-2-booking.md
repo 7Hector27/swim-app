@@ -896,19 +896,11 @@ apps/api/src/__tests__/balance.test.ts                       new
 
 ---
 
-## PR 9 — Recurring lessons (TBD)
+## PR 9 — Recurring lessons
 
-**Status:** TBD — blocked on a yes/no decision.
+**Moved to [docs/plans/recurring-lessons.md](./recurring-lessons.md).**
 
-If approved: each recurrence generates a full `lessons` row; a `recurrence_group_id` column links the series. Parents or Jason can cancel one lesson individually or all future ones.
-
-Proposed schema if approved:
-- `recurrence_groups`: id, household_id, location_id, day_of_week, duration_minutes, start_time, created_at.
-- `lessons.recurrence_group_id` uuid nullable FK → recurrence_groups.id.
-
-Routes: `POST /lessons/recurring`; `DELETE /lessons/recurring/:groupId/future`.
-
-**This PR does not begin until the decision is confirmed.**
+That plan supersedes the earlier stub here. It covers both recurring lessons (as a `lesson_series` rule that generates real `lessons` rows inside a cron-extended booking window, with per-occurrence and this-and-future changes, series-level approval, and one series email with a multi-event `.ics`) and the smaller multi-lesson batch flow. Blocked on open questions for Jason listed at the top of that document.
 
 ---
 
@@ -947,7 +939,7 @@ apps/web/src/content/CoachDashboardContent/CoachDashboardContent.tsx   remove an
 
 | Item | Status |
 |---|---|
-| Recurring weekly lessons | Decision pending; PR 9 blocked until resolved |
+| Recurring weekly lessons | See [docs/plans/recurring-lessons.md](./recurring-lessons.md); blocked on open questions |
 | 3-sibling package details and pricing | TBD; PR 8 seeds a disabled placeholder |
 | No-show fee policy | Not specified; current plan charges $0 for no-shows |
 | Balance visibility for managers/viewers | Flagged for Jason to confirm (currently owner-only) |
