@@ -1,6 +1,7 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
 import request from "supertest";
 import pino from "pino";
+import { LessonLocationSchema } from "@swim-app/shared";
 
 const COACH_PROFILE_ID = "aaaaaaaa-0000-0000-0000-000000000001";
 const PARENT_PROFILE_ID = "bbbbbbbb-0000-0000-0000-000000000002";
@@ -201,6 +202,48 @@ describe("GET /coach/locations", () => {
       .set("Authorization", "Bearer token");
 
     expect(res.status).toBe(403);
+  });
+
+  // The /coach/book page consumes this exact endpoint via the web adapter
+  // fetchCoachLocations. Guard the contract: the response must satisfy
+  // LessonLocationSchema, inactive pools must be included (so the page can
+  // choose whether to drop them), and the shape must preserve the fields
+  // the booking UI relies on (name, isActive).
+  it("response matches the shared LessonLocation shape and includes inactive pools", async () => {
+    const activePool = { ...namedLocationRow };
+    const inactivePool = {
+      ...namedLocationRow,
+      id: "cccccccc-0000-0000-0000-00000000000a",
+      name: "Swallows Park (retired)",
+      isActive: false,
+      sortOrder: 2,
+    };
+
+    authAs(coachProfile);
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(coachProfile))
+      .mockReturnValueOnce(simpleSelect([activePool, inactivePool]));
+
+    const res = await request(app)
+      .get("/coach/locations")
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(200);
+
+    // Parse the real body through the exact schema the web adapter uses.
+    const parsed = LessonLocationSchema.array().safeParse(res.body);
+    expect(parsed.success).toBe(true);
+
+    const pools = parsed.success ? parsed.data : [];
+    expect(pools.map((pool) => pool.name)).toEqual([
+      "Egret Park",
+      "Swallows Park (retired)",
+    ]);
+
+    // Mirrors the /coach/book filter: active pools only.
+    const bookable = pools.filter((pool) => pool.isActive);
+    expect(bookable).toHaveLength(1);
+    expect(bookable[0]).toMatchObject({ name: "Egret Park", isHomePool: false });
   });
 });
 

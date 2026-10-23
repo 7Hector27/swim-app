@@ -121,6 +121,10 @@ Don't use inline `style` for anything a class, token, or global rule covers. Inl
 - `content/<PageName>Content/` — Page body components (e.g. `HomepageContent`). Each folder holds `<Name>.tsx`, its CSS module if needed, and `index.ts` with `export { default } from "./<Name>"`. Import as `@/content/HomepageContent`. **Anything used by exactly one page lives here** — sections, local sub-components, helper files — not in `components/`. Server actions for a page live here as `actions.ts`, which begins with `"use server"` and exports only the server actions for that page.
 - `components/<ComponentName>/` — Reusable components used by more than one page, including layout components and modals. Same folder shape: `<Name>.tsx`, CSS module, and `index.ts` with `export { default } from "./<Name>"`. Import as `@/components/ThemeLogo`. If a component is only ever used by one page, it belongs in that page's Content folder instead.
 
+**Server/client boundaries**
+
+Server components and server pages never import from `"use client"` files except to render the client component itself. Shared helpers (pre-fill resolvers, formatters, pure logic reused by both the server page and its client orchestrator) live in plain modules with no directive — typically the content folder's `helpers.ts` — and are imported from both sides. Re-exporting a helper from a client module's barrel does not neutralize the boundary; the directive is the file where the helper is declared.
+
 File layout, top to bottom:
 
 1. Imports from libraries

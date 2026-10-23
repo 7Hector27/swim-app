@@ -80,6 +80,7 @@ Append-only log of significant household events.
 | `target_profile_id` | `uuid` | yes | — | FK → `profiles.id` (restrict on delete). Set for member-management events. |
 | `target_swimmer_id` | `uuid` | yes | — | FK → `swimmers.id` (restrict on delete). Set for swimmer events. |
 | `new_role` | `household_role` | yes | — | Set when a member's role changes. |
+| `payload` | `jsonb` | yes | — | Opaque JSON payload for events whose detail doesn't fit the shared columns. Used by ADR 029's `lesson_booked_by_coach` to record the server-computed override warnings alongside the lesson id. Mirrors `coach_audit_log.payload`. Keep usage sparse. Migration 0054. |
 | `created_at` | `timestamptz` | no | `now()` | |
 
 RLS is enabled. Policies TBD.

@@ -1,6 +1,6 @@
 const MESSAGES: Record<string, string> = {
   too_soon: "That time is less than 16 hours away. Text Jason to book it.",
-  slot_unavailable: "Someone just took that time. Pick another one.",
+  slot_unavailable: "That time isn't available anymore. Pick another one.",
   not_a_lesson_day: "Jason doesn't teach on that day.",
   too_far: "That time is more than 10 weeks away.",
   lesson_not_active: "This lesson has already been canceled or completed.",

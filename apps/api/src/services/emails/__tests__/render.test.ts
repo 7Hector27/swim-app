@@ -31,6 +31,7 @@ const basePayload: LessonEmailPayload = {
   declineReason: null,
   expiresAtLocalDisplay: null,
   coachFirstName: "Jason",
+  initiatedBy: null,
 };
 
 const ALL_EVENTS: LessonEmailEvent[] = [
@@ -128,6 +129,34 @@ describe("renderEmail — every template", () => {
     });
     expect(html ?? "").toContain("A household member canceled this lesson");
     expect(text).toContain("A household member canceled this lesson");
+  });
+
+  it("lesson_confirmed renders coach-scheduled copy when initiatedBy='coach'", async () => {
+    const { html, text, subject } = await renderEmail("lesson_confirmed", {
+      ...basePayload,
+      initiatedBy: "coach",
+      actorRole: "coach",
+    });
+    // Subject stays the same ("Lesson confirmed: ..."); only the body copy
+    // branches. The coach's name appears somewhere in the heading or body.
+    expect(subject).toBe("Lesson confirmed: Sat, Nov 1, 2026 at 10:30 AM");
+    expect(html ?? "").toContain("Jason");
+    expect(text).toContain("Jason");
+    expect(html ?? "").toContain("scheduled a lesson");
+    expect(text).toContain("scheduled a lesson");
+  });
+
+  it("lesson_confirmed renders parent-booked copy when initiatedBy='parent'", async () => {
+    const { html, text } = await renderEmail("lesson_confirmed", {
+      ...basePayload,
+      initiatedBy: "parent",
+      actorRole: "parent",
+    });
+    // The parent-copy heading is "You're on the schedule." — plain-text
+    // uppercases it, so match case-insensitively on just the key phrase.
+    expect((html ?? "").toLowerCase()).toContain("on the schedule");
+    expect(text.toLowerCase()).toContain("on the schedule");
+    expect(html ?? "").not.toContain("scheduled a lesson for");
   });
 
   it("booking_requested includes the expiration hint when provided", async () => {

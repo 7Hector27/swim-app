@@ -141,21 +141,39 @@ export type LessonStatus = z.infer<typeof LessonStatusSchema>;
 export const LessonTypeSchema = z.enum(["private", "family"]);
 export type LessonType = z.infer<typeof LessonTypeSchema>;
 
+// Shared lesson duration schema. Every lesson body/response/query that
+// carries a duration imports this instead of inlining the union — keeps the
+// three valid values in one place.
+export const LESSON_DURATION_MINUTES = [30, 45, 60] as const;
+export const LessonDurationMinutesSchema = z.union([
+  z.literal(30),
+  z.literal(45),
+  z.literal(60),
+]);
+export type LessonDurationMinutes = z.infer<typeof LessonDurationMinutesSchema>;
+
 export const CreateLessonBodySchema = z.object({
   startsAt: z.string().datetime({ offset: true }),
-  durationMinutes: z.union([z.literal(30), z.literal(45), z.literal(60)]),
+  durationMinutes: LessonDurationMinutesSchema,
   locationId: z.string().uuid(),
   swimmerIds: z.array(z.string().uuid()).min(1).max(4),
 });
 export type CreateLessonBody = z.infer<typeof CreateLessonBodySchema>;
+
+// Coach-only query flag that disables the min-advance ("16-hour notice")
+// filter on availability lookups. Server honors it only when the caller is
+// a coach — parents passing it still see the normal 16-hour rule applied.
+// Shape is a plain string so URLSearchParams round-trips cleanly.
+export const CoachBypassNoticeFlagSchema = z.literal("true").optional();
 
 export const AvailableSlotsQuerySchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   durationMinutes: z
     .string()
     .transform((value) => parseInt(value, 10))
-    .pipe(z.union([z.literal(30), z.literal(45), z.literal(60)])),
+    .pipe(LessonDurationMinutesSchema),
   locationId: z.string().uuid(),
+  coachBypassNotice: CoachBypassNoticeFlagSchema,
 });
 export type AvailableSlotsQuery = z.infer<typeof AvailableSlotsQuerySchema>;
 
@@ -171,7 +189,7 @@ export const LessonResponseSchema = z.object({
   householdId: z.string().uuid(),
   locationId: z.string().uuid(),
   startsAt: z.string().datetime({ offset: true }),
-  durationMinutes: z.union([z.literal(30), z.literal(45), z.literal(60)]),
+  durationMinutes: LessonDurationMinutesSchema,
   type: LessonTypeSchema,
   status: LessonStatusSchema,
   swimmers: z.array(LessonSwimmerSchema),
@@ -353,7 +371,7 @@ export type AvailabilityOverride = z.infer<typeof AvailabilityOverrideSchema>;
 
 export const UpdateLessonBodySchema = z.object({
   startsAt: z.string().datetime({ offset: true }).optional(),
-  durationMinutes: z.union([z.literal(30), z.literal(45), z.literal(60)]).optional(),
+  durationMinutes: LessonDurationMinutesSchema.optional(),
   locationId: z.string().uuid().optional(),
 });
 export type UpdateLessonBody = z.infer<typeof UpdateLessonBodySchema>;
@@ -404,14 +422,15 @@ export const WeekDayAvailabilitySchema = DayAvailabilitySchema.extend({
 export type WeekDayAvailability = z.infer<typeof WeekDayAvailabilitySchema>;
 
 export const RangeAvailabilityQuerySchema = z.object({
-  view:            z.enum(["week", "month"]),
-  date:            z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  durationMinutes: z
+  view:              z.enum(["week", "month"]),
+  date:              z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  durationMinutes:   z
     .string()
     .transform((value) => parseInt(value, 10))
-    .pipe(z.union([z.literal(30), z.literal(45), z.literal(60)])),
-  locationId:      z.string().uuid(),
-  excludeLessonId: z.string().uuid().optional(),
+    .pipe(LessonDurationMinutesSchema),
+  locationId:        z.string().uuid(),
+  excludeLessonId:   z.string().uuid().optional(),
+  coachBypassNotice: CoachBypassNoticeFlagSchema,
 });
 export type RangeAvailabilityQuery = z.infer<typeof RangeAvailabilityQuerySchema>;
 
@@ -555,7 +574,7 @@ export const CoachLessonDetailSchema = z.object({
   locationZip: z.string(),
   isHomePool: z.boolean(),
   startsAt: z.string().datetime({ offset: true }),
-  durationMinutes: z.union([z.literal(30), z.literal(45), z.literal(60)]),
+  durationMinutes: LessonDurationMinutesSchema,
   type: LessonTypeSchema,
   status: LessonStatusSchema,
   swimmers: z.array(CoachLessonSwimmerSchema),
@@ -610,3 +629,88 @@ export const CoachWeekScheduleResponseSchema = z.object({
   days: CoachWeekScheduleDaySchema.array(),
 });
 export type CoachWeekScheduleResponse = z.infer<typeof CoachWeekScheduleResponseSchema>;
+
+// ── Coach booking (ADR 029) ──────────────────────────────────────────────────
+
+// Server-computed warnings for a coach custom-time submission. See ADR 029
+// "custom-time override rules" for the semantics of each flag. The client
+// mirrors this shape for its acknowledgements field; the server never trusts
+// the client to self-report which warnings fired.
+//
+// Note: the 16-hour notice window is a parent-only rule — coaches book
+// without any min-advance restriction, so there is no insideNoticeWindow
+// warning. Start-in-past is a hard reject in POST /coach/lessons.
+export const CoachBookingWarningsSchema = z.object({
+  outsideHours: z.boolean().default(false),
+  maxAdvanceExceeded: z.boolean().default(false),
+  travelBufferViolated: z.boolean().default(false),
+  dailyCapExceeded: z.boolean().default(false),
+  blockedTimeOverlap: z.boolean().default(false),
+});
+export type CoachBookingWarnings = z.infer<typeof CoachBookingWarningsSchema>;
+
+export const CoachCreateLessonBodySchema = z.object({
+  householdId: z.string().uuid(),
+  swimmerIds: z.array(z.string().uuid()).min(1).max(4),
+  locationId: z.string().uuid(),
+  startsAt: z.string().datetime({ offset: true }),
+  durationMinutes: LessonDurationMinutesSchema,
+  // overrideWindow = "may I proceed if there are warnings?". Zero warnings
+  // → the flag is a no-op. One or more warnings → every one must appear
+  // true in acknowledgedWarnings OR the server returns 409.
+  overrideWindow: z.boolean().default(false),
+  acknowledgedWarnings: CoachBookingWarningsSchema.default({}),
+});
+export type CoachCreateLessonBody = z.infer<typeof CoachCreateLessonBodySchema>;
+
+// 409 body shape: the server-computed warnings the coach has not yet
+// acknowledged. The UI re-renders its warnings card from this payload.
+export const CoachCreateLessonWarningsResponseSchema = z.object({
+  error: z.literal("warnings_not_acknowledged"),
+  warnings: CoachBookingWarningsSchema,
+});
+export type CoachCreateLessonWarningsResponse = z.infer<
+  typeof CoachCreateLessonWarningsResponseSchema
+>;
+
+// ── Coach household search ──────────────────────────────────────────────────
+
+export const COACH_HOUSEHOLD_SEARCH_MIN_LENGTH = 2;
+
+// Either `q` (contains search across swimmer/member/household name) or
+// `householdId` (direct lookup for the /coach/book pre-fill path from
+// /coach/swimmers/[id]). Both set: householdId wins. Neither set: empty.
+export const CoachHouseholdSearchQuerySchema = z.object({
+  q: z.string().trim().optional(),
+  householdId: z.string().uuid().optional(),
+  limit: z
+    .string()
+    .transform((value) => parseInt(value, 10))
+    .pipe(z.number().int().min(1).max(50))
+    .optional(),
+});
+export type CoachHouseholdSearchQuery = z.infer<typeof CoachHouseholdSearchQuerySchema>;
+
+// Archived swimmers appear in the household search so the picker can grey
+// them out, but we only expose the fact that they're archived — never the
+// archivedAt timestamp. The parent can't see when their own swimmer was
+// archived, and the coach has no need to either.
+export const CoachHouseholdSearchSwimmerSchema = z.object({
+  id: z.string().uuid(),
+  firstName: z.string(),
+  lastName: z.string(),
+  isArchived: z.boolean(),
+});
+export type CoachHouseholdSearchSwimmer = z.infer<typeof CoachHouseholdSearchSwimmerSchema>;
+
+export const CoachHouseholdSearchResultSchema = z.object({
+  householdId: z.string().uuid(),
+  householdName: z.string(),
+  memberFullNames: z.array(z.string()),
+  swimmers: z.array(CoachHouseholdSearchSwimmerSchema),
+  homePoolLocationId: z.string().uuid().nullable(),
+});
+export type CoachHouseholdSearchResult = z.infer<typeof CoachHouseholdSearchResultSchema>;
+
+export const CoachHouseholdSearchResponseSchema = z.array(CoachHouseholdSearchResultSchema);
+export type CoachHouseholdSearchResponse = z.infer<typeof CoachHouseholdSearchResponseSchema>;

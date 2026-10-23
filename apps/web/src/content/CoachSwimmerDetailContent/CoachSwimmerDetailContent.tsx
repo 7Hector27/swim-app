@@ -596,6 +596,16 @@ export default function CoachSwimmerDetailContent({
               Evaluate {swimmer.firstName}
             </a>
             <a
+              href={`/coach/book?household=${swimmer.householdId}&swimmer=${swimmer.id}`}
+              className="inline-flex items-center justify-center px-5 min-h-[44px] font-bold text-sm rounded-[var(--radius-button)] border"
+              style={{
+                borderColor: "var(--color-button-outline)",
+                color: "var(--color-button-outline)",
+              }}
+            >
+              Book lesson
+            </a>
+            <a
               href={`/coach/swimmers/${swimmer.id}/progress`}
               className="inline-flex items-center justify-center px-5 min-h-[44px] font-bold text-sm rounded-[var(--radius-button)] border"
               style={{

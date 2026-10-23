@@ -427,7 +427,21 @@ async function finalizeFailed(
     .where(eq(lessonEmailOutbox.id, outboxId));
 }
 
-function shortError(err: unknown): string {
-  if (err instanceof Error) return `${err.name}:${err.message}`.slice(0, 200);
-  return String(err).slice(0, 200);
+// Rough RFC-5321-ish email match. Strict on the local-part so random
+// strings with "@" aren't over-redacted. Case-insensitive isn't needed
+// since the character classes already cover both cases. Global so
+// multiple addresses in one error string all get replaced.
+const EMAIL_PATTERN = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
+
+export function redactEmails(input: string): string {
+  return input.replace(EMAIL_PATTERN, "[email]");
+}
+
+// Returns a short, log-safe rendering of an upstream error. Resend / SMTP
+// providers sometimes include the recipient address in their error payload
+// ("could not deliver to foo@bar.com"); strip anything that looks like an
+// email before truncating + logging.
+export function shortError(err: unknown): string {
+  const raw = err instanceof Error ? `${err.name}:${err.message}` : String(err);
+  return redactEmails(raw).slice(0, 200);
 }

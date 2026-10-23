@@ -32,10 +32,10 @@ describe("mapBookingApiResponse", () => {
     expect("message" in result && result.message).toContain("10 weeks");
   });
 
-  it("maps 422 slot_unavailable to taken message", () => {
+  it("maps 422 slot_unavailable to a neutral unavailability message", () => {
     const result = mapBookingApiResponse(422, { error: "slot_unavailable" });
     expect(result.status).toBe("error");
-    expect("message" in result && result.message).toContain("just taken");
+    expect("message" in result && result.message).toContain("isn't available");
   });
 
   it("maps 403 to permission denied message", () => {

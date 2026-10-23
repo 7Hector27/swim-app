@@ -1,0 +1,1 @@
+ALTER TABLE "household_audit_log" ADD COLUMN "payload" jsonb;

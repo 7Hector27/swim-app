@@ -41,31 +41,39 @@ export default async function CoachScheduleContent({ accessToken, date, view, to
       <main id="main-content" className="flex-1">
         <div className="mx-auto max-w-content px-page pt-8 pb-20 tablet:pt-12 tablet:pb-32 flex flex-col gap-6">
           {/* ── Header + toggle ─────────────────────────────────────────── */}
-          <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center justify-between gap-4 flex-wrap">
             <h1 className="text-3xl tablet:text-4xl text-heading">Schedule</h1>
-            <div className="flex rounded-button border border-border overflow-hidden flex-shrink-0">
+            <div className="flex items-center gap-3 flex-wrap">
               <Link
-                href={`?view=day&date=${date}`}
-                aria-current={view === "day" ? "page" : undefined}
-                className={`px-4 h-11 inline-flex items-center text-sm font-semibold transition-colors duration-100 ${
-                  view === "day"
-                    ? "bg-accent text-on-accent"
-                    : "text-text-secondary hover:bg-surface-soft"
-                }`}
+                href="/coach/book"
+                className="inline-flex items-center justify-center min-h-[44px] px-5 rounded-button bg-button-primary-background text-button-primary-text text-sm font-bold transition-opacity duration-150 motion-reduce:transition-none hover:opacity-90 active:scale-[0.97]"
               >
-                Day
+                Book lesson
               </Link>
-              <Link
-                href={`?view=week&date=${weekMonday}`}
-                aria-current={view === "week" ? "page" : undefined}
-                className={`px-4 h-11 inline-flex items-center text-sm font-semibold border-l border-border transition-colors duration-100 ${
-                  view === "week"
-                    ? "bg-accent text-on-accent"
-                    : "text-text-secondary hover:bg-surface-soft"
-                }`}
-              >
-                Week
-              </Link>
+              <div className="flex rounded-button border border-border overflow-hidden flex-shrink-0">
+                <Link
+                  href={`?view=day&date=${date}`}
+                  aria-current={view === "day" ? "page" : undefined}
+                  className={`px-4 h-11 inline-flex items-center text-sm font-semibold transition-colors duration-100 ${
+                    view === "day"
+                      ? "bg-accent text-on-accent"
+                      : "text-text-secondary hover:bg-surface-soft"
+                  }`}
+                >
+                  Day
+                </Link>
+                <Link
+                  href={`?view=week&date=${weekMonday}`}
+                  aria-current={view === "week" ? "page" : undefined}
+                  className={`px-4 h-11 inline-flex items-center text-sm font-semibold border-l border-border transition-colors duration-100 ${
+                    view === "week"
+                      ? "bg-accent text-on-accent"
+                      : "text-text-secondary hover:bg-surface-soft"
+                  }`}
+                >
+                  Week
+                </Link>
+              </div>
             </div>
           </div>
 

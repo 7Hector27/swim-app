@@ -361,6 +361,9 @@ export async function fetchRangeAvailability(
     durationMinutes: 30 | 45 | 60;
     locationId: string;
     excludeLessonId?: string;
+    // Coach-only: ask the server to skip the 16-hour notice rule. Server
+    // silently drops the flag for non-coaches.
+    coachBypassNotice?: boolean;
   },
 ): Promise<WeekAvailabilityResponse | MonthAvailabilityResponse | null> {
   try {
@@ -372,6 +375,9 @@ export async function fetchRangeAvailability(
     });
     if (params.excludeLessonId !== undefined) {
       searchParams.set("excludeLessonId", params.excludeLessonId);
+    }
+    if (params.coachBypassNotice) {
+      searchParams.set("coachBypassNotice", "true");
     }
     const response = await fetch(
       `${process.env.NEXT_PUBLIC_API_URL}/lessons/available-range?${searchParams.toString()}`,

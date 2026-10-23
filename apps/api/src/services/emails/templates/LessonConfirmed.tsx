@@ -15,7 +15,10 @@ interface Props {
 export default function LessonConfirmed({ payload, siteUrl, replyToEmail }: Props) {
   const coach = coachDisplay(payload.coachFirstName);
   const swimmers = formatSwimmerList(payload.swimmerFirstNames);
-  const previewText = `Confirmed for ${swimmers} on ${payload.startsAtLocalDisplay}.`;
+  const isCoachInitiated = payload.initiatedBy === "coach";
+  const previewText = isCoachInitiated
+    ? `${coach} scheduled a lesson for ${swimmers} on ${payload.startsAtLocalDisplay}.`
+    : `Confirmed for ${swimmers} on ${payload.startsAtLocalDisplay}.`;
   return (
     <EmailLayout
       siteUrl={siteUrl}
@@ -23,11 +26,24 @@ export default function LessonConfirmed({ payload, siteUrl, replyToEmail }: Prop
       coachFirstName={coach}
       replyToEmail={replyToEmail ?? null}
     >
-      <Heading style={headingStyle}>You&apos;re on the schedule.</Heading>
+      <Heading style={headingStyle}>
+        {isCoachInitiated ? `${coach} booked a lesson for you.` : "You\u2019re on the schedule."}
+      </Heading>
       <Text style={bodyStyle}>
-        Confirmed for {swimmers} on <strong>{payload.startsAtLocalDisplay}</strong> at{" "}
-        <strong>{payload.location.name}</strong>. A calendar invite is attached. Tap it to add
-        this lesson to your calendar.
+        {isCoachInitiated ? (
+          <>
+            {coach} scheduled a lesson for {swimmers} on{" "}
+            <strong>{payload.startsAtLocalDisplay}</strong> at{" "}
+            <strong>{payload.location.name}</strong>. A calendar invite is attached. Tap it to add
+            this lesson to your calendar.
+          </>
+        ) : (
+          <>
+            Confirmed for {swimmers} on <strong>{payload.startsAtLocalDisplay}</strong> at{" "}
+            <strong>{payload.location.name}</strong>. A calendar invite is attached. Tap it to add
+            this lesson to your calendar.
+          </>
+        )}
       </Text>
       <LessonCard
         swimmerListDisplay={swimmers}

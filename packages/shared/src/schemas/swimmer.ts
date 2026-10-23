@@ -184,6 +184,9 @@ export type CoachSwimmer = z.infer<typeof CoachSwimmerSchema>;
 
 export const CoachSwimmerDetailSchema = CoachSwimmerSchema.extend({
   birthDate: z.string().date(),
+  // Household the swimmer belongs to. Used by the coach "Book lesson"
+  // entry on the swimmer detail page to pre-fill the booking flow (ADR 029).
+  householdId: z.string().uuid(),
   members: z.array(
     z.object({
       fullName: z.string().nullable(),

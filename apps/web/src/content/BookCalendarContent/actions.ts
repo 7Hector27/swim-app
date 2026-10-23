@@ -33,6 +33,8 @@ export async function fetchRangeAction(params: {
   durationMinutes: 30 | 45 | 60;
   locationId: string;
   excludeLessonId?: string;
+  // Coach-only — ignored by the server for parent callers.
+  coachBypassNotice?: boolean;
 }): Promise<WeekAvailabilityResponse | null> {
   const supabase = await createClient();
   const { data } = await supabase.auth.getSession();
@@ -49,6 +51,7 @@ export async function fetchMonthRangeAction(params: {
   durationMinutes: 30 | 45 | 60;
   locationId: string;
   excludeLessonId?: string;
+  coachBypassNotice?: boolean;
 }): Promise<MonthAvailabilityResponse | null> {
   const supabase = await createClient();
   const { data } = await supabase.auth.getSession();
@@ -65,6 +68,7 @@ export async function findFirstAvailableDayAction(params: {
   durationMinutes: 30 | 45 | 60;
   locationId: string;
   excludeLessonId?: string;
+  coachBypassNotice?: boolean;
 }): Promise<{
   firstAvailableDate: string | null;
   weekData: WeekAvailabilityResponse;
@@ -85,6 +89,7 @@ export async function findFirstAvailableDayAction(params: {
       durationMinutes: params.durationMinutes,
       locationId: params.locationId,
       ...(params.excludeLessonId ? { excludeLessonId: params.excludeLessonId } : {}),
+      ...(params.coachBypassNotice ? { coachBypassNotice: true } : {}),
     });
     if (result === null) return null;
     const parsed = WeekAvailabilityResponseSchema.safeParse(result);

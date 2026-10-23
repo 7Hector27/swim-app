@@ -34,6 +34,10 @@ export interface EnqueueLessonEmailInput {
   lessonId: string;
   event: LessonEmailEvent;
   actorRole: EmailActorRole;
+  // Who initiated the lesson. Only meaningful for event='lesson_confirmed'
+  // (ADR 029). Omit for every other event; the stored payload field will be
+  // null, and no template reads it.
+  initiatedBy?: "parent" | "coach" | null;
   // Decline reason, if any. Only relevant for event='request_declined'.
   declineReason?: string | null;
   // For event='lesson_rescheduled': the lesson's starts_at BEFORE this
@@ -210,6 +214,7 @@ export async function enqueueLessonEmail(
         ? formatLessonTimeDisplay(describeExpiresAt)
         : null,
     coachFirstName,
+    initiatedBy: input.initiatedBy ?? null,
   };
 
   const insertedRows = await tx

@@ -271,6 +271,11 @@ export const householdAuditLog = pgTable("household_audit_log", {
   targetProfileId: uuid("target_profile_id").references(() => profiles.id, { onDelete: "restrict" }),
   targetSwimmerId: uuid("target_swimmer_id").references(() => swimmers.id, { onDelete: "restrict" }),
   newRole: householdRoleEnum("new_role"),
+  // Opaque JSON payload for events whose detail doesn't fit the shared
+  // target_*/new_role columns. Added for ADR 029 (lesson_booked_by_coach
+  // records the server-computed override warnings alongside the lesson id).
+  // Mirrors coach_audit_log.payload from migration 0048 — keep usage sparse.
+  payload: jsonb("payload"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }).enableRLS();
 
