@@ -240,6 +240,9 @@ async function claimRow(outboxId: string): Promise<ClaimedRow | null> {
       .where(
         and(
           eq(lessonEmailOutbox.id, outboxId),
+          // Per-lesson rows only. Batch rows (lessonId IS NULL, batchId
+          // IS NOT NULL) are claimed by a parallel sender path in Phase 1C.
+          isNotNull(lessonEmailOutbox.lessonId),
           or(
             inArray(lessonEmailOutbox.status, ["pending", "failed"]),
             and(
@@ -254,6 +257,9 @@ async function claimRow(outboxId: string): Promise<ClaimedRow | null> {
 
     const row = rows[0];
     if (!row) return null;
+    // Narrowed to per-lesson rows by the isNotNull filter above.
+    const lessonId = row.lessonId;
+    if (lessonId === null) return null;
 
     const leaseUntil = new Date(Date.now() + CLAIM_LEASE_MS);
     await tx
@@ -267,7 +273,7 @@ async function claimRow(outboxId: string): Promise<ClaimedRow | null> {
 
     return {
       id: row.id,
-      lessonId: row.lessonId,
+      lessonId,
       event: row.event as LessonEmailEvent,
       recipientProfileIds: row.recipientProfileIds,
       icsMethod: (row.icsMethod ?? null) as "REQUEST" | "CANCEL" | null,
