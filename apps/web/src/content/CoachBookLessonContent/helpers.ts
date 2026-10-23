@@ -18,7 +18,7 @@ export interface SelectedLocation {
 export function activeSwimmers(
   household: CoachHouseholdSearchResult,
 ): CoachHouseholdSearchSwimmer[] {
-  return household.swimmers.filter((swimmer) => swimmer.archivedAt === null);
+  return household.swimmers.filter((swimmer) => !swimmer.isArchived);
 }
 
 // Resolves the pre-filled swimmer id from a /coach/book query string

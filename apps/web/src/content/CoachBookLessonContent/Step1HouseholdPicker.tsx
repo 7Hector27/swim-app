@@ -141,7 +141,7 @@ export default function Step1HouseholdPicker({
                   ) : (
                     <div className="flex flex-wrap gap-2">
                       {household.swimmers.map((swimmer) => {
-                        const isActiveSwimmer = swimmer.archivedAt === null;
+                        const isActiveSwimmer = !swimmer.isArchived;
                         const picked = selectedSwimmerIds.includes(swimmer.id);
                         const disabled =
                           !isActiveSwimmer ||

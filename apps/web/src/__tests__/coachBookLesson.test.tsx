@@ -59,7 +59,7 @@ const HOUSEHOLD: CoachHouseholdSearchResult = {
   householdName: "Smith household",
   memberFullNames: ["Jane Smith"],
   swimmers: [
-    { id: SWIMMER_ID, firstName: "Alex", lastName: "Smith", archivedAt: null },
+    { id: SWIMMER_ID, firstName: "Alex", lastName: "Smith", isArchived: false },
   ],
   homePoolLocationId: HOME_POOL_ID,
 };
@@ -319,12 +319,12 @@ describe("computeInitialSwimmerIds (server-safe pre-fill helper)", () => {
     householdName: "Smith household",
     memberFullNames: [],
     swimmers: [
-      { id: ACTIVE_ID, firstName: "Alex", lastName: "Smith", archivedAt: null },
+      { id: ACTIVE_ID, firstName: "Alex", lastName: "Smith", isArchived: false },
       {
         id: ARCHIVED_ID,
         firstName: "Ghost",
         lastName: "Smith",
-        archivedAt: "2026-01-01T00:00:00.000Z",
+        isArchived: true,
       },
     ],
     homePoolLocationId: null,

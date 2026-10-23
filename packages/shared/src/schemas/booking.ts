@@ -691,11 +691,15 @@ export const CoachHouseholdSearchQuerySchema = z.object({
 });
 export type CoachHouseholdSearchQuery = z.infer<typeof CoachHouseholdSearchQuerySchema>;
 
+// Archived swimmers appear in the household search so the picker can grey
+// them out, but we only expose the fact that they're archived — never the
+// archivedAt timestamp. The parent can't see when their own swimmer was
+// archived, and the coach has no need to either.
 export const CoachHouseholdSearchSwimmerSchema = z.object({
   id: z.string().uuid(),
   firstName: z.string(),
   lastName: z.string(),
-  archivedAt: z.string().datetime({ offset: true }).nullable(),
+  isArchived: z.boolean(),
 });
 export type CoachHouseholdSearchSwimmer = z.infer<typeof CoachHouseholdSearchSwimmerSchema>;
 

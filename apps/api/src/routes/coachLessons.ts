@@ -1292,7 +1292,7 @@ coachLessonsRouter.get(
         id: row.id,
         firstName: row.firstName,
         lastName: row.lastName,
-        archivedAt: row.archivedAt ? row.archivedAt.toISOString() : null,
+        isArchived: row.archivedAt !== null,
       });
       swimmersByHousehold.set(row.householdId, list);
     }
