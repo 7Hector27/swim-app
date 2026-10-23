@@ -706,6 +706,17 @@ lessonsRouter.post(
 
 // ── POST /lessons/batch/preview ───────────────────────────────────────────────
 
+// Thrown from inside the batch submit's db.transaction() so Drizzle rolls
+// back the booking_batches insert on a picks_conflict. Returning a tagged
+// object from the callback would commit instead — only an exception
+// triggers rollback.
+class BatchPicksConflictError extends Error {
+  constructor(readonly conflicts: BatchConflictPick[]) {
+    super("picks_conflict");
+    this.name = "BatchPicksConflictError";
+  }
+}
+
 interface BatchContext {
   config: typeof availabilityConfig.$inferSelect;
   seasons: ReturnType<typeof mapSeasonRow>[];
@@ -1019,7 +1030,13 @@ lessonsRouter.post(
       (a, b) => a.startsAt.getTime() - b.startsAt.getTime(),
     );
 
-    const result = await db.transaction(async (tx) => {
+    let result: {
+      batch: typeof bookingBatches.$inferSelect;
+      lessons: (typeof lessons.$inferSelect)[];
+      outboxId: string;
+    };
+    try {
+      result = await db.transaction(async (tx) => {
       const batchRows = await tx
         .insert(bookingBatches)
         .values(
@@ -1099,7 +1116,10 @@ lessonsRouter.post(
         }
       }
       if (conflicts.length > 0) {
-        return { kind: "conflicts" as const, conflicts };
+        // Throw a tagged class so the enclosing db.transaction() rolls back
+        // the booking_batches insert we did above. Returning a tagged object
+        // would commit; only an exception triggers Drizzle's rollback.
+        throw new BatchPicksConflictError(conflicts);
       }
 
       const approvalRequired = await needsApproval(householdId, body.locationId, tx);
@@ -1263,20 +1283,21 @@ lessonsRouter.post(
       });
 
       return {
-        kind: "ok" as const,
         batch,
         lessons: insertedLessons,
         outboxId,
       };
-    });
-
-    if (result.kind === "conflicts") {
-      req.log.warn(
-        { event: "picks_conflict", route: "POST /lessons/batch", conflicts: result.conflicts },
-        "batch rejected on recheck",
-      );
-      res.status(422).json({ error: "picks_conflict", conflicts: result.conflicts });
-      return;
+      });
+    } catch (err) {
+      if (err instanceof BatchPicksConflictError) {
+        req.log.warn(
+          { event: "picks_conflict", route: "POST /lessons/batch", conflicts: err.conflicts },
+          "batch rejected on recheck",
+        );
+        res.status(422).json({ error: "picks_conflict", conflicts: err.conflicts });
+        return;
+      }
+      throw err;
     }
 
     for (const lesson of result.lessons) {
