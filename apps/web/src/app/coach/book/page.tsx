@@ -1,8 +1,15 @@
 import { redirect } from "next/navigation";
 import { requireAuth } from "@/lib/requireAuth";
 import { fetchCoachHouseholds, fetchCoachLocations } from "@/lib/api/coachBooking";
+import { fetchAvailabilityConfig } from "@/lib/api/coachAvailability";
 import CoachBookLessonContent from "@/content/CoachBookLessonContent";
 import { computeInitialSwimmerIds } from "@/content/CoachBookLessonContent/helpers";
+
+// Fallback used when the config fetch fails. Matches the current prod
+// default; the UI only uses the number to render warning copy, so a stale
+// fallback here is a UI-only drift (the server authoritative check still
+// uses the live config).
+const DEFAULT_BOOKING_MAX_ADVANCE_WEEKS = 10;
 
 export const dynamic = "force-dynamic";
 
@@ -25,12 +32,15 @@ export default async function CoachBookPage({ searchParams }: Props) {
   }
 
   const params = await searchParams;
-  const [coachLocations, prefilled] = await Promise.all([
+  const [coachLocations, prefilled, availabilityConfig] = await Promise.all([
     fetchCoachLocations(auth.accessToken),
     params.household
       ? fetchCoachHouseholds(auth.accessToken, { householdId: params.household })
       : Promise.resolve(null),
+    fetchAvailabilityConfig(auth.accessToken),
   ]);
+  const bookingMaxAdvanceWeeks =
+    availabilityConfig?.bookingMaxAdvanceWeeks ?? DEFAULT_BOOKING_MAX_ADVANCE_WEEKS;
 
   const initialHousehold = prefilled?.[0] ?? null;
   const initialSwimmerIds = computeInitialSwimmerIds(initialHousehold, params.swimmer);
@@ -48,6 +58,7 @@ export default async function CoachBookPage({ searchParams }: Props) {
             initialHousehold={initialHousehold}
             initialSwimmerIds={initialSwimmerIds}
             namedPools={namedPools}
+            bookingMaxAdvanceWeeks={bookingMaxAdvanceWeeks}
           />
         </div>
       </main>

@@ -21,6 +21,9 @@ interface Props {
   initialHousehold: CoachHouseholdSearchResult | null;
   initialSwimmerIds: string[];
   namedPools: LessonLocation[];
+  // Server config value threaded through to the confirmation dialog so the
+  // max-advance warning string stays in sync with the real limit.
+  bookingMaxAdvanceWeeks: number;
 }
 
 interface PendingBooking {
@@ -46,6 +49,7 @@ export default function CoachBookLessonContent({
   initialHousehold,
   initialSwimmerIds,
   namedPools,
+  bookingMaxAdvanceWeeks,
 }: Props) {
   // Pre-fill: when entering from /coach/swimmers/[id], step 1 is skipped
   // and we go directly to step 2 with the household + swimmer selected.
@@ -220,6 +224,7 @@ export default function CoachBookLessonContent({
           open={true}
           summary={pending.summary}
           warnings={serverWarnings}
+          bookingMaxAdvanceWeeks={bookingMaxAdvanceWeeks}
           isSubmitting={isSubmitting}
           errorMessage={submitError}
           onCancel={handleCancelConfirm}

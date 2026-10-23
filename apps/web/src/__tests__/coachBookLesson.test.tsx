@@ -111,6 +111,7 @@ describe("CoachBookLessonContent", () => {
         initialHousehold={HOUSEHOLD}
         initialSwimmerIds={[SWIMMER_ID]}
         namedPools={NAMED_POOLS}
+        bookingMaxAdvanceWeeks={10}
       />,
     );
     // Step 2 markers.
@@ -126,6 +127,7 @@ describe("CoachBookLessonContent", () => {
         initialHousehold={null}
         initialSwimmerIds={[]}
         namedPools={NAMED_POOLS}
+        bookingMaxAdvanceWeeks={10}
       />,
     );
     expect(screen.getByPlaceholderText(/search by swimmer/i)).toBeInTheDocument();
@@ -156,6 +158,7 @@ describe("ConfirmBookingDialog warnings + 409 flow", () => {
           outsideHours: true,
           dailyCapExceeded: true,
         }}
+        bookingMaxAdvanceWeeks={10}
         isSubmitting={false}
         errorMessage={null}
         onCancel={vi.fn()}
@@ -202,6 +205,7 @@ describe("ConfirmBookingDialog warnings + 409 flow", () => {
         open
         summary={summary}
         warnings={null}
+        bookingMaxAdvanceWeeks={10}
         isSubmitting={false}
         errorMessage={null}
         onCancel={onCancel}
@@ -214,6 +218,7 @@ describe("ConfirmBookingDialog warnings + 409 flow", () => {
         open
         summary={summary}
         warnings={null}
+        bookingMaxAdvanceWeeks={10}
         isSubmitting={false}
         errorMessage="That time isn't available anymore. Pick another one."
         onCancel={onCancel}

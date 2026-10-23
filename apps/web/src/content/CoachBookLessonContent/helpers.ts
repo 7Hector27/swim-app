@@ -124,15 +124,19 @@ export function detectLocalOverlap(args: {
   return { overlaps: false };
 }
 
-// Human copy for each warning. The copy renders in the warnings card above
-// the summary dialog's acknowledge checkboxes and in the audit-visible list.
-export const WARNING_COPY: Record<keyof CoachBookingWarnings, string> = {
-  outsideHours: "Outside your teaching hours.",
-  maxAdvanceExceeded: "More than 10 weeks away.",
-  travelBufferViolated: "Travel buffer with another lesson is too tight.",
-  dailyCapExceeded: "This day will exceed your daily lesson cap.",
-  blockedTimeOverlap: "Overlaps a blocked time on your schedule.",
-};
+// Human copy for each warning. Renders in the warnings card above the
+// summary dialog's acknowledge checkboxes and in the audit-visible list.
+// Takes `bookingMaxAdvanceWeeks` from the server config so the max-advance
+// line stays in sync if the limit changes.
+export function warningCopy(bookingMaxAdvanceWeeks: number): Record<keyof CoachBookingWarnings, string> {
+  return {
+    outsideHours: "Outside your teaching hours.",
+    maxAdvanceExceeded: `More than ${bookingMaxAdvanceWeeks} weeks away.`,
+    travelBufferViolated: "Travel buffer with another lesson is too tight.",
+    dailyCapExceeded: "This day will exceed your daily lesson cap.",
+    blockedTimeOverlap: "Overlaps a blocked time on your schedule.",
+  };
+}
 
 // Returns true if the warnings object has at least one TRUE flag.
 export function hasAnyWarning(warnings: CoachBookingWarnings): boolean {

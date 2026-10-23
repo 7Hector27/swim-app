@@ -4,11 +4,11 @@ import { useEffect, useRef, useState } from "react";
 import type { CoachBookingWarnings } from "@swim-app/shared";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import {
-  WARNING_COPY,
   activeWarningKeys,
   emptyWarnings,
   formatLessonTimeDisplay,
   hasAnyWarning,
+  warningCopy,
 } from "./helpers";
 
 export interface ConfirmSummary {
@@ -29,6 +29,8 @@ interface Props {
   // dialog renders an acknowledge checkbox per TRUE flag; Submit is disabled
   // until every TRUE flag is acknowledged.
   warnings: CoachBookingWarnings | null;
+  // Server config value used to render the max-advance warning string.
+  bookingMaxAdvanceWeeks: number;
   isSubmitting: boolean;
   errorMessage: string | null;
   onCancel: () => void;
@@ -43,6 +45,7 @@ export default function ConfirmBookingDialog({
   open,
   summary,
   warnings,
+  bookingMaxAdvanceWeeks,
   isSubmitting,
   errorMessage,
   onCancel,
@@ -50,6 +53,7 @@ export default function ConfirmBookingDialog({
 }: Props) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [acknowledged, setAcknowledged] = useState<CoachBookingWarnings>(emptyWarnings());
+  const copy = warningCopy(bookingMaxAdvanceWeeks);
 
   useEffect(() => {
     if (!open) return;
@@ -136,7 +140,7 @@ export default function ConfirmBookingDialog({
                       }
                       className="mt-0.5 h-4 w-4 accent-[var(--color-accent)]"
                     />
-                    <span>{WARNING_COPY[key]}</span>
+                    <span>{copy[key]}</span>
                   </label>
                 </li>
               ))}
