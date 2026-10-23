@@ -145,7 +145,6 @@ export function detectLocalOverlap(args: {
 // the summary dialog's acknowledge checkboxes and in the audit-visible list.
 export const WARNING_COPY: Record<keyof CoachBookingWarnings, string> = {
   outsideHours: "Outside your teaching hours.",
-  insideNoticeWindow: "Less than 16 hours away.",
   maxAdvanceExceeded: "More than 10 weeks away.",
   travelBufferViolated: "Travel buffer with another lesson is too tight.",
   dailyCapExceeded: "This day will exceed your daily lesson cap.",
@@ -170,7 +169,6 @@ export function activeWarningKeys(
 export function emptyWarnings(): CoachBookingWarnings {
   return {
     outsideHours: false,
-    insideNoticeWindow: false,
     maxAdvanceExceeded: false,
     travelBufferViolated: false,
     dailyCapExceeded: false,

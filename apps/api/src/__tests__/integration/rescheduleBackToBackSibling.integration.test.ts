@@ -65,10 +65,15 @@ async function withAllDaysEnabled<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-async function findFirstAvailableSlot(
+// Finds slot X such that X, X+30min, and X+60min are ALL available at
+// `locId` for 30-minute bookings. Needed so the test can place sibling A at
+// X and sibling B at X+60 and reschedule B to X+30 without hitting the end
+// of a teaching window (bare "first available" slot can be the final 30-min
+// slot of the day, where X+30 is still inside but X+60 falls past the
+// window and the preflight booking fails).
+async function findSlotWithRoomForBackToBack(
   token: string,
   locId: string,
-  durationMinutes: number,
 ): Promise<string> {
   for (let weekOffset = 0; weekOffset < 10; weekOffset++) {
     const weekDate = new Date(Date.now() + weekOffset * 7 * 24 * 60 * 60 * 1000)
@@ -80,7 +85,7 @@ async function findFirstAvailableSlot(
       .query({
         view: "week",
         date: weekDate,
-        durationMinutes: String(durationMinutes),
+        durationMinutes: "30",
         locationId: locId,
       });
     if (res.status !== 200) continue;
@@ -88,12 +93,22 @@ async function findFirstAvailableSlot(
       days: Array<{ slots: Array<{ startsAt: string; state: string }> }>;
     };
     for (const day of body.days) {
+      const availableByStart = new Map<number, true>();
       for (const slot of day.slots) {
-        if (slot.state === "available") return slot.startsAt;
+        if (slot.state === "available") {
+          availableByStart.set(new Date(slot.startsAt).getTime(), true);
+        }
+      }
+      for (const slot of day.slots) {
+        if (slot.state !== "available") continue;
+        const t = new Date(slot.startsAt).getTime();
+        if (availableByStart.has(t + 30 * 60 * 1000) && availableByStart.has(t + 60 * 60 * 1000)) {
+          return slot.startsAt;
+        }
       }
     }
   }
-  throw new Error("No available slot found within 10 weeks");
+  throw new Error("No slot with room for a back-to-back trio found within 10 weeks");
 }
 
 beforeAll(async () => {
@@ -184,7 +199,7 @@ async function bookSiblingPair(token: string): Promise<{
   lessonAId: string;
   lessonBId: string;
 }> {
-  const slotX = await findFirstAvailableSlot(token, locationId, 30);
+  const slotX = await findSlotWithRoomForBackToBack(token, locationId);
   const slotMiddle = new Date(new Date(slotX).getTime() + 30 * 60 * 1000).toISOString();
   const slotY = new Date(new Date(slotX).getTime() + 60 * 60 * 1000).toISOString();
 

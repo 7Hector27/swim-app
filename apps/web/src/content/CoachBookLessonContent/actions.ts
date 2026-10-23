@@ -52,7 +52,12 @@ export async function fetchCoachRangeAction(params: {
 }): Promise<WeekAvailabilityResponse | null> {
   const token = await getAccessToken();
   if (!token) return null;
-  const result = await fetchRangeAvailability(token, { view: "week", ...params });
+  // Coach booking has no 16-hour notice rule; ask the server to skip it.
+  const result = await fetchRangeAvailability(token, {
+    view: "week",
+    ...params,
+    coachBypassNotice: true,
+  });
   if (result === null) return null;
   const parsed = WeekAvailabilityResponseSchema.safeParse(result);
   return parsed.success ? parsed.data : null;

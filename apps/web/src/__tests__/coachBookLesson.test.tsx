@@ -80,7 +80,6 @@ const NAMED_POOLS: LessonLocation[] = [
 
 const EMPTY_WARNINGS: CoachBookingWarnings = {
   outsideHours: false,
-  insideNoticeWindow: false,
   maxAdvanceExceeded: false,
   travelBufferViolated: false,
   dailyCapExceeded: false,
@@ -155,7 +154,7 @@ describe("ConfirmBookingDialog warnings + 409 flow", () => {
         warnings={{
           ...EMPTY_WARNINGS,
           outsideHours: true,
-          insideNoticeWindow: true,
+          dailyCapExceeded: true,
         }}
         isSubmitting={false}
         errorMessage={null}
@@ -169,7 +168,7 @@ describe("ConfirmBookingDialog warnings + 409 flow", () => {
     );
     expect(warningsAlert).toBeDefined();
     expect(warningsAlert!).toHaveTextContent(/outside your teaching hours/i);
-    expect(warningsAlert!).toHaveTextContent(/less than 16 hours away/i);
+    expect(warningsAlert!).toHaveTextContent(/daily lesson cap/i);
 
     const checkboxes = screen.getAllByRole("checkbox", { hidden: true });
     expect(checkboxes).toHaveLength(2);
@@ -191,7 +190,7 @@ describe("ConfirmBookingDialog warnings + 409 flow", () => {
     expect(onSubmit).toHaveBeenCalledTimes(1);
     const submittedAck = onSubmit.mock.calls[0]![0] as CoachBookingWarnings;
     expect(submittedAck.outsideHours).toBe(true);
-    expect(submittedAck.insideNoticeWindow).toBe(true);
+    expect(submittedAck.dailyCapExceeded).toBe(true);
     // Flags the server didn't flag stay false.
     expect(submittedAck.travelBufferViolated).toBe(false);
   });

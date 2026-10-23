@@ -119,7 +119,6 @@ export default function Step2TimePicker({
   const [fetchError, setFetchError] = useState<string | null>(null);
 
   const [selectedStartsAt, setSelectedStartsAt] = useState<string | null>(null);
-  const [tooSoonHint, setTooSoonHint] = useState(false);
 
   const [customOpen, setCustomOpen] = useState(false);
   const [customDate, setCustomDate] = useState<string>(today);
@@ -174,29 +173,24 @@ export default function Step2TimePicker({
   function handleWeekPrev() {
     setMondayStr((prev) => addDaysToDateStr(prev, -7));
     setSelectedStartsAt(null);
-    setTooSoonHint(false);
   }
 
   function handleWeekNext() {
     setMondayStr((prev) => addDaysToDateStr(prev, 7));
     setSelectedStartsAt(null);
-    setTooSoonHint(false);
   }
 
   function handleWeekToday() {
     setMondayStr(getMondayOfWeek(today));
     setSelectedStartsAt(null);
-    setTooSoonHint(false);
   }
 
+  // Coach booking has no 16-hour notice rule — the server never emits
+  // "too_soon" for coaches, so we only need to handle "available".
   function handleGridSlotClick(slot: { startsAt: string; state: string }) {
     if (slot.state === "available") {
       setSelectedStartsAt(slot.startsAt);
-      setTooSoonHint(false);
       setCustomOpen(false);
-    } else if (slot.state === "too_soon") {
-      setSelectedStartsAt(null);
-      setTooSoonHint(true);
     }
   }
 
@@ -306,7 +300,6 @@ export default function Step2TimePicker({
               onClick={() => {
                 setLocationId(option.id);
                 setSelectedStartsAt(null);
-                setTooSoonHint(false);
               }}
               aria-pressed={option.id === locationId}
               className={`min-h-[40px] px-4 rounded-button border text-sm font-semibold transition-colors duration-150 motion-reduce:transition-none active:scale-[0.97] ${
@@ -330,7 +323,6 @@ export default function Step2TimePicker({
               onClick={() => {
                 setDurationMinutes(minutes);
                 setSelectedStartsAt(null);
-                setTooSoonHint(false);
               }}
               aria-pressed={minutes === durationMinutes}
               className={`min-h-[40px] px-4 rounded-button border text-sm font-semibold transition-colors duration-150 motion-reduce:transition-none active:scale-[0.97] ${
@@ -434,19 +426,11 @@ export default function Step2TimePicker({
             </>
           )}
 
-          {tooSoonHint && (
-            <p className="text-sm text-text-secondary" role="status">
-              That slot is inside the 16-hour window. Use &quot;Pick a custom
-              time&quot; to book it anyway.
-            </p>
-          )}
-
           <button
             type="button"
             onClick={() => {
               setCustomOpen(true);
               setSelectedStartsAt(null);
-              setTooSoonHint(false);
             }}
             className="self-start text-sm font-semibold text-link underline hover:text-link-hover transition-colors duration-150 motion-reduce:transition-none"
           >
@@ -514,9 +498,9 @@ export default function Step2TimePicker({
             <p className="font-semibold">Overrides may apply</p>
             <p className="mt-1 text-text-secondary">
               The server will compute which warnings apply (teaching hours,
-              16-hour notice, travel buffer, daily cap, blocked times) and
-              surface them in the confirmation step. You&apos;ll be asked to
-              acknowledge each before the lesson is booked.
+              travel buffer, daily cap, blocked times) and surface them in
+              the confirmation step. You&apos;ll be asked to acknowledge each
+              before the lesson is booked.
             </p>
           </div>
 

@@ -5,11 +5,11 @@
 
 ## Context
 
-Today the only booking path is a parent submitting a request from their account. Jason routinely wants to book a lesson for a family himself — in response to a text, during a lesson, or when a parent asks him to schedule something that is outside the normal 16-hour notice window or outside his posted teaching hours. Four constraints shape the decision:
+Today the only booking path is a parent submitting a request from their account. Jason routinely wants to book a lesson for a family himself — in response to a text, during a lesson, or when a parent asks him to schedule something outside his posted teaching hours. Four constraints shape the decision:
 
 - The coach has already decided the lesson is happening. A pending-approval step would introduce a false "awaiting coach" state and a delay for no gain.
 - A coach booking must still produce the same durable artifacts a parent booking produces: a confirmation email with an `.ics` invite, a Google Calendar event (when the integration is connected), and a trust row at that pool for future auto-approvals.
-- Two lessons at times Jason cannot physically teach (same time, same place; or any direct time overlap given a single-coach app) must be impossible, even under an override. Everything else about his "custom time" (teaching hours, 16-hour notice, travel buffer, daily cap) is advisory to Jason himself and should be accept-able with a warning rather than blocked.
+- The 16-hour notice window is a parent-only rule: it exists so the coach has enough lead time to plan. When the coach is the one booking, the rule has no reason to apply. Two lessons at times Jason cannot physically teach (same time, same place; or any direct time overlap given a single-coach app) must still be impossible, even under an override. Everything else about his "custom time" (teaching hours, travel buffer, daily cap, blocked times) is advisory to Jason himself and should be accept-able with a warning rather than blocked.
 - The parent's experience of a coach-booked lesson must be indistinguishable from one they booked themselves: they can see it in their list, cancel it, and reschedule it under the same rules.
 
 ## Decision
@@ -29,8 +29,9 @@ Today the only booking path is a parent submitting a request from their account.
 **Custom-time override rules.**
 
 - **Hard reject: time overlap with another pending or approved lesson, at any location.** A single coach cannot be in two places at once. This is enforced by a `startsAt < existingEnd AND existingStartsAt < newEnd` predicate inside the transaction, after the advisory lock, and is not skippable by any flag. Direct overlap always returns `422 slot_unavailable`.
+- **Hard reject: start time in the past.** Not acknowledgeable. Returns `422 start_in_past`.
+- **No notice-window rule.** The 16-hour `bookingMinAdvanceHours` is parent-only; the coach booking slot picker queries `/lessons/available-range?coachBypassNotice=true` and the coach reschedule recheck sets `skipMinAdvance=true` on `computeAvailableSlots`. There is no `insideNoticeWindow` warning for the coach. (A parent that forges `coachBypassNotice=true` is ignored server-side.)
 - **Warning: outside teaching hours.** Skippable with `overrideWindow: true` and a UI acknowledgment.
-- **Warning: inside the 16-hour notice window.** Same.
 - **Warning: max-advance (`bookingMaxAdvanceWeeks`) exceeded.** Same — a coach booking the fall semester in May is unusual but not impossible.
 - **Warning: travel-buffer insufficient between back-to-back lessons at different pools.** Jason may accept a shorter buffer.
 - **Warning: daily lesson-minute cap exceeded.** Jason may teach more than `maxDailyLessonMinutes` on that day.
@@ -62,7 +63,7 @@ Reasons the server owns the computation rather than trusting the client to send 
 
 - **Impersonation entry from the parent lesson detail.** Rejected. Giving the coach a "book another for this family" shortcut from the parent-facing lesson detail would blur the role boundary and complicate the auth story. Coach-only entry points on `/coach/schedule` and `/coach/swimmers/[id]` are enough — Jason uses the coach surface regardless of which family he's booking for.
 
-- **A free-text "override reason" field the coach types when overriding.** Rejected. The structured server-computed warnings object (`outsideHours`, `insideNoticeWindow`, etc.) is the audit record. A free-text field would duplicate the signal, create a mild PII footgun (the retention story would need thought), and nobody has asked to read it. If a reason-column need materializes later, it's an additive migration.
+- **A free-text "override reason" field the coach types when overriding.** Rejected. The structured server-computed warnings object (`outsideHours`, `travelBufferViolated`, etc.) is the audit record. A free-text field would duplicate the signal, create a mild PII footgun (the retention story would need thought), and nobody has asked to read it. If a reason-column need materializes later, it's an additive migration.
 - **A boolean `coach_booked` column on `lessons`.** Rejected. Everything about the mechanism (coach as `approved_by`, coach as `requested_by`, audit row with `action = 'lesson_booked_by_coach'`) is already in the row or in the audit log. A dedicated boolean would be redundant and would need to stay consistent with the other three signals under every reschedule / cancel transition — an invariant we don't want to maintain.
 
 ## Consequences

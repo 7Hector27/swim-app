@@ -160,6 +160,12 @@ export const CreateLessonBodySchema = z.object({
 });
 export type CreateLessonBody = z.infer<typeof CreateLessonBodySchema>;
 
+// Coach-only query flag that disables the min-advance ("16-hour notice")
+// filter on availability lookups. Server honors it only when the caller is
+// a coach — parents passing it still see the normal 16-hour rule applied.
+// Shape is a plain string so URLSearchParams round-trips cleanly.
+export const CoachBypassNoticeFlagSchema = z.literal("true").optional();
+
 export const AvailableSlotsQuerySchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   durationMinutes: z
@@ -167,6 +173,7 @@ export const AvailableSlotsQuerySchema = z.object({
     .transform((value) => parseInt(value, 10))
     .pipe(LessonDurationMinutesSchema),
   locationId: z.string().uuid(),
+  coachBypassNotice: CoachBypassNoticeFlagSchema,
 });
 export type AvailableSlotsQuery = z.infer<typeof AvailableSlotsQuerySchema>;
 
@@ -415,14 +422,15 @@ export const WeekDayAvailabilitySchema = DayAvailabilitySchema.extend({
 export type WeekDayAvailability = z.infer<typeof WeekDayAvailabilitySchema>;
 
 export const RangeAvailabilityQuerySchema = z.object({
-  view:            z.enum(["week", "month"]),
-  date:            z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  durationMinutes: z
+  view:              z.enum(["week", "month"]),
+  date:              z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  durationMinutes:   z
     .string()
     .transform((value) => parseInt(value, 10))
     .pipe(LessonDurationMinutesSchema),
-  locationId:      z.string().uuid(),
-  excludeLessonId: z.string().uuid().optional(),
+  locationId:        z.string().uuid(),
+  excludeLessonId:   z.string().uuid().optional(),
+  coachBypassNotice: CoachBypassNoticeFlagSchema,
 });
 export type RangeAvailabilityQuery = z.infer<typeof RangeAvailabilityQuerySchema>;
 
@@ -628,9 +636,12 @@ export type CoachWeekScheduleResponse = z.infer<typeof CoachWeekScheduleResponse
 // "custom-time override rules" for the semantics of each flag. The client
 // mirrors this shape for its acknowledgements field; the server never trusts
 // the client to self-report which warnings fired.
+//
+// Note: the 16-hour notice window is a parent-only rule — coaches book
+// without any min-advance restriction, so there is no insideNoticeWindow
+// warning. Start-in-past is a hard reject in POST /coach/lessons.
 export const CoachBookingWarningsSchema = z.object({
   outsideHours: z.boolean().default(false),
-  insideNoticeWindow: z.boolean().default(false),
   maxAdvanceExceeded: z.boolean().default(false),
   travelBufferViolated: z.boolean().default(false),
   dailyCapExceeded: z.boolean().default(false),

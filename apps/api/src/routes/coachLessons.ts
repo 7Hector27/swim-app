@@ -1382,9 +1382,8 @@ function computeCoachBookingWarnings(input: ComputeWarningsInput): CoachBookingW
     });
   }
 
-  // insideNoticeWindow: start is sooner than bookingMinAdvanceHours from now.
-  const minAdvanceMs = nowMs + config.bookingMinAdvanceHours * 60 * 60 * 1000;
-  const insideNoticeWindow = startMs < minAdvanceMs;
+  // The 16-hour notice window is parent-only; coaches have no min-advance
+  // rule (start_in_past is a hard reject earlier in the handler).
 
   // maxAdvanceExceeded: start is further out than bookingMaxAdvanceWeeks.
   const maxAdvanceMs = nowMs + config.bookingMaxAdvanceWeeks * 7 * 24 * 60 * 60 * 1000;
@@ -1434,7 +1433,6 @@ function computeCoachBookingWarnings(input: ComputeWarningsInput): CoachBookingW
 
   return {
     outsideHours,
-    insideNoticeWindow,
     maxAdvanceExceeded,
     travelBufferViolated,
     dailyCapExceeded,

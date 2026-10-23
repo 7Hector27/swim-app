@@ -223,6 +223,11 @@ lessonsRouter.get(
       return;
     }
 
+    // The 16-hour notice window is parent-only. Coaches may skip it by
+    // passing coachBypassNotice=true; parents passing the flag are ignored.
+    const skipMinAdvance =
+      req.profile.role === "coach" && query.coachBypassNotice === "true";
+
     const slots = computeAvailableSlots({
       date: query.date,
       durationMinutes: query.durationMinutes,
@@ -246,6 +251,7 @@ lessonsRouter.get(
       overrides: overrideRows.map(mapOverrideRow),
       gcalBusyTimes: [],
       nowUtc: new Date(),
+      skipMinAdvance,
     });
 
     const body: AvailableSlot[] = slots.map((slot) => ({
@@ -349,6 +355,10 @@ lessonsRouter.get(
       new Date(nowUtc.getTime() + config.bookingMaxAdvanceWeeks * 7 * 24 * 60 * 60 * 1000),
     );
 
+    // Coach-only: skip the 16-hour notice-window filter. A parent passing
+    // the flag is ignored and still sees the normal rule applied.
+    const skipMinAdvance = isCoach && query.coachBypassNotice === "true";
+
     const sharedClassifyParams = {
       locationId: query.locationId,
       durationMinutes: query.durationMinutes,
@@ -368,6 +378,7 @@ lessonsRouter.get(
       overrides,
       gcalBusyTimes: [],
       nowUtc,
+      skipMinAdvance,
     };
 
     if (query.view === "week") {
@@ -928,17 +939,12 @@ lessonsRouter.patch(
       }
     }
 
-    // Shift the slot-check clock so computeAvailableSlots' booking advance
-    // window (minStartMs/maxStartMs) brackets newStartsAt instead of filtering
-    // it out. Needed for two cases:
-    //   - Honor-system parent edits (no new startsAt) — keep the existing time inside the window.
-    //   - Coach reschedules — bypass both min and max advance so any teaching-hour slot is reachable.
-    // Previously the coach branch used new Date(0), which shifted maxStartMs to
-    // March 1970 and filtered every real slot out of the recheck.
-    const nowForSlotCheck =
-      !isCoach && body.startsAt !== undefined
-        ? nowUtc
-        : new Date(newStartsAt.getTime() - (config.bookingMinAdvanceHours + 1) * 60 * 60 * 1000);
+    // Coach reschedules have no 16-hour notice rule (ADR 029). Parent
+    // duration/location-only edits (no new startsAt) also skip the min-advance
+    // check so a lesson already inside the window isn't rejected by the
+    // recheck. Parent edits with a new startsAt get the full rule — the
+    // explicit check at line 931 has already enforced it.
+    const skipMinAdvance = isCoach || body.startsAt === undefined;
 
     // Track coach-initiated reschedule so the parent sees "Moved by Jason".
     const newMovedAt = isCoach && body.startsAt !== undefined ? nowUtc : (existingLesson.movedAt ?? null);
@@ -983,7 +989,8 @@ lessonsRouter.patch(
         seasons,
         overrides,
         gcalBusyTimes: [],
-        nowUtc: nowForSlotCheck,
+        nowUtc,
+        skipMinAdvance,
       };
       const availableSlots = computeAvailableSlots(slotParams);
 

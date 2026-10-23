@@ -23,6 +23,12 @@ export interface SlotParams {
   overrides: AvailabilityOverride[];
   gcalBusyTimes: { startsAt: Date; endsAt: Date }[]; // empty until PR 6
   nowUtc: Date;
+  // When true, the 16-hour notice window (config.bookingMinAdvanceHours) is
+  // not applied. Slots before `nowUtc` are still "past" and still filtered.
+  // Set by callers who know the request is coach-side (coach reschedule
+  // recheck, coach-only `coachBypassNotice=true` slot queries). Parent
+  // requests always leave this undefined/false.
+  skipMinAdvance?: boolean;
 }
 
 export interface Slot {
@@ -197,6 +203,7 @@ export function computeAvailableSlots(params: SlotParams): Slot[] {
     overrides,
     gcalBusyTimes,
     nowUtc,
+    skipMinAdvance,
   } = params;
 
   const windows = resolveWindows(date, seasons, overrides, config);
@@ -251,8 +258,11 @@ export function computeAvailableSlots(params: SlotParams): Slot[] {
     }
   }
 
-  // Booking advance window.
-  const minStartMs = nowUtc.getTime() + config.bookingMinAdvanceHours * 60 * MIN_MS;
+  // Booking advance window. When skipMinAdvance=true (coach-only), the
+  // minimum collapses to "no earlier than now" — past slots are still filtered.
+  const minStartMs = skipMinAdvance
+    ? nowUtc.getTime()
+    : nowUtc.getTime() + config.bookingMinAdvanceHours * 60 * MIN_MS;
   const maxStartMs =
     nowUtc.getTime() + config.bookingMaxAdvanceWeeks * 7 * 24 * 60 * MIN_MS;
 
@@ -293,6 +303,7 @@ export function diagnoseSlotRejection(
     overrides,
     gcalBusyTimes,
     nowUtc,
+    skipMinAdvance,
   } = params;
 
   const slotEndMs = slotStartMs + durationMinutes * MIN_MS;
@@ -345,7 +356,9 @@ export function diagnoseSlotRejection(
     return "daily_cap_exceeded";
   }
 
-  const minStartMs = nowUtc.getTime() + config.bookingMinAdvanceHours * 60 * MIN_MS;
+  const minStartMs = skipMinAdvance
+    ? nowUtc.getTime()
+    : nowUtc.getTime() + config.bookingMinAdvanceHours * 60 * MIN_MS;
   const maxStartMs =
     nowUtc.getTime() + config.bookingMaxAdvanceWeeks * 7 * 24 * 60 * MIN_MS;
   if (slotStartMs < minStartMs) return "too_soon";
@@ -369,6 +382,7 @@ export function classifyDaySlots(params: SlotParams): SlotWithState[] {
     overrides,
     gcalBusyTimes,
     nowUtc,
+    skipMinAdvance,
   } = params;
 
   const windows = resolveWindows(date, seasons, overrides, config);
@@ -400,7 +414,9 @@ export function classifyDaySlots(params: SlotParams): SlotWithState[] {
 
   const durationMs = durationMinutes * MIN_MS;
   const nowMs = nowUtc.getTime();
-  const minMs = nowMs + config.bookingMinAdvanceHours * 60 * MIN_MS;
+  const minMs = skipMinAdvance
+    ? nowMs
+    : nowMs + config.bookingMinAdvanceHours * 60 * MIN_MS;
   const maxMs = nowMs + config.bookingMaxAdvanceWeeks * 7 * 24 * 60 * MIN_MS;
 
   const result: SlotWithState[] = [];

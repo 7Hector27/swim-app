@@ -155,6 +155,7 @@ export default function CoachRescheduleContent({ lesson, locations }: Props) {
           durationMinutes,
           locationId,
           excludeLessonId: lesson.id,
+          coachBypassNotice: true,
         });
         if (result !== null) {
           setMonthData(result);
@@ -171,6 +172,7 @@ export default function CoachRescheduleContent({ lesson, locations }: Props) {
           durationMinutes,
           locationId,
           excludeLessonId: lesson.id,
+          coachBypassNotice: true,
         });
         if (result !== null) {
           setWeekData(result);

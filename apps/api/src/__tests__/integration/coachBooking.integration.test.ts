@@ -120,6 +120,38 @@ async function findFirstAvailableSlot(
   throw new Error("No available slot found within 10 weeks");
 }
 
+// Coach-only variant: passes coachBypassNotice=true so slots inside the
+// 16-hour window are returned as "available" instead of "too_soon".
+async function findFirstAvailableSlotForCoach(
+  token: string,
+  locId: string,
+  durationMinutes: number,
+): Promise<string> {
+  for (let weekOffset = 0; weekOffset < 10; weekOffset++) {
+    const weekDate = new Date(Date.now() + weekOffset * 7 * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .slice(0, 10);
+    const res = await request(app)
+      .get("/lessons/available-range")
+      .set("Authorization", `Bearer ${token}`)
+      .query({
+        view: "week",
+        date: weekDate,
+        durationMinutes: String(durationMinutes),
+        locationId: locId,
+        coachBypassNotice: "true",
+      });
+    if (res.status !== 200) continue;
+    const body = res.body as { days: Array<{ slots: Array<{ startsAt: string; state: string }> }> };
+    for (const day of body.days) {
+      for (const slot of day.slots) {
+        if (slot.state === "available") return slot.startsAt;
+      }
+    }
+  }
+  throw new Error("No coach-visible available slot found within 10 weeks");
+}
+
 // Deletes everything the coach booking tests might create for a household.
 async function wipeHouseholdBookingArtifacts(householdId: string): Promise<void> {
   const lessonRows = await adminDb()
@@ -438,7 +470,6 @@ describe("POST /coach/lessons (integration)", () => {
           overrideWindow: true,
           acknowledgedWarnings: {
             outsideHours: true,
-            insideNoticeWindow: true,
             maxAdvanceExceeded: true,
             travelBufferViolated: true,
             dailyCapExceeded: true,
@@ -454,15 +485,17 @@ describe("POST /coach/lessons (integration)", () => {
   });
 
   it("5. unacknowledged warnings return 409 and the audit payload records the server's flags", async () => {
-    // Pick a time inside the 16-hour notice window → the server computes
-    // insideNoticeWindow=true. Without overrideWindow or acknowledgement,
-    // the server returns 409.
-    const soonStart = new Date(Date.now() + 60 * 60 * 1000); // 1 hour from now
+    // Pick 2 AM local — outside teaching hours → outsideHours warning fires.
+    // Without overrideWindow or acknowledgement, the server returns 409.
+    const now = new Date();
+    const outsideStart = new Date(now);
+    outsideStart.setUTCDate(outsideStart.getUTCDate() + 2);
+    outsideStart.setUTCHours(10, 0, 0, 0); // ~2–3 AM LA depending on DST
     const body = {
       householdId: ownerA.householdId,
       swimmerIds: [swimmerAId],
       locationId,
-      startsAt: soonStart.toISOString(),
+      startsAt: outsideStart.toISOString(),
       durationMinutes: 30 as const,
     };
 
@@ -472,7 +505,7 @@ describe("POST /coach/lessons (integration)", () => {
       .send(body);
     expect(first.status).toBe(409);
     expect(first.body.error).toBe("warnings_not_acknowledged");
-    expect(first.body.warnings.insideNoticeWindow).toBe(true);
+    expect(first.body.warnings.outsideHours).toBe(true);
 
     // Re-submit with override + acknowledgement for every TRUE warning.
     const second = await request(app)
@@ -488,27 +521,44 @@ describe("POST /coach/lessons (integration)", () => {
     const audit = await readCoachBookingAudit(second.body.id as string);
     const override = (audit?.payload as { override: Record<string, boolean> | null }).override;
     expect(override).not.toBeNull();
-    expect(override?.insideNoticeWindow).toBe(true);
+    expect(override?.outsideHours).toBe(true);
 
     await wipeHouseholdBookingArtifacts(ownerA.householdId);
   });
 
-  it("6. inside the notice window without overrideWindow returns 409", async () => {
-    const soonStart = new Date(Date.now() + 60 * 60 * 1000);
-    const res = await request(app)
-      .post("/coach/lessons")
-      .set("Authorization", `Bearer ${coach.accessToken}`)
-      .send({
-        householdId: ownerA.householdId,
-        swimmerIds: [swimmerAId],
+  it("6. no notice-window rule for coaches: a near-future slot books with no override and no warnings", async () => {
+    await withAllDaysEnabled(async () => {
+      // Pick a near-future time that is inside teaching hours but < 16h away.
+      // Use the first available slot via the coach's slot picker (which
+      // bypasses the min-advance filter) to guarantee it's inside hours.
+      const nearSlot = await findFirstAvailableSlotForCoach(
+        coach.accessToken,
         locationId,
-        startsAt: soonStart.toISOString(),
-        durationMinutes: 30,
-        overrideWindow: false,
-      });
-    expect(res.status).toBe(409);
-    expect(res.body.error).toBe("warnings_not_acknowledged");
-    expect(res.body.warnings.insideNoticeWindow).toBe(true);
+        30,
+      );
+      expect(new Date(nearSlot).getTime() - Date.now()).toBeLessThan(
+        16 * 60 * 60 * 1000,
+      );
+
+      const res = await request(app)
+        .post("/coach/lessons")
+        .set("Authorization", `Bearer ${coach.accessToken}`)
+        .send({
+          householdId: ownerA.householdId,
+          swimmerIds: [swimmerAId],
+          locationId,
+          startsAt: nearSlot,
+          durationMinutes: 30,
+        });
+      expect(res.status).toBe(201);
+
+      // Audit payload: no warnings fired at all.
+      const audit = await readCoachBookingAudit(res.body.id as string);
+      const override = (audit?.payload as { override: Record<string, boolean> | null }).override;
+      expect(override).toBeNull();
+
+      await wipeHouseholdBookingArtifacts(ownerA.householdId);
+    });
   });
 
   it("7. siblings must share a household — mixed-household swimmerIds rejected", async () => {
@@ -662,7 +712,6 @@ describe("POST /coach/lessons (integration)", () => {
         overrideWindow: true,
         acknowledgedWarnings: {
           outsideHours: true,
-          insideNoticeWindow: true,
           maxAdvanceExceeded: true,
           travelBufferViolated: true,
           dailyCapExceeded: true,
@@ -678,6 +727,55 @@ describe("POST /coach/lessons (integration)", () => {
       .from(lessons)
       .where(eq(lessons.householdId, ownerA.householdId));
     expect(lessonRows).toHaveLength(0);
+  });
+
+  it("12. notice-window rule still applies to parents, including a parent passing coachBypassNotice", async () => {
+    await withAllDaysEnabled(async () => {
+      // Pick the same near-future slot the coach can book without override.
+      const nearSlot = await findFirstAvailableSlotForCoach(
+        coach.accessToken,
+        locationId,
+        30,
+      );
+      expect(new Date(nearSlot).getTime() - Date.now()).toBeLessThan(
+        16 * 60 * 60 * 1000,
+      );
+
+      // Parent tries POST /lessons at the same time → 422 too_soon.
+      const parentPost = await request(app)
+        .post("/lessons")
+        .set("Authorization", `Bearer ${ownerA.accessToken}`)
+        .send({
+          locationId,
+          startsAt: nearSlot,
+          durationMinutes: 30,
+          swimmerIds: [swimmerAId],
+        });
+      expect(parentPost.status).toBe(422);
+      expect(parentPost.body.error).toBe("too_soon");
+
+      // Parent forges coachBypassNotice=true on the slot-range query → server
+      // ignores it and the slot still comes back as "too_soon".
+      const weekDate = new Date(nearSlot).toISOString().slice(0, 10);
+      const parentRange = await request(app)
+        .get("/lessons/available-range")
+        .set("Authorization", `Bearer ${ownerA.accessToken}`)
+        .query({
+          view: "week",
+          date: weekDate,
+          durationMinutes: "30",
+          locationId,
+          coachBypassNotice: "true",
+        });
+      expect(parentRange.status).toBe(200);
+      const slot = (parentRange.body as {
+        days: Array<{ slots: Array<{ startsAt: string; state: string }> }>;
+      })
+        .days.flatMap((day) => day.slots)
+        .find((entry) => entry.startsAt === nearSlot);
+      expect(slot).toBeDefined();
+      expect(slot!.state).toBe("too_soon");
+    });
   });
 });
 
