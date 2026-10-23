@@ -7,7 +7,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import request from "supertest";
 import pino from "pino";
-import { and, eq, inArray, isNotNull } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { createApp } from "../../app";
 import {
   adminDb,
@@ -778,7 +778,3 @@ describe("POST /coach/lessons (integration)", () => {
     });
   });
 });
-
-// Keep this reference so unused-import lint doesn't bark. The symbol is
-// used indirectly via vi.mocked() throughout.
-void isNotNull;
