@@ -17,14 +17,25 @@
 // last_error set and claimed_until cleared.
 
 import { and, eq, gt, inArray, isNotNull, lt, or, sql } from "drizzle-orm";
+import { render as renderReactEmail } from "@react-email/render";
 import { db } from "../../db/client";
 import { lessonEmailOutbox, lessons, profiles } from "../../db/schema";
 import { __resetEnvCacheForTests, getEnv } from "../../lib/env";
+import { getActiveCoachProfile } from "../../lib/coachProfile";
 import { logger as rootLogger } from "../../logger";
+import { buildBatchIcs, type BatchIcsFilteredLesson, type BatchIcsMethod } from "./batchIcs";
+import type { BatchEmailEvent, BatchEmailPayload } from "./batchTypes";
 import { buildIcs } from "./ics";
 import { renderEmail } from "./render";
+import Batch from "./templates/Batch";
 import { createTransport, type EmailTransport, type IcsAttachment, type TransportError } from "./transport";
 import type { IcsMethod, LessonEmailEvent, LessonEmailPayload } from "./types";
+
+const BATCH_EVENTS: ReadonlySet<string> = new Set([
+  "batch_booked",
+  "batch_approved",
+  "batch_canceled",
+]);
 
 // 2-minute claim lease. Covers Resend's p99 latency with ample headroom;
 // a longer-than-expected send gets a second worker to re-claim the row
@@ -80,11 +91,29 @@ function getTransport(): EmailTransport | null {
 
 export async function sendLessonEmailOutboxRow(outboxId: string): Promise<void> {
   try {
-    await sendInner(outboxId);
+    // Peek at the row's scope BEFORE claiming so we route to the correct
+    // sender path. The claim transactions below also narrow via
+    // isNotNull(lesson_id) / isNotNull(batch_id), so a mis-routed call
+    // just no-ops (nothing is claimed).
+    const peek = await db
+      .select({
+        lessonId: lessonEmailOutbox.lessonId,
+        batchId: lessonEmailOutbox.batchId,
+      })
+      .from(lessonEmailOutbox)
+      .where(eq(lessonEmailOutbox.id, outboxId))
+      .limit(1);
+    const scope = peek[0];
+    if (!scope) return;
+    if (scope.lessonId !== null) {
+      await sendInner(outboxId);
+    } else if (scope.batchId !== null) {
+      await sendBatchInner(outboxId);
+    }
   } catch (err) {
-    // Last-chance safety net. Anything that escapes sendInner's own
-    // handlers lands here so no exception reaches the microtask queue
-    // or the cron response.
+    // Last-chance safety net. Anything that escapes the inner senders'
+    // own handlers lands here so no exception reaches the microtask
+    // queue or the cron response.
     log.error(
       { outboxId, err: shortError(err) },
       "lesson-email sender unexpected throw at top level",
@@ -431,6 +460,366 @@ async function finalizeFailed(
       claimedUntil: null,
     })
     .where(eq(lessonEmailOutbox.id, outboxId));
+}
+
+// ─── Batch sender (ADR 030) ─────────────────────────────────────────────
+
+interface ClaimedBatchRow {
+  id: string;
+  batchId: string;
+  event: BatchEmailEvent;
+  recipientProfileIds: string[];
+  payload: BatchEmailPayload;
+  attempts: number;
+  createdAt: Date;
+}
+
+async function claimBatchRow(outboxId: string): Promise<ClaimedBatchRow | null> {
+  const nowAtClaim = new Date();
+  return await db.transaction(async (tx) => {
+    const rows = await tx
+      .select({
+        id: lessonEmailOutbox.id,
+        batchId: lessonEmailOutbox.batchId,
+        event: lessonEmailOutbox.event,
+        recipientProfileIds: lessonEmailOutbox.recipientProfileIds,
+        payload: lessonEmailOutbox.payload,
+        status: lessonEmailOutbox.status,
+        attempts: lessonEmailOutbox.attempts,
+        claimedUntil: lessonEmailOutbox.claimedUntil,
+        createdAt: lessonEmailOutbox.createdAt,
+      })
+      .from(lessonEmailOutbox)
+      .where(
+        and(
+          eq(lessonEmailOutbox.id, outboxId),
+          isNotNull(lessonEmailOutbox.batchId),
+          or(
+            inArray(lessonEmailOutbox.status, ["pending", "failed"]),
+            and(
+              eq(lessonEmailOutbox.status, "sending"),
+              lt(lessonEmailOutbox.claimedUntil, nowAtClaim),
+            ),
+          ),
+        ),
+      )
+      .for("update", { skipLocked: true })
+      .limit(1);
+
+    const row = rows[0];
+    if (!row) return null;
+    const batchId = row.batchId;
+    if (batchId === null) return null;
+    if (!BATCH_EVENTS.has(row.event)) return null;
+
+    const leaseUntil = new Date(Date.now() + CLAIM_LEASE_MS);
+    await tx
+      .update(lessonEmailOutbox)
+      .set({
+        status: "sending",
+        claimedUntil: leaseUntil,
+        lastAttemptAt: new Date(),
+      })
+      .where(eq(lessonEmailOutbox.id, outboxId));
+
+    return {
+      id: row.id,
+      batchId,
+      event: row.event as BatchEmailEvent,
+      recipientProfileIds: row.recipientProfileIds,
+      payload: row.payload as BatchEmailPayload,
+      attempts: row.attempts,
+      createdAt: row.createdAt,
+    };
+  });
+}
+
+type BatchSupersedeReason =
+  | "newer_sent_batch_row"
+  | "all_lessons_terminal_or_past"
+  | "zero_eligible_after_filter";
+
+async function evaluateBatchSupersede(
+  row: ClaimedBatchRow,
+  liveLessons: Map<string, { status: string; startsAt: Date; calendarSequence: number }>,
+): Promise<BatchSupersedeReason | null> {
+  // Newer-already-sent check for the same batch_id. Any newer sent batch
+  // row supersedes this one (noise-prevention).
+  const newerSent = await db
+    .select({ id: lessonEmailOutbox.id })
+    .from(lessonEmailOutbox)
+    .where(
+      and(
+        eq(lessonEmailOutbox.batchId, row.batchId),
+        isNotNull(lessonEmailOutbox.sentAt),
+        gt(lessonEmailOutbox.createdAt, row.createdAt),
+      ),
+    )
+    .limit(1);
+  if (newerSent[0]) return "newer_sent_batch_row";
+
+  // "All terminal or past" check — only for non-CANCEL rows. CANCEL rows
+  // are allowed to send past start time (same ADR 028 exemption).
+  if (row.event !== "batch_canceled") {
+    const nowMs = Date.now();
+    const terminalStatuses = new Set([
+      "canceled",
+      "declined",
+      "expired",
+      "no_show",
+    ]);
+    let anyActiveFuture = false;
+    for (const lesson of row.payload.lessons) {
+      const live = liveLessons.get(lesson.lessonId);
+      if (!live) continue; // lesson row deleted? shouldn't happen (RESTRICT); skip
+      const isTerminal = terminalStatuses.has(live.status);
+      const isPast = live.startsAt.getTime() < nowMs;
+      if (!isTerminal && !isPast) {
+        anyActiveFuture = true;
+        break;
+      }
+    }
+    if (!anyActiveFuture) return "all_lessons_terminal_or_past";
+  }
+
+  return null;
+}
+
+interface SendTimeFilterResult {
+  // Lessons that passed every filter check (eligible for a VEVENT).
+  kept: BatchIcsFilteredLesson[];
+  // Lesson ids that were in the payload but failed the filter.
+  changedLessonIds: string[];
+}
+
+function applySendTimeFilter(
+  row: ClaimedBatchRow,
+  liveLessons: Map<string, { status: string; startsAt: Date; calendarSequence: number }>,
+  nowMs: number,
+): SendTimeFilterResult {
+  const kept: BatchIcsFilteredLesson[] = [];
+  const changedLessonIds: string[] = [];
+  for (const lesson of row.payload.lessons) {
+    const live = liveLessons.get(lesson.lessonId);
+    if (!live) {
+      changedLessonIds.push(lesson.lessonId);
+      continue;
+    }
+    // "calendar_sequence still matches the payload snapshot" means the
+    // lesson has not been bumped past the one-step bump our own write did.
+    // After our write, the lesson's sequence is snapshot + 1. If anything
+    // bumped it further, the sequence is snapshot + 2 or more.
+    const expectedSequence = lesson.calendarSequence + 1;
+    const sequenceMatches = live.calendarSequence === expectedSequence;
+    if (!sequenceMatches) {
+      changedLessonIds.push(lesson.lessonId);
+      continue;
+    }
+    if (row.event === "batch_canceled") {
+      if (live.status !== "canceled") {
+        changedLessonIds.push(lesson.lessonId);
+        continue;
+      }
+    } else {
+      // batch_booked, batch_approved: must still be approved and upcoming.
+      if (live.status !== "approved" || live.startsAt.getTime() <= nowMs) {
+        changedLessonIds.push(lesson.lessonId);
+        continue;
+      }
+    }
+    kept.push({
+      lessonId: lesson.lessonId,
+      startsAtUtc: lesson.startsAtUtc,
+      durationMinutes: lesson.durationMinutes,
+      calendarSequence: lesson.calendarSequence,
+    });
+  }
+  return { kept, changedLessonIds };
+}
+
+async function sendBatchInner(outboxId: string): Promise<void> {
+  const transport = getTransport();
+  if (!transport) {
+    await finalizeSkipped(outboxId, "transport_not_configured");
+    return;
+  }
+
+  const claimed = await claimBatchRow(outboxId);
+  if (!claimed) return;
+
+  // Live-load every lesson in the batch for both the supersede check and
+  // the send-time filter.
+  const lessonIds = claimed.payload.lessons.map((l) => l.lessonId);
+  const liveRows = lessonIds.length === 0
+    ? []
+    : await db
+        .select({
+          id: lessons.id,
+          status: lessons.status,
+          startsAt: lessons.startsAt,
+          calendarSequence: lessons.calendarSequence,
+        })
+        .from(lessons)
+        .where(inArray(lessons.id, lessonIds));
+  const liveLessons = new Map(
+    liveRows.map((row) => [
+      row.id,
+      {
+        status: row.status as string,
+        startsAt: row.startsAt,
+        calendarSequence: row.calendarSequence,
+      },
+    ]),
+  );
+
+  const supersede = await evaluateBatchSupersede(claimed, liveLessons);
+  if (supersede !== null) {
+    await finalizeTerminal(outboxId, "superseded", `superseded:${supersede}`);
+    log.info(
+      { outboxId, batchId: claimed.batchId, event: claimed.event, reason: supersede },
+      "batch email superseded",
+    );
+    return;
+  }
+
+  const deliverable = await resolveRecipients(claimed.recipientProfileIds);
+  if (deliverable.length === 0) {
+    await finalizeSkipped(outboxId, "no_deliverable_recipients");
+    log.info(
+      {
+        outboxId,
+        batchId: claimed.batchId,
+        event: claimed.event,
+        resolvedCount: 0,
+        deliverableCount: 0,
+      },
+      "batch email skipped (no deliverable recipients)",
+    );
+    return;
+  }
+
+  const filter = applySendTimeFilter(claimed, liveLessons, Date.now());
+
+  // Supersede when the filter leaves no eligible lessons AND the body
+  // would be empty — treats "every lesson changed since we wrote the row"
+  // as noise.
+  if (filter.kept.length === 0 && filter.changedLessonIds.length === claimed.payload.lessons.length) {
+    await finalizeTerminal(
+      outboxId,
+      "superseded",
+      "superseded:zero_eligible_after_filter",
+    );
+    log.info(
+      { outboxId, batchId: claimed.batchId, event: claimed.event },
+      "batch email superseded (zero eligible after filter)",
+    );
+    return;
+  }
+
+  const coachFirstName = (await getActiveCoachProfile())?.firstName ?? null;
+  const siteUrl = getEnv().siteUrl;
+  const replyToEmail = getEnv().email?.replyTo ?? null;
+  const element = Batch({
+    event: claimed.event,
+    payload: claimed.payload,
+    siteUrl,
+    replyToEmail,
+    changedLessonIds: filter.changedLessonIds,
+    coachFirstName,
+  });
+  const [html, text] = await Promise.all([
+    renderReactEmail(element),
+    renderReactEmail(element, { plainText: true }),
+  ]);
+  const subject = buildBatchSubject(claimed.event, claimed.payload, filter.kept.length);
+
+  const method: BatchIcsMethod | null =
+    claimed.event === "batch_canceled" ? "CANCEL" : "REQUEST";
+  const ics =
+    filter.kept.length > 0
+      ? buildBatchIcs({
+          method,
+          payload: claimed.payload,
+          lessons: filter.kept,
+        })
+      : null;
+
+  const emailEnv = getEnv().email!;
+  const result = await transport.send({
+    from: emailEnv.from,
+    replyTo: emailEnv.replyTo,
+    to: deliverable,
+    subject,
+    text,
+    ...(html && { html }),
+    ...(ics && {
+      ics: {
+        filename: ics.filename,
+        content: ics.body,
+        method,
+      } satisfies IcsAttachment,
+    }),
+    idempotencyKey: outboxId,
+  });
+
+  if (result.ok) {
+    await finalizeSent(outboxId, result.providerMessageId);
+    log.info(
+      {
+        outboxId,
+        batchId: claimed.batchId,
+        event: claimed.event,
+        deliverableCount: deliverable.length,
+        attempts: claimed.attempts + 1,
+        providerMessageId: result.providerMessageId,
+        transport: emailEnv.transport,
+        veventCount: ics?.eventCount ?? 0,
+        changedCount: filter.changedLessonIds.length,
+      },
+      "batch email sent",
+    );
+    return;
+  }
+
+  await finalizeFailed(outboxId, result.error?.kind ?? "unexpected", result.errorMessage);
+  log.warn(
+    {
+      outboxId,
+      batchId: claimed.batchId,
+      event: claimed.event,
+      transport: emailEnv.transport,
+      attempts: claimed.attempts + 1,
+      errorKind: result.error?.kind,
+    },
+    "batch email send failed",
+  );
+}
+
+function buildBatchSubject(
+  event: BatchEmailEvent,
+  payload: BatchEmailPayload,
+  keptCount: number,
+): string {
+  const poolName = payload.location.name;
+  const modeWord = payload.mode === "weekly" ? "weekly " : "";
+  const approvedCount = payload.lessons.filter((l) => l.status === "approved").length;
+  const pendingCount = payload.lessons.filter((l) => l.status === "pending").length;
+  const canceledCount = payload.lessons.filter((l) => l.status === "canceled").length;
+  if (event === "batch_booked") {
+    if (pendingCount === 0) {
+      return `Your ${approvedCount} ${modeWord}${approvedCount === 1 ? "lesson" : "lessons"} at ${poolName} are booked`;
+    }
+    if (approvedCount === 0) {
+      return `Request received: ${pendingCount} ${modeWord}${pendingCount === 1 ? "lesson" : "lessons"} at ${poolName}`;
+    }
+    return `${approvedCount + pendingCount} ${modeWord}lessons at ${poolName}: ${approvedCount} confirmed, ${pendingCount} waiting for Jason`;
+  }
+  if (event === "batch_approved") {
+    return `Jason confirmed ${approvedCount} ${approvedCount === 1 ? "lesson" : "more lessons"} at ${poolName}`;
+  }
+  // batch_canceled
+  const count = canceledCount || keptCount;
+  return `${count} ${count === 1 ? "lesson" : "lessons"} at ${poolName} canceled`;
 }
 
 // Rough RFC-5321-ish email match. Strict on the local-part so random
