@@ -947,6 +947,12 @@ coachLessonsRouter.post(
       .from(swimmers)
       .where(inArray(swimmers.id, body.swimmerIds));
 
+    // A missing swimmer id (short count) is intentionally reported as
+    // "swimmers_not_in_household", the SAME code used for the belongs-to-
+    // a-different-household case below. Returning a distinct "not found"
+    // code would let a caller probe which swimmer UUIDs exist in the
+    // system vs. which belong to someone else's household. The row-level
+    // existence of a swimmer id is itself household-private data.
     if (swimmerRows.length !== body.swimmerIds.length) {
       res.status(422).json({ error: "swimmers_not_in_household" });
       return;
