@@ -431,7 +431,7 @@ async function finalizeFailed(
 // strings with "@" aren't over-redacted. Case-insensitive isn't needed
 // since the character classes already cover both cases. Global so
 // multiple addresses in one error string all get replaced.
-const EMAIL_PATTERN = /[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}/g;
+const EMAIL_PATTERN = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
 
 export function redactEmails(input: string): string {
   return input.replace(EMAIL_PATTERN, "[email]");
