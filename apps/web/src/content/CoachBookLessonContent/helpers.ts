@@ -1,3 +1,4 @@
+import { fromZonedTime } from "date-fns-tz";
 import type {
   CoachBookingWarnings,
   CoachHouseholdSearchResult,
@@ -56,45 +57,27 @@ export function todayLA(): string {
   return `${get("year")}-${get("month")}-${get("day")}`;
 }
 
-// Converts a (date, time) in LA to a UTC ISO string. Pure wall-clock math via
-// Intl — mirrors the server-side laToUtc approach so coach custom-time
-// submissions land on exactly the UTC instant the server expects.
+// Converts a (date, time) in America/Los_Angeles to a UTC ISO string via
+// date-fns-tz. Replaces an earlier hand-rolled probe that added a raw +7h
+// (PDT) guess to pick the DST side; on a PST↔PDT fall-back night the probe
+// could land on the wrong side of the ambiguous hour and emit a UTC time
+// one hour off.
+//
+// Fall-back ambiguity policy: the clock sees 01:00–02:00 LA twice (first as
+// PDT, then as PST). `fromZonedTime` resolves this to the first occurrence
+// (PDT) — this matches the coach picker's "the time I just typed" intent.
+// Spring-forward gap: 02:00–03:00 LA does not exist. `fromZonedTime` maps
+// those wall-clock minutes forward into PDT (the next real local instant).
+// Caller input validation already restricts times to :00/:15/:30/:45 inside
+// teaching hours, so the gap is practically unreachable; the mapping stays
+// defined for safety.
 export function laDateTimeToUtcIso(date: string, timeHHMM: string): string {
   const [y, m, d] = date.split("-").map(Number);
   const [hh, mm] = timeHHMM.split(":").map(Number);
   if (!y || !m || !d || hh === undefined || mm === undefined) return "";
-  // Start with a UTC guess (date at midnight), then compute LA offset for an
-  // instant near the chosen wall-clock to pick the right DST side.
-  const approxUtc = Date.UTC(y, m - 1, d, (hh ?? 0) + 7, mm ?? 0);
-  const offsetMs = laOffsetMs(new Date(approxUtc));
-  const utcMs = Date.UTC(y, m - 1, d, hh ?? 0, mm ?? 0) + offsetMs;
-  return new Date(utcMs).toISOString();
-}
-
-function laOffsetMs(instant: Date): number {
-  const toEpoch = (tz: string) => {
-    const parts = new Intl.DateTimeFormat("en-US", {
-      timeZone: tz,
-      year: "numeric",
-      month: "numeric",
-      day: "numeric",
-      hour: "numeric",
-      minute: "numeric",
-      second: "numeric",
-      hour12: false,
-    }).formatToParts(instant);
-    const get = (type: string) =>
-      Number(parts.find((p) => p.type === type)?.value ?? 0);
-    return Date.UTC(
-      get("year"),
-      get("month") - 1,
-      get("day"),
-      get("hour") % 24,
-      get("minute"),
-      get("second"),
-    );
-  };
-  return toEpoch("UTC") - toEpoch("America/Los_Angeles");
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const wallClock = `${y}-${pad(m)}-${pad(d)}T${pad(hh)}:${pad(mm)}:00`;
+  return fromZonedTime(wallClock, "America/Los_Angeles").toISOString();
 }
 
 // Human-readable LA display string, e.g. "Sat, Nov 1 at 10:30 AM".

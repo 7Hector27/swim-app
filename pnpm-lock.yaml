@@ -153,6 +153,9 @@ importers:
       '@swim-app/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      date-fns-tz:
+        specifier: ^3.2.0
+        version: 3.2.0(date-fns@4.4.0)
       next:
         specifier: ^15.3.1
         version: 15.5.27(@babel/core@7.29.7(supports-color@8.1.1))(@types/node@22.20.5)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
@@ -2057,6 +2060,14 @@ packages:
   data-urls@8.0.0:
     resolution: {integrity: sha512-JQUCCK+/CAGbGGx618PlFZMXH81Jtj7t73CHv9dd/zVWvxgGT2zLFRjnKb+Ng46GIwcy+f7f88qd4duqllK+WQ==}
     engines: {node: ^22.14.0 || >=24.0.0}
+
+  date-fns-tz@3.2.0:
+    resolution: {integrity: sha512-sg8HqoTEulcbbbVXeg84u5UnlsQa8GS5QXMqjjYIhS4abEVVKIUwe0/l/UhrZdKaL/W5eWZNlbTeEIiOXTcsBQ==}
+    peerDependencies:
+      date-fns: ^3.0.0 || ^4.0.0
+
+  date-fns@4.4.0:
+    resolution: {integrity: sha512-+1UMbeh68lH1SegH83CGWwpb6OHHbpSgr3+s5Eww5M4CAgswBpoWS0AjTOfEJ33HiYKz1hdj/KTFprzXHmq/6w==}
 
   dateformat@4.6.3:
     resolution: {integrity: sha512-2P0p0pFGzHS5EMnhdxQi7aJN+iMheud0UhG4dlE1DLAlvL8JHjJJTX/CSm4JXwV0Ka5nGk3zC5mcb5bUQUxxMA==}
@@ -5035,6 +5046,12 @@ snapshots:
       whatwg-url: 17.2.0(@noble/hashes@1.8.0)
     transitivePeerDependencies:
       - '@noble/hashes'
+
+  date-fns-tz@3.2.0(date-fns@4.4.0):
+    dependencies:
+      date-fns: 4.4.0
+
+  date-fns@4.4.0: {}
 
   dateformat@4.6.3: {}
 
