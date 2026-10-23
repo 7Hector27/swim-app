@@ -111,7 +111,7 @@ function formatLocation(payload: BatchEmailPayload): string {
   return `${location.name}, ${location.address}, ${location.city}, ${location.state} ${location.zip}`;
 }
 
-function formatDescription(payload: BatchEmailPayload): string {
+function formatDescription(_payload: BatchEmailPayload): string {
   // The batch's lessons each have their own per-lesson deep link that
   // parents reach from the dashboard; the per-event description here points
   // generically at the dashboard rather than including a specific lesson
