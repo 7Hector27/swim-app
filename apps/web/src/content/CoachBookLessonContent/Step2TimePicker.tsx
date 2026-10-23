@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import type {
-  CoachBookingWarnings,
   CoachHouseholdSearchResult,
   LessonLocation,
   WeekAvailabilityResponse,
@@ -260,9 +259,6 @@ export default function Step2TimePicker({
 
   const activeTabClass = "bg-accent text-on-accent border-accent";
   const inactiveTabClass = "border-border text-text hover:bg-surface-soft";
-
-  const _warningsLive: CoachBookingWarnings | null = null;
-  void _warningsLive;
 
   return (
     <div className="flex flex-col gap-5">
