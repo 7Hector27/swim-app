@@ -15,7 +15,9 @@ import {
   createTestUser,
   type TestUser,
 } from "./helpers";
+import { fromZonedTime } from "date-fns-tz";
 import {
+  availabilityConfig,
   availabilitySeasons,
   householdAuditLog,
   lessonEmailOutbox,
@@ -485,12 +487,25 @@ describe("POST /coach/lessons (integration)", () => {
   });
 
   it("5. unacknowledged warnings return 409 and the audit payload records the server's flags", async () => {
-    // Pick 2 AM local — outside teaching hours → outsideHours warning fires.
-    // Without overrideWindow or acknowledgement, the server returns 409.
-    const now = new Date();
-    const outsideStart = new Date(now);
-    outsideStart.setUTCDate(outsideStart.getUTCDate() + 2);
-    outsideStart.setUTCHours(10, 0, 0, 0); // ~2–3 AM LA depending on DST
+    // Derive the "outside hours" fixture from the live config instead of
+    // hard-coding a UTC hour: read defaultStartTime, back off by one LA
+    // hour, and convert to UTC via date-fns-tz. If someone widens the
+    // teaching window later, this fixture adapts automatically.
+    const [configRow] = await adminDb()
+      .select({ defaultStartTime: availabilityConfig.defaultStartTime })
+      .from(availabilityConfig)
+      .limit(1);
+    const defaultStartTime = configRow?.defaultStartTime ?? "16:00:00";
+    const [startH, startM] = defaultStartTime.split(":").map((n) => parseInt(n, 10));
+    const outsideHour = Math.max(0, (startH ?? 16) - 1);
+    const outsideMinute = startM ?? 0;
+
+    // Pick a date 2 days from now to stay away from today-is-DST noise.
+    const futureDate = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const laWallClock = `${futureDate.getUTCFullYear()}-${pad(futureDate.getUTCMonth() + 1)}-${pad(futureDate.getUTCDate())}T${pad(outsideHour)}:${pad(outsideMinute)}:00`;
+    const outsideStart = fromZonedTime(laWallClock, "America/Los_Angeles");
+
     const body = {
       householdId: ownerA.householdId,
       swimmerIds: [swimmerAId],

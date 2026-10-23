@@ -20,6 +20,7 @@
     "@supabase/supabase-js": "^2.117.2",
     "@swim-app/shared": "workspace:*",
     "cors": "^2.8.5",
+    "date-fns-tz": "^3.2.0",
     "dotenv": "^16.4.7",
     "drizzle-orm": "^0.43.1",
     "express": "^4.21.2",
