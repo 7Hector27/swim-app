@@ -72,7 +72,13 @@ import {
 import { effectiveHours } from "../lib/effectiveHours";
 import { nowUtc as getNowUtc } from "../lib/clock";
 import { mapConfigRow, mapSeasonRow, mapOverrideRow } from "../lib/availabilityMappers";
-import { needsApproval, notifyBookingCreated, notifyCoachOfChange } from "../lib/lessonApproval";
+import {
+  needsApproval,
+  notifyBatchBookingCreated,
+  notifyBookingCreated,
+  notifyCoachOfBatchChange,
+  notifyCoachOfChange,
+} from "../lib/lessonApproval";
 import { syncLessonToGoogle } from "../services/googleCalendarSync";
 import { enqueueLessonEmail } from "../services/emails/outbox";
 import { sendLessonEmailOutboxRow } from "../services/emails/sender";
@@ -1363,6 +1369,12 @@ lessonsRouter.post(
     const confirmedCount = result.lessons.filter((lesson) => lesson.status === "approved").length;
     const pendingCount = result.lessons.filter((lesson) => lesson.status === "pending").length;
 
+    // Coach notification fires once with a batch summary. The inbox-count
+    // argument that justified a single parent email for the batch applies
+    // to the coach's channel too — notifyBookingCreated's per-lesson stub
+    // would otherwise fire N times per submission.
+    notifyBatchBookingCreated(result.batch.id, { confirmedCount, pendingCount });
+
     const response: BatchSubmitSuccessResponse = {
       batchId: result.batch.id,
       mode: body.mode,
@@ -1682,6 +1694,13 @@ lessonsRouter.delete(
       queueMicrotask(() => { void syncLessonToGoogle(lessonId); });
     }
     queueMicrotask(() => { void sendLessonEmailOutboxRow(result.outboxId); });
+
+    // One coach notification per batch cancel, not per lesson — mirrors
+    // the single-lesson notifyCoachOfChange hook but at the batch grain so
+    // the coach's channel sees a summary.
+    notifyCoachOfBatchChange(batchId, "canceled_remaining", {
+      lessonCount: result.canceledIds.length,
+    });
 
     const body: BatchCancelRemainingResponse = {
       batchId,

@@ -47,6 +47,7 @@ import type {
 import { __resetEnvCacheForTests } from "../../lib/env";
 import { __setClockForTests } from "../../lib/clock";
 import * as googleSync from "../../services/googleCalendarSync";
+import * as lessonApproval from "../../lib/lessonApproval";
 
 const PINNED_NOW = new Date("2035-11-05T18:00:00Z");
 
@@ -766,6 +767,86 @@ describe("Phase 3 — DELETE /lessons/batch/:batchId/remaining", () => {
         expect(syncedIds).toEqual([...lessonIds].sort());
       } finally {
         syncSpy.mockRestore();
+        await adminDb().delete(lessons).where(eq(lessons.id, trustId));
+      }
+    });
+  });
+
+  // P6 — batch cancel-remaining notifies the coach once per batch with a
+  // summary, not once per lesson.
+  it("P6: cancel-remaining fires notifyCoachOfBatchChange once, not notifyCoachOfChange N times", async () => {
+    await withAllDaysEnabled(async () => {
+      const trustId = await seedTrust();
+      const batchChangeSpy = vi
+        .spyOn(lessonApproval, "notifyCoachOfBatchChange")
+        .mockImplementation(() => {});
+      const perLessonSpy = vi
+        .spyOn(lessonApproval, "notifyCoachOfChange")
+        .mockImplementation(() => {});
+      try {
+        const startDate = futureLaDate(305);
+        const weekday = isoWeekdayFor(startDate);
+        const { batchId, lessonIds, outboxId: bookedOutboxId } = await submitBatch({
+          startDate,
+          weeks: 3,
+          weekday,
+        });
+        await waitForOutboxTerminal(bookedOutboxId);
+        batchChangeSpy.mockClear();
+        perLessonSpy.mockClear();
+
+        const cancel = await request(app)
+          .delete(`/lessons/batch/${batchId}/remaining`)
+          .set("Authorization", `Bearer ${owner.accessToken}`)
+          .send();
+        expect(cancel.status).toBe(200);
+
+        expect(batchChangeSpy).toHaveBeenCalledTimes(1);
+        expect(batchChangeSpy).toHaveBeenCalledWith(batchId, "canceled_remaining", {
+          lessonCount: lessonIds.length,
+        });
+        expect(perLessonSpy).not.toHaveBeenCalled();
+      } finally {
+        batchChangeSpy.mockRestore();
+        perLessonSpy.mockRestore();
+        await adminDb().delete(lessons).where(eq(lessons.id, trustId));
+      }
+    });
+  });
+});
+
+// POST /lessons/batch's coach notification goes through the batch-scoped
+// stub too; this lives in its own describe block since it exercises the
+// batch submit path, not cancel-remaining.
+describe("Phase 3 — POST /lessons/batch coach notification", () => {
+  it("P7: a successful batch submit fires notifyBatchBookingCreated once with the summary and not notifyBookingCreated per lesson", async () => {
+    await withAllDaysEnabled(async () => {
+      const trustId = await seedTrust();
+      const batchSpy = vi
+        .spyOn(lessonApproval, "notifyBatchBookingCreated")
+        .mockImplementation(() => {});
+      const perLessonSpy = vi
+        .spyOn(lessonApproval, "notifyBookingCreated")
+        .mockImplementation(() => {});
+      try {
+        const startDate = futureLaDate(335);
+        const weekday = isoWeekdayFor(startDate);
+        const { batchId, lessonIds, outboxId } = await submitBatch({
+          startDate,
+          weeks: 3,
+          weekday,
+        });
+        await waitForOutboxTerminal(outboxId);
+
+        expect(batchSpy).toHaveBeenCalledTimes(1);
+        expect(batchSpy).toHaveBeenCalledWith(batchId, {
+          confirmedCount: lessonIds.length,
+          pendingCount: 0,
+        });
+        expect(perLessonSpy).not.toHaveBeenCalled();
+      } finally {
+        batchSpy.mockRestore();
+        perLessonSpy.mockRestore();
         await adminDb().delete(lessons).where(eq(lessons.id, trustId));
       }
     });
