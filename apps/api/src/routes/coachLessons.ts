@@ -53,6 +53,7 @@ import { validate } from "../middleware/validate";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { mapConfigRow, mapSeasonRow, mapOverrideRow } from "../lib/availabilityMappers";
 import { computeCoachBookingWarnings } from "../lib/coachBookingWarnings";
+import { nowUtc as getNowUtc } from "../lib/clock";
 import { notifyBookingCreated, notifyLessonApproved, notifyLessonDeclined } from "../lib/lessonApproval";
 import { syncLessonToGoogle } from "../services/googleCalendarSync";
 import { enqueueLessonEmail } from "../services/emails/outbox";
@@ -276,7 +277,7 @@ coachLessonsRouter.get(
           seasons,
           overrides,
           gcalBusyTimes: [],
-          nowUtc: new Date(),
+          nowUtc: getNowUtc(),
         });
         allSlots.push(...poolSlots);
       }
@@ -920,7 +921,7 @@ coachLessonsRouter.post(
     const body = req.body as CoachCreateLessonBody;
     const coachProfileId = req.profile.id;
     const startsAt = new Date(body.startsAt);
-    const nowUtc = new Date();
+    const nowUtc = getNowUtc();
 
     // ── Hard reject: start in the past ────────────────────────────────────────
     // Not acknowledgeable. Lessons that would already be underway or over

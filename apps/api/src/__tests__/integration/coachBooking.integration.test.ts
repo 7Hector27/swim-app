@@ -29,6 +29,7 @@ import {
 } from "../../db/schema";
 import * as outboxModule from "../../services/emails/outbox";
 import * as googleSyncModule from "../../services/googleCalendarSync";
+import { __setClockForTests } from "../../lib/clock";
 
 // Microtask mocks: nothing in these tests needs the real Google API or SMTP
 // transport. The outbox INSERT inside the lesson transaction is the real
@@ -73,25 +74,42 @@ async function makeCoach(userId: string): Promise<void> {
     .where(eq(profiles.id, userId));
 }
 
-// Open every day on every season so the integration test's slot search doesn't
-// care which weekday "today" happens to be.
+// Open every day on every season (and on the fallback config, in case there
+// are no seasons covering the test date) so the slot search does not care
+// which weekday "today" happens to be.
 async function withAllDaysEnabled<T>(fn: () => Promise<T>): Promise<T> {
   const seasons = await adminDb().select().from(availabilitySeasons);
-  const originals = seasons.map((season) => ({ id: season.id, teachesDays: season.teachesDays }));
+  const originalSeasons = seasons.map((season) => ({ id: season.id, teachesDays: season.teachesDays }));
   for (const season of seasons) {
     await adminDb()
       .update(availabilitySeasons)
       .set({ teachesDays: [1, 2, 3, 4, 5, 6, 7] })
       .where(eq(availabilitySeasons.id, season.id));
   }
+  const configRows = await adminDb().select().from(availabilityConfig).limit(1);
+  const originalConfig = configRows[0]
+    ? { id: configRows[0].id, defaultTeachesDays: configRows[0].defaultTeachesDays }
+    : null;
+  if (originalConfig) {
+    await adminDb()
+      .update(availabilityConfig)
+      .set({ defaultTeachesDays: [1, 2, 3, 4, 5, 6, 7] })
+      .where(eq(availabilityConfig.id, originalConfig.id));
+  }
   try {
     return await fn();
   } finally {
-    for (const original of originals) {
+    for (const original of originalSeasons) {
       await adminDb()
         .update(availabilitySeasons)
         .set({ teachesDays: original.teachesDays })
         .where(eq(availabilitySeasons.id, original.id));
+    }
+    if (originalConfig) {
+      await adminDb()
+        .update(availabilityConfig)
+        .set({ defaultTeachesDays: originalConfig.defaultTeachesDays })
+        .where(eq(availabilityConfig.id, originalConfig.id));
     }
   }
 }
@@ -123,14 +141,18 @@ async function findFirstAvailableSlot(
 }
 
 // Coach-only variant: passes coachBypassNotice=true so slots inside the
-// 16-hour window are returned as "available" instead of "too_soon".
+// 16-hour window are returned as "available" instead of "too_soon". If a
+// test pins the server clock via __setClockForTests it passes the same
+// instant as `fromMs` so the week-date math lines up with the server's
+// view of "now".
 async function findFirstAvailableSlotForCoach(
   token: string,
   locId: string,
   durationMinutes: number,
+  fromMs: number = Date.now(),
 ): Promise<string> {
   for (let weekOffset = 0; weekOffset < 10; weekOffset++) {
-    const weekDate = new Date(Date.now() + weekOffset * 7 * 24 * 60 * 60 * 1000)
+    const weekDate = new Date(fromMs + weekOffset * 7 * 24 * 60 * 60 * 1000)
       .toISOString()
       .slice(0, 10);
     const res = await request(app)
@@ -543,36 +565,44 @@ describe("POST /coach/lessons (integration)", () => {
 
   it("6. no notice-window rule for coaches: a near-future slot books with no override and no warnings", async () => {
     await withAllDaysEnabled(async () => {
-      // Pick a near-future time that is inside teaching hours but < 16h away.
-      // Use the first available slot via the coach's slot picker (which
-      // bypasses the min-advance filter) to guarantee it's inside hours.
-      const nearSlot = await findFirstAvailableSlotForCoach(
-        coach.accessToken,
-        locationId,
-        30,
-      );
-      expect(new Date(nearSlot).getTime() - Date.now()).toBeLessThan(
-        16 * 60 * 60 * 1000,
-      );
-
-      const res = await request(app)
-        .post("/coach/lessons")
-        .set("Authorization", `Bearer ${coach.accessToken}`)
-        .send({
-          householdId: ownerA.householdId,
-          swimmerIds: [swimmerAId],
+      // Pin the server clock to Mon 2026-11-02 14:00 LA (PST, UTC-8) =
+      // 2026-11-02T22:00:00Z. Default teaching hours start at 16:00 LA, so
+      // the first slot the coach picker returns is 2 hours away — well
+      // inside the 16-hour notice window the assertion covers.
+      const pinnedNow = new Date("2026-11-02T22:00:00Z");
+      __setClockForTests(pinnedNow);
+      try {
+        const nearSlot = await findFirstAvailableSlotForCoach(
+          coach.accessToken,
           locationId,
-          startsAt: nearSlot,
-          durationMinutes: 30,
-        });
-      expect(res.status).toBe(201);
+          30,
+          pinnedNow.getTime(),
+        );
+        expect(new Date(nearSlot).getTime() - pinnedNow.getTime()).toBeLessThan(
+          16 * 60 * 60 * 1000,
+        );
 
-      // Audit payload: no warnings fired at all.
-      const audit = await readCoachBookingAudit(res.body.id as string);
-      const override = (audit?.payload as { override: Record<string, boolean> | null }).override;
-      expect(override).toBeNull();
+        const res = await request(app)
+          .post("/coach/lessons")
+          .set("Authorization", `Bearer ${coach.accessToken}`)
+          .send({
+            householdId: ownerA.householdId,
+            swimmerIds: [swimmerAId],
+            locationId,
+            startsAt: nearSlot,
+            durationMinutes: 30,
+          });
+        expect(res.status).toBe(201);
 
-      await wipeHouseholdBookingArtifacts(ownerA.householdId);
+        // Audit payload: no warnings fired at all.
+        const audit = await readCoachBookingAudit(res.body.id as string);
+        const override = (audit?.payload as { override: Record<string, boolean> | null }).override;
+        expect(override).toBeNull();
+
+        await wipeHouseholdBookingArtifacts(ownerA.householdId);
+      } finally {
+        __setClockForTests(null);
+      }
     });
   });
 
@@ -746,13 +776,19 @@ describe("POST /coach/lessons (integration)", () => {
 
   it("12. notice-window rule still applies to parents, including a parent passing coachBypassNotice", async () => {
     await withAllDaysEnabled(async () => {
+      // Same deterministic clock pin as test 6: 14:00 LA on Mon 2026-11-02
+      // puts the first teaching slot 2 hours out, inside the notice window.
+      const pinnedNow = new Date("2026-11-02T22:00:00Z");
+      __setClockForTests(pinnedNow);
+      try {
       // Pick the same near-future slot the coach can book without override.
       const nearSlot = await findFirstAvailableSlotForCoach(
         coach.accessToken,
         locationId,
         30,
+        pinnedNow.getTime(),
       );
-      expect(new Date(nearSlot).getTime() - Date.now()).toBeLessThan(
+      expect(new Date(nearSlot).getTime() - pinnedNow.getTime()).toBeLessThan(
         16 * 60 * 60 * 1000,
       );
 
@@ -790,6 +826,9 @@ describe("POST /coach/lessons (integration)", () => {
         .find((entry) => entry.startsAt === nearSlot);
       expect(slot).toBeDefined();
       expect(slot!.state).toBe("too_soon");
+      } finally {
+        __setClockForTests(null);
+      }
     });
   });
 });

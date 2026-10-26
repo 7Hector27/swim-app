@@ -68,6 +68,7 @@ import {
   type Candidate,
 } from "../lib/batchCandidates";
 import { effectiveHours } from "../lib/effectiveHours";
+import { nowUtc as getNowUtc } from "../lib/clock";
 import { mapConfigRow, mapSeasonRow, mapOverrideRow } from "../lib/availabilityMappers";
 import { needsApproval, notifyBookingCreated, notifyCoachOfChange } from "../lib/lessonApproval";
 import { syncLessonToGoogle } from "../services/googleCalendarSync";
@@ -286,7 +287,7 @@ lessonsRouter.get(
       seasons: seasonRows.map(mapSeasonRow),
       overrides: overrideRows.map(mapOverrideRow),
       gcalBusyTimes: [],
-      nowUtc: new Date(),
+      nowUtc: getNowUtc(),
       skipMinAdvance,
     });
 
@@ -385,7 +386,7 @@ lessonsRouter.get(
       approvalRequired = true;
     }
 
-    const nowUtc = new Date();
+    const nowUtc = getNowUtc();
     const todayDateLA = getDateInLA(nowUtc);
     const maxAdvanceDateLA = getDateInLA(
       new Date(nowUtc.getTime() + config.bookingMaxAdvanceWeeks * 7 * 24 * 60 * 60 * 1000),
@@ -482,7 +483,7 @@ lessonsRouter.post(
     const profileId = req.profile.id;
 
     const startsAt = new Date(body.startsAt);
-    const nowUtc = new Date();
+    const nowUtc = getNowUtc();
 
     // ── Validate location access ──────────────────────────────────────────────
     const locationRows = await db
@@ -881,7 +882,7 @@ lessonsRouter.post(
   asyncHandler(async (req, res) => {
     const body = req.body as BatchPreviewBody;
     const { householdId } = req;
-    const nowUtc = new Date();
+    const nowUtc = getNowUtc();
 
     const guard = await assertBatchHouseholdAndSwimmers(body, householdId);
     if (!guard.ok) {
@@ -1000,7 +1001,7 @@ lessonsRouter.post(
     const body = req.body as BatchSubmitBody;
     const { householdId } = req;
     const profileId = req.profile.id;
-    const nowUtc = new Date();
+    const nowUtc = getNowUtc();
 
     const guard = await assertBatchHouseholdAndSwimmers(body, householdId);
     if (!guard.ok) {
@@ -1583,7 +1584,7 @@ lessonsRouter.patch(
     const newStartsAt = body.startsAt !== undefined ? new Date(body.startsAt) : existingLesson.startsAt;
     const newDurationMinutes = (body.durationMinutes ?? existingLesson.durationMinutes) as 30 | 45 | 60;
     const newLocationId = body.locationId ?? existingLesson.locationId;
-    const nowUtc = new Date();
+    const nowUtc = getNowUtc();
 
     // Compute LA calendar date — needed for the advisory lock key and computeAvailableSlots.
     const laDateParts = new Intl.DateTimeFormat("en-US", {

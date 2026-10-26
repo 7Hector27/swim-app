@@ -14,10 +14,10 @@
 // All tests seed their own fixtures and clean up at the end so they can run
 // in any order and alongside the other integration tests.
 
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import request from "supertest";
 import pino from "pino";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, gte, inArray, lt } from "drizzle-orm";
 import { createApp } from "../../app";
 import {
   adminDb,
@@ -49,6 +49,14 @@ import type {
   TransportSendOptions,
 } from "../../services/emails/transport";
 import { __resetEnvCacheForTests } from "../../lib/env";
+import { __setClockForTests } from "../../lib/clock";
+
+// Pin the server clock to a far-future Monday morning so every test runs
+// against the same instant. Mon 2035-11-05 10:00 America/Los_Angeles under
+// PST (UTC-8) = 2035-11-05T18:00:00Z. Teaching hours start at 16:00 LA so
+// futureLaDate(10) lands on 2035-11-15 and all per-test dates fit comfortably
+// inside the booking window.
+const PINNED_NOW = new Date("2035-11-05T18:00:00Z");
 
 const logger = pino({ level: "silent" });
 const app = createApp(logger);
@@ -190,6 +198,36 @@ async function withAllDaysEnabled<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
+// Deletes every batch artifact (lessons, outbox, batches, audit log) at any
+// household whose starts_at lives inside the pinned-clock window. This runs
+// once at the top of the file to clear leftovers from any prior crashed run,
+// so the current run never collides with stale data on the same dates.
+async function purgeStalePinnedWindowArtifacts(): Promise<void> {
+  const windowStart = new Date(PINNED_NOW.getTime() - 60 * 24 * 60 * 60 * 1000);
+  const windowEnd = new Date(PINNED_NOW.getTime() + 400 * 24 * 60 * 60 * 1000);
+  const stale = await adminDb()
+    .select({ id: lessons.id, batchId: lessons.batchId })
+    .from(lessons)
+    .where(and(gte(lessons.startsAt, windowStart), lt(lessons.startsAt, windowEnd)));
+  const lessonIds = stale.map((row) => row.id);
+  const batchIds = Array.from(
+    new Set(stale.map((row) => row.batchId).filter((id): id is string => id !== null)),
+  );
+  if (lessonIds.length > 0) {
+    await adminDb()
+      .delete(lessonEmailOutbox)
+      .where(inArray(lessonEmailOutbox.lessonId, lessonIds));
+    await adminDb().delete(lessonSwimmers).where(inArray(lessonSwimmers.lessonId, lessonIds));
+    await adminDb().delete(lessons).where(inArray(lessons.id, lessonIds));
+  }
+  if (batchIds.length > 0) {
+    await adminDb()
+      .delete(lessonEmailOutbox)
+      .where(inArray(lessonEmailOutbox.batchId, batchIds));
+    await adminDb().delete(bookingBatches).where(inArray(bookingBatches.id, batchIds));
+  }
+}
+
 async function cleanupHouseholdBatchArtifacts(householdId: string): Promise<void> {
   const batchRows = await adminDb()
     .select({ id: bookingBatches.id })
@@ -223,8 +261,27 @@ async function cleanupHouseholdBatchArtifacts(householdId: string): Promise<void
     );
 }
 
+let originalBookingMaxAdvanceWeeks: number | null = null;
+
 beforeAll(async () => {
   __resetEnvCacheForTests();
+  // Pin the server clock so every test runs against the same instant and
+  // futureLaDate() returns deterministic dates. Any orphan lessons /
+  // batches from a prior crashed run that land in that same window are
+  // purged before the current run touches the database.
+  __setClockForTests(PINNED_NOW);
+  await purgeStalePinnedWindowArtifacts();
+  // Give each test enough runway to pick its own non-overlapping startDate
+  // offset. Restored in afterAll.
+  const configRows = await adminDb().select().from(availabilityConfig).limit(1);
+  const config = configRows[0];
+  if (config) {
+    originalBookingMaxAdvanceWeeks = config.bookingMaxAdvanceWeeks;
+    await adminDb()
+      .update(availabilityConfig)
+      .set({ bookingMaxAdvanceWeeks: 52 })
+      .where(eq(availabilityConfig.id, config.id));
+  }
   owner = await createTestUser("batch-owner");
   viewer = await createTestUserInHousehold("batch-viewer", owner.householdId, "viewer");
 
@@ -261,13 +318,32 @@ afterAll(async () => {
   }
   if (viewer) await viewer.cleanup();
   if (owner) await owner.cleanup();
+  if (originalBookingMaxAdvanceWeeks !== null) {
+    const configRows = await adminDb().select().from(availabilityConfig).limit(1);
+    const config = configRows[0];
+    if (config) {
+      await adminDb()
+        .update(availabilityConfig)
+        .set({ bookingMaxAdvanceWeeks: originalBookingMaxAdvanceWeeks })
+        .where(eq(availabilityConfig.id, config.id));
+    }
+  }
+  __setClockForTests(null);
   await closeAdminDb();
 });
 
 beforeEach(async () => {
   transport.reset();
-  // Each test starts from a clean slate for the owner's household so later
-  // tests don't see leftover batches / lessons from earlier ones.
+  // Clean slate for the owner's household so later tests don't see
+  // leftover batches / lessons from earlier ones.
+  await cleanupHouseholdBatchArtifacts(owner.householdId);
+});
+
+afterEach(async () => {
+  // Belt-and-suspenders: every test must clean up what it created so a
+  // failure mid-test cannot leak lessons into the next test or the next
+  // run. The purge at beforeAll handles the "previous run crashed before
+  // afterAll" case.
   await cleanupHouseholdBatchArtifacts(owner.householdId);
 });
 
@@ -294,9 +370,11 @@ async function waitForOutboxTerminal(outboxId: string, maxMs = 2000): Promise<vo
 
 // Picks a weekday that is far enough in the future to clear the 16-hour
 // notice window and lands on a weekday included in the current seasons'
-// teachesDays (we open all days via withAllDaysEnabled).
+// teachesDays (we open all days via withAllDaysEnabled). Deterministic:
+// anchored to the pinned PINNED_NOW instant so date math is stable across
+// runs and tests can pick non-overlapping offsets.
 function futureLaDate(daysFromNow: number): string {
-  const future = new Date(Date.now() + daysFromNow * 24 * 60 * 60 * 1000);
+  const future = new Date(PINNED_NOW.getTime() + daysFromNow * 24 * 60 * 60 * 1000);
   return getLaDateFromDate(future);
 }
 
@@ -352,9 +430,9 @@ describe("POST /lessons/batch — Phase 1", () => {
   // T3 — weekly with two weekdays generates the right dates
   it("T3: weekly with two weekdays generates expected expanded dates", async () => {
     await withAllDaysEnabled(async () => {
-      // Pick a date 10 days out. The server expands Tuesdays and Thursdays
-      // (ISO 2 + 4) for 3 weeks → 6 lessons.
-      const startDate = futureLaDate(10);
+      // Pick a date 40 days out, unique to this test. The server expands
+      // Tuesdays and Thursdays (ISO 2 + 4) for 3 weeks → 6 lessons.
+      const startDate = futureLaDate(40);
       const res = await request(app)
         .post("/lessons/batch/preview")
         .set("Authorization", `Bearer ${owner.accessToken}`)
@@ -390,7 +468,7 @@ describe("POST /lessons/batch — Phase 1", () => {
   // T5 — cap and window rejection
   it("T5a: schema rejects a 21-pick manual batch", async () => {
     const picks = Array.from({ length: 21 }, (_unused, idx) => ({
-      startsAt: new Date(Date.now() + (10 + idx) * 24 * 60 * 60 * 1000).toISOString(),
+      startsAt: new Date(PINNED_NOW.getTime() + (10 + idx) * 24 * 60 * 60 * 1000).toISOString(),
       durationMinutes: 30 as const,
     }));
     const res = await request(app)
@@ -452,7 +530,7 @@ describe("POST /lessons/batch — Phase 1", () => {
   // T2 — picks conflicting through buffer and cap (overlap on same day)
   it("T2: two batch picks overlapping each other are flagged as conflicts_batch", async () => {
     await withAllDaysEnabled(async () => {
-      const startDate = futureLaDate(10);
+      const startDate = futureLaDate(65);
       // Two 45-min picks that overlap: 4:30 PM and 5:00 PM on the same day.
       const pick1 = laDateToUtcAtTime(startDate, "16:30");
       const pick2 = laDateToUtcAtTime(startDate, "17:00");
@@ -489,7 +567,7 @@ describe("POST /lessons/batch — Phase 1", () => {
   // T4a — flagged week moved
   it("T4a: a blocked week can be moved to another time via overrides", async () => {
     await withAllDaysEnabled(async () => {
-      const startDate = futureLaDate(10);
+      const startDate = futureLaDate(85);
       const weekday = isoWeekdayFor(startDate);
       // Block the week-2 slot (index 1 = startDate + 7 days with a single weekday).
       const week2Date = addDays(startDate, 7);
@@ -538,7 +616,7 @@ describe("POST /lessons/batch — Phase 1", () => {
   // T4b — flagged week skipped
   it("T4b: a blocked week can be skipped via skips", async () => {
     await withAllDaysEnabled(async () => {
-      const startDate = futureLaDate(10);
+      const startDate = futureLaDate(115);
       const weekday = isoWeekdayFor(startDate);
       const week2Date = addDays(startDate, 7);
       const blockedStart = laDateToUtcAtTime(week2Date, "16:00");
@@ -585,7 +663,7 @@ describe("POST /lessons/batch — Phase 1", () => {
   // T1 — all-or-nothing rollback
   it("T1: pre-existing conflicting lesson rolls the whole batch back", async () => {
     await withAllDaysEnabled(async () => {
-      const startDate = futureLaDate(10);
+      const startDate = futureLaDate(145);
       const weekday = isoWeekdayFor(startDate);
       // Pre-seed a lesson at the week-2 slot (startDate + 7 days when the
       // batch uses a single weekday matching startDate) at 16:30 using a
@@ -662,7 +740,7 @@ describe("POST /lessons/batch — Phase 1", () => {
   // T7 — one email with the right invites and no per-lesson booking emails
   it("T7: successful batch writes exactly one batch_booked outbox row and no per-lesson rows", async () => {
     await withAllDaysEnabled(async () => {
-      const startDate = futureLaDate(10);
+      const startDate = futureLaDate(175);
       const submit = await request(app)
         .post("/lessons/batch")
         .set("Authorization", `Bearer ${owner.accessToken}`)
@@ -730,18 +808,18 @@ describe("POST /lessons/batch — Phase 1", () => {
         .values({
           householdId: owner.householdId,
           locationId,
-          startsAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+          startsAt: new Date(PINNED_NOW.getTime() - 30 * 24 * 60 * 60 * 1000),
           durationMinutes: 30,
           type: "private",
           status: "completed",
           requestedBy: owner.userId,
-          approvedAt: new Date(Date.now() - 31 * 24 * 60 * 60 * 1000),
-          completedAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+          approvedAt: new Date(PINNED_NOW.getTime() - 31 * 24 * 60 * 60 * 1000),
+          completedAt: new Date(PINNED_NOW.getTime() - 30 * 24 * 60 * 60 * 1000),
         })
         .returning({ id: lessons.id });
       const trustSeedId = trustSeed[0]!.id;
 
-      const startDate = futureLaDate(10);
+      const startDate = futureLaDate(215);
       const submit = await request(app)
         .post("/lessons/batch")
         .set("Authorization", `Bearer ${owner.accessToken}`)
@@ -833,7 +911,7 @@ describe("POST /lessons/batch — Phase 1", () => {
       const otherSwimmerId = otherSwimmerRows[0]!.id;
 
       try {
-        const startDate = futureLaDate(10);
+        const startDate = futureLaDate(250);
         const sharedSlot = laDateToUtcAtTime(startDate, "16:30").toISOString();
 
         const batchBody = {
@@ -892,7 +970,7 @@ describe("POST /lessons/batch — Phase 1", () => {
   // T10: mixed-length preview and submit (per-pick duration end-to-end).
   it("T10: a batch with a 30 and a 45 picks correctly and stores each lesson's own length", async () => {
     await withAllDaysEnabled(async () => {
-      const startDate = futureLaDate(10);
+      const startDate = futureLaDate(275);
       // Two picks on the same day that cannot overlap: 30 min at 16:00
       // (ends 16:30) and 45 min at 17:00 (ends 17:45). Default teaching
       // hours are 16:00..20:00 so both sit well inside the window and the
@@ -951,7 +1029,7 @@ describe("POST /lessons/batch — Phase 1", () => {
   // flagged conflicts_batch. Submit returns 422 and writes nothing.
   it("T11: a 45-min pick overlapping a 30-min pick is flagged conflicts_batch", async () => {
     await withAllDaysEnabled(async () => {
-      const startDate = futureLaDate(10);
+      const startDate = futureLaDate(290);
       // 30-min pick 16:00..16:30, 45-min pick 16:15..17:00. The second
       // starts inside the first's span. Default teaching hours
       // (16:00..20:00) accommodate both so the only reason to flag either
