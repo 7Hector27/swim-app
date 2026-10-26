@@ -1260,18 +1260,19 @@ lessonsRouter.post(
           isHomePool: location.householdId !== null,
         },
         swimmerFirstNames,
-        // Each lesson entry includes its snapshotted calendar_sequence. The
-        // sender re-reads the live lessons table at send time and filters out
-        // any lesson whose status / sequence has drifted (ADR 030 send-time
-        // filter). Approved lessons' sequences were just bumped from 0 → 1
-        // above, so the snapshot here captures the invite number that just
-        // went out (0).
+        // Each lesson entry snapshots the pre-bump calendar_sequence straight
+        // off the row INSERTed above. `insertedLessons` was captured BEFORE
+        // the UPDATE that bumped approved rows to +1, so `lesson.calendarSequence`
+        // is 0 here for every row -- the SEQUENCE: value the first REQUEST / the
+        // first invite should ship. batch_approved reuses the same pattern:
+        // read each row's current calendar_sequence, snapshot it into the
+        // outbox payload, then bump the row.
         lessons: insertedLessons.map((lesson) => ({
           lessonId: lesson.id,
           startsAtUtc: lesson.startsAt.toISOString(),
           durationMinutes: lesson.durationMinutes,
           status: lesson.status,
-          calendarSequence: lesson.status === "approved" ? 0 : 0,
+          calendarSequence: lesson.calendarSequence,
         })),
       };
 
