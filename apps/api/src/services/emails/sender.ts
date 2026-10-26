@@ -620,6 +620,12 @@ function applySendTimeFilter(
         changedLessonIds.push(lesson.lessonId);
         continue;
       }
+      // For batch_canceled, only lessons that had a prior invite produce a
+      // VEVENT. Pending-only lessons stay in the payload (so the template
+      // can list them in the body) but are skipped here. See ADR 030.
+      if (lesson.wasInvited === false) {
+        continue;
+      }
     } else {
       // batch_booked, batch_approved: must still be approved and upcoming.
       if (live.status !== "approved" || live.startsAt.getTime() <= nowMs) {

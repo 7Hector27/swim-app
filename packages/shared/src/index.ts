@@ -182,6 +182,8 @@ export type {
   BatchSubmitSuccessResponse,
   BatchConflictPick,
   BatchSubmitConflictResponse,
+  CoachBatchApproveResponse,
+  BatchCancelRemainingResponse,
   StoredWeeklyPattern,
 } from "./schemas/booking";
 export {
@@ -244,6 +246,8 @@ export {
   BatchSubmitSuccessResponseSchema,
   BatchConflictPickSchema,
   BatchSubmitConflictResponseSchema,
+  CoachBatchApproveResponseSchema,
+  BatchCancelRemainingResponseSchema,
   BatchPatternPairSchema,
   StoredWeeklyPatternSchema,
 } from "./schemas/booking";

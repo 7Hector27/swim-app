@@ -239,10 +239,11 @@ describe("GET /coach/lessons", () => {
       callback({ update: vi.fn().mockReturnValue({ set: updateSet }) }),
     );
 
-    // lessons query
+    // lessons query (now left-joins bookingBatches for batchId/batchMode).
     const orderBy = vi.fn().mockResolvedValue([pendingLessonRow]);
     const where = vi.fn().mockReturnValue({ orderBy });
-    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where, orderBy }) });
+    const leftJoin = vi.fn().mockReturnValue({ where, orderBy });
+    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ leftJoin, where, orderBy }) });
 
     // swimmer join query
     const swimWhere = vi.fn().mockResolvedValue([{ lessonId: LESSON_ID, swimmerId: SWIMMER_ID, firstName: "Alice", lastName: "Smith" }]);
@@ -491,10 +492,11 @@ describe("lazy expiry in GET /coach/lessons", () => {
       callback({ update: vi.fn().mockReturnValue({ set: updateSet }) }),
     );
 
-    // lessons query returns the now-expired row
+    // lessons query returns the now-expired row (left-joins batches)
     const orderBy = vi.fn().mockResolvedValue([expiredRow]);
     const where = vi.fn().mockReturnValue({ orderBy });
-    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where, orderBy }) });
+    const leftJoin = vi.fn().mockReturnValue({ where, orderBy });
+    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ leftJoin, where, orderBy }) });
 
     // swimmer join (empty — lesson already expired)
     const swimWhere = vi.fn().mockResolvedValue([]);

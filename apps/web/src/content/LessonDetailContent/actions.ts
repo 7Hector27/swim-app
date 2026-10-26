@@ -44,6 +44,50 @@ export async function cancelLessonAction(
   return { status: "error", message: "Could not cancel this lesson. Please try again." };
 }
 
+export async function cancelBatchRemainingAction(
+  _prev: LessonDetailState,
+  formData: FormData,
+): Promise<LessonDetailState> {
+  const batchId = formData.get("batchId");
+  if (typeof batchId !== "string") {
+    return { status: "error", message: "Missing batch ID." };
+  }
+
+  const supabase = await createClient();
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) return { status: "error", message: "Session expired. Please sign in again." };
+
+  let responseStatus: number;
+  let responseBody: unknown = null;
+  try {
+    const response = await fetch(
+      `${process.env.NEXT_PUBLIC_API_URL}/lessons/batch/${batchId}/remaining`,
+      {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      },
+    );
+    responseStatus = response.status;
+    try { responseBody = await response.json(); } catch { /* non-JSON */ }
+  } catch {
+    return { status: "error", message: "Could not reach the server. Please try again." };
+  }
+
+  if (responseStatus >= 200 && responseStatus < 300) {
+    redirect("/dashboard");
+  }
+
+  const code = (responseBody as { error?: string } | null)?.error;
+  if (responseStatus === 403) {
+    return { status: "error", message: "You don't have permission to cancel this booking." };
+  }
+  if (code === "no_remaining_lessons") {
+    return { status: "error", message: "No lessons left to cancel in this booking." };
+  }
+  return { status: "error", message: "Could not cancel the remaining lessons. Please try again." };
+}
+
 export async function rescheduleLessonAction(
   _prev: LessonDetailState,
   formData: FormData,

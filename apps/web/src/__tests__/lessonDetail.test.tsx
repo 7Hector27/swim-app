@@ -16,6 +16,7 @@ vi.mock("@/content/BookCalendarContent/actions", () => ({
 
 vi.mock("../content/LessonDetailContent/actions", () => ({
   cancelLessonAction: vi.fn(),
+  cancelBatchRemainingAction: vi.fn(),
   rescheduleLessonAction: vi.fn(),
 }));
 
@@ -93,6 +94,61 @@ describe("LessonDetailContent — Moved by Jason", () => {
       <LessonDetailContent lesson={lesson} locations={locations} isViewer={false} isCoach={false} />,
     );
     expect(screen.queryByText(/Moved by Jason/)).toBeNull();
+  });
+});
+
+describe("LessonDetailContent — cancel remaining in batch", () => {
+  const futureLesson: UpcomingLesson = {
+    ...lesson,
+    startsAt: "2099-01-01T00:00:00.000Z",
+    batchId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+    batchMode: "weekly",
+  };
+  const sibling: UpcomingLesson = {
+    ...lesson,
+    id: "aaaaaaaa-0000-0000-0000-000000000099",
+    startsAt: "2099-01-08T00:00:00.000Z",
+    batchId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+    batchMode: "weekly",
+  };
+
+  it("renders the Cancel remaining lessons action for a batch lesson with siblings", () => {
+    render(
+      <LessonDetailContent
+        lesson={futureLesson}
+        locations={locations}
+        isViewer={false}
+        isCoach={false}
+        batchSiblings={[futureLesson, sibling]}
+      />,
+    );
+    expect(screen.getByRole("button", { name: /cancel remaining lessons/i })).toBeInTheDocument();
+  });
+
+  it("hides the Cancel remaining lessons action when the lesson has no batch siblings", () => {
+    render(
+      <LessonDetailContent
+        lesson={futureLesson}
+        locations={locations}
+        isViewer={false}
+        isCoach={false}
+        batchSiblings={[futureLesson]}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: /cancel remaining lessons/i })).toBeNull();
+  });
+
+  it("hides the Cancel remaining lessons action for viewers", () => {
+    render(
+      <LessonDetailContent
+        lesson={futureLesson}
+        locations={locations}
+        isViewer={true}
+        isCoach={false}
+        batchSiblings={[futureLesson, sibling]}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: /cancel remaining lessons/i })).toBeNull();
   });
 });
 

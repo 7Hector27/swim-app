@@ -31,6 +31,13 @@ export interface BatchEmailLesson {
   // filter compares current_calendar_sequence to this value + 1 to detect
   // "has this lesson been changed since we wrote this payload."
   calendarSequence: number;
+  // Only present on batch_canceled rows. True when the lesson had a prior
+  // REQUEST invite shipped (calendar_invite_sent_at is non-null); the sender
+  // emits a CANCEL VEVENT for it so the parent's calendar app removes the
+  // original entry. False means the lesson was pending-only and never had
+  // an invite: it still appears in the email body but gets no VEVENT. See
+  // ADR 030.
+  wasInvited?: boolean;
 }
 
 export type BatchPatternPair = SharedBatchPatternPair;

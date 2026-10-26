@@ -200,6 +200,12 @@ export const LessonResponseSchema = z.object({
   movedAt: z.string().datetime({ offset: true }).nullable(),
   previousStartsAt: z.string().datetime({ offset: true }).nullable(),
   createdAt: z.string().datetime({ offset: true }),
+  // Set when the lesson was booked as part of a batch submission (ADR 030).
+  // Nullable + optional so existing construction sites that don't need the
+  // batch metadata can omit the fields entirely. Pending-list grouping on
+  // the coach side consumes them from the /coach/lessons endpoint.
+  batchId: z.string().uuid().nullable().optional(),
+  batchMode: z.enum(["manual", "weekly"]).nullable().optional(),
 });
 export type LessonResponse = z.infer<typeof LessonResponseSchema>;
 
@@ -929,4 +935,33 @@ export const BatchSubmitConflictResponseSchema = z.object({
   conflicts: z.array(BatchConflictPickSchema).min(1),
 });
 export type BatchSubmitConflictResponse = z.infer<typeof BatchSubmitConflictResponseSchema>;
+
+// ── Coach approve-pending (ADR 030 phase 3) ───────────────────────────────
+//
+// PATCH /coach/lessons/batch/:batchId/approve-pending flips every pending
+// lesson in a batch to approved in one transaction, snapshots+bumps each
+// one's calendar_sequence, writes one audit row and one batch_approved
+// outbox row covering only the newly approved lessons.
+
+export const CoachBatchApproveResponseSchema = z.object({
+  batchId: z.string().uuid(),
+  approvedLessonIds: z.array(z.string().uuid()),
+  approvedCount: z.number().int().nonnegative(),
+});
+export type CoachBatchApproveResponse = z.infer<typeof CoachBatchApproveResponseSchema>;
+
+// ── Parent cancel-remaining (ADR 030 phase 3) ─────────────────────────────
+//
+// DELETE /lessons/batch/:batchId/remaining cancels every future-dated
+// pending or approved lesson in the batch in one transaction. CANCEL
+// VEVENTs ship for the lessons that had invites; pending ones appear in
+// the body text only.
+
+export const BatchCancelRemainingResponseSchema = z.object({
+  batchId: z.string().uuid(),
+  canceledLessonIds: z.array(z.string().uuid()),
+  canceledCount: z.number().int().nonnegative(),
+});
+export type BatchCancelRemainingResponse = z.infer<typeof BatchCancelRemainingResponseSchema>;
+
 export type CoachHouseholdSearchResponse = z.infer<typeof CoachHouseholdSearchResponseSchema>;

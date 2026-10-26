@@ -1,8 +1,9 @@
 import { type RequestHandler, Router } from "express";
-import { and, asc, count, desc, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, inArray, max, ne, sql } from "drizzle-orm";
 import type {
   AvailableSlot,
   AvailableSlotsQuery,
+  BatchCancelRemainingResponse,
   BatchConflictPick,
   BatchPickState,
   BatchPreviewBody,
@@ -74,6 +75,7 @@ import { needsApproval, notifyBookingCreated, notifyCoachOfChange } from "../lib
 import { syncLessonToGoogle } from "../services/googleCalendarSync";
 import { enqueueLessonEmail } from "../services/emails/outbox";
 import { sendLessonEmailOutboxRow } from "../services/emails/sender";
+import type { BatchEmailLesson, BatchEmailPayload } from "../services/emails/batchTypes";
 import { isActiveSwimmer } from "../db/queries";
 
 export const lessonsRouter = Router();
@@ -1367,6 +1369,219 @@ lessonsRouter.post(
       pendingCount,
     };
     res.status(201).json(response);
+  }),
+);
+
+// ── DELETE /lessons/batch/:batchId/remaining ─────────────────────────────────
+// Owners / managers cancel every future-dated pending + approved lesson in the
+// batch under the same rules as single-lesson cancel. One transaction, one
+// audit row, one batch_canceled outbox row (CANCEL VEVENTs only for lessons
+// that had invites; pending ones listed in the text). See ADR 030.
+
+lessonsRouter.delete(
+  "/batch/:batchId/remaining",
+  requireParent,
+  requireHouseholdMember,
+  requireHouseholdRole("manager"),
+  validate({}),
+  asyncHandler(async (req, res) => {
+    const batchId = req.params.batchId as string;
+    const { householdId } = req;
+    const profileId = req.profile.id;
+
+    const batchRows = await db
+      .select()
+      .from(bookingBatches)
+      .where(and(eq(bookingBatches.id, batchId), eq(bookingBatches.householdId, householdId)))
+      .limit(1);
+    const batch = batchRows[0];
+    if (!batch) {
+      res.status(404).json({ error: "Batch not found" });
+      return;
+    }
+
+    const result = await db.transaction(async (tx) => {
+      const now = new Date();
+
+      // Lock + load every future-dated pending/approved lesson in the batch.
+      // Past lessons are left alone. Match single-lesson cancel's "lesson_in_past"
+      // rule by filtering on starts_at > now.
+      const toCancel = await tx
+        .select()
+        .from(lessons)
+        .where(
+          and(
+            eq(lessons.batchId, batchId),
+            inArray(lessons.status, ["pending", "approved"]),
+            gt(lessons.startsAt, now),
+          ),
+        )
+        .for("update");
+
+      if (toCancel.length === 0) return { kind: "none" as const };
+
+      // Snapshot pre-bump calendar_sequence per lesson; only lessons that had
+      // a prior invite get CANCEL rows. Pending-only lessons appear in the
+      // email body text but not in the .ics (matches single-lesson rules).
+      const sequenceByLesson = new Map<string, number>();
+      for (const lesson of toCancel) {
+        sequenceByLesson.set(lesson.id, lesson.calendarSequence);
+      }
+
+      const invitedIdSet = new Set(
+        toCancel.filter((lesson) => lesson.calendarInviteSentAt !== null).map((lesson) => lesson.id),
+      );
+      const allIds = toCancel.map((lesson) => lesson.id);
+
+      // Bump calendar_sequence on every canceled lesson so the sender's
+      // send-time filter sees snapshot+1 for ALL of them (invited and
+      // pending alike). Only invited lessons produce a CANCEL VEVENT; the
+      // ics builder consults `wasInvited` on each payload lesson to decide.
+      await tx
+        .update(lessons)
+        .set({
+          status: "canceled",
+          canceledAt: now,
+          canceledBy: profileId,
+          calendarSequence: sql`${lessons.calendarSequence} + 1` as unknown as number,
+        })
+        .where(inArray(lessons.id, allIds));
+
+      const recipientRows = await tx
+        .select({ profileId: householdMembers.profileId })
+        .from(householdMembers)
+        .where(
+          and(
+            eq(householdMembers.householdId, householdId),
+            inArray(householdMembers.role, ["owner", "manager"]),
+          ),
+        );
+      const recipientProfileIds = recipientRows.map((row) => row.profileId);
+
+      const sampleLessonId = toCancel[0]!.id;
+      const swimmerRows = await tx
+        .select({ firstName: swimmers.firstName })
+        .from(lessonSwimmers)
+        .innerJoin(swimmers, eq(lessonSwimmers.swimmerId, swimmers.id))
+        .where(eq(lessonSwimmers.lessonId, sampleLessonId))
+        .orderBy(swimmers.firstName);
+      const swimmerFirstNames = swimmerRows.map((row) => row.firstName);
+
+      const locationId = toCancel[0]!.locationId;
+      const locationRows = await tx
+        .select({
+          id: lessonLocations.id,
+          name: lessonLocations.name,
+          address: lessonLocations.address,
+          city: lessonLocations.city,
+          state: lessonLocations.state,
+          zip: lessonLocations.zip,
+          householdId: lessonLocations.householdId,
+        })
+        .from(lessonLocations)
+        .where(eq(lessonLocations.id, locationId))
+        .limit(1);
+      const location = locationRows[0]!;
+
+      const payloadLessons: BatchEmailLesson[] = toCancel.map((lesson) => ({
+        lessonId: lesson.id,
+        startsAtUtc: lesson.startsAt.toISOString(),
+        durationMinutes: lesson.durationMinutes as 30 | 45 | 60,
+        status: "canceled" as const,
+        // Pre-bump value. Every canceled lesson was bumped by one above, so
+        // the sender's filter check (live === stored + 1) passes for both
+        // invited and pending-only rows. wasInvited distinguishes the two:
+        // invited rows produce a CANCEL VEVENT, pending-only rows don't.
+        calendarSequence: sequenceByLesson.get(lesson.id)!,
+        wasInvited: invitedIdSet.has(lesson.id),
+      }));
+
+      const payload: BatchEmailPayload = {
+        batchId,
+        mode: batch.mode as "manual" | "weekly",
+        ...(batch.mode === "weekly" && batch.weeklyPattern && batch.weeklyStartDate && batch.weeklyWeeks !== null
+          ? {
+              weekly: {
+                pattern: batch.weeklyPattern,
+                startDate: batch.weeklyStartDate,
+                weeks: batch.weeklyWeeks,
+              },
+            }
+          : {}),
+        location: {
+          id: location.id,
+          name: location.name,
+          address: location.address,
+          city: location.city,
+          state: location.state,
+          zip: location.zip,
+          isHomePool: location.householdId !== null,
+        },
+        swimmerFirstNames,
+        lessons: payloadLessons,
+      };
+
+      // Next (batch_id, event='batch_canceled') sequence. Starts at 0.
+      const seqRows = await tx
+        .select({ max: max(lessonEmailOutbox.sequence) })
+        .from(lessonEmailOutbox)
+        .where(
+          and(
+            eq(lessonEmailOutbox.batchId, batchId),
+            eq(lessonEmailOutbox.event, "batch_canceled"),
+          ),
+        );
+      const nextSeq = (seqRows[0]?.max ?? -1) + 1;
+
+      const outboxInsert = await tx
+        .insert(lessonEmailOutbox)
+        .values({
+          batchId,
+          lessonId: null,
+          event: "batch_canceled",
+          sequence: nextSeq,
+          recipientProfileIds,
+          icsMethod: null,
+          icsSequence: null,
+          payload,
+        })
+        .returning({ id: lessonEmailOutbox.id });
+      const outboxId = outboxInsert[0]!.id;
+
+      await tx.insert(householdAuditLog).values({
+        householdId,
+        actorId: profileId,
+        action: "lesson_batch_canceled_remaining",
+        payload: {
+          batchId,
+          canceledLessonIds: allIds,
+          invitedLessonIds: Array.from(invitedIdSet),
+        },
+      });
+
+      return {
+        kind: "canceled" as const,
+        canceledIds: allIds,
+        outboxId,
+      };
+    });
+
+    if (result.kind === "none") {
+      res.status(409).json({ error: "no_remaining_lessons" });
+      return;
+    }
+
+    for (const lessonId of result.canceledIds) {
+      queueMicrotask(() => { void syncLessonToGoogle(lessonId); });
+    }
+    queueMicrotask(() => { void sendLessonEmailOutboxRow(result.outboxId); });
+
+    const body: BatchCancelRemainingResponse = {
+      batchId,
+      canceledLessonIds: result.canceledIds,
+      canceledCount: result.canceledIds.length,
+    };
+    res.json(body);
   }),
 );
 
