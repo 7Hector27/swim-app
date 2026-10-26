@@ -147,10 +147,13 @@ export function isSlotInSelection(
   return slotMs >= startMs && slotMs < startMs + durationMinutes * 60 * 1000;
 }
 
+// Canonical one-line display for a lesson. Example output:
+// "Tue, Oct 27 · 4:00 to 4:30 PM · 30 min". Shared by Single's bottom bar,
+// the batch review sheet, the batch success screen, the Multiple pick list,
+// the Recurring pattern list, and the Reschedule flows so one lesson reads
+// the same everywhere.
 export function formatSlotRangeWithDate(isoStr: string, durationMinutes: number): string {
   const start = new Date(isoStr);
-  const end = new Date(start.getTime() + durationMinutes * 60 * 1000);
-
   const laOptions = { timeZone: "America/Los_Angeles" } as const;
 
   const dayLabel = new Intl.DateTimeFormat("en-US", {
@@ -160,14 +163,40 @@ export function formatSlotRangeWithDate(isoStr: string, durationMinutes: number)
     day: "numeric",
   }).format(start);
 
+  return `${dayLabel} \u00b7 ${formatRangeAndLength(start, durationMinutes)}`;
+}
+
+// Weekday-only canonical display for a recurring pattern entry (no specific
+// date). Mirrors formatSlotRangeWithDate so a pattern pair reads the same
+// as a per-date lesson, modulo the leading date vs. weekday.
+export function formatPatternRangeAndLength(input: {
+  weekday: number;
+  timeOfDay: string;
+  durationMinutes: number;
+}): string {
+  const [hourStr = "0", minuteStr = "0"] = input.timeOfDay.split(":");
+  const hour = Number(hourStr);
+  const minute = Number(minuteStr);
+  // Use a reference Monday (2023-01-02) so the Intl formatter resolves AM/PM
+  // deterministically without pulling in the current date.
+  const start = new Date(Date.UTC(2023, 0, 2 + ((input.weekday - 1) % 7), hour, minute));
+  const weekday = new Intl.DateTimeFormat("en-US", { weekday: "short", timeZone: "UTC" }).format(start);
+  return `${weekday} \u00b7 ${formatRangeAndLength(start, input.durationMinutes, { useUtc: true })}`;
+}
+
+function formatRangeAndLength(
+  start: Date,
+  durationMinutes: number,
+  options: { useUtc?: boolean } = {},
+): string {
+  const end = new Date(start.getTime() + durationMinutes * 60 * 1000);
   const fmt = (date: Date) =>
     new Intl.DateTimeFormat("en-US", {
-      ...laOptions,
+      timeZone: options.useUtc === true ? "UTC" : "America/Los_Angeles",
       hour: "numeric",
       minute: "2-digit",
       hour12: true,
     }).format(date);
-
   const startStr = fmt(start);
   const endStr = fmt(end);
   const startMeridiem = startStr.slice(-2);
@@ -176,8 +205,7 @@ export function formatSlotRangeWithDate(isoStr: string, durationMinutes: number)
     startMeridiem === endMeridiem
       ? `${startStr.slice(0, -3)} to ${endStr}`
       : `${startStr} to ${endStr}`;
-
-  return `${dayLabel} · ${rangeStr}`;
+  return `${rangeStr} \u00b7 ${durationMinutes} min`;
 }
 
 export function formatHHMM(hhmm: string): string {
@@ -200,6 +228,26 @@ const ERROR_CODE_MESSAGES: Record<string, string> = {
   too_far: "You can only book lessons up to 10 weeks in advance.",
   slot_unavailable: "That time isn't available anymore. Pick another one.",
 };
+
+// LA calendar date (YYYY-MM-DD) corresponding to a UTC epoch ms. Mirrors the
+// server's `getDateInLA`, so the client measures the booking window the same
+// way the server does.
+export function laDateFromMs(ms: number): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Los_Angeles",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date(ms));
+  const get = (type: string) => parts.find((part) => part.type === type)?.value ?? "";
+  return `${get("year")}-${get("month")}-${get("day")}`;
+}
+
+// Last LA calendar date inside the rolling booking window. Mirrors the server
+// rule: `getDateInLA(now + bookingMaxAdvanceWeeks * 7 days)`.
+export function maxBookableDateLA(bookingMaxAdvanceWeeks: number, nowMs: number): string {
+  return laDateFromMs(nowMs + bookingMaxAdvanceWeeks * 7 * 24 * 60 * 60 * 1000);
+}
 
 export function firstAvailableDayInWeek(
   days: WeekDayAvailability[],

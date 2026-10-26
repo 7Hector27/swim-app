@@ -8,28 +8,53 @@ import type { LessonLocation, UpcomingLesson } from "@swim-app/shared";
 import AddNoteForm from "@/components/AddNoteForm";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import LessonStatusBadge from "@/components/LessonStatusBadge";
-import { cancelLessonAction, type LessonDetailState } from "./actions";
+import BatchModeBadge from "@/components/BatchModeBadge";
+import {
+  cancelBatchRemainingAction,
+  cancelLessonAction,
+  type LessonDetailState,
+} from "./actions";
 
 interface Props {
   lesson: UpcomingLesson;
   locations: LessonLocation[];
   isViewer: boolean;
   isCoach: boolean;
+  batchSiblings?: UpcomingLesson[];
 }
 
-export default function LessonDetailContent({ lesson, locations: _locations, isViewer, isCoach }: Props) {
+export default function LessonDetailContent({
+  lesson,
+  locations: _locations,
+  isViewer,
+  isCoach,
+  batchSiblings = [],
+}: Props) {
   const cancelDialogRef = useRef<HTMLDialogElement>(null);
+  const cancelBatchDialogRef = useRef<HTMLDialogElement>(null);
 
   const [cancelState, cancelFormAction, isCanceling] = useActionState<LessonDetailState, FormData>(
     cancelLessonAction,
     { status: "idle" },
   );
+  const [cancelBatchState, cancelBatchFormAction, isCancelingBatch] = useActionState<
+    LessonDetailState,
+    FormData
+  >(cancelBatchRemainingAction, { status: "idle" });
 
   const startsAt = new Date(lesson.startsAt);
   const endsAt = new Date(startsAt.getTime() + lesson.durationMinutes * 60 * 1000);
   const lessonType = lesson.type === "private" ? "Private lesson" : "Family lesson";
   const swimmerNames = lesson.swimmers.map((swimmer) => swimmer.firstName).join(", ");
   const lessonHasStarted = new Date() >= new Date(lesson.startsAt);
+  const canCancelBatch =
+    !isViewer &&
+    !isCoach &&
+    lesson.batchId !== null &&
+    batchSiblings.length > 1;
+  const sortedSiblings = [...batchSiblings].sort((a, b) =>
+    a.startsAt.localeCompare(b.startsAt),
+  );
 
   return (
     <div className="flex flex-col flex-1 bg-background">
@@ -57,7 +82,7 @@ export default function LessonDetailContent({ lesson, locations: _locations, isV
                 <Row label="Time">{`${formatTime(startsAt)} to ${formatTime(endsAt)}`}</Row>
                 <Row label="Location">{lesson.locationName}</Row>
                 <Row label="Duration">{`${lesson.durationMinutes} min`}</Row>
-                <Row label="Swimmers">{swimmerNames || "—"}</Row>
+                <Row label="Swimmers">{swimmerNames || "N/A"}</Row>
                 <Row label="Type">{lessonType}</Row>
                 <Row label="Status">
                   {lesson.status === "approved" ? (
@@ -72,6 +97,11 @@ export default function LessonDetailContent({ lesson, locations: _locations, isV
                   <Row label="Rescheduled">
                     Moved by Jason from {formatDateLabel(lesson.previousStartsAt)} at{" "}
                     {formatTime(new Date(lesson.previousStartsAt))}
+                  </Row>
+                )}
+                {lesson.batchMode !== null && (
+                  <Row label="Batch">
+                    <BatchModeBadge mode={lesson.batchMode} />
                   </Row>
                 )}
               </dl>
@@ -106,6 +136,29 @@ export default function LessonDetailContent({ lesson, locations: _locations, isV
                     Cancel this lesson
                   </button>
                 </div>
+
+                {canCancelBatch && (
+                  <div className="rounded-card border border-border p-5 tablet:p-6">
+                    <h2 className="text-xl text-heading mb-1">
+                      Cancel remaining lessons in this booking
+                    </h2>
+                    <p className="text-sm text-text-secondary mb-5">
+                      Ends every future lesson in this booking at once. Past lessons stay as they are.
+                    </p>
+
+                    <form id="cancel-batch-form" action={cancelBatchFormAction}>
+                      <input type="hidden" name="batchId" value={lesson.batchId ?? ""} />
+                    </form>
+
+                    <button
+                      type="button"
+                      onClick={() => cancelBatchDialogRef.current?.showModal()}
+                      className="inline-flex items-center justify-center rounded-button bg-danger text-button-danger-text font-bold text-sm px-5 h-11 transition-opacity hover:opacity-90"
+                    >
+                      Cancel remaining lessons
+                    </button>
+                  </div>
+                )}
               </>
             )}
           </div>
@@ -140,6 +193,31 @@ export default function LessonDetailContent({ lesson, locations: _locations, isV
         {...(cancelState.status === "error" ? { errorMessage: cancelState.message } : {})}
         onCancel={() => cancelDialogRef.current?.close()}
       />
+      {canCancelBatch && (
+        <ConfirmDialog
+          dialogRef={cancelBatchDialogRef}
+          title={`Cancel ${sortedSiblings.length} remaining lessons?`}
+          description="These lessons will be canceled and removed from your calendar."
+          formId="cancel-batch-form"
+          confirmLabel="Cancel all"
+          confirmDanger
+          cancelLabel="Keep them"
+          isPending={isCancelingBatch}
+          {...(cancelBatchState.status === "error" ? { errorMessage: cancelBatchState.message } : {})}
+          onCancel={() => cancelBatchDialogRef.current?.close()}
+        >
+          <ul className="flex flex-col gap-1.5 text-sm text-text-on-section max-h-64 overflow-y-auto">
+            {sortedSiblings.map((sibling) => (
+              <li key={sibling.id} className="flex justify-between gap-3">
+                <span>{formatDateLabel(sibling.startsAt)}</span>
+                <span className="text-text-secondary-on-section tabular-nums">
+                  {formatTime(new Date(sibling.startsAt))}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </ConfirmDialog>
+      )}
     </div>
   );
 }

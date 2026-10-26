@@ -526,6 +526,11 @@ export const lessons = pgTable("lessons", {
   calendarInviteSentAt: timestamp("calendar_invite_sent_at", { withTimezone: true }),
   movedAt: timestamp("moved_at", { withTimezone: true }),
   previousStartsAt: timestamp("previous_starts_at", { withTimezone: true }),
+  // When this lesson is one of several submitted together through
+  // POST /lessons/batch, this points to the batch row. Null for every
+  // other lesson (single-lesson parent bookings, coach bookings).
+  // Immutable after insert in v1. See ADR 030.
+  batchId: uuid("batch_id").references((): AnyPgColumn => bookingBatches.id, { onDelete: "restrict" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdateFn(() => new Date()),
 }, (table) => [
@@ -878,6 +883,67 @@ export const coachAuditLog = pgTable(
   ],
 ).enableRLS();
 
+// ── Batch booking (ADR 030) ─────────────────────────────────────────────────
+
+// One row per batch submission. Immutable after insert; the member
+// lessons' lifecycle (reschedule, cancel, approval) is independent of
+// this row. For weekly mode the three weekly_* columns record the
+// parent's original request: a jsonb array of
+// `{ weekday, time, durationMinutes }` entries, a start date, and a week
+// count. Manual mode leaves all three NULL; the picks live only on the
+// generated `lessons` rows. See docs/plans/batch-booking.md.
+export const bookingBatches = pgTable(
+  "booking_batches",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    householdId: uuid("household_id").notNull().references(() => households.id, { onDelete: "restrict" }),
+    createdBy: uuid("created_by").notNull().references(() => profiles.id),
+    // 'manual' | 'weekly'. The CHECK below pairs it with the weekly_* fields.
+    mode: text("mode").notNull(),
+    // JSONB array of `{ weekday: 1..7, timeOfDay: "HH:MM",
+    // durationMinutes: 30 | 45 | 60 }`. Non-null only when mode='weekly'.
+    // The CHECK below asserts the shape at the column level; the API also
+    // validates it against the shared BatchPatternPairSchema on write (via
+    // the request body) and on read via mapBookingBatchRow().
+    weeklyPattern: jsonb("weekly_pattern").$type<
+      { weekday: number; timeOfDay: string; durationMinutes: 30 | 45 | 60 }[]
+    >(),
+    // LA calendar date of the first candidate week. Non-null only when mode='weekly'.
+    weeklyStartDate: date("weekly_start_date"),
+    // Number of weeks the parent requested. Non-null only when mode='weekly'.
+    weeklyWeeks: integer("weekly_weeks"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdateFn(() => new Date()),
+  },
+  (table) => [
+    check(
+      "booking_batches_mode_valid",
+      sql`${table.mode} IN ('manual', 'weekly')`,
+    ),
+    // All weekly_* columns are set together or none of them. mode='weekly'
+    // requires all three set and the pattern to be a non-empty jsonb array;
+    // mode='manual' forbids all three. Keeps the batch row self-consistent
+    // so later readers can trust the mode flag.
+    check(
+      "booking_batches_weekly_fields_pair",
+      sql`(
+        (${table.mode} = 'weekly'
+         AND ${table.weeklyPattern} IS NOT NULL
+         AND jsonb_typeof(${table.weeklyPattern}) = 'array'
+         AND jsonb_array_length(${table.weeklyPattern}) >= 1
+         AND ${table.weeklyStartDate} IS NOT NULL
+         AND ${table.weeklyWeeks} IS NOT NULL)
+        OR
+        (${table.mode} = 'manual'
+         AND ${table.weeklyPattern} IS NULL
+         AND ${table.weeklyStartDate} IS NULL
+         AND ${table.weeklyWeeks} IS NULL)
+      )`,
+    ),
+    index("booking_batches_household_created_idx").on(table.householdId, table.createdAt.desc()),
+  ],
+).enableRLS();
+
 // ── Parent booking emails outbox (ADR 028) ──────────────────────────────────
 
 // Transactional outbox for parent-facing booking emails. One row per state
@@ -891,9 +957,16 @@ export const lessonEmailOutbox = pgTable(
   "lesson_email_outbox",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    lessonId: uuid("lesson_id").notNull().references(() => lessons.id, { onDelete: "restrict" }),
+    // Nullable because batch-scoped rows reference booking_batches via
+    // batch_id instead. The exactly-one CHECK below enforces that each row
+    // populates exactly one of lesson_id / batch_id. See ADR 030.
+    lessonId: uuid("lesson_id").references(() => lessons.id, { onDelete: "restrict" }),
+    // Non-null for batch-scoped rows (events: batch_booked, batch_approved,
+    // batch_canceled). NULL for per-lesson rows. See ADR 030.
+    batchId: uuid("batch_id").references(() => bookingBatches.id, { onDelete: "restrict" }),
     // One of: 'booking_requested', 'lesson_confirmed', 'request_declined',
-    // 'request_expired', 'lesson_canceled', 'lesson_rescheduled'.
+    // 'request_expired', 'lesson_canceled', 'lesson_rescheduled', or (for
+    // batch rows) 'batch_booked', 'batch_approved', 'batch_canceled'.
     event: text("event").notNull(),
     // Per-(lesson_id, event) occurrence counter. First lesson_rescheduled
     // for a given lesson is 1, next is 2, etc. The (lesson_id, event,
@@ -943,10 +1016,19 @@ export const lessonEmailOutbox = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdateFn(() => new Date()),
   },
   (table) => [
-    unique("lesson_email_outbox_lesson_event_sequence_uniq").on(table.lessonId, table.event, table.sequence),
+    // Two partial unique indexes replace the old (lesson_id, event, sequence)
+    // UNIQUE constraint. Per-lesson dedup and per-batch dedup are independent
+    // namespaces — a batch's batch_booked row with sequence=0 does not
+    // collide with any per-lesson lesson_confirmed row's sequence=0.
+    uniqueIndex("lesson_email_outbox_lesson_event_seq_uq")
+      .on(table.lessonId, table.event, table.sequence)
+      .where(sql`lesson_id IS NOT NULL`),
+    uniqueIndex("lesson_email_outbox_batch_event_seq_uq")
+      .on(table.batchId, table.event, table.sequence)
+      .where(sql`batch_id IS NOT NULL`),
     check(
       "lesson_email_outbox_event_valid",
-      sql`${table.event} IN ('booking_requested', 'lesson_confirmed', 'request_declined', 'request_expired', 'lesson_canceled', 'lesson_rescheduled')`,
+      sql`${table.event} IN ('booking_requested', 'lesson_confirmed', 'request_declined', 'request_expired', 'lesson_canceled', 'lesson_rescheduled', 'batch_booked', 'batch_approved', 'batch_canceled')`,
     ),
     check(
       "lesson_email_outbox_status_valid",
@@ -960,6 +1042,13 @@ export const lessonEmailOutbox = pgTable(
       "lesson_email_outbox_claim_pair",
       sql`(${table.status} = 'sending') = (${table.claimedUntil} IS NOT NULL)`,
     ),
+    // Every row is scoped to exactly one of a lesson or a batch — never both,
+    // never neither. See ADR 030.
+    check(
+      "lesson_email_outbox_scope_exactly_one",
+      sql`(CASE WHEN ${table.lessonId} IS NOT NULL THEN 1 ELSE 0 END)
+        + (CASE WHEN ${table.batchId} IS NOT NULL THEN 1 ELSE 0 END) = 1`,
+    ),
     // Partial index on (next_attempt_at) for the drain's hot path. Includes
     // 'sending' because an expired-claim row is a drain candidate.
     index("lesson_email_outbox_drain_idx")
@@ -967,6 +1056,8 @@ export const lessonEmailOutbox = pgTable(
       .where(sql`status IN ('pending', 'failed', 'sending')`),
     // Debugging: the full timeline of emails for one lesson.
     index("lesson_email_outbox_lesson_created_idx").on(table.lessonId, table.createdAt.desc()),
+    // Same debug use for batch rows.
+    index("lesson_email_outbox_batch_created_idx").on(table.batchId, table.createdAt.desc()),
   ],
 ).enableRLS();
 

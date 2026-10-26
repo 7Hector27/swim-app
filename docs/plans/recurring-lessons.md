@@ -1,6 +1,6 @@
 # Plan: Recurring lessons and multi-lesson batch booking
 
-**Status:** Planning. Blocked on the open questions below (Jason to answer).
+**Status:** **Shelved.** Superseded by [docs/plans/batch-booking.md](./batch-booking.md) and [ADR 030 — Parent multi-lesson batch booking](../decisions/030-parent-batch-booking.md). "Weekly repeat for N weeks" ships as a batch mode, not as a continuous `lesson_series` rule — no cron extension, no `generated_through_date`, no this-and-future, nothing beyond the booking window. Keep this file for reference if a true open-ended series rule is ever needed.
 **Replaces:** The "PR 9 — Recurring lessons (TBD)" stub in `docs/plans/phase-2-booking.md`.
 
 ---

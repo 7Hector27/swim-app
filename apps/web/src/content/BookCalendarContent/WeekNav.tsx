@@ -8,9 +8,17 @@ interface Props {
   onNext: () => void;
   onToday: () => void;
   todayStr: string;
+  disableNext?: boolean;
 }
 
-export default function WeekNav({ mondayStr, onPrev, onNext, onToday, todayStr }: Props) {
+export default function WeekNav({
+  mondayStr,
+  onPrev,
+  onNext,
+  onToday,
+  todayStr,
+  disableNext = false,
+}: Props) {
   const sundayStr = addDaysToDateStr(mondayStr, 6);
   const todayMonday = getMondayOfWeek(todayStr);
   const isCurrentWeek = mondayStr === todayMonday;
@@ -21,7 +29,8 @@ export default function WeekNav({ mondayStr, onPrev, onNext, onToday, todayStr }
         type="button"
         onClick={onPrev}
         aria-label="Previous week"
-        className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-button border border-border text-text hover:bg-surface-soft transition-colors duration-150"
+        disabled={isCurrentWeek}
+        className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-button border border-border text-text hover:bg-surface-soft transition-colors duration-150 disabled:opacity-40 disabled:cursor-default disabled:hover:bg-transparent"
       >
         ‹
       </button>
@@ -29,7 +38,8 @@ export default function WeekNav({ mondayStr, onPrev, onNext, onToday, todayStr }
         type="button"
         onClick={onNext}
         aria-label="Next week"
-        className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-button border border-border text-text hover:bg-surface-soft transition-colors duration-150"
+        disabled={disableNext}
+        className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-button border border-border text-text hover:bg-surface-soft transition-colors duration-150 disabled:opacity-40 disabled:cursor-default disabled:hover:bg-transparent"
       >
         ›
       </button>

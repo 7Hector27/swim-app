@@ -9,6 +9,19 @@ interface Props {
   gridRows: string[];
   durationMinutes: 30 | 45 | 60;
   selectedStartsAt: string | null;
+  // Set of pick starts (used for pick-head detection) and the derived
+  // within-span set for full-span highlighting (a 45-min pick covers 3
+  // adjacent 15-min cells).
+  pickStartsSet?: Set<string>;
+  pickSpanSet?: Set<string>;
+  // Generated-but-not-committed startsAt strings in Recurring mode.
+  plannedStartsAtSet?: Set<string>;
+  // Slot startsAt strings the server's preview has flagged, mapped to the
+  // reason copy to show on hover + screen readers.
+  flagReasonByStart?: Map<string, string>;
+  // Slots not currently picked but blocked by one of the parent's picks
+  // (overlap or daily-cap). Rendered dim + non-interactive.
+  takenByPicksSet?: Set<string>;
   todayStr: string;
   onSlotClick: (slot: { startsAt: string; state: string }) => void;
 }
@@ -40,6 +53,11 @@ export default function DayColumn({
   gridRows,
   durationMinutes,
   selectedStartsAt,
+  pickStartsSet,
+  pickSpanSet,
+  plannedStartsAtSet,
+  flagReasonByStart,
+  takenByPicksSet,
   todayStr,
   onSlotClick,
 }: Props) {
@@ -78,10 +96,29 @@ export default function DayColumn({
         <div className="flex flex-col gap-[2px] pt-[2px]">
           {gridRows.map((rowHHMM) => {
             const slot = slotsByHHMM.get(rowHHMM) ?? null;
-            const isYourPick =
+            const isYourPickFromSingle =
               selectedStartsAt !== null &&
               slot !== null &&
               isSlotInSelection(slot.startsAt, selectedStartsAt, durationMinutes);
+            const isYourPickFromSpan =
+              slot !== null && (pickSpanSet?.has(slot.startsAt) ?? false);
+            const isYourPick = isYourPickFromSingle || isYourPickFromSpan;
+            const isPlanned =
+              slot !== null && !isYourPick &&
+              (plannedStartsAtSet?.has(slot.startsAt) ?? false);
+            const isPickHead =
+              slot !== null && (pickStartsSet?.has(slot.startsAt) ?? false);
+            // A flag applies to the pick's HEAD cell, not every within-span
+            // cell. Looking it up on the head keeps the "red" visual to one
+            // cell per pick, which matches how the reason appears in Review.
+            const flagReason =
+              slot !== null && isPickHead
+                ? flagReasonByStart?.get(slot.startsAt)
+                : undefined;
+            const isFlagged = flagReason !== undefined;
+            const isTakenByPicks =
+              slot !== null && !isYourPick && !isPlanned && !isFlagged &&
+              (takenByPicksSet?.has(slot.startsAt) ?? false);
 
             return (
               <SlotCell
@@ -90,6 +127,10 @@ export default function DayColumn({
                 rowHHMM={rowHHMM}
                 dayDate={day.date}
                 isYourPick={isYourPick}
+                isPlanned={isPlanned}
+                isFlagged={isFlagged}
+                {...(flagReason !== undefined && { flagReason })}
+                isTakenByPicks={isTakenByPicks}
                 durationMinutes={durationMinutes}
                 onSlotClick={onSlotClick}
               />

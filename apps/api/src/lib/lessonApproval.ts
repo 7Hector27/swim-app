@@ -42,3 +42,21 @@ export function chargeLessonComplete(_lessonId: string): void {}
 
 // Stub — wired in PR 7.
 export function notifyCoachOfChange(_lessonId: string): void {}
+
+// Batch-scoped coach notifications (ADR 030). The single-lesson stubs fire
+// per lesson; the inbox-noise argument that drives one-email-per-batch on
+// the parent side applies to the coach's channel too, so these fire exactly
+// once per batch write with a summary payload. Still stubs — the hook sites
+// are in place so later wiring is a one-liner.
+export function notifyBatchBookingCreated(
+  _batchId: string,
+  _summary: { confirmedCount: number; pendingCount: number },
+): void {}
+
+export type BatchChangeKind = "canceled_remaining";
+
+export function notifyCoachOfBatchChange(
+  _batchId: string,
+  _change: BatchChangeKind,
+  _summary: { lessonCount: number },
+): void {}

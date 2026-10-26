@@ -37,6 +37,8 @@ const baseLesson = {
   movedAt: null,
   previousStartsAt: null,
   createdAt: "2026-06-10T09:00:00-07:00",
+  batchId: null,
+  batchMode: null,
 };
 
 describe("BookingConfirmDialog", () => {

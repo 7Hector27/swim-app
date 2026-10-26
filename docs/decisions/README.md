@@ -25,3 +25,4 @@
 | [023](023-leaderboard-eligibility-and-scoring-rules.md) | Leaderboard eligibility and scoring rules (draft — confirm with Jason) |
 | [028](028-parent-booking-emails.md) | Parent booking emails via transactional outbox |
 | [029](029-coach-booking.md) | Coach booking on behalf of a family |
+| [030](030-parent-batch-booking.md) | Parent multi-lesson batch booking (manual + weekly repeat) |

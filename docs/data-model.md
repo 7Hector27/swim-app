@@ -110,14 +110,15 @@ RLS is enabled. Policies TBD.
 
 ### `lesson_email_outbox`
 
-Transactional outbox for parent-facing booking emails. One row per state transition per lesson, written inside the same `db.transaction()` as the lesson change (CLAUDE.md's audit-log rule). Drained by the post-commit microtask sender and the `POST /internal/cron/tick` drain. See ADR 028.
+Transactional outbox for parent-facing booking emails. One row per state transition — per lesson for `lesson_*`/`booking_*`/`request_*` events, per batch for the three `batch_*` events (added in migration 0055 per ADR 030). Written inside the same `db.transaction()` as the lesson or batch change (CLAUDE.md's audit-log rule). Drained by the post-commit microtask sender and the `POST /internal/cron/tick` drain. See ADR 028 and ADR 030.
 
 | Column | Type | Nullable | Default | Notes |
 |---|---|---|---|---|
 | `id` | `uuid` | no | `gen_random_uuid()` | Primary key |
-| `lesson_id` | `uuid` | no | — | FK → `lessons.id` (`ON DELETE RESTRICT`). |
-| `event` | `text` | no | — | CHECK IN (`booking_requested`, `lesson_confirmed`, `request_declined`, `request_expired`, `lesson_canceled`, `lesson_rescheduled`). |
-| `sequence` | `integer` | no | — | Per-(`lesson_id`, `event`) occurrence counter. The `(lesson_id, event, sequence)` triple is the natural dedup key. |
+| `lesson_id` | `uuid` | yes | — | FK → `lessons.id` (`ON DELETE RESTRICT`). Non-null for per-lesson events; null for batch events. Became nullable in migration 0055. |
+| `batch_id` | `uuid` | yes | — | FK → `booking_batches.id` (`ON DELETE RESTRICT`). Non-null for batch events; null for per-lesson events. Added in migration 0055. The `lesson_email_outbox_scope_exactly_one` CHECK enforces that each row sets exactly one of `lesson_id` / `batch_id`. |
+| `event` | `text` | no | — | CHECK IN (`booking_requested`, `lesson_confirmed`, `request_declined`, `request_expired`, `lesson_canceled`, `lesson_rescheduled`, `batch_booked`, `batch_approved`, `batch_canceled`). |
+| `sequence` | `integer` | no | — | Per-(`lesson_id`, `event`) counter for per-lesson rows and per-(`batch_id`, `event`) counter for batch rows. Two partial unique indexes enforce the dedup separately in each namespace. |
 | `recipient_profile_ids` | `uuid[]` | no | — | Snapshot of household owner + manager profile ids at write time. Email verification re-checked at send time. |
 | `ics_method` | `text` | yes | — | `REQUEST`, `CANCEL`, or NULL. NULL means "no `.ics` attached" — used for `booking_requested` and decline/expire from pending. Paired with `ics_sequence` (both or neither). |
 | `ics_sequence` | `integer` | yes | — | Snapshot of `lessons.calendar_sequence` at write time. First REQUEST ships 0. |
@@ -134,13 +135,43 @@ Transactional outbox for parent-facing booking emails. One row per state transit
 | `updated_at` | `timestamptz` | no | `now()` | Auto-updated |
 
 Constraints:
-- `UNIQUE (lesson_id, event, sequence)` — dedup key.
-- CHECK: `(ics_method IS NULL) = (ics_sequence IS NULL)`.
+- Partial `UNIQUE (lesson_id, event, sequence) WHERE lesson_id IS NOT NULL` — dedup key for per-lesson rows (migration 0055).
+- Partial `UNIQUE (batch_id, event, sequence) WHERE batch_id IS NOT NULL` — dedup key for batch rows (migration 0055).
+- CHECK `lesson_email_outbox_scope_exactly_one`: exactly one of `lesson_id` / `batch_id` is non-null (migration 0055).
+- CHECK: `(ics_method IS NULL) = (ics_sequence IS NULL)`. For batch rows both are NULL; the renderer reads per-lesson sequences from `payload.lessons[]` instead.
 - CHECK: `(status = 'sending') = (claimed_until IS NOT NULL)`.
 
 Indexes:
 - Partial index on `(next_attempt_at)` `WHERE status IN ('pending','failed','sending')` — the drain hot path.
-- `(lesson_id, created_at DESC)` for debugging.
+- `(lesson_id, created_at DESC)` for debugging per-lesson timelines.
+- `(batch_id, created_at DESC)` for debugging per-batch timelines (migration 0055).
+
+RLS is enabled. Policies TBD.
+
+---
+
+### `booking_batches`
+
+One row per batch-booked submission (parent-created via `POST /lessons/batch`). The row is immutable after insert; member lessons' lifecycle (reschedule, cancel, individual approval) is independent of the batch. `lessons.batch_id` links each generated lesson back to the batch. See ADR 030 and `docs/plans/batch-booking.md`.
+
+| Column | Type | Nullable | Default | Notes |
+|---|---|---|---|---|
+| `id` | `uuid` | no | `gen_random_uuid()` | Primary key |
+| `household_id` | `uuid` | no | — | FK → `households.id` (`ON DELETE RESTRICT`). |
+| `created_by` | `uuid` | no | — | FK → `profiles.id`. The parent who submitted the batch. |
+| `mode` | `text` | no | — | CHECK IN (`manual`, `weekly`). |
+| `weekly_pattern` | `jsonb` | yes | — | Non-empty array of `{ weekday, timeOfDay, durationMinutes }`. Non-null only when `mode='weekly'`. Each entry's length is independent so a batch can mix 30, 45, and 60-minute lessons. Validated against `StoredWeeklyPatternSchema` (shared Zod) on write and read. Added in migration 0056; replaces the aligned `weekly_pattern_weekdays` and `weekly_pattern_times` arrays that migration 0055 introduced. |
+| `weekly_start_date` | `date` | yes | — | LA calendar date of the first candidate week. Non-null only when `mode='weekly'`. |
+| `weekly_weeks` | `integer` | yes | — | Number of weeks the parent requested. Non-null only when `mode='weekly'`. |
+| `created_at` | `timestamptz` | no | `now()` | |
+| `updated_at` | `timestamptz` | no | `now()` | Auto-updated. Reserved; nothing writes to it in v1. |
+
+Constraints:
+- CHECK `booking_batches_mode_valid`: `mode IN ('manual', 'weekly')`.
+- CHECK `booking_batches_weekly_fields_pair`: when `mode='weekly'`, `weekly_pattern` is non-null, `jsonb_typeof` is `array`, `jsonb_array_length >= 1`, and `weekly_start_date` + `weekly_weeks` are non-null. When `mode='manual'`, all three are null.
+
+Indexes:
+- `(household_id, created_at DESC)` for dashboard listing.
 
 RLS is enabled. Policies TBD.
 
@@ -436,6 +467,7 @@ One row per lesson booking request.
 | `calendar_sync_attempts` | `integer` | no | `0` | Incremented on every attempt (success or failure). |
 | `calendar_sequence` | `integer` | no | `0` | **Next** `.ics` `SEQUENCE:` value to issue for this lesson, per RFC 5545. Snapshot into `lesson_email_outbox.ics_sequence` and then incremented inside the same lesson transaction. First `REQUEST` ships `SEQUENCE:0`. See ADR 028. |
 | `calendar_invite_sent_at` | `timestamptz` | yes | — | Set to `now()` the first time an outbox row with `ics_method='REQUEST'` is written. Lets the cancel/decline/expire paths decide whether a `METHOD:CANCEL` `.ics` is required (prior invite went out) or no `.ics` (never confirmed). Never cleared. |
+| `batch_id` | `uuid` | yes | — | FK → `booking_batches.id` (`ON DELETE RESTRICT`). Non-null when this lesson was written through `POST /lessons/batch`; null for single-lesson parent bookings and all coach bookings. Immutable after insert in v1. Added in migration 0055. See ADR 030. |
 | `created_at` | `timestamptz` | no | `now()` | |
 | `updated_at` | `timestamptz` | no | `now()` | Auto-updated |
 

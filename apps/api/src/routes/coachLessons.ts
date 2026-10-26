@@ -1,6 +1,7 @@
 import { Router } from "express";
-import { and, asc, desc, eq, inArray, lt, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, lt, max, or, sql } from "drizzle-orm";
 import type {
+  CoachBatchApproveResponse,
   CoachBookingWarnings,
   CoachCreateLessonBody,
   CoachCreateLessonWarningsResponse,
@@ -36,11 +37,13 @@ import {
   availabilityOverrides,
   availabilitySeasons,
   blockedTimes,
+  bookingBatches,
   clubs,
   coachNotes,
   householdAuditLog,
   householdMembers,
   households,
+  lessonEmailOutbox,
   lessonLocations,
   lessonSwimmers,
   lessons,
@@ -49,10 +52,12 @@ import {
   swimmerClubs,
   travelBufferOverrides,
 } from "../db/schema";
+import type { BatchEmailLesson, BatchEmailPayload } from "../services/emails/batchTypes";
 import { validate } from "../middleware/validate";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { mapConfigRow, mapSeasonRow, mapOverrideRow } from "../lib/availabilityMappers";
 import { computeCoachBookingWarnings } from "../lib/coachBookingWarnings";
+import { nowUtc as getNowUtc } from "../lib/clock";
 import { notifyBookingCreated, notifyLessonApproved, notifyLessonDeclined } from "../lib/lessonApproval";
 import { syncLessonToGoogle } from "../services/googleCalendarSync";
 import { enqueueLessonEmail } from "../services/emails/outbox";
@@ -276,7 +281,7 @@ coachLessonsRouter.get(
           seasons,
           overrides,
           gcalBusyTimes: [],
-          nowUtc: new Date(),
+          nowUtc: getNowUtc(),
         });
         allSlots.push(...poolSlots);
       }
@@ -516,8 +521,26 @@ coachLessonsRouter.get(
     }
 
     const lessonRows = await db
-      .select()
+      .select({
+        id: lessons.id,
+        householdId: lessons.householdId,
+        locationId: lessons.locationId,
+        startsAt: lessons.startsAt,
+        durationMinutes: lessons.durationMinutes,
+        type: lessons.type,
+        status: lessons.status,
+        expiresAt: lessons.expiresAt,
+        approvedAt: lessons.approvedAt,
+        declinedAt: lessons.declinedAt,
+        declineReason: lessons.declineReason,
+        movedAt: lessons.movedAt,
+        previousStartsAt: lessons.previousStartsAt,
+        createdAt: lessons.createdAt,
+        batchId: lessons.batchId,
+        batchMode: bookingBatches.mode,
+      })
       .from(lessons)
+      .leftJoin(bookingBatches, eq(lessons.batchId, bookingBatches.id))
       .where(filters.length > 0 ? and(...filters) : undefined)
       .orderBy(asc(lessons.startsAt));
 
@@ -560,6 +583,9 @@ coachLessonsRouter.get(
       movedAt: row.movedAt?.toISOString() ?? null,
       previousStartsAt: row.previousStartsAt?.toISOString() ?? null,
       createdAt: row.createdAt.toISOString(),
+      batchId: row.batchId,
+      batchMode:
+        row.batchMode === "manual" || row.batchMode === "weekly" ? row.batchMode : null,
     }));
 
     res.json(body);
@@ -651,6 +677,217 @@ coachLessonsRouter.patch(
     if (approveOutboxId) {
       queueMicrotask(() => { void sendLessonEmailOutboxRow(approveOutboxId); });
     }
+  }),
+);
+
+// ── PATCH /coach/lessons/batch/:batchId/approve-pending ──────────────────────
+// Flip every pending lesson in a batch to approved in one transaction, snapshot
+// then bump each lesson's calendar_sequence, write one audit row and one
+// batch_approved outbox row covering only the newly approved lessons. 409
+// no_pending_lessons when nothing is pending. See ADR 030.
+
+const BatchIdParamsSchema = z.object({ batchId: z.string().uuid() });
+
+coachLessonsRouter.patch(
+  "/lessons/batch/:batchId/approve-pending",
+  validate({ params: BatchIdParamsSchema }),
+  asyncHandler(async (req, res) => {
+    const { batchId } = req.params as { batchId: string };
+    const coachProfileId = req.profile.id;
+
+    // Resolve the batch row + its household (used to fetch recipients,
+    // location, and swimmer names for the outbox payload).
+    const batchRows = await db
+      .select()
+      .from(bookingBatches)
+      .where(eq(bookingBatches.id, batchId))
+      .limit(1);
+    const batch = batchRows[0];
+    if (!batch) {
+      res.status(404).json({ error: "Batch not found" });
+      return;
+    }
+
+    const result = await db.transaction(async (tx) => {
+      // Lock every pending lesson in the batch so a concurrent per-lesson
+      // approve/decline cannot flip rows underneath us.
+      const pendingBefore = await tx
+        .select()
+        .from(lessons)
+        .where(and(eq(lessons.batchId, batchId), eq(lessons.status, "pending")))
+        .for("update");
+
+      if (pendingBefore.length === 0) return { kind: "none" as const };
+
+      const now = getNowUtc();
+      const pendingIds = pendingBefore.map((row) => row.id);
+
+      // Snapshot pre-bump calendar_sequence per lesson.
+      const sequenceByLesson = new Map<string, number>();
+      for (const lesson of pendingBefore) {
+        sequenceByLesson.set(lesson.id, lesson.calendarSequence);
+      }
+
+      await tx
+        .update(lessons)
+        .set({
+          status: "approved",
+          approvedAt: now,
+          approvedBy: coachProfileId,
+          expiresAt: null,
+          calendarSequence: sql`${lessons.calendarSequence} + 1` as unknown as number,
+          calendarInviteSentAt: now,
+        })
+        .where(inArray(lessons.id, pendingIds));
+
+      // Approved rows after the bump — same column set the per-lesson route
+      // returns. We don't re-SELECT because we have everything we need.
+      const approvedLessons = pendingBefore.map((lesson) => ({
+        ...lesson,
+        status: "approved" as const,
+        approvedAt: now,
+        approvedBy: coachProfileId,
+        expiresAt: null,
+        calendarSequence: lesson.calendarSequence + 1,
+        calendarInviteSentAt: now,
+      }));
+
+      // Load the batch's household context for the outbox payload.
+      const recipientRows = await tx
+        .select({ profileId: householdMembers.profileId })
+        .from(householdMembers)
+        .where(
+          and(
+            eq(householdMembers.householdId, batch.householdId),
+            inArray(householdMembers.role, ["owner", "manager"]),
+          ),
+        );
+      const recipientProfileIds = recipientRows.map((row) => row.profileId);
+
+      // Every batch lesson shares the same swimmer set + pool. Use the first
+      // approved lesson's lesson_swimmers rows as the batch-wide swimmer list.
+      const sampleLessonId = approvedLessons[0]!.id;
+      const swimmerRows = await tx
+        .select({ firstName: swimmers.firstName })
+        .from(lessonSwimmers)
+        .innerJoin(swimmers, eq(lessonSwimmers.swimmerId, swimmers.id))
+        .where(eq(lessonSwimmers.lessonId, sampleLessonId))
+        .orderBy(swimmers.firstName);
+      const swimmerFirstNames = swimmerRows.map((row) => row.firstName);
+
+      const locationId = approvedLessons[0]!.locationId;
+      const locationRows = await tx
+        .select({
+          id: lessonLocations.id,
+          name: lessonLocations.name,
+          address: lessonLocations.address,
+          city: lessonLocations.city,
+          state: lessonLocations.state,
+          zip: lessonLocations.zip,
+          householdId: lessonLocations.householdId,
+        })
+        .from(lessonLocations)
+        .where(eq(lessonLocations.id, locationId))
+        .limit(1);
+      const location = locationRows[0]!;
+
+      const payloadLessons: BatchEmailLesson[] = approvedLessons.map((lesson) => ({
+        lessonId: lesson.id,
+        startsAtUtc: lesson.startsAt.toISOString(),
+        durationMinutes: lesson.durationMinutes as 30 | 45 | 60,
+        status: "approved" as const,
+        // The sender's filter compares current calendar_sequence against
+        // snapshot + 1 (ADR 028 and 030). We bumped by one above, so the
+        // pre-bump value is what the payload holds.
+        calendarSequence: sequenceByLesson.get(lesson.id)!,
+      }));
+
+      const payload: BatchEmailPayload = {
+        batchId,
+        mode: batch.mode as "manual" | "weekly",
+        ...(batch.mode === "weekly" && batch.weeklyPattern && batch.weeklyStartDate && batch.weeklyWeeks !== null
+          ? {
+              weekly: {
+                pattern: batch.weeklyPattern,
+                startDate: batch.weeklyStartDate,
+                weeks: batch.weeklyWeeks,
+              },
+            }
+          : {}),
+        location: {
+          id: location.id,
+          name: location.name,
+          address: location.address,
+          city: location.city,
+          state: location.state,
+          zip: location.zip,
+          isHomePool: location.householdId !== null,
+        },
+        swimmerFirstNames,
+        lessons: payloadLessons,
+      };
+
+      // Next (batch_id, event='batch_approved') sequence. Starts at 0.
+      const seqRows = await tx
+        .select({ max: max(lessonEmailOutbox.sequence) })
+        .from(lessonEmailOutbox)
+        .where(
+          and(
+            eq(lessonEmailOutbox.batchId, batchId),
+            eq(lessonEmailOutbox.event, "batch_approved"),
+          ),
+        );
+      const nextSeq = (seqRows[0]?.max ?? -1) + 1;
+
+      const outboxInsert = await tx
+        .insert(lessonEmailOutbox)
+        .values({
+          batchId,
+          lessonId: null,
+          event: "batch_approved",
+          sequence: nextSeq,
+          recipientProfileIds,
+          icsMethod: null,
+          icsSequence: null,
+          payload,
+        })
+        .returning({ id: lessonEmailOutbox.id });
+      const outboxId = outboxInsert[0]!.id;
+
+      await tx.insert(householdAuditLog).values({
+        householdId: batch.householdId,
+        actorId: coachProfileId,
+        action: "lesson_batch_approved",
+        payload: {
+          batchId,
+          approvedLessonIds: approvedLessons.map((lesson) => lesson.id),
+        },
+      });
+
+      return {
+        kind: "approved" as const,
+        approvedIds: approvedLessons.map((lesson) => lesson.id),
+        outboxId,
+      };
+    });
+
+    if (result.kind === "none") {
+      res.status(409).json({ error: "no_pending_lessons" });
+      return;
+    }
+
+    for (const lessonId of result.approvedIds) {
+      notifyLessonApproved(lessonId);
+      queueMicrotask(() => { void syncLessonToGoogle(lessonId); });
+    }
+    queueMicrotask(() => { void sendLessonEmailOutboxRow(result.outboxId); });
+
+    const body: CoachBatchApproveResponse = {
+      batchId,
+      approvedLessonIds: result.approvedIds,
+      approvedCount: result.approvedIds.length,
+    };
+    res.json(body);
   }),
 );
 
@@ -920,7 +1157,7 @@ coachLessonsRouter.post(
     const body = req.body as CoachCreateLessonBody;
     const coachProfileId = req.profile.id;
     const startsAt = new Date(body.startsAt);
-    const nowUtc = new Date();
+    const nowUtc = getNowUtc();
 
     // ── Hard reject: start in the past ────────────────────────────────────────
     // Not acknowledgeable. Lessons that would already be underway or over

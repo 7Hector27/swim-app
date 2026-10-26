@@ -37,6 +37,38 @@ export async function approveLessonAction(
   }
 }
 
+export async function approveBatchPendingAction(
+  batchId: string,
+  _prev: CoachLessonActionState,
+  _formData: FormData,
+): Promise<CoachLessonActionState> {
+  const supabase = await createClient();
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) return { status: "error", message: "Session expired. Please sign in again." };
+  try {
+    const response = await fetch(
+      `${process.env.NEXT_PUBLIC_API_URL}/coach/lessons/batch/${batchId}/approve-pending`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({}),
+      },
+    );
+    if (response.ok) {
+      revalidatePath("/coach/schedule");
+      revalidatePath("/coach");
+      return { status: "success" };
+    }
+    if (response.status === 409) {
+      return { status: "error", message: "No pending lessons left in this batch." };
+    }
+    return { status: "error", message: "Could not approve the batch. Please try again." };
+  } catch {
+    return { status: "error", message: "Could not reach the server. Please try again." };
+  }
+}
+
 export async function declineLessonAction(
   lessonId: string,
   _prev: CoachLessonActionState,

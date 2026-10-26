@@ -681,6 +681,7 @@ describe("BookCalendarContent", () => {
     await act(async () => {
       render(
         <BookCalendarContent
+          householdId="household-1"
           locations={LOCATIONS}
           swimmers={[]}
           isViewer={false}
@@ -696,6 +697,7 @@ describe("BookCalendarContent", () => {
     await act(async () => {
       render(
         <BookCalendarContent
+          householdId="household-1"
           locations={LOCATIONS}
           swimmers={SWIMMERS}
           isViewer={true}
@@ -710,6 +712,7 @@ describe("BookCalendarContent", () => {
   it("shows no-pools message when locations=[]", () => {
     render(
       <BookCalendarContent
+        householdId="household-1"
         locations={[]}
         swimmers={SWIMMERS}
         isViewer={false}

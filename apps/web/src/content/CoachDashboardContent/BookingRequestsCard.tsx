@@ -1,14 +1,17 @@
 "use client";
 
-import { useState, useEffect, useActionState } from "react";
+import { useState, useEffect, useActionState, useMemo } from "react";
 
 import type { LessonResponse } from "@swim-app/shared";
 
 import {
+  approveBatchPendingAction,
   approveLessonAction,
   declineLessonAction,
   type CoachLessonActionState,
 } from "@/components/CoachLessonRow/actions";
+import { buildBatchGroupSummary } from "./batchGroupSummary";
+import { buildGroups } from "./batchGroups";
 
 interface Props {
   initialLessons: LessonResponse[];
@@ -16,6 +19,8 @@ interface Props {
 
 export default function BookingRequestsCard({ initialLessons }: Props) {
   const [lessons, setLessons] = useState(initialLessons);
+
+  const groups = useMemo(() => buildGroups(lessons), [lessons]);
 
   if (lessons.length === 0) {
     return (
@@ -30,14 +35,126 @@ export default function BookingRequestsCard({ initialLessons }: Props) {
     <div className="rounded-card border border-border p-5">
       <h3 className="text-base font-semibold text-heading mb-4">Booking requests</h3>
       <div className="flex flex-col divide-y divide-border">
-        {lessons.map((lesson) => (
-          <BookingRequestRow
-            key={lesson.id}
-            lesson={lesson}
-            onDone={(id) => setLessons((prev) => prev.filter((lessonItem) => lessonItem.id !== id))}
-          />
-        ))}
+        {groups.map((group) =>
+          group.kind === "solo" ? (
+            <BookingRequestRow
+              key={group.lesson.id}
+              lesson={group.lesson}
+              onDone={(id) =>
+                setLessons((prev) => prev.filter((lesson) => lesson.id !== id))
+              }
+            />
+          ) : (
+            <BatchGroup
+              key={group.batchId}
+              batchId={group.batchId}
+              batchMode={group.batchMode}
+              lessons={group.lessons}
+              onLessonDone={(id) =>
+                setLessons((prev) => prev.filter((lesson) => lesson.id !== id))
+              }
+              onBatchApproved={(ids) =>
+                setLessons((prev) => prev.filter((lesson) => !ids.has(lesson.id)))
+              }
+            />
+          ),
+        )}
       </div>
+    </div>
+  );
+}
+
+function BatchGroup({
+  batchId,
+  batchMode,
+  lessons,
+  onLessonDone,
+  onBatchApproved,
+}: {
+  batchId: string;
+  batchMode: "manual" | "weekly";
+  lessons: LessonResponse[];
+  onLessonDone: (id: string) => void;
+  onBatchApproved: (ids: Set<string>) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  const sorted = useMemo(
+    () => [...lessons].sort((a, b) => a.startsAt.localeCompare(b.startsAt)),
+    [lessons],
+  );
+
+  const householdLabel = useMemo(() => {
+    const names = new Set<string>();
+    for (const lesson of sorted) {
+      for (const swimmer of lesson.swimmers) {
+        names.add(`${swimmer.firstName} ${swimmer.lastName[0] ?? ""}.`.trim());
+      }
+    }
+    return [...names].join(", ") || "Household";
+  }, [sorted]);
+
+  const summary = useMemo(
+    () => buildBatchGroupSummary({ lessons: sorted, mode: batchMode }),
+    [sorted, batchMode],
+  );
+
+  const boundApproveBatch = approveBatchPendingAction.bind(null, batchId);
+  const [approveState, approveFormAction, isApproving] = useActionState(
+    boundApproveBatch,
+    { status: "idle" } as CoachLessonActionState,
+  );
+
+  useEffect(() => {
+    if (approveState.status === "success") {
+      onBatchApproved(new Set(sorted.map((lesson) => lesson.id)));
+    }
+  }, [approveState.status, sorted, onBatchApproved]);
+
+  return (
+    <div className="flex flex-col gap-3 py-4 first:pt-0 last:pb-0">
+      <div>
+        <p className="text-sm font-semibold text-text">{householdLabel}</p>
+        <p className="text-xs text-text-secondary mt-0.5">{summary}</p>
+      </div>
+
+      {approveState.status === "error" && (
+        <p role="alert" className="text-xs text-danger">
+          {approveState.message}
+        </p>
+      )}
+
+      <div className="flex gap-2">
+        <form action={approveFormAction} className="flex-1">
+          <button
+            type="submit"
+            disabled={isApproving}
+            className="w-full rounded-button bg-button-primary-background text-button-primary-text font-semibold text-xs h-9 transition-opacity hover:opacity-90 active:scale-[0.97] disabled:opacity-50"
+          >
+            {isApproving ? "Approving…" : "Approve all"}
+          </button>
+        </form>
+        <button
+          type="button"
+          onClick={() => setExpanded((prev) => !prev)}
+          aria-expanded={expanded}
+          className="flex-1 rounded-button border border-border text-text-secondary font-semibold text-xs h-9 hover:bg-surface-soft transition-colors duration-150"
+        >
+          {expanded ? "Hide lessons" : `Show ${sorted.length} lessons`}
+        </button>
+      </div>
+
+      {expanded && (
+        <div className="flex flex-col divide-y divide-border border-t border-border pt-2">
+          {sorted.map((lesson) => (
+            <BookingRequestRow
+              key={lesson.id}
+              lesson={lesson}
+              onDone={onLessonDone}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -76,7 +193,7 @@ function BookingRequestRow({
         : null;
 
   const swimmerLabel = lesson.swimmers
-    .map((swimmer) => `${swimmer.firstName} ${swimmer.lastName[0]}.`)
+    .map((swimmer) => `${swimmer.firstName} ${swimmer.lastName[0] ?? ""}.`.trim())
     .join(", ");
 
   const start = new Date(lesson.startsAt);
@@ -98,7 +215,7 @@ function BookingRequestRow({
     minute: "2-digit",
   }).format(end);
 
-  const timeLabel = `${laFmt(start)} – ${endTimeFmt}`;
+  const timeLabel = `${laFmt(start)} - ${endTimeFmt}`;
 
   return (
     <div className="flex flex-col gap-3 py-4 first:pt-0 last:pb-0">
