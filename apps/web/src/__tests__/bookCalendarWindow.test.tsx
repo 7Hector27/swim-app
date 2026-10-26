@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 import type { ParentSwimmer, WeekAvailabilityResponse } from "@swim-app/shared";
 
@@ -32,8 +32,9 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
 }));
 
-const { mockFetchRange, mockFirstAvail, mockPreview } = vi.hoisted(() => ({
+const { mockFetchRange, mockFetchMonthRange, mockFirstAvail, mockPreview } = vi.hoisted(() => ({
   mockFetchRange: vi.fn(),
+  mockFetchMonthRange: vi.fn(),
   mockFirstAvail: vi.fn(),
   mockPreview: vi.fn().mockResolvedValue({
     kind: "ok",
@@ -43,7 +44,7 @@ const { mockFetchRange, mockFirstAvail, mockPreview } = vi.hoisted(() => ({
 
 vi.mock("../content/BookCalendarContent/actions", () => ({
   fetchRangeAction: mockFetchRange,
-  fetchMonthRangeAction: vi.fn(),
+  fetchMonthRangeAction: mockFetchMonthRange,
   findFirstAvailableDayAction: mockFirstAvail,
   createBookingAction: vi.fn(),
   previewBatchAction: mockPreview,
@@ -231,6 +232,57 @@ describe("Booking window — week arrow", () => {
   });
 });
 
+describe("Previous-week arrow", () => {
+  it("is disabled when the calendar is on the current LA week and enabled a week later", async () => {
+    // 2026-11-02T18:00:00Z is Mon Nov 2 10:00 LA. Today's monday is the
+    // same day, so initial currentDate's monday === today's monday.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-02T18:00:00Z"));
+
+    await renderCalendar(WEEK_NOV_02);
+
+    const prevBtn = screen.getByLabelText(/Previous week/i) as HTMLButtonElement;
+    expect(prevBtn.disabled).toBe(true);
+
+    // Clicking Next week moves to a future monday. The prev arrow then
+    // enables, confirming the disable is scoped to the current week only.
+    const nextBtn = screen.getByLabelText(/Next week/i) as HTMLButtonElement;
+    await act(async () => {
+      fireEvent.click(nextBtn);
+    });
+    await waitFor(() => {
+      expect(prevBtn.disabled).toBe(false);
+    });
+  });
+
+  it("clamps a deep link pointing at a past week to the current week on mount", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-02T18:00:00Z"));
+
+    mockFirstAvail.mockResolvedValue({
+      firstAvailableDate: "2026-11-02",
+      weekData: WEEK_NOV_02,
+    });
+    mockFetchRange.mockResolvedValue(WEEK_NOV_02);
+    render(
+      <BookCalendarContent
+        householdId={HOUSEHOLD_ID}
+        locations={locations}
+        swimmers={swimmers}
+        isViewer={false}
+        initialDate="2026-09-21"
+      />,
+    );
+    await screen.findByLabelText(/Previous week/i);
+
+    // Even though initialDate pointed at a past week, the week nav shows
+    // the current (today's) week range.
+    expect(screen.getByText(/Nov 2 \u2013 8, 2026/)).toBeInTheDocument();
+    const prevBtn = screen.getByLabelText(/Previous week/i) as HTMLButtonElement;
+    expect(prevBtn.disabled).toBe(true);
+  });
+});
+
 describe("Booking window — slot past window", () => {
   it("renders a slot one day past the window as 'Not open yet' and non-interactive", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
@@ -275,5 +327,128 @@ describe("Booking window — recurring stepper", () => {
 
     const plusBtn = screen.getByTestId("recurring-weeks-plus") as HTMLButtonElement;
     expect(plusBtn.disabled).toBe(true);
+  });
+});
+
+describe("Month view — Previous-month arrow", () => {
+  it("is disabled on the current LA month and enables after navigating to a future month", async () => {
+    // Today Mon Nov 2 2026, 10:00 LA. 52-week window keeps the next-month
+    // arrow enabled so we can scrub forward and confirm the prev arrow
+    // enables once we leave the current month.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-02T18:00:00Z"));
+
+    const MONTH_NOV: import("@swim-app/shared").MonthAvailabilityResponse = {
+      needsApproval: false,
+      maxDailyLessonMinutes: 240,
+      bookingMaxAdvanceWeeks: 52,
+      days: [
+        {
+          date: "2026-11-02",
+          dayState: "open",
+          openCount: 1,
+          totalCount: 1,
+          teachingWindows: [{ start: "15:00", end: "15:30" }],
+        },
+      ],
+    };
+    mockFetchMonthRange.mockResolvedValue(MONTH_NOV);
+
+    render(
+      <BookCalendarContent
+        householdId={HOUSEHOLD_ID}
+        locations={locations}
+        swimmers={swimmers}
+        isViewer={false}
+        initialView="month"
+      />,
+    );
+    const prevBtn = (await screen.findByLabelText(/Previous month/i)) as HTMLButtonElement;
+    expect(prevBtn.disabled).toBe(true);
+
+    const nextBtn = screen.getByLabelText(/Next month/i) as HTMLButtonElement;
+    expect(nextBtn.disabled).toBe(false);
+    await act(async () => {
+      fireEvent.click(nextBtn);
+    });
+    await waitFor(() => {
+      expect(prevBtn.disabled).toBe(false);
+    });
+  });
+
+  it("clamps a deep link pointing at a past month to the current month on mount", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-02T18:00:00Z"));
+
+    const MONTH_NOV: import("@swim-app/shared").MonthAvailabilityResponse = {
+      needsApproval: false,
+      maxDailyLessonMinutes: 240,
+      bookingMaxAdvanceWeeks: 52,
+      days: [
+        {
+          date: "2026-11-02",
+          dayState: "open",
+          openCount: 1,
+          totalCount: 1,
+          teachingWindows: [{ start: "15:00", end: "15:30" }],
+        },
+      ],
+    };
+    mockFetchMonthRange.mockResolvedValue(MONTH_NOV);
+
+    render(
+      <BookCalendarContent
+        householdId={HOUSEHOLD_ID}
+        locations={locations}
+        swimmers={swimmers}
+        isViewer={false}
+        initialView="month"
+        initialDate="2026-07-15"
+      />,
+    );
+
+    // Even though initialDate pointed at a past month, the header shows
+    // November 2026 and prev is disabled.
+    expect(await screen.findByText(/November 2026/)).toBeInTheDocument();
+    const prevBtn = screen.getByLabelText(/Previous month/i) as HTMLButtonElement;
+    expect(prevBtn.disabled).toBe(true);
+  });
+});
+
+describe("Month view — Next-month arrow", () => {
+  it("is disabled once the next month has no days inside the booking window", async () => {
+    // Today Nov 2 2026, 2-week window → max advance = Nov 16 2026.
+    // Dec 1 2026 > max → every day of December is past the window, so
+    // the next-month arrow is disabled from November.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-02T18:00:00Z"));
+
+    const MONTH_NOV: import("@swim-app/shared").MonthAvailabilityResponse = {
+      needsApproval: false,
+      maxDailyLessonMinutes: 240,
+      bookingMaxAdvanceWeeks: 2,
+      days: [
+        {
+          date: "2026-11-02",
+          dayState: "open",
+          openCount: 1,
+          totalCount: 1,
+          teachingWindows: [{ start: "15:00", end: "15:30" }],
+        },
+      ],
+    };
+    mockFetchMonthRange.mockResolvedValue(MONTH_NOV);
+
+    render(
+      <BookCalendarContent
+        householdId={HOUSEHOLD_ID}
+        locations={locations}
+        swimmers={swimmers}
+        isViewer={false}
+        initialView="month"
+      />,
+    );
+    const nextBtn = (await screen.findByLabelText(/Next month/i)) as HTMLButtonElement;
+    expect(nextBtn.disabled).toBe(true);
   });
 });

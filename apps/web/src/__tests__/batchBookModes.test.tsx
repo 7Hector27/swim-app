@@ -365,11 +365,15 @@ describe("Recurring bottom bar", () => {
     fireEvent.click(screen.getByTestId("mode-recurring"));
     // Mon 3:00 PM
     fireEvent.click(firstSlotButton(/^3:00 PM$/i));
-    expect(screen.getByTestId("recurring-pattern-label").textContent).toMatch(/Mon 3:00 PM/i);
-    // Wed 3:00 PM — find the Wednesday "3:00 PM" button via its aria-label.
+    expect(screen.getByTestId("recurring-pattern-label").textContent).toMatch(
+      /Mon.*3:00 to 3:30 PM.*30 min/i,
+    );
+    // Wed 3:00 PM: find the Wednesday "3:00 PM" button via its aria-label.
     const wedSlot = screen.getByRole("button", { name: /^Wednesday, November 4, 3:00 PM/i });
     fireEvent.click(wedSlot);
-    expect(screen.getByTestId("recurring-pattern-label").textContent).toMatch(/Wed 3:00 PM/i);
+    expect(screen.getByTestId("recurring-pattern-label").textContent).toMatch(
+      /Wed.*3:00 to 3:30 PM.*30 min/i,
+    );
     expect(screen.getByTestId("recurring-weeks-value").textContent).toContain("4 wks");
     // 2 pairs × 4 weeks = 8 lessons × 30 min = 240 min = 4 hr. 1 swimmer × 30 min = $60/each × 8 = $480.
     expect(screen.getByTestId("recurring-total").textContent).toMatch(/8\s*lessons/i);
@@ -410,10 +414,11 @@ describe("Review sheet", () => {
       data: {
         needsApproval: false,
         picks: [
-          { index: 0, startsAt: "2026-11-02T23:00:00.000Z", state: "available" },
+          { index: 0, startsAt: "2026-11-02T23:00:00.000Z", durationMinutes: 30, state: "available" },
           {
             index: 1,
             startsAt: "2026-11-02T23:30:00.000Z",
+            durationMinutes: 30,
             state: "blocked_time",
             reason: "coach_vacation",
             suggestions: [{ startsAt: "2026-11-02T23:45:00.000Z" }],
@@ -434,8 +439,8 @@ describe("Review sheet", () => {
       data: {
         needsApproval: false,
         picks: [
-          { index: 0, startsAt: "2026-11-02T23:00:00.000Z", state: "available" },
-          { index: 1, startsAt: "2026-11-02T23:45:00.000Z", state: "available" },
+          { index: 0, startsAt: "2026-11-02T23:00:00.000Z", durationMinutes: 30, state: "available" },
+          { index: 1, startsAt: "2026-11-02T23:45:00.000Z", durationMinutes: 30, state: "available" },
         ],
       },
     });
@@ -456,8 +461,8 @@ describe("Review sheet", () => {
       data: {
         needsApproval: false,
         picks: [
-          { index: 0, startsAt: "2026-11-02T23:00:00.000Z", state: "available" },
-          { index: 1, startsAt: "2026-11-02T23:30:00.000Z", state: "available" },
+          { index: 0, startsAt: "2026-11-02T23:00:00.000Z", durationMinutes: 30, state: "available" },
+          { index: 1, startsAt: "2026-11-02T23:30:00.000Z", durationMinutes: 30, state: "available" },
         ],
       },
     });
@@ -485,6 +490,251 @@ describe("Review sheet", () => {
     });
     await screen.findByText(/no longer available/i);
     expect((screen.getByTestId("review-book") as HTMLButtonElement).disabled).toBe(true);
+  });
+});
+
+describe("Changing settings keeps the current week", () => {
+  it("navigates three weeks ahead, changes length, stays on that week and refetches it", async () => {
+    await renderCalendar();
+
+    // Jump three weeks forward: Nov 2 → Nov 9 → Nov 16 → Nov 23. Each
+    // click fires fetchRangeAction; the mock resolves to WEEK_DATA, so
+    // the slot grid stays populated and the week label advances.
+    const nextWeek = screen.getByLabelText(/Next week/i);
+    await act(async () => {
+      fireEvent.click(nextWeek);
+    });
+    await act(async () => {
+      fireEvent.click(nextWeek);
+    });
+    await act(async () => {
+      fireEvent.click(nextWeek);
+    });
+    await waitFor(() => {
+      expect(screen.getByText(/Nov 23 \u2013 29, 2026/)).toBeInTheDocument();
+    });
+
+    // Clear call history so the next assertion only sees the chip-change
+    // fetch and nothing from the three navigation clicks above.
+    mockFetchRange.mockClear();
+
+    // Change the length chip. The handler must refetch the CURRENT week
+    // (Nov 23), not reset back to the first available week (Nov 2).
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /45 min/i }));
+    });
+
+    await waitFor(() => {
+      expect(mockFetchRange).toHaveBeenCalled();
+    });
+    const lastCall = mockFetchRange.mock.calls.at(-1)!;
+    expect(lastCall[0]).toMatchObject({
+      view: "week",
+      date: "2026-11-23",
+      durationMinutes: 45,
+    });
+    // The visible week label still shows Nov 23, not Nov 2.
+    expect(screen.getByText(/Nov 23 \u2013 29, 2026/)).toBeInTheDocument();
+    expect(screen.queryByText(/Nov 2 \u2013 8, 2026/)).toBeNull();
+    // "Find first available" was not re-invoked for the chip change.
+    expect(mockFirstAvail).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("Batch success refreshes the calendar", () => {
+  it("the booked slot in the visible week flips to unavailable without a reload, and a slot in a different week flips too after navigating", async () => {
+    await renderCalendar();
+    fireEvent.click(screen.getByTestId("mode-multiple"));
+    // Pick two slots in the visible week (Nov 2).
+    fireEvent.click(firstSlotButton(/^3:00 PM$/i));
+    fireEvent.click(firstSlotButton(/^3:30 PM$/i));
+
+    mockPreview.mockResolvedValue({
+      kind: "ok",
+      data: {
+        needsApproval: false,
+        picks: [
+          {
+            index: 0,
+            startsAt: "2026-11-02T23:00:00.000Z",
+            durationMinutes: 30,
+            state: "available",
+          },
+          {
+            index: 1,
+            startsAt: "2026-11-02T23:30:00.000Z",
+            durationMinutes: 30,
+            state: "available",
+          },
+        ],
+      },
+    });
+
+    fireEvent.click(screen.getByTestId("review-multiple"));
+    await screen.findByTestId("review-sheet");
+
+    // After submit, the component bumps fetchSpec to refetch the visible
+    // week. Return a WEEK_DATA where the two booked slots are now
+    // unavailable; this is what fresh server data would look like after
+    // the writes committed.
+    const WEEK_DATA_AFTER = {
+      needsApproval: false,
+      maxDailyLessonMinutes: 240,
+      bookingMaxAdvanceWeeks: 52,
+      days: WEEK_DATA.days.map((day) =>
+        day.date !== "2026-11-02"
+          ? day
+          : {
+              ...day,
+              openCount: 3,
+              totalCount: 5,
+              slots: day.slots.map((slot) => {
+                if (
+                  slot.startsAt === "2026-11-02T23:00:00.000Z" ||
+                  slot.startsAt === "2026-11-02T23:30:00.000Z"
+                ) {
+                  return { ...slot, state: "unavailable" as const };
+                }
+                return slot;
+              }),
+            },
+      ),
+    };
+    mockFetchRange.mockResolvedValueOnce(WEEK_DATA_AFTER);
+
+    mockSubmit.mockResolvedValueOnce({
+      kind: "ok",
+      data: {
+        batchId: "11111111-2222-3333-4444-555555555555",
+        mode: "manual" as const,
+        lessonIds: ["l1", "l2"],
+        confirmedCount: 2,
+        pendingCount: 0,
+      },
+    });
+
+    const bookBtn = await screen.findByTestId("review-book");
+    await waitFor(() => {
+      expect((bookBtn as HTMLButtonElement).disabled).toBe(false);
+    });
+    await act(async () => {
+      fireEvent.click(bookBtn);
+    });
+    await screen.findByTestId("batch-success");
+
+    // The fresh fetch should have landed; the previously-booked slot in
+    // the visible week now renders as a non-tappable "unavailable" cell
+    // (SlotCell for state === "unavailable" is a <div> with line-through).
+    await waitFor(() => {
+      const unavailable = Array.from(
+        document.querySelectorAll("div.line-through"),
+      ) as HTMLElement[];
+      const booked = unavailable.find((el) => el.textContent?.trim() === "3:00 PM");
+      expect(booked).toBeDefined();
+    });
+
+    // The visible 3:00 PM is a <div>, not a tappable <button>: no element
+    // with the "3:00 PM" accessible name remains clickable.
+    const stillAButton = screen
+      .queryAllByRole("button", { name: /^Monday, November 2, 3:00 PM/ })
+      .filter((el) => el.tagName === "BUTTON");
+    expect(stillAButton).toHaveLength(0);
+
+    // Dismiss the sheet so navigation is unblocked.
+    fireEvent.click(screen.getByRole("button", { name: /Back to calendar/i }));
+
+    // Simulate booking a lesson that also lives in week B (not on screen).
+    // Navigate forward one week; the component always refetches on
+    // navigation, so the next-week slot must also come back unavailable
+    // to prove the "different week than the one on screen" case.
+    const WEEK_DATA_B = {
+      needsApproval: false,
+      maxDailyLessonMinutes: 240,
+      bookingMaxAdvanceWeeks: 52,
+      days: [
+        {
+          date: "2026-11-09",
+          dayState: "open" as const,
+          openCount: 0,
+          totalCount: 1,
+          teachingWindows: [{ start: "15:00", end: "15:30" }],
+          slots: [
+            // Simulated: parent booked this slot in the same batch, so
+            // week B's view also comes back with it marked unavailable.
+            { startsAt: "2026-11-09T23:00:00.000Z", state: "unavailable" as const },
+          ],
+        },
+      ],
+    };
+    mockFetchRange.mockResolvedValueOnce(WEEK_DATA_B);
+
+    fireEvent.click(screen.getByLabelText(/Next week/i));
+    await waitFor(() => {
+      const unavailable = Array.from(
+        document.querySelectorAll("div.line-through"),
+      ) as HTMLElement[];
+      const booked = unavailable.find((el) => el.textContent?.trim() === "3:00 PM");
+      expect(booked).toBeDefined();
+    });
+    const stillAButtonB = screen
+      .queryAllByRole("button", { name: /^Monday, November 9, 3:00 PM/ })
+      .filter((el) => el.tagName === "BUTTON");
+    expect(stillAButtonB).toHaveLength(0);
+  });
+});
+
+describe("Canonical lesson formatter", () => {
+  it("Multiple pick list rows read the same as the review sheet rows", async () => {
+    await renderCalendar();
+    fireEvent.click(screen.getByTestId("mode-multiple"));
+    fireEvent.click(firstSlotButton(/^3:00 PM$/i));
+    fireEvent.click(firstSlotButton(/^3:30 PM$/i));
+    // Show the Multiple pick list so the first pick is rendered.
+    fireEvent.click(screen.getByTestId("multiple-count-toggle"));
+    const pickRow = screen.getAllByTestId("multiple-pick-row")[0]!;
+    expect(pickRow.textContent).toMatch(/Mon.*Nov 2.*3:00 to 3:30 PM.*30 min/i);
+
+    // Open the review sheet; the heading in each PickRow uses the same format.
+    mockPreview.mockResolvedValue({
+      kind: "ok",
+      data: {
+        needsApproval: false,
+        picks: [
+          {
+            index: 0,
+            startsAt: "2026-11-02T23:00:00.000Z",
+            durationMinutes: 30,
+            state: "available",
+          },
+          {
+            index: 1,
+            startsAt: "2026-11-02T23:30:00.000Z",
+            durationMinutes: 30,
+            state: "available",
+          },
+        ],
+      },
+    });
+    fireEvent.click(screen.getByTestId("review-multiple"));
+    const sheet = await screen.findByTestId("review-sheet");
+    await waitFor(() => {
+      expect(sheet.textContent).toMatch(/Mon.*Nov 2.*3:00 to 3:30 PM.*30 min/i);
+    });
+    expect(sheet.textContent).toMatch(/Mon.*Nov 2.*3:30 to 4:00 PM.*30 min/i);
+  });
+
+  it("Recurring pattern list rows use the canonical weekday + range + length format", async () => {
+    await renderCalendar();
+    fireEvent.click(screen.getByTestId("mode-recurring"));
+    fireEvent.click(firstSlotButton(/^3:00 PM$/i));
+    // Pattern summary line in the bar uses the canonical format.
+    expect(screen.getByTestId("recurring-pattern-label").textContent).toMatch(
+      /Mon.*3:00 to 3:30 PM.*30 min/i,
+    );
+    // The expanded pattern list row too.
+    fireEvent.click(screen.getByTestId("recurring-pattern-toggle"));
+    const row = screen.getAllByTestId("recurring-pattern-row")[0]!;
+    expect(row.textContent).toMatch(/Mon.*3:00 to 3:30 PM.*30 min/i);
   });
 });
 

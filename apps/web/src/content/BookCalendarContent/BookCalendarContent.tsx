@@ -29,6 +29,8 @@ import {
 import {
   addDaysToDateStr,
   formatDayLabel,
+  formatPatternRangeAndLength,
+  formatSlotRangeWithDate,
   getMondayOfWeek,
   maxBookableDateLA,
   type BookingState,
@@ -37,7 +39,6 @@ import {
   doesSlotOverlapAnyPick,
   expandRecurring,
   findPickContainingSlot,
-  formatPatternPair,
   isWithinAnyPickSpan,
   laDateFromIso,
   laIsoWeekday,
@@ -92,6 +93,17 @@ function getMonthStr(dateStr: string): string {
   return dateStr.slice(0, 7);
 }
 
+// Shift a YYYY-MM month string forward by N months (negative for backward).
+// Pure string + modular arithmetic so no TZ libraries are involved.
+function addMonthsToMonthStr(monthStr: string, months: number): string {
+  const [yearStr, monthDigits] = monthStr.split("-");
+  const year = Number(yearStr);
+  const monthIndex = Number(monthDigits) - 1 + months;
+  const nextYear = year + Math.floor(monthIndex / 12);
+  const nextMonth = ((monthIndex % 12) + 12) % 12;
+  return `${nextYear}-${String(nextMonth + 1).padStart(2, "0")}`;
+}
+
 export default function BookCalendarContent({
   householdId,
   locations,
@@ -105,7 +117,13 @@ export default function BookCalendarContent({
   const today = todayLA();
 
   const [calendarView, setCalendarView] = useState<CalendarView>(initialView);
-  const [currentDate, setCurrentDate] = useState<string>(initialDate ?? today);
+  // Clamp any deep-link / saved initial date so a past week or month opens
+  // on the current one instead. The simple `< today` check covers both: a
+  // date in a prior week or prior month lands before today's YYYY-MM-DD
+  // string; a date in today's week on or after today passes through.
+  const resolvedInitialDate =
+    initialDate !== undefined && initialDate < today ? today : initialDate ?? today;
+  const [currentDate, setCurrentDate] = useState<string>(resolvedInitialDate);
   const [locationId, setLocationId] = useState<string | null>(locations[0]?.id ?? null);
   const [durationMinutes, setDurationMinutes] = useState<30 | 45 | 60>(30);
   const [swimmerIds, setSwimmerIds] = useState<string[]>(
@@ -141,7 +159,11 @@ export default function BookCalendarContent({
   const [success, setSuccess] = useState<{
     confirmedCount: number;
     pendingCount: number;
-    lessons: { startsAt: string; status: "approved" | "pending" }[];
+    lessons: {
+      startsAt: string;
+      durationMinutes: LessonDurationMinutes;
+      status: "approved" | "pending";
+    }[];
   } | null>(null);
   const [isPreviewLoading, startPreviewLoading] = useTransition();
   const [isSubmitting, startSubmitting] = useTransition();
@@ -169,6 +191,14 @@ export default function BookCalendarContent({
   );
   const nextMondayStr = addDaysToDateStr(mondayStr, 7);
   const disableNextWeek = nextMondayStr > maxAdvanceDateLA;
+
+  // Month-nav flags mirror the week-nav rules in LA. Previous is blocked on
+  // the current month; next is blocked once the next month's first day is
+  // already past the booking window (no day in that month would be bookable).
+  const todayMonthStr = getMonthStr(today);
+  const disablePrevMonth = monthStr === todayMonthStr;
+  const nextMonthFirstDate = `${addMonthsToMonthStr(monthStr, 1)}-01`;
+  const disableNextMonth = nextMonthFirstDate > maxAdvanceDateLA;
 
   // ── Availability fetch ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -743,6 +773,20 @@ export default function BookCalendarContent({
     startSubmitting(async () => {
       const result = await submitBatchAction(body);
       if (result.kind === "ok") {
+        // Single mode navigates away on success so the calendar remounts
+        // fresh. Batch stays on the calendar, so we have to actively
+        // invalidate what the calendar has in state: refetch the visible
+        // range here (navigation to any other touched week already bumps
+        // fetchSpec.key, which refetches from the server). Clear the
+        // picks + preview so the calendar underneath does not keep stale
+        // highlights once the sheet is dismissed.
+        refetchVisibleRange();
+        setMultiplePicks([]);
+        setPattern([]);
+        setPreviewPicks([]);
+        setSkippedIndexes(new Set());
+        setRemovedIndexes(new Set());
+        setOverridesMap(new Map());
         buildSuccessView(result.data);
       } else if (result.kind === "conflict") {
         setPreviewPicks((current) =>
@@ -777,6 +821,7 @@ export default function BookCalendarContent({
     );
     const lessons = sorted.map((pick, index) => ({
       startsAt: pick.startsAt,
+      durationMinutes: pick.durationMinutes,
       status: index < data.confirmedCount ? ("approved" as const) : ("pending" as const),
     }));
     setSuccess({
@@ -795,18 +840,31 @@ export default function BookCalendarContent({
 
   // ── Nav handlers ───────────────────────────────────────────────────────────
 
+  // Pins the next fetch to the currently viewed range (week or month) and
+  // bumps the key so the useEffect refires. Length and pool changes use
+  // this so the view stays on the current week instead of searching for
+  // the first available one. If the current week has no bookable days
+  // under the new settings, the user stays on it and sees empty days.
+  function refetchVisibleRange() {
+    setFetchSpec((prev) =>
+      calendarView === "month"
+        ? { mode: "month", monthStr, key: prev.key + 1 }
+        : { mode: "week", monday: mondayStr, key: prev.key + 1 },
+    );
+  }
+
   function handleLocationChange(id: string) {
     setLocationId(id);
     setSelectedStartsAt(null);
     setTooSoon(false);
-    setFetchSpec((prev) => ({ mode: "search", key: prev.key + 1 }));
+    refetchVisibleRange();
   }
 
   function handleDurationChange(d: 30 | 45 | 60) {
     setDurationMinutes(d);
     setSelectedStartsAt(null);
     setTooSoon(false);
-    setFetchSpec((prev) => ({ mode: "search", key: prev.key + 1 }));
+    refetchVisibleRange();
   }
 
   function prevWeek() {
@@ -1024,7 +1082,8 @@ export default function BookCalendarContent({
             type="button"
             onClick={prevMonth}
             aria-label="Previous month"
-            className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-button border border-border text-text hover:bg-surface-soft transition-colors duration-150"
+            disabled={disablePrevMonth}
+            className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-button border border-border text-text hover:bg-surface-soft transition-colors duration-150 disabled:opacity-40 disabled:cursor-default disabled:hover:bg-transparent"
           >
             &lsaquo;
           </button>
@@ -1032,7 +1091,8 @@ export default function BookCalendarContent({
             type="button"
             onClick={nextMonth}
             aria-label="Next month"
-            className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-button border border-border text-text hover:bg-surface-soft transition-colors duration-150"
+            disabled={disableNextMonth}
+            className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-button border border-border text-text hover:bg-surface-soft transition-colors duration-150 disabled:opacity-40 disabled:cursor-default disabled:hover:bg-transparent"
           >
             &rsaquo;
           </button>
@@ -1340,50 +1400,6 @@ function formatHoursMinutes(totalMinutes: number): string {
   return `${hours} hr ${minutes} min`;
 }
 
-function formatLaDisplayFromIso(iso: string): string {
-  const date = new Date(iso);
-  const dayPart = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/Los_Angeles",
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-  }).format(date);
-  const start = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/Los_Angeles",
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  }).format(date);
-  return `${dayPart} \u00b7 ${start}`;
-}
-
-function formatLaRangeFromIso(iso: string, durationMinutes: number): string {
-  const start = new Date(iso);
-  const end = new Date(start.getTime() + durationMinutes * 60_000);
-  const fmt = (date: Date) =>
-    new Intl.DateTimeFormat("en-US", {
-      timeZone: "America/Los_Angeles",
-      hour: "numeric",
-      minute: "2-digit",
-      hour12: true,
-    }).format(date);
-  const startStr = fmt(start);
-  const endStr = fmt(end);
-  const sameMeridiem = startStr.slice(-2) === endStr.slice(-2);
-  const compactStart = sameMeridiem ? startStr.slice(0, -3) : startStr;
-  return `${compactStart} to ${endStr}`;
-}
-
-function formatPickWithRange(iso: string, durationMinutes: number): string {
-  const date = new Date(iso);
-  const dayPart = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/Los_Angeles",
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-  }).format(date);
-  return `${dayPart} \u00b7 ${formatLaRangeFromIso(iso, durationMinutes)} \u00b7 ${durationMinutes} min`;
-}
 
 // Inline length picker that lives inside each pick / pattern row. Each row
 // owns its own length so a batch can mix 30, 45, and 60-min lessons; changing
@@ -1563,17 +1579,17 @@ function MultipleBottomBar({
                     data-testid="multiple-pick-row"
                   >
                     <span className="text-sm flex-1 min-w-0">
-                      {formatPickWithRange(pick.startsAt, pick.durationMinutes)}
+                      {formatSlotRangeWithDate(pick.startsAt, pick.durationMinutes)}
                     </span>
                     <PickDurationChips
                       value={pick.durationMinutes}
-                      ariaLabel={`Length for ${formatLaDisplayFromIso(pick.startsAt)}`}
+                      ariaLabel={`Length for ${formatSlotRangeWithDate(pick.startsAt, pick.durationMinutes)}`}
                       onChange={(next) => onChangePickDuration(pick.startsAt, next)}
                     />
                     <button
                       type="button"
                       onClick={() => onRemove(pick.startsAt)}
-                      aria-label={`Remove ${formatLaDisplayFromIso(pick.startsAt)}`}
+                      aria-label={`Remove ${formatSlotRangeWithDate(pick.startsAt, pick.durationMinutes)}`}
                       className="min-h-[36px] px-2 rounded-full text-xs font-semibold opacity-80 hover:opacity-100 active:scale-[0.97] motion-reduce:transform-none transition-opacity duration-150"
                     >
                       Remove
@@ -1632,7 +1648,7 @@ function RecurringBottomBar({
 }: RecurringBottomBarProps) {
   const hasPattern = pattern.length > 0;
   const patternLabel = hasPattern
-    ? pattern.map(formatPatternPair).join(" + ")
+    ? pattern.map(formatPatternRangeAndLength).join(" + ")
     : "No pattern yet";
   const canReview = !underMin && !overCap && hasPattern;
 
@@ -1754,17 +1770,17 @@ function RecurringBottomBar({
                 data-testid="recurring-pattern-row"
               >
                 <span className="text-xs font-semibold flex-1 min-w-0">
-                  {formatPatternPair(pair)}
+                  {formatPatternRangeAndLength(pair)}
                 </span>
                 <PickDurationChips
                   value={pair.durationMinutes}
-                  ariaLabel={`Length for ${formatPatternPair(pair)}`}
+                  ariaLabel={`Length for ${formatPatternRangeAndLength(pair)}`}
                   onChange={(next) => onChangePairDuration(pair, next)}
                 />
                 <button
                   type="button"
                   onClick={() => onRemovePair(pair)}
-                  aria-label={`Remove ${formatPatternPair(pair)}`}
+                  aria-label={`Remove ${formatPatternRangeAndLength(pair)}`}
                   className="min-h-[36px] px-2 rounded-full text-xs font-semibold opacity-80 hover:opacity-100 active:scale-[0.97] motion-reduce:transform-none transition-opacity duration-150"
                 >
                   Remove

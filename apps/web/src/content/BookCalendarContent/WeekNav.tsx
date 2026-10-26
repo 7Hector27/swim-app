@@ -29,7 +29,8 @@ export default function WeekNav({
         type="button"
         onClick={onPrev}
         aria-label="Previous week"
-        className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-button border border-border text-text hover:bg-surface-soft transition-colors duration-150"
+        disabled={isCurrentWeek}
+        className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-button border border-border text-text hover:bg-surface-soft transition-colors duration-150 disabled:opacity-40 disabled:cursor-default disabled:hover:bg-transparent"
       >
         ‹
       </button>

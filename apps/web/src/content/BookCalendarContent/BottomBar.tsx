@@ -35,7 +35,7 @@ export default function BottomBar({
     subLabel = "Text Jason to book this one.";
   } else if (hasSelection) {
     timeLabel = formatSlotRangeWithDate(selectedStartsAt, durationMinutes);
-    subLabel = `${durationMinutes} min · ${swimmerIds.length} swimmer${swimmerIds.length === 1 ? "" : "s"}`;
+    subLabel = `${swimmerIds.length} swimmer${swimmerIds.length === 1 ? "" : "s"}`;
     if (hasSwimmers) {
       const price = lessonPrice(durationMinutes, swimmerIds.length);
       priceLabel = `$${price}`;

@@ -4,12 +4,14 @@ import { useEffect, useRef } from "react";
 
 import type { BatchPreviewPick, BatchPickState } from "@swim-app/shared";
 
-import { formatLaDisplay, formatLaTime, pickReasonCopy } from "./batchHelpers";
+import { formatLaTime, pickReasonCopy } from "./batchHelpers";
+import { formatSlotRangeWithDate } from "./helpers";
 
 type Mode = "multiple" | "recurring";
 
 interface SubmittedLesson {
   startsAt: string;
+  durationMinutes: number;
   status: "approved" | "pending";
 }
 
@@ -281,7 +283,7 @@ function PickRow({
     return (
       <li className="rounded-card border border-dashed border-border bg-background p-3 flex items-center justify-between gap-3">
         <span className="text-sm text-text-secondary line-through">
-          {formatLaDisplay(pick.startsAt)}
+          {formatSlotRangeWithDate(pick.startsAt, pick.durationMinutes)}
         </span>
         <button
           type="button"
@@ -305,7 +307,9 @@ function PickRow({
     >
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-heading">{formatLaDisplay(pick.startsAt)}</p>
+          <p className="text-sm font-semibold text-heading">
+            {formatSlotRangeWithDate(pick.startsAt, pick.durationMinutes)}
+          </p>
           {!isAvailable && (
             <p className="text-xs text-text-secondary mt-0.5">
               {pickReasonCopy(pick.state) || "Not available"}
@@ -390,7 +394,7 @@ function SuccessContent({
           <ul className="flex flex-col gap-1">
             {confirmed.map((lesson) => (
               <li key={lesson.startsAt} className="text-sm text-text">
-                {formatLaDisplay(lesson.startsAt)}
+                {formatSlotRangeWithDate(lesson.startsAt, lesson.durationMinutes)}
               </li>
             ))}
           </ul>
@@ -405,7 +409,7 @@ function SuccessContent({
           <ul className="flex flex-col gap-1">
             {pending.map((lesson) => (
               <li key={lesson.startsAt} className="text-sm text-text">
-                {formatLaDisplay(lesson.startsAt)}
+                {formatSlotRangeWithDate(lesson.startsAt, lesson.durationMinutes)}
               </li>
             ))}
           </ul>
