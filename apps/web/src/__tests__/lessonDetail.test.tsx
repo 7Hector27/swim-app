@@ -28,7 +28,7 @@ vi.mock("@/components/AddNoteForm", () => ({
 }));
 
 import LessonDetailContent from "../content/LessonDetailContent/LessonDetailContent";
-import type { UpcomingLesson, LessonLocation } from "@swim-app/shared";
+import type { LessonLocation, UpcomingLesson } from "@swim-app/shared";
 
 const LESSON_ID = "aaaaaaaa-0000-0000-0000-000000000001";
 const SWIMMER_ID = "bbbbbbbb-0000-0000-0000-000000000002";
@@ -54,29 +54,65 @@ const lesson: UpcomingLesson = {
   batchMode: null,
 };
 
-const locations: LessonLocation[] = [];
+const locations: LessonLocation[] = [
+  {
+    id: LOCATION_ID,
+    name: "Egret Park",
+    address: "123 Palm Street",
+    city: "Palos Verdes",
+    state: "CA",
+    zip: "90274",
+    isHomePool: true,
+    isActive: true,
+    sortOrder: 0,
+  },
+];
 
-describe("LessonDetailContent — started lesson guard", () => {
-  it("shows Reschedule and Cancel headings for a future lesson", () => {
+describe("LessonDetailContent — action visibility", () => {
+  it("renders Reschedule and Cancel actions for a future lesson", () => {
     const futureLesson: UpcomingLesson = { ...lesson, startsAt: "2099-01-01T00:00:00.000Z" };
     render(
       <LessonDetailContent lesson={futureLesson} locations={locations} isViewer={false} isCoach={false} />,
     );
-    expect(screen.getByText("Reschedule")).toBeInTheDocument();
-    expect(screen.getByText("Cancel lesson")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Reschedule" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /cancel this lesson/i })).toBeInTheDocument();
   });
 
-  it("hides Reschedule and Cancel for a started lesson", () => {
+  it("hides Reschedule and Cancel for a past lesson", () => {
     render(
       <LessonDetailContent lesson={lesson} locations={locations} isViewer={false} isCoach={false} />,
     );
-    expect(screen.queryByText("Reschedule")).toBeNull();
-    expect(screen.queryByText("Cancel lesson")).toBeNull();
+    expect(screen.queryByRole("link", { name: "Reschedule" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /cancel this lesson/i })).toBeNull();
+  });
+
+  it("hides Reschedule and Cancel for viewers", () => {
+    const futureLesson: UpcomingLesson = { ...lesson, startsAt: "2099-01-01T00:00:00.000Z" };
+    render(
+      <LessonDetailContent lesson={futureLesson} locations={locations} isViewer={true} isCoach={false} />,
+    );
+    expect(screen.queryByRole("link", { name: "Reschedule" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /cancel this lesson/i })).toBeNull();
+  });
+
+  it("shows the viewer-friendly note when a viewer opens a future lesson", () => {
+    const futureLesson: UpcomingLesson = { ...lesson, startsAt: "2099-01-01T00:00:00.000Z" };
+    render(
+      <LessonDetailContent lesson={futureLesson} locations={locations} isViewer={true} isCoach={false} />,
+    );
+    expect(screen.getByText(/view this lesson but not change it/i)).toBeInTheDocument();
+  });
+
+  it("shows the past-lesson note when the lesson has already started", () => {
+    render(
+      <LessonDetailContent lesson={lesson} locations={locations} isViewer={false} isCoach={false} />,
+    );
+    expect(screen.getByText(/this lesson has ended/i)).toBeInTheDocument();
   });
 });
 
-describe("LessonDetailContent — Moved by Jason", () => {
-  it("shows 'Moved by Jason' row when movedAt and previousStartsAt are set", () => {
+describe("LessonDetailContent — rescheduled badge", () => {
+  it("shows the Rescheduled row when movedAt and previousStartsAt are set", () => {
     const movedLesson: UpcomingLesson = {
       ...lesson,
       startsAt: "2099-01-02T17:00:00.000Z",
@@ -89,7 +125,7 @@ describe("LessonDetailContent — Moved by Jason", () => {
     expect(screen.getByText(/Moved by Jason/)).toBeInTheDocument();
   });
 
-  it("does not show 'Moved by Jason' when movedAt is null", () => {
+  it("does not show the Rescheduled row when movedAt is null", () => {
     render(
       <LessonDetailContent lesson={lesson} locations={locations} isViewer={false} isCoach={false} />,
     );
@@ -98,7 +134,7 @@ describe("LessonDetailContent — Moved by Jason", () => {
 });
 
 describe("LessonDetailContent — cancel remaining in batch", () => {
-  const futureLesson: UpcomingLesson = {
+  const batchLesson: UpcomingLesson = {
     ...lesson,
     startsAt: "2099-01-01T00:00:00.000Z",
     batchId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
@@ -115,11 +151,11 @@ describe("LessonDetailContent — cancel remaining in batch", () => {
   it("renders the Cancel remaining lessons action for a batch lesson with siblings", () => {
     render(
       <LessonDetailContent
-        lesson={futureLesson}
+        lesson={batchLesson}
         locations={locations}
         isViewer={false}
         isCoach={false}
-        batchSiblings={[futureLesson, sibling]}
+        batchSiblings={[batchLesson, sibling]}
       />,
     );
     expect(screen.getByRole("button", { name: /cancel remaining lessons/i })).toBeInTheDocument();
@@ -128,11 +164,11 @@ describe("LessonDetailContent — cancel remaining in batch", () => {
   it("hides the Cancel remaining lessons action when the lesson has no batch siblings", () => {
     render(
       <LessonDetailContent
-        lesson={futureLesson}
+        lesson={batchLesson}
         locations={locations}
         isViewer={false}
         isCoach={false}
-        batchSiblings={[futureLesson]}
+        batchSiblings={[batchLesson]}
       />,
     );
     expect(screen.queryByRole("button", { name: /cancel remaining lessons/i })).toBeNull();
@@ -141,14 +177,64 @@ describe("LessonDetailContent — cancel remaining in batch", () => {
   it("hides the Cancel remaining lessons action for viewers", () => {
     render(
       <LessonDetailContent
-        lesson={futureLesson}
+        lesson={batchLesson}
         locations={locations}
         isViewer={true}
         isCoach={false}
-        batchSiblings={[futureLesson, sibling]}
+        batchSiblings={[batchLesson, sibling]}
       />,
     );
     expect(screen.queryByRole("button", { name: /cancel remaining lessons/i })).toBeNull();
+  });
+
+  it("renders the Upcoming in this booking list with other siblings only", () => {
+    render(
+      <LessonDetailContent
+        lesson={batchLesson}
+        locations={locations}
+        isViewer={false}
+        isCoach={false}
+        batchSiblings={[batchLesson, sibling]}
+      />,
+    );
+    expect(screen.getByText("Upcoming in this booking")).toBeInTheDocument();
+    expect(screen.getByText("1 lesson")).toBeInTheDocument();
+  });
+
+  it("hides the Upcoming in this booking list for a non-batch lesson", () => {
+    const futureNonBatch: UpcomingLesson = { ...lesson, startsAt: "2099-01-01T00:00:00.000Z" };
+    render(
+      <LessonDetailContent lesson={futureNonBatch} locations={locations} isViewer={false} isCoach={false} />,
+    );
+    expect(screen.queryByText("Upcoming in this booking")).toBeNull();
+  });
+});
+
+describe("LessonDetailContent — map link", () => {
+  it("renders the map link with the full pool address when the location is known", () => {
+    const futureLesson: UpcomingLesson = { ...lesson, startsAt: "2099-01-01T00:00:00.000Z" };
+    render(
+      <LessonDetailContent lesson={futureLesson} locations={locations} isViewer={false} isCoach={false} />,
+    );
+    const link = screen.getByRole("link", {
+      name: /123 Palm Street, Palos Verdes, CA 90274/,
+    });
+    expect(link).toHaveAttribute(
+      "href",
+      "https://www.google.com/maps/search/?api=1&query=123%20Palm%20Street%2C%20Palos%20Verdes%2C%20CA%2090274",
+    );
+  });
+
+  it("falls back to the pool name when the location is not in the locations list", () => {
+    const futureLesson: UpcomingLesson = { ...lesson, startsAt: "2099-01-01T00:00:00.000Z" };
+    render(
+      <LessonDetailContent lesson={futureLesson} locations={[]} isViewer={false} isCoach={false} />,
+    );
+    const link = screen.getByRole("link", { name: /Open in Maps/ });
+    expect(link).toHaveAttribute(
+      "href",
+      "https://www.google.com/maps/search/?api=1&query=Egret%20Park",
+    );
   });
 });
 

@@ -10,6 +10,7 @@ import {
   weekRangeLabel,
 } from "@/lib/calendarDate";
 import CoachLessonRow from "@/components/CoachLessonRow";
+import CoachWeekLessonCard from "@/components/CoachWeekLessonCard";
 import DatePickerInput from "./DatePickerInput";
 
 interface Props {
@@ -243,13 +244,13 @@ function DayColumn({ day, today }: { day: CoachWeekScheduleDay; today: string })
         {shortDayLabel(day.date)}
         {isToday && <span className="sr-only"> (today)</span>}
       </Link>
-      {/* Lessons */}
+      {/* Lessons (tablet+ week columns use the compact week card, not the day-view row) */}
       <div className="flex-1 flex flex-col gap-1.5 p-1.5">
         {day.items.length === 0 ? (
-          <p className="text-xs text-text-secondary text-center py-4">No lessons.</p>
+          <p className="text-xs italic text-text-secondary/70 text-center py-4">No lessons.</p>
         ) : (
           day.items.map((item) => (
-            <CoachLessonRow key={item.lesson.id} item={item} />
+            <CoachWeekLessonCard key={item.lesson.id} item={item} />
           ))
         )}
       </div>
