@@ -1293,6 +1293,11 @@ lessonsRouter.post(
         .returning({ id: lessonEmailOutbox.id });
       const outboxId = outboxInsert[0]!.id;
 
+      // Audit payload omits per-lesson startsAt / durationMinutes so a
+      // minor's scheduling data does not sit in household_audit_log for
+      // the 30-day retention window (accounts.md). Lesson ids are enough
+      // to reconstruct the batch via the lessons table when truly needed;
+      // the ids themselves are not kids'-data under accounts.md.
       await tx.insert(householdAuditLog).values({
         householdId,
         actorId: profileId,
@@ -1302,12 +1307,8 @@ lessonsRouter.post(
           mode: body.mode,
           locationId: body.locationId,
           swimmerIds: body.swimmerIds,
-          picks: insertedLessons.map((lesson) => ({
-            lessonId: lesson.id,
-            startsAt: lesson.startsAt.toISOString(),
-            durationMinutes: lesson.durationMinutes,
-            status: lesson.status,
-          })),
+          lessonIds: insertedLessons.map((lesson) => lesson.id),
+          lessonCount: insertedLessons.length,
           ...(body.mode === "weekly"
             ? {
                 weekly: {
