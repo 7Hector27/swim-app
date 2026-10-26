@@ -1,4 +1,6 @@
 import {
+  ParentPersonalBestsResponseSchema,
+  type ParentPersonalBestsResponse,
   ParentSwimmerProgressResponseSchema,
   type ParentSwimmerProgressResponse,
   ParentSwimmerSchema,
@@ -46,6 +48,29 @@ export async function fetchParentSwimmer(
     const parsed = ParentSwimmerSchema.safeParse(body);
     if (!parsed.success) return { ok: false, status: 500 };
     return { ok: true, swimmer: parsed.data };
+  } catch {
+    return { ok: false, status: 500 };
+  }
+}
+
+export type FetchParentPersonalBestsResult =
+  | { ok: true; data: ParentPersonalBestsResponse }
+  | { ok: false; status: number };
+
+export async function fetchParentPersonalBests(
+  swimmerId: string,
+  accessToken: string,
+): Promise<FetchParentPersonalBestsResult> {
+  try {
+    const response = await fetch(
+      `${process.env.NEXT_PUBLIC_API_URL}/swimmers/${swimmerId}/personal-bests`,
+      { headers: { Authorization: `Bearer ${accessToken}` } },
+    );
+    if (!response.ok) return { ok: false, status: response.status };
+    const body: unknown = await response.json();
+    const parsed = ParentPersonalBestsResponseSchema.safeParse(body);
+    if (!parsed.success) return { ok: false, status: 500 };
+    return { ok: true, data: parsed.data };
   } catch {
     return { ok: false, status: 500 };
   }

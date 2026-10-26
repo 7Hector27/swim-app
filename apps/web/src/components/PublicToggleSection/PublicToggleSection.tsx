@@ -4,8 +4,8 @@ import { useActionState, useMemo, useState } from "react";
 
 import type { HouseholdRole } from "@swim-app/shared";
 
-import { toggleSwimmerPublic } from "./actions";
-import type { PublicToggleState } from "./helpers";
+import { toggleSwimmerPublic } from "@/content/EditSwimmerContent/actions";
+import type { PublicToggleState } from "@/content/EditSwimmerContent/helpers";
 
 interface PublicToggleSectionProps {
   swimmerId: string;

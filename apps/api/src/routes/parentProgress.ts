@@ -1,7 +1,7 @@
 import { Router } from "express";
-import { desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../db/client";
-import { evaluationSessions, skillLevelDescriptors } from "../db/schema";
+import { evaluationSessions, meetSwims, meets, skillLevelDescriptors } from "../db/schema";
 import { validate } from "../middleware/validate";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { requireUser } from "../middleware/requireUser";
@@ -10,11 +10,15 @@ import { requireHouseholdMember } from "../middleware/requireHouseholdMember";
 import { requireHouseholdSwimmer } from "../middleware/requireHouseholdSwimmer";
 import { computeSwimmerProgress } from "../lib/progressCalculation";
 import {
+  formatSwimTime,
   IdParamsSchema,
+  ParentPersonalBestsResponseSchema,
   ParentSwimmerProgressResponseSchema,
   SCREEN_NAMES,
   type IdParams,
   type ParentCoachingNote,
+  type ParentPersonalBest,
+  type ParentPersonalBestsResponse,
   type ParentSwimmerProgressResponse,
 } from "@swim-app/shared";
 
@@ -92,5 +96,79 @@ parentProgressRouter.get(
 
     req.log.info({ swimmerId, skillCount: parentSkills.length }, "parent swimmer progress fetched");
     res.json(response);
+  }),
+);
+
+// GET /swimmers/:id/personal-bests: parent-facing personal bests.
+// Mirrors the coach-side best-time computation (meet swims only, grouped by
+// event + course, MIN(timeHundredths)) and joins meets to include the meet
+// date and name of the swim that set each PB.
+parentProgressRouter.get(
+  "/:id/personal-bests",
+  requireUser,
+  requireParent,
+  validate({ params: IdParamsSchema }),
+  requireHouseholdMember,
+  requireHouseholdSwimmer,
+  asyncHandler(async (req, res) => {
+    const { id: swimmerId } = req.params as unknown as IdParams;
+
+    const pbRows = await db
+      .select({
+        eventDistance: meetSwims.eventDistance,
+        eventStroke: meetSwims.eventStroke,
+        course: meetSwims.course,
+        timeHundredths: sql<number>`MIN(${meetSwims.timeHundredths})`.as("time_hundredths"),
+      })
+      .from(meetSwims)
+      .where(and(eq(meetSwims.swimmerId, swimmerId), eq(meetSwims.swimType, "meet")))
+      .groupBy(meetSwims.eventDistance, meetSwims.eventStroke, meetSwims.course);
+
+    const swimRows = pbRows.length === 0
+      ? []
+      : await db
+          .select({
+            eventDistance: meetSwims.eventDistance,
+            eventStroke: meetSwims.eventStroke,
+            course: meetSwims.course,
+            timeHundredths: meetSwims.timeHundredths,
+            meetName: meets.name,
+            meetDate: meets.meetDate,
+          })
+          .from(meetSwims)
+          .leftJoin(meets, eq(meets.id, meetSwims.meetId))
+          .where(and(eq(meetSwims.swimmerId, swimmerId), eq(meetSwims.swimType, "meet")));
+
+    const personalBests: ParentPersonalBest[] = pbRows.flatMap((pb) => {
+      const match = swimRows.find(
+        (row) =>
+          row.eventDistance === pb.eventDistance &&
+          row.eventStroke === pb.eventStroke &&
+          row.course === pb.course &&
+          row.timeHundredths === pb.timeHundredths,
+      );
+      if (!match) return [];
+      return [
+        {
+          eventDistance: pb.eventDistance,
+          eventStroke: pb.eventStroke,
+          course: pb.course,
+          timeHundredths: pb.timeHundredths,
+          timeString: formatSwimTime(pb.timeHundredths),
+          meetDate: match.meetDate ?? null,
+          meetName: match.meetName ?? null,
+        },
+      ];
+    });
+
+    const body: ParentPersonalBestsResponse = ParentPersonalBestsResponseSchema.parse({
+      personalBests,
+    });
+
+    req.log.info(
+      { swimmerId, pbCount: personalBests.length },
+      "parent swimmer personal bests fetched",
+    );
+    res.json(body);
   }),
 );
