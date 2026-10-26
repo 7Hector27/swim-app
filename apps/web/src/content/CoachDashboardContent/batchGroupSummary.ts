@@ -1,12 +1,10 @@
-// Pure helper that builds the one-line summary a grouped batch card renders
-// in the coach pending list (ADR 030 phase 3). Derives the (weekday, time)
-// pattern, length(s), and date range from the lessons themselves so it works
-// for both weekly and multi-booking batches without needing the stored
-// batch_mode-specific metadata (which doesn't reach this component anyway —
-// LessonResponse only carries the mode flag, not the pattern).
+// Grouped batch card summary for the coach pending list. See ADR 030.
 //
-// Empty parts are dropped before joining so there are never dangling "," or "·"
-// separators even if the pattern list is omitted for a long-tail batch.
+// Why derive the pattern from the grouped lessons instead of the stored
+// batch_mode-specific metadata: LessonResponse carries the mode flag but not
+// the weekday/time pattern, so the component has no second source to fall
+// back on. Dropping empty parts before joining keeps a long-tail batch (no
+// listable pattern) from printing a dangling "," or "·".
 
 import type { LessonResponse } from "@swim-app/shared";
 
