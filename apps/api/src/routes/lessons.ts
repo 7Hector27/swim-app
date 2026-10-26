@@ -1326,8 +1326,17 @@ lessonsRouter.post(
       });
     } catch (err) {
       if (err instanceof BatchPicksConflictError) {
+        // Log aggregated metadata only: a count and the enum reason codes.
+        // The per-pick startsAt is a specific datetime tied to a kid's
+        // lesson request and should not sit in server logs (accounts.md).
+        // The full conflicts array still goes back in the 422 response.
         req.log.warn(
-          { event: "picks_conflict", route: "POST /lessons/batch", conflicts: err.conflicts },
+          {
+            event: "picks_conflict",
+            route: "POST /lessons/batch",
+            conflictCount: err.conflicts.length,
+            reasons: err.conflicts.map((conflict) => conflict.reason ?? conflict.state),
+          },
           "batch rejected on recheck",
         );
         res.status(422).json({ error: "picks_conflict", conflicts: err.conflicts });
