@@ -1,5 +1,6 @@
 import { type RequestHandler, Router } from "express";
 import { and, asc, count, desc, eq, gt, inArray, max, ne, sql } from "drizzle-orm";
+import { z } from "zod";
 import type {
   AvailableSlot,
   AvailableSlotsQuery,
@@ -1379,12 +1380,14 @@ lessonsRouter.post(
 // audit row, one batch_canceled outbox row (CANCEL VEVENTs only for lessons
 // that had invites; pending ones listed in the text). See ADR 030.
 
+const BatchIdParamsSchema = z.object({ batchId: z.string().uuid() });
+
 lessonsRouter.delete(
   "/batch/:batchId/remaining",
   requireParent,
   requireHouseholdMember,
   requireHouseholdRole("manager"),
-  validate({}),
+  validate({ params: BatchIdParamsSchema }),
   asyncHandler(async (req, res) => {
     const batchId = req.params.batchId as string;
     const { householdId } = req;
