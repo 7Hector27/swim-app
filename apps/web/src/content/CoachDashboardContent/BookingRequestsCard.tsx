@@ -11,14 +11,11 @@ import {
   type CoachLessonActionState,
 } from "@/components/CoachLessonRow/actions";
 import { buildBatchGroupSummary } from "./batchGroupSummary";
+import { buildGroups } from "./batchGroups";
 
 interface Props {
   initialLessons: LessonResponse[];
 }
-
-type Group =
-  | { kind: "solo"; lesson: LessonResponse }
-  | { kind: "batch"; batchId: string; batchMode: "manual" | "weekly"; lessons: LessonResponse[] };
 
 export default function BookingRequestsCard({ initialLessons }: Props) {
   const [lessons, setLessons] = useState(initialLessons);
@@ -65,49 +62,6 @@ export default function BookingRequestsCard({ initialLessons }: Props) {
       </div>
     </div>
   );
-}
-
-function buildGroups(lessons: LessonResponse[]): Group[] {
-  const soloList: LessonResponse[] = [];
-  const batchMap = new Map<string, { mode: "manual" | "weekly"; lessons: LessonResponse[] }>();
-  for (const lesson of lessons) {
-    const batchId = lesson.batchId;
-    const mode = lesson.batchMode;
-    if (!batchId || !mode) {
-      soloList.push(lesson);
-      continue;
-    }
-    const existing = batchMap.get(batchId);
-    if (existing) {
-      existing.lessons.push(lesson);
-    } else {
-      batchMap.set(batchId, { mode, lessons: [lesson] });
-    }
-  }
-  const groups: Group[] = [];
-  for (const lesson of soloList) {
-    groups.push({ kind: "solo", lesson });
-  }
-  for (const [batchId, entry] of batchMap) {
-    if (entry.lessons.length === 1) {
-      groups.push({ kind: "solo", lesson: entry.lessons[0]! });
-    } else {
-      groups.push({
-        kind: "batch",
-        batchId,
-        batchMode: entry.mode,
-        lessons: entry.lessons,
-      });
-    }
-  }
-  // Sort by the earliest pending startsAt so the most imminent group floats up.
-  groups.sort((a, b) => firstStartsAt(a).localeCompare(firstStartsAt(b)));
-  return groups;
-}
-
-function firstStartsAt(group: Group): string {
-  if (group.kind === "solo") return group.lesson.startsAt;
-  return [...group.lessons].sort((a, b) => a.startsAt.localeCompare(b.startsAt))[0]!.startsAt;
 }
 
 function BatchGroup({
