@@ -619,6 +619,72 @@ describe("Phase 3 — DELETE /lessons/batch/:batchId/remaining", () => {
     });
   });
 
+  // P4b — a parent in a different household from the batch's owner gets
+  // 404 and nothing is written. Exercises the household-scoped SELECT
+  // guard on the DELETE route; the batch itself was created legitimately.
+  it("P4b: DELETE /lessons/batch/:batchId/remaining returns 404 for a non-member household", async () => {
+    await withAllDaysEnabled(async () => {
+      const trustId = await seedTrust();
+      const other = await createTestUser("batch-phase3-other");
+      try {
+        const startDate = futureLaDate(165);
+        const weekday = isoWeekdayFor(startDate);
+        const { batchId, outboxId: bookedOutboxId } = await submitBatch({
+          startDate,
+          weeks: 2,
+          weekday,
+        });
+        await waitForOutboxTerminal(bookedOutboxId);
+
+        // The caller is a legitimate owner of their own household, so the
+        // middleware chain accepts them; the route's household-scoped SELECT
+        // returns no row and the handler must return 404 rather than exposing
+        // existence or canceling anyone else's lessons.
+        const cancel = await request(app)
+          .delete(`/lessons/batch/${batchId}/remaining`)
+          .set("Authorization", `Bearer ${other.accessToken}`)
+          .send();
+        expect(cancel.status).toBe(404);
+
+        // No audit row, no outbox row, and the batch's own lessons stayed
+        // pending/approved (none got flipped to canceled).
+        const auditRows = await adminDb()
+          .select({ id: householdAuditLog.id })
+          .from(householdAuditLog)
+          .where(
+            and(
+              eq(householdAuditLog.householdId, owner.householdId),
+              eq(householdAuditLog.action, "lesson_batch_canceled_remaining"),
+            ),
+          );
+        expect(auditRows).toHaveLength(0);
+
+        const outboxRows = await adminDb()
+          .select({ id: lessonEmailOutbox.id })
+          .from(lessonEmailOutbox)
+          .where(
+            and(
+              eq(lessonEmailOutbox.batchId, batchId),
+              eq(lessonEmailOutbox.event, "batch_canceled"),
+            ),
+          );
+        expect(outboxRows).toHaveLength(0);
+
+        const batchLessonRows = await adminDb()
+          .select({ status: lessons.status })
+          .from(lessons)
+          .where(eq(lessons.batchId, batchId));
+        expect(batchLessonRows.length).toBeGreaterThan(0);
+        for (const row of batchLessonRows) {
+          expect(row.status).not.toBe("canceled");
+        }
+      } finally {
+        await adminDb().delete(lessons).where(eq(lessons.id, trustId));
+        await other.cleanup();
+      }
+    });
+  });
+
   // P4 — viewer gets 403.
   it("P4: viewer gets 403 and no rows are written", async () => {
     await withAllDaysEnabled(async () => {
