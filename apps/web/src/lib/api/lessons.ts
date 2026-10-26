@@ -265,6 +265,29 @@ export async function fetchUpcomingLessonsCount(accessToken: string): Promise<nu
   }
 }
 
+export async function fetchBatchCancelableLessons(
+  accessToken: string,
+  batchId: string,
+): Promise<UpcomingLesson[] | null> {
+  try {
+    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/lessons/batch/${batchId}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      cache: "no-store",
+    });
+    if (!response.ok) return null;
+    const body: unknown = await response.json();
+    const parsed = UpcomingLessonSchema.array().safeParse(body);
+    if (!parsed.success) {
+      const detail = parsed.error.issues.map((issue) => `${issue.path.join(".")} (${issue.message})`).join("; ");
+      console.warn(`fetchBatchCancelableLessons: response shape mismatch — ${detail}`);
+      return null;
+    }
+    return parsed.data;
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchLesson(accessToken: string, lessonId: string): Promise<UpcomingLesson | null> {
   try {
     const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/lessons/${lessonId}`, {

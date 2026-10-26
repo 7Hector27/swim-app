@@ -562,6 +562,63 @@ describe("Phase 3 — DELETE /lessons/batch/:batchId/remaining", () => {
     });
   });
 
+  // P3b — the GET /lessons/batch/:batchId preview endpoint the cancel-
+  // remaining confirm dialog reads must return the same lessons the DELETE
+  // endpoint cancels, 1:1. The current lesson a parent is viewing is one of
+  // them.
+  it("P3b: GET /lessons/batch/:batchId returns the exact set DELETE will cancel", async () => {
+    await withAllDaysEnabled(async () => {
+      const trustId = await seedTrust();
+      try {
+        const startDate = futureLaDate(190);
+        const weekday = isoWeekdayFor(startDate);
+        const { batchId, lessonIds, outboxId: bookedOutboxId } = await submitBatch({
+          startDate,
+          weeks: 3,
+          weekday,
+        });
+        await waitForOutboxTerminal(bookedOutboxId);
+        transport.reset();
+
+        // One lesson in the past; the preview endpoint should exclude it,
+        // same as the DELETE route.
+        const pastId = lessonIds[0]!;
+        await adminDb()
+          .update(lessons)
+          .set({
+            startsAt: new Date(PINNED_NOW.getTime() - 24 * 60 * 60 * 1000),
+            status: "completed",
+            completedAt: new Date(PINNED_NOW.getTime() - 24 * 60 * 60 * 1000),
+          })
+          .where(eq(lessons.id, pastId));
+
+        const preview = await request(app)
+          .get(`/lessons/batch/${batchId}`)
+          .set("Authorization", `Bearer ${owner.accessToken}`);
+        expect(preview.status).toBe(200);
+        const previewIds = (preview.body as Array<{ id: string }>)
+          .map((row) => row.id)
+          .sort();
+        expect(previewIds).not.toContain(pastId);
+        // Preview must also include the lesson a parent is currently viewing
+        // (any of the two future lessons), not just siblings.
+        for (const id of previewIds) {
+          expect(lessonIds).toContain(id);
+        }
+
+        const cancel = await request(app)
+          .delete(`/lessons/batch/${batchId}/remaining`)
+          .set("Authorization", `Bearer ${owner.accessToken}`)
+          .send();
+        expect(cancel.status).toBe(200);
+        const canceledIds = (cancel.body.canceledLessonIds as string[]).sort();
+        expect(canceledIds).toEqual(previewIds);
+      } finally {
+        await adminDb().delete(lessons).where(eq(lessons.id, trustId));
+      }
+    });
+  });
+
   // P4 — viewer gets 403.
   it("P4: viewer gets 403 and no rows are written", async () => {
     await withAllDaysEnabled(async () => {

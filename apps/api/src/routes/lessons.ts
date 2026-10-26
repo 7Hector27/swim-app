@@ -1374,13 +1374,116 @@ lessonsRouter.post(
   }),
 );
 
+const BatchIdParamsSchema = z.object({ batchId: z.string().uuid() });
+
+// ── GET /lessons/batch/:batchId ─────────────────────────────────────────────
+// Returns exactly the set of lessons that DELETE
+// /lessons/batch/:batchId/remaining would cancel: same batch, same household,
+// pending or approved, strictly future-dated. The parent cancel-remaining
+// confirm dialog reads this so its listed lessons match the API's canceled
+// set 1:1 instead of filtering the household's upcoming list heuristically.
+
+lessonsRouter.get(
+  "/batch/:batchId",
+  requireParent,
+  requireHouseholdMember,
+  validate({ params: BatchIdParamsSchema }),
+  asyncHandler(async (req, res) => {
+    const batchId = req.params.batchId as string;
+    const { householdId } = req;
+    const nowUtc = getNowUtc();
+
+    const batchRows = await db
+      .select({ id: bookingBatches.id, mode: bookingBatches.mode })
+      .from(bookingBatches)
+      .where(and(eq(bookingBatches.id, batchId), eq(bookingBatches.householdId, householdId)))
+      .limit(1);
+    const batch = batchRows[0];
+    if (!batch) {
+      res.status(404).json({ error: "Batch not found" });
+      return;
+    }
+
+    const lessonRows = await db
+      .select({
+        id: lessons.id,
+        locationId: lessons.locationId,
+        locationName: lessonLocations.name,
+        startsAt: lessons.startsAt,
+        durationMinutes: lessons.durationMinutes,
+        type: lessons.type,
+        status: lessons.status,
+        expiresAt: lessons.expiresAt,
+        approvedAt: lessons.approvedAt,
+        declinedAt: lessons.declinedAt,
+        declineReason: lessons.declineReason,
+        movedAt: lessons.movedAt,
+        previousStartsAt: lessons.previousStartsAt,
+        createdAt: lessons.createdAt,
+        batchId: lessons.batchId,
+      })
+      .from(lessons)
+      .innerJoin(lessonLocations, eq(lessons.locationId, lessonLocations.id))
+      .where(
+        and(
+          eq(lessons.batchId, batchId),
+          eq(lessons.householdId, householdId),
+          inArray(lessons.status, ["pending", "approved"]),
+          gt(lessons.startsAt, nowUtc),
+        ),
+      )
+      .orderBy(asc(lessons.startsAt));
+
+    const lessonIds = lessonRows.map((row) => row.id);
+    const swimmerRows =
+      lessonIds.length > 0
+        ? await db
+            .select({
+              lessonId: lessonSwimmers.lessonId,
+              swimmerId: lessonSwimmers.swimmerId,
+              firstName: swimmers.firstName,
+              lastName: swimmers.lastName,
+            })
+            .from(lessonSwimmers)
+            .innerJoin(swimmers, eq(lessonSwimmers.swimmerId, swimmers.id))
+            .where(inArray(lessonSwimmers.lessonId, lessonIds))
+        : [];
+    const swimmersByLesson = new Map<string, LessonSwimmer[]>();
+    for (const row of swimmerRows) {
+      const list = swimmersByLesson.get(row.lessonId) ?? [];
+      list.push({ swimmerId: row.swimmerId, firstName: row.firstName, lastName: row.lastName });
+      swimmersByLesson.set(row.lessonId, list);
+    }
+
+    const body: UpcomingLesson[] = lessonRows.map((row) => ({
+      id: row.id,
+      locationId: row.locationId,
+      locationName: row.locationName,
+      startsAt: row.startsAt.toISOString(),
+      durationMinutes: row.durationMinutes as 30 | 45 | 60,
+      type: row.type,
+      status: row.status,
+      swimmers: swimmersByLesson.get(row.id) ?? [],
+      expiresAt: row.expiresAt?.toISOString() ?? null,
+      approvedAt: row.approvedAt?.toISOString() ?? null,
+      declinedAt: row.declinedAt?.toISOString() ?? null,
+      declineReason: row.declineReason ?? null,
+      movedAt: row.movedAt?.toISOString() ?? null,
+      previousStartsAt: row.previousStartsAt?.toISOString() ?? null,
+      createdAt: row.createdAt.toISOString(),
+      batchId: row.batchId,
+      batchMode: batch.mode === "manual" || batch.mode === "weekly" ? batch.mode : null,
+    }));
+
+    res.json(body);
+  }),
+);
+
 // ── DELETE /lessons/batch/:batchId/remaining ─────────────────────────────────
 // Owners / managers cancel every future-dated pending + approved lesson in the
 // batch under the same rules as single-lesson cancel. One transaction, one
 // audit row, one batch_canceled outbox row (CANCEL VEVENTs only for lessons
 // that had invites; pending ones listed in the text). See ADR 030.
-
-const BatchIdParamsSchema = z.object({ batchId: z.string().uuid() });
 
 lessonsRouter.delete(
   "/batch/:batchId/remaining",

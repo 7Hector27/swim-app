@@ -5,7 +5,7 @@ import type { UpcomingLesson } from "@swim-app/shared";
 
 import { requireAuth } from "@/lib/requireAuth";
 import { fetchHousehold } from "@/lib/api/households";
-import { fetchLesson, fetchLocations, fetchUpcomingLessons } from "@/lib/api/lessons";
+import { fetchBatchCancelableLessons, fetchLesson, fetchLocations } from "@/lib/api/lessons";
 import LessonDetailContent from "@/content/LessonDetailContent";
 
 export const metadata: Metadata = {
@@ -29,14 +29,13 @@ export default async function LessonDetailPage({ params }: { params: Promise<{ i
   const isViewer = household?.myRole === "viewer";
   const isCoach = auth.profile.role === "coach";
 
-  // When the lesson is part of a batch, load the siblings so the cancel-
-  // remaining confirm dialog can list exactly what will be cancelled. The
-  // list only matters for parent owners/managers on a future-dated lesson;
-  // for other viewers we skip the extra fetch.
+  // When the lesson is part of a batch, load the exact set of lessons the
+  // cancel-remaining DELETE endpoint would cancel so the confirm dialog
+  // shows a 1:1 preview of what will be removed. Owners / managers only;
+  // viewers and coaches never see the dialog.
   let batchSiblings: UpcomingLesson[] = [];
   if (lesson.batchId !== null && !isViewer && !isCoach) {
-    const upcoming = (await fetchUpcomingLessons(accessToken, { limit: 50 })) ?? [];
-    batchSiblings = upcoming.filter((item) => item.batchId === lesson.batchId);
+    batchSiblings = (await fetchBatchCancelableLessons(accessToken, lesson.batchId)) ?? [];
   }
 
   return (
