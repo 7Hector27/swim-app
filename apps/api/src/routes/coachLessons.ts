@@ -719,7 +719,7 @@ coachLessonsRouter.patch(
 
       if (pendingBefore.length === 0) return { kind: "none" as const };
 
-      const now = new Date();
+      const now = getNowUtc();
       const pendingIds = pendingBefore.map((row) => row.id);
 
       // Snapshot pre-bump calendar_sequence per lesson.
