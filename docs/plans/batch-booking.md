@@ -47,7 +47,7 @@ The single-lesson parent path at `POST /lessons` is unchanged. Coach booking at 
 ## Decisions already made (from Jason, after the revision pass)
 
 - Parents only. Jason uses `/coach/book` for his own bookings.
-- Per batch: one household, one swimmer set, one pool, one duration.
+- Per batch: one household, one swimmer set, one pool. Each manual pick and each weekly pattern entry carries its own `durationMinutes`; one batch can mix 30, 45, and 60-minute lessons. The server validates overlap, travel buffer, and daily cap against each pick's own length.
 - Two modes: `manual` (2–20 explicit picks) and `weekly` (one or more weekdays at one time of day, N weeks, cap 20 lessons, every lesson strictly inside `bookingMaxAdvanceWeeks`).
 - Weekly never caps silently. Over-window lessons surface in the preview as `not_open_yet` with a count; submission rejects any over-window pick.
 - Preview lists every lesson individually. Each unavailable lesson shows the reason and (where same-day alternatives exist) up to three suggestions. The parent either moves the lesson to a different open time or skips that specific lesson.
@@ -77,8 +77,7 @@ See ADR 030 for the reasoning behind each.
 | `household_id` | `uuid` | no | — | FK → `households.id` (`ON DELETE RESTRICT`). Historical reference. |
 | `created_by` | `uuid` | no | — | FK → `profiles.id`. The parent who submitted. |
 | `mode` | `text` | no | — | CHECK IN (`'manual'`, `'weekly'`). |
-| `weekly_weekdays` | `int[]` | yes | — | ISO weekday numbers (1=Mon … 7=Sun). NULL when `mode='manual'`. |
-| `weekly_time_of_day` | `time` | yes | — | Local America/Los_Angeles time. NULL when `mode='manual'`. |
+| `weekly_pattern` | `jsonb` | yes | — | Non-empty array of `{ weekday, timeOfDay, durationMinutes }`. NULL when `mode='manual'`. Each entry's length is independent so one batch can mix 30, 45, and 60-minute lessons. Validated with the shared `StoredWeeklyPatternSchema` on write and read. Added in migration 0056; replaces the aligned `weekly_pattern_weekdays` + `weekly_pattern_times` arrays from migration 0055. |
 | `weekly_start_date` | `date` | yes | — | LA calendar date of the first candidate week. NULL when `mode='manual'`. |
 | `weekly_weeks` | `integer` | yes | — | Count of weeks the parent requested. NULL when `mode='manual'`. |
 | `created_at` | `timestamptz` | no | `now()` | |
@@ -87,14 +86,14 @@ See ADR 030 for the reasoning behind each.
 CHECK:
 ```
 ((mode = 'weekly'
-  AND weekly_weekdays IS NOT NULL
-  AND weekly_time_of_day IS NOT NULL
+  AND weekly_pattern IS NOT NULL
+  AND jsonb_typeof(weekly_pattern) = 'array'
+  AND jsonb_array_length(weekly_pattern) >= 1
   AND weekly_start_date IS NOT NULL
   AND weekly_weeks IS NOT NULL)
  OR
  (mode = 'manual'
-  AND weekly_weekdays IS NULL
-  AND weekly_time_of_day IS NULL
+  AND weekly_pattern IS NULL
   AND weekly_start_date IS NULL
   AND weekly_weeks IS NULL))
 ```
@@ -161,6 +160,7 @@ export type BatchMode = z.infer<typeof BatchModeSchema>;
 
 export const BatchPickSchema = z.object({
   startsAt: z.string().datetime({ offset: true }),
+  durationMinutes: LessonDurationMinutesSchema,
 });
 export type BatchPick = z.infer<typeof BatchPickSchema>;
 
@@ -169,12 +169,20 @@ export type BatchPick = z.infer<typeof BatchPickSchema>;
 const BATCH_LESSON_MIN = 2;
 const BATCH_LESSON_MAX = 20;
 
+export const BatchPatternPairSchema = z.object({
+  // ISO weekday (1=Mon … 7=Sun).
+  weekday: z.number().int().min(1).max(7),
+  // Local America/Los_Angeles time, zero-padded. Example: "16:30".
+  timeOfDay: z.string().regex(/^\d{2}:\d{2}$/, "timeOfDay must be HH:MM"),
+  durationMinutes: LessonDurationMinutesSchema,
+});
+
 export const BatchManualPreviewBodySchema = z.object({
   mode: z.literal("manual"),
   householdId: z.string().uuid(),
   locationId: z.string().uuid(),
-  durationMinutes: LessonDurationMinutesSchema,
   swimmerIds: z.array(z.string().uuid()).min(1).max(4),
+  // Each pick carries its own durationMinutes so a batch can mix lengths.
   picks: z.array(BatchPickSchema).min(BATCH_LESSON_MIN).max(BATCH_LESSON_MAX),
 });
 
@@ -182,12 +190,10 @@ export const BatchWeeklyPreviewBodySchema = z.object({
   mode: z.literal("weekly"),
   householdId: z.string().uuid(),
   locationId: z.string().uuid(),
-  durationMinutes: LessonDurationMinutesSchema,
   swimmerIds: z.array(z.string().uuid()).min(1).max(4),
-  // ISO weekday numbers: 1=Mon … 7=Sun. One or more.
-  weekdays: z.array(z.number().int().min(1).max(7)).min(1).max(7),
-  // Local time of day, e.g. "16:30".
-  timeOfDay: z.string().regex(/^\d{2}:\d{2}$/, "timeOfDay must be HH:MM"),
+  // Ordered list of (weekday, timeOfDay, durationMinutes) entries. One batch
+  // can mix 30, 45, and 60-minute entries.
+  pattern: z.array(BatchPatternPairSchema).min(1).max(BATCH_LESSON_MAX),
   // LA calendar date of the first candidate week.
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "startDate must be YYYY-MM-DD"),
   weeks: z.number().int().min(1).max(BATCH_LESSON_MAX),
@@ -366,7 +372,7 @@ Flow:
     - `recipient_profile_ids = <resolved>`
     - `ics_method = NULL`, `ics_sequence = NULL`
     - `payload`: see payload shape below
-13. Insert one `household_audit_log` row with `action='lesson_batch_booked'`, `actor_id=<requester>`, `household_id`, `target_swimmer_id=NULL`, `payload={ batchId, mode, locationId, durationMinutes, swimmerIds, picks: [{ startsAt, status }], ...weekly fields if applicable }`.
+13. Insert one `household_audit_log` row with `action='lesson_batch_booked'`, `actor_id=<requester>`, `household_id`, `target_swimmer_id=NULL`, `payload={ batchId, mode, locationId, swimmerIds, picks: [{ lessonId, startsAt, durationMinutes, status }], ...weekly fields if applicable }`. Each pick carries its own `durationMinutes` so a mixed-length batch stays reconstructible from the audit log.
 14. Commit.
 15. After `res.json()`:
     - For each approved lesson, `queueMicrotask(() => void syncLessonToGoogle(id))`.
@@ -381,15 +387,16 @@ Response: 201 with `BatchSubmitSuccessResponseSchema`. On any conflict, 422 with
   "batchId": "uuid",
   "mode": "manual" | "weekly",
   "weekly": {                        // only when mode = 'weekly'
-    "weekdays": [2, 4],
-    "timeOfDay": "16:30",
+    "pattern": [
+      { "weekday": 2, "timeOfDay": "16:30", "durationMinutes": 30 },
+      { "weekday": 4, "timeOfDay": "16:30", "durationMinutes": 45 }
+    ],
     "startDate": "2026-11-02",
     "weeks": 8
   },
   "locationId": "uuid",
   "locationName": "Egret Park",
   "locationAddress": "45 Ovation, Irvine, CA 92620",
-  "durationMinutes": 45,
   "swimmerFirstNames": ["Alex"],
   "deepLink": "/dashboard",
   "lessons": [

@@ -22,6 +22,8 @@ const makeLesson = (id: string, startsAt: string): UpcomingLesson => ({
   movedAt: null,
   previousStartsAt: null,
   createdAt: "2026-01-01T00:00:00.000Z",
+  batchId: null,
+  batchMode: null,
 });
 
 // ── lessonDateLA ──────────────────────────────────────────────────────────────

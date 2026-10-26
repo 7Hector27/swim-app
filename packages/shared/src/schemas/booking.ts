@@ -264,6 +264,11 @@ export type UpcomingLessonsCountResponse = z.infer<typeof UpcomingLessonsCountRe
 
 export const UpcomingLessonSchema = LessonResponseSchema.omit({ householdId: true }).extend({
   locationName: z.string(),
+  // Set when the lesson was booked as part of a multi-lesson or weekly batch.
+  // Dashboard uses `batchMode` to render a small "Weekly" / "Multi-booking"
+  // label next to the lesson.
+  batchId: z.string().uuid().nullable(),
+  batchMode: z.enum(["manual", "weekly"]).nullable(),
 });
 export type UpcomingLesson = z.infer<typeof UpcomingLessonSchema>;
 
@@ -437,12 +442,22 @@ export type RangeAvailabilityQuery = z.infer<typeof RangeAvailabilityQuerySchema
 export const MonthAvailabilityResponseSchema = z.object({
   needsApproval: z.boolean(),
   days:          z.array(DayAvailabilitySchema),
+  // Daily lesson-minutes cap echoed from availability_config. Clients use it
+  // to grey out unpicked slots that would push a day past the cap once
+  // all current picks are counted.
+  maxDailyLessonMinutes: z.number().int().positive(),
+  // Rolling booking-window length echoed from availability_config. Clients
+  // use it to measure the window the same way the server does, so the
+  // calendar's "not open yet" boundary matches the server's filter.
+  bookingMaxAdvanceWeeks: z.number().int().positive(),
 });
 export type MonthAvailabilityResponse = z.infer<typeof MonthAvailabilityResponseSchema>;
 
 export const WeekAvailabilityResponseSchema = z.object({
   needsApproval: z.boolean(),
   days:          z.array(WeekDayAvailabilitySchema),
+  maxDailyLessonMinutes: z.number().int().positive(),
+  bookingMaxAdvanceWeeks: z.number().int().positive(),
 });
 export type WeekAvailabilityResponse = z.infer<typeof WeekAvailabilityResponseSchema>;
 
@@ -727,6 +742,7 @@ export type BatchMode = z.infer<typeof BatchModeSchema>;
 
 export const BatchPickSchema = z.object({
   startsAt: z.string().datetime({ offset: true }),
+  durationMinutes: LessonDurationMinutesSchema,
 });
 export type BatchPick = z.infer<typeof BatchPickSchema>;
 
@@ -753,6 +769,7 @@ export const BatchPickSuggestionSchema = z.object({
 export const BatchPreviewPickSchema = z.object({
   index: z.number().int().nonnegative(),
   startsAt: z.string().datetime({ offset: true }),
+  durationMinutes: LessonDurationMinutesSchema,
   state: BatchPickStateSchema,
   reason: z.string().optional(),
   suggestions: z.array(BatchPickSuggestionSchema).max(3).optional(),
@@ -775,21 +792,40 @@ const batchManualBase = z.object({
   mode: z.literal("manual"),
   householdId: z.string().uuid(),
   locationId: z.string().uuid(),
-  durationMinutes: LessonDurationMinutesSchema,
   swimmerIds: z.array(z.string().uuid()).min(1).max(4),
+  // Each pick carries its own durationMinutes. One batch can mix 30, 45, and
+  // 60-minute lessons; household / swimmers / pool stay batch-wide.
   picks: z.array(BatchPickSchema).min(BATCH_LESSON_MIN).max(BATCH_LESSON_MAX),
 });
+
+// A single (weekday, time, length) entry in a recurring batch's pattern. For
+// example Tue 4:30 PM, 45 min. The pattern is an ordered list of these; the
+// server expands each entry across N weeks starting from `startDate`. Each
+// entry's lesson length is independent of the others.
+export const BatchPatternPairSchema = z.object({
+  // ISO weekday (1=Mon … 7=Sun).
+  weekday: z.number().int().min(1).max(7),
+  // Local America/Los_Angeles time, zero-padded. Example: "16:30".
+  timeOfDay: z.string().regex(/^\d{2}:\d{2}$/, "timeOfDay must be HH:MM"),
+  durationMinutes: LessonDurationMinutesSchema,
+});
+export type BatchPatternPair = z.infer<typeof BatchPatternPairSchema>;
+
+// Shape of the booking_batches.weekly_pattern jsonb column (ADR 030 phase 2).
+// Applied on write (defense in depth after the request body already parsed via
+// BatchPreviewBodySchema) and on read (so later consumers can trust the shape).
+export const StoredWeeklyPatternSchema = z.array(BatchPatternPairSchema).min(1);
+export type StoredWeeklyPattern = z.infer<typeof StoredWeeklyPatternSchema>;
 
 const batchWeeklyBase = z.object({
   mode: z.literal("weekly"),
   householdId: z.string().uuid(),
   locationId: z.string().uuid(),
-  durationMinutes: LessonDurationMinutesSchema,
   swimmerIds: z.array(z.string().uuid()).min(1).max(4),
-  // ISO weekday numbers: 1=Mon … 7=Sun. One or more; uniqueness enforced below.
-  weekdays: z.array(z.number().int().min(1).max(7)).min(1).max(7),
-  // Local America/Los_Angeles time, zero-padded. Example: "16:30".
-  timeOfDay: z.string().regex(/^\d{2}:\d{2}$/, "timeOfDay must be HH:MM"),
+  // Ordered list of (weekday, time, duration) entries. The expanded candidate
+  // list is pattern.length * weeks lessons; order inside the pattern
+  // determines the stable index assignment.
+  pattern: z.array(BatchPatternPairSchema).min(1).max(BATCH_LESSON_MAX),
   // LA calendar date of the first candidate week. Example: "2026-11-02".
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "startDate must be YYYY-MM-DD"),
   weeks: z.number().int().min(1).max(BATCH_LESSON_MAX),
@@ -812,14 +848,15 @@ function applyBatchInvariants(
     return;
   }
   // weekly
-  if (new Set(body.weekdays).size !== body.weekdays.length) {
+  const patternKeys = body.pattern.map((pair) => `${pair.weekday}@${pair.timeOfDay}`);
+  if (new Set(patternKeys).size !== patternKeys.length) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      path: ["weekdays"],
-      message: "weekdays must be unique",
+      path: ["pattern"],
+      message: "pattern pairs must be unique on (weekday, timeOfDay)",
     });
   }
-  const expanded = body.weekdays.length * body.weeks;
+  const expanded = body.pattern.length * body.weeks;
   if (expanded < BATCH_LESSON_MIN) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,

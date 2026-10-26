@@ -8,6 +8,11 @@ interface Props {
   days: WeekDayAvailability[];
   durationMinutes: 30 | 45 | 60;
   selectedStartsAt: string | null;
+  pickStartsSet?: Set<string>;
+  pickSpanSet?: Set<string>;
+  plannedStartsAtSet?: Set<string>;
+  flagReasonByStart?: Map<string, string>;
+  takenByPicksSet?: Set<string>;
   todayStr: string;
   onSlotClick: (slot: { startsAt: string; state: string }) => void;
 }
@@ -16,6 +21,11 @@ export default function WeekGrid({
   days,
   durationMinutes,
   selectedStartsAt,
+  pickStartsSet,
+  pickSpanSet,
+  plannedStartsAtSet,
+  flagReasonByStart,
+  takenByPicksSet,
   todayStr,
   onSlotClick,
 }: Props) {
@@ -56,6 +66,11 @@ export default function WeekGrid({
             gridRows={gridRows}
             durationMinutes={durationMinutes}
             selectedStartsAt={selectedStartsAt}
+            {...(pickStartsSet && { pickStartsSet })}
+            {...(pickSpanSet && { pickSpanSet })}
+            {...(plannedStartsAtSet && { plannedStartsAtSet })}
+            {...(flagReasonByStart && { flagReasonByStart })}
+            {...(takenByPicksSet && { takenByPicksSet })}
             todayStr={todayStr}
             onSlotClick={onSlotClick}
           />

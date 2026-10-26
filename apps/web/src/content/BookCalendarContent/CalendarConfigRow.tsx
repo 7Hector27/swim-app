@@ -22,6 +22,11 @@ interface Props {
   swimmerIds: string[];
   isLoading: boolean;
   showSwimmerError: boolean;
+  // Label for the length chips. In Multiple and Recurring the chips only set
+  // the length for the NEXT pick, so the label makes that explicit; existing
+  // picks keep their own length and get edited in the pick list / pattern
+  // list.
+  durationLabel?: string;
   onLocationChange: (id: string) => void;
   onDurationChange: (d: 30 | 45 | 60) => void;
   onSwimmersChange: (ids: string[]) => void;
@@ -81,6 +86,7 @@ export default function CalendarConfigRow({
   swimmerIds,
   isLoading,
   showSwimmerError,
+  durationLabel = "Length",
   onLocationChange,
   onDurationChange,
   onSwimmersChange,
@@ -125,7 +131,7 @@ export default function CalendarConfigRow({
       )}
 
       <div>
-        <p className={LABEL}>Length</p>
+        <p className={LABEL}>{durationLabel}</p>
         <div className="flex flex-wrap gap-2">
           {DURATIONS.map((minutes) => (
             <button

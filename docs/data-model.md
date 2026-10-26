@@ -160,8 +160,7 @@ One row per batch-booked submission (parent-created via `POST /lessons/batch`). 
 | `household_id` | `uuid` | no | — | FK → `households.id` (`ON DELETE RESTRICT`). |
 | `created_by` | `uuid` | no | — | FK → `profiles.id`. The parent who submitted the batch. |
 | `mode` | `text` | no | — | CHECK IN (`manual`, `weekly`). |
-| `weekly_weekdays` | `integer[]` | yes | — | ISO weekday numbers (1=Mon … 7=Sun). Non-null only when `mode='weekly'`. |
-| `weekly_time_of_day` | `time` | yes | — | Local America/Los_Angeles time (e.g. 16:30). Non-null only when `mode='weekly'`. |
+| `weekly_pattern` | `jsonb` | yes | — | Non-empty array of `{ weekday, timeOfDay, durationMinutes }`. Non-null only when `mode='weekly'`. Each entry's length is independent so a batch can mix 30, 45, and 60-minute lessons. Validated against `StoredWeeklyPatternSchema` (shared Zod) on write and read. Added in migration 0056; replaces the aligned `weekly_pattern_weekdays` and `weekly_pattern_times` arrays that migration 0055 introduced. |
 | `weekly_start_date` | `date` | yes | — | LA calendar date of the first candidate week. Non-null only when `mode='weekly'`. |
 | `weekly_weeks` | `integer` | yes | — | Number of weeks the parent requested. Non-null only when `mode='weekly'`. |
 | `created_at` | `timestamptz` | no | `now()` | |
@@ -169,7 +168,7 @@ One row per batch-booked submission (parent-created via `POST /lessons/batch`). 
 
 Constraints:
 - CHECK `booking_batches_mode_valid`: `mode IN ('manual', 'weekly')`.
-- CHECK `booking_batches_weekly_fields_pair`: all four `weekly_*` columns are non-null when `mode='weekly'` and all four are null when `mode='manual'`.
+- CHECK `booking_batches_weekly_fields_pair`: when `mode='weekly'`, `weekly_pattern` is non-null, `jsonb_typeof` is `array`, `jsonb_array_length >= 1`, and `weekly_start_date` + `weekly_weeks` are non-null. When `mode='manual'`, all three are null.
 
 Indexes:
 - `(household_id, created_at DESC)` for dashboard listing.

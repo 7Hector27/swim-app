@@ -4,18 +4,21 @@
 // preview + submit response schemas.
 
 import { laToUtc, type SlotRejectionReason } from "./slots";
-import type { BatchPickState, BatchWeeklyOverride } from "@swim-app/shared";
+import type {
+  BatchPatternPair,
+  BatchPickState,
+  BatchWeeklyOverride,
+  LessonDurationMinutes,
+} from "@swim-app/shared";
 
 // ── Weekly expansion ────────────────────────────────────────────────────────
 
 export interface WeeklyExpandParams {
-  // ISO weekday numbers (1=Mon … 7=Sun). The caller is responsible for
-  // deduping and sorting if the stable order matters externally; this
-  // function respects the given order so the client's `weekdays` input
-  // determines the index assignment.
-  weekdays: number[];
-  // Local America/Los_Angeles time of day, e.g. "16:30".
-  timeOfDay: string;
+  // Ordered list of (weekday, timeOfDay) pairs. The pattern's order defines
+  // the position of each pair inside a single week; the expansion walks
+  // week-by-week so the stable index equals (weekIndex * pattern.length +
+  // pairIndex).
+  pattern: BatchPatternPair[];
   // LA calendar date of the first candidate week, e.g. "2026-11-02".
   startDate: string;
   // Number of weeks the parent requested.
@@ -27,17 +30,19 @@ export interface Candidate {
   // from `overrides[].index` and `skips[]`.
   index: number;
   startsAt: Date;
+  // Each candidate owns its length so a single batch can mix 30, 45, and
+  // 60-minute lessons.
+  durationMinutes: LessonDurationMinutes;
 }
 
 /**
- * Expand a weekly rule into a flat list of candidate lessons. The order is
- * week-then-weekday: all weekdays for week 0, then all weekdays for week 1,
- * and so on. The resulting index is stable across preview and submit so the
- * client can address a specific candidate by index.
+ * Expand a recurring pattern into a flat list of candidate lessons. The order
+ * is week-then-pattern-position: all pattern pairs for week 0, then all pattern
+ * pairs for week 1, and so on. The index is stable across preview and submit
+ * so the client can address a specific candidate by index.
  */
 export function expandWeeklyCandidates(params: WeeklyExpandParams): Candidate[] {
-  const { weekdays, timeOfDay, startDate, weeks } = params;
-  const sortedUniqueWeekdays = Array.from(new Set(weekdays)).sort((a, b) => a - b);
+  const { pattern, startDate, weeks } = params;
 
   // The first candidate for weekday W is on or after startDate (the parent
   // picked startDate as the start of the series's first week).
@@ -46,15 +51,15 @@ export function expandWeeklyCandidates(params: WeeklyExpandParams): Candidate[] 
   const candidates: Candidate[] = [];
   let index = 0;
   for (let weekIndex = 0; weekIndex < weeks; weekIndex++) {
-    for (const weekday of sortedUniqueWeekdays) {
+    for (const pair of pattern) {
       // Offset within the first week: how many days from startDate until the
-      // next occurrence of `weekday`. If startDate itself IS `weekday`, offset
-      // is 0 and the first candidate is startDate.
-      const firstWeekOffset = (weekday - startIsoWeekday + 7) % 7;
+      // next occurrence of `pair.weekday`. If startDate itself IS the pair's
+      // weekday, offset is 0 and the first candidate is startDate.
+      const firstWeekOffset = (pair.weekday - startIsoWeekday + 7) % 7;
       const totalDayOffset = weekIndex * 7 + firstWeekOffset;
       const dateStr = addDaysToLaDate(startDate, totalDayOffset);
-      const startsAt = laToUtc(dateStr, timeOfDay);
-      candidates.push({ index, startsAt });
+      const startsAt = laToUtc(dateStr, pair.timeOfDay);
+      candidates.push({ index, startsAt, durationMinutes: pair.durationMinutes });
       index++;
     }
   }
@@ -80,7 +85,13 @@ export function applyWeeklyOverridesAndSkips(
     if (skipSet.has(candidate.index)) continue;
     const override = overrideByIndex.get(candidate.index);
     if (override) {
-      result.push({ index: candidate.index, startsAt: new Date(override.startsAt) });
+      result.push({
+        index: candidate.index,
+        startsAt: new Date(override.startsAt),
+        // An override only moves a candidate's time; its length stays the
+        // length declared in the pattern entry it belongs to.
+        durationMinutes: candidate.durationMinutes,
+      });
     } else {
       result.push(candidate);
     }

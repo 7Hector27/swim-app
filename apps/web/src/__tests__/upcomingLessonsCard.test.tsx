@@ -25,6 +25,8 @@ const baseLesson: UpcomingLesson = {
   movedAt: null,
   previousStartsAt: null,
   createdAt: "2026-10-14T10:00:00.000Z",
+  batchId: null,
+  batchMode: null,
 };
 
 describe("UpcomingLessonsCard — empty state", () => {

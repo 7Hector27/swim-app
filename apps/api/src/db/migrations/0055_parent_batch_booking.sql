@@ -3,8 +3,8 @@ CREATE TABLE "booking_batches" (
 	"household_id" uuid NOT NULL,
 	"created_by" uuid NOT NULL,
 	"mode" text NOT NULL,
-	"weekly_weekdays" integer[],
-	"weekly_time_of_day" time,
+	"weekly_pattern_weekdays" integer[],
+	"weekly_pattern_times" time[],
 	"weekly_start_date" date,
 	"weekly_weeks" integer,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
@@ -12,14 +12,16 @@ CREATE TABLE "booking_batches" (
 	CONSTRAINT "booking_batches_mode_valid" CHECK ("booking_batches"."mode" IN ('manual', 'weekly')),
 	CONSTRAINT "booking_batches_weekly_fields_pair" CHECK ((
         ("booking_batches"."mode" = 'weekly'
-         AND "booking_batches"."weekly_weekdays" IS NOT NULL
-         AND "booking_batches"."weekly_time_of_day" IS NOT NULL
+         AND "booking_batches"."weekly_pattern_weekdays" IS NOT NULL
+         AND "booking_batches"."weekly_pattern_times" IS NOT NULL
          AND "booking_batches"."weekly_start_date" IS NOT NULL
-         AND "booking_batches"."weekly_weeks" IS NOT NULL)
+         AND "booking_batches"."weekly_weeks" IS NOT NULL
+         AND array_length("booking_batches"."weekly_pattern_weekdays", 1)
+             = array_length("booking_batches"."weekly_pattern_times", 1))
         OR
         ("booking_batches"."mode" = 'manual'
-         AND "booking_batches"."weekly_weekdays" IS NULL
-         AND "booking_batches"."weekly_time_of_day" IS NULL
+         AND "booking_batches"."weekly_pattern_weekdays" IS NULL
+         AND "booking_batches"."weekly_pattern_times" IS NULL
          AND "booking_batches"."weekly_start_date" IS NULL
          AND "booking_batches"."weekly_weeks" IS NULL)
       ))

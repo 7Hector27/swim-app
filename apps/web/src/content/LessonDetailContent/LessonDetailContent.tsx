@@ -8,6 +8,7 @@ import type { LessonLocation, UpcomingLesson } from "@swim-app/shared";
 import AddNoteForm from "@/components/AddNoteForm";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import LessonStatusBadge from "@/components/LessonStatusBadge";
+import BatchModeBadge from "@/components/BatchModeBadge";
 import { cancelLessonAction, type LessonDetailState } from "./actions";
 
 interface Props {
@@ -72,6 +73,11 @@ export default function LessonDetailContent({ lesson, locations: _locations, isV
                   <Row label="Rescheduled">
                     Moved by Jason from {formatDateLabel(lesson.previousStartsAt)} at{" "}
                     {formatTime(new Date(lesson.previousStartsAt))}
+                  </Row>
+                )}
+                {lesson.batchMode !== null && (
+                  <Row label="Batch">
+                    <BatchModeBadge mode={lesson.batchMode} />
                   </Row>
                 )}
               </dl>

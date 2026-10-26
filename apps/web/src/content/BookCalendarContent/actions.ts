@@ -4,6 +4,14 @@ import { createClient } from "@/lib/supabase/server";
 import { fetchRangeAvailability, fetchAvailableSlots } from "@/lib/api/lessons";
 import {
   type AvailableSlot,
+  BatchPreviewResponseSchema,
+  BatchSubmitConflictResponseSchema,
+  BatchSubmitSuccessResponseSchema,
+  type BatchPreviewBody,
+  type BatchPreviewResponse,
+  type BatchSubmitBody,
+  type BatchSubmitConflictResponse,
+  type BatchSubmitSuccessResponse,
   CreateLessonBodySchema,
   LessonResponseSchema,
   MonthAvailabilityResponseSchema,
@@ -166,4 +174,71 @@ export async function createBookingAction(
   }
 
   return mapBookingApiResponse(responseStatus, responseBody);
+}
+
+// ── Batch (ADR 030) ──────────────────────────────────────────────────────────
+
+export type BatchPreviewResult =
+  | { kind: "ok"; data: BatchPreviewResponse }
+  | { kind: "forbidden" }
+  | { kind: "error"; message: string };
+
+export async function previewBatchAction(body: BatchPreviewBody): Promise<BatchPreviewResult> {
+  const supabase = await createClient();
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) return { kind: "error", message: "Session expired. Please sign in again." };
+  try {
+    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/lessons/batch/preview`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify(body),
+    });
+    if (response.status === 403) return { kind: "forbidden" };
+    if (!response.ok) {
+      return { kind: "error", message: "Could not check availability. Please try again." };
+    }
+    const json: unknown = await response.json();
+    const parsed = BatchPreviewResponseSchema.safeParse(json);
+    if (!parsed.success) return { kind: "error", message: "Unexpected response from server." };
+    return { kind: "ok", data: parsed.data };
+  } catch {
+    return { kind: "error", message: "Could not reach the server. Please try again." };
+  }
+}
+
+export type BatchSubmitResult =
+  | { kind: "ok"; data: BatchSubmitSuccessResponse }
+  | { kind: "conflict"; data: BatchSubmitConflictResponse }
+  | { kind: "forbidden" }
+  | { kind: "error"; message: string };
+
+export async function submitBatchAction(body: BatchSubmitBody): Promise<BatchSubmitResult> {
+  const supabase = await createClient();
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) return { kind: "error", message: "Session expired. Please sign in again." };
+  try {
+    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/lessons/batch`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify(body),
+    });
+    if (response.status === 403) return { kind: "forbidden" };
+    if (response.status === 422) {
+      const json: unknown = await response.json().catch(() => null);
+      const parsed = BatchSubmitConflictResponseSchema.safeParse(json);
+      if (parsed.success) return { kind: "conflict", data: parsed.data };
+      return { kind: "error", message: "Some lessons are no longer available." };
+    }
+    if (response.status === 201) {
+      const json: unknown = await response.json();
+      const parsed = BatchSubmitSuccessResponseSchema.safeParse(json);
+      if (!parsed.success) return { kind: "error", message: "Unexpected response from server." };
+      return { kind: "ok", data: parsed.data };
+    }
+    return { kind: "error", message: "Could not book your lessons. Please try again." };
+  } catch {
+    return { kind: "error", message: "Could not reach the server. Please try again." };
+  }
 }

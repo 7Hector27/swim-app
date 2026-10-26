@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import type { UpcomingLesson } from "@swim-app/shared";
 import LessonStatusBadge from "@/components/LessonStatusBadge";
+import BatchModeBadge from "@/components/BatchModeBadge";
 
 interface Props {
   lessons: UpcomingLesson[];
@@ -83,8 +84,9 @@ function LessonRow({ lesson }: { lesson: UpcomingLesson }) {
         <p className="font-semibold text-text text-base leading-snug">{timeRange}</p>
         <p className="text-sm text-text-secondary mt-0.5">{lesson.locationName}</p>
         <p className="text-sm text-text-secondary">{swimmerNames}</p>
-        <div className="mt-1.5">
+        <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
           <LessonStatusBadge status={lesson.status} viewer="parent" />
+          <BatchModeBadge mode={lesson.batchMode} />
         </div>
       </div>
     </Link>

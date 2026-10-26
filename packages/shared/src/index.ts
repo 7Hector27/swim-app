@@ -172,6 +172,7 @@ export type {
   CoachHouseholdSearchResponse,
   BatchMode,
   BatchPick,
+  BatchPatternPair,
   BatchPickState,
   BatchPreviewPick,
   BatchPreviewBody,
@@ -181,6 +182,7 @@ export type {
   BatchSubmitSuccessResponse,
   BatchConflictPick,
   BatchSubmitConflictResponse,
+  StoredWeeklyPattern,
 } from "./schemas/booking";
 export {
   LessonLocationSchema,
@@ -242,6 +244,8 @@ export {
   BatchSubmitSuccessResponseSchema,
   BatchConflictPickSchema,
   BatchSubmitConflictResponseSchema,
+  BatchPatternPairSchema,
+  StoredWeeklyPatternSchema,
 } from "./schemas/booking";
 export type {
   SlotState,

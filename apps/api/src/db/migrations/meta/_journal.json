@@ -393,6 +393,13 @@
       "when": 1792790449089,
       "tag": "0055_parent_batch_booking",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1793031080649,
+      "tag": "0056_booking_batches_weekly_pattern_jsonb",
+      "breakpoints": true
     }
   ]
 }

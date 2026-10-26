@@ -28,13 +28,17 @@ export interface BatchEmailLesson {
   calendarSequence: number;
 }
 
+export interface BatchPatternPair {
+  weekday: number;
+  timeOfDay: string;
+}
+
 export interface BatchEmailPayload {
   batchId: string;
   mode: "manual" | "weekly";
   // Present only for mode='weekly'.
   weekly?: {
-    weekdays: number[];
-    timeOfDay: string;
+    pattern: BatchPatternPair[];
     startDate: string;
     weeks: number;
   };

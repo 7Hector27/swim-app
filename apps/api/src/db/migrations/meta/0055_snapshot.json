@@ -365,15 +365,15 @@
           "primaryKey": false,
           "notNull": true
         },
-        "weekly_weekdays": {
-          "name": "weekly_weekdays",
+        "weekly_pattern_weekdays": {
+          "name": "weekly_pattern_weekdays",
           "type": "integer[]",
           "primaryKey": false,
           "notNull": false
         },
-        "weekly_time_of_day": {
-          "name": "weekly_time_of_day",
-          "type": "time",
+        "weekly_pattern_times": {
+          "name": "weekly_pattern_times",
+          "type": "time[]",
           "primaryKey": false,
           "notNull": false
         },
@@ -465,7 +465,7 @@
         },
         "booking_batches_weekly_fields_pair": {
           "name": "booking_batches_weekly_fields_pair",
-          "value": "(\n        (\"booking_batches\".\"mode\" = 'weekly'\n         AND \"booking_batches\".\"weekly_weekdays\" IS NOT NULL\n         AND \"booking_batches\".\"weekly_time_of_day\" IS NOT NULL\n         AND \"booking_batches\".\"weekly_start_date\" IS NOT NULL\n         AND \"booking_batches\".\"weekly_weeks\" IS NOT NULL)\n        OR\n        (\"booking_batches\".\"mode\" = 'manual'\n         AND \"booking_batches\".\"weekly_weekdays\" IS NULL\n         AND \"booking_batches\".\"weekly_time_of_day\" IS NULL\n         AND \"booking_batches\".\"weekly_start_date\" IS NULL\n         AND \"booking_batches\".\"weekly_weeks\" IS NULL)\n      )"
+          "value": "(\n        (\"booking_batches\".\"mode\" = 'weekly'\n         AND \"booking_batches\".\"weekly_pattern_weekdays\" IS NOT NULL\n         AND \"booking_batches\".\"weekly_pattern_times\" IS NOT NULL\n         AND \"booking_batches\".\"weekly_start_date\" IS NOT NULL\n         AND \"booking_batches\".\"weekly_weeks\" IS NOT NULL\n         AND array_length(\"booking_batches\".\"weekly_pattern_weekdays\", 1)\n             = array_length(\"booking_batches\".\"weekly_pattern_times\", 1))\n        OR\n        (\"booking_batches\".\"mode\" = 'manual'\n         AND \"booking_batches\".\"weekly_pattern_weekdays\" IS NULL\n         AND \"booking_batches\".\"weekly_pattern_times\" IS NULL\n         AND \"booking_batches\".\"weekly_start_date\" IS NULL\n         AND \"booking_batches\".\"weekly_weeks\" IS NULL)\n      )"
         }
       },
       "isRLSEnabled": true

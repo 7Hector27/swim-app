@@ -149,7 +149,7 @@ function addDays(iso: string, n: number): string {
 // pick. Mirrors the pattern in lessons.integration.test.ts.
 async function withAllDaysEnabled<T>(fn: () => Promise<T>): Promise<T> {
   const seasons = await adminDb().select().from(availabilitySeasons);
-  const originals = seasons.map((season) => ({
+  const originalSeasons = seasons.map((season) => ({
     id: season.id,
     teachesDays: season.teachesDays,
   }));
@@ -159,14 +159,33 @@ async function withAllDaysEnabled<T>(fn: () => Promise<T>): Promise<T> {
       .set({ teachesDays: [1, 2, 3, 4, 5, 6, 7] })
       .where(eq(availabilitySeasons.id, season.id));
   }
+  // Also open all days on the fallback config so that dates with no season
+  // coverage (common when test anchors land on a weekend or odd weekday)
+  // are still treated as lesson days.
+  const configRows = await adminDb().select().from(availabilityConfig).limit(1);
+  const originalConfig = configRows[0]
+    ? { id: configRows[0].id, defaultTeachesDays: configRows[0].defaultTeachesDays }
+    : null;
+  if (originalConfig) {
+    await adminDb()
+      .update(availabilityConfig)
+      .set({ defaultTeachesDays: [1, 2, 3, 4, 5, 6, 7] })
+      .where(eq(availabilityConfig.id, originalConfig.id));
+  }
   try {
     return await fn();
   } finally {
-    for (const original of originals) {
+    for (const original of originalSeasons) {
       await adminDb()
         .update(availabilitySeasons)
         .set({ teachesDays: original.teachesDays })
         .where(eq(availabilitySeasons.id, original.id));
+    }
+    if (originalConfig) {
+      await adminDb()
+        .update(availabilityConfig)
+        .set({ defaultTeachesDays: originalConfig.defaultTeachesDays })
+        .where(eq(availabilityConfig.id, originalConfig.id));
     }
   }
 }
@@ -304,10 +323,8 @@ describe("POST /lessons/batch — Phase 1", () => {
         mode: "weekly" as const,
         householdId: owner.householdId,
         locationId,
-        durationMinutes: 30 as const,
         swimmerIds: [swimmerId],
-        weekdays: [3],
-        timeOfDay: "16:30",
+        pattern: [{ weekday: 3, timeOfDay: "16:30", durationMinutes: 30 as const }],
         startDate,
         weeks: 2,
       };
@@ -345,10 +362,11 @@ describe("POST /lessons/batch — Phase 1", () => {
           mode: "weekly",
           householdId: owner.householdId,
           locationId,
-          durationMinutes: 30,
           swimmerIds: [swimmerId],
-          weekdays: [2, 4],
-          timeOfDay: "16:30",
+          pattern: [
+            { weekday: 2, timeOfDay: "16:30", durationMinutes: 30 },
+            { weekday: 4, timeOfDay: "16:30", durationMinutes: 30 },
+          ],
           startDate,
           weeks: 3,
         });
@@ -373,6 +391,7 @@ describe("POST /lessons/batch — Phase 1", () => {
   it("T5a: schema rejects a 21-pick manual batch", async () => {
     const picks = Array.from({ length: 21 }, (_unused, idx) => ({
       startsAt: new Date(Date.now() + (10 + idx) * 24 * 60 * 60 * 1000).toISOString(),
+      durationMinutes: 30 as const,
     }));
     const res = await request(app)
       .post("/lessons/batch")
@@ -381,7 +400,6 @@ describe("POST /lessons/batch — Phase 1", () => {
         mode: "manual",
         householdId: owner.householdId,
         locationId,
-        durationMinutes: 30,
         swimmerIds: [swimmerId],
         picks,
       });
@@ -399,10 +417,8 @@ describe("POST /lessons/batch — Phase 1", () => {
         mode: "weekly" as const,
         householdId: owner.householdId,
         locationId,
-        durationMinutes: 30 as const,
         swimmerIds: [swimmerId],
-        weekdays: [3],
-        timeOfDay: "16:30",
+        pattern: [{ weekday: 3, timeOfDay: "16:30", durationMinutes: 30 as const }],
         startDate,
         weeks: 2,
       };
@@ -444,9 +460,11 @@ describe("POST /lessons/batch — Phase 1", () => {
         mode: "manual" as const,
         householdId: owner.householdId,
         locationId,
-        durationMinutes: 45 as const,
         swimmerIds: [swimmerId],
-        picks: [{ startsAt: pick1.toISOString() }, { startsAt: pick2.toISOString() }],
+        picks: [
+          { startsAt: pick1.toISOString(), durationMinutes: 45 as const },
+          { startsAt: pick2.toISOString(), durationMinutes: 45 as const },
+        ],
       };
       const preview = await request(app)
         .post("/lessons/batch/preview")
@@ -491,10 +509,8 @@ describe("POST /lessons/batch — Phase 1", () => {
             mode: "weekly",
             householdId: owner.householdId,
             locationId,
-            durationMinutes: 30,
             swimmerIds: [swimmerId],
-            weekdays: [weekday],
-            timeOfDay: "16:30",
+            pattern: [{ weekday, timeOfDay: "16:30", durationMinutes: 30 }],
             startDate,
             weeks: 3,
             overrides: [{ index: 1, startsAt: laDateToUtcAtTime(week2Date, "17:30").toISOString() }],
@@ -541,10 +557,8 @@ describe("POST /lessons/batch — Phase 1", () => {
             mode: "weekly",
             householdId: owner.householdId,
             locationId,
-            durationMinutes: 30,
             swimmerIds: [swimmerId],
-            weekdays: [weekday],
-            timeOfDay: "16:30",
+            pattern: [{ weekday, timeOfDay: "16:30", durationMinutes: 30 }],
             startDate,
             weeks: 3,
             overrides: [],
@@ -601,10 +615,8 @@ describe("POST /lessons/batch — Phase 1", () => {
             mode: "weekly",
             householdId: owner.householdId,
             locationId,
-            durationMinutes: 30,
             swimmerIds: [swimmerId],
-            weekdays: [weekday],
-            timeOfDay: "16:30",
+            pattern: [{ weekday, timeOfDay: "16:30", durationMinutes: 30 }],
             startDate,
             weeks: 3,
           });
@@ -658,10 +670,8 @@ describe("POST /lessons/batch — Phase 1", () => {
           mode: "weekly",
           householdId: owner.householdId,
           locationId,
-          durationMinutes: 30,
           swimmerIds: [swimmerId],
-          weekdays: [3],
-          timeOfDay: "16:30",
+          pattern: [{ weekday: 3, timeOfDay: "16:30", durationMinutes: 30 }],
           startDate,
           weeks: 4,
         });
@@ -739,10 +749,8 @@ describe("POST /lessons/batch — Phase 1", () => {
           mode: "weekly",
           householdId: owner.householdId,
           locationId,
-          durationMinutes: 30,
           swimmerIds: [swimmerId],
-          weekdays: [3],
-          timeOfDay: "16:30",
+          pattern: [{ weekday: 3, timeOfDay: "16:30", durationMinutes: 30 }],
           startDate,
           weeks: 3,
         });
@@ -832,11 +840,13 @@ describe("POST /lessons/batch — Phase 1", () => {
           mode: "manual" as const,
           householdId: owner.householdId,
           locationId,
-          durationMinutes: 30 as const,
           swimmerIds: [swimmerId],
           picks: [
-            { startsAt: sharedSlot },
-            { startsAt: laDateToUtcAtTime(addDays(startDate, 7), "16:30").toISOString() },
+            { startsAt: sharedSlot, durationMinutes: 30 as const },
+            {
+              startsAt: laDateToUtcAtTime(addDays(startDate, 7), "16:30").toISOString(),
+              durationMinutes: 30 as const,
+            },
           ],
         };
         const singleBody = {
@@ -876,6 +886,110 @@ describe("POST /lessons/batch — Phase 1", () => {
         await adminDb().delete(swimmers).where(eq(swimmers.id, otherSwimmerId));
         await other.cleanup();
       }
+    });
+  });
+
+  // T10: mixed-length preview and submit (per-pick duration end-to-end).
+  it("T10: a batch with a 30 and a 45 picks correctly and stores each lesson's own length", async () => {
+    await withAllDaysEnabled(async () => {
+      const startDate = futureLaDate(10);
+      // Two picks on the same day that cannot overlap: 30 min at 16:00
+      // (ends 16:30) and 45 min at 17:00 (ends 17:45). Default teaching
+      // hours are 16:00..20:00 so both sit well inside the window and the
+      // slot engine treats each pick with its own length.
+      const first = laDateToUtcAtTime(startDate, "16:00");
+      const second = laDateToUtcAtTime(startDate, "17:00");
+      const body = {
+        mode: "manual" as const,
+        householdId: owner.householdId,
+        locationId,
+        swimmerIds: [swimmerId],
+        picks: [
+          { startsAt: first.toISOString(), durationMinutes: 30 as const },
+          { startsAt: second.toISOString(), durationMinutes: 45 as const },
+        ],
+      };
+      const preview = await request(app)
+        .post("/lessons/batch/preview")
+        .set("Authorization", `Bearer ${owner.accessToken}`)
+        .send(body);
+      expect(preview.status).toBe(200);
+      const previewPicks = preview.body.picks as Array<{
+        index: number;
+        state: string;
+        durationMinutes: number;
+      }>;
+      expect(previewPicks).toHaveLength(2);
+      expect(previewPicks.every((p) => p.state === "available")).toBe(true);
+      // Preview echoes each pick's own length.
+      expect(previewPicks.find((p) => p.index === 0)!.durationMinutes).toBe(30);
+      expect(previewPicks.find((p) => p.index === 1)!.durationMinutes).toBe(45);
+
+      const submit = await request(app)
+        .post("/lessons/batch")
+        .set("Authorization", `Bearer ${owner.accessToken}`)
+        .send(body);
+      expect(submit.status).toBe(201);
+      const lessonIds = submit.body.lessonIds as string[];
+      expect(lessonIds).toHaveLength(2);
+      const lessonRows = await adminDb()
+        .select({
+          startsAt: lessons.startsAt,
+          durationMinutes: lessons.durationMinutes,
+        })
+        .from(lessons)
+        .where(inArray(lessons.id, lessonIds))
+        .orderBy(lessons.startsAt);
+      expect(lessonRows).toHaveLength(2);
+      // Lessons are written with each pick's own duration, not a batch-wide one.
+      expect(lessonRows[0]!.durationMinutes).toBe(30);
+      expect(lessonRows[1]!.durationMinutes).toBe(45);
+    });
+  });
+
+  // T11: a 45-min pick overlapping a 30-min pick in the same batch is
+  // flagged conflicts_batch. Submit returns 422 and writes nothing.
+  it("T11: a 45-min pick overlapping a 30-min pick is flagged conflicts_batch", async () => {
+    await withAllDaysEnabled(async () => {
+      const startDate = futureLaDate(10);
+      // 30-min pick 16:00..16:30, 45-min pick 16:15..17:00. The second
+      // starts inside the first's span. Default teaching hours
+      // (16:00..20:00) accommodate both so the only reason to flag either
+      // is the batch-level overlap check.
+      const first = laDateToUtcAtTime(startDate, "16:00");
+      const second = laDateToUtcAtTime(startDate, "16:15");
+      const body = {
+        mode: "manual" as const,
+        householdId: owner.householdId,
+        locationId,
+        swimmerIds: [swimmerId],
+        picks: [
+          { startsAt: first.toISOString(), durationMinutes: 30 as const },
+          { startsAt: second.toISOString(), durationMinutes: 45 as const },
+        ],
+      };
+      const preview = await request(app)
+        .post("/lessons/batch/preview")
+        .set("Authorization", `Bearer ${owner.accessToken}`)
+        .send(body);
+      expect(preview.status).toBe(200);
+      const previewPicks = preview.body.picks as Array<{ index: number; state: string }>;
+      // At least one of the two is flagged as conflicts_batch (the one
+      // seen second in picks-ascending order).
+      expect(previewPicks.some((p) => p.state === "conflicts_batch")).toBe(true);
+
+      const submit = await request(app)
+        .post("/lessons/batch")
+        .set("Authorization", `Bearer ${owner.accessToken}`)
+        .send(body);
+      expect(submit.status).toBe(422);
+      expect(submit.body.error).toBe("picks_conflict");
+      // Nothing written.
+      const householdLessonRows = await adminDb()
+        .select({ id: lessons.id })
+        .from(lessons)
+        .where(eq(lessons.householdId, owner.householdId));
+      expect(householdLessonRows).toHaveLength(0);
     });
   });
 });

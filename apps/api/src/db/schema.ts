@@ -887,11 +887,11 @@ export const coachAuditLog = pgTable(
 
 // One row per batch submission. Immutable after insert; the member
 // lessons' lifecycle (reschedule, cancel, approval) is independent of
-// this row. For weekly mode the four weekly_* columns record the
-// parent's original request (one or more weekdays at one time of day,
-// starting on a specific date, for N weeks). Manual mode leaves them
-// all NULL; the picks live only on the generated `lessons` rows. See
-// docs/plans/batch-booking.md.
+// this row. For weekly mode the three weekly_* columns record the
+// parent's original request: a jsonb array of
+// `{ weekday, time, durationMinutes }` entries, a start date, and a week
+// count. Manual mode leaves all three NULL; the picks live only on the
+// generated `lessons` rows. See docs/plans/batch-booking.md.
 export const bookingBatches = pgTable(
   "booking_batches",
   {
@@ -900,10 +900,14 @@ export const bookingBatches = pgTable(
     createdBy: uuid("created_by").notNull().references(() => profiles.id),
     // 'manual' | 'weekly'. The CHECK below pairs it with the weekly_* fields.
     mode: text("mode").notNull(),
-    // ISO weekday numbers (1=Mon … 7=Sun). Non-null only when mode='weekly'.
-    weeklyWeekdays: integer("weekly_weekdays").array(),
-    // Local America/Los_Angeles time, e.g. 16:30. Non-null only when mode='weekly'.
-    weeklyTimeOfDay: time("weekly_time_of_day"),
+    // JSONB array of `{ weekday: 1..7, timeOfDay: "HH:MM",
+    // durationMinutes: 30 | 45 | 60 }`. Non-null only when mode='weekly'.
+    // The CHECK below asserts the shape at the column level; the API also
+    // validates it against the shared BatchPatternPairSchema on write (via
+    // the request body) and on read via mapBookingBatchRow().
+    weeklyPattern: jsonb("weekly_pattern").$type<
+      { weekday: number; timeOfDay: string; durationMinutes: 30 | 45 | 60 }[]
+    >(),
     // LA calendar date of the first candidate week. Non-null only when mode='weekly'.
     weeklyStartDate: date("weekly_start_date"),
     // Number of weeks the parent requested. Non-null only when mode='weekly'.
@@ -916,21 +920,22 @@ export const bookingBatches = pgTable(
       "booking_batches_mode_valid",
       sql`${table.mode} IN ('manual', 'weekly')`,
     ),
-    // All four weekly_* columns are set together or none of them. mode='weekly'
-    // requires all four; mode='manual' forbids all four. Keeps the batch row
-    // self-consistent so later readers can trust the mode flag.
+    // All weekly_* columns are set together or none of them. mode='weekly'
+    // requires all three set and the pattern to be a non-empty jsonb array;
+    // mode='manual' forbids all three. Keeps the batch row self-consistent
+    // so later readers can trust the mode flag.
     check(
       "booking_batches_weekly_fields_pair",
       sql`(
         (${table.mode} = 'weekly'
-         AND ${table.weeklyWeekdays} IS NOT NULL
-         AND ${table.weeklyTimeOfDay} IS NOT NULL
+         AND ${table.weeklyPattern} IS NOT NULL
+         AND jsonb_typeof(${table.weeklyPattern}) = 'array'
+         AND jsonb_array_length(${table.weeklyPattern}) >= 1
          AND ${table.weeklyStartDate} IS NOT NULL
          AND ${table.weeklyWeeks} IS NOT NULL)
         OR
         (${table.mode} = 'manual'
-         AND ${table.weeklyWeekdays} IS NULL
-         AND ${table.weeklyTimeOfDay} IS NULL
+         AND ${table.weeklyPattern} IS NULL
          AND ${table.weeklyStartDate} IS NULL
          AND ${table.weeklyWeeks} IS NULL)
       )`,

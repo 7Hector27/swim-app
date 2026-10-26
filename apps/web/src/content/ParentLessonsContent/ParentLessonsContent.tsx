@@ -5,6 +5,7 @@ import Link from "next/link";
 
 import type { UpcomingLesson } from "@swim-app/shared";
 import LessonStatusBadge from "@/components/LessonStatusBadge";
+import BatchModeBadge from "@/components/BatchModeBadge";
 
 import { loadMoreUpcomingLessons } from "./actions";
 import { groupLessonsByWeek, todayMondayLA } from "./weekGroups";
@@ -127,7 +128,8 @@ function LessonRow({ lesson }: { lesson: UpcomingLesson }) {
             {swimmerNames ? ` · ${swimmerNames}` : ""}
           </p>
         </div>
-        <div className="flex items-center gap-3 flex-shrink-0 ml-4">
+        <div className="flex items-center gap-2 flex-shrink-0 ml-4">
+          <BatchModeBadge mode={lesson.batchMode} />
           <LessonStatusBadge status={lesson.status} viewer="parent" />
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
             <path

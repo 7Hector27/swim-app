@@ -28,6 +28,8 @@ import {
   AvailableSlotsQuerySchema,
   BatchPreviewBodySchema,
   BatchSubmitBodySchema,
+  StoredWeeklyPatternSchema,
+  type StoredWeeklyPattern,
   BATCH_LESSON_MAX,
   BATCH_LESSON_MIN,
   CreateLessonBodySchema,
@@ -117,6 +119,8 @@ lessonsRouter.get(
       movedAt: lessons.movedAt,
       previousStartsAt: lessons.previousStartsAt,
       createdAt: lessons.createdAt,
+      batchId: lessons.batchId,
+      batchMode: bookingBatches.mode,
     };
 
     const lessonRows = filter === "past"
@@ -124,6 +128,7 @@ lessonsRouter.get(
           .select(selectShape)
           .from(lessons)
           .innerJoin(lessonLocations, eq(lessons.locationId, lessonLocations.id))
+          .leftJoin(bookingBatches, eq(lessons.batchId, bookingBatches.id))
           .where(
             and(
               eq(lessons.householdId, householdId),
@@ -137,6 +142,7 @@ lessonsRouter.get(
           .select(selectShape)
           .from(lessons)
           .innerJoin(lessonLocations, eq(lessons.locationId, lessonLocations.id))
+          .leftJoin(bookingBatches, eq(lessons.batchId, bookingBatches.id))
           .where(
             and(
               eq(lessons.householdId, householdId),
@@ -187,6 +193,9 @@ lessonsRouter.get(
       movedAt: row.movedAt?.toISOString() ?? null,
       previousStartsAt: row.previousStartsAt?.toISOString() ?? null,
       createdAt: row.createdAt.toISOString(),
+      batchId: row.batchId,
+      batchMode:
+        row.batchMode === "manual" || row.batchMode === "weekly" ? row.batchMode : null,
     }));
 
     res.json(body);
@@ -425,7 +434,12 @@ lessonsRouter.get(
           slots,
         };
       });
-      const body: WeekAvailabilityResponse = { needsApproval: approvalRequired, days: responseDays };
+      const body: WeekAvailabilityResponse = {
+        needsApproval: approvalRequired,
+        days: responseDays,
+        maxDailyLessonMinutes: config.maxDailyLessonMinutes,
+        bookingMaxAdvanceWeeks: config.bookingMaxAdvanceWeeks,
+      };
       res.json(body);
     } else {
       const responseDays: DayAvailability[] = days.map((date: string) => {
@@ -443,7 +457,12 @@ lessonsRouter.get(
           teachingWindows: windows,
         };
       });
-      const body: MonthAvailabilityResponse = { needsApproval: approvalRequired, days: responseDays };
+      const body: MonthAvailabilityResponse = {
+        needsApproval: approvalRequired,
+        days: responseDays,
+        maxDailyLessonMinutes: config.maxDailyLessonMinutes,
+        bookingMaxAdvanceWeeks: config.bookingMaxAdvanceWeeks,
+      };
       res.json(body);
     }
   }),
@@ -731,7 +750,6 @@ function classifyBatchPick(
   candidate: Candidate,
   allCandidates: Candidate[],
   locationId: string,
-  durationMinutes: 30 | 45 | 60,
   ctx: BatchContext,
 ): { state: BatchPickState; reason?: string } {
   const startsAtMs = candidate.startsAt.getTime();
@@ -744,16 +762,19 @@ function classifyBatchPick(
   if (startsAtMs < nowMs + minAdvMs) return { state: "too_soon", reason: "too_soon" };
 
   const laDate = getDateInLA(candidate.startsAt);
+  // Fold every other candidate in as an "existing lesson" at ITS OWN length,
+  // so overlap and buffer checks respect per-pick duration (e.g. a 45-min
+  // pick blocks a later 30-min pick that lands inside its span).
   const otherFoldIn = allCandidates
     .filter((other) => other.index !== candidate.index)
     .map((other) => ({
       startsAt: other.startsAt,
-      durationMinutes,
+      durationMinutes: other.durationMinutes,
       locationId,
     }));
   const slotParams = {
     date: laDate,
-    durationMinutes,
+    durationMinutes: candidate.durationMinutes,
     locationId,
     existingLessons: [...ctx.dbLessons, ...otherFoldIn],
     blockedTimes: ctx.blocked,
@@ -773,7 +794,7 @@ function classifyBatchPick(
   // Promote generic unavailability to conflicts_batch when the overlap is
   // specifically with another pick in the same submission.
   if (state === "unavailable") {
-    const myEnd = startsAtMs + durationMinutes * 60_000;
+    const myEnd = startsAtMs + candidate.durationMinutes * 60_000;
     const overlapsAnotherPick = otherFoldIn.some((other) => {
       const otherEnd = other.startsAt.getTime() + other.durationMinutes * 60_000;
       return startsAtMs < otherEnd && myEnd > other.startsAt.getTime();
@@ -787,7 +808,6 @@ function suggestionsForPick(
   candidate: Candidate,
   allCandidates: Candidate[],
   locationId: string,
-  durationMinutes: 30 | 45 | 60,
   ctx: BatchContext,
 ): { startsAt: string }[] {
   const laDate = getDateInLA(candidate.startsAt);
@@ -795,12 +815,12 @@ function suggestionsForPick(
     .filter((other) => other.index !== candidate.index)
     .map((other) => ({
       startsAt: other.startsAt,
-      durationMinutes,
+      durationMinutes: other.durationMinutes,
       locationId,
     }));
   const slotParams = {
     date: laDate,
-    durationMinutes,
+    durationMinutes: candidate.durationMinutes,
     locationId,
     existingLessons: [...ctx.dbLessons, ...otherFoldIn],
     blockedTimes: ctx.blocked,
@@ -910,10 +930,13 @@ lessonsRouter.post(
     };
 
     const candidates: Candidate[] = body.mode === "manual"
-      ? body.picks.map((pick, index) => ({ index, startsAt: new Date(pick.startsAt) }))
+      ? body.picks.map((pick, index) => ({
+          index,
+          startsAt: new Date(pick.startsAt),
+          durationMinutes: pick.durationMinutes,
+        }))
       : expandWeeklyCandidates({
-          weekdays: body.weekdays,
-          timeOfDay: body.timeOfDay,
+          pattern: body.pattern,
           startDate: body.startDate,
           weeks: body.weeks,
         });
@@ -925,19 +948,19 @@ lessonsRouter.post(
         candidate,
         candidates,
         body.locationId,
-        body.durationMinutes,
         ctx,
       );
       const base: BatchPreviewPick = {
         index: candidate.index,
         startsAt: candidate.startsAt.toISOString(),
+        durationMinutes: candidate.durationMinutes,
         state: classified.state,
       };
       if (classified.state === "available") return base;
       if (classified.reason) base.reason = classified.reason;
       // Suggestions only when the day has an open teaching window at all.
       // past / too_soon / not_open_yet are not time-of-day failures, so no
-      // same-day replacements will help — omit the suggestions field.
+      // same-day replacements will help, so the field is omitted.
       const suggestable: BatchPickState[] = [
         "unavailable",
         "outside_hours",
@@ -950,7 +973,6 @@ lessonsRouter.post(
           candidate,
           candidates,
           body.locationId,
-          body.durationMinutes,
           ctx,
         );
         if (suggestions.length > 0) base.suggestions = suggestions;
@@ -989,11 +1011,14 @@ lessonsRouter.post(
     // Compute final picks after applying weekly skips + overrides.
     let finalPicks: Candidate[];
     if (body.mode === "manual") {
-      finalPicks = body.picks.map((pick, index) => ({ index, startsAt: new Date(pick.startsAt) }));
+      finalPicks = body.picks.map((pick, index) => ({
+        index,
+        startsAt: new Date(pick.startsAt),
+        durationMinutes: pick.durationMinutes,
+      }));
     } else {
       const expanded = expandWeeklyCandidates({
-        weekdays: body.weekdays,
-        timeOfDay: body.timeOfDay,
+        pattern: body.pattern,
         startDate: body.startDate,
         weeks: body.weeks,
       });
@@ -1037,6 +1062,20 @@ lessonsRouter.post(
     };
     try {
       result = await db.transaction(async (tx) => {
+      // Shape matches the shared BatchPatternPairSchema so one Zod schema
+      // validates on write (here, defense in depth after the body parse) and
+      // on read (via parseStoredWeeklyPattern).
+      const weeklyPatternForInsert: StoredWeeklyPattern | null =
+        body.mode === "weekly"
+          ? StoredWeeklyPatternSchema.parse(
+              body.pattern.map((pair) => ({
+                weekday: pair.weekday,
+                timeOfDay: pair.timeOfDay,
+                durationMinutes: pair.durationMinutes,
+              })),
+            )
+          : null;
+
       const batchRows = await tx
         .insert(bookingBatches)
         .values(
@@ -1045,8 +1084,7 @@ lessonsRouter.post(
                 householdId,
                 createdBy: profileId,
                 mode: "weekly" as const,
-                weeklyWeekdays: body.weekdays,
-                weeklyTimeOfDay: body.timeOfDay,
+                weeklyPattern: weeklyPatternForInsert,
                 weeklyStartDate: body.startDate,
                 weeklyWeeks: body.weeks,
               }
@@ -1102,7 +1140,6 @@ lessonsRouter.post(
           pick,
           picksAsc,
           body.locationId,
-          body.durationMinutes,
           ctx,
         );
         if (classified.state !== "available") {
@@ -1134,7 +1171,7 @@ lessonsRouter.post(
             householdId,
             locationId: body.locationId,
             startsAt: pick.startsAt,
-            durationMinutes: body.durationMinutes,
+            durationMinutes: pick.durationMinutes,
             type,
             status: (approvalRequired ? "pending" : "approved") as "pending" | "approved",
             requestedBy: profileId,
@@ -1206,8 +1243,7 @@ lessonsRouter.post(
         ...(body.mode === "weekly"
           ? {
               weekly: {
-                weekdays: body.weekdays,
-                timeOfDay: body.timeOfDay,
+                pattern: body.pattern,
                 startDate: body.startDate,
                 weeks: body.weeks,
               },
@@ -1222,7 +1258,6 @@ lessonsRouter.post(
           zip: location.zip,
           isHomePool: location.householdId !== null,
         },
-        durationMinutes: body.durationMinutes,
         swimmerFirstNames,
         // Each lesson entry includes its snapshotted calendar_sequence. The
         // sender re-reads the live lessons table at send time and filters out
@@ -1262,18 +1297,17 @@ lessonsRouter.post(
           batchId: batch.id,
           mode: body.mode,
           locationId: body.locationId,
-          durationMinutes: body.durationMinutes,
           swimmerIds: body.swimmerIds,
           picks: insertedLessons.map((lesson) => ({
             lessonId: lesson.id,
             startsAt: lesson.startsAt.toISOString(),
+            durationMinutes: lesson.durationMinutes,
             status: lesson.status,
           })),
           ...(body.mode === "weekly"
             ? {
                 weekly: {
-                  weekdays: body.weekdays,
-                  timeOfDay: body.timeOfDay,
+                  pattern: body.pattern,
                   startDate: body.startDate,
                   weeks: body.weeks,
                 },
@@ -1375,9 +1409,12 @@ lessonsRouter.get(
         movedAt: lessons.movedAt,
         previousStartsAt: lessons.previousStartsAt,
         createdAt: lessons.createdAt,
+        batchId: lessons.batchId,
+        batchMode: bookingBatches.mode,
       })
       .from(lessons)
       .innerJoin(lessonLocations, eq(lessons.locationId, lessonLocations.id))
+      .leftJoin(bookingBatches, eq(lessons.batchId, bookingBatches.id))
       .where(and(eq(lessons.id, id), eq(lessons.householdId, req.householdId)))
       .limit(1);
 
@@ -1413,6 +1450,11 @@ lessonsRouter.get(
       movedAt: lessonRow.movedAt?.toISOString() ?? null,
       previousStartsAt: lessonRow.previousStartsAt?.toISOString() ?? null,
       createdAt: lessonRow.createdAt.toISOString(),
+      batchId: lessonRow.batchId,
+      batchMode:
+        lessonRow.batchMode === "manual" || lessonRow.batchMode === "weekly"
+          ? lessonRow.batchMode
+          : null,
     };
 
     res.json(body);

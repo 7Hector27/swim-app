@@ -360,12 +360,15 @@ describe("GET /lessons", () => {
       movedAt: null as Date | null,
       previousStartsAt: null as Date | null,
       createdAt: now,
+      batchId: null as string | null,
+      batchMode: null as string | null,
     };
     const lessonsOffset = vi.fn().mockResolvedValue([lessonJoinRow]);
     const lessonsLimit = vi.fn().mockReturnValue({ offset: lessonsOffset });
     const lessonsOrderBy = vi.fn().mockReturnValue({ limit: lessonsLimit });
     const lessonsWhere = vi.fn().mockReturnValue({ orderBy: lessonsOrderBy });
-    const lessonsInnerJoin = vi.fn().mockReturnValue({ where: lessonsWhere });
+    const lessonsLeftJoin = vi.fn().mockReturnValue({ where: lessonsWhere });
+    const lessonsInnerJoin = vi.fn().mockReturnValue({ leftJoin: lessonsLeftJoin });
     mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ innerJoin: lessonsInnerJoin }) });
 
     // lessonSwimmers select with innerJoin
@@ -436,12 +439,15 @@ describe("GET /lessons", () => {
       movedAt: null as Date | null,
       previousStartsAt: null as Date | null,
       createdAt: now,
+      batchId: null as string | null,
+      batchMode: null as string | null,
     };
     const lessonsOffset = vi.fn().mockResolvedValue([lessonJoinRow]);
     const lessonsLimit = vi.fn().mockReturnValue({ offset: lessonsOffset });
     const lessonsOrderBy = vi.fn().mockReturnValue({ limit: lessonsLimit });
     const lessonsWhere = vi.fn().mockReturnValue({ orderBy: lessonsOrderBy });
-    const lessonsInnerJoin = vi.fn().mockReturnValue({ where: lessonsWhere });
+    const lessonsLeftJoin = vi.fn().mockReturnValue({ where: lessonsWhere });
+    const lessonsInnerJoin = vi.fn().mockReturnValue({ leftJoin: lessonsLeftJoin });
     mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ innerJoin: lessonsInnerJoin }) });
 
     const swimWhere = vi.fn().mockResolvedValue([{ lessonId: LESSON_ID, swimmerId: SWIMMER_ID, firstName: "Alice", lastName: "Smith" }]);
@@ -470,7 +476,8 @@ describe("GET /lessons", () => {
     const lessonsLimit = vi.fn().mockReturnValue({ offset: lessonsOffset });
     const lessonsOrderBy = vi.fn().mockReturnValue({ limit: lessonsLimit });
     const lessonsWhere = vi.fn().mockReturnValue({ orderBy: lessonsOrderBy });
-    const lessonsInnerJoin = vi.fn().mockReturnValue({ where: lessonsWhere });
+    const lessonsLeftJoin = vi.fn().mockReturnValue({ where: lessonsWhere });
+    const lessonsInnerJoin = vi.fn().mockReturnValue({ leftJoin: lessonsLeftJoin });
     mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ innerJoin: lessonsInnerJoin }) });
 
     const res = await request(app)
@@ -505,12 +512,15 @@ describe("GET /lessons", () => {
       movedAt: null as Date | null,
       previousStartsAt: null as Date | null,
       createdAt: now,
+      batchId: null as string | null,
+      batchMode: null as string | null,
     };
     const lessonsOffset = vi.fn().mockResolvedValue([lessonJoinRow]);
     const lessonsLimit = vi.fn().mockReturnValue({ offset: lessonsOffset });
     const lessonsOrderBy = vi.fn().mockReturnValue({ limit: lessonsLimit });
     const lessonsWhere = vi.fn().mockReturnValue({ orderBy: lessonsOrderBy });
-    const lessonsInnerJoin = vi.fn().mockReturnValue({ where: lessonsWhere });
+    const lessonsLeftJoin = vi.fn().mockReturnValue({ where: lessonsWhere });
+    const lessonsInnerJoin = vi.fn().mockReturnValue({ leftJoin: lessonsLeftJoin });
     mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ innerJoin: lessonsInnerJoin }) });
 
     const swimWhere = vi.fn().mockResolvedValue([]);
@@ -535,7 +545,8 @@ describe("GET /lessons", () => {
     const lessonsLimit = vi.fn().mockReturnValue({ offset: lessonsOffset });
     const lessonsOrderBy = vi.fn().mockReturnValue({ limit: lessonsLimit });
     const lessonsWhere = vi.fn().mockReturnValue({ orderBy: lessonsOrderBy });
-    const lessonsInnerJoin = vi.fn().mockReturnValue({ where: lessonsWhere });
+    const lessonsLeftJoin = vi.fn().mockReturnValue({ where: lessonsWhere });
+    const lessonsInnerJoin = vi.fn().mockReturnValue({ leftJoin: lessonsLeftJoin });
     mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ innerJoin: lessonsInnerJoin }) });
 
     await request(app)
@@ -566,7 +577,8 @@ describe("GET /lessons", () => {
     const pastLimit = vi.fn().mockReturnValue({ offset: pastOffset });
     const pastOrderBy = vi.fn().mockReturnValue({ limit: pastLimit });
     const pastWhere = vi.fn().mockReturnValue({ orderBy: pastOrderBy });
-    const pastInnerJoin = vi.fn().mockReturnValue({ where: pastWhere });
+    const pastLeftJoin = vi.fn().mockReturnValue({ where: pastWhere });
+    const pastInnerJoin = vi.fn().mockReturnValue({ leftJoin: pastLeftJoin });
     mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ innerJoin: pastInnerJoin }) });
 
     await request(app)

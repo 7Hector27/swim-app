@@ -33,6 +33,8 @@ const makeLesson = (id: string, startsAt: string, status: UpcomingLesson["status
   movedAt: null,
   previousStartsAt: null,
   createdAt: "2024-01-01T00:00:00.000Z",
+  batchId: null,
+  batchMode: null,
 });
 
 const auth = { profile: { role: "parent" as const, fullName: "Parent A", phone: null, ageAttestedAt: "", createdAt: "", updatedAt: "" }, accessToken: "tok" };
