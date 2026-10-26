@@ -1,12 +1,17 @@
 // Internal types for the batch-booking email path (ADR 030). The outbox
 // row's payload column stores this shape for batch-scoped events. Not
-// exported through @swim-app/shared — API-only, mirroring ./types.ts for
+// exported through @swim-app/shared -- API-only, mirroring ./types.ts for
 // per-lesson rows.
 //
 // Per-lesson emails use ./types.ts's LessonEmailPayload; batch emails use
 // this file. The two namespaces never share a row (CHECK: lesson_id XOR
 // batch_id on lesson_email_outbox), so there is no mixed shape.
+//
+// The pattern pair type is re-exported from the shared Zod schema so the
+// stored payload and this declaration cannot drift (durationMinutes etc.
+// come along for free).
 
+import type { LessonDurationMinutes, BatchPatternPair as SharedBatchPatternPair } from "@swim-app/shared";
 import type { LessonEmailLocation } from "./types";
 
 export type BatchEmailEvent = "batch_booked" | "batch_approved" | "batch_canceled";
@@ -17,7 +22,7 @@ export interface BatchEmailLesson {
   lessonId: string;
   // Full ISO string. Rendering formats to LA display at send time.
   startsAtUtc: string;
-  durationMinutes: number;
+  durationMinutes: LessonDurationMinutes;
   status: BatchLessonStatus;
   // The SEQUENCE value that was issued for this lesson's VEVENT in the
   // triggering outbox write. For batch_booked and batch_approved, this is
@@ -28,10 +33,7 @@ export interface BatchEmailLesson {
   calendarSequence: number;
 }
 
-export interface BatchPatternPair {
-  weekday: number;
-  timeOfDay: string;
-}
+export type BatchPatternPair = SharedBatchPatternPair;
 
 export interface BatchEmailPayload {
   batchId: string;
@@ -43,7 +45,6 @@ export interface BatchEmailPayload {
     weeks: number;
   };
   location: LessonEmailLocation;
-  durationMinutes: number;
   swimmerFirstNames: string[];
   lessons: BatchEmailLesson[];
 }
