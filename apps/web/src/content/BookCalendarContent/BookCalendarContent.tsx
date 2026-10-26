@@ -1558,10 +1558,8 @@ function MultipleBottomBar({
                 viewBox="0 0 12 12"
                 fill="none"
                 aria-hidden="true"
-                style={{
-                  transform: expanded ? "rotate(180deg)" : "rotate(0deg)",
-                  transition: "transform 150ms ease-out",
-                }}
+                className="transition-transform duration-150 ease-out motion-reduce:transition-none"
+                style={{ transform: expanded ? "rotate(180deg)" : "rotate(0deg)" }}
               >
                 <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
@@ -1747,10 +1745,8 @@ function RecurringBottomBar({
                 viewBox="0 0 12 12"
                 fill="none"
                 aria-hidden="true"
-                style={{
-                  transform: expanded ? "rotate(180deg)" : "rotate(0deg)",
-                  transition: "transform 150ms ease-out",
-                }}
+                className="transition-transform duration-150 ease-out motion-reduce:transition-none"
+                style={{ transform: expanded ? "rotate(180deg)" : "rotate(0deg)" }}
               >
                 <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
