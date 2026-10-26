@@ -197,7 +197,6 @@ function BatchGroup({
               key={lesson.id}
               lesson={lesson}
               onDone={onLessonDone}
-              compact
             />
           ))}
         </div>
@@ -209,11 +208,9 @@ function BatchGroup({
 function BookingRequestRow({
   lesson,
   onDone,
-  compact = false,
 }: {
   lesson: LessonResponse;
   onDone: (id: string) => void;
-  compact?: boolean;
 }) {
   const boundApprove = approveLessonAction.bind(null, lesson.id);
   const [approveState, approveFormAction, isApproving] = useActionState(
@@ -267,7 +264,7 @@ function BookingRequestRow({
   const timeLabel = `${laFmt(start)} - ${endTimeFmt}`;
 
   return (
-    <div className={`flex flex-col gap-3 py-4 first:pt-0 last:pb-0 ${compact ? "" : ""}`}>
+    <div className="flex flex-col gap-3 py-4 first:pt-0 last:pb-0">
       <div>
         <p className="text-sm font-semibold text-text">
           {swimmerLabel}, {lesson.durationMinutes} min
