@@ -266,7 +266,7 @@ export default function CoachNav() {
 
       {/* Sticky header */}
       <header
-        className={`sticky top-0 z-50 bg-section border-b transition-colors duration-200 ${
+        className={`sticky top-0 z-50 bg-section text-text-on-section border-b transition-colors duration-200 ${
           scrolled ? "border-divider-section" : "border-transparent"
         }`}
       >
@@ -306,7 +306,7 @@ export default function CoachNav() {
       {/* Mobile bottom tab bar — hidden on tablet+ */}
       <nav
         data-testid="coach-bottom-nav"
-        className={`${styles.tabBar} tablet:hidden fixed bottom-0 inset-x-0 z-50 bg-section border-t border-divider-section flex`}
+        className={`${styles.tabBar} tablet:hidden fixed bottom-0 inset-x-0 z-50 bg-section text-text-on-section border-t border-divider-section flex`}
         aria-label="Coach navigation"
       >
         {BOTTOM_NAV_TABS.map((tab) => {

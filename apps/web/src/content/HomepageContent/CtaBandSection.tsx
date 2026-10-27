@@ -41,7 +41,7 @@ interface Props {
 export default function CtaBandSection({ variant = "signed-out" }: Props) {
   const copy = COPY[variant];
   return (
-    <section className="bg-section">
+    <section className="bg-section text-text-on-section">
       <div className="mx-auto max-w-content px-page py-16 tablet:py-24 text-center">
         <div className="flex flex-col items-center gap-6">
           <h2 className="text-text-on-section max-w-xl">{copy.heading}</h2>

@@ -30,7 +30,7 @@ export default function SiteNav() {
     <>
       <div ref={sentinelRef} aria-hidden="true" className="h-px" />
       <nav
-        className={`sticky top-0 z-50 bg-section border-b transition-colors duration-200 ${scrolled ? "border-divider-section" : "border-transparent"}`}
+        className={`sticky top-0 z-50 bg-section text-text-on-section border-b transition-colors duration-200 ${scrolled ? "border-divider-section" : "border-transparent"}`}
       >
         <div className="mx-auto max-w-content px-page flex items-center justify-between h-16">
           <Link href="/" aria-label="Axiom Aquatics home">

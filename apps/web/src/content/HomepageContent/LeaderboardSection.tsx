@@ -110,7 +110,7 @@ function LeaderboardTable({ rows }: { rows: LeaderboardRow[] }) {
 
 export default function LeaderboardSection() {
   return (
-    <section id="leaderboards" className="scroll-mt-16 bg-section">
+    <section id="leaderboards" className="scroll-mt-16 bg-section text-text-on-section">
       <div className="mx-auto max-w-content px-page py-16 tablet:py-24">
         <div className="flex flex-col gap-3 mb-10 tablet:mb-14">
           <h2 className="text-text-on-section">Leaderboards</h2>
@@ -128,7 +128,7 @@ export default function LeaderboardSection() {
               mobileStagger={false}
               className="flex-shrink-0 w-72 tablet:w-auto"
             >
-              <article className="rounded-card bg-card border border-divider-section p-6 flex flex-col gap-4 h-full">
+              <article className="rounded-card bg-card text-text-on-section border border-divider-section p-6 flex flex-col gap-4 h-full">
                 <div>
                   <h3 className="text-text-on-section font-bold text-base font-body">
                     {card.title}

@@ -113,7 +113,7 @@ export default function ParentNav() {
 
       {/* Sticky header */}
       <header
-        className={`sticky top-0 z-50 bg-section border-b transition-colors duration-200 ${
+        className={`sticky top-0 z-50 bg-section text-text-on-section border-b transition-colors duration-200 ${
           scrolled ? "border-divider-section" : "border-transparent"
         }`}
       >
@@ -152,7 +152,7 @@ export default function ParentNav() {
 
       {/* Mobile bottom tab bar — hidden on tablet+ */}
       <nav
-        className={`${styles.tabBar} tablet:hidden fixed bottom-0 inset-x-0 z-50 bg-section border-t border-divider-section flex`}
+        className={`${styles.tabBar} tablet:hidden fixed bottom-0 inset-x-0 z-50 bg-section text-text-on-section border-t border-divider-section flex`}
         aria-label="Parent navigation"
       >
         {visibleLinks.map((link) => {

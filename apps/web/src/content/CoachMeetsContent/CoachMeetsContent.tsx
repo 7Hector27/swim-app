@@ -67,7 +67,7 @@ function CreateMeetForm() {
   return (
     <form
       action={action}
-      className="flex flex-col gap-4 p-5 rounded-card border border-border bg-card"
+      className="flex flex-col gap-4 p-5 rounded-card border border-border bg-background"
     >
       <h2 className="font-heading font-semibold text-lg text-heading" style={{ fontVariationSettings: '"SOFT" 100, "WONK" 0' }}>
         New meet
@@ -116,9 +116,9 @@ function CreateMeetForm() {
           onChange={(e) => setCourse(e.target.value)}
           className="h-11 px-3 rounded-lg border border-border bg-background text-text text-sm focus:outline focus:outline-2 focus:outline-focus-ring"
         >
-          <option value="scy">SCY — Short Course Yards</option>
-          <option value="scm">SCM — Short Course Meters</option>
-          <option value="lcm">LCM — Long Course Meters</option>
+          <option value="scy">SCY (Short Course Yards)</option>
+          <option value="scm">SCM (Short Course Meters)</option>
+          <option value="lcm">LCM (Long Course Meters)</option>
         </select>
       </div>
 
