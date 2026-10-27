@@ -24,8 +24,9 @@ export default async function ParentLessonsPage() {
     );
   }
 
-  const initialHasMore = upcomingRaw.length > PAGE_SIZE;
-  const initialLessons = initialHasMore ? upcomingRaw.slice(0, PAGE_SIZE) : upcomingRaw;
+  const upcomingItems = upcomingRaw.items;
+  const initialHasMore = upcomingItems.length > PAGE_SIZE;
+  const initialLessons = initialHasMore ? upcomingItems.slice(0, PAGE_SIZE) : upcomingItems;
 
   return <ParentLessonsContent initialLessons={initialLessons} initialHasMore={initialHasMore} past={past} />;
 }

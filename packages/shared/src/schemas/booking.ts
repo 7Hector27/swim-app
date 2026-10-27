@@ -263,11 +263,6 @@ export const UpcomingLessonsQuerySchema = z.object({
 });
 export type UpcomingLessonsQuery = z.infer<typeof UpcomingLessonsQuerySchema>;
 
-export const UpcomingLessonsCountResponseSchema = z.object({
-  count: z.number().int().min(0),
-});
-export type UpcomingLessonsCountResponse = z.infer<typeof UpcomingLessonsCountResponseSchema>;
-
 export const UpcomingLessonSchema = LessonResponseSchema.omit({ householdId: true }).extend({
   locationName: z.string(),
   // Set when the lesson was booked as part of a multi-lesson or weekly batch.
@@ -277,6 +272,12 @@ export const UpcomingLessonSchema = LessonResponseSchema.omit({ householdId: tru
   batchMode: z.enum(["manual", "weekly"]).nullable(),
 });
 export type UpcomingLesson = z.infer<typeof UpcomingLessonSchema>;
+
+export const UpcomingLessonsResponseSchema = z.object({
+  items: UpcomingLessonSchema.array(),
+  total: z.number().int().min(0),
+});
+export type UpcomingLessonsResponse = z.infer<typeof UpcomingLessonsResponseSchema>;
 
 // ── Coach schedule ────────────────────────────────────────────────────────────
 
@@ -737,10 +738,10 @@ export const CoachHouseholdSearchResponseSchema = z.array(CoachHouseholdSearchRe
 
 // ── Batch booking (ADR 030) ──────────────────────────────────────────────────
 
-// A batch is 2 to 20 lessons submitted together through POST /lessons/batch
+// A batch is 1 to 20 lessons submitted together through POST /lessons/batch
 // (parents only). Manual mode supplies the explicit start times; weekly mode
 // supplies a weekday set, a time of day, a start date, and a week count.
-export const BATCH_LESSON_MIN = 2;
+export const BATCH_LESSON_MIN = 1;
 export const BATCH_LESSON_MAX = 20;
 
 export const BatchModeSchema = z.enum(["manual", "weekly"]);
@@ -867,7 +868,7 @@ function applyBatchInvariants(
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["weeks"],
-      message: `A batch must have at least ${BATCH_LESSON_MIN} lessons.`,
+      message: `A batch must have at least ${BATCH_LESSON_MIN} ${BATCH_LESSON_MIN === 1 ? "lesson" : "lessons"}.`,
     });
   }
   if (expanded > BATCH_LESSON_MAX) {

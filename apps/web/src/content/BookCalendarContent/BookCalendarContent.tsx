@@ -490,6 +490,28 @@ export default function BookCalendarContent({
     });
   }, [bookingMode, plannedStartsAt.length, multiplePicks.length]);
 
+  // When the recurring pattern itself changes (pair added/removed, length
+  // changed), the stable indexes from the previous pattern no longer refer to
+  // the same lessons. Drop skips, overrides, removed, and stale preview
+  // results so the new pattern starts from a clean slate.
+  const patternKey = useMemo(
+    () =>
+      bookingMode === "recurring"
+        ? pattern.map((pair) => `${pair.weekday}@${pair.timeOfDay}@${pair.durationMinutes}`).join(",")
+        : "",
+    [bookingMode, pattern],
+  );
+  useEffect(() => {
+    if (bookingMode !== "recurring") return;
+    setSkippedIndexes(new Set());
+    setRemovedIndexes(new Set());
+    setOverridesMap(new Map());
+    setPreviewPicks([]);
+    setPreviewNeedsApproval(false);
+    setPreviewError(null);
+    setSubmitError(null);
+  }, [bookingMode, patternKey]);
+
   // ── Mode-switch handling ───────────────────────────────────────────────────
 
   const hasInProgressWork =
@@ -754,6 +776,25 @@ export default function BookCalendarContent({
     unresolvedCount === 0 &&
     effectiveFinalCount >= BATCH_LESSON_MIN &&
     effectiveFinalCount <= BATCH_LESSON_MAX;
+
+  // Short reason the review sheet shows under its Book button when disabled.
+  // "Pick who's swimming" is still a soft hint — the parent already blocks
+  // Review from opening when no swimmer is picked.
+  const bookDisabledReason: string | null = (() => {
+    if (!reviewOpen || isSubmitting) return null;
+    if (isPreviewLoading) return "Checking availability.";
+    if (previewPicks.length === 0) return "Add lessons on the calendar.";
+    if (unresolvedCount > 0) {
+      return `Fix ${unresolvedCount} flagged ${unresolvedCount === 1 ? "lesson" : "lessons"} first.`;
+    }
+    if (effectiveFinalCount > BATCH_LESSON_MAX) {
+      return `Over the ${BATCH_LESSON_MAX} lesson cap.`;
+    }
+    if (effectiveFinalCount < BATCH_LESSON_MIN) {
+      return `Need at least ${BATCH_LESSON_MIN} ${BATCH_LESSON_MIN === 1 ? "lesson" : "lessons"}.`;
+    }
+    return null;
+  })();
 
   function buildBatchSubmitBody(): BatchSubmitBody | null {
     const base = buildBatchBody();
@@ -1308,6 +1349,7 @@ export default function BookCalendarContent({
         isSubmitting={isSubmitting}
         needsApproval={previewNeedsApproval}
         success={success}
+        {...(bookDisabledReason !== null && { bookDisabledReason })}
         onClose={closeReview}
         onApplySuggestion={handleApplySuggestion}
         onSkip={handleSkipIndex}
@@ -1498,6 +1540,19 @@ function MultipleBottomBar({
   const hasPicks = picks.length > 0;
   const canReview = !underMin && !overCap;
 
+  // Short reason shown under the Review button. Priority: structural (no
+  // picks / over cap) first, then needs-attention from the live preview, then
+  // "pick who's swimming" (soft — click still scrolls to the picker).
+  const reviewReason: string | null = (() => {
+    if (!hasPicks) return "Tap open times to pick lessons.";
+    if (overCap) return `Over the ${BATCH_LESSON_MAX} lesson cap.`;
+    if (flaggedCount > 0) {
+      return `${flaggedCount} ${flaggedCount === 1 ? "needs" : "need"} attention.`;
+    }
+    if (swimmerCount === 0) return "Pick who's swimming first.";
+    return null;
+  })();
+
   return (
     <div role="region" aria-label="Booking selection" className={BAR_SHELL_CLASS}>
       <div className={BAR_CARD_CLASS}>
@@ -1522,36 +1577,33 @@ function MultipleBottomBar({
             {needsApproval && hasPicks && (
               <p className="text-xs opacity-70 mt-0.5">Jason will confirm each one.</p>
             )}
-            {flaggedCount > 0 && (
-              <p
-                className="text-xs font-semibold text-danger mt-1"
-                data-testid="multiple-flagged-count"
-                role="status"
-              >
-                {flaggedCount} {flaggedCount === 1 ? "needs" : "need"} attention
-              </p>
-            )}
-            {atCap && (
+            {atCap && !overCap && (
               <p className="text-xs opacity-70 mt-0.5">
                 Max {BATCH_LESSON_MAX} lessons at a time.
               </p>
             )}
-            {underMin && !hasPicks && (
-              <p className="text-xs opacity-70 mt-0.5">
-                Tap open times to pick lessons.
+          </div>
+
+          <div className="flex flex-col items-end gap-1 flex-shrink-0">
+            <button
+              type="button"
+              onClick={onReview}
+              disabled={!canReview}
+              data-testid="review-multiple"
+              className={BAR_PRIMARY_BUTTON_CLASS}
+            >
+              Review
+            </button>
+            {reviewReason !== null && (
+              <p
+                className="text-[11px] text-background/70 text-right max-w-[12rem]"
+                data-testid="multiple-disabled-reason"
+                role={flaggedCount > 0 || overCap ? "status" : undefined}
+              >
+                {reviewReason}
               </p>
             )}
           </div>
-
-          <button
-            type="button"
-            onClick={onReview}
-            disabled={!canReview}
-            data-testid="review-multiple"
-            className={BAR_PRIMARY_BUTTON_CLASS}
-          >
-            Review
-          </button>
         </div>
 
         {hasPicks && (
@@ -1579,13 +1631,13 @@ function MultipleBottomBar({
 
             {expanded && (
               <ul
-                className="max-h-[40vh] overflow-y-auto flex flex-col gap-1.5 border-t border-background/20 pt-3"
+                className="max-h-[40vh] overflow-y-auto flex flex-col border-t border-background/20"
                 data-testid="multiple-pick-list"
               >
                 {picks.map((pick) => (
                   <li
                     key={pick.startsAt}
-                    className="flex items-center justify-between gap-3 rounded-button bg-background/10 px-3 py-2 flex-wrap"
+                    className="flex items-center justify-between gap-3 py-3 border-b border-background/20 last:border-b-0 flex-wrap"
                     data-testid="multiple-pick-row"
                   >
                     <span className="text-sm flex-1 min-w-0">
@@ -1644,7 +1696,7 @@ function RecurringBottomBar({
   totalLessons,
   totalMinutes,
   totalPrice,
-  swimmerCount: _swimmerCount,
+  swimmerCount,
   needsApproval,
   flaggedCount,
   expanded,
@@ -1661,6 +1713,19 @@ function RecurringBottomBar({
     ? pattern.map(formatPatternRangeAndLength).join(" + ")
     : "No pattern yet";
   const canReview = !underMin && !overCap && hasPattern;
+
+  // Reason shown under the Review button. Match MultipleBottomBar's priority
+  // so the first blocker surfaces first; "pick who's swimming" is a soft hint
+  // that keeps Review clickable and relies on the click handler to scroll.
+  const reviewReason: string | null = (() => {
+    if (!hasPattern) return "Tap open times to build a pattern.";
+    if (overCap) return `Over the ${BATCH_LESSON_MAX} lesson cap.`;
+    if (flaggedCount > 0) {
+      return `${flaggedCount} ${flaggedCount === 1 ? "needs" : "need"} attention.`;
+    }
+    if (swimmerCount === 0) return "Pick who's swimming first.";
+    return null;
+  })();
 
   return (
     <div role="region" aria-label="Booking selection" className={BAR_SHELL_CLASS}>
@@ -1686,26 +1751,28 @@ function RecurringBottomBar({
             {needsApproval && hasPattern && !overCap && (
               <p className="text-xs opacity-70 mt-0.5">Jason will confirm each one.</p>
             )}
-            {flaggedCount > 0 && (
+          </div>
+
+          <div className="flex flex-col items-end gap-1 flex-shrink-0">
+            <button
+              type="button"
+              onClick={onReview}
+              disabled={!canReview}
+              data-testid="review-recurring"
+              className={BAR_PRIMARY_BUTTON_CLASS}
+            >
+              Review
+            </button>
+            {reviewReason !== null && (
               <p
-                className="text-xs font-semibold text-danger mt-1"
-                data-testid="recurring-flagged-count"
-                role="status"
+                className="text-[11px] text-background/70 text-right max-w-[12rem]"
+                data-testid="recurring-disabled-reason"
+                role={flaggedCount > 0 || overCap ? "status" : undefined}
               >
-                {flaggedCount} {flaggedCount === 1 ? "needs" : "need"} attention
+                {reviewReason}
               </p>
             )}
           </div>
-
-          <button
-            type="button"
-            onClick={onReview}
-            disabled={!canReview}
-            data-testid="review-recurring"
-            className={BAR_PRIMARY_BUTTON_CLASS}
-          >
-            Review
-          </button>
         </div>
 
         <div className="flex items-center gap-3 flex-wrap">
@@ -1768,13 +1835,13 @@ function RecurringBottomBar({
 
         {hasPattern && expanded && (
           <ul
-            className="flex flex-col gap-1.5 border-t border-background/20 pt-3"
+            className="flex flex-col border-t border-background/20"
             data-testid="recurring-pattern-list"
           >
             {pattern.map((pair) => (
               <li
                 key={`${pair.weekday}-${pair.timeOfDay}`}
-                className="flex items-center justify-between gap-3 rounded-button bg-background/10 px-3 py-2 flex-wrap"
+                className="flex items-center justify-between gap-3 py-3 border-b border-background/20 last:border-b-0 flex-wrap"
                 data-testid="recurring-pattern-row"
               >
                 <span className="text-xs font-semibold flex-1 min-w-0">

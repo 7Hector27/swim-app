@@ -1,12 +1,20 @@
 // @vitest-environment node
 //
-// Catches the dark-on-dark contrast bug directly: any element that renders
-// `bg-section` or `bg-card` must also set an on-section text color on itself,
-// so descendants that don't declare their own color inherit something readable
-// in both themes. Without this guard, a form with `bg-card` can appear fine
-// while every nested heading, label, and button quietly inherits page
-// `text-text` (near-black in light mode) and becomes unreadable, which is
-// exactly what happened on /coach/meets.
+// Two symmetric guards for surface/text token mismatches:
+//
+// 1. Dark-on-dark (original): any element that renders `bg-section` or
+//    `bg-card` must also set an on-section text color on itself, so
+//    descendants that don't declare their own color inherit something
+//    readable in both themes. Without this guard, a form with `bg-card`
+//    can appear fine while every nested heading, label, and button quietly
+//    inherits page `text-text` (near-black in light mode) and becomes
+//    unreadable, which is exactly what happened on /coach/meets.
+//
+// 2. Light-on-light (reverse): any element that renders `bg-background` or
+//    `bg-surface-soft` must NOT also set an on-section text token on
+//    itself. On-section tokens resolve to white in light mode, so pairing
+//    them with a page surface renders white text on a near-white
+//    background — exactly the cancel-lesson dialog bug.
 
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
@@ -15,6 +23,7 @@ import { describe, it, expect } from "vitest";
 const SRC = join(__dirname, "..");
 
 const DARK_SECTION_BACKGROUNDS = new Set(["bg-section", "bg-card"]);
+const LIGHT_SURFACE_BACKGROUNDS = new Set(["bg-background", "bg-surface-soft"]);
 
 // A className that sets any of these tokens defines a text color safe for a
 // dark surface in both themes. If none are present, descendants inherit the
@@ -37,11 +46,14 @@ const SELF_TEXT_OPT_OUTS = new Set([
   "text-button-danger-text",
 ]);
 
+type ViolationKind = "dark-missing-safe-color" | "light-with-on-section-text";
+
 interface Violation {
   file: string;
   line: number;
   classString: string;
-  darkTokens: string[];
+  kind: ViolationKind;
+  tokens: string[];
 }
 
 function walkFiles(dir: string): string[] {
@@ -90,42 +102,66 @@ function findViolations(file: string, content: string): Violation[] {
   const violations: Violation[] = [];
   for (const { raw, index } of extractClassStrings(content)) {
     const tokens = new Set(tokenize(raw));
-    const darkTokens = [...tokens].filter((token) => DARK_SECTION_BACKGROUNDS.has(token));
-    if (darkTokens.length === 0) continue;
-    const hasSafeInherited = [...tokens].some((token) => ON_SECTION_TEXT_TOKENS.has(token));
-    const hasSelfOnlyColor = [...tokens].some((token) => SELF_TEXT_OPT_OUTS.has(token));
-    if (hasSafeInherited || hasSelfOnlyColor) continue;
-    violations.push({
-      file,
-      line: lineAt(content, index),
-      classString: raw.replace(/\s+/g, " ").trim(),
-      darkTokens,
-    });
+
+    const darkBgs = [...tokens].filter((token) => DARK_SECTION_BACKGROUNDS.has(token));
+    if (darkBgs.length > 0) {
+      const hasSafeInherited = [...tokens].some((token) => ON_SECTION_TEXT_TOKENS.has(token));
+      const hasSelfOnlyColor = [...tokens].some((token) => SELF_TEXT_OPT_OUTS.has(token));
+      if (!hasSafeInherited && !hasSelfOnlyColor) {
+        violations.push({
+          file,
+          line: lineAt(content, index),
+          classString: raw.replace(/\s+/g, " ").trim(),
+          kind: "dark-missing-safe-color",
+          tokens: darkBgs,
+        });
+      }
+    }
+
+    const lightBgs = [...tokens].filter((token) => LIGHT_SURFACE_BACKGROUNDS.has(token));
+    if (lightBgs.length > 0) {
+      const onSectionText = [...tokens].filter((token) => ON_SECTION_TEXT_TOKENS.has(token));
+      if (onSectionText.length > 0) {
+        violations.push({
+          file,
+          line: lineAt(content, index),
+          classString: raw.replace(/\s+/g, " ").trim(),
+          kind: "light-with-on-section-text",
+          tokens: [...lightBgs, ...onSectionText],
+        });
+      }
+    }
   }
   return violations;
 }
 
+function describeViolation(violation: Violation): string {
+  const prefix = `  line ${violation.line}: {${violation.tokens.join(", ")}}`;
+  const suffix = violation.kind === "dark-missing-safe-color"
+    ? "without an on-section text color"
+    : "pairs a light surface with on-section text tokens";
+  return `${prefix} ${suffix}\n    ${violation.classString}`;
+}
+
 const files = walkFiles(SRC);
 
-describe("dark-section contrast guard", () => {
+describe("surface/text contrast guard", () => {
   it("finds .tsx files to scan (sanity check)", () => {
     expect(files.length).toBeGreaterThan(0);
   });
 
   for (const file of files) {
     const label = file.replace(SRC, "").replace(/\\/g, "/");
-    it(`${label} declares an on-section text color wherever it sets a dark background`, () => {
+    it(`${label} pairs surface tokens with the matching text palette`, () => {
       const content = readFileSync(file, "utf8");
       const violations = findViolations(file, content);
-      const formatted = violations
-        .map(
-          (violation) =>
-            `  line ${violation.line}: {${violation.darkTokens.join(", ")}} without an on-section text color\n    ${violation.classString}`,
-        )
-        .join("\n");
+      const formatted = violations.map(describeViolation).join("\n");
       expect(
         violations,
-        `Add text-text-on-section (or another *-on-section token) to the element with the dark background, so descendants without explicit colors inherit something readable in both themes:\n${formatted}`,
+        `Fix the token mismatches below.\n` +
+          `  - dark-missing-safe-color: add text-text-on-section (or another *-on-section token) to the element with the dark background so descendants without explicit colors inherit a readable color.\n` +
+          `  - light-with-on-section-text: on-section tokens are white in light mode; on a bg-background/bg-surface-soft surface they vanish. Swap to text-text, text-heading, text-text-secondary, or border-border.\n` +
+          formatted,
       ).toEqual([]);
     });
   }

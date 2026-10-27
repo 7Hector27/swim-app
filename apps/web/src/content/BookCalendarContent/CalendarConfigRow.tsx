@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 interface Location {
   id: string;
@@ -41,6 +41,10 @@ const CHIP_BASE =
 
 const CHIP_ACTIVE = "border-accent bg-accent/10 text-accent";
 const CHIP_INACTIVE = "border-border text-text hover:bg-surface-soft";
+
+// Length of the "please pick a swimmer" highlight pulse. Matches the
+// transition declared in the section className below.
+const HIGHLIGHT_MS = 1600;
 
 function CheckIcon() {
   return (
@@ -91,12 +95,19 @@ export default function CalendarConfigRow({
   onDurationChange,
   onSwimmersChange,
 }: Props) {
+  const swimmerSectionRef = useRef<HTMLDivElement>(null);
   const swimmerErrorRef = useRef<HTMLParagraphElement>(null);
+  const [highlight, setHighlight] = useState(false);
 
   useEffect(() => {
-    if (showSwimmerError && swimmerIds.length === 0) {
-      swimmerErrorRef.current?.focus();
-    }
+    if (!showSwimmerError || swimmerIds.length !== 0) return;
+    // scrollIntoView is missing in some test environments; guard it so the
+    // highlight + focus still run.
+    swimmerSectionRef.current?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+    swimmerErrorRef.current?.focus({ preventScroll: true });
+    setHighlight(true);
+    const timer = setTimeout(() => setHighlight(false), HIGHLIGHT_MS);
+    return () => clearTimeout(timer);
   }, [showSwimmerError, swimmerIds.length]);
 
   function toggleSwimmer(id: string) {
@@ -148,7 +159,16 @@ export default function CalendarConfigRow({
       </div>
 
       {swimmers.length > 0 && (
-        <div>
+        <div
+          ref={swimmerSectionRef}
+          data-highlight={highlight ? "true" : undefined}
+          data-testid="swimmer-picker"
+          className={`rounded-card -mx-2 px-2 py-2 transition-shadow duration-300 motion-reduce:transition-none ${
+            highlight
+              ? "ring-2 ring-danger bg-danger/5"
+              : "ring-0 bg-transparent"
+          }`}
+        >
           <p className={LABEL}>Who&rsquo;s swimming</p>
           {swimmers.length > 1 && (
             <p className="text-xs text-text-secondary mb-2">Tap everyone who&rsquo;s swimming</p>
@@ -187,9 +207,10 @@ export default function CalendarConfigRow({
               role="alert"
               tabIndex={-1}
               style={{ outline: "none" }}
-              className="text-xs text-danger mt-2"
+              className="text-sm font-semibold text-danger mt-2"
+              data-testid="swimmer-error"
             >
-              Pick who&rsquo;s swimming
+              Pick who&rsquo;s swimming first.
             </p>
           )}
         </div>

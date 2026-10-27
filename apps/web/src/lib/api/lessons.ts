@@ -9,7 +9,7 @@ import {
   LessonResponseSchema,
   MonthAvailabilityResponseSchema,
   UpcomingLessonSchema,
-  UpcomingLessonsCountResponseSchema,
+  UpcomingLessonsResponseSchema,
   WeekAvailabilityResponseSchema,
   type AvailableSlot,
   type CoachLessonDetail,
@@ -21,6 +21,7 @@ import {
   type LessonResponse,
   type MonthAvailabilityResponse,
   type UpcomingLesson,
+  type UpcomingLessonsResponse,
   type WeekAvailabilityResponse,
 } from "@swim-app/shared";
 
@@ -210,7 +211,7 @@ export async function fetchCoachStats(accessToken: string): Promise<CoachStats |
 export async function fetchUpcomingLessons(
   accessToken: string,
   params?: { limit?: number; offset?: number },
-): Promise<UpcomingLesson[] | null> {
+): Promise<UpcomingLessonsResponse | null> {
   try {
     const searchParams = new URLSearchParams();
     if (params?.limit !== undefined) searchParams.set("limit", String(params.limit));
@@ -228,7 +229,7 @@ export async function fetchUpcomingLessons(
       return null;
     }
     const body: unknown = await response.json();
-    const parsed = UpcomingLessonSchema.array().safeParse(body);
+    const parsed = UpcomingLessonsResponseSchema.safeParse(body);
     if (!parsed.success) {
       const detail = parsed.error.issues.map((issue) => `${issue.path.join(".")} (${issue.message})`).join("; ");
       console.error(`fetchUpcomingLessons: response shape mismatch — ${detail}`);
@@ -237,30 +238,6 @@ export async function fetchUpcomingLessons(
     return parsed.data;
   } catch (error) {
     console.error("fetchUpcomingLessons: network error —", error);
-    return null;
-  }
-}
-
-export async function fetchUpcomingLessonsCount(accessToken: string): Promise<number | null> {
-  try {
-    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/lessons/count`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-      cache: "no-store",
-    });
-    if (!response.ok) {
-      console.error(`fetchUpcomingLessonsCount: non-2xx response — ${response.status}`);
-      return null;
-    }
-    const body: unknown = await response.json();
-    const parsed = UpcomingLessonsCountResponseSchema.safeParse(body);
-    if (!parsed.success) {
-      const detail = parsed.error.issues.map((issue) => `${issue.path.join(".")} (${issue.message})`).join("; ");
-      console.error(`fetchUpcomingLessonsCount: response shape mismatch — ${detail}`);
-      return null;
-    }
-    return parsed.data.count;
-  } catch (error) {
-    console.error("fetchUpcomingLessonsCount: network error —", error);
     return null;
   }
 }

@@ -261,11 +261,11 @@ export default function LessonDetailContent({
           {...(cancelBatchState.status === "error" ? { errorMessage: cancelBatchState.message } : {})}
           onCancel={() => cancelBatchDialogRef.current?.close()}
         >
-          <ul className="flex flex-col gap-1.5 text-sm text-text-on-section max-h-64 overflow-y-auto">
+          <ul className="flex flex-col gap-1.5 text-sm text-text max-h-64 overflow-y-auto">
             {cancelDialogSiblings.map((sibling) => (
               <li key={sibling.id} className="flex justify-between gap-3">
                 <span>{formatLongDate(sibling.startsAt)}</span>
-                <span className="text-text-secondary-on-section tabular-nums">
+                <span className="text-text-secondary tabular-nums">
                   {formatTime(new Date(sibling.startsAt))}
                 </span>
               </li>

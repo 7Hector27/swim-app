@@ -23,6 +23,7 @@ import type {
   UpdateLessonBody,
   UpcomingLesson,
   UpcomingLessonsQuery,
+  UpcomingLessonsResponse,
   WeekAvailabilityResponse,
   WeekDayAvailability,
 } from "@swim-app/shared";
@@ -133,36 +134,39 @@ lessonsRouter.get(
       batchMode: bookingBatches.mode,
     };
 
-    const lessonRows = filter === "past"
-      ? await db
-          .select(selectShape)
-          .from(lessons)
-          .innerJoin(lessonLocations, eq(lessons.locationId, lessonLocations.id))
-          .leftJoin(bookingBatches, eq(lessons.batchId, bookingBatches.id))
-          .where(
-            and(
-              eq(lessons.householdId, householdId),
-              sql`${lessons.startsAt} + ${lessons.durationMinutes} * interval '1 minute' <= ${now.toISOString()}::timestamptz`,
-            ),
-          )
-          .orderBy(desc(lessons.startsAt))
-          .limit(limit)
-          .offset(offset)
-      : await db
-          .select(selectShape)
-          .from(lessons)
-          .innerJoin(lessonLocations, eq(lessons.locationId, lessonLocations.id))
-          .leftJoin(bookingBatches, eq(lessons.batchId, bookingBatches.id))
-          .where(
-            and(
-              eq(lessons.householdId, householdId),
-              inArray(lessons.status, ["pending", "approved"]),
-              sql`${lessons.startsAt} + ${lessons.durationMinutes} * interval '1 minute' > ${now.toISOString()}::timestamptz`,
-            ),
-          )
-          .orderBy(asc(lessons.startsAt))
-          .limit(limit)
-          .offset(offset);
+    const filterCondition = filter === "past"
+      ? and(
+          eq(lessons.householdId, householdId),
+          sql`${lessons.startsAt} + ${lessons.durationMinutes} * interval '1 minute' <= ${now.toISOString()}::timestamptz`,
+        )
+      : and(
+          eq(lessons.householdId, householdId),
+          inArray(lessons.status, ["pending", "approved"]),
+          sql`${lessons.startsAt} + ${lessons.durationMinutes} * interval '1 minute' > ${now.toISOString()}::timestamptz`,
+        );
+
+    const [lessonRows, countRows] = await Promise.all([
+      filter === "past"
+        ? db
+            .select(selectShape)
+            .from(lessons)
+            .innerJoin(lessonLocations, eq(lessons.locationId, lessonLocations.id))
+            .leftJoin(bookingBatches, eq(lessons.batchId, bookingBatches.id))
+            .where(filterCondition)
+            .orderBy(desc(lessons.startsAt))
+            .limit(limit)
+            .offset(offset)
+        : db
+            .select(selectShape)
+            .from(lessons)
+            .innerJoin(lessonLocations, eq(lessons.locationId, lessonLocations.id))
+            .leftJoin(bookingBatches, eq(lessons.batchId, bookingBatches.id))
+            .where(filterCondition)
+            .orderBy(asc(lessons.startsAt))
+            .limit(limit)
+            .offset(offset),
+      db.select({ count: count() }).from(lessons).where(filterCondition),
+    ]);
 
     const lessonIds = lessonRows.map((row) => row.id);
 
@@ -187,7 +191,7 @@ lessonsRouter.get(
       swimmersByLesson.set(row.lessonId, list);
     }
 
-    const body: UpcomingLesson[] = lessonRows.map((row) => ({
+    const items: UpcomingLesson[] = lessonRows.map((row) => ({
       id: row.id,
       locationId: row.locationId,
       locationName: row.locationName,
@@ -207,6 +211,11 @@ lessonsRouter.get(
       batchMode:
         row.batchMode === "manual" || row.batchMode === "weekly" ? row.batchMode : null,
     }));
+
+    const body: UpcomingLessonsResponse = {
+      items,
+      total: Number(countRows[0]?.count ?? 0),
+    };
 
     res.json(body);
   }),
@@ -1708,30 +1717,6 @@ lessonsRouter.delete(
       canceledCount: result.canceledIds.length,
     };
     res.json(body);
-  }),
-);
-
-// ── GET /lessons/count ───────────────────────────────────────────────────────
-
-lessonsRouter.get(
-  "/count",
-  requireParent,
-  requireHouseholdMember,
-  validate({}),
-  asyncHandler(async (req, res) => {
-    const { householdId } = req;
-    const now = new Date();
-    const rows = await db
-      .select({ count: count() })
-      .from(lessons)
-      .where(
-        and(
-          eq(lessons.householdId, householdId),
-          inArray(lessons.status, ["pending", "approved"]),
-          sql`${lessons.startsAt} + ${lessons.durationMinutes} * interval '1 minute' > ${now.toISOString()}::timestamptz`,
-        ),
-      );
-    res.json({ count: Number(rows[0]?.count ?? 0) });
   }),
 );
 

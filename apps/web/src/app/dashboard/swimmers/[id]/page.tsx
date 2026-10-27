@@ -65,7 +65,7 @@ export default async function SwimmerProfilePage({ params }: Props) {
       personalBests={
         personalBestsResult.ok ? { ok: true, data: personalBestsResult.data } : { ok: false }
       }
-      upcomingLessons={upcoming === null ? { ok: false } : { ok: true, data: upcoming }}
+      upcomingLessons={upcoming === null ? { ok: false } : { ok: true, data: upcoming.items }}
       pastLessons={past === null ? { ok: false } : { ok: true, data: past }}
     />
   );

@@ -49,12 +49,12 @@ export default function TransferOwnershipDialog({ profileId, memberName, onClose
       <div className="flex flex-col gap-5">
         <div className="flex flex-col gap-2">
           <h2
-            className="text-lg font-heading font-semibold text-text-on-section leading-tight"
+            className="text-lg font-heading font-semibold text-heading leading-tight"
             style={{ fontVariationSettings: '"SOFT" 100, "WONK" 0' }}
           >
             {phase === 1 ? `Transfer ownership to ${memberName}?` : "Are you sure?"}
           </h2>
-          <p className="text-sm text-text-secondary-on-section leading-relaxed">
+          <p className="text-sm text-text-secondary leading-relaxed">
             {phase === 1
               ? `You'll become a manager of this household.`
               : "This can't be undone. You'll lose owner access immediately."}
@@ -73,7 +73,7 @@ export default function TransferOwnershipDialog({ profileId, memberName, onClose
               <button
                 type="button"
                 onClick={onClose}
-                className="inline-flex items-center justify-center rounded-button border border-divider-section text-text-on-section font-semibold text-sm px-5 h-11 transition-colors duration-150 hover:border-text-secondary-on-section"
+                className="inline-flex items-center justify-center rounded-button border border-border text-text font-semibold text-sm px-5 h-11 transition-colors duration-150 hover:border-text-secondary"
               >
                 Cancel
               </button>
@@ -90,7 +90,7 @@ export default function TransferOwnershipDialog({ profileId, memberName, onClose
               <button
                 type="button"
                 onClick={() => setPhase(1)}
-                className="inline-flex items-center justify-center rounded-button border border-divider-section text-text-on-section font-semibold text-sm px-5 h-11 transition-colors duration-150 hover:border-text-secondary-on-section"
+                className="inline-flex items-center justify-center rounded-button border border-border text-text font-semibold text-sm px-5 h-11 transition-colors duration-150 hover:border-text-secondary"
               >
                 Back
               </button>
@@ -98,7 +98,7 @@ export default function TransferOwnershipDialog({ profileId, memberName, onClose
                 type="submit"
                 form={formId}
                 disabled={isPending}
-                className="inline-flex items-center justify-center rounded-button bg-danger text-text-on-section font-bold text-sm px-5 h-11 transition-opacity hover:opacity-90 disabled:opacity-60"
+                className="inline-flex items-center justify-center rounded-button bg-danger text-button-danger-text font-bold text-sm px-5 h-11 transition-opacity hover:opacity-90 disabled:opacity-60"
               >
                 {isPending ? "Transferring…" : "Transfer ownership"}
               </button>

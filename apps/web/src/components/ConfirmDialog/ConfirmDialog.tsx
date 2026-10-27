@@ -60,12 +60,12 @@ export default function ConfirmDialog({
       <div className="flex flex-col gap-5">
         <div className="flex flex-col gap-2">
           <h2
-            className="text-lg font-heading font-semibold text-text-on-section leading-tight"
+            className="text-lg font-heading font-semibold text-heading leading-tight"
             style={{ fontVariationSettings: '"SOFT" 100, "WONK" 0' }}
           >
             {title}
           </h2>
-          <p className="text-sm text-text-secondary-on-section leading-relaxed">{description}</p>
+          <p className="text-sm text-text-secondary leading-relaxed">{description}</p>
         </div>
 
         {children && <div>{children}</div>}
@@ -80,7 +80,7 @@ export default function ConfirmDialog({
           <button
             type="button"
             onClick={onCancel}
-            className="inline-flex items-center justify-center rounded-button border border-divider-section text-text-on-section font-semibold text-sm px-5 h-11 transition-colors duration-150 hover:border-text-secondary-on-section"
+            className="inline-flex items-center justify-center rounded-button border border-border text-text font-semibold text-sm px-5 h-11 transition-colors duration-150 hover:border-text-secondary"
           >
             {cancelLabel}
           </button>
@@ -89,7 +89,7 @@ export default function ConfirmDialog({
             {...(formId !== undefined ? { form: formId } : {})}
             {...(formId === undefined && onConfirm !== undefined ? { onClick: onConfirm } : {})}
             disabled={isPending}
-            className={`${confirmBase} ${confirmDanger ? "bg-danger text-text-on-section" : "bg-button-primary-background text-button-primary-text"}`}
+            className={`${confirmBase} ${confirmDanger ? "bg-danger text-button-danger-text" : "bg-button-primary-background text-button-primary-text"}`}
           >
             <PendingLabel
               isPending={isPending}

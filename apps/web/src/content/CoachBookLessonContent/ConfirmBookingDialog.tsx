@@ -110,9 +110,9 @@ export default function ConfirmBookingDialog({
       onCancel={onCancel}
     >
       <div className="flex flex-col gap-4">
-        <div className="rounded-card border border-divider-section p-3 text-sm text-text-on-section">
+        <div className="rounded-card border border-border p-3 text-sm text-text">
           <p className="font-semibold">{summary.householdName}</p>
-          <p className="text-text-secondary-on-section mt-0.5">
+          <p className="text-text-secondary mt-0.5">
             {formatLessonTimeDisplay(summary.startsAtUtc)}
           </p>
         </div>
@@ -120,7 +120,7 @@ export default function ConfirmBookingDialog({
         {needsAck && warnings !== null && (
           <div
             role="alert"
-            className="rounded-card border border-divider-section bg-surface-soft p-3 text-sm text-text"
+            className="rounded-card border border-border bg-surface-soft p-3 text-sm text-text"
           >
             <p className="font-semibold text-heading mb-2">
               Confirm these before booking
