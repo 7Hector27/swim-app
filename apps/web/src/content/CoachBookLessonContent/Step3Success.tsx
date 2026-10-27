@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { formatLessonTimeDisplay } from "./helpers";
+import styles from "./Step3Success.module.css";
 
 interface Props {
   lessonId: string;
@@ -22,7 +23,7 @@ export default function Step3Success({
 }: Props) {
   return (
     <div className="flex flex-col gap-6 max-w-lg mx-auto">
-      <div className="flex flex-col items-center text-center gap-3">
+      <div className={`${styles.stagger} flex flex-col items-center text-center gap-3`}>
         <span
           aria-hidden="true"
           className="inline-flex items-center justify-center h-12 w-12 rounded-full bg-accent/10 text-accent"
@@ -37,7 +38,7 @@ export default function Step3Success({
         </p>
       </div>
 
-      <dl className="rounded-card border border-border p-4 flex flex-col gap-3 text-sm">
+      <dl className={`${styles.stagger} rounded-card border border-border p-4 flex flex-col gap-3 text-sm`}>
         <div>
           <dt className="text-xs font-semibold text-text-secondary uppercase tracking-wide">
             Household
@@ -66,7 +67,7 @@ export default function Step3Success({
         </div>
       </dl>
 
-      <div className="flex flex-wrap gap-3 justify-center">
+      <div className={`${styles.stagger} flex flex-wrap gap-3 justify-center`}>
         <Link
           href={`/coach/lessons/${lessonId}`}
           className="inline-flex items-center justify-center min-h-[52px] px-6 rounded-button bg-button-primary-background text-button-primary-text font-bold text-sm transition-opacity duration-150 motion-reduce:transition-none hover:opacity-90 active:scale-[0.97]"

@@ -1,5 +1,6 @@
 "use client";
 
+import PendingLabel from "@/components/PendingLabel";
 import { lessonPrice } from "@/lib/pricing";
 import { formatSlotRangeWithDate } from "./helpers";
 
@@ -77,7 +78,11 @@ export default function BottomBar({
           disabled={!confirmEnabled}
           className="min-h-[44px] px-5 rounded-button bg-button-primary-background text-button-primary-text text-sm font-semibold transition-opacity hover:opacity-90 active:scale-[0.97] transition-[opacity,transform] motion-reduce:transform-none disabled:opacity-40 disabled:cursor-default flex-shrink-0"
         >
-          {isConfirming ? "Booking…" : "Confirm booking"}
+          <PendingLabel
+            isPending={isConfirming}
+            label="Confirm booking"
+            pendingLabel="Booking…"
+          />
         </button>
       </div>
     </div>

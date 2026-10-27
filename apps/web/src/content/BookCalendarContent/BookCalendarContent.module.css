@@ -1,0 +1,47 @@
+/* Booking-mode indicator. Three equal-width buttons; the active style lives
+   on a duplicated layer that gets clipped to the active third. Clipping
+   avoids timing color transitions on text + background separately, which
+   never settles cleanly across neighbors. */
+.modeTrack {
+  position: relative;
+  isolation: isolate;
+}
+
+.modeActiveLayer {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  pointer-events: none;
+  z-index: 1;
+  border-radius: inherit;
+  overflow: hidden;
+  clip-path: inset(0 66.6667% 0 0 round 9999px);
+  transition: clip-path 220ms var(--ease-in-out, cubic-bezier(0.77, 0, 0.175, 1));
+}
+
+.modeActiveLayer[data-mode="multiple"] {
+  clip-path: inset(0 33.3333% 0 33.3333% round 9999px);
+}
+
+.modeActiveLayer[data-mode="recurring"] {
+  clip-path: inset(0 0 0 66.6667% round 9999px);
+}
+
+.modeActiveItem {
+  flex: 1;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  background: var(--color-heading);
+  color: var(--color-background);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modeActiveLayer {
+    transition: none;
+  }
+}

@@ -1,0 +1,139 @@
+/* Drawer transitions for the batch-booking Review sheet.
+   Mobile: slides up from the bottom (bottom sheet).
+   Tablet+: slides in from the right (side sheet).
+   Reduced motion drops the transform and keeps a short opacity fade.
+
+   Native <dialog> plus allow-discrete on display/overlay keeps the element in
+   the DOM long enough to animate both open and close. */
+
+.sheet {
+  /* Base = closed/exit target. --closed-* let the media query swap the axis. */
+  --closed-x: 0;
+  --closed-y: 100%;
+
+  transform: translate(var(--closed-x), var(--closed-y));
+  opacity: 0;
+
+  transition:
+    transform 300ms var(--ease-drawer, cubic-bezier(0.32, 0.72, 0, 1)),
+    opacity 240ms var(--ease-out-strong, cubic-bezier(0.23, 1, 0.32, 1)),
+    overlay 300ms allow-discrete,
+    display 300ms allow-discrete;
+}
+
+.sheet[open] {
+  transform: translate(0, 0);
+  opacity: 1;
+}
+
+@starting-style {
+  .sheet[open] {
+    transform: translate(var(--closed-x), var(--closed-y));
+    opacity: 0;
+  }
+}
+
+.sheet::backdrop {
+  background: rgba(0, 0, 0, 0.4);
+  opacity: 0;
+  transition:
+    opacity 240ms var(--ease-out-strong, cubic-bezier(0.23, 1, 0.32, 1)),
+    overlay 300ms allow-discrete,
+    display 300ms allow-discrete;
+}
+
+.sheet[open]::backdrop {
+  opacity: 1;
+}
+
+@starting-style {
+  .sheet[open]::backdrop {
+    opacity: 0;
+  }
+}
+
+/* Tablet+: side sheet slides in from the right instead of up from the bottom. */
+@media (min-width: 769px) {
+  .sheet {
+    --closed-x: 100%;
+    --closed-y: 0;
+  }
+}
+
+/* Pick row exit. The parent clears the data as soon as Remove is pressed;
+   the row stays mounted locally for a short slide + fade, then returns null.
+   data-exiting is toggled by the row's own effect, not the parent. */
+.pickRow {
+  transition:
+    opacity 180ms var(--ease-out-strong, cubic-bezier(0.23, 1, 0.32, 1)),
+    transform 180ms var(--ease-out-strong, cubic-bezier(0.23, 1, 0.32, 1));
+}
+
+.pickRow[data-exiting="true"] {
+  opacity: 0;
+  transform: translateX(16px);
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pickRow {
+    transition: opacity 150ms linear;
+  }
+
+  .pickRow[data-exiting="true"] {
+    transform: none;
+    opacity: 0;
+  }
+}
+
+/* Crossfade between the review view and the success view inside the sheet.
+   Key-based remount triggers @starting-style on the newly mounted copy. The
+   departing copy unmounts synchronously; the small blur + opacity ramp hides
+   the swap seam. */
+.fade {
+  opacity: 1;
+  filter: blur(0);
+  transition:
+    opacity 220ms var(--ease-out-strong, cubic-bezier(0.23, 1, 0.32, 1)),
+    filter 220ms var(--ease-out-strong, cubic-bezier(0.23, 1, 0.32, 1));
+}
+
+@starting-style {
+  .fade {
+    opacity: 0;
+    filter: blur(2px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sheet,
+  .sheet::backdrop {
+    transition:
+      opacity 150ms linear,
+      overlay 150ms allow-discrete,
+      display 150ms allow-discrete;
+  }
+
+  .sheet {
+    transform: none;
+  }
+
+  @starting-style {
+    .sheet[open] {
+      transform: none;
+      opacity: 0;
+    }
+  }
+
+  .fade {
+    transition: opacity 150ms linear;
+    filter: none;
+  }
+
+  @starting-style {
+    .fade {
+      filter: none;
+      opacity: 0;
+    }
+  }
+}

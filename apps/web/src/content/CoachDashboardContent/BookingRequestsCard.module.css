@@ -1,0 +1,39 @@
+/* Batch group exit. On successful approve-all the group marks itself as
+   exiting, plays the fade + settle, then signals the parent to remove the
+   lessons from state. Visual-only delay; the server has already approved. */
+.batchGroup {
+  transition:
+    opacity 220ms var(--ease-out-strong, cubic-bezier(0.23, 1, 0.32, 1)),
+    transform 220ms var(--ease-out-strong, cubic-bezier(0.23, 1, 0.32, 1));
+}
+
+.batchGroup[data-exiting="true"] {
+  opacity: 0;
+  transform: scale(0.98);
+  pointer-events: none;
+}
+
+/* Hide the native summary bullet so the controlled trigger button next to
+   Approve-all remains the only visible toggle control. The details element
+   still provides the ::details-content animation defined in globals.css. */
+.hiddenSummary {
+  list-style: none;
+  display: block;
+  height: 0;
+  overflow: hidden;
+}
+
+.hiddenSummary::-webkit-details-marker {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .batchGroup {
+    transition: opacity 150ms linear;
+  }
+
+  .batchGroup[data-exiting="true"] {
+    transform: none;
+    opacity: 0;
+  }
+}

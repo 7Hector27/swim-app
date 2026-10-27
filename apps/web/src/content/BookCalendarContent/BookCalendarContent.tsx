@@ -62,6 +62,7 @@ import PhoneTimeList from "./PhoneTimeList";
 import BottomBar from "./BottomBar";
 import ReviewSheet from "./ReviewSheet";
 import ConfirmDiscardDialog from "./ConfirmDiscardDialog";
+import modeStyles from "./BookCalendarContent.module.css";
 
 interface Location {
   id: string;
@@ -1336,9 +1337,9 @@ interface ModeSwitchProps {
 }
 
 const MODE_BUTTON_BASE =
-  "flex-1 min-h-[44px] px-3 text-sm font-semibold transition-colors duration-150 motion-reduce:transition-none active:scale-[0.97] motion-reduce:transform-none";
-const MODE_ACTIVE = "bg-heading text-background";
-const MODE_INACTIVE = "text-text hover:bg-surface-soft";
+  "relative z-[2] flex-1 min-h-[44px] px-3 text-sm font-semibold transition-colors duration-150 motion-reduce:transition-none active:scale-[0.97] motion-reduce:transform-none";
+const MODE_ACTIVE_TEXT = "text-background";
+const MODE_INACTIVE_TEXT = "text-text hover:bg-surface-soft";
 
 function ModeSwitch({ mode, onChange }: ModeSwitchProps) {
   return (
@@ -1346,15 +1347,26 @@ function ModeSwitch({ mode, onChange }: ModeSwitchProps) {
       role="radiogroup"
       aria-label="Booking mode"
       data-testid="mode-switch"
-      className="flex rounded-full border border-border overflow-hidden"
+      className={`${modeStyles.modeTrack} flex rounded-full border border-border overflow-hidden`}
     >
+      {/* Clipped active layer sits under the real buttons and slides between
+          the three thirds. Buttons stay as the accessible controls. */}
+      <div
+        aria-hidden="true"
+        data-mode={mode}
+        className={modeStyles.modeActiveLayer}
+      >
+        <span className={modeStyles.modeActiveItem}>Single</span>
+        <span className={modeStyles.modeActiveItem}>Multiple</span>
+        <span className={modeStyles.modeActiveItem}>Recurring</span>
+      </div>
       <button
         type="button"
         role="radio"
         aria-checked={mode === "single"}
         onClick={() => onChange("single")}
         data-testid="mode-single"
-        className={`${MODE_BUTTON_BASE} ${mode === "single" ? MODE_ACTIVE : MODE_INACTIVE}`}
+        className={`${MODE_BUTTON_BASE} ${mode === "single" ? MODE_ACTIVE_TEXT : MODE_INACTIVE_TEXT}`}
       >
         Single
       </button>
@@ -1364,7 +1376,7 @@ function ModeSwitch({ mode, onChange }: ModeSwitchProps) {
         aria-checked={mode === "multiple"}
         onClick={() => onChange("multiple")}
         data-testid="mode-multiple"
-        className={`${MODE_BUTTON_BASE} border-l border-border ${mode === "multiple" ? MODE_ACTIVE : MODE_INACTIVE}`}
+        className={`${MODE_BUTTON_BASE} border-l border-border ${mode === "multiple" ? MODE_ACTIVE_TEXT : MODE_INACTIVE_TEXT}`}
       >
         Multiple
       </button>
@@ -1374,7 +1386,7 @@ function ModeSwitch({ mode, onChange }: ModeSwitchProps) {
         aria-checked={mode === "recurring"}
         onClick={() => onChange("recurring")}
         data-testid="mode-recurring"
-        className={`${MODE_BUTTON_BASE} border-l border-border ${mode === "recurring" ? MODE_ACTIVE : MODE_INACTIVE}`}
+        className={`${MODE_BUTTON_BASE} border-l border-border ${mode === "recurring" ? MODE_ACTIVE_TEXT : MODE_INACTIVE_TEXT}`}
       >
         Recurring
       </button>

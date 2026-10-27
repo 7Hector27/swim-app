@@ -78,13 +78,23 @@ describe("BookingRequestsCard — batch grouping (Phase 3)", () => {
     const approveAllButtons = screen.getAllByRole("button", { name: /approve all/i });
     expect(approveAllButtons).toHaveLength(1);
 
-    // Individual lessons are not visible until expanded.
-    expect(screen.queryByRole("button", { name: /^approve$/i })).toBeNull();
+    // Collapsed by default: the toggle button says "Show N lessons" and the
+    // <details> wrapper that holds the per-lesson rows is not open.
+    const toggle = screen.getByRole("button", { name: /show 3 lessons/i });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    const panel = document.getElementById(toggle.getAttribute("aria-controls") ?? "");
+    expect(panel?.tagName.toLowerCase()).toBe("details");
+    expect(panel?.hasAttribute("open")).toBe(false);
 
     // Expand the batch.
-    fireEvent.click(screen.getByRole("button", { name: /show 3 lessons/i }));
+    fireEvent.click(toggle);
+    expect(screen.getByRole("button", { name: /hide lessons/i })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    expect(panel?.hasAttribute("open")).toBe(true);
 
-    // Now three per-lesson Approve buttons appear.
+    // Three per-lesson Approve + Decline buttons appear after expansion.
     const perLessonApprove = screen.getAllByRole("button", { name: /^approve$/i });
     expect(perLessonApprove).toHaveLength(3);
     const perLessonDecline = screen.getAllByRole("button", { name: /^decline$/i });
