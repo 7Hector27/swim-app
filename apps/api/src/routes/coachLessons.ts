@@ -764,16 +764,29 @@ coachLessonsRouter.patch(
         );
       const recipientProfileIds = recipientRows.map((row) => row.profileId);
 
-      // Every batch lesson shares the same swimmer set + pool. Use the first
-      // approved lesson's lesson_swimmers rows as the batch-wide swimmer list.
-      const sampleLessonId = approvedLessons[0]!.id;
-      const swimmerRows = await tx
-        .select({ firstName: swimmers.firstName })
+      // Per-lesson swimmer first names (ADR 030 phase 2 — a batch can mix
+      // swimmer sets across lessons). The batch-wide `swimmerFirstNames`
+      // below is the sorted union across every approved lesson for the
+      // email intro + ICS summary.
+      const approvedLessonIds = approvedLessons.map((lesson) => lesson.id);
+      const perLessonSwimmerRows = await tx
+        .select({
+          lessonId: lessonSwimmers.lessonId,
+          firstName: swimmers.firstName,
+        })
         .from(lessonSwimmers)
         .innerJoin(swimmers, eq(lessonSwimmers.swimmerId, swimmers.id))
-        .where(eq(lessonSwimmers.lessonId, sampleLessonId))
+        .where(inArray(lessonSwimmers.lessonId, approvedLessonIds))
         .orderBy(swimmers.firstName);
-      const swimmerFirstNames = swimmerRows.map((row) => row.firstName);
+      const firstNamesByLessonId = new Map<string, string[]>();
+      for (const row of perLessonSwimmerRows) {
+        const list = firstNamesByLessonId.get(row.lessonId) ?? [];
+        list.push(row.firstName);
+        firstNamesByLessonId.set(row.lessonId, list);
+      }
+      const swimmerFirstNames = Array.from(
+        new Set(perLessonSwimmerRows.map((row) => row.firstName)),
+      ).sort((a, b) => a.localeCompare(b));
 
       const locationId = approvedLessons[0]!.locationId;
       const locationRows = await tx
@@ -796,6 +809,7 @@ coachLessonsRouter.patch(
         startsAtUtc: lesson.startsAt.toISOString(),
         durationMinutes: lesson.durationMinutes as 30 | 45 | 60,
         status: "approved" as const,
+        swimmerFirstNames: firstNamesByLessonId.get(lesson.id) ?? [],
         // The sender's filter compares current calendar_sequence against
         // snapshot + 1 (ADR 028 and 030). We bumped by one above, so the
         // pre-bump value is what the payload holds.

@@ -750,6 +750,11 @@ export type BatchMode = z.infer<typeof BatchModeSchema>;
 export const BatchPickSchema = z.object({
   startsAt: z.string().datetime({ offset: true }),
   durationMinutes: LessonDurationMinutesSchema,
+  // Per-pick swimmers (ADR 030 phase 2 update). Each pick captures the
+  // swimmer set the parent chose at tap time, so a Multiple batch can
+  // interleave different kids and the server books each lesson against
+  // the pick's own list rather than a batch-wide one.
+  swimmerIds: z.array(z.string().uuid()).min(1).max(4),
 });
 export type BatchPick = z.infer<typeof BatchPickSchema>;
 
@@ -777,6 +782,9 @@ export const BatchPreviewPickSchema = z.object({
   index: z.number().int().nonnegative(),
   startsAt: z.string().datetime({ offset: true }),
   durationMinutes: LessonDurationMinutesSchema,
+  // Echo back the pick's swimmers so the Review sheet can show each row's
+  // first names without re-indexing against the request body.
+  swimmerIds: z.array(z.string().uuid()).min(1).max(4),
   state: BatchPickStateSchema,
   reason: z.string().optional(),
   suggestions: z.array(BatchPickSuggestionSchema).max(3).optional(),
@@ -799,9 +807,9 @@ const batchManualBase = z.object({
   mode: z.literal("manual"),
   householdId: z.string().uuid(),
   locationId: z.string().uuid(),
-  swimmerIds: z.array(z.string().uuid()).min(1).max(4),
-  // Each pick carries its own durationMinutes. One batch can mix 30, 45, and
-  // 60-minute lessons; household / swimmers / pool stay batch-wide.
+  // Each pick carries its own durationMinutes + swimmerIds. One batch can
+  // mix 30, 45, and 60-minute lessons across different swimmers; the
+  // household and pool stay batch-wide.
   picks: z.array(BatchPickSchema).min(BATCH_LESSON_MIN).max(BATCH_LESSON_MAX),
 });
 
@@ -815,6 +823,10 @@ export const BatchPatternPairSchema = z.object({
   // Local America/Los_Angeles time, zero-padded. Example: "16:30".
   timeOfDay: z.string().regex(/^\d{2}:\d{2}$/, "timeOfDay must be HH:MM"),
   durationMinutes: LessonDurationMinutesSchema,
+  // Per-entry swimmers. Each candidate expanded from this pair inherits
+  // this list so a recurring series can run different kids on different
+  // (weekday, time) slots. See ADR 030 phase 2.
+  swimmerIds: z.array(z.string().uuid()).min(1).max(4),
 });
 export type BatchPatternPair = z.infer<typeof BatchPatternPairSchema>;
 
@@ -828,10 +840,10 @@ const batchWeeklyBase = z.object({
   mode: z.literal("weekly"),
   householdId: z.string().uuid(),
   locationId: z.string().uuid(),
-  swimmerIds: z.array(z.string().uuid()).min(1).max(4),
-  // Ordered list of (weekday, time, duration) entries. The expanded candidate
-  // list is pattern.length * weeks lessons; order inside the pattern
-  // determines the stable index assignment.
+  // Ordered list of (weekday, time, duration, swimmerIds) entries. The
+  // expanded candidate list is pattern.length * weeks lessons; order inside
+  // the pattern determines the stable index assignment, and each candidate
+  // inherits its swimmer set from the entry it was expanded from.
   pattern: z.array(BatchPatternPairSchema).min(1).max(BATCH_LESSON_MAX),
   // LA calendar date of the first candidate week. Example: "2026-11-02".
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "startDate must be YYYY-MM-DD"),

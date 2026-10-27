@@ -161,12 +161,14 @@ export type BatchMode = z.infer<typeof BatchModeSchema>;
 export const BatchPickSchema = z.object({
   startsAt: z.string().datetime({ offset: true }),
   durationMinutes: LessonDurationMinutesSchema,
+  // Each pick carries its own swimmer set (ADR 030 phase 2).
+  swimmerIds: z.array(z.string().uuid()).min(1).max(4),
 });
 export type BatchPick = z.infer<typeof BatchPickSchema>;
 
 // ── Preview ────────────────────────────────────────────────────────────────────
 
-const BATCH_LESSON_MIN = 2;
+const BATCH_LESSON_MIN = 1;
 const BATCH_LESSON_MAX = 20;
 
 export const BatchPatternPairSchema = z.object({
@@ -175,14 +177,18 @@ export const BatchPatternPairSchema = z.object({
   // Local America/Los_Angeles time, zero-padded. Example: "16:30".
   timeOfDay: z.string().regex(/^\d{2}:\d{2}$/, "timeOfDay must be HH:MM"),
   durationMinutes: LessonDurationMinutesSchema,
+  // Each pattern entry carries its own swimmer set (ADR 030 phase 2).
+  swimmerIds: z.array(z.string().uuid()).min(1).max(4),
 });
 
 export const BatchManualPreviewBodySchema = z.object({
   mode: z.literal("manual"),
   householdId: z.string().uuid(),
   locationId: z.string().uuid(),
-  swimmerIds: z.array(z.string().uuid()).min(1).max(4),
-  // Each pick carries its own durationMinutes so a batch can mix lengths.
+  // Each pick carries its own durationMinutes AND its own swimmerIds so one
+  // batch can mix lengths and mix swimmer sets across picks. The server
+  // validates every unique swimmer against the household in a single pass
+  // before any availability check runs.
   picks: z.array(BatchPickSchema).min(BATCH_LESSON_MIN).max(BATCH_LESSON_MAX),
 });
 
@@ -190,9 +196,9 @@ export const BatchWeeklyPreviewBodySchema = z.object({
   mode: z.literal("weekly"),
   householdId: z.string().uuid(),
   locationId: z.string().uuid(),
-  swimmerIds: z.array(z.string().uuid()).min(1).max(4),
-  // Ordered list of (weekday, timeOfDay, durationMinutes) entries. One batch
-  // can mix 30, 45, and 60-minute entries.
+  // Ordered list of (weekday, timeOfDay, durationMinutes, swimmerIds)
+  // entries. Each pattern entry owns its own swimmer set; every candidate
+  // expanded from an entry inherits those swimmers unchanged.
   pattern: z.array(BatchPatternPairSchema).min(1).max(BATCH_LESSON_MAX),
   // LA calendar date of the first candidate week.
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "startDate must be YYYY-MM-DD"),
@@ -311,7 +317,7 @@ Parent-only. Middleware chain:
 
 Flow:
 1. Verify `req.householdId === body.householdId`. 403 if not.
-2. Verify `swimmerIds` all belong to the household and are not archived. 422 if any fails.
+2. Verify every swimmer referenced by any pick / pattern entry belongs to the household and is not archived (union: `collectBatchSwimmerIds(body)` for both modes). 422 if any swimmer fails the check.
 3. Compute candidate picks and expanded candidate list `candidates[]`:
    - Manual: `candidates = body.picks` directly, index = array position.
    - Weekly: compute each `(weekIndex, weekdayIndex)` pair's `startsAt` by taking `startDate + weekIndex * 7 days`, advancing to the next occurrence of each listed `weekday`, applying `timeOfDay` in the LA zone. The expanded list is in week-then-weekday order; each pick has a stable `index` across the whole batch.
@@ -363,7 +369,7 @@ Flow:
    - `requested_by`: the submitting profile id.
    - `expires_at`: `starts_at − bookingMinAdvanceHours` for pending; `NULL` for approved.
    - `batch_id`: the just-inserted batch's id.
-9. Insert N × swimmer-count rows into `lesson_swimmers`.
+9. Insert `lesson_swimmers` rows: for each lesson, one row per swimmer in that pick's / pattern entry's `swimmerIds`. The counts can differ per lesson so one batch can mix private and family rows.
 10. For each approved lesson, snapshot `calendar_sequence` (initial `0`) into the outbox payload, then set `calendar_sequence = 1` and `calendar_invite_sent_at = now()`. **Only approved lessons bump their sequence.** Pending lessons get their first invite later (through approve-all or per-lesson approve).
 11. Resolve recipient profile ids via `SELECT profile_id FROM household_members WHERE household_id = :h AND role IN ('owner','manager')`.
 12. Insert one `lesson_email_outbox` row:
@@ -372,7 +378,7 @@ Flow:
     - `recipient_profile_ids = <resolved>`
     - `ics_method = NULL`, `ics_sequence = NULL`
     - `payload`: see payload shape below
-13. Insert one `household_audit_log` row with `action='lesson_batch_booked'`, `actor_id=<requester>`, `household_id`, `target_swimmer_id=NULL`, `payload={ batchId, mode, locationId, swimmerIds, picks: [{ lessonId, startsAt, durationMinutes, status }], ...weekly fields if applicable }`. Each pick carries its own `durationMinutes` so a mixed-length batch stays reconstructible from the audit log.
+13. Insert one `household_audit_log` row with `action='lesson_batch_booked'`, `actor_id=<requester>`, `household_id`, `target_swimmer_id=NULL`, `payload={ batchId, mode, locationId, swimmerIds: <union across all picks/pattern entries>, picks: [{ lessonId, startsAt, durationMinutes, status }], ...weekly fields if applicable }`. Each pick carries its own `durationMinutes` AND `swimmerIds` so a mixed-length + mixed-swimmer batch stays reconstructible via the `lesson_swimmers` join.
 14. Commit.
 15. After `res.json()`:
     - For each approved lesson, `queueMicrotask(() => void syncLessonToGoogle(id))`.

@@ -33,6 +33,9 @@ export interface Candidate {
   // Each candidate owns its length so a single batch can mix 30, 45, and
   // 60-minute lessons.
   durationMinutes: LessonDurationMinutes;
+  // Each candidate owns its swimmer set so a batch can book different kids
+  // on different picks or pattern entries (ADR 030 phase 2).
+  swimmerIds: string[];
 }
 
 /**
@@ -59,7 +62,12 @@ export function expandWeeklyCandidates(params: WeeklyExpandParams): Candidate[] 
       const totalDayOffset = weekIndex * 7 + firstWeekOffset;
       const dateStr = addDaysToLaDate(startDate, totalDayOffset);
       const startsAt = laToUtc(dateStr, pair.timeOfDay);
-      candidates.push({ index, startsAt, durationMinutes: pair.durationMinutes });
+      candidates.push({
+        index,
+        startsAt,
+        durationMinutes: pair.durationMinutes,
+        swimmerIds: pair.swimmerIds,
+      });
       index++;
     }
   }
@@ -88,9 +96,10 @@ export function applyWeeklyOverridesAndSkips(
       result.push({
         index: candidate.index,
         startsAt: new Date(override.startsAt),
-        // An override only moves a candidate's time; its length stays the
-        // length declared in the pattern entry it belongs to.
+        // An override only moves a candidate's time; its length and
+        // swimmer set stay as declared in the pattern entry.
         durationMinutes: candidate.durationMinutes,
+        swimmerIds: candidate.swimmerIds,
       });
     } else {
       result.push(candidate);

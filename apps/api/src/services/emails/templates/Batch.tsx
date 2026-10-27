@@ -108,6 +108,15 @@ interface LessonListProps {
 }
 
 function LessonList({ label, lessons, payload, secondary = false }: LessonListProps) {
+  // If every lesson in the batch has the same swimmer set, the intro line
+  // already names everyone; skip the per-row swimmer suffix to keep the
+  // table tight. When sets differ (ADR 030 phase 2), surface each row's
+  // kids inline so the parent can tell which lesson is for which swimmer.
+  const perLessonSets = new Set(
+    lessons.map((lesson) => [...lesson.swimmerFirstNames].sort().join("|")),
+  );
+  const showPerLessonSwimmers = perLessonSets.size > 1;
+
   return (
     <Section
       style={{
@@ -126,6 +135,11 @@ function LessonList({ label, lessons, payload, secondary = false }: LessonListPr
           <span style={{ color: emailTheme.color.textSecondary, marginLeft: 8 }}>
             {lesson.durationMinutes} min · {payload.location.name}
           </span>
+          {showPerLessonSwimmers && lesson.swimmerFirstNames.length > 0 && (
+            <span style={{ color: emailTheme.color.textSecondary, marginLeft: 8 }}>
+              · {formatSwimmerList(lesson.swimmerFirstNames)}
+            </span>
+          )}
         </Text>
       ))}
     </Section>

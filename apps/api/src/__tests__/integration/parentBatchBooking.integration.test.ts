@@ -401,8 +401,14 @@ describe("POST /lessons/batch — Phase 1", () => {
         mode: "weekly" as const,
         householdId: owner.householdId,
         locationId,
-        swimmerIds: [swimmerId],
-        pattern: [{ weekday: 3, timeOfDay: "16:30", durationMinutes: 30 as const }],
+        pattern: [
+          {
+            weekday: 3,
+            timeOfDay: "16:30",
+            durationMinutes: 30 as const,
+            swimmerIds: [swimmerId],
+          },
+        ],
         startDate,
         weeks: 2,
       };
@@ -440,10 +446,19 @@ describe("POST /lessons/batch — Phase 1", () => {
           mode: "weekly",
           householdId: owner.householdId,
           locationId,
-          swimmerIds: [swimmerId],
           pattern: [
-            { weekday: 2, timeOfDay: "16:30", durationMinutes: 30 },
-            { weekday: 4, timeOfDay: "16:30", durationMinutes: 30 },
+            {
+              weekday: 2,
+              timeOfDay: "16:30",
+              durationMinutes: 30,
+              swimmerIds: [swimmerId],
+            },
+            {
+              weekday: 4,
+              timeOfDay: "16:30",
+              durationMinutes: 30,
+              swimmerIds: [swimmerId],
+            },
           ],
           startDate,
           weeks: 3,
@@ -470,6 +485,7 @@ describe("POST /lessons/batch — Phase 1", () => {
     const picks = Array.from({ length: 21 }, (_unused, idx) => ({
       startsAt: new Date(PINNED_NOW.getTime() + (10 + idx) * 24 * 60 * 60 * 1000).toISOString(),
       durationMinutes: 30 as const,
+      swimmerIds: [swimmerId],
     }));
     const res = await request(app)
       .post("/lessons/batch")
@@ -478,7 +494,6 @@ describe("POST /lessons/batch — Phase 1", () => {
         mode: "manual",
         householdId: owner.householdId,
         locationId,
-        swimmerIds: [swimmerId],
         picks,
       });
     expect(res.status).toBe(422);
@@ -495,8 +510,14 @@ describe("POST /lessons/batch — Phase 1", () => {
         mode: "weekly" as const,
         householdId: owner.householdId,
         locationId,
-        swimmerIds: [swimmerId],
-        pattern: [{ weekday: 3, timeOfDay: "16:30", durationMinutes: 30 as const }],
+        pattern: [
+          {
+            weekday: 3,
+            timeOfDay: "16:30",
+            durationMinutes: 30 as const,
+            swimmerIds: [swimmerId],
+          },
+        ],
         startDate,
         weeks: 2,
       };
@@ -538,10 +559,17 @@ describe("POST /lessons/batch — Phase 1", () => {
         mode: "manual" as const,
         householdId: owner.householdId,
         locationId,
-        swimmerIds: [swimmerId],
         picks: [
-          { startsAt: pick1.toISOString(), durationMinutes: 45 as const },
-          { startsAt: pick2.toISOString(), durationMinutes: 45 as const },
+          {
+            startsAt: pick1.toISOString(),
+            durationMinutes: 45 as const,
+            swimmerIds: [swimmerId],
+          },
+          {
+            startsAt: pick2.toISOString(),
+            durationMinutes: 45 as const,
+            swimmerIds: [swimmerId],
+          },
         ],
       };
       const preview = await request(app)
@@ -587,8 +615,14 @@ describe("POST /lessons/batch — Phase 1", () => {
             mode: "weekly",
             householdId: owner.householdId,
             locationId,
-            swimmerIds: [swimmerId],
-            pattern: [{ weekday, timeOfDay: "16:30", durationMinutes: 30 }],
+            pattern: [
+              {
+                weekday,
+                timeOfDay: "16:30",
+                durationMinutes: 30,
+                swimmerIds: [swimmerId],
+              },
+            ],
             startDate,
             weeks: 3,
             overrides: [{ index: 1, startsAt: laDateToUtcAtTime(week2Date, "17:30").toISOString() }],
@@ -635,8 +669,14 @@ describe("POST /lessons/batch — Phase 1", () => {
             mode: "weekly",
             householdId: owner.householdId,
             locationId,
-            swimmerIds: [swimmerId],
-            pattern: [{ weekday, timeOfDay: "16:30", durationMinutes: 30 }],
+            pattern: [
+              {
+                weekday,
+                timeOfDay: "16:30",
+                durationMinutes: 30,
+                swimmerIds: [swimmerId],
+              },
+            ],
             startDate,
             weeks: 3,
             overrides: [],
@@ -693,8 +733,14 @@ describe("POST /lessons/batch — Phase 1", () => {
             mode: "weekly",
             householdId: owner.householdId,
             locationId,
-            swimmerIds: [swimmerId],
-            pattern: [{ weekday, timeOfDay: "16:30", durationMinutes: 30 }],
+            pattern: [
+              {
+                weekday,
+                timeOfDay: "16:30",
+                durationMinutes: 30,
+                swimmerIds: [swimmerId],
+              },
+            ],
             startDate,
             weeks: 3,
           });
@@ -748,8 +794,14 @@ describe("POST /lessons/batch — Phase 1", () => {
           mode: "weekly",
           householdId: owner.householdId,
           locationId,
-          swimmerIds: [swimmerId],
-          pattern: [{ weekday: 3, timeOfDay: "16:30", durationMinutes: 30 }],
+          pattern: [
+            {
+              weekday: 3,
+              timeOfDay: "16:30",
+              durationMinutes: 30,
+              swimmerIds: [swimmerId],
+            },
+          ],
           startDate,
           weeks: 4,
         });
@@ -827,8 +879,14 @@ describe("POST /lessons/batch — Phase 1", () => {
           mode: "weekly",
           householdId: owner.householdId,
           locationId,
-          swimmerIds: [swimmerId],
-          pattern: [{ weekday: 3, timeOfDay: "16:30", durationMinutes: 30 }],
+          pattern: [
+            {
+              weekday: 3,
+              timeOfDay: "16:30",
+              durationMinutes: 30,
+              swimmerIds: [swimmerId],
+            },
+          ],
           startDate,
           weeks: 3,
         });
@@ -918,12 +976,16 @@ describe("POST /lessons/batch — Phase 1", () => {
           mode: "manual" as const,
           householdId: owner.householdId,
           locationId,
-          swimmerIds: [swimmerId],
           picks: [
-            { startsAt: sharedSlot, durationMinutes: 30 as const },
+            {
+              startsAt: sharedSlot,
+              durationMinutes: 30 as const,
+              swimmerIds: [swimmerId],
+            },
             {
               startsAt: laDateToUtcAtTime(addDays(startDate, 7), "16:30").toISOString(),
               durationMinutes: 30 as const,
+              swimmerIds: [swimmerId],
             },
           ],
         };
@@ -981,10 +1043,17 @@ describe("POST /lessons/batch — Phase 1", () => {
         mode: "manual" as const,
         householdId: owner.householdId,
         locationId,
-        swimmerIds: [swimmerId],
         picks: [
-          { startsAt: first.toISOString(), durationMinutes: 30 as const },
-          { startsAt: second.toISOString(), durationMinutes: 45 as const },
+          {
+            startsAt: first.toISOString(),
+            durationMinutes: 30 as const,
+            swimmerIds: [swimmerId],
+          },
+          {
+            startsAt: second.toISOString(),
+            durationMinutes: 45 as const,
+            swimmerIds: [swimmerId],
+          },
         ],
       };
       const preview = await request(app)
@@ -1025,6 +1094,103 @@ describe("POST /lessons/batch — Phase 1", () => {
     });
   });
 
+  // T12: per-pick swimmer sets end-to-end. Two picks with different kids
+  // book under THOSE kids — not the chip set, not the first pick's set.
+  // Regression test for the dev-feedback-2 bug where every lesson was
+  // written against the first pick's swimmer list.
+  it("T12: two picks with different swimmers book each lesson to the right swimmer", async () => {
+    await withAllDaysEnabled(async () => {
+      // A second swimmer in the same household so the batch can mix kids.
+      const kid2Rows = await adminDb()
+        .insert(swimmers)
+        .values({
+          firstName: "BatchKidTwo",
+          lastName: "Integration",
+          birthDate: "2018-01-01",
+          sex: "male",
+          isPublic: false,
+          householdId: owner.householdId,
+        })
+        .returning({ id: swimmers.id });
+      const kid2Id = kid2Rows[0]!.id;
+
+      try {
+        const startDate = futureLaDate(305);
+        // Two 30-min picks on the same day, non-overlapping: 16:00 is kid1's,
+        // 17:00 is kid2's. The server derives each lesson's `type` from the
+        // pick's `swimmerIds.length` and inserts `lesson_swimmers` from the
+        // pick's own list.
+        const first = laDateToUtcAtTime(startDate, "16:00");
+        const second = laDateToUtcAtTime(startDate, "17:00");
+        const body = {
+          mode: "manual" as const,
+          householdId: owner.householdId,
+          locationId,
+          picks: [
+            {
+              startsAt: first.toISOString(),
+              durationMinutes: 30 as const,
+              swimmerIds: [swimmerId],
+            },
+            {
+              startsAt: second.toISOString(),
+              durationMinutes: 30 as const,
+              swimmerIds: [kid2Id],
+            },
+          ],
+        };
+
+        const submit = await request(app)
+          .post("/lessons/batch")
+          .set("Authorization", `Bearer ${owner.accessToken}`)
+          .send(body);
+        expect(submit.status).toBe(201);
+        const lessonIds = submit.body.lessonIds as string[];
+        expect(lessonIds).toHaveLength(2);
+
+        // Pull every lesson with its swimmers. Compare by startsAt so the
+        // test tolerates whichever pick-asc order picksAsc produced.
+        const lessonRows = await adminDb()
+          .select({
+            id: lessons.id,
+            startsAt: lessons.startsAt,
+            type: lessons.type,
+          })
+          .from(lessons)
+          .where(inArray(lessons.id, lessonIds));
+        const swimmerRows = await adminDb()
+          .select({
+            lessonId: lessonSwimmers.lessonId,
+            swimmerId: lessonSwimmers.swimmerId,
+          })
+          .from(lessonSwimmers)
+          .where(inArray(lessonSwimmers.lessonId, lessonIds));
+        const byStartsAt = new Map(lessonRows.map((row) => [row.startsAt.toISOString(), row]));
+        const swimmerIdsByLessonId = new Map<string, string[]>();
+        for (const row of swimmerRows) {
+          const list = swimmerIdsByLessonId.get(row.lessonId) ?? [];
+          list.push(row.swimmerId);
+          swimmerIdsByLessonId.set(row.lessonId, list);
+        }
+
+        const firstLesson = byStartsAt.get(first.toISOString())!;
+        const secondLesson = byStartsAt.get(second.toISOString())!;
+        // Each lesson got exactly the pick's swimmer, no cross-pollination.
+        expect(swimmerIdsByLessonId.get(firstLesson.id)).toEqual([swimmerId]);
+        expect(swimmerIdsByLessonId.get(secondLesson.id)).toEqual([kid2Id]);
+        // Both lessons derived their type per-lesson from swimmer count.
+        expect(firstLesson.type).toBe("private");
+        expect(secondLesson.type).toBe("private");
+      } finally {
+        // Clean up the second swimmer. The main afterAll closes the owner
+        // household; this just drops the extra kid so subsequent tests see
+        // the suite's single-swimmer fixture.
+        await adminDb().delete(lessonSwimmers).where(eq(lessonSwimmers.swimmerId, kid2Id));
+        await adminDb().delete(swimmers).where(eq(swimmers.id, kid2Id));
+      }
+    });
+  });
+
   // T11: a 45-min pick overlapping a 30-min pick in the same batch is
   // flagged conflicts_batch. Submit returns 422 and writes nothing.
   it("T11: a 45-min pick overlapping a 30-min pick is flagged conflicts_batch", async () => {
@@ -1040,10 +1206,17 @@ describe("POST /lessons/batch — Phase 1", () => {
         mode: "manual" as const,
         householdId: owner.householdId,
         locationId,
-        swimmerIds: [swimmerId],
         picks: [
-          { startsAt: first.toISOString(), durationMinutes: 30 as const },
-          { startsAt: second.toISOString(), durationMinutes: 45 as const },
+          {
+            startsAt: first.toISOString(),
+            durationMinutes: 30 as const,
+            swimmerIds: [swimmerId],
+          },
+          {
+            startsAt: second.toISOString(),
+            durationMinutes: 45 as const,
+            swimmerIds: [swimmerId],
+          },
         ],
       };
       const preview = await request(app)

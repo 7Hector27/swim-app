@@ -28,6 +28,9 @@ interface Props {
   open: boolean;
   mode: Mode;
   previewPicks: BatchPreviewPick[];
+  // Household swimmer list, used to resolve per-pick swimmerIds to first
+  // names in each pick row (ADR 030 phase 2 — a batch can mix swimmer sets).
+  swimmers: readonly { id: string; firstName: string }[];
   skippedIndexes: Set<number>;
   removedIndexes: Set<number>;
   isLoading: boolean;
@@ -127,6 +130,7 @@ export default function ReviewSheet(props: Props) {
             <ReviewContent
               mode={props.mode}
               previewPicks={props.previewPicks}
+              swimmers={props.swimmers}
               skippedIndexes={props.skippedIndexes}
               removedIndexes={props.removedIndexes}
               isLoading={props.isLoading}
@@ -178,6 +182,7 @@ export default function ReviewSheet(props: Props) {
 interface ReviewContentProps {
   mode: Mode;
   previewPicks: BatchPreviewPick[];
+  swimmers: readonly { id: string; firstName: string }[];
   skippedIndexes: Set<number>;
   removedIndexes: Set<number>;
   isLoading: boolean;
@@ -192,6 +197,7 @@ interface ReviewContentProps {
 function ReviewContent({
   mode,
   previewPicks,
+  swimmers,
   skippedIndexes,
   removedIndexes,
   isLoading,
@@ -202,6 +208,7 @@ function ReviewContent({
   onRemove,
   onUnskip,
 }: ReviewContentProps) {
+  const firstNameById = new Map(swimmers.map((swimmer) => [swimmer.id, swimmer.firstName]));
   const visible = previewPicks.filter(
     (pick) => !skippedIndexes.has(pick.index) && !removedIndexes.has(pick.index),
   );
@@ -253,19 +260,28 @@ function ReviewContent({
       )}
 
       <ul className="flex flex-col gap-2">
-        {previewPicks.map((pick) => (
-          <PickRow
-            key={pick.index}
-            pick={pick}
-            mode={mode}
-            isSkipped={skippedIndexes.has(pick.index)}
-            isRemoved={removedIndexes.has(pick.index)}
-            onApplySuggestion={(startsAt) => onApplySuggestion(pick.index, startsAt)}
-            onSkip={() => onSkip(pick.index)}
-            onRemove={() => onRemove(pick.index)}
-            onUnskip={() => onUnskip(pick.index)}
-          />
-        ))}
+        {previewPicks.map((pick) => {
+          // swimmerIds is always present in the real server response (ADR
+          // 030 phase 2 Zod schema), but defensive against test mocks that
+          // skip the field — treat missing as "no first names to show."
+          const pickSwimmerNames = (pick.swimmerIds ?? [])
+            .map((id) => firstNameById.get(id))
+            .filter((name): name is string => name !== undefined);
+          return (
+            <PickRow
+              key={pick.index}
+              pick={pick}
+              swimmerFirstNames={pickSwimmerNames}
+              mode={mode}
+              isSkipped={skippedIndexes.has(pick.index)}
+              isRemoved={removedIndexes.has(pick.index)}
+              onApplySuggestion={(startsAt) => onApplySuggestion(pick.index, startsAt)}
+              onSkip={() => onSkip(pick.index)}
+              onRemove={() => onRemove(pick.index)}
+              onUnskip={() => onUnskip(pick.index)}
+            />
+          );
+        })}
       </ul>
     </section>
   );
@@ -273,6 +289,7 @@ function ReviewContent({
 
 interface PickRowProps {
   pick: BatchPreviewPick;
+  swimmerFirstNames: string[];
   mode: Mode;
   isSkipped: boolean;
   isRemoved: boolean;
@@ -290,6 +307,7 @@ const PICK_ROW_EXIT_MS = 180;
 
 function PickRow({
   pick,
+  swimmerFirstNames,
   mode,
   isSkipped,
   isRemoved,
@@ -350,6 +368,14 @@ function PickRow({
           <p className="text-sm font-semibold text-heading">
             {formatSlotRangeWithDate(pick.startsAt, pick.durationMinutes)}
           </p>
+          {swimmerFirstNames.length > 0 && (
+            <p
+              className="text-xs text-text-secondary mt-0.5"
+              data-testid={`pick-row-swimmers-${pick.index}`}
+            >
+              {swimmerFirstNames.join(", ")}
+            </p>
+          )}
           {!isAvailable && (
             <p className="text-xs text-text-secondary mt-0.5">
               {pickReasonCopy(pick.state) || "Not available"}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, useActionState, useEffect, useRef } from "react";
+import { useCallback, useMemo, useState, useTransition, useActionState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { todayLA } from "@swim-app/shared";
 import type {
@@ -22,8 +22,10 @@ import {
   formatSlotRangeWithDate,
   getSlotHHMM,
   formatDayLabel,
+  maxBookableDateLA,
 } from "@/content/BookCalendarContent/helpers";
-import WeekNav from "@/content/BookCalendarContent/WeekNav";
+import WeekNav, { type WeekNavDot } from "@/content/BookCalendarContent/WeekNav";
+import { useWeekPrefetch } from "@/content/BookCalendarContent/useWeekPrefetch";
 import MonthGrid from "@/content/BookCalendarContent/MonthGrid";
 import PhoneDayStrip from "@/content/BookCalendarContent/PhoneDayStrip";
 import ConfirmDialog from "@/components/ConfirmDialog";
@@ -135,6 +137,43 @@ export default function RescheduleContent({ lesson, locations }: Props) {
 
   const mondayStr = getMondayOfWeek(currentDate);
   const monthStr = getMonthStr(currentDate);
+  const todayMondayStr = useMemo(() => getMondayOfWeek(today), [today]);
+  const bookingMaxAdvanceWeeks =
+    weekData?.bookingMaxAdvanceWeeks ?? monthData?.bookingMaxAdvanceWeeks ?? 10;
+  const maxAdvanceDateLA = useMemo(
+    () => maxBookableDateLA(bookingMaxAdvanceWeeks, Date.now()),
+    [bookingMaxAdvanceWeeks],
+  );
+  const nextMondayStr = addDaysToDateStr(mondayStr, 7);
+  const prevMondayStr = addDaysToDateStr(mondayStr, -7);
+  const disableNextWeek = nextMondayStr > maxAdvanceDateLA;
+  const disablePrevWeek = prevMondayStr < todayMondayStr;
+
+  const weekMondays = useMemo(() => {
+    const list: string[] = [];
+    let monday = todayMondayStr;
+    while (monday <= maxAdvanceDateLA) {
+      list.push(monday);
+      monday = addDaysToDateStr(monday, 7);
+    }
+    return list;
+  }, [todayMondayStr, maxAdvanceDateLA]);
+
+  const weekPrefetch = useWeekPrefetch({
+    windowStart: todayMondayStr,
+    windowEnd: maxAdvanceDateLA,
+    fetchWeek: useCallback(
+      (monday: string) =>
+        fetchRangeAction({
+          view: "week",
+          date: monday,
+          durationMinutes,
+          locationId,
+          excludeLessonId: lesson.id,
+        }),
+      [durationMinutes, locationId, lesson.id],
+    ),
+  });
 
   const currentLesson = {
     date: lessonDateLA,
@@ -144,6 +183,10 @@ export default function RescheduleContent({ lesson, locations }: Props) {
 
   useEffect(() => {
     setFetchError(null);
+    if (calendarView === "week" && fetchSpec.mode === "week") {
+      const cached = weekPrefetch.readFromCache(fetchSpec.monday);
+      if (cached !== null) setWeekData(cached);
+    }
     startFetching(async () => {
       if (calendarView === "month") {
         const result = await fetchMonthRangeAction({
@@ -170,6 +213,7 @@ export default function RescheduleContent({ lesson, locations }: Props) {
         });
         if (result !== null) {
           setWeekData(result);
+          weekPrefetch.onWeekFetched(fetchSpec.monday, result);
         } else {
           setFetchError("Could not load availability. Try again.");
         }
@@ -177,6 +221,23 @@ export default function RescheduleContent({ lesson, locations }: Props) {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fetchSpec, locationId, durationMinutes, calendarView]);
+
+  const weekDots = useMemo<WeekNavDot[]>(() => {
+    return weekMondays.map((weekMonday) => {
+      const hasOpenValue = weekPrefetch.hasOpenByMonday.get(weekMonday);
+      return {
+        mondayStr: weekMonday,
+        ...(hasOpenValue !== undefined && { hasOpen: hasOpenValue }),
+      };
+    });
+  }, [weekMondays, weekPrefetch.hasOpenByMonday]);
+
+  function jumpToMonday(monday: string) {
+    if (monday === mondayStr) return;
+    setCurrentDate(monday);
+    setSelectedStartsAt(null);
+    setFetchSpec((prev) => ({ mode: "week", monday, key: prev.key + 1 }));
+  }
 
   function prevWeek() {
     const newMonday = addDaysToDateStr(mondayStr, -7);
@@ -247,6 +308,7 @@ export default function RescheduleContent({ lesson, locations }: Props) {
   }
 
   function handleLocationChange(id: string) {
+    weekPrefetch.reset();
     setLocationId(id);
     setSelectedStartsAt(null);
     startFetching(async () => {
@@ -278,6 +340,7 @@ export default function RescheduleContent({ lesson, locations }: Props) {
   }
 
   function handleDurationChange(d: 30 | 45 | 60) {
+    weekPrefetch.reset();
     setDurationMinutes(d);
     setSelectedStartsAt(null);
     startFetching(async () => {
@@ -421,6 +484,9 @@ export default function RescheduleContent({ lesson, locations }: Props) {
           onNext={nextWeek}
           onToday={goToday}
           todayStr={today}
+          disablePrev={disablePrevWeek}
+          disableNext={disableNextWeek}
+          dots={{ weeks: weekDots, onJump: jumpToMonday }}
         />
       ) : (
         <div className="flex items-center gap-2 flex-wrap">

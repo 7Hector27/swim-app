@@ -53,7 +53,8 @@ import {
 } from "./batchHelpers";
 import { lessonPrice } from "@/lib/pricing";
 import CalendarConfigRow from "./CalendarConfigRow";
-import WeekNav from "./WeekNav";
+import WeekNav, { type WeekNavDot } from "./WeekNav";
+import { useWeekPrefetch } from "./useWeekPrefetch";
 import Legend from "./Legend";
 import WeekGrid from "./WeekGrid";
 import MonthGrid from "./MonthGrid";
@@ -130,7 +131,13 @@ export default function BookCalendarContent({
   const [swimmerIds, setSwimmerIds] = useState<string[]>(
     swimmers.length === 1 ? [swimmers[0]!.id] : [],
   );
-  const [showSwimmerError, setShowSwimmerError] = useState(false);
+  // Nonce (not a boolean): CalendarConfigRow re-plays scroll + highlight +
+  // focus on every new value, so repeated Confirm / Review taps keep working
+  // after the user has already seen the message once.
+  const [swimmerErrorNonce, setSwimmerErrorNonce] = useState(0);
+  function flagMissingSwimmer() {
+    setSwimmerErrorNonce((prev) => prev + 1);
+  }
   const [selectedStartsAt, setSelectedStartsAt] = useState<string | null>(null);
   const [tooSoon, setTooSoon] = useState(false);
   const [weekData, setWeekData] = useState<WeekAvailabilityResponse | null>(null);
@@ -183,6 +190,7 @@ export default function BookCalendarContent({
 
   const mondayStr = getMondayOfWeek(currentDate);
   const monthStr = getMonthStr(currentDate);
+  const todayMondayStr = useMemo(() => getMondayOfWeek(today), [today]);
 
   const bookingMaxAdvanceWeeks =
     weekData?.bookingMaxAdvanceWeeks ?? monthData?.bookingMaxAdvanceWeeks ?? 10;
@@ -191,7 +199,38 @@ export default function BookCalendarContent({
     [bookingMaxAdvanceWeeks],
   );
   const nextMondayStr = addDaysToDateStr(mondayStr, 7);
+  const prevMondayStr = addDaysToDateStr(mondayStr, -7);
   const disableNextWeek = nextMondayStr > maxAdvanceDateLA;
+  const disablePrevWeek = prevMondayStr < todayMondayStr;
+
+  // Every bookable Monday in the window, from today's Monday to the last
+  // Monday whose week has at least one in-window day. Feeds the WeekNav dots.
+  const weekMondays = useMemo(() => {
+    const list: string[] = [];
+    let monday = todayMondayStr;
+    while (monday <= maxAdvanceDateLA) {
+      list.push(monday);
+      monday = addDaysToDateStr(monday, 7);
+    }
+    return list;
+  }, [todayMondayStr, maxAdvanceDateLA]);
+
+  const weekPrefetch = useWeekPrefetch({
+    windowStart: todayMondayStr,
+    windowEnd: maxAdvanceDateLA,
+    fetchWeek: useCallback(
+      (monday: string) => {
+        if (!locationId) return Promise.resolve(null);
+        return fetchRangeAction({
+          view: "week",
+          date: monday,
+          durationMinutes,
+          locationId,
+        });
+      },
+      [locationId, durationMinutes],
+    ),
+  });
 
   // Month-nav flags mirror the week-nav rules in LA. Previous is blocked on
   // the current month; next is blocked once the next month's first day is
@@ -206,6 +245,15 @@ export default function BookCalendarContent({
     if (!locationId) return;
     setNoAvailability(false);
     setFetchError(null);
+
+    // Hydrate instantly from the prefetch cache when flipping to a week we
+    // already have. The fresh fetch still runs below so stale data gets
+    // overwritten.
+    if (calendarView === "week" && fetchSpec.mode === "week") {
+      const cached = weekPrefetch.readFromCache(fetchSpec.monday);
+      if (cached !== null) setWeekData(cached);
+    }
+
     startFetching(async () => {
       if (calendarView === "month") {
         const result = await fetchMonthRangeAction({
@@ -229,6 +277,10 @@ export default function BookCalendarContent({
           return;
         }
         setWeekData(result.weekData);
+        const resolvedDate =
+          result.firstAvailableDate !== null ? result.firstAvailableDate : today;
+        const resolvedMonday = getMondayOfWeek(resolvedDate);
+        weekPrefetch.onWeekFetched(resolvedMonday, result.weekData);
         if (result.firstAvailableDate !== null) {
           setCurrentDate(result.firstAvailableDate);
           setSelectedPhoneDay(result.firstAvailableDate);
@@ -244,8 +296,10 @@ export default function BookCalendarContent({
           durationMinutes,
           locationId,
         });
-        if (result !== null) setWeekData(result);
-        else setFetchError("Could not load availability. Try again.");
+        if (result !== null) {
+          setWeekData(result);
+          weekPrefetch.onWeekFetched(fetchSpec.monday, result);
+        } else setFetchError("Could not load availability. Try again.");
       }
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -302,7 +356,6 @@ export default function BookCalendarContent({
         : 0;
 
   const overCap = totalLessons > BATCH_LESSON_MAX;
-  const underMin = totalLessons < BATCH_LESSON_MIN;
 
   // Per-pick totals (minutes) summed across every current pick. Each pick
   // carries its own length so a batch can mix 30, 45, and 60-minute lessons.
@@ -333,6 +386,29 @@ export default function BookCalendarContent({
   }, [bookingMode, plannedStartsAt]);
 
   const maxDailyLessonMinutes = weekData?.maxDailyLessonMinutes ?? 240;
+
+  // Per-week pick count across the booking window. Feeds the WeekNav dots so
+  // parents can see at a glance which weeks already have their picks.
+  const pickCountByMonday = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const pick of pickList) {
+      const monday = getMondayOfWeek(laDateFromIso(pick.startsAt));
+      map.set(monday, (map.get(monday) ?? 0) + 1);
+    }
+    return map;
+  }, [pickList]);
+
+  const weekDots = useMemo<WeekNavDot[]>(() => {
+    return weekMondays.map((weekMonday) => {
+      const hasOpenValue = weekPrefetch.hasOpenByMonday.get(weekMonday);
+      const pickCount = pickCountByMonday.get(weekMonday) ?? 0;
+      return {
+        mondayStr: weekMonday,
+        ...(hasOpenValue !== undefined && { hasOpen: hasOpenValue }),
+        pickCount,
+      };
+    });
+  }, [weekMondays, weekPrefetch.hasOpenByMonday, pickCountByMonday]);
 
   // Pre-compute the within-span and taken-by-picks sets for every slot in
   // the currently-visible week. Running once per week-fetch avoids repeating
@@ -398,24 +474,27 @@ export default function BookCalendarContent({
     if (!locationId || householdId === null) return null;
     if (bookingMode === "multiple") {
       if (multiplePicks.length < BATCH_LESSON_MIN) return null;
+      // Every pick carries its own swimmerIds — the server validates each
+      // pick independently and derives private vs family per lesson.
+      if (multiplePicks.some((pick) => pick.swimmerIds.length === 0)) return null;
       return {
         mode: "manual",
         householdId,
         locationId,
-        swimmerIds,
         picks: multiplePicks.map((pick) => ({
           startsAt: pick.startsAt,
           durationMinutes: pick.durationMinutes,
+          swimmerIds: pick.swimmerIds,
         })),
       };
     }
     if (bookingMode === "recurring") {
       if (pattern.length === 0 || recurringWeeks < 1) return null;
+      if (pattern.some((pair) => pair.swimmerIds.length === 0)) return null;
       return {
         mode: "weekly",
         householdId,
         locationId,
-        swimmerIds,
         pattern,
         startDate: recurringStartDate,
         weeks: recurringWeeks,
@@ -425,7 +504,6 @@ export default function BookCalendarContent({
   }, [
     householdId,
     locationId,
-    swimmerIds,
     bookingMode,
     multiplePicks,
     pattern,
@@ -573,13 +651,19 @@ export default function BookCalendarContent({
       // Block clicks on slots already blocked by our own picks (overlap or
       // daily-cap). The visual is already non-interactive but keep the guard.
       if (takenByPicksSet.has(slot.startsAt)) return;
-      // The current length chip picks the new pick's length. Existing picks
-      // keep their own lengths, so a batch can mix 30, 45, and 60-min lessons.
+      // The current chips (length AND swimmers) only apply to NEW picks.
+      // Existing picks keep their own lengths and swimmer sets, so one batch
+      // can mix 30/45/60-min lessons AND different kids across picks.
+      if (swimmerIds.length === 0) {
+        flagMissingSwimmer();
+        return;
+      }
+      const pickSwimmerIds = [...swimmerIds];
       setMultiplePicks((current) => {
         if (current.length >= BATCH_LESSON_MAX) return current;
         const next: MultiplePick[] = [
           ...current,
-          { startsAt: slot.startsAt, durationMinutes },
+          { startsAt: slot.startsAt, durationMinutes, swimmerIds: pickSwimmerIds },
         ];
         return next.sort((a, b) => (a.startsAt < b.startsAt ? -1 : a.startsAt > b.startsAt ? 1 : 0));
       });
@@ -610,17 +694,22 @@ export default function BookCalendarContent({
       setRecurringStartDate((currentStart) =>
         currentStart === "" || currentStart > laDate ? laDate : currentStart,
       );
-      // Pattern entries pick up the length from the current chip. Tapping the
-      // same (weekday, time) again removes that entry; it does not swap its
-      // length.
+      // Pattern entries pick up the length AND swimmer set from the current
+      // chips. Each pattern entry carries its own swimmers so one series can
+      // run different kids on different (weekday, time) slots.
+      if (swimmerIds.length === 0) {
+        flagMissingSwimmer();
+        return;
+      }
+      const entrySwimmerIds = [...swimmerIds];
       setPattern((current) => {
         const existingIndex = current.findIndex(
           (pair) => `${pair.weekday}@${pair.timeOfDay}` === key,
         );
         if (existingIndex >= 0) {
-          return current.filter((_, index) => index !== existingIndex);
+          return current.filter((_unused, index) => index !== existingIndex);
         }
-        return [...current, { weekday, timeOfDay, durationMinutes }];
+        return [...current, { weekday, timeOfDay, durationMinutes, swimmerIds: entrySwimmerIds }];
       });
     }
   }
@@ -628,10 +717,16 @@ export default function BookCalendarContent({
   // ── Review flow ────────────────────────────────────────────────────────────
 
   function openReview() {
+    // Tapping Review with no swimmer selected should always replay the
+    // scroll + highlight (ADR 030 phase 2) — the chip governs new picks, so
+    // if it's empty the parent can't add any more. This fires regardless of
+    // pick count so repeated taps always get fresh feedback.
     if (swimmerIds.length === 0) {
-      setShowSwimmerError(true);
+      flagMissingSwimmer();
       return;
     }
+    const hasPicks = multiplePicks.length > 0 || pattern.length > 0;
+    if (!hasPicks) return;
     setSubmitError(null);
     setSuccess(null);
     setReviewOpen(true);
@@ -654,8 +749,12 @@ export default function BookCalendarContent({
         const existing = next[index];
         if (existing !== undefined) {
           // A suggestion only moves a pick to a different time; its own
-          // length stays the same.
-          next[index] = { startsAt, durationMinutes: existing.durationMinutes };
+          // length AND swimmer set stay the same.
+          next[index] = {
+            startsAt,
+            durationMinutes: existing.durationMinutes,
+            swimmerIds: existing.swimmerIds,
+          };
         }
         return next.sort((a, b) =>
           a.startsAt < b.startsAt ? -1 : a.startsAt > b.startsAt ? 1 : 0,
@@ -731,6 +830,27 @@ export default function BookCalendarContent({
     );
   }
 
+  function toggleMultiplePickSwimmer(startsAt: string, swimmerId: string) {
+    setMultiplePicks((current) =>
+      current.map((pick) => {
+        if (pick.startsAt !== startsAt) return pick;
+        const has = pick.swimmerIds.includes(swimmerId);
+        if (has && pick.swimmerIds.length === 1) {
+          // Guardrail: every pick must keep at least one swimmer. The chip
+          // acts as a toggle but refuses to clear the final swimmer; the
+          // Remove button is the escape hatch to drop the pick entirely.
+          return pick;
+        }
+        return {
+          ...pick,
+          swimmerIds: has
+            ? pick.swimmerIds.filter((id) => id !== swimmerId)
+            : [...pick.swimmerIds, swimmerId],
+        };
+      }),
+    );
+  }
+
   function changePatternPairDuration(pair: BatchPatternPair, nextDuration: LessonDurationMinutes) {
     setPattern((current) =>
       current.map((existing) =>
@@ -738,6 +858,26 @@ export default function BookCalendarContent({
           ? { ...existing, durationMinutes: nextDuration }
           : existing,
       ),
+    );
+  }
+
+  function togglePatternPairSwimmer(pair: BatchPatternPair, swimmerId: string) {
+    setPattern((current) =>
+      current.map((existing) => {
+        if (existing.weekday !== pair.weekday || existing.timeOfDay !== pair.timeOfDay) {
+          return existing;
+        }
+        const has = existing.swimmerIds.includes(swimmerId);
+        if (has && existing.swimmerIds.length === 1) {
+          return existing;
+        }
+        return {
+          ...existing,
+          swimmerIds: has
+            ? existing.swimmerIds.filter((id) => id !== swimmerId)
+            : [...existing.swimmerIds, swimmerId],
+        };
+      }),
     );
   }
 
@@ -896,6 +1036,7 @@ export default function BookCalendarContent({
   }
 
   function handleLocationChange(id: string) {
+    weekPrefetch.reset();
     setLocationId(id);
     setSelectedStartsAt(null);
     setTooSoon(false);
@@ -903,6 +1044,7 @@ export default function BookCalendarContent({
   }
 
   function handleDurationChange(d: 30 | 45 | 60) {
+    weekPrefetch.reset();
     setDurationMinutes(d);
     setSelectedStartsAt(null);
     setTooSoon(false);
@@ -964,6 +1106,14 @@ export default function BookCalendarContent({
     setFetchSpec((prev) => ({ mode: "search", key: prev.key + 1 }));
   }
 
+  function jumpToMonday(monday: string) {
+    if (monday === mondayStr) return;
+    setCurrentDate(monday);
+    setSelectedStartsAt(null);
+    setTooSoon(false);
+    setFetchSpec((prev) => ({ mode: "week", monday, key: prev.key + 1 }));
+  }
+
   function handleMonthDayClick(date: string) {
     setCurrentDate(date);
     setCalendarView("week");
@@ -974,13 +1124,12 @@ export default function BookCalendarContent({
 
   function handleSwimmersChange(ids: string[]) {
     setSwimmerIds(ids);
-    setShowSwimmerError(false);
   }
 
   function handleConfirmSingle() {
     if (!selectedStartsAt || !locationId) return;
     if (swimmerIds.length === 0) {
-      setShowSwimmerError(true);
+      flagMissingSwimmer();
       return;
     }
     const form = new FormData();
@@ -1102,7 +1251,12 @@ export default function BookCalendarContent({
         durationMinutes={durationMinutes}
         swimmerIds={swimmerIds}
         isLoading={isFetching}
-        showSwimmerError={showSwimmerError}
+        swimmerErrorNonce={swimmerErrorNonce}
+        swimmerLabel={
+          bookingMode === "single"
+            ? "Who\u2019s swimming"
+            : "Who\u2019s swimming in new picks"
+        }
         durationLabel={bookingMode === "single" ? "Length" : "Length for new picks"}
         onLocationChange={handleLocationChange}
         onDurationChange={handleDurationChange}
@@ -1116,7 +1270,9 @@ export default function BookCalendarContent({
           onNext={nextWeek}
           onToday={goToday}
           todayStr={today}
+          disablePrev={disablePrevWeek}
           disableNext={disableNextWeek}
+          dots={{ weeks: weekDots, onJump: jumpToMonday }}
         />
       ) : (
         <div className="flex items-center gap-2 flex-wrap">
@@ -1275,15 +1431,16 @@ export default function BookCalendarContent({
               picks={multiplePicks}
               totalMinutes={totalPickMinutes}
               swimmerCount={swimmerIds.length}
+              swimmers={swimmers}
               needsApproval={previewNeedsApproval || (weekData?.needsApproval ?? false)}
               flaggedCount={flaggedPickCount}
               expanded={showPickList}
               onToggleExpanded={() => setShowPickList((prev) => !prev)}
               onRemove={removeMultiplePick}
               onChangePickDuration={changeMultiplePickDuration}
+              onTogglePickSwimmer={toggleMultiplePickSwimmer}
               onReview={openReview}
               overCap={overCap}
-              underMin={underMin}
             />
           )}
           {bookingMode === "recurring" && (
@@ -1303,6 +1460,7 @@ export default function BookCalendarContent({
                   : null
               }
               swimmerCount={swimmerIds.length}
+              swimmers={swimmers}
               needsApproval={previewNeedsApproval || (weekData?.needsApproval ?? false)}
               flaggedCount={flaggedPickCount}
               expanded={showPickList}
@@ -1310,9 +1468,9 @@ export default function BookCalendarContent({
               onChangeWeeks={changeRecurringWeeks}
               onRemovePair={removePatternPair}
               onChangePairDuration={changePatternPairDuration}
+              onTogglePairSwimmer={togglePatternPairSwimmer}
               onReview={openReview}
               overCap={overCap}
-              underMin={underMin}
             />
           )}
         </>
@@ -1340,6 +1498,7 @@ export default function BookCalendarContent({
         open={reviewOpen}
         mode={bookingMode === "recurring" ? "recurring" : "multiple"}
         previewPicks={previewPicks}
+        swimmers={swimmers}
         skippedIndexes={skippedIndexes}
         removedIndexes={removedIndexes}
         isLoading={isPreviewLoading}
@@ -1498,37 +1657,87 @@ function PickDurationChips({ value, ariaLabel, onChange }: PickDurationChipsProp
   );
 }
 
+// Per-row swimmer chips (ADR 030 phase 2). Each pick / pattern entry owns
+// its own swimmer set; tapping a chip here flips that swimmer on this row
+// only and never touches sibling rows or the top-level "new picks" chip.
+interface PickSwimmerChipsProps {
+  swimmers: readonly { id: string; firstName: string }[];
+  selectedIds: readonly string[];
+  ariaLabel: string;
+  onToggle: (swimmerId: string) => void;
+}
+
+function PickSwimmerChips({
+  swimmers,
+  selectedIds,
+  ariaLabel,
+  onToggle,
+}: PickSwimmerChipsProps) {
+  if (swimmers.length <= 1) return null;
+  return (
+    <div
+      role="group"
+      aria-label={ariaLabel}
+      className="flex flex-wrap gap-1"
+      data-testid="pick-swimmer-chips"
+    >
+      {swimmers.map((swimmer) => {
+        const isActive = selectedIds.includes(swimmer.id);
+        return (
+          <button
+            key={swimmer.id}
+            type="button"
+            aria-pressed={isActive}
+            onClick={() => onToggle(swimmer.id)}
+            className={[
+              "min-h-[32px] px-2.5 rounded-full text-xs font-semibold border transition-colors duration-150 motion-reduce:transition-none",
+              isActive
+                ? "border-background bg-background text-heading"
+                : "border-background/40 text-background/80 hover:bg-background/10",
+            ].join(" ")}
+          >
+            {swimmer.firstName}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 // ── Multiple bottom bar ──────────────────────────────────────────────────────
 
 interface MultipleBottomBarProps {
   picks: MultiplePick[];
   totalMinutes: number;
   swimmerCount: number;
+  swimmers: readonly { id: string; firstName: string }[];
   needsApproval: boolean;
   flaggedCount: number;
   expanded: boolean;
   onToggleExpanded: () => void;
   onRemove: (startsAt: string) => void;
   onChangePickDuration: (startsAt: string, duration: LessonDurationMinutes) => void;
+  onTogglePickSwimmer: (startsAt: string, swimmerId: string) => void;
   onReview: () => void;
   overCap: boolean;
-  underMin: boolean;
 }
 
 function MultipleBottomBar({
   picks,
   totalMinutes,
   swimmerCount,
+  swimmers,
   needsApproval,
   flaggedCount,
   expanded,
   onToggleExpanded,
   onRemove,
   onChangePickDuration,
+  onTogglePickSwimmer,
   onReview,
   overCap,
-  underMin,
 }: MultipleBottomBarProps) {
+  const firstNameById = new Map(swimmers.map((swimmer) => [swimmer.id, swimmer.firstName]));
   const atCap = picks.length >= BATCH_LESSON_MAX;
   const totalPrice =
     swimmerCount > 0
@@ -1538,7 +1747,10 @@ function MultipleBottomBar({
         )
       : null;
   const hasPicks = picks.length > 0;
-  const canReview = !underMin && !overCap;
+  // Review stays clickable even without picks so the swimmer-check scroll
+  // can fire from the Review tap (ADR 030 phase 2). overCap still blocks it
+  // because there is no path for the parent to proceed with too many picks.
+  const canReview = !overCap;
 
   // Short reason shown under the Review button. Priority: structural (no
   // picks / over cap) first, then needs-attention from the live preview, then
@@ -1634,30 +1846,53 @@ function MultipleBottomBar({
                 className="max-h-[40vh] overflow-y-auto flex flex-col border-t border-background/20"
                 data-testid="multiple-pick-list"
               >
-                {picks.map((pick) => (
-                  <li
-                    key={pick.startsAt}
-                    className="flex items-center justify-between gap-3 py-3 border-b border-background/20 last:border-b-0 flex-wrap"
-                    data-testid="multiple-pick-row"
-                  >
-                    <span className="text-sm flex-1 min-w-0">
-                      {formatSlotRangeWithDate(pick.startsAt, pick.durationMinutes)}
-                    </span>
-                    <PickDurationChips
-                      value={pick.durationMinutes}
-                      ariaLabel={`Length for ${formatSlotRangeWithDate(pick.startsAt, pick.durationMinutes)}`}
-                      onChange={(next) => onChangePickDuration(pick.startsAt, next)}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => onRemove(pick.startsAt)}
-                      aria-label={`Remove ${formatSlotRangeWithDate(pick.startsAt, pick.durationMinutes)}`}
-                      className="min-h-[36px] px-2 rounded-full text-xs font-semibold opacity-80 hover:opacity-100 active:scale-[0.97] motion-reduce:transform-none transition-opacity duration-150"
+                {picks.map((pick) => {
+                  const pickLabel = formatSlotRangeWithDate(pick.startsAt, pick.durationMinutes);
+                  const pickSwimmerNames = pick.swimmerIds
+                    .map((id) => firstNameById.get(id))
+                    .filter((name): name is string => name !== undefined);
+                  return (
+                    <li
+                      key={pick.startsAt}
+                      className="flex flex-col gap-2 py-3 border-b border-background/20 last:border-b-0"
+                      data-testid="multiple-pick-row"
                     >
-                      Remove
-                    </button>
-                  </li>
-                ))}
+                      <div className="flex items-center justify-between gap-3 flex-wrap">
+                        <span className="text-sm flex-1 min-w-0">{pickLabel}</span>
+                        <PickDurationChips
+                          value={pick.durationMinutes}
+                          ariaLabel={`Length for ${pickLabel}`}
+                          onChange={(next) => onChangePickDuration(pick.startsAt, next)}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => onRemove(pick.startsAt)}
+                          aria-label={`Remove ${pickLabel}`}
+                          className="min-h-[36px] px-2 rounded-full text-xs font-semibold opacity-80 hover:opacity-100 active:scale-[0.97] motion-reduce:transform-none transition-opacity duration-150"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                      {swimmers.length > 1 ? (
+                        <PickSwimmerChips
+                          swimmers={swimmers}
+                          selectedIds={pick.swimmerIds}
+                          ariaLabel={`Swimmers for ${pickLabel}`}
+                          onToggle={(swimmerId) => onTogglePickSwimmer(pick.startsAt, swimmerId)}
+                        />
+                      ) : (
+                        pickSwimmerNames.length > 0 && (
+                          <p
+                            className="text-xs opacity-70"
+                            data-testid="multiple-pick-swimmers"
+                          >
+                            Who's swimming: {pickSwimmerNames.join(", ")}
+                          </p>
+                        )
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </>
@@ -1677,6 +1912,7 @@ interface RecurringBottomBarProps {
   totalMinutes: number;
   totalPrice: number | null;
   swimmerCount: number;
+  swimmers: readonly { id: string; firstName: string }[];
   needsApproval: boolean;
   flaggedCount: number;
   expanded: boolean;
@@ -1684,9 +1920,9 @@ interface RecurringBottomBarProps {
   onChangeWeeks: (next: number) => void;
   onRemovePair: (pair: BatchPatternPair) => void;
   onChangePairDuration: (pair: BatchPatternPair, next: LessonDurationMinutes) => void;
+  onTogglePairSwimmer: (pair: BatchPatternPair, swimmerId: string) => void;
   onReview: () => void;
   overCap: boolean;
-  underMin: boolean;
 }
 
 function RecurringBottomBar({
@@ -1697,6 +1933,7 @@ function RecurringBottomBar({
   totalMinutes,
   totalPrice,
   swimmerCount,
+  swimmers,
   needsApproval,
   flaggedCount,
   expanded,
@@ -1704,15 +1941,18 @@ function RecurringBottomBar({
   onChangeWeeks,
   onRemovePair,
   onChangePairDuration,
+  onTogglePairSwimmer,
   onReview,
   overCap,
-  underMin,
 }: RecurringBottomBarProps) {
+  const firstNameById = new Map(swimmers.map((swimmer) => [swimmer.id, swimmer.firstName]));
   const hasPattern = pattern.length > 0;
   const patternLabel = hasPattern
     ? pattern.map(formatPatternRangeAndLength).join(" + ")
     : "No pattern yet";
-  const canReview = !underMin && !overCap && hasPattern;
+  // Review stays clickable even without a pattern so the swimmer-check
+  // scroll fires from the Review tap (ADR 030 phase 2); overCap blocks it.
+  const canReview = !overCap;
 
   // Reason shown under the Review button. Match MultipleBottomBar's priority
   // so the first blocker surfaces first; "pick who's swimming" is a soft hint
@@ -1838,30 +2078,53 @@ function RecurringBottomBar({
             className="flex flex-col border-t border-background/20"
             data-testid="recurring-pattern-list"
           >
-            {pattern.map((pair) => (
-              <li
-                key={`${pair.weekday}-${pair.timeOfDay}`}
-                className="flex items-center justify-between gap-3 py-3 border-b border-background/20 last:border-b-0 flex-wrap"
-                data-testid="recurring-pattern-row"
-              >
-                <span className="text-xs font-semibold flex-1 min-w-0">
-                  {formatPatternRangeAndLength(pair)}
-                </span>
-                <PickDurationChips
-                  value={pair.durationMinutes}
-                  ariaLabel={`Length for ${formatPatternRangeAndLength(pair)}`}
-                  onChange={(next) => onChangePairDuration(pair, next)}
-                />
-                <button
-                  type="button"
-                  onClick={() => onRemovePair(pair)}
-                  aria-label={`Remove ${formatPatternRangeAndLength(pair)}`}
-                  className="min-h-[36px] px-2 rounded-full text-xs font-semibold opacity-80 hover:opacity-100 active:scale-[0.97] motion-reduce:transform-none transition-opacity duration-150"
+            {pattern.map((pair) => {
+              const pairLabel = formatPatternRangeAndLength(pair);
+              const pairSwimmerNames = pair.swimmerIds
+                .map((id) => firstNameById.get(id))
+                .filter((name): name is string => name !== undefined);
+              return (
+                <li
+                  key={`${pair.weekday}-${pair.timeOfDay}`}
+                  className="flex flex-col gap-2 py-3 border-b border-background/20 last:border-b-0"
+                  data-testid="recurring-pattern-row"
                 >
-                  Remove
-                </button>
-              </li>
-            ))}
+                  <div className="flex items-center justify-between gap-3 flex-wrap">
+                    <span className="text-xs font-semibold flex-1 min-w-0">{pairLabel}</span>
+                    <PickDurationChips
+                      value={pair.durationMinutes}
+                      ariaLabel={`Length for ${pairLabel}`}
+                      onChange={(next) => onChangePairDuration(pair, next)}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => onRemovePair(pair)}
+                      aria-label={`Remove ${pairLabel}`}
+                      className="min-h-[36px] px-2 rounded-full text-xs font-semibold opacity-80 hover:opacity-100 active:scale-[0.97] motion-reduce:transform-none transition-opacity duration-150"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                  {swimmers.length > 1 ? (
+                    <PickSwimmerChips
+                      swimmers={swimmers}
+                      selectedIds={pair.swimmerIds}
+                      ariaLabel={`Swimmers for ${pairLabel}`}
+                      onToggle={(swimmerId) => onTogglePairSwimmer(pair, swimmerId)}
+                    />
+                  ) : (
+                    pairSwimmerNames.length > 0 && (
+                      <p
+                        className="text-xs opacity-70"
+                        data-testid="recurring-pair-swimmers"
+                      >
+                        Who's swimming: {pairSwimmerNames.join(", ")}
+                      </p>
+                    )
+                  )}
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>

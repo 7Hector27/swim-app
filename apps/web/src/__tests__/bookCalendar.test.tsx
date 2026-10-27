@@ -484,7 +484,7 @@ describe("CalendarConfigRow", () => {
         durationMinutes={30}
         swimmerIds={[]}
         isLoading={false}
-        showSwimmerError={false}
+        swimmerErrorNonce={0}
         onLocationChange={() => {}}
         onDurationChange={() => {}}
         onSwimmersChange={() => {}}
@@ -503,7 +503,7 @@ describe("CalendarConfigRow", () => {
         durationMinutes={30}
         swimmerIds={[]}
         isLoading={false}
-        showSwimmerError={false}
+        swimmerErrorNonce={0}
         onLocationChange={() => {}}
         onDurationChange={() => {}}
         onSwimmersChange={() => {}}
@@ -523,7 +523,7 @@ describe("CalendarConfigRow", () => {
         durationMinutes={30}
         swimmerIds={[]}
         isLoading={false}
-        showSwimmerError={false}
+        swimmerErrorNonce={0}
         onLocationChange={() => {}}
         onDurationChange={handler}
         onSwimmersChange={() => {}}
@@ -542,7 +542,7 @@ describe("CalendarConfigRow", () => {
         durationMinutes={30}
         swimmerIds={[]}
         isLoading={true}
-        showSwimmerError={false}
+        swimmerErrorNonce={0}
         onLocationChange={() => {}}
         onDurationChange={() => {}}
         onSwimmersChange={() => {}}
@@ -562,7 +562,7 @@ describe("CalendarConfigRow", () => {
         durationMinutes={30}
         swimmerIds={[SWIMMERS[0]!.id]}
         isLoading={false}
-        showSwimmerError={false}
+        swimmerErrorNonce={0}
         onLocationChange={() => {}}
         onDurationChange={() => {}}
         onSwimmersChange={() => {}}
@@ -583,7 +583,7 @@ describe("CalendarConfigRow", () => {
         durationMinutes={30}
         swimmerIds={[SWIMMERS[0]!.id, SWIMMERS[1]!.id]}
         isLoading={false}
-        showSwimmerError={false}
+        swimmerErrorNonce={0}
         onLocationChange={() => {}}
         onDurationChange={() => {}}
         onSwimmersChange={() => {}}
@@ -592,7 +592,7 @@ describe("CalendarConfigRow", () => {
     expect(screen.getByText("Family lesson · 2")).toBeInTheDocument();
   });
 
-  it("shows swimmer error when showSwimmerError=true and none selected", () => {
+  it("shows swimmer error when swimmerErrorNonce has fired and none selected", () => {
     render(
       <CalendarConfigRow
         locations={[]}
@@ -601,7 +601,7 @@ describe("CalendarConfigRow", () => {
         durationMinutes={30}
         swimmerIds={[]}
         isLoading={false}
-        showSwimmerError={true}
+        swimmerErrorNonce={1}
         onLocationChange={() => {}}
         onDurationChange={() => {}}
         onSwimmersChange={() => {}}
@@ -610,7 +610,7 @@ describe("CalendarConfigRow", () => {
     expect(screen.getByRole("alert")).toHaveTextContent(/Pick who.s swimming/);
   });
 
-  it("does not show swimmer error when showSwimmerError=true but swimmer selected", () => {
+  it("does not show swimmer error when swimmerErrorNonce has fired but a swimmer is selected", () => {
     render(
       <CalendarConfigRow
         locations={[]}
@@ -619,7 +619,7 @@ describe("CalendarConfigRow", () => {
         durationMinutes={30}
         swimmerIds={[SWIMMERS[0]!.id]}
         isLoading={false}
-        showSwimmerError={true}
+        swimmerErrorNonce={1}
         onLocationChange={() => {}}
         onDurationChange={() => {}}
         onSwimmersChange={() => {}}
@@ -637,7 +637,7 @@ describe("CalendarConfigRow", () => {
         durationMinutes={30}
         swimmerIds={[]}
         isLoading={false}
-        showSwimmerError={false}
+        swimmerErrorNonce={0}
         onLocationChange={() => {}}
         onDurationChange={() => {}}
         onSwimmersChange={() => {}}
@@ -655,7 +655,7 @@ describe("CalendarConfigRow", () => {
         durationMinutes={30}
         swimmerIds={[]}
         isLoading={false}
-        showSwimmerError={false}
+        swimmerErrorNonce={0}
         onLocationChange={() => {}}
         onDurationChange={() => {}}
         onSwimmersChange={() => {}}

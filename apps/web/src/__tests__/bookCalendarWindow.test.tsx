@@ -72,7 +72,7 @@ describe("maxRecurringWeeksInWindow", () => {
     // Pattern [Mon] → firstOffset=0; weeks that fit = 2 (Nov 2, Nov 9).
     expect(
       maxRecurringWeeksInWindow({
-        pattern: [{ weekday: 1, timeOfDay: "15:00", durationMinutes: 30 }],
+        pattern: [{ weekday: 1, timeOfDay: "15:00", durationMinutes: 30, swimmerIds: ["00000000-0000-4000-8000-000000000001"] }],
         startDate: "2026-11-02",
         maxAdvanceDateLA: "2026-11-15",
         maxLessons: 20,
@@ -85,11 +85,11 @@ describe("maxRecurringWeeksInWindow", () => {
     expect(
       maxRecurringWeeksInWindow({
         pattern: [
-          { weekday: 1, timeOfDay: "15:00", durationMinutes: 30 },
-          { weekday: 2, timeOfDay: "15:00", durationMinutes: 30 },
-          { weekday: 3, timeOfDay: "15:00", durationMinutes: 30 },
-          { weekday: 4, timeOfDay: "15:00", durationMinutes: 30 },
-          { weekday: 5, timeOfDay: "15:00", durationMinutes: 30 },
+          { weekday: 1, timeOfDay: "15:00", durationMinutes: 30, swimmerIds: ["00000000-0000-4000-8000-000000000001"] },
+          { weekday: 2, timeOfDay: "15:00", durationMinutes: 30, swimmerIds: ["00000000-0000-4000-8000-000000000001"] },
+          { weekday: 3, timeOfDay: "15:00", durationMinutes: 30, swimmerIds: ["00000000-0000-4000-8000-000000000001"] },
+          { weekday: 4, timeOfDay: "15:00", durationMinutes: 30, swimmerIds: ["00000000-0000-4000-8000-000000000001"] },
+          { weekday: 5, timeOfDay: "15:00", durationMinutes: 30, swimmerIds: ["00000000-0000-4000-8000-000000000001"] },
         ],
         startDate: "2026-11-02",
         maxAdvanceDateLA: "2027-02-01",
@@ -103,7 +103,7 @@ describe("maxRecurringWeeksInWindow", () => {
     // maxAdvance = 2026-11-05 (Thu). Week 1 Thu is Nov 5 → fits. Week 2 is Nov 12 → doesn't.
     expect(
       maxRecurringWeeksInWindow({
-        pattern: [{ weekday: 4, timeOfDay: "15:00", durationMinutes: 30 }],
+        pattern: [{ weekday: 4, timeOfDay: "15:00", durationMinutes: 30, swimmerIds: ["00000000-0000-4000-8000-000000000001"] }],
         startDate: "2026-11-02",
         maxAdvanceDateLA: "2026-11-05",
         maxLessons: 20,

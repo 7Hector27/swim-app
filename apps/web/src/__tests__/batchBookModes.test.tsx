@@ -532,12 +532,16 @@ describe("Changing settings keeps the current week", () => {
     await waitFor(() => {
       expect(mockFetchRange).toHaveBeenCalled();
     });
-    const lastCall = mockFetchRange.mock.calls.at(-1)!;
-    expect(lastCall[0]).toMatchObject({
-      view: "week",
-      date: "2026-11-23",
-      durationMinutes: 45,
-    });
+    // The duration change must refetch the CURRENT week at the new length.
+    // There are also fire-and-forget prefetches for the ±7 adjacent weeks,
+    // so match by content rather than by position.
+    expect(mockFetchRange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        view: "week",
+        date: "2026-11-23",
+        durationMinutes: 45,
+      }),
+    );
     // The visible week label still shows Nov 23, not Nov 2.
     expect(screen.getByText(/Nov 23 \u2013 29, 2026/)).toBeInTheDocument();
     expect(screen.queryByText(/Nov 2 \u2013 8, 2026/)).toBeNull();
@@ -990,5 +994,182 @@ describe("No-swimmer Review feedback", () => {
     // The review sheet is always mounted but should not have been opened.
     const sheet = screen.getByTestId("review-sheet") as HTMLDialogElement;
     expect(sheet.hasAttribute("open")).toBe(false);
+  });
+
+  // Dev-feedback-2: Confirm / Review tapped repeatedly with no swimmer must
+  // replay the scroll + highlight each time, not just the first. The nonce-
+  // based effect in CalendarConfigRow re-fires on every bump; a boolean
+  // flag would make the useEffect dep set stable after the first tap.
+  it("replays scroll + highlight on every Review tap, not just the first", async () => {
+    mockFirstAvail.mockResolvedValue({
+      firstAvailableDate: "2026-11-02",
+      weekData: WEEK_DATA,
+    });
+    mockFetchRange.mockResolvedValue(WEEK_DATA);
+    render(
+      <BookCalendarContent
+        householdId={HOUSEHOLD_ID}
+        locations={locations}
+        swimmers={multiSwimmers}
+        isViewer={false}
+      />,
+    );
+    await screen.findAllByRole("button", { name: /3:00 PM/i }, { timeout: 5000 });
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("mode-multiple"));
+    });
+
+    const picker = screen.getByTestId("swimmer-picker");
+    const scrollSpy = vi.fn();
+    picker.scrollIntoView = scrollSpy;
+
+    // Three taps on Review with no swimmer selected. Each must land a fresh
+    // scroll call — the previous assertion was that the spy was called ≥ 1,
+    // which the first-tap-only bug would pass.
+    for (let tap = 1; tap <= 3; tap++) {
+      await act(async () => {
+        fireEvent.click(screen.getByTestId("review-multiple"));
+      });
+      expect(scrollSpy).toHaveBeenCalledTimes(tap);
+    }
+
+    // The error copy stays visible across repeated taps so the parent sees
+    // the same signal every time.
+    expect(screen.getByTestId("swimmer-error").textContent).toMatch(
+      /pick who['\u2019]s swimming first\./i,
+    );
+  });
+});
+
+// ── Dev-feedback-2: per-pick swimmers ──────────────────────────────────────
+
+describe("Per-pick swimmers in Multiple mode", () => {
+  const twoSwimmers: ParentSwimmer[] = [
+    {
+      id: "22222222-2222-2222-2222-222222222222",
+      firstName: "Alex",
+      lastName: "Smith",
+      birthDate: "2016-01-01",
+      sex: "female",
+      isPublic: false,
+      createdAt: "2024-01-01T00:00:00Z",
+      updatedAt: "2024-01-01T00:00:00Z",
+      clubs: [],
+      currentLeagues: [],
+    },
+    {
+      id: "22222222-2222-2222-2222-222222222223",
+      firstName: "Jamie",
+      lastName: "Smith",
+      birthDate: "2018-01-01",
+      sex: "male",
+      isPublic: false,
+      createdAt: "2024-01-01T00:00:00Z",
+      updatedAt: "2024-01-01T00:00:00Z",
+      clubs: [],
+      currentLeagues: [],
+    },
+  ];
+
+  // The old batch-wide swimmer model booked every lesson under whichever kid
+  // was selected on the top-level chip at submit time; changing the chip
+  // between picks silently rewrote the first pick too. This test proves the
+  // per-pick capture: each pick keeps the swimmers it was tapped with.
+  it("changing the chip between picks does not rewrite existing picks", async () => {
+    mockFirstAvail.mockResolvedValue({
+      firstAvailableDate: "2026-11-02",
+      weekData: WEEK_DATA,
+    });
+    mockFetchRange.mockResolvedValue(WEEK_DATA);
+    render(
+      <BookCalendarContent
+        householdId={HOUSEHOLD_ID}
+        locations={locations}
+        swimmers={twoSwimmers}
+        isViewer={false}
+      />,
+    );
+    await screen.findAllByRole("button", { name: /3:00 PM/i }, { timeout: 5000 });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("mode-multiple"));
+    });
+
+    // Pick Alex on the top-level chip, then click a slot.
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /^Alex Smith$/ }));
+    });
+    await act(async () => {
+      fireEvent.click(firstSlotButton(/^3:00 PM$/i));
+    });
+
+    // Swap the chip to Jamie, then click a second slot on a different day.
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /^Alex Smith$/ })); // off
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /^Jamie Smith$/ }));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /^Wednesday, November 4, 3:00 PM/i }));
+    });
+
+    // Expand the pick list so we can read each pick's swimmer label.
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("multiple-count-toggle"));
+    });
+    const rows = screen.getAllByTestId("multiple-pick-row");
+    expect(rows).toHaveLength(2);
+
+    // Row 0 (Mon 3:00) kept Alex despite the chip flipping to Jamie after.
+    // Row 1 (Wed 3:00) got Jamie because that was the chip at tap time.
+    // The per-row chips reflect each pick's own swimmer set.
+    const row0Alex = rows[0]!.querySelector(
+      'button[aria-pressed="true"]',
+    ) as HTMLButtonElement;
+    expect(row0Alex?.textContent).toContain("Alex");
+    const row1Jamie = rows[1]!.querySelector(
+      'button[aria-pressed="true"]',
+    ) as HTMLButtonElement;
+    expect(row1Jamie?.textContent).toContain("Jamie");
+
+    // The preview request body carries per-pick swimmerIds (not a shared
+    // batch field). Trigger a preview and inspect the mock call.
+    mockPreview.mockResolvedValue({
+      kind: "ok",
+      data: {
+        needsApproval: false,
+        picks: [
+          {
+            index: 0,
+            startsAt: "2026-11-02T23:00:00.000Z",
+            durationMinutes: 30,
+            swimmerIds: [twoSwimmers[0]!.id],
+            state: "available",
+          },
+          {
+            index: 1,
+            startsAt: "2026-11-04T23:00:00.000Z",
+            durationMinutes: 30,
+            swimmerIds: [twoSwimmers[1]!.id],
+            state: "available",
+          },
+        ],
+      },
+    });
+
+    await waitFor(() => {
+      expect(mockPreview).toHaveBeenCalled();
+    });
+    const lastCall = mockPreview.mock.calls.at(-1)!;
+    const sentBody = lastCall[0] as {
+      mode: string;
+      picks?: Array<{ startsAt: string; swimmerIds: string[] }>;
+    };
+    expect(sentBody.mode).toBe("manual");
+    expect(sentBody.picks?.[0]?.swimmerIds).toEqual([twoSwimmers[0]!.id]);
+    expect(sentBody.picks?.[1]?.swimmerIds).toEqual([twoSwimmers[1]!.id]);
+    // The old shape would have sent a single batch-wide swimmerIds here.
+    expect("swimmerIds" in sentBody).toBe(false);
   });
 });
