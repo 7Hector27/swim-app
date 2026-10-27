@@ -20,7 +20,7 @@ export default function Loading() {
           </div>
 
           <div className="grid grid-cols-2 tablet:grid-cols-4 gap-4">
-            {Array.from({ length: 4 }).map((_, index) => (
+            {Array.from({ length: 4 }).map((_unused, index) => (
               <Skeleton key={index} className="h-24 rounded-card" />
             ))}
           </div>

@@ -37,8 +37,6 @@ function renderControls(view: "day" | "week" = "day") {
       nextDay={NEXT_DAY}
       prevWeekMonday={PREV_WEEK_MONDAY}
       nextWeekMonday={NEXT_WEEK_MONDAY}
-      dayLabel="Today"
-      weekLabel="Oct 19 to 25"
     >
       <div data-testid="schedule-content">lessons here</div>
     </CoachScheduleControls>,

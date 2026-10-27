@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition, type MouseEvent, type ReactNode } from "react";
 
+import { dayViewLabel, weekRangeLabel } from "@/lib/calendarDate";
+
 interface Props {
   date: string;
   view: "day" | "week";
@@ -14,8 +16,6 @@ interface Props {
   nextDay: string;
   prevWeekMonday: string;
   nextWeekMonday: string;
-  dayLabel: string;
-  weekLabel: string;
   children: ReactNode;
 }
 
@@ -29,8 +29,6 @@ export default function CoachScheduleControls({
   nextDay,
   prevWeekMonday,
   nextWeekMonday,
-  dayLabel,
-  weekLabel,
   children,
 }: Props) {
   const router = useRouter();
@@ -84,6 +82,12 @@ export default function CoachScheduleControls({
   const weekToggleHref = `?view=week&date=${optimisticWeekMonday}`;
   const todayDayHref = `?view=day&date=${today}`;
   const todayWeekHref = `?view=week&date=${todayMonday}`;
+
+  // Compute labels from optimistic state so the day/week heading matches the
+  // just-clicked state instantly, instead of lagging until the server renders
+  // the new URL. Both helpers are pure.
+  const dayLabel = dayViewLabel(optimisticDate, today);
+  const weekLabel = weekRangeLabel(optimisticWeekMonday);
 
   return (
     <>

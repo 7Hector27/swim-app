@@ -4,7 +4,7 @@
 // syncLessonToGoogle is called directly on seeded lesson rows.
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { and, eq, inArray, ne } from "drizzle-orm";
+import { and, eq, gte, inArray, isNotNull, ne, or } from "drizzle-orm";
 
 // Env for OAuth config must be set before importing the service module.
 process.env["GOOGLE_OAUTH_CLIENT_ID"] = "test-client-id";
@@ -146,6 +146,57 @@ async function restoreOtherCoaches(): Promise<void> {
   pausedOthers = [];
 }
 
+// The cron-tick full-pass loop iterates every in-window approved/completed
+// lesson across the DB with a 100ms gap per lesson. On a dev machine that
+// carries real lessons from manual testing, the loop runs longer than the
+// cron-tick test's 2s poll window for the write to last_full_reconcile_at,
+// and the test flakes.
+//
+// Mirror the pauseOtherCoaches pattern: park every candidate lesson from
+// another household by moving starts_at into the far past (keeps all
+// FKs/columns intact), then restore the original values after the file.
+// On CI the DB starts clean so this is a no-op.
+interface ParkedLesson {
+  id: string;
+  originalStartsAt: Date;
+}
+let parkedLessons: ParkedLesson[] = [];
+async function parkOtherLessons(testHouseholdId: string): Promise<void> {
+  // Reach a day earlier than the service's startOfTodayLA() window boundary
+  // to cover the full UTC day no matter where "now" falls inside LA's day.
+  const windowBoundary = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const rows = await adminDb()
+    .select({ id: lessons.id, startsAt: lessons.startsAt })
+    .from(lessons)
+    .where(
+      and(
+        ne(lessons.householdId, testHouseholdId),
+        or(
+          inArray(lessons.status, ["approved", "completed"]),
+          isNotNull(lessons.googleCalendarEventId),
+        ),
+        gte(lessons.startsAt, windowBoundary),
+      ),
+    );
+  parkedLessons = rows.map((row) => ({ id: row.id, originalStartsAt: row.startsAt }));
+  if (parkedLessons.length === 0) return;
+  // Year 2000 is comfortably before any realistic test or dev window.
+  const parkedAt = new Date("2000-01-01T00:00:00Z");
+  await adminDb()
+    .update(lessons)
+    .set({ startsAt: parkedAt })
+    .where(inArray(lessons.id, parkedLessons.map((p) => p.id)));
+}
+async function restoreOtherLessons(): Promise<void> {
+  for (const parked of parkedLessons) {
+    await adminDb()
+      .update(lessons)
+      .set({ startsAt: parked.originalStartsAt })
+      .where(eq(lessons.id, parked.id));
+  }
+  parkedLessons = [];
+}
+
 async function seedCoachIntegration(status: "active" | "needs_reconnect" | "disconnected" = "active"): Promise<void> {
   const encrypted = encryptToken("refresh-token-value", Buffer.from(KEY, "base64"));
   await adminDb().insert(coachCalendarIntegrations).values({
@@ -223,6 +274,7 @@ beforeAll(async () => {
   coach = await createTestUser("sync-int-coach");
   await makeCoach(coach.userId);
   await pauseOtherCoaches(coach.userId);
+  await parkOtherLessons(owner.householdId);
 
   const locs = await adminDb()
     .select({ id: lessonLocations.id })
@@ -258,6 +310,7 @@ afterAll(async () => {
   for (const id of swimmerIds) {
     await adminDb().delete(swimmers).where(eq(swimmers.id, id));
   }
+  await restoreOtherLessons();
   await restoreOtherCoaches();
   await coach.cleanup();
   await owner.cleanup();

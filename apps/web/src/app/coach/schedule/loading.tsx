@@ -21,7 +21,7 @@ export default function Loading() {
           </div>
 
           <div className="flex flex-col gap-3">
-            {Array.from({ length: 4 }).map((_, index) => (
+            {Array.from({ length: 4 }).map((_unused, index) => (
               <Skeleton key={index} className="h-20 rounded-card" />
             ))}
           </div>

@@ -11,7 +11,7 @@ export default function Loading() {
           </div>
 
           <div className="rounded-card border border-border overflow-hidden">
-            {Array.from({ length: 5 }).map((_, index) => (
+            {Array.from({ length: 5 }).map((_unused, index) => (
               <div
                 key={index}
                 className="px-5 py-4 border-b border-border last:border-b-0 flex items-center gap-4"

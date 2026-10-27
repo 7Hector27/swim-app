@@ -23,7 +23,7 @@ export default function Loading() {
                   <Skeleton className="h-5 w-40" />
                 </div>
                 <div className="flex flex-col divide-y divide-border">
-                  {Array.from({ length: 3 }).map((_, index) => (
+                  {Array.from({ length: 3 }).map((_unused, index) => (
                     <div key={index} className="px-5 py-4 flex items-center gap-4">
                       <Skeleton className="h-10 w-10 rounded-full" />
                       <div className="flex-1 flex flex-col gap-2">
@@ -39,7 +39,7 @@ export default function Loading() {
               <div>
                 <Skeleton className="h-5 w-32 mb-4" />
                 <div className="grid grid-cols-1 tablet:grid-cols-2 gap-4">
-                  {Array.from({ length: 2 }).map((_, index) => (
+                  {Array.from({ length: 2 }).map((_unused, index) => (
                     <Skeleton key={index} className="h-[220px] rounded-card" />
                   ))}
                 </div>

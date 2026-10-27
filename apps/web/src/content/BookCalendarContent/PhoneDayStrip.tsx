@@ -88,7 +88,11 @@ export default function PhoneDayStrip({
             aria-pressed={isSelected}
             className={`${base} ${stateClasses}`}
           >
-            <span className={`font-semibold ${isSelected ? "text-accent" : unavailable ? "text-text-secondary" : "text-text-secondary"}`}>
+            <span
+              className={`font-semibold ${
+                isSelected ? "text-accent" : unavailable ? "text-text-secondary" : "text-text"
+              }`}
+            >
               {getDowAbbr(day.date)}
             </span>
             <span

@@ -3,11 +3,9 @@ import type { CoachScheduleItem, CoachWeekScheduleDay } from "@swim-app/shared";
 import { fetchCoachSchedule, fetchCoachWeekSchedule } from "@/lib/api/lessons";
 import {
   addDays,
-  dayViewLabel,
   mondayOf,
   shortDayLabel,
   weekDates,
-  weekRangeLabel,
 } from "@/lib/calendarDate";
 import CoachLessonRow from "@/components/CoachLessonRow";
 import CoachWeekLessonCard from "@/components/CoachWeekLessonCard";
@@ -51,8 +49,6 @@ export default async function CoachScheduleContent({ accessToken, date, view, to
             nextDay={nextDay}
             prevWeekMonday={prevWeekMonday}
             nextWeekMonday={nextWeekMonday}
-            dayLabel={dayViewLabel(date, today)}
-            weekLabel={weekRangeLabel(weekMonday)}
           >
             {view === "day" ? (
               <DayContent items={dayItems} />

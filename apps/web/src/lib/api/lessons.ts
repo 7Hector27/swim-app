@@ -293,13 +293,13 @@ export async function fetchPastLessons(accessToken: string): Promise<UpcomingLes
     });
     if (!response.ok) return [];
     const body: unknown = await response.json();
-    const parsed = UpcomingLessonSchema.array().safeParse(body);
+    const parsed = UpcomingLessonsResponseSchema.safeParse(body);
     if (!parsed.success) {
       const detail = parsed.error.issues.map((issue) => `${issue.path.join(".")} (${issue.message})`).join("; ");
       console.warn(`fetchPastLessons: response shape mismatch — ${detail}`);
       return [];
     }
-    return parsed.data;
+    return parsed.data.items;
   } catch {
     return [];
   }
@@ -315,7 +315,7 @@ export async function fetchPastLessonsResult(
     });
     if (!response.ok) return null;
     const body: unknown = await response.json();
-    const parsed = UpcomingLessonSchema.array().safeParse(body);
+    const parsed = UpcomingLessonsResponseSchema.safeParse(body);
     if (!parsed.success) {
       const detail = parsed.error.issues
         .map((issue) => `${issue.path.join(".")} (${issue.message})`)
@@ -323,7 +323,7 @@ export async function fetchPastLessonsResult(
       console.warn(`fetchPastLessonsResult: response shape mismatch — ${detail}`);
       return null;
     }
-    return parsed.data;
+    return parsed.data.items;
   } catch {
     return null;
   }

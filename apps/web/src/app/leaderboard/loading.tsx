@@ -22,7 +22,7 @@ export default function Loading() {
               <Skeleton className="h-3 w-24" />
               <Skeleton className="h-3 w-16 justify-self-end" />
             </div>
-            {Array.from({ length: 8 }).map((_, index) => (
+            {Array.from({ length: 8 }).map((_unused, index) => (
               <div
                 key={index}
                 className="px-5 py-4 border-b border-border last:border-b-0 grid grid-cols-[60px_1fr_120px] gap-4 items-center"

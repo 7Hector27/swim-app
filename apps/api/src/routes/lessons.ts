@@ -165,6 +165,9 @@ lessonsRouter.get(
             .orderBy(asc(lessons.startsAt))
             .limit(limit)
             .offset(offset),
+      // Count query omits the lessonLocations + bookingBatches joins because
+      // filterCondition only references columns on `lessons`. If the filter
+      // ever starts referencing joined columns, add the matching joins here.
       db.select({ count: count() }).from(lessons).where(filterCondition),
     ]);
 
