@@ -1,0 +1,40 @@
+/* Crossfade a button's own label when isPending flips. The outer wrapper
+   gives the span a stable baseline; the keyed inner span is remounted on
+   each label change and runs the @starting-style blur + opacity entrance.
+   Keeps the swap readable without a sudden pop. */
+.wrapper {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+}
+
+.text {
+  display: inline-block;
+  opacity: 1;
+  filter: blur(0);
+  transition:
+    opacity 180ms var(--ease-out-strong, cubic-bezier(0.23, 1, 0.32, 1)),
+    filter 180ms var(--ease-out-strong, cubic-bezier(0.23, 1, 0.32, 1));
+}
+
+@starting-style {
+  .text {
+    opacity: 0;
+    filter: blur(2px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .text {
+    transition: opacity 150ms linear;
+    filter: none;
+  }
+
+  @starting-style {
+    .text {
+      filter: none;
+      opacity: 0;
+    }
+  }
+}

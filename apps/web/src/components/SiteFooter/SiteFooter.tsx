@@ -78,7 +78,7 @@ function SocialIconRow() {
 
 export default function SiteFooter() {
   return (
-    <footer className="bg-section border-t border-divider-section">
+    <footer className="bg-section text-text-on-section border-t border-divider-section">
       <div className="mx-auto max-w-content px-page py-12 tablet:py-16">
         <div className="flex flex-col gap-10 tablet:flex-row tablet:items-start tablet:gap-16">
           {/* Logo + social icons stacked — left column on tablet+ */}

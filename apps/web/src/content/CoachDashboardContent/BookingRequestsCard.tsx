@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useActionState, useMemo } from "react";
+import { useState, useEffect, useActionState, useMemo, useId, useRef } from "react";
 
 import type { LessonResponse } from "@swim-app/shared";
 
@@ -12,6 +12,12 @@ import {
 } from "@/components/CoachLessonRow/actions";
 import { buildBatchGroupSummary } from "./batchGroupSummary";
 import { buildGroups } from "./batchGroups";
+import styles from "./BookingRequestsCard.module.css";
+
+// Approve-all exit animation duration. The group fades + settles for this
+// long before the parent is told the batch is approved. Visual only; the
+// server call succeeds first, so this is purely for the on-screen settle.
+const BATCH_EXIT_MS = 220;
 
 interface Props {
   initialLessons: LessonResponse[];
@@ -78,6 +84,9 @@ function BatchGroup({
   onBatchApproved: (ids: Set<string>) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [exiting, setExiting] = useState(false);
+  const exitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const panelId = useId();
 
   const sorted = useMemo(
     () => [...lessons].sort((a, b) => a.startsAt.localeCompare(b.startsAt)),
@@ -105,14 +114,25 @@ function BatchGroup({
     { status: "idle" } as CoachLessonActionState,
   );
 
+  // On success: start the exit animation, then tell the parent to drop the
+  // batch from state. Timer is tracked in a ref so unmount cancels it.
   useEffect(() => {
-    if (approveState.status === "success") {
-      onBatchApproved(new Set(sorted.map((lesson) => lesson.id)));
-    }
+    if (approveState.status !== "success") return;
+    setExiting(true);
+    const ids = new Set(sorted.map((lesson) => lesson.id));
+    exitTimerRef.current = setTimeout(() => {
+      onBatchApproved(ids);
+    }, BATCH_EXIT_MS);
+    return () => {
+      if (exitTimerRef.current !== null) clearTimeout(exitTimerRef.current);
+    };
   }, [approveState.status, sorted, onBatchApproved]);
 
   return (
-    <div className="flex flex-col gap-3 py-4 first:pt-0 last:pb-0">
+    <div
+      className={`${styles.batchGroup} flex flex-col gap-3 py-4 first:pt-0 last:pb-0`}
+      data-exiting={exiting ? "true" : undefined}
+    >
       <div>
         <p className="text-sm font-semibold text-text">{householdLabel}</p>
         <p className="text-xs text-text-secondary mt-0.5">{summary}</p>
@@ -128,7 +148,7 @@ function BatchGroup({
         <form action={approveFormAction} className="flex-1">
           <button
             type="submit"
-            disabled={isApproving}
+            disabled={isApproving || exiting}
             className="w-full rounded-button bg-button-primary-background text-button-primary-text font-semibold text-xs h-9 transition-opacity hover:opacity-90 active:scale-[0.97] disabled:opacity-50"
           >
             {isApproving ? "Approving…" : "Approve all"}
@@ -138,13 +158,20 @@ function BatchGroup({
           type="button"
           onClick={() => setExpanded((prev) => !prev)}
           aria-expanded={expanded}
+          aria-controls={panelId}
           className="flex-1 rounded-button border border-border text-text-secondary font-semibold text-xs h-9 hover:bg-surface-soft transition-colors duration-150"
         >
           {expanded ? "Hide lessons" : `Show ${sorted.length} lessons`}
         </button>
       </div>
 
-      {expanded && (
+      {/* <details> drives the collapse via the global details::details-content
+          CSS. The visible toggle control is the button above; the native
+          <summary> is kept for valid markup but hidden. */}
+      <details id={panelId} open={expanded}>
+        <summary className={styles.hiddenSummary} aria-hidden="true" tabIndex={-1}>
+          Lessons in this booking
+        </summary>
         <div className="flex flex-col divide-y divide-border border-t border-border pt-2">
           {sorted.map((lesson) => (
             <BookingRequestRow
@@ -154,7 +181,7 @@ function BatchGroup({
             />
           ))}
         </div>
-      )}
+      </details>
     </div>
   );
 }

@@ -2,14 +2,21 @@
 
 import type { RefObject } from "react";
 
+import PendingLabel from "@/components/PendingLabel";
+
 import styles from "./ConfirmDialog.module.css";
 
 interface ConfirmDialogProps {
   dialogRef: RefObject<HTMLDialogElement | null>;
   title: string;
   description: string;
-  formId: string;
+  // Confirm must be either a form submit (formId) or a direct callback
+  // (onConfirm). Callers that need a server action route through formId;
+  // simple client-side confirmations use onConfirm.
+  formId?: string;
+  onConfirm?: () => void;
   confirmLabel?: string;
+  confirmPendingLabel?: string;
   confirmDanger?: boolean;
   cancelLabel?: string;
   isPending?: boolean;
@@ -23,7 +30,9 @@ export default function ConfirmDialog({
   title,
   description,
   formId,
+  onConfirm,
   confirmLabel = "Confirm",
+  confirmPendingLabel,
   confirmDanger = false,
   cancelLabel = "Cancel",
   isPending = false,
@@ -76,12 +85,17 @@ export default function ConfirmDialog({
             {cancelLabel}
           </button>
           <button
-            type="submit"
-            form={formId}
+            type={formId !== undefined ? "submit" : "button"}
+            {...(formId !== undefined ? { form: formId } : {})}
+            {...(formId === undefined && onConfirm !== undefined ? { onClick: onConfirm } : {})}
             disabled={isPending}
             className={`${confirmBase} ${confirmDanger ? "bg-danger text-text-on-section" : "bg-button-primary-background text-button-primary-text"}`}
           >
-            {isPending ? `${confirmLabel}…` : confirmLabel}
+            <PendingLabel
+              isPending={isPending}
+              label={confirmLabel}
+              pendingLabel={confirmPendingLabel ?? `${confirmLabel}…`}
+            />
           </button>
         </div>
       </div>

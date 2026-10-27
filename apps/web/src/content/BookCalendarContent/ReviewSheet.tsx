@@ -1,11 +1,14 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { BatchPreviewPick, BatchPickState } from "@swim-app/shared";
 
+import PendingLabel from "@/components/PendingLabel";
+
 import { formatLaTime, pickReasonCopy } from "./batchHelpers";
 import { formatSlotRangeWithDate } from "./helpers";
+import styles from "./ReviewSheet.module.css";
 
 type Mode = "multiple" | "recurring";
 
@@ -77,12 +80,12 @@ export default function ReviewSheet(props: Props) {
       onClose={handleDialogClose}
       aria-labelledby="review-sheet-heading"
       className={[
+        styles.sheet,
         "p-0 bg-background text-text max-h-[90vh]",
         // Mobile: slide up from bottom, full width.
         "fixed bottom-0 left-0 right-0 m-0 w-full rounded-t-[24px] overflow-hidden",
         // Tablet+: side panel on the right, fixed width, full height.
         "tablet:bottom-0 tablet:right-0 tablet:left-auto tablet:top-0 tablet:w-[420px] tablet:rounded-none tablet:rounded-l-[24px] tablet:max-h-screen tablet:h-full",
-        "backdrop:bg-heading/40",
       ].join(" ")}
       data-testid="review-sheet"
     >
@@ -90,7 +93,8 @@ export default function ReviewSheet(props: Props) {
         <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-border">
           <h2
             id="review-sheet-heading"
-            className="font-heading text-xl text-heading"
+            key={props.success !== null ? "heading-success" : "heading-review"}
+            className={`${styles.fade} font-heading text-xl text-heading`}
           >
             {props.success !== null ? "You're set" : "Review your lessons"}
           </h2>
@@ -111,7 +115,10 @@ export default function ReviewSheet(props: Props) {
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-5 py-4">
+        <div
+          key={props.success !== null ? "body-success" : "body-review"}
+          className={`${styles.fade} flex-1 overflow-y-auto px-5 py-4`}
+        >
           {props.success !== null ? (
             <SuccessContent
               success={props.success}
@@ -148,7 +155,11 @@ export default function ReviewSheet(props: Props) {
               data-testid="review-book"
               className="w-full min-h-[52px] px-5 rounded-button bg-button-primary-background text-button-primary-text font-bold text-sm transition-opacity duration-150 hover:opacity-90 active:scale-[0.97] motion-reduce:transform-none disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              {props.isSubmitting ? "Booking…" : "Book lessons"}
+              <PendingLabel
+                isPending={props.isSubmitting}
+                label="Book lessons"
+                pendingLabel="Booking…"
+              />
             </button>
           </div>
         )}
@@ -264,6 +275,12 @@ interface PickRowProps {
   onUnskip: () => void;
 }
 
+// Row exit duration must match the transition in ReviewSheet.module.css. The
+// row stays rendered locally for this long after isRemoved flips so the slide
+// + fade can play, then the row returns null. Parent data updates immediately
+// via onRemove, so this is a visual-only delay.
+const PICK_ROW_EXIT_MS = 180;
+
 function PickRow({
   pick,
   mode,
@@ -274,14 +291,28 @@ function PickRow({
   onRemove,
   onUnskip,
 }: PickRowProps) {
-  if (isRemoved) return null;
+  const [hidden, setHidden] = useState(false);
+
+  useEffect(() => {
+    if (!isRemoved) {
+      setHidden(false);
+      return;
+    }
+    const timer = setTimeout(() => setHidden(true), PICK_ROW_EXIT_MS);
+    return () => clearTimeout(timer);
+  }, [isRemoved]);
+
+  if (hidden) return null;
 
   const isAvailable = pick.state === "available";
   const isFlagged = FLAGGED_STATES.includes(pick.state) || pick.state === "not_open_yet";
 
   if (isSkipped) {
     return (
-      <li className="rounded-card border border-dashed border-border bg-background p-3 flex items-center justify-between gap-3">
+      <li
+        data-exiting={isRemoved ? "true" : undefined}
+        className={`${styles.pickRow} rounded-card border border-dashed border-border bg-background p-3 flex items-center justify-between gap-3`}
+      >
         <span className="text-sm text-text-secondary line-through">
           {formatSlotRangeWithDate(pick.startsAt, pick.durationMinutes)}
         </span>
@@ -300,7 +331,9 @@ function PickRow({
     <li
       role={isFlagged ? "alert" : undefined}
       data-flagged={isFlagged ? "true" : undefined}
+      data-exiting={isRemoved ? "true" : undefined}
       className={[
+        styles.pickRow,
         "rounded-card border p-3 flex flex-col gap-2",
         isFlagged ? "border-danger/50 bg-danger/5" : "border-border bg-background",
       ].join(" ")}

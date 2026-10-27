@@ -140,7 +140,7 @@ export default function ProfileMenu() {
           role="menu"
           aria-label="Account menu"
           onKeyDown={handleMenuKeyDown}
-          className={`absolute right-0 top-full mt-2 w-52 rounded-card bg-section border border-divider-section shadow-lg z-50 overflow-hidden py-1 ${styles.dropdown}`}
+          className={`absolute right-0 top-full mt-2 w-52 rounded-card bg-section text-text-on-section border border-divider-section shadow-lg z-50 overflow-hidden py-1 ${styles.dropdown}`}
         >
           {menuItems.map((item, index) => (
             <a

@@ -1,0 +1,38 @@
+/* First-time success stagger. Three sibling blocks (header, details list,
+   action row) fade + rise into place with short delays. Keyframes rather than
+   @starting-style so the entrance runs on fresh mount of the whole step
+   without depending on the transition retargeting. CSS animation runs off
+   the main thread, which keeps the stagger smooth while the previous step
+   is still unmounting. */
+.stagger {
+  opacity: 0;
+  transform: translateY(8px);
+  animation: stepSuccessIn 320ms var(--ease-out-strong, cubic-bezier(0.23, 1, 0.32, 1)) forwards;
+}
+
+.stagger:nth-child(1) { animation-delay: 0ms; }
+.stagger:nth-child(2) { animation-delay: 60ms; }
+.stagger:nth-child(3) { animation-delay: 120ms; }
+
+@keyframes stepSuccessIn {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stagger {
+    animation: stepSuccessFade 200ms linear forwards;
+    transform: none;
+  }
+
+  @keyframes stepSuccessFade {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+}

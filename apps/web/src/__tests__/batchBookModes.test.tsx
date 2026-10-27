@@ -162,9 +162,14 @@ describe("BookCalendarContent — mode switch", () => {
     // Bar now shows "1 lesson" + the Show-picks toggle.
     expect(screen.getByTestId("review-multiple")).toBeInTheDocument();
     fireEvent.click(screen.getByTestId("mode-recurring"));
-    expect(screen.getByTestId("confirm-discard-dialog")).toHaveAttribute("open");
+    // ConfirmDiscardDialog now routes through the shared ConfirmDialog, so the
+    // dialog is identified by its title / confirm label rather than a bespoke
+    // test id.
+    const discardHeading = screen.getByText("Switch booking mode?");
+    const discardDialog = discardHeading.closest("dialog");
+    expect(discardDialog).toHaveAttribute("open");
     expect(screen.getByTestId("mode-multiple").getAttribute("aria-checked")).toBe("true");
-    fireEvent.click(screen.getByTestId("confirm-discard-ok"));
+    fireEvent.click(screen.getByRole("button", { name: "Switch and clear" }));
     expect(screen.getByTestId("mode-recurring").getAttribute("aria-checked")).toBe("true");
   });
 });
