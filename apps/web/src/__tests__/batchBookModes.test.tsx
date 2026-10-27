@@ -334,8 +334,8 @@ describe("Per-pick length change", () => {
       document.querySelectorAll('[data-flagged="true"]'),
     ) as HTMLElement[];
     expect(flaggedEls.some((el) => el.textContent?.includes("3:30 PM"))).toBe(true);
-    // The flagged count surfaces exactly 1 — the first pick stays available.
-    expect(screen.getByTestId("multiple-flagged-count").textContent).toMatch(/1\s*needs/i);
+    // The flagged count surfaces under the Review button — the first pick stays available.
+    expect(screen.getByTestId("multiple-disabled-reason").textContent).toMatch(/1\s*needs/i);
   });
 });
 
@@ -755,5 +755,240 @@ describe("Viewer", () => {
     );
     expect(screen.getByText(/Booking is for household owners and managers/i)).toBeInTheDocument();
     expect(screen.queryByTestId("mode-switch")).not.toBeInTheDocument();
+  });
+});
+
+// ── Bug #5: changing the recurring pattern clears stale state ───────────────
+
+describe("Recurring: pattern change clears stale preview + skips", () => {
+  it("flagged count from the previous pattern disappears as soon as the pattern changes", async () => {
+    await renderCalendar();
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("mode-recurring"));
+    });
+
+    // Pattern A: Mon 3:00 PM. Server flags all 4 expanded weeks as blocked.
+    mockPreview.mockResolvedValue({
+      kind: "ok",
+      data: {
+        needsApproval: false,
+        picks: [
+          { index: 0, startsAt: "2026-11-02T23:00:00.000Z", durationMinutes: 30, state: "blocked_time", reason: "x" },
+          { index: 1, startsAt: "2026-11-09T23:00:00.000Z", durationMinutes: 30, state: "blocked_time", reason: "x" },
+          { index: 2, startsAt: "2026-11-16T23:00:00.000Z", durationMinutes: 30, state: "blocked_time", reason: "x" },
+          { index: 3, startsAt: "2026-11-23T23:00:00.000Z", durationMinutes: 30, state: "blocked_time", reason: "x" },
+        ],
+      },
+    });
+
+    const monSlot = (await screen.findAllByRole("button", { name: /^3:00 PM$/i }))[0]!;
+    await act(async () => {
+      fireEvent.click(monSlot);
+    });
+
+    // Wait for the live preview to resolve: Review button shows "4 need attention."
+    await waitFor(() => {
+      expect(screen.getByTestId("recurring-disabled-reason").textContent).toMatch(/4\s*need/i);
+    });
+
+    // Pattern B: swap Mon for Wed via the pattern list's Remove button, then
+    // click a new Wed slot. The clear-on-pattern-change effect wipes
+    // previewPicks synchronously — the stale "N need attention" copy must
+    // disappear before the debounced preview resolves again.
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("recurring-pattern-toggle"));
+    });
+    const patternRow = screen.getAllByTestId("recurring-pattern-row")[0]!;
+    const removeBtn = patternRow.querySelector('button[aria-label^="Remove"]') as HTMLButtonElement;
+    await act(async () => {
+      fireEvent.click(removeBtn);
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /^Wednesday, November 4, 3:00 PM/i }));
+    });
+
+    await waitFor(() => {
+      const reasonEl = screen.queryByTestId("recurring-disabled-reason");
+      // After pattern change the stale "N need attention" copy must be gone.
+      expect(reasonEl?.textContent ?? "").not.toMatch(/need\s+attention/i);
+    });
+  });
+});
+
+// ── Bug #6: BATCH_LESSON_MIN = 1 allows a single-lesson batch ───────────────
+
+describe("Batch of 1 is allowed", () => {
+  it("Review stays enabled with a single pick in Multiple mode", async () => {
+    await renderCalendar();
+    fireEvent.click(screen.getByTestId("mode-multiple"));
+    fireEvent.click(firstSlotButton(/^3:00 PM$/i));
+
+    const reviewBtn = screen.getByTestId("review-multiple") as HTMLButtonElement;
+    expect(reviewBtn.disabled).toBe(false);
+  });
+
+  it("Book stays enabled in the review sheet when only one lesson remains", async () => {
+    await renderCalendar();
+    fireEvent.click(screen.getByTestId("mode-multiple"));
+    fireEvent.click(firstSlotButton(/^3:00 PM$/i));
+
+    mockPreview.mockResolvedValue({
+      kind: "ok",
+      data: {
+        needsApproval: false,
+        picks: [
+          { index: 0, startsAt: "2026-11-02T23:00:00.000Z", durationMinutes: 30, state: "available" },
+        ],
+      },
+    });
+
+    fireEvent.click(screen.getByTestId("review-multiple"));
+    await screen.findByTestId("review-sheet");
+
+    await waitFor(() => {
+      expect((screen.getByTestId("review-book") as HTMLButtonElement).disabled).toBe(false);
+    });
+  });
+});
+
+// ── Bug #7: disabled-reason copy next to Review / Book ──────────────────────
+
+describe("Disabled reasons surface next to Review and Book", () => {
+  it("shows 'Tap open times' as the review reason before any picks exist", async () => {
+    await renderCalendar();
+    fireEvent.click(screen.getByTestId("mode-multiple"));
+    expect(screen.getByTestId("multiple-disabled-reason").textContent).toMatch(/tap open times/i);
+  });
+
+  it("shows 'need attention' as the review reason when the preview flags a pick", async () => {
+    await renderCalendar();
+    fireEvent.click(screen.getByTestId("mode-multiple"));
+
+    mockPreview.mockResolvedValue({
+      kind: "ok",
+      data: {
+        needsApproval: false,
+        picks: [
+          { index: 0, startsAt: "2026-11-02T23:00:00.000Z", durationMinutes: 30, state: "available" },
+          {
+            index: 1,
+            startsAt: "2026-11-02T23:30:00.000Z",
+            durationMinutes: 30,
+            state: "blocked_time",
+            reason: "coach_vacation",
+          },
+        ],
+      },
+    });
+
+    fireEvent.click(firstSlotButton(/^3:00 PM$/i));
+    fireEvent.click(firstSlotButton(/^3:30 PM$/i));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("multiple-disabled-reason").textContent).toMatch(/1\s*needs/i);
+    });
+  });
+
+  it("shows the Book disabled reason inside the review sheet when picks are unresolved", async () => {
+    await renderCalendar();
+    fireEvent.click(screen.getByTestId("mode-multiple"));
+    fireEvent.click(firstSlotButton(/^3:00 PM$/i));
+    fireEvent.click(firstSlotButton(/^3:30 PM$/i));
+
+    mockPreview.mockResolvedValue({
+      kind: "ok",
+      data: {
+        needsApproval: false,
+        picks: [
+          { index: 0, startsAt: "2026-11-02T23:00:00.000Z", durationMinutes: 30, state: "available" },
+          {
+            index: 1,
+            startsAt: "2026-11-02T23:30:00.000Z",
+            durationMinutes: 30,
+            state: "blocked_time",
+            reason: "coach_vacation",
+          },
+        ],
+      },
+    });
+
+    fireEvent.click(screen.getByTestId("review-multiple"));
+    await screen.findByTestId("review-sheet");
+
+    await waitFor(() => {
+      const reason = screen.getByTestId("review-book-disabled-reason");
+      expect(reason.textContent).toMatch(/fix\s*1\s*flagged/i);
+    });
+  });
+});
+
+// ── Bug #8: no-swimmer Review scrolls + highlights the swimmer picker ───────
+
+describe("No-swimmer Review feedback", () => {
+  const multiSwimmers: ParentSwimmer[] = [
+    {
+      id: "22222222-2222-2222-2222-222222222222",
+      firstName: "Alex",
+      lastName: "Smith",
+      birthDate: "2016-01-01",
+      sex: "female",
+      isPublic: false,
+      createdAt: "2024-01-01T00:00:00Z",
+      updatedAt: "2024-01-01T00:00:00Z",
+      clubs: [],
+      currentLeagues: [],
+    },
+    {
+      id: "22222222-2222-2222-2222-222222222223",
+      firstName: "Jamie",
+      lastName: "Smith",
+      birthDate: "2018-01-01",
+      sex: "male",
+      isPublic: false,
+      createdAt: "2024-01-01T00:00:00Z",
+      updatedAt: "2024-01-01T00:00:00Z",
+      clubs: [],
+      currentLeagues: [],
+    },
+  ];
+
+  it("scrolls to the Who's swimming picker, highlights it, and shows the error copy", async () => {
+    mockFirstAvail.mockResolvedValue({
+      firstAvailableDate: "2026-11-02",
+      weekData: WEEK_DATA,
+    });
+    mockFetchRange.mockResolvedValue(WEEK_DATA);
+    render(
+      <BookCalendarContent
+        householdId={HOUSEHOLD_ID}
+        locations={locations}
+        swimmers={multiSwimmers}
+        isViewer={false}
+      />,
+    );
+    await screen.findAllByRole("button", { name: /3:00 PM/i }, { timeout: 5000 });
+
+    // Two swimmers → neither is auto-selected (auto-select only runs when
+    // there's exactly one swimmer).
+    fireEvent.click(screen.getByTestId("mode-multiple"));
+    fireEvent.click(firstSlotButton(/^3:00 PM$/i));
+
+    const picker = screen.getByTestId("swimmer-picker");
+    const scrollSpy = vi.fn();
+    picker.scrollIntoView = scrollSpy;
+    expect(picker.getAttribute("data-highlight")).toBeNull();
+
+    fireEvent.click(screen.getByTestId("review-multiple"));
+
+    await waitFor(() => {
+      expect(picker.getAttribute("data-highlight")).toBe("true");
+    });
+    expect(scrollSpy).toHaveBeenCalled();
+    expect(screen.getByTestId("swimmer-error").textContent).toMatch(
+      /pick who['\u2019]s swimming first\./i,
+    );
+    // The review sheet is always mounted but should not have been opened.
+    const sheet = screen.getByTestId("review-sheet") as HTMLDialogElement;
+    expect(sheet.hasAttribute("open")).toBe(false);
   });
 });

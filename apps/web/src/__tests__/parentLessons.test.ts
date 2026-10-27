@@ -73,13 +73,13 @@ describe("lessons page data", () => {
 
 describe("loadMoreUpcomingLessons", () => {
   it("calls fetchUpcomingLessons with offset=10 and limit=11", async () => {
-    mockFetchUpcomingLessons.mockResolvedValue([]);
+    mockFetchUpcomingLessons.mockResolvedValue({ items: [], total: 0 });
     await loadMoreUpcomingLessons(10);
     expect(mockFetchUpcomingLessons).toHaveBeenCalledWith("tok", { limit: 11, offset: 10 });
   });
 
   it("calls fetchUpcomingLessons with offset=20 for the third page", async () => {
-    mockFetchUpcomingLessons.mockResolvedValue([]);
+    mockFetchUpcomingLessons.mockResolvedValue({ items: [], total: 0 });
     await loadMoreUpcomingLessons(20);
     expect(mockFetchUpcomingLessons).toHaveBeenCalledWith("tok", { limit: 11, offset: 20 });
   });
@@ -87,13 +87,13 @@ describe("loadMoreUpcomingLessons", () => {
   it("returns the lesson array from fetchUpcomingLessons", async () => {
     const future = new Date(Date.now() + 60 * 60 * 1000).toISOString();
     const lessons = [makeLesson("l-1", future), makeLesson("l-2", future)];
-    mockFetchUpcomingLessons.mockResolvedValue(lessons);
+    mockFetchUpcomingLessons.mockResolvedValue({ items: lessons, total: lessons.length });
     const result = await loadMoreUpcomingLessons(10);
     expect(result).toEqual(lessons);
   });
 
   it("returns an empty array when no lessons remain", async () => {
-    mockFetchUpcomingLessons.mockResolvedValue([]);
+    mockFetchUpcomingLessons.mockResolvedValue({ items: [], total: 0 });
     const result = await loadMoreUpcomingLessons(100);
     expect(result).toEqual([]);
   });

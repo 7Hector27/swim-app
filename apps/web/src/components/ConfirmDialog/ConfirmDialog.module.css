@@ -1,11 +1,18 @@
+/* Native <dialog> UA styles vary across browsers. Pin inset + margin + max-height
+   so the dialog is reliably centered in the viewport in Chrome, Safari, and
+   Firefox even when author transforms are applied for the open animation. */
 .dialog {
-  max-width: min(90vw, 400px);
-  width: 100%;
-  border-radius: var(--radius-card);
-  background: var(--color-section);
-  border: 1px solid var(--color-divider-section);
-  padding: 1.5rem;
+  position: fixed;
+  inset: 0;
   margin: auto;
+  width: 100%;
+  max-width: min(90vw, 460px);
+  max-height: min(90vh, calc(100vh - 2rem));
+  border-radius: var(--radius-card);
+  background: var(--color-background);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  padding: 1.5rem;
 
   transition:
     transform 220ms var(--ease-out-strong, cubic-bezier(0.23, 1, 0.32, 1)),

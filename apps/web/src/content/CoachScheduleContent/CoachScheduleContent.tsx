@@ -3,15 +3,13 @@ import type { CoachScheduleItem, CoachWeekScheduleDay } from "@swim-app/shared";
 import { fetchCoachSchedule, fetchCoachWeekSchedule } from "@/lib/api/lessons";
 import {
   addDays,
-  dayViewLabel,
   mondayOf,
   shortDayLabel,
   weekDates,
-  weekRangeLabel,
 } from "@/lib/calendarDate";
 import CoachLessonRow from "@/components/CoachLessonRow";
 import CoachWeekLessonCard from "@/components/CoachWeekLessonCard";
-import DatePickerInput from "./DatePickerInput";
+import CoachScheduleControls from "./CoachScheduleControls";
 
 interface Props {
   accessToken: string;
@@ -41,105 +39,23 @@ export default async function CoachScheduleContent({ accessToken, date, view, to
     <div className="flex flex-col flex-1 bg-background">
       <main id="main-content" className="flex-1">
         <div className="mx-auto max-w-content px-page pt-8 pb-20 tablet:pt-12 tablet:pb-32 flex flex-col gap-6">
-          {/* ── Header + toggle ─────────────────────────────────────────── */}
-          <div className="flex items-center justify-between gap-4 flex-wrap">
-            <h1 className="text-3xl tablet:text-4xl text-heading">Schedule</h1>
-            <div className="flex items-center gap-3 flex-wrap">
-              <Link
-                href="/coach/book"
-                className="inline-flex items-center justify-center min-h-[44px] px-5 rounded-button bg-button-primary-background text-button-primary-text text-sm font-bold transition-opacity duration-150 motion-reduce:transition-none hover:opacity-90 active:scale-[0.97]"
-              >
-                Book lesson
-              </Link>
-              <div className="flex rounded-button border border-border overflow-hidden flex-shrink-0">
-                <Link
-                  href={`?view=day&date=${date}`}
-                  aria-current={view === "day" ? "page" : undefined}
-                  className={`px-4 h-11 inline-flex items-center text-sm font-semibold transition-colors duration-100 ${
-                    view === "day"
-                      ? "bg-accent text-on-accent"
-                      : "text-text-secondary hover:bg-surface-soft"
-                  }`}
-                >
-                  Day
-                </Link>
-                <Link
-                  href={`?view=week&date=${weekMonday}`}
-                  aria-current={view === "week" ? "page" : undefined}
-                  className={`px-4 h-11 inline-flex items-center text-sm font-semibold border-l border-border transition-colors duration-100 ${
-                    view === "week"
-                      ? "bg-accent text-on-accent"
-                      : "text-text-secondary hover:bg-surface-soft"
-                  }`}
-                >
-                  Week
-                </Link>
-              </div>
-            </div>
-          </div>
-
-          {/* ── Navigation bar ─────────────────────────────────────────── */}
-          {view === "day" ? (
-            <div className="flex items-center gap-2 flex-wrap">
-              <Link
-                href={`?view=day&date=${prevDay}`}
-                aria-label="Previous day"
-                className="inline-flex items-center justify-center w-11 h-11 rounded-button border border-border text-text-secondary hover:bg-surface-soft transition-colors duration-100"
-              >
-                <ChevronLeftIcon />
-              </Link>
-              <Link
-                href={`?view=day&date=${nextDay}`}
-                aria-label="Next day"
-                className="inline-flex items-center justify-center w-11 h-11 rounded-button border border-border text-text-secondary hover:bg-surface-soft transition-colors duration-100"
-              >
-                <ChevronRightIcon />
-              </Link>
-              <span className="font-semibold text-heading text-base">{dayViewLabel(date, today)}</span>
-              {date !== today && (
-                <Link
-                  href={`?view=day&date=${today}`}
-                  className="inline-flex items-center justify-center h-11 px-4 rounded-button border border-border text-text-secondary text-sm font-semibold hover:bg-surface-soft transition-colors duration-100"
-                >
-                  Today
-                </Link>
-              )}
-              <DatePickerInput date={date} />
-            </div>
-          ) : (
-            <div className="flex items-center gap-2 flex-wrap">
-              <Link
-                href={`?view=week&date=${prevWeekMonday}`}
-                aria-label="Previous week"
-                className="inline-flex items-center justify-center w-11 h-11 rounded-button border border-border text-text-secondary hover:bg-surface-soft transition-colors duration-100"
-              >
-                <ChevronLeftIcon />
-              </Link>
-              <Link
-                href={`?view=week&date=${nextWeekMonday}`}
-                aria-label="Next week"
-                className="inline-flex items-center justify-center w-11 h-11 rounded-button border border-border text-text-secondary hover:bg-surface-soft transition-colors duration-100"
-              >
-                <ChevronRightIcon />
-              </Link>
-              <span className="font-semibold text-heading text-base">{weekRangeLabel(weekMonday)}</span>
-              {weekMonday !== todayMonday && (
-                <Link
-                  href={`?view=week&date=${todayMonday}`}
-                  className="inline-flex items-center justify-center h-11 px-4 rounded-button border border-border text-text-secondary text-sm font-semibold hover:bg-surface-soft transition-colors duration-100"
-                >
-                  Today
-                </Link>
-              )}
-            </div>
-          )}
-
-          {/* ── Content ────────────────────────────────────────────────── */}
-          {view === "day" ? (
-            <DayContent items={dayItems} />
-          ) : (
-            <WeekContent days={weekDays} today={today} />
-          )}
+          <CoachScheduleControls
+            date={date}
+            view={view}
+            today={today}
+            weekMonday={weekMonday}
+            todayMonday={todayMonday}
+            prevDay={prevDay}
+            nextDay={nextDay}
+            prevWeekMonday={prevWeekMonday}
+            nextWeekMonday={nextWeekMonday}
+          >
+            {view === "day" ? (
+              <DayContent items={dayItems} />
+            ) : (
+              <WeekContent days={weekDays} today={today} />
+            )}
+          </CoachScheduleControls>
         </div>
       </main>
     </div>
@@ -288,22 +204,6 @@ function DaySection({ day, today }: { day: CoachWeekScheduleDay; today: string }
 }
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
-
-function ChevronLeftIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-      <path d="M13 4l-6 6 6 6" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function ChevronRightIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-      <path d="M7 4l6 6-6 6" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
 
 function TravelIcon() {
   return (

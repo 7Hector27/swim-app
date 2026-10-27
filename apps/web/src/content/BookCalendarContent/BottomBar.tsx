@@ -46,6 +46,16 @@ export default function BottomBar({
     subLabel = "No time picked yet";
   }
 
+  // Soft hint shown next to the Confirm button. When no swimmer is picked
+  // the button stays enabled; clicking scrolls to Who's swimming instead.
+  const reason: string | null = (() => {
+    if (isConfirming) return null;
+    if (!hasSelection) return "Pick a time first.";
+    if (tooSoon) return "Less than 16 hours away.";
+    if (!hasSwimmers) return "Pick who's swimming first.";
+    return null;
+  })();
+
   return (
     <div
       role="region"
@@ -72,18 +82,29 @@ export default function BottomBar({
           )}
         </div>
 
-        <button
-          type="button"
-          onClick={onConfirm}
-          disabled={!confirmEnabled}
-          className="min-h-[44px] px-5 rounded-button bg-button-primary-background text-button-primary-text text-sm font-semibold transition-opacity hover:opacity-90 active:scale-[0.97] transition-[opacity,transform] motion-reduce:transform-none disabled:opacity-40 disabled:cursor-default flex-shrink-0"
-        >
-          <PendingLabel
-            isPending={isConfirming}
-            label="Confirm booking"
-            pendingLabel="Booking…"
-          />
-        </button>
+        <div className="flex flex-col items-end gap-1 flex-shrink-0">
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={!confirmEnabled}
+            data-testid="confirm-single"
+            className="min-h-[44px] px-5 rounded-button bg-button-primary-background text-button-primary-text text-sm font-semibold transition-opacity hover:opacity-90 active:scale-[0.97] transition-[opacity,transform] motion-reduce:transform-none disabled:opacity-40 disabled:cursor-default"
+          >
+            <PendingLabel
+              isPending={isConfirming}
+              label="Confirm booking"
+              pendingLabel="Booking…"
+            />
+          </button>
+          {reason !== null && (
+            <p
+              className="text-[11px] text-background/70 text-right max-w-[12rem]"
+              data-testid="single-disabled-reason"
+            >
+              {reason}
+            </p>
+          )}
+        </div>
       </div>
     </div>
   );

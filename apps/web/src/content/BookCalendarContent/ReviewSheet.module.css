@@ -4,14 +4,23 @@
    Reduced motion drops the transform and keeps a short opacity fade.
 
    Native <dialog> plus allow-discrete on display/overlay keeps the element in
-   the DOM long enough to animate both open and close. */
+   the DOM long enough to animate both open and close.
+
+   Positioning is pinned here instead of relying on Tailwind utilities so UA
+   <dialog> defaults (inset: 0; margin: auto; max-width constraint) don't fight
+   the bottom-sheet anchor and leave the sheet in the top-left of the viewport. */
 
 .sheet {
-  /* Base = closed/exit target. --closed-* let the media query swap the axis. */
-  --closed-x: 0;
-  --closed-y: 100%;
+  position: fixed;
+  /* Mobile base = bottom sheet anchored to the bottom edge, full width. */
+  inset: auto 0 0 0;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  max-width: 100%;
+  max-height: 90vh;
 
-  transform: translate(var(--closed-x), var(--closed-y));
+  transform: translateY(100%);
   opacity: 0;
 
   transition:
@@ -28,7 +37,7 @@
 
 @starting-style {
   .sheet[open] {
-    transform: translate(var(--closed-x), var(--closed-y));
+    transform: translateY(100%);
     opacity: 0;
   }
 }
@@ -52,11 +61,25 @@
   }
 }
 
-/* Tablet+: side sheet slides in from the right instead of up from the bottom. */
+/* Tablet+: side sheet anchored to the right, full height, slides in horizontally. */
 @media (min-width: 769px) {
   .sheet {
-    --closed-x: 100%;
-    --closed-y: 0;
+    inset: 0 0 0 auto;
+    width: 420px;
+    max-width: 420px;
+    max-height: 100vh;
+    height: 100%;
+    transform: translateX(100%);
+  }
+
+  .sheet[open] {
+    transform: translate(0, 0);
+  }
+
+  @starting-style {
+    .sheet[open] {
+      transform: translateX(100%);
+    }
   }
 }
 

@@ -4,7 +4,7 @@ import { calculateAge, todayLA, type MeResponse } from "@swim-app/shared";
 
 import Placeholder from "@/components/Placeholder";
 import { fetchHousehold } from "@/lib/api/households";
-import { fetchLesson, fetchUpcomingLessons, fetchUpcomingLessonsCount } from "@/lib/api/lessons";
+import { fetchLesson, fetchUpcomingLessons } from "@/lib/api/lessons";
 import { fetchSwimmers } from "@/lib/api/swimmers";
 import { removeSwimmer } from "./actions";
 import BookingConfirmDialog from "./BookingConfirmDialog";
@@ -22,15 +22,15 @@ interface Props {
 export default async function ParentDashboardContent({ profile, accessToken, bookedLessonId, rescheduledLessonId, rescheduledFrom }: Props) {
   const firstName = profile.fullName?.trim().split(/\s+/)[0] ?? "there";
   const hasPhone = !!(profile.phone && profile.phone.length > 0);
-  const [swimmers, upcomingLessonsRaw, upcomingCount, household, bookedLesson, rescheduledLesson] = await Promise.all([
+  const [swimmers, upcomingLessonsRaw, household, bookedLesson, rescheduledLesson] = await Promise.all([
     fetchSwimmers(accessToken),
     fetchUpcomingLessons(accessToken, { limit: 3 }),
-    fetchUpcomingLessonsCount(accessToken),
     fetchHousehold(accessToken),
     bookedLessonId ? fetchLesson(accessToken, bookedLessonId) : Promise.resolve(null),
     rescheduledLessonId ? fetchLesson(accessToken, rescheduledLessonId) : Promise.resolve(null),
   ]);
-  const upcomingLessons = upcomingLessonsRaw ?? [];
+  const upcomingLessons = upcomingLessonsRaw?.items ?? [];
+  const upcomingCount = upcomingLessonsRaw?.total ?? null;
   const today = todayLA();
   const showFinishSetup = !hasPhone;
   const nextLesson = upcomingLessons[0];
@@ -83,9 +83,9 @@ export default async function ParentDashboardContent({ profile, accessToken, boo
           </div>
 
           {/* Two-column layout */}
-          <div className="flex flex-col tablet:flex-row gap-6 desktop:gap-8 items-start">
-            {/* Main column */}
-            <div className="flex-1 min-w-0 flex flex-col gap-6">
+          <div className="flex flex-col tablet:flex-row tablet:items-start gap-6 desktop:gap-8">
+            {/* Main column — full width on phone, flex-1 on tablet+ */}
+            <div className="w-full min-w-0 flex flex-col gap-6 tablet:flex-1">
               <UpcomingLessonsCard lessons={upcomingLessons} total={upcomingCount ?? upcomingLessons.length} />
 
               <SwimmersSection

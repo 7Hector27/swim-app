@@ -32,6 +32,13 @@ function openLabel(day: WeekDayAvailability): string {
   return `${day.openCount} open`;
 }
 
+function isUnavailable(day: WeekDayAvailability): boolean {
+  if (day.dayState === "past" || day.dayState === "closed" || day.dayState === "not_open_yet") {
+    return true;
+  }
+  return day.openCount === 0;
+}
+
 export default function PhoneDayStrip({
   days,
   selectedDayDate,
@@ -57,6 +64,19 @@ export default function PhoneDayStrip({
       {days.map((day) => {
         const isSelected = day.date === selectedDayDate;
         const isToday = day.date === todayStr;
+        const unavailable = isUnavailable(day);
+
+        const base =
+          "relative min-h-[64px] min-w-[64px] flex flex-col items-center justify-center gap-0.5 rounded-[14px] border px-2 py-1.5 text-xs flex-shrink-0 snap-start transition-colors duration-100 motion-reduce:transition-none";
+
+        let stateClasses: string;
+        if (isSelected) {
+          stateClasses = "border-accent bg-accent/10 text-accent";
+        } else if (unavailable) {
+          stateClasses = "border-border bg-surface-soft text-text-secondary";
+        } else {
+          stateClasses = "border-border text-text hover:bg-surface-soft";
+        }
 
         return (
           <button
@@ -66,19 +86,29 @@ export default function PhoneDayStrip({
             onClick={() => onDaySelect(day.date)}
             aria-current={isToday ? "date" : undefined}
             aria-pressed={isSelected}
-            className={`min-h-[44px] min-w-[60px] flex flex-col items-center justify-center rounded-button border px-2 py-1 text-xs flex-shrink-0 snap-start transition-colors duration-100 motion-reduce:transition-none ${
-              isSelected
-                ? "border-accent text-accent bg-accent/10"
-                : "border-border text-text-secondary hover:bg-surface-soft"
-            }`}
+            className={`${base} ${stateClasses}`}
           >
-            <span className="font-semibold">{getDowAbbr(day.date)}</span>
             <span
-              className={`text-base font-bold ${isSelected ? "text-accent" : "text-heading"}`}
+              className={`font-semibold ${
+                isSelected ? "text-accent" : unavailable ? "text-text-secondary" : "text-text"
+              }`}
+            >
+              {getDowAbbr(day.date)}
+            </span>
+            <span
+              className={`text-lg font-bold leading-none tabular-nums ${
+                isSelected ? "text-accent" : unavailable ? "text-text-secondary" : "text-heading"
+              }`}
             >
               {getDayNumber(day.date)}
             </span>
             <span className="text-[10px]">{openLabel(day)}</span>
+            {isToday && !isSelected && (
+              <span
+                aria-hidden="true"
+                className="absolute bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-accent"
+              />
+            )}
           </button>
         );
       })}

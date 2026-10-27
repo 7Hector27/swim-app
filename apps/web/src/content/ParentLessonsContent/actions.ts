@@ -12,5 +12,6 @@ export async function loadMoreUpcomingLessons(offset: number): Promise<UpcomingL
   const auth = await requireAuth();
   if (!auth) redirect("/login");
   if (auth.profile.role !== "parent") redirect("/dashboard");
-  return fetchUpcomingLessons(auth.accessToken, { limit: PAGE_SIZE + 1, offset });
+  const result = await fetchUpcomingLessons(auth.accessToken, { limit: PAGE_SIZE + 1, offset });
+  return result === null ? null : result.items;
 }

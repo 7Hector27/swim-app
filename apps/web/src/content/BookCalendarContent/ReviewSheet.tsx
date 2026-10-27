@@ -37,6 +37,8 @@ interface Props {
   isSubmitting: boolean;
   needsApproval: boolean;
   success: SuccessView | null;
+  // Short copy under the Book button explaining why it is disabled.
+  bookDisabledReason?: string;
   onClose: () => void;
   onApplySuggestion: (index: number, startsAt: string) => void;
   onSkip: (index: number) => void;
@@ -81,11 +83,8 @@ export default function ReviewSheet(props: Props) {
       aria-labelledby="review-sheet-heading"
       className={[
         styles.sheet,
-        "p-0 bg-background text-text max-h-[90vh]",
-        // Mobile: slide up from bottom, full width.
-        "fixed bottom-0 left-0 right-0 m-0 w-full rounded-t-[24px] overflow-hidden",
-        // Tablet+: side panel on the right, fixed width, full height.
-        "tablet:bottom-0 tablet:right-0 tablet:left-auto tablet:top-0 tablet:w-[420px] tablet:rounded-none tablet:rounded-l-[24px] tablet:max-h-screen tablet:h-full",
+        "bg-background text-text overflow-hidden rounded-t-[24px]",
+        "tablet:rounded-none tablet:rounded-l-[24px]",
       ].join(" ")}
       data-testid="review-sheet"
     >
@@ -161,6 +160,14 @@ export default function ReviewSheet(props: Props) {
                 pendingLabel="Booking…"
               />
             </button>
+            {props.bookDisabledReason !== undefined && !props.canSubmit && (
+              <p
+                className="text-xs text-text-secondary text-center mt-2"
+                data-testid="review-book-disabled-reason"
+              >
+                {props.bookDisabledReason}
+              </p>
+            )}
           </div>
         )}
       </div>

@@ -4,7 +4,7 @@ import { vi, describe, it, expect, beforeEach } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn(), prefetch: vi.fn() }),
   usePathname: () => "/coach/schedule",
 }));
 
@@ -12,7 +12,6 @@ vi.mock("@/components/CoachLessonRow", () => ({
   default: ({ item }: { item: { lesson: { id: string } } }) =>
     `<div data-lesson="${item.lesson.id}"></div>`,
 }));
-vi.mock("@/content/CoachScheduleContent/DatePickerInput", () => ({ default: () => null }));
 
 const mockFetchSchedule = vi.fn();
 const mockFetchWeekSchedule = vi.fn();
