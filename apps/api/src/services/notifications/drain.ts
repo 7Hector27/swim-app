@@ -2,7 +2,7 @@
 // POST /internal/cron/tick. All sequential, bounded, never throw past
 // their own internal catches. See ADR 031 and docs/plans/coach-alerts.md.
 
-import { and, asc, between, count, eq, gt, gte, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
+import { and, asc, between, count, eq, gte, inArray, lt, or, sql } from "drizzle-orm";
 
 import { db } from "../../db/client";
 import {
@@ -24,7 +24,7 @@ import {
   laTimeIsAtOrPast,
 } from "./quietHours";
 import { sendCoachNotification } from "./sender";
-import type { CoachNotificationPayload, DailySummaryPayload } from "./types";
+import type { DailySummaryPayload } from "./types";
 
 const DRAIN_LIMIT_PER_TICK = 50;
 const RELEASE_LIMIT_PER_TICK = 200;
