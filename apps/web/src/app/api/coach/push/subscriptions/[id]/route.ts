@@ -1,4 +1,7 @@
 // Delete one push subscription (coach removed a device from /account).
+//
+// Uses getSession() only to extract the token; the Express API verifies
+// it with getUser() on every request (see docs/accounts.md).
 
 import { NextResponse } from "next/server";
 

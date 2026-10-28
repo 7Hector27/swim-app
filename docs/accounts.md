@@ -18,7 +18,7 @@ No role: public visitors, and kids under 13 (no accounts ever).
 - Birth dates from signup are checked, then discarded.
 - The API enforces every permission. Every table has RLS on with no policies, which denies all access on purpose: the browser's public key can't read anything, and the API connects as the database owner.
 - The app role is read from the database on every request, never from the JWT.
-- Tokens are verified against Supabase's auth server on every request via `getUser`, not decoded locally. Revoked sessions and banned users are rejected immediately rather than being allowed until the JWT's `exp` claim expires.
+- Tokens are verified against Supabase's auth server on every request via `getUser`, not decoded locally. Revoked sessions and banned users are rejected immediately rather than being allowed until the JWT's `exp` claim expires. The verification happens in the Express API's `requireUser` middleware — the single source of truth for session liveness. Next.js route handlers under `apps/web/src/app/api/` are **thin proxies**: they use `supabase.auth.getSession()` only to extract the access token from the SSR cookie and forward it as a Bearer header to the API, which re-verifies via `getUser`. Proxies never make authorization decisions themselves.
 - **Every signup path must pass `emailRedirectTo`** when calling Supabase's signup API. The confirmation email template (`supabase/templates/confirmation.html`) builds the confirmation link as `{{ .RedirectTo }}&token_hash=…` with no fallback — if `emailRedirectTo` is omitted, `.RedirectTo` is empty and the link is broken. Normal signup sets it to `/auth/confirm?`; invite signup sets it to `/auth/confirm?returnTo=<encoded>`.
 
 ## Households

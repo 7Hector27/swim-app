@@ -1,4 +1,7 @@
 // Unread count — polled every 60s by the coach dashboard bell.
+//
+// Uses getSession() only to extract the token; the Express API verifies
+// it with getUser() on every request (see docs/accounts.md).
 
 import { NextResponse } from "next/server";
 

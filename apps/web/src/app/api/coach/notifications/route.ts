@@ -1,4 +1,11 @@
 // Lists the coach's in-app notifications (newest 20, unread first).
+//
+// This handler uses supabase.auth.getSession() to extract the access
+// token from the SSR cookie — it does NOT verify the token itself. The
+// Express API's requireUser middleware verifies the token with
+// supabase.auth.getUser() on every request, which is the single
+// source of truth for session liveness (revoked / banned / expired).
+// See docs/accounts.md.
 
 import { NextResponse } from "next/server";
 

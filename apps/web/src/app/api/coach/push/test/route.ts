@@ -1,5 +1,8 @@
 // Send a test push to the coach's active subscriptions. Called by the
 // "Send test notification" button on /account.
+//
+// Uses getSession() only to extract the token; the Express API verifies
+// it with getUser() on every request (see docs/accounts.md).
 
 import { NextResponse } from "next/server";
 

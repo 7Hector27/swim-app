@@ -1,4 +1,7 @@
 // Marks one notification as read.
+//
+// Uses getSession() only to extract the token; the Express API verifies
+// it with getUser() on every request (see docs/accounts.md).
 
 import { NextResponse } from "next/server";
 

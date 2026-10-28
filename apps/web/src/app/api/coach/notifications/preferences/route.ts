@@ -1,4 +1,7 @@
 // GET and PATCH for coach notification preferences.
+//
+// Uses getSession() only to extract the token; the Express API verifies
+// it with getUser() on every request (see docs/accounts.md).
 
 import { NextResponse } from "next/server";
 

@@ -5,6 +5,9 @@
 //
 // GET → list active subscriptions for the current coach.
 // POST → register / revive a subscription (idempotent).
+//
+// Uses getSession() only to extract the token; the Express API verifies
+// it with getUser() on every request (see docs/accounts.md).
 
 import { NextResponse } from "next/server";
 
