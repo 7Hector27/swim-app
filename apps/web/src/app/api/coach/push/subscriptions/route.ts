@@ -36,17 +36,19 @@ export async function POST(request: Request): Promise<NextResponse> {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
   const payload: unknown = await request.json().catch(() => null);
+  // Node normalizes header keys to lowercase on read, so read with the
+  // lowercase name once into a local. Forward with the canonical casing
+  // Express expects. If the browser omitted a UA, do not add the header.
+  const userAgent = request.headers.get("user-agent");
+  const forwardHeaders: Record<string, string> = {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${token}`,
+  };
+  if (userAgent) forwardHeaders["User-Agent"] = userAgent;
+
   const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/coach/push/subscriptions`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-      // Forward the browser's user-agent so the API's register handler
-      // can capture it on the subscription row for the devices list.
-      ...(request.headers.get("user-agent") && {
-        "User-Agent": request.headers.get("user-agent")!,
-      }),
-    },
+    headers: forwardHeaders,
     body: JSON.stringify(payload),
     cache: "no-store",
   });
