@@ -1191,6 +1191,103 @@ describe("POST /lessons/batch — Phase 1", () => {
     });
   });
 
+  // T13: the batch_booked email outbox payload names the right child on
+  // each lesson row. Regression test for the review finding that
+  // insertedLessons was positionally zipped with picksAsc — if that ever
+  // drifted, a parent would see a lesson in their confirmation email
+  // attributed to the wrong kid. We now generate lesson ids up front and
+  // key per-lesson first names by lesson id, so this test exercises the
+  // id-keyed path end-to-end.
+  it("T13: per-lesson swimmerFirstNames in the batch_booked payload match the pick's swimmer", async () => {
+    await withAllDaysEnabled(async () => {
+      const kid2Rows = await adminDb()
+        .insert(swimmers)
+        .values({
+          firstName: "BatchKidTwoEmail",
+          lastName: "Integration",
+          birthDate: "2018-01-01",
+          sex: "male",
+          isPublic: false,
+          householdId: owner.householdId,
+        })
+        .returning({ id: swimmers.id });
+      const kid2Id = kid2Rows[0]!.id;
+
+      try {
+        const startDate = futureLaDate(306);
+        const first = laDateToUtcAtTime(startDate, "16:00");
+        const second = laDateToUtcAtTime(startDate, "17:00");
+        const body = {
+          mode: "manual" as const,
+          householdId: owner.householdId,
+          locationId,
+          picks: [
+            {
+              startsAt: first.toISOString(),
+              durationMinutes: 30 as const,
+              swimmerIds: [swimmerId],
+            },
+            {
+              startsAt: second.toISOString(),
+              durationMinutes: 30 as const,
+              swimmerIds: [kid2Id],
+            },
+          ],
+        };
+
+        const submit = await request(app)
+          .post("/lessons/batch")
+          .set("Authorization", `Bearer ${owner.accessToken}`)
+          .send(body);
+        expect(submit.status).toBe(201);
+        const lessonIds = submit.body.lessonIds as string[];
+        const batchId = submit.body.batchId as string;
+        expect(lessonIds).toHaveLength(2);
+
+        // Resolve the two swimmers' first names from the DB so the test is
+        // insensitive to how they were spelled in the fixture — we just
+        // need to compare against the actual stored values.
+        const nameRows = await adminDb()
+          .select({ id: swimmers.id, firstName: swimmers.firstName })
+          .from(swimmers)
+          .where(inArray(swimmers.id, [swimmerId, kid2Id]));
+        const nameById = new Map(nameRows.map((row) => [row.id, row.firstName]));
+
+        // Map lesson id → startsAt so we can locate each pick's row in the
+        // payload without assuming order.
+        const lessonStartRows = await adminDb()
+          .select({ id: lessons.id, startsAt: lessons.startsAt })
+          .from(lessons)
+          .where(inArray(lessons.id, lessonIds));
+        const startByLessonId = new Map(
+          lessonStartRows.map((row) => [row.id, row.startsAt.toISOString()]),
+        );
+
+        const outboxRows = await adminDb()
+          .select({ payload: lessonEmailOutbox.payload })
+          .from(lessonEmailOutbox)
+          .where(eq(lessonEmailOutbox.batchId, batchId));
+        expect(outboxRows).toHaveLength(1);
+        const payload = outboxRows[0]!.payload as {
+          lessons: Array<{ lessonId: string; swimmerFirstNames: string[] }>;
+        };
+        expect(payload.lessons).toHaveLength(2);
+
+        for (const payloadLesson of payload.lessons) {
+          const startsAtIso = startByLessonId.get(payloadLesson.lessonId);
+          expect(startsAtIso).toBeDefined();
+          const expectedSwimmerId =
+            startsAtIso === first.toISOString() ? swimmerId : kid2Id;
+          const expectedFirstName = nameById.get(expectedSwimmerId)!;
+          expect(payloadLesson.swimmerFirstNames).toEqual([expectedFirstName]);
+        }
+      } finally {
+        await adminDb().delete(lessonSwimmers).where(eq(lessonSwimmers.swimmerId, kid2Id));
+        await adminDb().delete(swimmers).where(eq(swimmers.id, kid2Id));
+      }
+    });
+  });
+
   // T11: a 45-min pick overlapping a 30-min pick in the same batch is
   // flagged conflicts_batch. Submit returns 422 and writes nothing.
   it("T11: a 45-min pick overlapping a 30-min pick is flagged conflicts_batch", async () => {

@@ -282,7 +282,7 @@ export default function WeekNav({
                   type="button"
                   onClick={() => dots.onJump(week.mondayStr)}
                   aria-label={`Jump to week of ${formatShortDate(week.mondayStr)}`}
-                  aria-current={isActive ? "true" : undefined}
+                  aria-current={isActive ? "date" : undefined}
                   className="w-6 h-6 inline-flex items-center justify-center rounded-full transition-colors duration-150 motion-reduce:transition-none hover:bg-surface-soft focus:outline focus:outline-2 focus:outline-focus-ring"
                 >
                   <span

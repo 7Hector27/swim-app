@@ -185,6 +185,7 @@ export type {
   CoachBatchApproveResponse,
   BatchCancelRemainingResponse,
   StoredWeeklyPattern,
+  StoredWeeklyPatternRead,
 } from "./schemas/booking";
 export {
   LessonLocationSchema,
@@ -250,6 +251,7 @@ export {
   BatchCancelRemainingResponseSchema,
   BatchPatternPairSchema,
   StoredWeeklyPatternSchema,
+  StoredWeeklyPatternReadSchema,
 } from "./schemas/booking";
 export type {
   SlotState,

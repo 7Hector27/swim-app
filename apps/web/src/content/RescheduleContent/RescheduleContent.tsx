@@ -187,6 +187,7 @@ export default function RescheduleContent({ lesson, locations }: Props) {
       const cached = weekPrefetch.readFromCache(fetchSpec.monday);
       if (cached !== null) setWeekData(cached);
     }
+    const fetchEpoch = weekPrefetch.beginFetch();
     startFetching(async () => {
       if (calendarView === "month") {
         const result = await fetchMonthRangeAction({
@@ -213,7 +214,7 @@ export default function RescheduleContent({ lesson, locations }: Props) {
         });
         if (result !== null) {
           setWeekData(result);
-          weekPrefetch.onWeekFetched(fetchSpec.monday, result);
+          weekPrefetch.onWeekFetched(fetchSpec.monday, result, fetchEpoch);
         } else {
           setFetchError("Could not load availability. Try again.");
         }

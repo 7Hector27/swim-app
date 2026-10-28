@@ -138,6 +138,11 @@ export default function BookCalendarContent({
   function flagMissingSwimmer() {
     setSwimmerErrorNonce((prev) => prev + 1);
   }
+  // Nonce for the "no picks yet" state. Both bottom bars already show the
+  // reason text persistently; keying the aria-live wrapper by this nonce
+  // re-announces it to screen readers on every empty-picks Review tap so
+  // the tap doesn't feel silent.
+  const [emptyPicksNonce, setEmptyPicksNonce] = useState(0);
   const [selectedStartsAt, setSelectedStartsAt] = useState<string | null>(null);
   const [tooSoon, setTooSoon] = useState(false);
   const [weekData, setWeekData] = useState<WeekAvailabilityResponse | null>(null);
@@ -254,6 +259,7 @@ export default function BookCalendarContent({
       if (cached !== null) setWeekData(cached);
     }
 
+    const fetchEpoch = weekPrefetch.beginFetch();
     startFetching(async () => {
       if (calendarView === "month") {
         const result = await fetchMonthRangeAction({
@@ -280,7 +286,7 @@ export default function BookCalendarContent({
         const resolvedDate =
           result.firstAvailableDate !== null ? result.firstAvailableDate : today;
         const resolvedMonday = getMondayOfWeek(resolvedDate);
-        weekPrefetch.onWeekFetched(resolvedMonday, result.weekData);
+        weekPrefetch.onWeekFetched(resolvedMonday, result.weekData, fetchEpoch);
         if (result.firstAvailableDate !== null) {
           setCurrentDate(result.firstAvailableDate);
           setSelectedPhoneDay(result.firstAvailableDate);
@@ -298,7 +304,7 @@ export default function BookCalendarContent({
         });
         if (result !== null) {
           setWeekData(result);
-          weekPrefetch.onWeekFetched(fetchSpec.monday, result);
+          weekPrefetch.onWeekFetched(fetchSpec.monday, result, fetchEpoch);
         } else setFetchError("Could not load availability. Try again.");
       }
     });
@@ -726,7 +732,14 @@ export default function BookCalendarContent({
       return;
     }
     const hasPicks = multiplePicks.length > 0 || pattern.length > 0;
-    if (!hasPicks) return;
+    if (!hasPicks) {
+      // Don't open the sheet, but bump the nonce so the "Add at least one
+      // lesson" reason under the Review button re-announces via aria-live.
+      // Repeated taps always re-fire so a screen-reader user hears it each
+      // time, not just once.
+      setEmptyPicksNonce((prev) => prev + 1);
+      return;
+    }
     setSubmitError(null);
     setSuccess(null);
     setReviewOpen(true);
@@ -1441,6 +1454,7 @@ export default function BookCalendarContent({
               onTogglePickSwimmer={toggleMultiplePickSwimmer}
               onReview={openReview}
               overCap={overCap}
+              emptyPicksNonce={emptyPicksNonce}
             />
           )}
           {bookingMode === "recurring" && (
@@ -1471,6 +1485,7 @@ export default function BookCalendarContent({
               onTogglePairSwimmer={togglePatternPairSwimmer}
               onReview={openReview}
               overCap={overCap}
+              emptyPicksNonce={emptyPicksNonce}
             />
           )}
         </>
@@ -1720,6 +1735,7 @@ interface MultipleBottomBarProps {
   onTogglePickSwimmer: (startsAt: string, swimmerId: string) => void;
   onReview: () => void;
   overCap: boolean;
+  emptyPicksNonce: number;
 }
 
 function MultipleBottomBar({
@@ -1736,6 +1752,7 @@ function MultipleBottomBar({
   onTogglePickSwimmer,
   onReview,
   overCap,
+  emptyPicksNonce,
 }: MultipleBottomBarProps) {
   const firstNameById = new Map(swimmers.map((swimmer) => [swimmer.id, swimmer.firstName]));
   const atCap = picks.length >= BATCH_LESSON_MAX;
@@ -1756,7 +1773,7 @@ function MultipleBottomBar({
   // picks / over cap) first, then needs-attention from the live preview, then
   // "pick who's swimming" (soft — click still scrolls to the picker).
   const reviewReason: string | null = (() => {
-    if (!hasPicks) return "Tap open times to pick lessons.";
+    if (!hasPicks) return "Add at least one lesson.";
     if (overCap) return `Over the ${BATCH_LESSON_MAX} lesson cap.`;
     if (flaggedCount > 0) {
       return `${flaggedCount} ${flaggedCount === 1 ? "needs" : "need"} attention.`;
@@ -1808,9 +1825,14 @@ function MultipleBottomBar({
             </button>
             {reviewReason !== null && (
               <p
+                // Re-mount the aria-live region on every empty-picks Review
+                // tap so screen readers announce the reason again — the sheet
+                // doesn't open, so without this the tap would feel silent.
+                key={!hasPicks ? `empty-${emptyPicksNonce}` : "static"}
                 className="text-[11px] text-background/70 text-right max-w-[12rem]"
                 data-testid="multiple-disabled-reason"
-                role={flaggedCount > 0 || overCap ? "status" : undefined}
+                role={flaggedCount > 0 || overCap || !hasPicks ? "status" : undefined}
+                aria-live={!hasPicks ? "polite" : undefined}
               >
                 {reviewReason}
               </p>
@@ -1923,6 +1945,7 @@ interface RecurringBottomBarProps {
   onTogglePairSwimmer: (pair: BatchPatternPair, swimmerId: string) => void;
   onReview: () => void;
   overCap: boolean;
+  emptyPicksNonce: number;
 }
 
 function RecurringBottomBar({
@@ -1944,6 +1967,7 @@ function RecurringBottomBar({
   onTogglePairSwimmer,
   onReview,
   overCap,
+  emptyPicksNonce,
 }: RecurringBottomBarProps) {
   const firstNameById = new Map(swimmers.map((swimmer) => [swimmer.id, swimmer.firstName]));
   const hasPattern = pattern.length > 0;
@@ -1958,7 +1982,7 @@ function RecurringBottomBar({
   // so the first blocker surfaces first; "pick who's swimming" is a soft hint
   // that keeps Review clickable and relies on the click handler to scroll.
   const reviewReason: string | null = (() => {
-    if (!hasPattern) return "Tap open times to build a pattern.";
+    if (!hasPattern) return "Add at least one lesson.";
     if (overCap) return `Over the ${BATCH_LESSON_MAX} lesson cap.`;
     if (flaggedCount > 0) {
       return `${flaggedCount} ${flaggedCount === 1 ? "needs" : "need"} attention.`;
@@ -2005,9 +2029,14 @@ function RecurringBottomBar({
             </button>
             {reviewReason !== null && (
               <p
+                // Re-mount the aria-live region on every empty-pattern
+                // Review tap so screen readers re-announce the reason — the
+                // sheet doesn't open, so the tap would feel silent otherwise.
+                key={!hasPattern ? `empty-${emptyPicksNonce}` : "static"}
                 className="text-[11px] text-background/70 text-right max-w-[12rem]"
                 data-testid="recurring-disabled-reason"
-                role={flaggedCount > 0 || overCap ? "status" : undefined}
+                role={flaggedCount > 0 || overCap || !hasPattern ? "status" : undefined}
+                aria-live={!hasPattern ? "polite" : undefined}
               >
                 {reviewReason}
               </p>

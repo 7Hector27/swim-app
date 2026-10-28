@@ -883,11 +883,6 @@ async function assertBatchHouseholdAndSwimmers(
     return { ok: false, status: 403, error: "Forbidden" };
   }
   const batchSwimmerIds = collectBatchSwimmerIds(body);
-  if (batchSwimmerIds.length === 0) {
-    // Zod ensures ≥1 per pick/pattern entry, but a defensive check costs
-    // nothing and keeps the branch below from running a no-op SELECT.
-    return { ok: false, status: 422, error: "swimmers_required" };
-  }
   const swimmerRows = await db
     .select({ id: swimmers.id, householdId: swimmers.householdId })
     .from(swimmers)
@@ -1211,10 +1206,20 @@ lessonsRouter.post(
       const now = new Date();
       const sixteenHoursMs = 16 * 60 * 60 * 1000;
 
+      // Generate each lesson's id up front so every downstream insert and
+      // payload mapping (lesson_swimmers rows, per-lesson email names,
+      // approved-id snapshot) can key by the pick's own id. No positional
+      // zipping between the insert's returning array and picksAsc.
+      const picksWithIds = picksAsc.map((pick) => ({
+        ...pick,
+        id: crypto.randomUUID() as string,
+      }));
+
       const insertedLessons = await tx
         .insert(lessons)
         .values(
-          picksAsc.map((pick) => ({
+          picksWithIds.map((pick) => ({
+            id: pick.id,
             householdId,
             locationId: body.locationId,
             startsAt: pick.startsAt,
@@ -1235,14 +1240,10 @@ lessonsRouter.post(
         )
         .returning();
 
-      // insertedLessons preserves the order of picksAsc, so zip them for
-      // the lesson_swimmers inserts — each lesson gets exactly the pick's
-      // own swimmers.
       await tx.insert(lessonSwimmers).values(
-        insertedLessons.flatMap((lesson, lessonIndex) => {
-          const pick = picksAsc[lessonIndex]!;
-          return pick.swimmerIds.map((swimmerId) => ({ lessonId: lesson.id, swimmerId }));
-        }),
+        picksWithIds.flatMap((pick) =>
+          pick.swimmerIds.map((swimmerId) => ({ lessonId: pick.id, swimmerId })),
+        ),
       );
 
       // Approved lessons: snapshot calendar_sequence (0) into the payload and
@@ -1284,11 +1285,20 @@ lessonsRouter.post(
         swimmerNameRows.map((row) => [row.id, row.firstName] as const),
       );
       const swimmerFirstNames = swimmerNameRows.map((row) => row.firstName);
-      const perLessonFirstNames = picksAsc.map((pick) =>
-        pick.swimmerIds
-          .map((id) => firstNameById.get(id))
-          .filter((name): name is string => name !== undefined)
-          .sort((a, b) => a.localeCompare(b)),
+      // Key per-lesson first names by the generated lesson id so the
+      // payload mapping and email render can look them up without relying
+      // on insertedLessons preserving picksAsc order.
+      const firstNamesByLessonId = new Map(
+        picksWithIds.map(
+          (pick) =>
+            [
+              pick.id,
+              pick.swimmerIds
+                .map((id) => firstNameById.get(id))
+                .filter((name): name is string => name !== undefined)
+                .sort((a, b) => a.localeCompare(b)),
+            ] as const,
+        ),
       );
 
       const locationRows = await tx
@@ -1335,13 +1345,13 @@ lessonsRouter.post(
         // first invite should ship. batch_approved reuses the same pattern:
         // read each row's current calendar_sequence, snapshot it into the
         // outbox payload, then bump the row.
-        lessons: insertedLessons.map((lesson, lessonIndex) => ({
+        lessons: insertedLessons.map((lesson) => ({
           lessonId: lesson.id,
           startsAtUtc: lesson.startsAt.toISOString(),
           durationMinutes: lesson.durationMinutes,
           status: lesson.status,
           calendarSequence: lesson.calendarSequence,
-          swimmerFirstNames: perLessonFirstNames[lessonIndex] ?? [],
+          swimmerFirstNames: firstNamesByLessonId.get(lesson.id) ?? [],
         })),
       };
 

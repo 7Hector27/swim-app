@@ -170,6 +170,7 @@ export default function Step2TimePicker({
     setFetchError(null);
     const cached = weekPrefetch.readFromCache(mondayStr);
     if (cached !== null) setWeekData(cached);
+    const fetchEpoch = weekPrefetch.beginFetch();
     startFetching(async () => {
       const result = await fetchCoachRangeAction({
         date: mondayStr,
@@ -181,7 +182,7 @@ export default function Step2TimePicker({
         return;
       }
       setWeekData(result);
-      weekPrefetch.onWeekFetched(mondayStr, result);
+      weekPrefetch.onWeekFetched(mondayStr, result, fetchEpoch);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mondayStr, durationMinutes, locationId]);

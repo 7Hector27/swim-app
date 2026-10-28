@@ -47,7 +47,7 @@ The single-lesson parent path at `POST /lessons` is unchanged. Coach booking at 
 ## Decisions already made (from Jason, after the revision pass)
 
 - Parents only. Jason uses `/coach/book` for his own bookings.
-- Per batch: one household, one swimmer set, one pool. Each manual pick and each weekly pattern entry carries its own `durationMinutes`; one batch can mix 30, 45, and 60-minute lessons. The server validates overlap, travel buffer, and daily cap against each pick's own length.
+- Per batch: one household, one pool. Length and swimmers are per pick: each manual pick and each weekly pattern entry carries its own `durationMinutes` AND its own `swimmerIds`. One batch can mix 30/45/60-minute lessons and run different kids on different picks or weekly slots. The server validates overlap, travel buffer, and daily cap against each pick's own length; lesson type (`private` vs `family`) is derived per pick from its swimmer count. (ADR 030 phase 2.)
 - Two modes: `manual` (2–20 explicit picks) and `weekly` (one or more weekdays at one time of day, N weeks, cap 20 lessons, every lesson strictly inside `bookingMaxAdvanceWeeks`).
 - Weekly never caps silently. Over-window lessons surface in the preview as `not_open_yet` with a count; submission rejects any over-window pick.
 - Preview lists every lesson individually. Each unavailable lesson shows the reason and (where same-day alternatives exist) up to three suggestions. The parent either moves the lesson to a different open time or skips that specific lesson.

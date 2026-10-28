@@ -9,8 +9,13 @@
 //
 // Reset the hook when location / duration / excludeLessonId change — the
 // cached data belongs to the previous combination and would be wrong. An
-// epoch counter also drops any in-flight prefetches that straddled the
-// reset so they don't write stale data back into the cache.
+// epoch counter bumps on reset so any in-flight fetch (primary or prefetch)
+// that started before the reset is dropped on resolve and can't write
+// stale data back into the cache or the hasOpen state.
+//
+// Callers call `beginFetch()` before awaiting their primary fetcher and pass
+// the returned epoch to `onWeekFetched` on commit. The hook silently drops
+// the result if a reset ran in between.
 
 import { useCallback, useRef, useState } from "react";
 import type { WeekAvailabilityResponse } from "@swim-app/shared";
@@ -21,7 +26,12 @@ type FetchWeek = (monday: string) => Promise<WeekAvailabilityResponse | null>;
 
 export interface UseWeekPrefetch {
   readFromCache: (monday: string) => WeekAvailabilityResponse | null;
-  onWeekFetched: (monday: string, weekData: WeekAvailabilityResponse) => void;
+  beginFetch: () => number;
+  onWeekFetched: (
+    monday: string,
+    weekData: WeekAvailabilityResponse,
+    epoch: number,
+  ) => void;
   reset: () => void;
   hasOpenByMonday: Map<string, boolean>;
 }
@@ -43,6 +53,8 @@ export function useWeekPrefetch({ windowStart, windowEnd, fetchWeek }: Config): 
     (monday: string) => cacheRef.current.get(monday) ?? null,
     [],
   );
+
+  const beginFetch = useCallback(() => epochRef.current, []);
 
   const reset = useCallback(() => {
     epochRef.current += 1;
@@ -75,7 +87,8 @@ export function useWeekPrefetch({ windowStart, windowEnd, fetchWeek }: Config): 
   );
 
   const onWeekFetched = useCallback(
-    (monday: string, weekData: WeekAvailabilityResponse) => {
+    (monday: string, weekData: WeekAvailabilityResponse, epoch: number) => {
+      if (epochRef.current !== epoch) return;
       cacheRef.current.set(monday, weekData);
       storeOpen(monday, weekData);
       void prefetchOne(addDaysToDateStr(monday, -7), windowStart, windowEnd);
@@ -84,5 +97,5 @@ export function useWeekPrefetch({ windowStart, windowEnd, fetchWeek }: Config): 
     [prefetchOne, storeOpen, windowStart, windowEnd],
   );
 
-  return { readFromCache, onWeekFetched, reset, hasOpenByMonday };
+  return { readFromCache, beginFetch, onWeekFetched, reset, hasOpenByMonday };
 }

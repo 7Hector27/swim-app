@@ -44,7 +44,13 @@ export interface BatchEmailLesson {
   wasInvited?: boolean;
 }
 
-export type BatchPatternPair = SharedBatchPatternPair;
+// The embedded weekly block is an archival snapshot of the pattern as stored
+// in booking_batches. Nothing re-expands it, so swimmerIds is optional here
+// to match rows written before ADR 030 phase 2 that don't carry per-pair
+// swimmer sets. New writes always include it.
+export type BatchPatternPair = Omit<SharedBatchPatternPair, "swimmerIds"> & {
+  swimmerIds?: string[];
+};
 
 export interface BatchEmailPayload {
   batchId: string;

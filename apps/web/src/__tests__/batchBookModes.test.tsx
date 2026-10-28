@@ -858,10 +858,12 @@ describe("Batch of 1 is allowed", () => {
 // ── Bug #7: disabled-reason copy next to Review / Book ──────────────────────
 
 describe("Disabled reasons surface next to Review and Book", () => {
-  it("shows 'Tap open times' as the review reason before any picks exist", async () => {
+  it("shows 'Add at least one lesson' as the review reason before any picks exist", async () => {
     await renderCalendar();
     fireEvent.click(screen.getByTestId("mode-multiple"));
-    expect(screen.getByTestId("multiple-disabled-reason").textContent).toMatch(/tap open times/i);
+    expect(screen.getByTestId("multiple-disabled-reason").textContent).toMatch(
+      /add at least one lesson/i,
+    );
   });
 
   it("shows 'need attention' as the review reason when the preview flags a pick", async () => {

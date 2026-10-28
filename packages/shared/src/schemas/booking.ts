@@ -831,10 +831,26 @@ export const BatchPatternPairSchema = z.object({
 export type BatchPatternPair = z.infer<typeof BatchPatternPairSchema>;
 
 // Shape of the booking_batches.weekly_pattern jsonb column (ADR 030 phase 2).
-// Applied on write (defense in depth after the request body already parsed via
-// BatchPreviewBodySchema) and on read (so later consumers can trust the shape).
+//
+// The stored pattern is HISTORY ONLY. Nothing re-expands it — concrete lessons
+// (including per-lesson swimmer sets) are already materialized in `lessons`
+// and `lesson_swimmers` at submit time. Cancel-remaining reads from `lessons`,
+// not from the pattern, and the email outbox payload embeds the pattern as an
+// archival snapshot that no renderer currently reads.
+//
+// Writes always carry swimmerIds (see BatchPatternPairSchema). Reads use the
+// looser StoredWeeklyPatternReadSchema below so rows written before ADR 030
+// phase 2 — which are missing swimmerIds — still parse.
 export const StoredWeeklyPatternSchema = z.array(BatchPatternPairSchema).min(1);
 export type StoredWeeklyPattern = z.infer<typeof StoredWeeklyPatternSchema>;
+
+const StoredWeeklyPatternPairReadSchema = BatchPatternPairSchema.extend({
+  swimmerIds: z.array(z.string().uuid()).min(1).max(4).optional(),
+});
+export const StoredWeeklyPatternReadSchema = z
+  .array(StoredWeeklyPatternPairReadSchema)
+  .min(1);
+export type StoredWeeklyPatternRead = z.infer<typeof StoredWeeklyPatternReadSchema>;
 
 const batchWeeklyBase = z.object({
   mode: z.literal("weekly"),

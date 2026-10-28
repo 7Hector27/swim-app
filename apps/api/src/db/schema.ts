@@ -901,20 +901,27 @@ export const bookingBatches = pgTable(
     // 'manual' | 'weekly'. The CHECK below pairs it with the weekly_* fields.
     mode: text("mode").notNull(),
     // JSONB array of `{ weekday: 1..7, timeOfDay: "HH:MM",
-    // durationMinutes: 30 | 45 | 60, swimmerIds: string[] }`. Non-null only
+    // durationMinutes: 30 | 45 | 60, swimmerIds?: string[] }`. Non-null only
     // when mode='weekly'. The CHECK below asserts the shape at the column
-    // level; the API also validates it against the shared
-    // BatchPatternPairSchema on write (via the request body) and on read
-    // via mapBookingBatchRow(). swimmerIds was added in ADR 030 phase 2;
-    // batches written before that upgrade may be missing it, so readers
-    // use StoredWeeklyPatternSchema.safeParse and treat the row as
-    // best-effort (see cancel-remaining path).
+    // level; the API validates it against the shared BatchPatternPairSchema
+    // on write.
+    //
+    // History only — nothing re-expands this column. Concrete lessons
+    // (including per-lesson swimmer sets) are materialized in `lessons`
+    // and `lesson_swimmers` at submit time. Cancel-remaining reads from
+    // `lessons`, not from the pattern. The email outbox payload embeds the
+    // pattern as an archival snapshot but no renderer currently reads it.
+    //
+    // swimmerIds was added in ADR 030 phase 2 and is optional on the type
+    // because rows written before that upgrade don't carry it. Readers that
+    // actually consume the pattern (none today) should use
+    // StoredWeeklyPatternReadSchema and treat `swimmerIds` as unknown.
     weeklyPattern: jsonb("weekly_pattern").$type<
       {
         weekday: number;
         timeOfDay: string;
         durationMinutes: 30 | 45 | 60;
-        swimmerIds: string[];
+        swimmerIds?: string[];
       }[]
     >(),
     // LA calendar date of the first candidate week. Non-null only when mode='weekly'.
