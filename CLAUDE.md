@@ -125,6 +125,8 @@ Don't use inline `style` for anything a class, token, or global rule covers. Inl
 
 Server components and server pages never import from `"use client"` files except to render the client component itself. Shared helpers (pre-fill resolvers, formatters, pure logic reused by both the server page and its client orchestrator) live in plain modules with no directive — typically the content folder's `helpers.ts` — and are imported from both sides. Re-exporting a helper from a client module's barrel does not neutralize the boundary; the directive is the file where the helper is declared.
 
+Client components never import `@/lib/env` (the public-env validator). `parsePublicEnv` iterates `process.env` by dynamic key, which Next.js cannot inline into the client bundle, and the Zod validator crashes at runtime in the browser. Server pages read the needed `NEXT_PUBLIC_*` values from `publicEnv` and hand them down as props. `src/lib/env.ts` is marked `import "server-only"` so a stray client import fails the build.
+
 File layout, top to bottom:
 
 1. Imports from libraries

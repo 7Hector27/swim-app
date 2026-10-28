@@ -1,0 +1,120 @@
+/* Bell + panel animations. Keep motion in a module so Tailwind utilities
+   stay doing layout and tokens, and the custom easing isn't repeated in a
+   dozen style props. */
+
+.panel {
+  transform-origin: top right;
+  transition:
+    transform 180ms var(--ease-out-strong, cubic-bezier(0.23, 1, 0.32, 1)),
+    opacity 180ms var(--ease-out-strong, cubic-bezier(0.23, 1, 0.32, 1));
+}
+
+@starting-style {
+  .panel {
+    transform: scale(0.96);
+    opacity: 0;
+  }
+}
+
+.panel[data-origin="top-left"] {
+  transform-origin: top left;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panel {
+    transition: opacity 120ms linear;
+  }
+
+  @starting-style {
+    .panel {
+      transform: none;
+      opacity: 0;
+    }
+  }
+}
+
+/* Mobile sheet — slides up from the bottom instead of scaling. */
+.sheet {
+  position: fixed;
+  inset: auto 0 0 0;
+  margin: 0;
+  width: 100%;
+  max-width: 100%;
+  max-height: 80vh;
+  border: 0;
+  border-top: 1px solid var(--color-border);
+  border-radius: var(--radius-card) var(--radius-card) 0 0;
+  background: var(--color-background);
+  color: var(--color-text);
+  padding: 0;
+  overflow: hidden;
+
+  transition:
+    transform 240ms var(--ease-drawer, cubic-bezier(0.32, 0.72, 0, 1)),
+    opacity 240ms var(--ease-drawer, cubic-bezier(0.32, 0.72, 0, 1)),
+    overlay 240ms allow-discrete,
+    display 240ms allow-discrete;
+}
+
+.sheet[open] {
+  transform: translateY(0);
+  opacity: 1;
+}
+
+@starting-style {
+  .sheet[open] {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+}
+
+.sheet::backdrop {
+  background: rgba(0, 0, 0, 0.55);
+  transition:
+    opacity 240ms,
+    overlay 240ms allow-discrete,
+    display 240ms allow-discrete;
+}
+
+@starting-style {
+  .sheet::backdrop {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sheet,
+  .sheet::backdrop {
+    transition: opacity 150ms;
+  }
+
+  @starting-style {
+    .sheet[open] {
+      transform: none;
+      opacity: 0;
+    }
+  }
+}
+
+/* Pulse on the badge count change — soft, no bouncing. */
+.badgePulse {
+  animation: badgePulse 420ms var(--ease-out-strong, cubic-bezier(0.23, 1, 0.32, 1));
+}
+
+@keyframes badgePulse {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.18);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .badgePulse {
+    animation: none;
+  }
+}

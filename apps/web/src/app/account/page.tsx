@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 
 import AccountContent from "@/content/AccountContent";
 import { fetchGoogleCalendarStatus } from "@/lib/api/googleCalendar";
+import { publicEnv } from "@/lib/env";
 import { requireAuth } from "@/lib/requireAuth";
 
 export const metadata: Metadata = {
@@ -29,6 +30,7 @@ export default async function AccountPage({ searchParams }: AccountPageProps) {
       googleCalendarStatus={googleCalendarStatus}
       googleConnectError={googleConnectError}
       googleDisconnectError={googleDisconnectError}
+      vapidPublicKey={publicEnv.vapidPublicKey}
     />
   );
 }

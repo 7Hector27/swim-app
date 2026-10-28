@@ -10,6 +10,10 @@ const requiredPublicEnv = [
   "NEXT_PUBLIC_SITE_URL",
   "NEXT_PUBLIC_SUPABASE_URL",
   "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
+  // VAPID public key is validated by the Zod schema in src/lib/env.ts
+  // (optional on local, enforced on dev/prod via Railway variable sets).
+  // The pre-flight only guards the fields that would otherwise crash
+  // builds with a cryptic undefined-URL render error.
 ] as const;
 
 const isProductionBuild =
