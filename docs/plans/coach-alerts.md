@@ -24,7 +24,7 @@ Transport is `web-push` with VAPID in every environment (local, dev, prod). iPho
 - `parent_change` — a parent canceled or rescheduled a lesson (one per single-lesson cancel/reschedule; one per batch cancel-remaining).
 - `calendar_disconnected` — the coach's Google Calendar integration flipped to `needs_reconnect`.
 - `auto_approved_summary` — a lesson at a pool the household is already trusted at was auto-approved. Delivered via the daily summary by default; a per-category toggle can switch it to immediate.
-- `daily_summary` — one push at 08:00 LA with today's lesson count, first lesson time + pool, count of pending requests, and the count of held overnight alerts.
+- `daily_summary` — one push on or after the coach's `daily_summary_time_local` (default 08:00 LA) with today's lesson count, first lesson time + pool, count of pending requests, and the count of overnight alerts that were held under quiet hours. Fires on every tick that passes the time threshold until a row for today's LA date exists; the per-day unique index enforces one-per-coach-per-date.
 - Coach-facing settings on `/account`: per-category on/off, quiet hours, daily summary, email backup, lock-screen detail.
 - An in-app notification list on the coach dashboard with read/unread state.
 
@@ -50,15 +50,15 @@ Transactional outbox for coach alerts. One row per state change event. Written i
 | `id` | `uuid` | no | `gen_random_uuid()` | PK |
 | `profile_id` | `uuid` | no | — | FK → `profiles.id` (`ON DELETE RESTRICT`). The coach the notification is for. Keyed by profile, not coach, so future parent-facing alerts fit the same table. |
 | `category` | `text` | no | — | CHECK IN (`booking_request`, `request_expiring_soon`, `parent_change`, `calendar_disconnected`, `auto_approved_summary`, `daily_summary`). |
-| `urgency` | `text` | no | — | CHECK IN (`standard`, `urgent`). Server-computed: `urgent` when the affected lesson's `starts_at` is before midnight tomorrow in `America/Los_Angeles`. Daily-summary rows are always `standard`. Calendar-disconnected rows are always `urgent`. |
+| `urgency` | `text` | no | — | CHECK IN (`standard`, `urgent`). Server-computed: `urgent` when the affected lesson's `starts_at` is before midnight tomorrow in `America/Los_Angeles` (today or tomorrow). Daily-summary rows are always `standard`. Calendar-disconnected rows are always `urgent`. **Only alerts whose `starts_at` is within the next 12 hours bypass quiet hours;** this is computed by the sender at send time, not stored on the row (so a reschedule can be re-evaluated if the send is delayed). |
 | `lesson_id` | `uuid` | yes | — | FK → `lessons.id` (`ON DELETE RESTRICT`). Set for per-lesson categories. Null for batch, calendar, and summary categories. |
 | `batch_id` | `uuid` | yes | — | FK → `booking_batches.id` (`ON DELETE RESTRICT`). Set when the alert describes a batch. Null otherwise. |
 | `payload` | `jsonb` | no | — | Frozen render inputs. For `booking_request` single-lesson: `{ swimmerFirstNamesWithInitial, startsAtLocalDisplay, locationName, lessonId }`. For `booking_request` batch: `{ batchId, lessonCount, firstStartsAtLocalDisplay, lastStartsAtLocalDisplay, locationName }`. For `parent_change`: adds `{ changeKind: 'canceled' | 'rescheduled', previousStartsAtLocalDisplay? }`. For `calendar_disconnected`: `{ needsReconnectSinceUtc }`. For `daily_summary`: `{ dateLocal, lessonCount, firstLessonTimeLocal, firstLessonPoolName, pendingRequestCount, heldAlertCount }`. The push body is built at send time from this payload + the coach's lock-screen detail setting; the frozen payload lets the renderer run as a pure function. |
 | `click_url` | `text` | no | — | Deep link the service worker opens on tap. Snapshotted at write time (see ADR 031 for the per-category routing). |
 | `tag` | `text` | no | — | Notification tag (`lesson:<id>`, `batch:<id>`, `calendar-disconnected:<coachId>`, or `daily-summary:<dateLocal>`). The browser surface collapses successive pushes with the same tag. |
 | `read_at` | `timestamptz` | yes | — | Set by `POST /coach/notifications/:id/read` or `POST /coach/notifications/read-all`. The in-app list sorts unread first. |
-| `push_status` | `text` | no | `'pending'` | CHECK IN (`pending`, `held`, `sending`, `sent`, `failed`, `skipped`, `superseded`, `abandoned`). `held` is the quiet-hours terminal-until-release state; the drain promotes it to `pending` when the current LA time passes `release_at`. Rules otherwise match ADR 028's email outbox. |
-| `release_at` | `timestamptz` | yes | — | Non-null only when `push_status = 'held'`. Set to the next 07:00 LA at write time if the alert fell in quiet hours. The cron's `releaseHeldCoachNotifications` pass promotes rows whose `release_at < now()`. |
+| `push_status` | `text` | no | `'pending'` | CHECK IN (`pending`, `held`, `summarized`, `sending`, `sent`, `failed`, `skipped`, `superseded`, `abandoned`). `held` is the quiet-hours terminal-until-release state; when `release_at` passes AND the coach's daily summary is **on**, the row flips to the new terminal state `summarized` (counted into the summary, in-app list keeps it, lock screen stays silent). When the daily summary is **off**, the row flips back to `pending` and the drain picks it up. Rules otherwise match ADR 028's email outbox. |
+| `release_at` | `timestamptz` | yes | — | Non-null only when `push_status = 'held'`. Set to the end of the coach's quiet-hours window (`quiet_hours_end_local`) in LA, resolved to a UTC timestamp at write time. The cron's `releaseHeldCoachNotifications` pass promotes rows whose `release_at < now()` to either `summarized` (daily summary on) or `pending` (daily summary off). |
 | `push_attempts` | `integer` | no | `0` | Incremented on every attempt that reaches the transport layer. |
 | `push_claimed_until` | `timestamptz` | yes | — | Non-null only while `push_status='sending'`. Set to `now() + interval '2 minutes'`. Expired claims are recoverable. |
 | `push_last_error` | `text` | yes | — | Short transport error summary. No names, no addresses, no email bodies. |
@@ -74,9 +74,9 @@ Constraints:
 - CHECK: `(push_status = 'sending') = (push_claimed_until IS NOT NULL)`.
 - CHECK: `(push_status = 'held') = (release_at IS NOT NULL)`.
 - CHECK on `category`, `urgency`, `push_status`.
-- Partial unique index on `(profile_id, lesson_id, category) WHERE lesson_id IS NOT NULL` — the server idempotently retries the `request_expiring_soon` cron pass, so dedup is necessary. The `booking_request` and `parent_change` paths rely on the state change's transaction preventing a second write naturally (the same transaction cannot run twice), so the partial unique index is defensive for the expiring-reminder path specifically.
+- Partial unique index on `(profile_id, lesson_id, category) WHERE lesson_id IS NOT NULL` — enforces "at most one `request_expiring_soon` reminder per lesson" across repeated cron ticks. The `booking_request` and `parent_change` paths rely on the state change's transaction preventing a second write naturally (the same transaction cannot run twice), so the partial unique index is load-bearing for the expiring-reminder path specifically.
 - Partial unique index on `(profile_id, batch_id, category) WHERE batch_id IS NOT NULL` — same reason for batch alerts.
-- Partial unique index on `(profile_id, (payload->>'dateLocal')) WHERE category = 'daily_summary'` — one daily-summary row per coach per LA date.
+- Partial unique index on `(profile_id, (payload->>'dateLocal')) WHERE category = 'daily_summary'` — the durable idempotency key for the daily summary. One row per coach per LA date, period. The at-or-past-time cron pass inserts speculatively on every tick after the threshold; this index drops every attempt after the first.
 
 Indexes:
 - Partial index on `(push_next_attempt_at) WHERE push_status IN ('pending', 'failed', 'sending')` — the drain hot path, same shape as `lesson_email_outbox`.
@@ -98,8 +98,8 @@ One row per browser push subscription per coach device. Rows are per profile (no
 | `p256dh` | `text` | no | — | Base64url public key from `PushSubscription.getKey('p256dh')`. |
 | `auth` | `text` | no | — | Base64url auth secret from `PushSubscription.getKey('auth')`. |
 | `user_agent` | `text` | yes | — | Captured from the request header at register time. Trimmed to 200 chars. Rendered on `/account` as "Chrome on macOS" (derived at display time with a small UA parser, not stored normalized). |
-| `is_active` | `boolean` | no | `true` | Flipped to `false` when the push service returns 410 Gone or 404 Not Found. |
-| `removed_reason` | `text` | yes | — | CHECK IN (`gone`, `vapid_rejected`, `coach_disabled`). Non-null only when `is_active = false`. |
+| `is_active` | `boolean` | no | `true` | Flipped to `false` **only** when the push service returns 410 Gone or 404 Not Found. VAPID / signature errors, 400, 403, 413, 429, and 5xx leave the subscription active and fail the send with backoff retry. |
+| `removed_reason` | `text` | yes | — | CHECK IN (`gone`, `coach_disabled`). Non-null only when `is_active = false`. (Earlier draft included `vapid_rejected`; dropped — signature errors never deactivate.) |
 | `last_delivery_at` | `timestamptz` | yes | — | Updated on every 2xx push delivery. |
 | `last_failure_at` | `timestamptz` | yes | — | Updated on every non-retryable failure. |
 | `created_at` | `timestamptz` | no | `now()` | |
@@ -116,7 +116,7 @@ RLS: `.enableRLS()` with no policies.
 
 ### New table — `coach_notification_preferences`
 
-One row per coach profile. Keyed by profile id so the signup trigger's companion insert matches the household creation pattern.
+One row per profile, keyed by profile id. **Rows are created lazily on first read** via `INSERT ... ON CONFLICT DO NOTHING` from the shared `getOrCreateCoachNotificationPreferences(profileId)` helper — not by a signup trigger. The signup trigger is already carrying household creation and the email mirror writes, and the preferences row is only read a few times per request (sender, settings page, read endpoint) so an upsert on first read is simpler to reason about than a trigger + backfill.
 
 | Column | Type | Nullable | Default | Notes |
 |---|---|---|---|---|
@@ -143,12 +143,11 @@ Extend the CHECK on `event` to accept a new value: `coach_booking_request`. This
 
 ### Migration
 
-Two Drizzle migration pairs:
+One Drizzle migration — no custom SQL:
 
-1. `pnpm db:generate --name=coach_alerts` — adds the three new tables (with CHECKs, partial unique indexes, hot-path indexes), the new `event` CHECK value on `lesson_email_outbox`.
-2. `pnpm db:generate --custom --name=coach_notification_prefs_default` — custom SQL. Extends the existing `on_auth_user_created` trigger function to also insert a `coach_notification_preferences` row with defaults for every new profile (not just coaches; the row is cheap and lets the preferences page work for every profile without a lazy upsert). Backfill: `INSERT INTO coach_notification_preferences (profile_id) SELECT id FROM profiles WHERE id NOT IN (SELECT profile_id FROM coach_notification_preferences)`.
+- `pnpm db:generate --name=coach_alerts` — adds the three new tables (with CHECKs, partial unique indexes, hot-path indexes) and the new `event` CHECK value on `lesson_email_outbox`.
 
-Both go through the standard flow (`pnpm db:generate`, apply locally, PR description states "applied locally"). The custom migration edits only the SQL file; the snapshot is produced by drizzle-kit.
+Goes through the standard flow (`pnpm db:generate`, apply locally, PR description states "applied locally"). No signup-trigger changes: preference rows are created on first read.
 
 `docs/data-model.md` grows three new `###` sections for the new tables, a one-line note on `lesson_email_outbox.event`, and no changes to `lessons`.
 
@@ -185,9 +184,9 @@ The same lesson-change-path list from ADRs 027–030 governs where `coach_notifi
 | 6 | Parent batch booking | `lessons.ts:1446` (`notifyBatchBookingCreated(batchId, …)`) | One row per batch with `lesson_id = null`, `batch_id = <batchId>`, category depending on the batch's mix: `booking_request` if any pending, `auto_approved_summary` if all auto-approved. The payload summarizes counts. | |
 | 7 | Parent batch cancel-remaining | `lessons.ts:1785` (`notifyCoachOfBatchChange(batchId, 'canceled_remaining', …)`) | One row with `category: 'parent_change'`, `payload.changeKind = 'batch_canceled_remaining'`, `lessonCount`. | |
 | 8 | Coach-booked lesson (ADR 029) | `coachLessons.ts:1401` (`notifyBookingCreated(id, true)`) | **No alert written** — coach is the actor. | |
-| 9 | Cron tick: pending request about to expire | **New** — `internal.ts` adds `enqueueExpiringRequestReminders` pass | Scans `lessons.status = 'pending'` with `expires_at BETWEEN now() + '3 hours' AND now() + '4 hours'`. For each, inserts `category: 'request_expiring_soon'` with `urgency` computed from `starts_at`. The partial unique index on `(profile_id, lesson_id, category)` makes the pass idempotent — if the previous tick fired already, the second insert is a no-op. | |
+| 9 | Cron tick: pending request about to expire | **New** — `internal.ts` adds `enqueueExpiringRequestReminders` pass | Scans `lessons.status = 'pending'` with `expires_at BETWEEN now() + '3 hours' AND now() + '4 hours'`. For each, inserts `category: 'request_expiring_soon'` with `urgency` computed from `starts_at`. `push_next_attempt_at` is set to `expires_at - 3h` normally, or to `quiet_hours_start_local − 15m` LA if the normal time is inside quiet hours. The partial unique index on `(profile_id, lesson_id, category)` enforces one reminder per lesson across ticks. | |
 | 10 | Google Calendar flips to `needs_reconnect` | `services/googleCalendarSync.ts` — the token refresh handler that sets `status = 'needs_reconnect'` | Inside the same transaction as the status update, insert `category: 'calendar_disconnected'`, `payload: { needsReconnectSinceUtc: new Date().toISOString() }`, `tag: 'calendar-disconnected:<coachId>'`. `urgency = 'urgent'`. | |
-| 11 | Cron tick: 08:00 LA daily summary | **New** — `internal.ts` adds `composeDailyCoachSummary` pass | Fires when the current LA time rounds to the coach's `daily_summary_time_local` (default `08:00`). Computes the payload from today's lesson state and inserts one `daily_summary` row per connected coach. The partial unique index on `(profile_id, dateLocal) WHERE category = 'daily_summary'` makes this idempotent across repeated ticks within the same minute. | |
+| 11 | Cron tick: daily summary | **New** — `internal.ts` adds `composeDailyCoachSummary` pass | Runs on every tick. For each coach with `daily_summary_enabled = true`, inserts a `daily_summary` row when the current LA time is at or past the coach's `daily_summary_time_local` (default `08:00`) **and** no row for that coach + today's LA date already exists. The partial unique index on `(profile_id, dateLocal) WHERE category = 'daily_summary'` enforces one summary per coach per LA date no matter how many ticks fire inside that date. | |
 
 Every row above is written inside the state change's transaction. The alert insert is **in** the `tx` passed to `enqueueCoachNotification`. No HTTP, no `web-push` call, no body render happens inside the transaction.
 
@@ -214,7 +213,7 @@ Single entry point used by both the post-commit microtask and the cron drain. Cl
 
 1. **Claim.** `UPDATE coach_notifications SET push_status='sending', push_claimed_until = now() + interval '2 minutes', push_last_attempt_at = now() WHERE id = :id AND (push_status IN ('pending', 'failed') OR (push_status = 'sending' AND push_claimed_until < now())) RETURNING *`. If no row returned → another worker owns the claim or the row is terminal; log and return.
 2. **Pre-send guard.** Supersede if a newer notification for the same `(profile_id, lesson_id)` or `(profile_id, batch_id)` has already sent, or if the affected lesson has already started (`lesson.starts_at < now()`) — except for `parent_change` cancel rows, which still deliver past start time so Jason knows a lesson is off. `calendar_disconnected` and `daily_summary` rows have no lesson and are not superseded by this rule.
-3. **Quiet-hours check.** Look up the coach's `coach_notification_preferences`. If the alert is non-urgent, `quiet_hours_enabled = true`, and the current LA time falls inside the window, flip to `push_status = 'held'`, set `release_at` to the next `quiet_hours_end_local` LA, commit, return.
+3. **Quiet-hours check.** Resolve `coach_notification_preferences` via `getOrCreateCoachNotificationPreferences(profileId)`. The bypass gate is **`lesson.starts_at < now() + 12 hours`** (`'immediate'`) — not the row's `urgency` field. Rows with no lesson (`daily_summary`, `calendar_disconnected`) take the row's `urgency`: `urgent` bypasses, `standard` holds. If the gate is not met, `quiet_hours_enabled = true`, and the current LA time is inside the quiet window, flip the row to `push_status = 'held'`, set `release_at` to the next occurrence of `quiet_hours_end_local` in LA (resolved to UTC), commit, return.
 4. **Lock-screen render.** Build `{ title, body, tag, click_url, urgency }` from the row's payload and the coach's `lock_screen_detail` setting. The server does not send anything beyond these five fields through the push transport.
 5. **Fan-out.** Load every active `coach_push_subscriptions` row for `profile_id`. For each subscription, call `webpush.sendNotification(subscription, body, { TTL: urgency === 'urgent' ? 60 : 86400, urgency: urgency === 'urgent' ? 'high' : 'normal', vapidDetails })`. The call is `await`ed per subscription — the per-coach device count is small (1–3 realistically), so sequential sends keep the error attribution clean without hurting latency.
 6. **Finalize.** Open a second transaction and update:
@@ -240,8 +239,9 @@ Same reason as ADR 028: the dedup key only prevents duplicate rows, not duplicat
 | 410 Gone / 404 Not Found | counts as a successful delivery attempt | `is_active = false`, `removed_reason = 'gone'` |
 | 429 Too Many Requests | retry with backoff | `last_failure_at = now()` |
 | 5xx | retry with backoff | `last_failure_at = now()` |
-| VAPID signature rejected | `push_status = 'failed'`, no retry (bug in config, not transient) | `is_active = false`, `removed_reason = 'vapid_rejected'` |
-| Request body too large | `push_status = 'failed'`, no retry — the renderer is at fault, retrying won't help | — |
+| VAPID / signature rejected (401, 403, "VapidPublicKeyError" from `web-push`) | retry with backoff, **log loudly** with the response code and body excerpt | `last_failure_at = now()`; **subscription remains active** |
+| 400 Bad Request / 413 Payload Too Large | retry with backoff; log loudly (bug in renderer) | `last_failure_at = now()`; subscription remains active |
+| Other / unknown status | retry with backoff | `last_failure_at = now()`; subscription remains active |
 
 No cap on `push_attempts`; same abandon rule as ADR 028 (7 days post-create flips a persistently-failed row to `'abandoned'` during the drain).
 
@@ -250,9 +250,9 @@ No cap on `push_attempts`; same abandon rule as ADR 028 (7 days post-create flip
 Extends `POST /internal/cron/tick` with four new passes:
 
 1. **`drainCoachNotifications`** — identical shape to the email outbox drain. Selects up to 50 rows where `push_status IN ('pending', 'failed')` or (`sending` AND `claimed_until < now()`) and `push_next_attempt_at < now()`. Sequential await per row.
-2. **`releaseHeldCoachNotifications`** — selects rows where `push_status = 'held'` and `release_at < now()`, flips to `'pending'`, sets `push_next_attempt_at = now()`. The drain picks them up on the same tick. Cap 200.
-3. **`enqueueExpiringRequestReminders`** — selects `lessons.status = 'pending'` with `expires_at BETWEEN now() + interval '3 hours' AND now() + interval '4 hours'`. For each, calls `enqueueCoachNotification` in a per-lesson transaction. The partial unique index silently drops duplicates from a previous tick. Cap 200.
-4. **`composeDailyCoachSummary`** — fires only when the current UTC minute rounds to one of the connected coaches' `daily_summary_time_local` in LA. Reads today's lessons, pending requests, auto-approved count since the previous summary, and the count of released held alerts in the last 24 hours; inserts one `daily_summary` row per connected coach. Partial unique index drops duplicates if the tick fires twice at `08:00`.
+2. **`releaseHeldCoachNotifications`** — selects rows where `push_status = 'held'` and `release_at < now()`. For each row, resolve the coach's preferences and branch: if `daily_summary_enabled = true`, flip the row to the terminal state `'summarized'` (lock-screen push stays silent; the in-app list still shows the row; the daily-summary pass counts it); if `false`, flip to `'pending'` with `push_next_attempt_at = now()` and the drain picks it up on the same tick. Cap 200.
+3. **`enqueueExpiringRequestReminders`** — selects `lessons.status = 'pending'` with `expires_at BETWEEN now() + interval '3 hours' AND now() + interval '4 hours'`. For each lesson, computes the intended send time (`expires_at - 3 hours`) in LA. If that falls inside the coach's quiet-hours window, sets `push_next_attempt_at` to `quiet_hours_start_local − 15 minutes` in LA (resolved to UTC) so the reminder fires before quiet hours start; otherwise `push_next_attempt_at = now()`. Calls `enqueueCoachNotification` in a per-lesson transaction. The partial unique index on `(profile_id, lesson_id, category)` silently drops duplicates on later ticks. Cap 200.
+4. **`composeDailyCoachSummary`** — runs on every cron tick. For each profile with `profile.role = 'coach'` and `daily_summary_enabled = true`, resolves `now()` in LA. If the LA time is at or past the coach's `daily_summary_time_local`, speculatively inserts a `daily_summary` row with `payload.dateLocal = <today in LA>` using `ON CONFLICT (profile_id, (payload->>'dateLocal')) DO NOTHING`. The partial unique index on `(profile_id, (payload->>'dateLocal')) WHERE category = 'daily_summary'` ensures each coach gets exactly one summary per LA date no matter how often the tick fires. The payload captures today's approved+completed lessons (first lesson time + pool), count of pending requests, count of auto-approved bookings since the previous summary, and the count of alerts held under quiet hours whose `release_at` passed in the last 24 hours.
 
 The retention scrub pass is extended to also null `coach_notifications.payload` on terminal rows older than 30 days, same rule as `lesson_email_outbox`.
 
@@ -423,10 +423,13 @@ Vitest, pure logic. New files under `apps/api/src/services/notifications/__tests
   - Every subscription 429 → `push_status='failed'`, backoff computed.
   - Zero subscriptions + email backup enabled → `push_status='skipped'`, email outbox row inserted with `coach_booking_request`.
   - Zero subscriptions + email backup disabled → `push_status='skipped'`, no email outbox row.
-  - Quiet hours + non-urgent → `push_status='held'`, `release_at` set to next 07:00 LA.
-  - Quiet hours + urgent → delivers immediately.
+  - Quiet hours + lesson 24h out → `push_status='held'`, `release_at` set to next `quiet_hours_end_local` LA.
+  - Quiet hours + lesson 6h out → delivers immediately (12-hour bypass).
+  - Quiet hours + lesson 15h out but `urgency='urgent'` (today-or-tomorrow) → still held — urgency does not bypass quiet hours by itself, only the 12-hour starts_at window does.
   - Supersede by newer sent row for same lesson → `push_status='superseded'`.
-  - VAPID rejection on one subscription → that subscription flipped `is_active=false`, `removed_reason='vapid_rejected'`.
+  - **VAPID / signature rejection on one subscription → row goes `failed` with backoff; the subscription remains `is_active=true`;** logger receives an error-level entry with the response code.
+  - 400 Bad Request on one subscription → row goes `failed`, subscription remains active.
+  - 403 Forbidden → row goes `failed`, subscription remains active.
   - Idempotency: run sender twice for same row in parallel (real DB, mocked transport) → transport called at most once per subscription per row.
 
 ### Integration (`pnpm test:integration`)
@@ -442,8 +445,11 @@ Live local Supabase, `web-push` mocked at the module boundary. New file `apps/ap
   - Coach approve, decline, reschedule, cancel each write **zero** rows.
   - Coach-booked lesson writes zero rows.
   - Cron tick's `enqueueExpiringRequestReminders` writes exactly one `request_expiring_soon` row for a lesson in the 3-to-4-hour window, and running the same tick twice yields exactly one row (partial unique index backstops the pass).
+  - Expiring-reminder shift-earlier: a lesson whose normal reminder time (`expires_at - 3h`) falls inside quiet hours is enqueued with `push_next_attempt_at = quiet_hours_start_local − 15m` LA.
   - Google Calendar flip to `needs_reconnect` writes exactly one `calendar_disconnected` row inside the same transaction as the status update.
-  - Cron tick at 08:00 LA writes exactly one `daily_summary` row per connected coach for today's date; a repeat tick within the minute is a no-op.
+  - Daily summary: when LA time is at or past the coach's `daily_summary_time_local`, the cron inserts exactly one `daily_summary` row for the coach + LA date; repeated ticks within the same date insert no additional rows (unique index).
+  - Daily summary ON: a non-urgent `parent_change` row written inside quiet hours ends `held`; the release pass flips it to `summarized` once `release_at` passes; the transport is never called for it; the daily-summary payload's `heldAlertCount` counts it.
+  - Daily summary OFF: the same row flips from `held` to `pending`, and the drain delivers it individually at end of quiet hours.
   - Transaction atomicity: inject a seam that forces the notification insert to raise during `POST /lessons`; the lesson row is not committed and no partial state remains.
   - Email backup: register zero subscriptions, submit a parent booking, assert the push row ends `skipped` and one `lesson_email_outbox` row with `event='coach_booking_request'` is written for the coach.
   - Dead subscription cleanup: mock a 410 from the push service, assert the subscription row flips `is_active=false, removed_reason='gone'` and the notification row still ends `sent` on another subscription.
@@ -530,6 +536,12 @@ Neither phase requires a backfill or a destructive migration.
 - **One service worker file at `/sw.js`.** No bundler, no cache versioning in v1. If we ever add offline caching the SW grows a `fetch` handler and a cache-naming scheme.
 - **No audit log table.** The alert row's status/attempts/sent timestamps are the audit trail.
 - **Coach actions do not fire a self-alert.** The actor-is-coach check lives inside `enqueueCoachNotification`.
+- **Daily summary is composed by at-or-past-time + per-day idempotency, not exact-minute matching.** A drifted tick or a 2-minute cron gap used to skip the day; the new rule fires exactly once per coach per LA date.
+- **404 and 410 are the only subscription-deactivating responses.** VAPID / signature rejections, 4xx config errors, and 5xx all fail the send loudly without touching subscription state. This prevents a VAPID misconfiguration from mass-wiping every registered coach device.
+- **Preferences row created lazily on first read, not in the signup trigger.** `getOrCreateCoachNotificationPreferences(profileId)` is the single entry point; it upserts with `ON CONFLICT DO NOTHING` and returns the row. Reads from the sender, settings endpoints, and `/account` all go through this helper. Drops the custom-SQL trigger migration from the migration plan.
+- **Only alerts for lessons within 12 hours bypass quiet hours.** `urgent` as a UI/push-header flag still means "today or tomorrow"; the quiet-hours bypass is a separate, tighter gate at send time.
+- **Held alerts under daily-summary-on are never pushed individually.** The release pass flips them to `summarized`, the daily summary counts them, the in-app list keeps them.
+- **Expiring-request reminders shift earlier when the normal 3-hour-before time falls in quiet hours.** The reminder goes before quiet hours start minus 15 minutes, so Jason can still act before bed.
 
 ---
 
