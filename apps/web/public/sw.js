@@ -136,12 +136,23 @@ async function postSubscription(subscription) {
   // Same-origin POST — the browser attaches the session cookie if present.
   // The /api/coach/push/subscriptions route handler on the web app is a
   // thin proxy that forwards the authorization token to the Express API.
-  await fetch("/api/coach/push/subscriptions", {
+  const response = await fetch("/api/coach/push/subscriptions", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ endpoint, keys }),
     credentials: "same-origin",
   });
+  if (response.status === 401) {
+    // Session expired between SW install and the endpoint rotation. The
+    // proxy returns 401; next time the coach opens the app,
+    // PushSubscriptionManager will detect the orphan subscription and
+    // re-register with a fresh token. Surface it to the dev console so
+    // "my notifications stopped" complaints have an on-device trail.
+    console.warn(
+      "[sw] pushsubscriptionchange re-register got 401; " +
+        "session expired. The app will re-register on next open.",
+    );
+  }
 }
 
 function urlBase64ToUint8Array(base64String) {
