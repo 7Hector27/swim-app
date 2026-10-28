@@ -163,12 +163,7 @@ async function sendInner(notificationId: string): Promise<void> {
       claimed.category === "booking_request" &&
       prefs.bookingRequestEmailBackupEnabled
     ) {
-      await enqueueCoachBookingEmailBackup(claimed);
-      await finalizeTerminal(
-        notificationId,
-        "skipped",
-        "no_active_subscriptions:email_backup_queued",
-      );
+      await enqueueBackupAndFinalize(claimed, notificationId);
       log.info(
         { notificationId, category: claimed.category },
         "coach-notification skipped, email backup queued",
@@ -409,20 +404,30 @@ async function loadActiveSubscriptions(profileId: string) {
     );
 }
 
-async function enqueueCoachBookingEmailBackup(row: ClaimedRow): Promise<void> {
-  // The lesson_email_outbox requires lesson_id XOR batch_id — exactly one.
-  // We also need to compute the next (lesson_id, event, sequence) tuple
-  // for dedup. For booking_request → coach_booking_request, there is
-  // never a prior row (the sender only reaches this branch when the push
-  // row's status flips from pending for the first time), but the index
-  // is strict — compute max+1 defensively.
+// Atomic email-backup + finalize. Both writes land together or neither
+// does. A retry (same notification id) is a no-op because the dedup
+// query inside the tx sees the first attempt's row via its
+// `payload->>'coachNotificationId'` tag and skips the insert. If the
+// notification is already terminal (another run beat us), finalize is
+// also a no-op because the predicate below only moves 'sending'/'pending'
+// rows forward.
+async function enqueueBackupAndFinalize(
+  row: ClaimedRow,
+  notificationId: string,
+): Promise<void> {
   const scope =
     row.lessonId !== null
       ? { lessonId: row.lessonId, batchId: null as string | null }
       : { lessonId: null as string | null, batchId: row.batchId };
-  if (scope.lessonId === null && scope.batchId === null) return;
+  if (scope.lessonId === null && scope.batchId === null) {
+    // No lesson or batch context — nothing to back up. Just finalize.
+    await finalizeTerminal(notificationId, "skipped", "no_active_subscriptions");
+    return;
+  }
 
-  // Resolve coach's profile row.
+  // Resolve the coach's verified email outside the tx — a read that
+  // does not need the lock, and lets us bail without opening a tx when
+  // there is no email channel.
   const coachRow = await db
     .select({ email: profiles.email, emailVerifiedAt: profiles.emailVerifiedAt })
     .from(profiles)
@@ -430,30 +435,68 @@ async function enqueueCoachBookingEmailBackup(row: ClaimedRow): Promise<void> {
     .limit(1);
   const coach = coachRow[0];
   if (!coach?.email || !coach.emailVerifiedAt) {
-    // Coach has no verified email → no backup channel. Silently skip —
-    // the alert row itself is still being marked skipped by the caller.
+    // Coach has no verified email → no backup channel. Still move the
+    // alert to its terminal state.
+    await finalizeTerminal(notificationId, "skipped", "no_active_subscriptions");
     return;
   }
 
-  const sequenceCol = scope.lessonId
-    ? eq(lessonEmailOutbox.lessonId, scope.lessonId)
-    : eq(lessonEmailOutbox.batchId, scope.batchId!);
-  const existingRows = await db
-    .select({ sequence: lessonEmailOutbox.sequence })
-    .from(lessonEmailOutbox)
-    .where(and(sequenceCol, eq(lessonEmailOutbox.event, "coach_booking_request")));
-  const nextSequence =
-    existingRows.reduce((max, r) => Math.max(max, r.sequence), 0) + 1;
+  // Stamp the notification id onto the backup payload so a retry can
+  // dedup against it. Preserve the existing payload fields the email
+  // template renders from.
+  const backupPayload = {
+    ...(row.payload as unknown as Record<string, unknown>),
+    coachNotificationId: notificationId,
+  };
 
-  await db.insert(lessonEmailOutbox).values({
-    lessonId: scope.lessonId,
-    batchId: scope.batchId,
-    event: "coach_booking_request",
-    sequence: nextSequence,
-    recipientProfileIds: [row.profileId],
-    icsMethod: null,
-    icsSequence: null,
-    payload: row.payload,
+  await db.transaction(async (tx) => {
+    // Dedup: has this notification already produced a backup row? If so,
+    // skip the insert but still finalize (idempotent on the push row).
+    const existing = await tx
+      .select({ id: lessonEmailOutbox.id })
+      .from(lessonEmailOutbox)
+      .where(
+        and(
+          eq(lessonEmailOutbox.event, "coach_booking_request"),
+          sql`${lessonEmailOutbox.payload}->>'coachNotificationId' = ${notificationId}`,
+        ),
+      )
+      .limit(1);
+
+    if (existing.length === 0) {
+      // The lesson_email_outbox unique index covers (lesson_id, event,
+      // sequence); compute max+1 defensively in case another email
+      // (e.g. booking_requested) already lives at sequence 1.
+      const sequenceCol = scope.lessonId
+        ? eq(lessonEmailOutbox.lessonId, scope.lessonId)
+        : eq(lessonEmailOutbox.batchId, scope.batchId!);
+      const prior = await tx
+        .select({ sequence: lessonEmailOutbox.sequence })
+        .from(lessonEmailOutbox)
+        .where(and(sequenceCol, eq(lessonEmailOutbox.event, "coach_booking_request")));
+      const nextSequence =
+        prior.reduce((max, r) => Math.max(max, r.sequence), 0) + 1;
+
+      await tx.insert(lessonEmailOutbox).values({
+        lessonId: scope.lessonId,
+        batchId: scope.batchId,
+        event: "coach_booking_request",
+        sequence: nextSequence,
+        recipientProfileIds: [row.profileId],
+        icsMethod: null,
+        icsSequence: null,
+        payload: backupPayload,
+      });
+    }
+
+    await tx
+      .update(coachNotifications)
+      .set({
+        pushStatus: "skipped",
+        pushLastError: "no_active_subscriptions:email_backup_queued",
+        pushClaimedUntil: null,
+      })
+      .where(eq(coachNotifications.id, notificationId));
   });
 }
 
