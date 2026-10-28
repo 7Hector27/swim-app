@@ -38,6 +38,19 @@ const DEAD_SUBSCRIPTION_LIMIT_PER_TICK = 500;
 
 const log = rootLogger.child({ component: "coach-notification-drain" });
 
+// Log-safe error summary — just the class name. Postgres error messages
+// can echo back column values (an FK violation on `swimmers.id` could
+// surface a swimmer's name verbatim), and docs/accounts.md forbids
+// names, birth dates, emails, or notes in logs. The error class is
+// enough to classify at a glance; the raw message stays off disk.
+function errorName(err: unknown): string {
+  if (err instanceof Error && err.name) return err.name;
+  if (err && typeof err === "object" && "name" in err && typeof err.name === "string") {
+    return err.name;
+  }
+  return "UnknownError";
+}
+
 export interface CoachDrainResult {
   drained: number;
   abandoned: number;
@@ -97,7 +110,7 @@ export async function drainCoachNotifications(): Promise<CoachDrainResult> {
       drained++;
     } catch (err) {
       log.error(
-        { notificationId: row.id, err: err instanceof Error ? err.message : String(err) },
+        { notificationId: row.id, err: errorName(err) },
         "coach-notification sender threw past its catch — continuing drain",
       );
     }
@@ -234,7 +247,7 @@ export async function enqueueExpiringRequestReminders(): Promise<ExpiringReminde
     } catch (err) {
       // Unique index drops duplicates silently; anything else is logged.
       log.warn(
-        { lessonId: lesson.id, err: err instanceof Error ? err.message : String(err) },
+        { lessonId: lesson.id, err: errorName(err) },
         "enqueueExpiringRequestReminders insert failed",
       );
     }
@@ -363,7 +376,7 @@ export async function composeDailyCoachSummary(): Promise<DailySummaryResult> {
       if (result.notificationId) inserted++;
     } catch (err) {
       log.warn(
-        { coachId: coach.id, err: err instanceof Error ? err.message : String(err) },
+        { coachId: coach.id, err: errorName(err) },
         "composeDailyCoachSummary insert failed",
       );
     }
