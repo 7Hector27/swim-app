@@ -47,6 +47,7 @@ import {
   SCREEN_SLUGS,
   SCREEN_NAMES,
   type ScreenSlug,
+  displayUnitToMeasurementEnum,
 } from "@swim-app/shared";
 
 const RatingIdParamsSchema = z.object({ id: z.string().uuid() });
@@ -232,17 +233,22 @@ evaluationsRouter.post(
         return;
       }
 
-      // measurement unit must match skill.unit when present
+      // measurement unit must match skill.unit when present. `skill.unit` is
+      // the catalog's free-text display label (e.g. "cycles/min"); the submitted
+      // `measurementUnit` is the DB enum ("stroke_cycles_per_minute"). Map via
+      // the shared helper so the comparison is on equal footing.
       if (
         ratingInput.measurementUnit !== null &&
-        skill.unit !== null &&
-        ratingInput.measurementUnit !== skill.unit
+        skill.unit !== null
       ) {
-        res.status(422).json({
-          error: "Validation error",
-          issues: [{ path: [`ratings[${index}].measurementUnit`], message: `Measurement unit must be ${skill.unit}` }],
-        });
-        return;
+        const expectedEnum = displayUnitToMeasurementEnum(skill.unit);
+        if (expectedEnum !== null && ratingInput.measurementUnit !== expectedEnum) {
+          res.status(422).json({
+            error: "Validation error",
+            issues: [{ path: ["ratings", index, "measurementUnit"], message: `Measurement unit must be ${skill.unit}` }],
+          });
+          return;
+        }
       }
     }
 
@@ -259,6 +265,15 @@ evaluationsRouter.post(
       seenRatingKeys.add(key);
     }
 
+    // Normalize an all-whitespace coaching priority to null. The schema's
+    // z.string().min(1).nullable() rejects empty strings but accepts whitespace;
+    // we treat "no visible characters" as "no priority".
+    const normalizedPriority = body.coachingPriority === null
+      ? null
+      : body.coachingPriority.trim().length === 0
+        ? null
+        : body.coachingPriority;
+
     // All validations passed — insert session + ratings in one transaction
     const result = await db.transaction(async (tx) => {
       const sessionRows = await tx
@@ -270,7 +285,7 @@ evaluationsRouter.post(
           ...(body.breathingPattern !== null && { breathingPattern: body.breathingPattern }),
           sessionDate: body.sessionDate,
           context: body.context,
-          coachingPriority: body.coachingPriority,
+          coachingPriority: normalizedPriority,
         })
         .returning({ id: evaluationSessions.id });
 

@@ -183,6 +183,7 @@ describe("Past lessons render on the swimmer profile page", () => {
     headPositionOverall: null,
     coachingPriorities: [],
     latestCoachingNotes: [],
+    latestCoachingPriority: null,
   };
 
   it("includes the past lesson in the Recent column", () => {

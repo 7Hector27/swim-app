@@ -416,13 +416,18 @@ coachSwimmersRouter.get(
             skillId: rating.skillId,
           },
         })),
-      ...sessionRows.map((session): TimelineItem => ({
-        type: "coaching_priority",
-        id: session.id,
-        body: session.coachingPriority,
-        createdAt: toISO(session.createdAt),
-        tiedTo: { sessionId: session.id },
-      })),
+      ...sessionRows
+        .filter(
+          (session): session is typeof session & { coachingPriority: string } =>
+            session.coachingPriority !== null,
+        )
+        .map((session): TimelineItem => ({
+          type: "coaching_priority",
+          id: session.id,
+          body: session.coachingPriority,
+          createdAt: toISO(session.createdAt),
+          tiedTo: { sessionId: session.id },
+        })),
     ];
 
     items.sort((a, b) => b.createdAt.localeCompare(a.createdAt));

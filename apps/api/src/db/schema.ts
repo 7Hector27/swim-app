@@ -604,12 +604,17 @@ export const evaluationSessions = pgTable(
     breathingPattern: text("breathing_pattern"),
     sessionDate: date("session_date").notNull(),
     context: evaluationContextEnum("context").notNull(),
-    coachingPriority: text("coaching_priority").notNull(),
+    // Nullable: a coach can skip the priority when there is nothing new to say.
+    // The parent UI falls back to the most recent non-null priority from any
+    // session with at least one non-voided rating.
+    coachingPriority: text("coaching_priority"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdateFn(() => new Date()),
   },
   (table) => [
-    check("coaching_priority_not_blank", sql`${table.coachingPriority} <> ''`),
+    // When set, the priority can't be an empty string. Null is the "no priority"
+    // state; empty string was never meant to be meaningful.
+    check("coaching_priority_not_blank", sql`${table.coachingPriority} IS NULL OR ${table.coachingPriority} <> ''`),
     check("screen_slug_valid", sql`${table.screenSlug} IN ('fundamentals','water-confidence','freestyle','backstroke','breaststroke','butterfly','starts','im-turns','racing')`),
     check("breathing_pattern_valid", sql`${table.breathingPattern} IS NULL OR ${table.breathingPattern} IN ('every_1','every_2','every_3','every_4','every_5','other')`),
   ],

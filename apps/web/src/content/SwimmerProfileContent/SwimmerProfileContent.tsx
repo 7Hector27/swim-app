@@ -60,7 +60,10 @@ export default function SwimmerProfileContent({
 
   const upcomingCountDisplay = upcomingLessons.ok ? upcomingForSwimmer.length : null;
 
-  const coachingPriority = progress.ok ? progress.data.coachingPriorities[0] ?? null : null;
+  // Current focus = most recent non-empty priority from a non-voided session.
+  // The API already filters out empty priorities and sessions whose every
+  // rating has been voided, so passing it straight through is safe.
+  const coachingPriority = progress.ok ? progress.data.latestCoachingPriority : null;
   const lastEvalDate = progress.ok ? progress.data.latestCoachingNotes[0]?.sessionDate ?? null : null;
 
   return (

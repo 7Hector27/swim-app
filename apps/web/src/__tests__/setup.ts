@@ -14,3 +14,11 @@ globalThis.IntersectionObserver = class {
   unobserve() {}
   disconnect() {}
 } as unknown as typeof IntersectionObserver;
+
+// jsdom doesn't implement scrollIntoView either; EvaluateContent calls it from
+// a useEffect after client-side validation fails, so provide a stub so unrelated
+// tests can submit forms without crashing. Tests that actually assert scroll
+// behavior override this on their own.
+if (typeof Element !== "undefined" && typeof Element.prototype.scrollIntoView !== "function") {
+  Element.prototype.scrollIntoView = function scrollIntoView() {};
+}

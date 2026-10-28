@@ -5,7 +5,7 @@ import { CreateSessionBodySchema } from "@swim-app/shared";
 import type { SaveDraftBody } from "@swim-app/shared";
 import { createClient } from "@/lib/supabase/server";
 import type { EvaluateState } from "./helpers";
-import { mapSubmitResponse } from "./helpers";
+import { mapSubmitResponse, mapZodIssuesToFieldIssues } from "./helpers";
 
 export async function submitEvaluation(
   swimmerId: string,
@@ -34,7 +34,12 @@ export async function submitEvaluation(
 
   const parsed = CreateSessionBodySchema.safeParse(raw);
   if (!parsed.success) {
-    return { status: "error", message: "Some inputs are invalid. Please check and retry." };
+    const issues = mapZodIssuesToFieldIssues(parsed.error.issues);
+    return {
+      status: "error",
+      message: "Some inputs are invalid. Please check and retry.",
+      issues,
+    };
   }
 
   const response = await fetch(

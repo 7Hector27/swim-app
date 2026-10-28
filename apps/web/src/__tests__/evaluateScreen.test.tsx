@@ -95,9 +95,15 @@ const COMPONENTS = [1, 2, 3, 4, 5, 6].map(makeComponent);
 // ── Helper tests ──────────────────────────────────────────────────────────────
 
 describe("canSubmit", () => {
-  it("returns false when coachingPriority is empty", () => {
-    const draft = { ...initialSessionDraft(), screenSlug: "freestyle", sessionDate: "2026-10-14", context: "practice" as const };
-    expect(canSubmit(draft, 1, false)).toBe(false);
+  it("returns true when coachingPriority is empty (optional)", () => {
+    const draft = {
+      ...initialSessionDraft(),
+      screenSlug: "freestyle",
+      sessionDate: "2026-10-14",
+      context: "practice" as const,
+      breathingPattern: "every_3" as const,
+    };
+    expect(canSubmit(draft, 1, false)).toBe(true);
   });
 
   it("returns false when no ratings", () => {
@@ -426,12 +432,14 @@ describe("draft persistence — full component", () => {
   });
 
   it("clears both localStorage keys after a successful save", async () => {
+    // Freestyle requires breathingPattern. Supply it so the pre-save
+    // client validator doesn't block the submit.
     localStorage.setItem(metaKey(SWIMMER_ID), JSON.stringify({
       screenSlug: SCREEN_A_SLUG,
       sessionDate: "2026-10-14",
       context: "practice",
       coachingPriority: "Fix kick",
-      breathingPattern: null,
+      breathingPattern: "every_3",
     }));
     localStorage.setItem(skillsKey(SWIMMER_ID, SCREEN_A_SLUG), JSON.stringify({
       skills: { [SKILL_A_ID]: { ...defaultSkillDraft(), grade: 3 } },
@@ -631,6 +639,170 @@ describe("UndoToast", () => {
     await vi.waitFor(() => {
       expect(deleteSessionAction).toHaveBeenCalledWith(SESSION_ID);
     });
+  });
+});
+
+// ── Pre-save client validation ────────────────────────────────────────────────
+
+describe("EvaluateContent — pre-save validation", () => {
+  const VALIDATION_SCREENS: ScreensResponse = [
+    {
+      screenSlug: "freestyle",
+      name: "Freestyle",
+      skills: [{
+        id: SKILL_A_ID, slug: "free-kick", name: "Freestyle Kick",
+        type: "rubric", unit: null, stroke: "free" as const, ratedPerSide: false,
+        notLegalAllowed: false, parentSkillId: null, sortOrder: 1, faultTags: [], descriptors: [],
+      }],
+    },
+  ];
+
+  const scrollIntoViewMock = vi.fn();
+  const originalScrollIntoView = Element.prototype.scrollIntoView;
+
+  beforeEach(() => {
+    localStorage.clear();
+    scrollIntoViewMock.mockClear();
+    Element.prototype.scrollIntoView = scrollIntoViewMock;
+    vi.mocked(submitEvaluation).mockResolvedValue({ status: "idle" });
+    mockFetch.mockResolvedValue({ ok: true, json: async () => ({ suggestion: null }) });
+  });
+
+  afterEach(() => {
+    localStorage.clear();
+    Element.prototype.scrollIntoView = originalScrollIntoView;
+    vi.clearAllMocks();
+  });
+
+  // Takes the form from "nothing filled" to "almost there" so the only
+  // remaining required field is breathingPattern. Returns the form element.
+  // Coaching priority is left blank on purpose: starting with migration 0061
+  // it's optional, so the form should still submit without it.
+  async function setupAlmostCompleteForm(container: HTMLElement): Promise<HTMLFormElement> {
+    const select = screen.getByRole("combobox");
+    fireEvent.change(select, { target: { value: "freestyle" } });
+
+    // Freestyle shows the breathing pattern picker but we deliberately skip it.
+    await waitFor(() => {
+      expect(screen.getByText("Breathing pattern")).toBeInTheDocument();
+    });
+
+    // Pick a context.
+    fireEvent.click(screen.getByRole("button", { name: /practice/i }));
+
+    // Rate the one skill so ratings[] is non-empty.
+    await waitFor(() => {
+      expect(screen.getAllByRole("radio", { name: "3" }).length).toBeGreaterThan(0);
+    });
+    const grade3 = screen.getAllByRole("radio", { name: "3" })[0]!;
+    fireEvent.click(grade3);
+
+    const form = container.querySelector("form");
+    expect(form).not.toBeNull();
+    return form!;
+  }
+
+  it("blocks the submit, surfaces per-field + summary alerts, and scrolls to the first missing field", async () => {
+    const { container } = render(
+      <EvaluateContent swimmer={SWIMMER_DETAIL} screens={VALIDATION_SCREENS} />,
+    );
+    const form = await setupAlmostCompleteForm(container);
+
+    // breathingPattern stays unpicked. Tap Save.
+    await act(async () => {
+      fireEvent.submit(form);
+    });
+
+    // The server action was never dispatched.
+    expect(vi.mocked(submitEvaluation)).not.toHaveBeenCalled();
+
+    // Summary alert surfaces with the pluralized copy.
+    const summary = screen.getByTestId("evaluate-issues-summary");
+    expect(summary.textContent).toMatch(/1 thing needs attention/i);
+
+    // Per-field error renders next to the Breathing pattern group.
+    const breathingGroup = container.querySelector("[id='evaluate-field-breathingPattern'] [role='group']");
+    expect(breathingGroup).not.toBeNull();
+    expect(breathingGroup).toHaveAttribute("aria-invalid", "true");
+
+    // scrollIntoView fires on the breathingPattern fieldset.
+    expect(scrollIntoViewMock).toHaveBeenCalledTimes(1);
+  });
+
+  // Regression: coaching priority is optional starting with migration 0061.
+  // A fully-rated form with an empty priority should submit successfully.
+  it("allows saving when coaching priority is left blank", async () => {
+    vi.mocked(submitEvaluation).mockResolvedValue({
+      status: "saved",
+      sessionId: "00000000-0000-0000-0000-000000000099",
+      ratingIds: [],
+    });
+
+    const { container } = render(
+      <EvaluateContent swimmer={SWIMMER_DETAIL} screens={VALIDATION_SCREENS} />,
+    );
+    const form = await setupAlmostCompleteForm(container);
+
+    // Pick a breathing pattern so the form is fully valid except for the
+    // intentionally-empty coachingPriority textarea.
+    fireEvent.click(screen.getByRole("button", { name: "Every 3" }));
+
+    await act(async () => {
+      fireEvent.submit(form);
+    });
+
+    // Save succeeds — no issues banner surfaces, and the saved screen renders.
+    expect(screen.queryByTestId("evaluate-issues-summary")).toBeNull();
+    await waitFor(() => {
+      expect(screen.getByText(/evaluation saved/i)).toBeInTheDocument();
+    });
+  });
+
+  it("re-scrolls on every tap, not just the first", async () => {
+    const { container } = render(
+      <EvaluateContent swimmer={SWIMMER_DETAIL} screens={VALIDATION_SCREENS} />,
+    );
+    const form = await setupAlmostCompleteForm(container);
+
+    await act(async () => {
+      fireEvent.submit(form);
+    });
+    await act(async () => {
+      fireEvent.submit(form);
+    });
+    await act(async () => {
+      fireEvent.submit(form);
+    });
+
+    expect(scrollIntoViewMock).toHaveBeenCalledTimes(3);
+    expect(vi.mocked(submitEvaluation)).not.toHaveBeenCalled();
+  });
+
+  it("honors prefers-reduced-motion when scrolling", async () => {
+    const matchMediaSpy = vi.spyOn(window, "matchMedia").mockImplementation((query) => ({
+      matches: query === "(prefers-reduced-motion: reduce)",
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      onchange: null,
+      dispatchEvent: vi.fn(() => true),
+    }));
+
+    const { container } = render(
+      <EvaluateContent swimmer={SWIMMER_DETAIL} screens={VALIDATION_SCREENS} />,
+    );
+    const form = await setupAlmostCompleteForm(container);
+
+    await act(async () => {
+      fireEvent.submit(form);
+    });
+
+    expect(scrollIntoViewMock).toHaveBeenCalledWith(
+      expect.objectContaining({ behavior: "auto" }),
+    );
+    matchMediaSpy.mockRestore();
   });
 });
 

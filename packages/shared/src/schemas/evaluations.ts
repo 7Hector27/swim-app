@@ -32,7 +32,10 @@ export const EvaluationSessionSchema = z.object({
   categoryId: z.string().uuid(),
   sessionDate: z.string().date(),
   context: EvaluationContextSchema,
-  coachingPriority: z.string().min(1),
+  // Optional (nullable + optional). The parent-facing progress UI falls back to
+  // the most recent non-empty priority from a non-voided session, so coaches
+  // can leave this blank when there is nothing new to say.
+  coachingPriority: z.string().min(1).nullable(),
   createdAt: z.string().datetime({ offset: true }),
   updatedAt: z.string().datetime({ offset: true }),
 });
@@ -173,7 +176,9 @@ export const CreateSessionBodySchema = z.object({
   screenSlug: z.string(),
   sessionDate: z.string().date(),
   context: EvaluationContextSchema,
-  coachingPriority: z.string().min(1),
+  // Nullable (optional for the coach): empty is accepted. Whitespace-only
+  // strings normalize to null at the API boundary.
+  coachingPriority: z.string().min(1).nullable(),
   breathingPattern: BreathingPatternSchema.nullable(),
   ratings: z.array(RatingInputSchema).min(1),
 });
@@ -434,8 +439,18 @@ export const ParentCoachingNoteSchema = z.object({
 });
 export type ParentCoachingNote = z.infer<typeof ParentCoachingNoteSchema>;
 
+// Single-latest priority surfaced in the parent progress view and the swimmer
+// profile's current-focus card. Null when the swimmer has never had a priority
+// written on any session with at least one non-voided rating.
+export const LatestCoachingPrioritySchema = z.object({
+  text: z.string().min(1),
+  sessionDate: z.string(),
+});
+export type LatestCoachingPriority = z.infer<typeof LatestCoachingPrioritySchema>;
+
 export const ParentSwimmerProgressResponseSchema = SwimmerProgressResponseSchema.extend({
   skills: z.array(ParentSkillProgressSchema),
   latestCoachingNotes: z.array(ParentCoachingNoteSchema),
+  latestCoachingPriority: LatestCoachingPrioritySchema.nullable(),
 });
 export type ParentSwimmerProgressResponse = z.infer<typeof ParentSwimmerProgressResponseSchema>;

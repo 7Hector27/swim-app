@@ -10,14 +10,18 @@ import type {
 import { calculateBilateralBreathingGrade } from "@swim-app/shared";
 import AddNoteForm from "@/components/AddNoteForm";
 import { deleteDraft, fetchDependencyMapAction, fetchServerDraftsAction, saveDraft, submitEvaluation } from "./actions";
-import type { EvaluateState, SessionDraft, SkillDraft } from "./helpers";
+import type { EvaluateFieldIssue, EvaluateState, SessionDraft, SkillDraft } from "./helpers";
 import {
   defaultSkillDraft,
   initialSessionDraft,
   todayLA,
-  canSubmit,
+  buildRatingKeys,
   buildRatingsArray,
   buildSectionGroups,
+  validateSubmission,
+  sortIssuesForScroll,
+  anchorIdForIssue,
+  DOM_IDS,
 } from "./helpers";
 import { SCREEN_SECTIONS } from "./screenSections";
 import SessionSetup from "./SessionSetup";
@@ -366,16 +370,122 @@ export default function EvaluateContent({ swimmer, screens, resumeDraft }: Evalu
     screens.flatMap((screen) => screen.skills.map((skill) => [skill.slug, skill.name])),
   );
 
-  const ratingsArray = selectedScreen
-    ? buildRatingsArray(selectedScreen.skills, draft.skills)
-    : [];
-  const submitEnabled = canSubmit(draft, ratingsArray.length, isPending);
+  const ratingsArray = useMemo(
+    () => (selectedScreen ? buildRatingsArray(selectedScreen.skills, draft.skills) : []),
+    [selectedScreen, draft.skills],
+  );
+  const ratingKeys = useMemo(
+    () => (selectedScreen ? buildRatingKeys(selectedScreen.skills, draft.skills) : []),
+    [selectedScreen, draft.skills],
+  );
+  // Save is enabled whenever the coach isn't mid-submit. Everything else runs
+  // through the client-side validator on tap so the coach gets inline field
+  // guidance instead of a disabled button with no feedback.
+  const submitEnabled = !isPending;
 
+  // Client-side pre-save validation issues. Set on each Save tap; cleared on
+  // the next valid submission. These live separately from the server's
+  // `state.issues` so a successful submit doesn't silently resurrect stale
+  // client messages (and vice versa).
+  const [clientIssues, setClientIssues] = useState<EvaluateFieldIssue[]>([]);
+  // Bumped on every Save tap (valid or invalid) so the scroll + highlight
+  // effect re-fires each time, even when the issue set is identical to the
+  // previous tap.
+  const [tapNonce, setTapNonce] = useState(0);
+  // Separate nonce for server-returned issues so a 422 scrolls to the first
+  // field without colliding with a client tap in flight.
+  const [serverIssueNonce, setServerIssueNonce] = useState(0);
+
+  const serverIssues: EvaluateFieldIssue[] = useMemo(
+    () => (state.status === "error" && state.issues ? state.issues : []),
+    [state],
+  );
+
+  // Bump the server-issue nonce whenever a new server error arrives.
+  useEffect(() => {
+    if (state.status === "error" && serverIssues.length > 0) {
+      setServerIssueNonce((prev) => prev + 1);
+    }
+  }, [state, serverIssues.length]);
+
+  // The merged issues list the UI renders. Client issues take precedence
+  // while they're set (coach hasn't tried again yet); otherwise fall back to
+  // the last server-returned set.
+  const activeIssues = clientIssues.length > 0 ? clientIssues : serverIssues;
+
+  const issuesByDraftKey = useMemo(() => {
+    const map = new Map<string, EvaluateFieldIssue[]>();
+    for (const issue of activeIssues) {
+      if (issue.ratingIndex === undefined) continue;
+      const key = ratingKeys[issue.ratingIndex];
+      if (key === undefined) continue;
+      const list = map.get(key) ?? [];
+      list.push(issue);
+      map.set(key, list);
+    }
+    return map;
+  }, [activeIssues, ratingKeys]);
+  const sessionLevelIssues = useMemo(
+    () => activeIssues.filter((issue) => issue.ratingIndex === undefined),
+    [activeIssues],
+  );
+  const coachingPriorityIssue = sessionLevelIssues.find((issue) => issue.field === "coachingPriority");
+  const sessionSetupIssues = useMemo(
+    () => sessionLevelIssues.filter((issue) => issue.field !== "coachingPriority" && issue.field !== "ratings"),
+    [sessionLevelIssues],
+  );
+  const ratingsIssue = sessionLevelIssues.find((issue) => issue.field === "ratings");
+
+  // Scroll to and focus the first invalid field whenever the coach taps Save
+  // with issues, OR whenever a new server 422 arrives. Honors reduced motion.
+  useEffect(() => {
+    if (activeIssues.length === 0) return;
+    if (tapNonce === 0 && serverIssueNonce === 0) return;
+    const sorted = sortIssuesForScroll(activeIssues);
+    const first = sorted[0];
+    if (!first) return;
+    const anchor = anchorIdForIssue(first, ratingKeys);
+    if (!anchor) return;
+    const el = document.getElementById(anchor);
+    if (!el) return;
+    const prefersReducedMotion =
+      typeof window !== "undefined" &&
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    el.scrollIntoView({
+      behavior: prefersReducedMotion ? "auto" : "smooth",
+      block: "center",
+    });
+    const focusTarget =
+      el.querySelector<HTMLElement>(
+        "input:not([type='hidden']), select, textarea, [role='group'] button, button[type='button']",
+      );
+    focusTarget?.focus({ preventScroll: true });
+    // Intentional: re-scrolling on every tap is a product requirement, so the
+    // nonces are the primary trigger; activeIssues identity isn't.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tapNonce, serverIssueNonce]);
+
+  function handleFormSubmit(event: React.FormEvent<HTMLFormElement>) {
+    savedScreenSlugRef.current = draft.screenSlug;
+    setTapNonce((prev) => prev + 1);
+    const issues = validateSubmission(draft, ratingsArray);
+    if (issues.length > 0) {
+      event.preventDefault();
+      setClientIssues(issues);
+      return;
+    }
+    setClientIssues([]);
+  }
+
+  // Empty / whitespace-only priority goes over the wire as null so the API
+  // writes NULL to the DB rather than hitting the `<> ''` check constraint.
+  const trimmedPriority = draft.coachingPriority.trim();
   const bodyJson = JSON.stringify({
     screenSlug: draft.screenSlug,
     sessionDate: draft.sessionDate,
     context: draft.context,
-    coachingPriority: draft.coachingPriority,
+    coachingPriority: trimmedPriority.length > 0 ? trimmedPriority : null,
     breathingPattern: draft.breathingPattern,
     ratings: ratingsArray,
   });
@@ -472,7 +582,30 @@ export default function EvaluateContent({ swimmer, screens, resumeDraft }: Evalu
             </h1>
           </div>
 
-          {state.status === "error" && (
+          {activeIssues.length > 0 && (
+            <div
+              role="alert"
+              aria-live="polite"
+              data-testid="evaluate-issues-summary"
+              className="flex flex-col gap-1 text-sm"
+              style={{ color: "var(--color-danger)" }}
+            >
+              <p className="font-semibold">
+                {activeIssues.length} {activeIssues.length === 1 ? "thing needs" : "things need"} attention
+              </p>
+              {sessionLevelIssues.length > 0 && (
+                <ul className="list-disc pl-5">
+                  {sessionLevelIssues.map((issue, index) => (
+                    <li key={`${issue.field}-${index}`} data-testid={`session-issue-${issue.field}`}>
+                      {issue.message}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+
+          {state.status === "error" && activeIssues.length === 0 && (
             <p role="alert" className="text-sm" style={{ color: "var(--color-danger)" }}>
               {state.message}
             </p>
@@ -532,7 +665,7 @@ export default function EvaluateContent({ swimmer, screens, resumeDraft }: Evalu
             action={formAction}
             noValidate
             className="flex flex-col gap-6"
-            onSubmit={() => { savedScreenSlugRef.current = draft.screenSlug; }}
+            onSubmit={handleFormSubmit}
           >
             <input type="hidden" name="bodyJson" value={bodyJson} />
 
@@ -541,6 +674,7 @@ export default function EvaluateContent({ swimmer, screens, resumeDraft }: Evalu
               screens={screens}
               onScreenChange={handleScreenChange}
               onChange={(patch) => setDraft((prev) => ({ ...prev, ...patch }))}
+              issues={sessionSetupIssues}
             />
 
             {/* Skills */}
@@ -568,6 +702,8 @@ export default function EvaluateContent({ swimmer, screens, resumeDraft }: Evalu
                   );
                 }
                 if (skill.ratedPerSide) {
+                  const leftIssues = issuesByDraftKey.get(`${skill.id}:left`);
+                  const rightIssues = issuesByDraftKey.get(`${skill.id}:right`);
                   return (
                     <SideRatedRowPair
                       key={skill.id}
@@ -576,9 +712,12 @@ export default function EvaluateContent({ swimmer, screens, resumeDraft }: Evalu
                       leftDraft={draft.skills[`${skill.id}:left`] ?? defaultSkillDraft()}
                       rightDraft={draft.skills[`${skill.id}:right`] ?? defaultSkillDraft()}
                       onChange={patchSkill}
+                      {...(leftIssues !== undefined && { leftIssues })}
+                      {...(rightIssues !== undefined && { rightIssues })}
                     />
                   );
                 }
+                const rowIssues = issuesByDraftKey.get(skill.id);
                 return (
                   <SkillGradeRow
                     key={skill.id}
@@ -587,6 +726,7 @@ export default function EvaluateContent({ swimmer, screens, resumeDraft }: Evalu
                     label={label}
                     draft={draft.skills[skill.id] ?? defaultSkillDraft()}
                     onChange={patchSkill}
+                    {...(rowIssues !== undefined && { issues: rowIssues })}
                   />
                 );
               }
@@ -711,11 +851,18 @@ export default function EvaluateContent({ swimmer, screens, resumeDraft }: Evalu
               );
             })()}
 
+            {ratingsIssue && (
+              <p id={DOM_IDS.ratings} className="text-xs" style={{ color: "var(--color-danger)" }}>
+                {ratingsIssue.message}
+              </p>
+            )}
+
             <CoachingPriorityField
               value={draft.coachingPriority}
               onChange={(value) => setDraft((prev) => ({ ...prev, coachingPriority: value }))}
               suggestion={depSuggestion}
               slugToName={slugToName}
+              {...(coachingPriorityIssue !== undefined && { issue: coachingPriorityIssue })}
             />
 
             <div className="flex gap-3 flex-wrap">
@@ -731,7 +878,7 @@ export default function EvaluateContent({ swimmer, screens, resumeDraft }: Evalu
                   cursor: submitEnabled ? "pointer" : "not-allowed",
                 }}
               >
-                {isPending ? "Saving…" : "Save evaluation"}
+                {isPending ? "Saving..." : "Save evaluation"}
               </button>
               <button
                 type="button"
@@ -739,7 +886,7 @@ export default function EvaluateContent({ swimmer, screens, resumeDraft }: Evalu
                 disabled={draft.screenSlug === "" || draftSaveState === "saving"}
                 className="inline-flex items-center justify-center px-5 min-h-[44px] font-semibold text-sm rounded-[var(--radius-button)] border border-border text-text"
               >
-                {draftSaveState === "saving" ? "Saving…" : draftSaveState === "saved" ? "Draft saved" : draftSaveState === "error" ? "Save failed" : "Save as draft"}
+                {draftSaveState === "saving" ? "Saving..." : draftSaveState === "saved" ? "Draft saved" : draftSaveState === "error" ? "Save failed" : "Save as draft"}
               </button>
             </div>
           </form>

@@ -1,7 +1,13 @@
 import { Router } from "express";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { db } from "../db/client";
-import { evaluationSessions, meetSwims, meets, skillLevelDescriptors } from "../db/schema";
+import {
+  evaluationSessions,
+  meetSwims,
+  meets,
+  skillLevelDescriptors,
+  skillRatings,
+} from "../db/schema";
 import { validate } from "../middleware/validate";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { requireUser } from "../middleware/requireUser";
@@ -16,6 +22,7 @@ import {
   ParentSwimmerProgressResponseSchema,
   SCREEN_NAMES,
   type IdParams,
+  type LatestCoachingPriority,
   type ParentCoachingNote,
   type ParentPersonalBest,
   type ParentPersonalBestsResponse,
@@ -38,8 +45,13 @@ parentProgressRouter.get(
 
     const displayedSkillIds = full.skills.map((skill) => skill.skillId);
 
-    // Fetch level descriptors and latest coaching notes in parallel
-    const [descriptorRows, sessionRows] = await Promise.all([
+    // Fetch level descriptors, coaching-note sessions, and the single-latest
+    // non-empty / non-voided priority in parallel.
+    //
+    // The "non-voided evaluation" rule: a session counts only when it has at
+    // least one skill_ratings row with voidedAt IS NULL. A session whose every
+    // rating has been voided is treated as a voided evaluation and skipped.
+    const [descriptorRows, sessionRows, latestPriorityRows] = await Promise.all([
       displayedSkillIds.length > 0
         ? db
             .select({ skillId: skillLevelDescriptors.skillId, level: skillLevelDescriptors.level, text: skillLevelDescriptors.text })
@@ -55,7 +67,36 @@ parentProgressRouter.get(
         .from(evaluationSessions)
         .where(eq(evaluationSessions.swimmerId, swimmerId))
         .orderBy(desc(evaluationSessions.sessionDate)),
+      db
+        .select({
+          sessionDate: evaluationSessions.sessionDate,
+          coachingPriority: evaluationSessions.coachingPriority,
+        })
+        .from(evaluationSessions)
+        .where(
+          and(
+            eq(evaluationSessions.swimmerId, swimmerId),
+            isNotNull(evaluationSessions.coachingPriority),
+            // Correlated EXISTS: skip sessions whose every rating is voided.
+            sql`EXISTS (
+              SELECT 1 FROM ${skillRatings}
+              WHERE ${skillRatings.sessionId} = ${evaluationSessions.id}
+                AND ${skillRatings.voidedAt} IS NULL
+            )`,
+          ),
+        )
+        .orderBy(desc(evaluationSessions.sessionDate), desc(evaluationSessions.createdAt))
+        .limit(1),
     ]);
+
+    const latestPriorityRow = latestPriorityRows[0];
+    const latestCoachingPriority: LatestCoachingPriority | null =
+      latestPriorityRow && latestPriorityRow.coachingPriority !== null
+        ? {
+            text: latestPriorityRow.coachingPriority,
+            sessionDate: latestPriorityRow.sessionDate,
+          }
+        : null;
 
     // Build per-skill descriptor map: skillId -> { "1": text, "2": text, ... }
     const descriptorMap = new Map<string, Record<string, string>>();
@@ -65,11 +106,15 @@ parentProgressRouter.get(
       descriptorMap.set(row.skillId, existing);
     }
 
-    // Latest coaching note per screen (first seen wins since ordered by date DESC)
+    // Latest coaching note per screen. We only consider sessions with a
+    // non-null priority — empty priorities aren't shown. First row per screen
+    // wins since sessionRows are ordered by date DESC. (Voided-session
+    // filtering is added below, at the single-latest-priority step.)
     const seenScreens = new Set<string>();
     const latestCoachingNotes: ParentCoachingNote[] = [];
     for (const row of sessionRows) {
       if (row.screenSlug === null) continue;
+      if (row.coachingPriority === null) continue;
       if (seenScreens.has(row.screenSlug)) continue;
       seenScreens.add(row.screenSlug);
       latestCoachingNotes.push({
@@ -92,6 +137,7 @@ parentProgressRouter.get(
       headPositionOverall: full.headPositionOverall,
       coachingPriorities: full.coachingPriorities,
       latestCoachingNotes,
+      latestCoachingPriority,
     });
 
     req.log.info({ swimmerId, skillCount: parentSkills.length }, "parent swimmer progress fetched");

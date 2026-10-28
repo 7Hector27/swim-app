@@ -1,7 +1,7 @@
 "use client";
 
 import type { SkillForRating } from "@swim-app/shared";
-import type { SkillDraft } from "./helpers";
+import type { EvaluateFieldIssue, SkillDraft } from "./helpers";
 import SkillGradeRow from "./SkillGradeRow";
 
 interface SideRatedRowPairProps {
@@ -10,9 +10,19 @@ interface SideRatedRowPairProps {
   rightDraft: SkillDraft;
   onChange: (key: string, patch: Partial<SkillDraft>) => void;
   label?: string;
+  leftIssues?: EvaluateFieldIssue[];
+  rightIssues?: EvaluateFieldIssue[];
 }
 
-export default function SideRatedRowPair({ skill, leftDraft, rightDraft, onChange, label }: SideRatedRowPairProps) {
+export default function SideRatedRowPair({
+  skill,
+  leftDraft,
+  rightDraft,
+  onChange,
+  label,
+  leftIssues,
+  rightIssues,
+}: SideRatedRowPairProps) {
   const displayName = label ?? skill.name;
   return (
     <div id={`skill-${skill.id}`} className="flex flex-col gap-2">
@@ -22,6 +32,7 @@ export default function SideRatedRowPair({ skill, leftDraft, rightDraft, onChang
         label={`${displayName} — Left`}
         draft={leftDraft}
         onChange={onChange}
+        {...(leftIssues !== undefined && { issues: leftIssues })}
       />
       <SkillGradeRow
         skill={skill}
@@ -29,6 +40,7 @@ export default function SideRatedRowPair({ skill, leftDraft, rightDraft, onChang
         label={`${displayName} — Right`}
         draft={rightDraft}
         onChange={onChange}
+        {...(rightIssues !== undefined && { issues: rightIssues })}
       />
     </div>
   );

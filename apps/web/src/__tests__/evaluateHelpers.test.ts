@@ -1,6 +1,20 @@
 import { describe, it, expect } from "vitest";
-import { mapSubmitResponse, buildSkillGroups, buildSectionGroups, canSubmit } from "../content/EvaluateContent/helpers";
+import {
+  mapSubmitResponse,
+  mapZodIssuesToFieldIssues,
+  buildSkillGroups,
+  buildSectionGroups,
+  buildRatingsArray,
+  canSubmit,
+  validateSubmission,
+  sortIssuesForScroll,
+  anchorIdForIssue,
+  DOM_IDS,
+  initialSessionDraft,
+  defaultSkillDraft,
+} from "../content/EvaluateContent/helpers";
 import type { SkillForRating } from "@swim-app/shared";
+import { CreateSessionBodySchema } from "@swim-app/shared";
 
 describe("mapSubmitResponse", () => {
   it("returns saved state on 201 with valid body", () => {
@@ -227,6 +241,317 @@ describe("SCREEN_SECTIONS", () => {
     for (const slug of SCREEN_SLUGS) {
       expect(SCREEN_SECTIONS[slug], `${slug} missing from SCREEN_SECTIONS`).toBeDefined();
     }
+  });
+});
+
+// ── Measurement-unit regression ───────────────────────────────────────────────
+//
+// Previously: when a coach rated a freestyle measured skill (e.g. Tempo
+// `unit: "cycles/min"`) and typed a measurement value, `buildRatingsArray`
+// emitted `measurementValue: "60", measurementUnit: null`. The shared
+// `CreateSessionBodySchema` superRefine then rejected with
+// `ratings[0].measurementValue` — "both must be present or both absent".
+// The server action surfaced only the generic
+// "Some inputs are invalid. Please check and retry." with no field path.
+
+describe("buildRatingsArray — measured skill with catalog unit", () => {
+  const SKILL_ID = "00000000-0000-0000-0000-00000000e001";
+  const measuredSkill: SkillForRating = {
+    id: SKILL_ID,
+    slug: "freestyle-tempo",
+    name: "Tempo",
+    type: "measured",
+    unit: "cycles/min",
+    stroke: "free",
+    ratedPerSide: false,
+    parentSkillId: null,
+    sortOrder: 0,
+    faultTags: [],
+    notLegalAllowed: false,
+    descriptors: [],
+  };
+
+  function baseSkillDraft() {
+    return {
+      grade: 3 as const,
+      notLegal: false,
+      noConcept: false,
+      capacityValue: "",
+      capacityUnit: null,
+      measurementValue: "",
+      measurementUnit: null,
+      note: "",
+      faultTags: [],
+      detailsOpen: false,
+      golfScoreCategory: null,
+    };
+  }
+
+  it("auto-fills measurementUnit from the catalog label so safeParse passes", () => {
+    const ratings = buildRatingsArray([measuredSkill], {
+      [SKILL_ID]: { ...baseSkillDraft(), measurementValue: "60" },
+    });
+    expect(ratings).toHaveLength(1);
+    expect(ratings[0]!.measurementValue).toBe("60");
+    expect(ratings[0]!.measurementUnit).toBe("stroke_cycles_per_minute");
+  });
+
+  it("leaves both measurement fields null when the coach didn't enter a value", () => {
+    const ratings = buildRatingsArray([measuredSkill], {
+      [SKILL_ID]: { ...baseSkillDraft() },
+    });
+    expect(ratings[0]!.measurementValue).toBeNull();
+    expect(ratings[0]!.measurementUnit).toBeNull();
+  });
+
+  it("produces a body that CreateSessionBodySchema accepts (regression)", () => {
+    const ratings = buildRatingsArray([measuredSkill], {
+      [SKILL_ID]: { ...baseSkillDraft(), measurementValue: "60" },
+    });
+    const body = {
+      screenSlug: "freestyle",
+      sessionDate: "2026-10-28",
+      context: "practice" as const,
+      coachingPriority: "Work on tempo",
+      breathingPattern: "every_3" as const,
+      ratings,
+    };
+    const parsed = CreateSessionBodySchema.safeParse(body);
+    expect(parsed.success).toBe(true);
+  });
+
+  it("still rejects (and reports the right field) when the catalog unit has no enum map", () => {
+    // "kicks/min" has no enum equivalent — the UI hides the measurement input
+    // for this case, so coaches can't reach the failing state. But if a stale
+    // draft or an older client ever submits `measurementValue` for such a
+    // skill, the schema's rejection surfaces the per-row field path.
+    const kickSkill: SkillForRating = { ...measuredSkill, slug: "freestyle-kick-rate", unit: "kicks/min" };
+    const ratings = buildRatingsArray([kickSkill], {
+      [SKILL_ID]: { ...baseSkillDraft(), measurementValue: "30" },
+    });
+    const parsed = CreateSessionBodySchema.safeParse({
+      screenSlug: "freestyle",
+      sessionDate: "2026-10-28",
+      context: "practice" as const,
+      coachingPriority: "p",
+      breathingPattern: "every_3" as const,
+      ratings,
+    });
+    expect(parsed.success).toBe(false);
+    if (parsed.success) return;
+    const issues = mapZodIssuesToFieldIssues(parsed.error.issues);
+    const measurementIssue = issues.find(
+      (issue) => issue.ratingIndex === 0 && issue.field === "measurementValue",
+    );
+    expect(measurementIssue).toBeDefined();
+    expect(measurementIssue?.message).toMatch(/unit/i);
+  });
+});
+
+describe("mapZodIssuesToFieldIssues", () => {
+  it("extracts the rating index and field from a Zod path", () => {
+    const result = mapZodIssuesToFieldIssues([
+      { path: ["ratings", 2, "measurementValue"], message: "raw" },
+      { path: ["coachingPriority"], message: "raw too" },
+    ]);
+    expect(result).toEqual([
+      {
+        ratingIndex: 2,
+        field: "measurementValue",
+        message: expect.stringMatching(/unit/i),
+      },
+      {
+        field: "coachingPriority",
+        message: expect.stringMatching(/coaching priority/i),
+      },
+    ]);
+  });
+});
+
+describe("mapSubmitResponse — 422 with issues[]", () => {
+  it("parses an API 422 body into per-field issues", () => {
+    const result = mapSubmitResponse(422, {
+      error: "Validation error",
+      issues: [
+        { path: ["ratings", 0, "measurementUnit"], message: "Measurement unit must be cycles/min" },
+      ],
+    });
+    expect(result.status).toBe("error");
+    if (result.status !== "error") return;
+    expect(result.issues).toBeDefined();
+    expect(result.issues?.[0]).toEqual({
+      ratingIndex: 0,
+      field: "measurementUnit",
+      message: "Measurement unit must be cycles/min",
+    });
+  });
+});
+
+// ── validateSubmission ────────────────────────────────────────────────────────
+
+describe("validateSubmission", () => {
+  const SKILL: SkillForRating = {
+    id: "00000000-0000-0000-cccc-000000000001",
+    slug: "free-kick",
+    name: "Kick",
+    type: "rubric",
+    unit: null,
+    stroke: "free",
+    ratedPerSide: false,
+    notLegalAllowed: false,
+    parentSkillId: null,
+    sortOrder: 1,
+    faultTags: [],
+    descriptors: [],
+  };
+
+  function filledDraft() {
+    return {
+      ...initialSessionDraft(),
+      screenSlug: "freestyle",
+      sessionDate: "2026-10-28",
+      context: "practice" as const,
+      coachingPriority: "Work on kick",
+      breathingPattern: "every_3" as const,
+      skills: { [SKILL.id]: { ...defaultSkillDraft(), grade: 3 as const } },
+    };
+  }
+
+  it("reports a specific per-field issue for each missing session field", () => {
+    const draft = {
+      ...initialSessionDraft(),
+      screenSlug: "freestyle",
+      sessionDate: "",
+      context: null,
+      coachingPriority: "   ",
+      breathingPattern: null,
+      skills: {},
+    };
+    const issues = validateSubmission(draft, []);
+    const fields = issues.map((issue) => issue.field);
+    expect(fields).toEqual(expect.arrayContaining([
+      "sessionDate",
+      "context",
+      "breathingPattern",
+      "ratings",
+    ]));
+    expect(fields).not.toContain("screenSlug"); // screen is picked
+    // Coaching priority is optional. The parent progress view falls back to
+    // the most recent non-empty priority from a non-voided session.
+    expect(fields).not.toContain("coachingPriority");
+  });
+
+  it("allows saving with an empty coaching priority", () => {
+    const SKILL: SkillForRating = {
+      id: "00000000-0000-0000-cccc-00000000c003",
+      slug: "free-kick",
+      name: "Kick",
+      type: "rubric",
+      unit: null,
+      stroke: "free",
+      ratedPerSide: false,
+      notLegalAllowed: false,
+      parentSkillId: null,
+      sortOrder: 1,
+      faultTags: [],
+      descriptors: [],
+    };
+    const draft = {
+      ...initialSessionDraft(),
+      screenSlug: "backstroke",
+      sessionDate: "2026-10-28",
+      context: "practice" as const,
+      coachingPriority: "", // empty on purpose
+      skills: { [SKILL.id]: { ...defaultSkillDraft(), grade: 3 as const } },
+    };
+    const ratings = buildRatingsArray([SKILL], draft.skills);
+    expect(validateSubmission(draft, ratings)).toEqual([]);
+  });
+
+  it("does not require breathingPattern for backstroke", () => {
+    const draft = {
+      ...initialSessionDraft(),
+      screenSlug: "backstroke",
+      sessionDate: "2026-10-28",
+      context: "practice" as const,
+      coachingPriority: "Fix pull",
+      skills: { [SKILL.id]: { ...defaultSkillDraft(), grade: 3 as const } },
+    };
+    const ratings = buildRatingsArray([SKILL], draft.skills);
+    const issues = validateSubmission(draft, ratings);
+    expect(issues.map((issue) => issue.field)).not.toContain("breathingPattern");
+  });
+
+  it("returns zero issues for a fully filled, schema-valid submission", () => {
+    const draft = filledDraft();
+    const ratings = buildRatingsArray([SKILL], draft.skills);
+    expect(validateSubmission(draft, ratings)).toEqual([]);
+  });
+
+  it("still surfaces per-rating issues (measurement without a unit) via the schema", () => {
+    const kickSkill: SkillForRating = {
+      ...SKILL,
+      id: "00000000-0000-0000-cccc-000000000002",
+      slug: "free-kick-rate",
+      type: "measured",
+      unit: "kicks/min", // no enum mapping; triggers the "both or neither" check
+    };
+    const draft = {
+      ...filledDraft(),
+      skills: {
+        [kickSkill.id]: { ...defaultSkillDraft(), grade: 3 as const, measurementValue: "30" },
+      },
+    };
+    const ratings = buildRatingsArray([kickSkill], draft.skills);
+    const issues = validateSubmission(draft, ratings);
+    const measurementIssue = issues.find(
+      (issue) => issue.ratingIndex === 0 && issue.field === "measurementValue",
+    );
+    expect(measurementIssue).toBeDefined();
+  });
+});
+
+// ── sortIssuesForScroll + anchorIdForIssue ────────────────────────────────────
+
+describe("sortIssuesForScroll", () => {
+  it("puts session fields in canonical order, ratings next, coachingPriority last", () => {
+    const issues = [
+      { field: "coachingPriority", message: "" },
+      { ratingIndex: 1, field: "grade", message: "" },
+      { ratingIndex: 0, field: "grade", message: "" },
+      { field: "sessionDate", message: "" },
+      { field: "screenSlug", message: "" },
+      { field: "context", message: "" },
+    ];
+    const sorted = sortIssuesForScroll(issues);
+    const order = sorted.map((i) =>
+      i.ratingIndex !== undefined ? `ratings[${i.ratingIndex}].${i.field}` : i.field,
+    );
+    expect(order).toEqual([
+      "screenSlug",
+      "sessionDate",
+      "context",
+      "ratings[0].grade",
+      "ratings[1].grade",
+      "coachingPriority",
+    ]);
+  });
+});
+
+describe("anchorIdForIssue", () => {
+  it("maps session fields to DOM_IDS entries", () => {
+    expect(anchorIdForIssue({ field: "screenSlug", message: "" }, [])).toBe(DOM_IDS.screenSlug);
+    expect(anchorIdForIssue({ field: "coachingPriority", message: "" }, [])).toBe(DOM_IDS.coachingPriority);
+  });
+
+  it("maps rating issues to the skill fieldset id via the ratingKeys array", () => {
+    expect(
+      anchorIdForIssue({ ratingIndex: 1, field: "grade", message: "" }, ["skill-a", "skill-b"]),
+    ).toBe("skill-skill-b");
+  });
+
+  it("returns null for an unknown field", () => {
+    expect(anchorIdForIssue({ field: "nonsense", message: "" }, [])).toBeNull();
   });
 });
 

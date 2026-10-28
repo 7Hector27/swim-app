@@ -127,6 +127,7 @@ export { todayLA } from "./lib/todayLA";
 export { isSafeReturnTo } from "./lib/isSafeReturnTo";
 export { parseSwimTime, formatSwimTime } from "./lib/swimTime";
 export { bookingWindowEnd, isAfterBookingWindow, laCalendarDate } from "./lib/bookingWindow";
+export { displayUnitToMeasurementEnum } from "./lib/measurementUnit";
 
 export type {
   LessonLocation,
@@ -496,6 +497,7 @@ export type {
   ParentProgressRatingPoint,
   ParentSkillProgress,
   ParentCoachingNote,
+  LatestCoachingPriority,
   ParentSwimmerProgressResponse,
 } from "./schemas/evaluations";
 export {
@@ -510,6 +512,7 @@ export {
   ParentProgressRatingPointSchema,
   ParentSkillProgressSchema,
   ParentCoachingNoteSchema,
+  LatestCoachingPrioritySchema,
   ParentSwimmerProgressResponseSchema,
 } from "./schemas/evaluations";
 
