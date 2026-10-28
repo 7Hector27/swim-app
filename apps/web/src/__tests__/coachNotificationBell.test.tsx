@@ -1,5 +1,5 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 
 const { mockUnread, mockList, mockReadAll, mockMarkRead, mockPush } = vi.hoisted(() => ({
   mockUnread: vi.fn(),
@@ -29,17 +29,15 @@ beforeEach(() => {
   mockList.mockResolvedValue({ ok: true, data: { items: [], unreadCount: 0 } });
   mockReadAll.mockResolvedValue({ ok: true, status: 204 });
   mockMarkRead.mockResolvedValue({ ok: true, status: 204 });
-  window.matchMedia = ((query: string) => ({
-    matches: false,
-    media: query,
-    addEventListener: () => {},
-    removeEventListener: () => {},
-    addListener: () => {},
-    removeListener: () => {},
-    dispatchEvent: () => false,
-    onchange: null,
-  })) as unknown as (query: string) => MediaQueryList;
 });
+
+// Both the desktop dropdown (role="menu" aria-label="Notifications")
+// and the mobile sheet (role="dialog" aria-label="Notifications") render
+// into the DOM when open; CSS media queries pick one. Scope assertions
+// to the dropdown so each item is matched once.
+function panelContent() {
+  return within(screen.getByRole("menu", { name: "Notifications" }));
+}
 
 describe("CoachNotificationBell", () => {
   it("renders without a badge when the unread count is zero", async () => {
@@ -94,7 +92,7 @@ describe("CoachNotificationBell", () => {
     await waitFor(() => expect(screen.getByText("1")).toBeInTheDocument());
     fireEvent.click(screen.getByRole("button", { name: /1 unread/i }));
     await waitFor(() =>
-      expect(screen.getByText("New booking request")).toBeInTheDocument(),
+      expect(panelContent().getByText("New booking request")).toBeInTheDocument(),
     );
   });
 
@@ -124,9 +122,11 @@ describe("CoachNotificationBell", () => {
     render(<CoachNotificationBell />);
     await waitFor(() => expect(screen.getByText("1")).toBeInTheDocument());
     fireEvent.click(screen.getByRole("button", { name: /notifications/i }));
-    await waitFor(() => expect(screen.getByText("New booking request")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(panelContent().getByText("New booking request")).toBeInTheDocument(),
+    );
 
-    fireEvent.click(screen.getByText("New booking request"));
+    fireEvent.click(panelContent().getByText("New booking request"));
     await waitFor(() => {
       expect(mockMarkRead).toHaveBeenCalledWith("n1");
       expect(mockPush).toHaveBeenCalledWith("/coach/lessons/l1");
@@ -159,8 +159,10 @@ describe("CoachNotificationBell", () => {
     render(<CoachNotificationBell />);
     await waitFor(() => expect(screen.getByText("2")).toBeInTheDocument());
     fireEvent.click(screen.getByRole("button", { name: /notifications/i }));
-    await waitFor(() => expect(screen.getByText("T1")).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("button", { name: /mark all as read/i }));
+    await waitFor(() => expect(panelContent().getByText("T1")).toBeInTheDocument());
+    // Two "Mark all as read" buttons render (one per surface); grab the
+    // one inside the dropdown.
+    fireEvent.click(panelContent().getByRole("button", { name: /mark all as read/i }));
     await waitFor(() => {
       expect(mockReadAll).toHaveBeenCalled();
       // Badge gone.
@@ -195,9 +197,9 @@ describe("CoachNotificationBell", () => {
     await waitFor(() => expect(mockUnread).toHaveBeenCalled());
     fireEvent.click(screen.getByRole("button", { name: /notifications/i }));
     await waitFor(() =>
-      expect(screen.getByText(/No longer available/)).toBeInTheDocument(),
+      expect(panelContent().getByText(/No longer available/)).toBeInTheDocument(),
     );
-    const row = screen.getByRole("menuitem", { name: /booking request/i });
+    const row = panelContent().getByRole("menuitem", { name: /booking request/i });
     expect(row).toBeDisabled();
   });
 });

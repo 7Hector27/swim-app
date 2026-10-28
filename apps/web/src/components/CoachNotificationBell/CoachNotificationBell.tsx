@@ -33,10 +33,8 @@ export default function CoachNotificationBell({ variant = "header" }: Props) {
   const [listError, setListError] = useState(false);
   const [markAllError, setMarkAllError] = useState(false);
   const [animateBadge, setAnimateBadge] = useState(false);
-  const [isMobile, setIsMobile] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
-  const dialogRef = useRef<HTMLDialogElement>(null);
   const pathname = usePathname();
   const router = useRouter();
   const previousCount = useRef<number>(0);
@@ -75,25 +73,18 @@ export default function CoachNotificationBell({ variant = "header" }: Props) {
     return () => window.clearInterval(timer);
   }, [refreshUnread]);
 
-  // Match the project's custom tablet breakpoint (769px).
-  useEffect(() => {
-    const query = window.matchMedia("(max-width: 768px)");
-    const update = () => setIsMobile(query.matches);
-    update();
-    query.addEventListener("change", update);
-    return () => query.removeEventListener("change", update);
-  }, []);
-
-  // Close on route change (dropdown stays with the previous route
-  // otherwise after a link click).
+  // Close on route change (otherwise a link click leaves the panel
+  // mounted against the previous route).
   useEffect(() => {
     setOpen(false);
   }, [pathname]);
 
-  // Dropdown dismissal — ignore when the mobile sheet is in play (its
-  // backdrop handles that).
+  // Shared dismissal: pointer-down outside the panel + the trigger closes
+  // the dropdown on tablet+. On mobile the sheet renders its own backdrop
+  // (via the .sheetBackdrop element) which handles the same gesture, so
+  // one handler covers both. Escape key closes either surface.
   useEffect(() => {
-    if (!open || isMobile) return;
+    if (!open) return;
     function handlePointerDown(event: PointerEvent) {
       const target = event.target as Node;
       if (
@@ -117,15 +108,7 @@ export default function CoachNotificationBell({ variant = "header" }: Props) {
       document.removeEventListener("pointerdown", handlePointerDown);
       document.removeEventListener("keydown", handleKey);
     };
-  }, [open, isMobile]);
-
-  // Mobile sheet — show/hide the native <dialog>.
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    if (!dialog || !isMobile) return;
-    if (open && !dialog.open) dialog.showModal();
-    if (!open && dialog.open) dialog.close();
-  }, [open, isMobile]);
+  }, [open]);
 
   // Animate the badge pulse once per uptick, then clear the class.
   useEffect(() => {
@@ -229,7 +212,7 @@ export default function CoachNotificationBell({ variant = "header" }: Props) {
       <button
         ref={triggerRef}
         type="button"
-        aria-haspopup={isMobile ? "dialog" : "menu"}
+        aria-haspopup="menu"
         aria-expanded={open}
         aria-label={
           unreadCount === 0
@@ -253,37 +236,39 @@ export default function CoachNotificationBell({ variant = "header" }: Props) {
         {variant === "nav-tab" && <span>Alerts</span>}
       </button>
 
-      {!isMobile && open && (
-        <div className="relative tablet:static tablet:inline-block">
+      {/* Both surfaces are rendered as plain divs and the CSS module
+          decides which one is visible for the current viewport width.
+          No matchMedia probe means no first-render flash of the wrong
+          surface on mobile. */}
+      {open && (
+        <>
+          {/* Desktop dropdown — hidden by styles.panel until tablet+. */}
+          <div className="relative tablet:static tablet:inline-block">
+            <div
+              ref={panelRef}
+              role="menu"
+              aria-label="Notifications"
+              className={`${styles.panel} absolute right-0 top-full mt-2 w-80 max-w-[90vw] rounded-card bg-section text-text-on-section border border-divider-section shadow-lg z-50 overflow-hidden`}
+            >
+              {panel}
+            </div>
+          </div>
+
+          {/* Mobile bottom sheet — hidden by styles.sheet from tablet+. */}
           <div
-            ref={panelRef}
-            role="menu"
+            className={styles.sheetBackdrop}
+            aria-hidden="true"
+            onClick={() => setOpen(false)}
+          />
+          <div
+            role="dialog"
+            aria-modal="true"
             aria-label="Notifications"
-            className={`${styles.panel} absolute right-0 top-full mt-2 w-80 max-w-[90vw] rounded-card bg-section text-text-on-section border border-divider-section shadow-lg z-50 overflow-hidden`}
+            className={styles.sheet}
           >
             {panel}
           </div>
-        </div>
-      )}
-
-      {isMobile && (
-        <dialog
-          ref={dialogRef}
-          className={styles.sheet}
-          onCancel={(event) => {
-            event.preventDefault();
-            setOpen(false);
-          }}
-          onClick={(event) => {
-            // The sheet fills the bottom of the viewport; clicking the
-            // backdrop (anywhere above the sheet) closes it.
-            const rect = event.currentTarget.getBoundingClientRect();
-            if (event.clientY < rect.top) setOpen(false);
-          }}
-          aria-label="Notifications"
-        >
-          <div className="bg-section text-text-on-section flex flex-col">{panel}</div>
-        </dialog>
+        </>
       )}
     </>
   );
