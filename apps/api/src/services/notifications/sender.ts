@@ -155,14 +155,12 @@ async function sendInner(notificationId: string): Promise<void> {
   // ── Step 4: load subscriptions ───────────────────────────────────────
   const subscriptions = await loadActiveSubscriptions(claimed.profileId);
   if (subscriptions.length === 0) {
-    // Email-backup branch for single-lesson booking requests only. Batch
-    // alerts don't get a backup email — one 20-row summary email is noise
-    // and the batch itself appears in the next daily summary. Scoping the
-    // backup to lesson_id-bearing rows also keeps the backup outbox row's
-    // FK blast radius narrower.
+    // Email-backup branch for booking requests. One summary email per
+    // single lesson OR per batch — never per-lesson inside a batch. The
+    // email sender's dedicated coach_booking_request path picks the right
+    // template from the payload shape.
     if (
       claimed.category === "booking_request" &&
-      claimed.lessonId !== null &&
       prefs.bookingRequestEmailBackupEnabled
     ) {
       await enqueueCoachBookingEmailBackup(claimed);

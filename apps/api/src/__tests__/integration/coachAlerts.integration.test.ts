@@ -16,7 +16,7 @@
 //    first read.
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { eq, and } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 
 import {
   adminDb,
@@ -25,6 +25,7 @@ import {
   type TestUser,
 } from "./helpers";
 import {
+  bookingBatches,
   coachNotifications,
   coachNotificationPreferences,
   coachPushSubscriptions,
@@ -325,6 +326,103 @@ describe("sendCoachNotification", () => {
     await adminDb().delete(coachNotifications).where(eq(coachNotifications.lessonId, lessonId));
     await adminDb().delete(lessonSwimmers).where(eq(lessonSwimmers.lessonId, lessonId));
     await adminDb().delete(lessons).where(eq(lessons.id, lessonId));
+  });
+
+  it("writes ONE batch email backup row when a batch booking has zero push subscriptions", async () => {
+    await cleanAllNotifications();
+    // Seed a batch of 3 lessons for the owner household.
+    const batchRows = await adminDb()
+      .insert(bookingBatches)
+      .values({
+        householdId: owner.householdId,
+        createdBy: owner.userId,
+        mode: "manual",
+      })
+      .returning({ id: bookingBatches.id });
+    const batchId = batchRows[0]!.id;
+    const base = Date.now() + 48 * 60 * 60 * 1000;
+    const lessonIds: string[] = [];
+    for (let index = 0; index < 3; index++) {
+      const insertedLesson = await adminDb()
+        .insert(lessons)
+        .values({
+          householdId: owner.householdId,
+          locationId,
+          startsAt: new Date(base + index * 24 * 60 * 60 * 1000),
+          durationMinutes: 30,
+          type: "private",
+          status: "pending",
+          requestedBy: owner.userId,
+          batchId,
+        })
+        .returning({ id: lessons.id });
+      const id = insertedLesson[0]!.id;
+      lessonIds.push(id);
+      await adminDb().insert(lessonSwimmers).values({ lessonId: id, swimmerId });
+    }
+
+    // Make the coach's email backup resolve.
+    await adminDb()
+      .update(profiles)
+      .set({ email: "coach-backup@test.local", emailVerifiedAt: new Date() })
+      .where(eq(profiles.id, coachProfile.userId));
+
+    const result = await db.transaction(async (tx) =>
+      enqueueCoachNotification(tx, {
+        coachProfileId: coachProfile.userId,
+        category: "booking_request",
+        batchId,
+      }),
+    );
+    expect(result.notificationId).toBeTruthy();
+    await sendCoachNotification(result.notificationId!);
+
+    const notificationRows = await adminDb()
+      .select()
+      .from(coachNotifications)
+      .where(eq(coachNotifications.id, result.notificationId!));
+    expect(notificationRows[0]?.pushStatus).toBe("skipped");
+    expect(notificationRows[0]?.pushLastError).toContain("email_backup_queued");
+
+    // Exactly one coach_booking_request outbox row for the whole batch,
+    // not one per lesson.
+    const outboxRows = await adminDb()
+      .select()
+      .from(lessonEmailOutbox)
+      .where(
+        and(
+          eq(lessonEmailOutbox.batchId, batchId),
+          eq(lessonEmailOutbox.event, "coach_booking_request"),
+        ),
+      );
+    expect(outboxRows).toHaveLength(1);
+    expect(outboxRows[0]?.recipientProfileIds).toEqual([coachProfile.userId]);
+    expect(outboxRows[0]?.lessonId).toBeNull();
+
+    // No per-lesson coach_booking_request rows were written.
+    const perLessonBackups = await adminDb()
+      .select()
+      .from(lessonEmailOutbox)
+      .where(
+        and(
+          inArray(lessonEmailOutbox.lessonId, lessonIds),
+          eq(lessonEmailOutbox.event, "coach_booking_request"),
+        ),
+      );
+    expect(perLessonBackups).toHaveLength(0);
+
+    // Clean up: outbox rows before batch, batch before household artifacts.
+    await adminDb()
+      .delete(lessonEmailOutbox)
+      .where(eq(lessonEmailOutbox.batchId, batchId));
+    await adminDb()
+      .delete(coachNotifications)
+      .where(eq(coachNotifications.id, result.notificationId!));
+    await adminDb()
+      .delete(lessonSwimmers)
+      .where(inArray(lessonSwimmers.lessonId, lessonIds));
+    await adminDb().delete(lessons).where(inArray(lessons.id, lessonIds));
+    await adminDb().delete(bookingBatches).where(eq(bookingBatches.id, batchId));
   });
 
   it("deactivates subscription on 410 Gone but still delivers via a second active subscription", async () => {

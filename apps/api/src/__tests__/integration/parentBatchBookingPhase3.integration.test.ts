@@ -27,6 +27,7 @@ import {
   availabilityConfig,
   availabilitySeasons,
   bookingBatches,
+  coachNotifications,
   householdAuditLog,
   lessonEmailOutbox,
   lessonLocations,
@@ -148,23 +149,30 @@ async function purgeStalePinnedWindowArtifacts(): Promise<void> {
     new Set(stale.map((row) => row.batchId).filter((id): id is string => id !== null)),
   );
   if (lessonIds.length > 0) {
+    await adminDb().delete(coachNotifications).where(inArray(coachNotifications.lessonId, lessonIds));
     await adminDb().delete(lessonEmailOutbox).where(inArray(lessonEmailOutbox.lessonId, lessonIds));
     await adminDb().delete(lessonSwimmers).where(inArray(lessonSwimmers.lessonId, lessonIds));
     await adminDb().delete(lessons).where(inArray(lessons.id, lessonIds));
   }
   if (batchIds.length > 0) {
+    await adminDb().delete(coachNotifications).where(inArray(coachNotifications.batchId, batchIds));
     await adminDb().delete(lessonEmailOutbox).where(inArray(lessonEmailOutbox.batchId, batchIds));
     await adminDb().delete(bookingBatches).where(inArray(bookingBatches.id, batchIds));
   }
 }
 
 async function cleanupHouseholdBatchArtifacts(householdId: string): Promise<void> {
+  // Drain in-flight notify* stubs so their INSERTs land against still-
+  // live FK targets. See parentBatchBooking's cleanup for details.
+  await lessonApproval.__settlePendingCoachAlertsForTests();
+
   const batchRows = await adminDb()
     .select({ id: bookingBatches.id })
     .from(bookingBatches)
     .where(eq(bookingBatches.householdId, householdId));
   const batchIds = batchRows.map((row) => row.id);
   if (batchIds.length > 0) {
+    await adminDb().delete(coachNotifications).where(inArray(coachNotifications.batchId, batchIds));
     await adminDb().delete(lessonEmailOutbox).where(inArray(lessonEmailOutbox.batchId, batchIds));
   }
   const lessonRows = await adminDb()
@@ -173,6 +181,7 @@ async function cleanupHouseholdBatchArtifacts(householdId: string): Promise<void
     .where(eq(lessons.householdId, householdId));
   const lessonIds = lessonRows.map((row) => row.id);
   if (lessonIds.length > 0) {
+    await adminDb().delete(coachNotifications).where(inArray(coachNotifications.lessonId, lessonIds));
     await adminDb().delete(lessonEmailOutbox).where(inArray(lessonEmailOutbox.lessonId, lessonIds));
     await adminDb().delete(lessonSwimmers).where(inArray(lessonSwimmers.lessonId, lessonIds));
     await adminDb().delete(lessons).where(inArray(lessons.id, lessonIds));

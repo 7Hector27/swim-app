@@ -9,6 +9,36 @@ import { getActiveCoachProfile } from "./coachProfile";
 
 const log = rootLogger.child({ component: "lesson-notify" });
 
+// Pending-work tracker. Each notify* stub fires an async IIFE for the
+// enqueue + send work; the IIFE promise is tracked here so tests can
+// await settlement before cleanup. In production this is unused — the
+// Set adds a promise and removes it on settle, bounded by the stub's own
+// completion.
+const inFlight = new Set<Promise<unknown>>();
+
+function track(promise: Promise<unknown>): void {
+  inFlight.add(promise);
+  // Attach a finally handler to always remove the entry. Swallow any
+  // rejection the handler itself might cause (shouldn't happen) so this
+  // path never surfaces an unhandled rejection.
+  promise.catch(() => {}).finally(() => {
+    inFlight.delete(promise);
+  });
+}
+
+/**
+ * Test-only helper. Waits until every pending notify* stub's async work
+ * has settled. Call this in test teardown BEFORE deleting lessons,
+ * batches, or households so the stub's INSERT / sender call completes
+ * against still-live FK targets. New work spawned while draining is also
+ * awaited (allSettled loops until the set is empty).
+ */
+export async function __settlePendingCoachAlertsForTests(): Promise<void> {
+  while (inFlight.size > 0) {
+    await Promise.allSettled(Array.from(inFlight));
+  }
+}
+
 // Approval gate: approval is required if the household has no prior approved
 // or completed lessons at this specific location. Declined, canceled, expired,
 // no_show, and pending lessons do not count toward the approval threshold.
@@ -37,7 +67,7 @@ export async function needsApproval(
 // in the DB; if the notification insert fails, the coach checks the
 // dashboard). A future refinement plumbs `tx` through this call site.
 export function notifyBookingCreated(lessonId: string, autoApproved: boolean): void {
-  void (async () => {
+  const work = (async () => {
     try {
       const coach = await getActiveCoachProfile();
       if (!coach) return;
@@ -53,7 +83,7 @@ export function notifyBookingCreated(lessonId: string, autoApproved: boolean): v
         });
       });
       if (result.notificationId) {
-        void sendCoachNotification(result.notificationId);
+        await sendCoachNotification(result.notificationId);
       }
     } catch (err) {
       log.error(
@@ -62,6 +92,7 @@ export function notifyBookingCreated(lessonId: string, autoApproved: boolean): v
       );
     }
   })();
+  track(work);
 }
 
 // Coach-initiated approve/decline. Jason is the actor; he does not notify
@@ -85,7 +116,7 @@ export function notifyCoachOfChange(
   },
 ): void {
   if (options?.actorIsCoach) return;
-  void (async () => {
+  const work = (async () => {
     try {
       const coach = await getActiveCoachProfile();
       if (!coach) return;
@@ -99,7 +130,7 @@ export function notifyCoachOfChange(
         });
       });
       if (result.notificationId) {
-        void sendCoachNotification(result.notificationId);
+        await sendCoachNotification(result.notificationId);
       }
     } catch (err) {
       log.error(
@@ -108,6 +139,7 @@ export function notifyCoachOfChange(
       );
     }
   })();
+  track(work);
 }
 
 // Batch-scoped coach notifications (ADR 030). One row per batch write with
@@ -117,7 +149,7 @@ export function notifyBatchBookingCreated(
   batchId: string,
   _summary: { confirmedCount: number; pendingCount: number },
 ): void {
-  void (async () => {
+  const work = (async () => {
     try {
       const coach = await getActiveCoachProfile();
       if (!coach) return;
@@ -129,7 +161,7 @@ export function notifyBatchBookingCreated(
         });
       });
       if (result.notificationId) {
-        void sendCoachNotification(result.notificationId);
+        await sendCoachNotification(result.notificationId);
       }
     } catch (err) {
       log.error(
@@ -138,6 +170,7 @@ export function notifyBatchBookingCreated(
       );
     }
   })();
+  track(work);
 }
 
 export type BatchChangeKind = "canceled_remaining";
@@ -147,7 +180,7 @@ export function notifyCoachOfBatchChange(
   _change: BatchChangeKind,
   _summary: { lessonCount: number },
 ): void {
-  void (async () => {
+  const work = (async () => {
     try {
       const coach = await getActiveCoachProfile();
       if (!coach) return;
@@ -160,7 +193,7 @@ export function notifyCoachOfBatchChange(
         });
       });
       if (result.notificationId) {
-        void sendCoachNotification(result.notificationId);
+        await sendCoachNotification(result.notificationId);
       }
     } catch (err) {
       log.error(
@@ -169,4 +202,5 @@ export function notifyCoachOfBatchChange(
       );
     }
   })();
+  track(work);
 }

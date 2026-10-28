@@ -94,6 +94,71 @@ describe("renderEmail — coach_booking_request (ADR 031 email backup)", () => {
   });
 });
 
+describe("renderEmail — coach_booking_request BATCH (ADR 031 email backup)", () => {
+  const batchPayload = {
+    kind: "booking_request_batch" as const,
+    listTitle: "New batch request",
+    batchId: "88888888-9999-aaaa-bbbb-cccccccccccc",
+    lessonCount: 3,
+    pendingCount: 3,
+    approvedCount: 0,
+    firstStartsAtLocalDisplay: "Tue, Oct 27, 2026 at 4:30 PM",
+    lastStartsAtLocalDisplay: "Thu, Oct 29, 2026 at 5:30 PM",
+    locationName: "Egret Park",
+  };
+
+  it("uses the FIRST starts-at in the subject (batch payloads carry no startsAtLocalDisplay)", async () => {
+    const { subject } = await renderEmail("coach_booking_request", batchPayload);
+    expect(subject).toBe("New booking request: Tue, Oct 27, 2026 at 4:30 PM");
+  });
+
+  it("renders the lesson count, pool, and first/last times in the body", async () => {
+    const { html, text } = await renderEmail("coach_booking_request", batchPayload);
+    expect(html).toContain("3 lessons");
+    expect(html).toContain("Egret Park");
+    expect(html).toContain("Tue, Oct 27, 2026 at 4:30 PM");
+    expect(html).toContain("Thu, Oct 29, 2026 at 5:30 PM");
+    expect(text).toContain("3 lessons");
+  });
+
+  it("renders the deep link scoped to the batch", async () => {
+    const { html } = await renderEmail("coach_booking_request", batchPayload);
+    expect(html).toContain(
+      "/coach/lessons?batch=88888888-9999-aaaa-bbbb-cccccccccccc",
+    );
+  });
+
+  it("renders a mixed-approval mix sentence when some are auto-approved", async () => {
+    const mixed = {
+      ...batchPayload,
+      pendingCount: 2,
+      approvedCount: 1,
+    };
+    const { html } = await renderEmail("coach_booking_request", mixed);
+    expect(html ?? "").toContain("1 auto-approved");
+    expect(html ?? "").toContain("2 waiting");
+  });
+
+  it("renders an all-auto-approved mix sentence", async () => {
+    const allApproved = {
+      ...batchPayload,
+      pendingCount: 0,
+      approvedCount: 3,
+    };
+    const { html } = await renderEmail("coach_booking_request", allApproved);
+    expect(html ?? "").toContain("auto-approved");
+    expect((html ?? "").toLowerCase()).toContain("heads-up");
+  });
+
+  it("never leaks a swimmer last name (batch payload carries no last-name field)", async () => {
+    const { html, text } = await renderEmail("coach_booking_request", batchPayload);
+    // No swimmer names in the batch summary; sanity-check nothing from the
+    // payload surfaces unexpected PII.
+    expect((html ?? "").toLowerCase()).not.toContain("rodriguez");
+    expect(text.toLowerCase()).not.toContain("rodriguez");
+  });
+});
+
 describe("renderEmail — every template", () => {
   it.each(ALL_EVENTS)(
     "%s: subject, deep link, lesson time, plain text, no em dash, no calendar.google.com",

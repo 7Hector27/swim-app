@@ -9,9 +9,13 @@
 import { render as renderReactEmail } from "@react-email/render";
 import type { ReactElement } from "react";
 import { getEnv } from "../../lib/env";
-import type { BookingRequestLessonPayload } from "../notifications/types";
+import type {
+  BookingRequestBatchPayload,
+  BookingRequestLessonPayload,
+} from "../notifications/types";
 import type { LessonEmailEvent, LessonEmailPayload } from "./types";
 import BookingRequested from "./templates/BookingRequested";
+import CoachBookingBatchRequest from "./templates/CoachBookingBatchRequest";
 import CoachBookingRequest from "./templates/CoachBookingRequest";
 import LessonCanceled from "./templates/LessonCanceled";
 import LessonConfirmed from "./templates/LessonConfirmed";
@@ -35,13 +39,17 @@ const SUBJECT_PREFIX: Record<LessonEmailEvent, string> = {
   coach_booking_request: "New booking request",
 };
 
+type CoachBackupPayload = BookingRequestLessonPayload | BookingRequestBatchPayload;
+type AnyEmailPayload = LessonEmailPayload | CoachBackupPayload;
+
 export async function renderEmail(
   event: LessonEmailEvent,
-  payload: LessonEmailPayload | BookingRequestLessonPayload,
+  payload: AnyEmailPayload,
 ): Promise<RenderedEmail> {
-  // Both payload shapes carry `startsAtLocalDisplay` as a string, so the
-  // subject assembly is uniform. Templates branch on the event below.
-  const subject = `${SUBJECT_PREFIX[event]}: ${payload.startsAtLocalDisplay}`;
+  // Subject assembly varies by payload shape: parent/lesson rows carry
+  // `startsAtLocalDisplay`; batch coach-backup rows carry
+  // `firstStartsAtLocalDisplay`. The dispatch below picks the right one.
+  const subject = `${SUBJECT_PREFIX[event]}: ${pickSubjectWhen(payload)}`;
   // SITE_URL is required by env.ts (defaulted to localhost in local, pinned
   // to a non-localhost URL in dev/prod), so getEnv() either returns a usable
   // siteUrl or throws at boot. No silent fallback here — a misconfigured
@@ -58,13 +66,25 @@ export async function renderEmail(
   return { subject, text, html };
 }
 
+function pickSubjectWhen(payload: AnyEmailPayload): string {
+  // Batch coach-backup rows carry firstStartsAtLocalDisplay; everything
+  // else uses startsAtLocalDisplay. Branch on the discriminated kind.
+  if ("kind" in payload && payload.kind === "booking_request_batch") {
+    return payload.firstStartsAtLocalDisplay;
+  }
+  return (payload as LessonEmailPayload | BookingRequestLessonPayload).startsAtLocalDisplay;
+}
+
 function selectTemplate(
   event: LessonEmailEvent,
-  payload: LessonEmailPayload | BookingRequestLessonPayload,
+  payload: AnyEmailPayload,
   siteUrl: string,
   replyToEmail: string | null,
 ): ReactElement {
   if (event === "coach_booking_request") {
+    if ("kind" in payload && payload.kind === "booking_request_batch") {
+      return CoachBookingBatchRequest({ payload, siteUrl, replyToEmail });
+    }
     return CoachBookingRequest({
       payload: payload as BookingRequestLessonPayload,
       siteUrl,
