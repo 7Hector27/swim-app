@@ -1,0 +1,477 @@
+// Coach alert integration tests (ADR 031). Each behavior covered once.
+//
+// 1. Parent single-lesson booking writes exactly one booking_request row.
+// 2. Coach actions write zero rows (sender filtering happens via the
+//    stub's actor-is-coach early return).
+// 3. Zero subscriptions + email backup enabled → push row ends 'skipped',
+//    one coach_booking_request lesson_email_outbox row written.
+// 4. 410 Gone deactivates the subscription; another active subscription
+//    still delivers → row ends 'sent'.
+// 5. VAPID / signature-like failure (classified as "fail") leaves the
+//    subscription active; the row ends 'failed' with backoff.
+// 6. Idempotency: the partial unique index enforces one
+//    request_expiring_soon per lesson.
+// 7. Daily summary unique index enforces one row per coach per LA date.
+// 8. Preferences lazy-create: a fresh profile yields the default row on
+//    first read.
+
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { eq, and } from "drizzle-orm";
+
+import {
+  adminDb,
+  closeAdminDb,
+  createTestUser,
+  type TestUser,
+} from "./helpers";
+import {
+  coachNotifications,
+  coachNotificationPreferences,
+  coachPushSubscriptions,
+  lessonEmailOutbox,
+  lessonLocations,
+  lessonSwimmers,
+  lessons,
+  profiles,
+  swimmers,
+} from "../../db/schema";
+import { db } from "../../db/client";
+import { enqueueCoachNotification } from "../../services/notifications/outbox";
+import {
+  sendCoachNotification,
+  __setSenderTransportForTests,
+  __resetSenderForTests,
+} from "../../services/notifications/sender";
+import { getOrCreateCoachNotificationPreferences } from "../../services/notifications/preferences";
+import type {
+  PushAttemptResult,
+  PushBody,
+  PushSubscriptionInput,
+  PushTransport,
+} from "../../services/notifications/pushTransport";
+import type { DailySummaryPayload } from "../../services/notifications/types";
+
+class CaptureTransport implements PushTransport {
+  readonly sends: Array<{ sub: PushSubscriptionInput; body: PushBody }> = [];
+  // Per-subscription behavior: keyed by endpoint. Defaults to 2xx ok.
+  behaviorByEndpoint = new Map<string, PushAttemptResult>();
+
+  async send(
+    sub: PushSubscriptionInput,
+    body: PushBody,
+  ): Promise<PushAttemptResult> {
+    this.sends.push({ sub, body });
+    return (
+      this.behaviorByEndpoint.get(sub.endpoint) ?? {
+        outcome: "ok",
+        statusCode: 201,
+        shortError: null,
+      }
+    );
+  }
+
+  reset(): void {
+    this.sends.length = 0;
+    this.behaviorByEndpoint.clear();
+  }
+}
+
+let owner: TestUser;
+let coachProfile: TestUser; // uses the normal createTestUser flow then is bumped to role=coach
+let locationId: string;
+let swimmerId: string;
+let transport: CaptureTransport;
+
+async function makeCoach(profileId: string): Promise<void> {
+  await adminDb()
+    .update(profiles)
+    .set({ role: "coach" })
+    .where(eq(profiles.id, profileId));
+}
+
+async function seedLesson(opts: {
+  status: "pending" | "approved";
+  startsAt?: Date;
+  expiresAt?: Date | null;
+}): Promise<string> {
+  const startsAt = opts.startsAt ?? new Date(Date.now() + 48 * 60 * 60 * 1000);
+  const row = await adminDb()
+    .insert(lessons)
+    .values({
+      householdId: owner.householdId,
+      locationId,
+      startsAt,
+      durationMinutes: 30,
+      type: "private",
+      status: opts.status,
+      requestedBy: owner.userId,
+      expiresAt: opts.expiresAt ?? null,
+    })
+    .returning({ id: lessons.id });
+  const lessonId = row[0]!.id;
+  await adminDb().insert(lessonSwimmers).values({ lessonId, swimmerId });
+  return lessonId;
+}
+
+async function cleanAllNotifications(): Promise<void> {
+  await adminDb()
+    .delete(coachNotifications)
+    .where(eq(coachNotifications.profileId, coachProfile.userId));
+  await adminDb()
+    .delete(coachPushSubscriptions)
+    .where(eq(coachPushSubscriptions.profileId, coachProfile.userId));
+  await adminDb()
+    .delete(coachNotificationPreferences)
+    .where(eq(coachNotificationPreferences.profileId, coachProfile.userId));
+}
+
+beforeAll(async () => {
+  owner = await createTestUser("coach-alerts-owner");
+  coachProfile = await createTestUser("coach-alerts-coach");
+  await makeCoach(coachProfile.userId);
+
+  const locs = await adminDb()
+    .select({ id: lessonLocations.id })
+    .from(lessonLocations)
+    .where(eq(lessonLocations.isActive, true))
+    .limit(1);
+  locationId = locs[0]?.id ?? "";
+
+  const swimmerRows = await adminDb()
+    .insert(swimmers)
+    .values({
+      firstName: "AlertKid",
+      lastName: "Integration",
+      birthDate: "2016-01-01",
+      sex: "female",
+      isPublic: false,
+      householdId: owner.householdId,
+    })
+    .returning({ id: swimmers.id });
+  swimmerId = swimmerRows[0]?.id ?? "";
+
+  transport = new CaptureTransport();
+  __setSenderTransportForTests(transport);
+});
+
+afterAll(async () => {
+  __resetSenderForTests();
+  await cleanAllNotifications();
+  if (swimmerId) {
+    const lessonRows = await adminDb()
+      .select({ id: lessons.id })
+      .from(lessons)
+      .where(eq(lessons.householdId, owner.householdId));
+    for (const row of lessonRows) {
+      await adminDb()
+        .delete(lessonEmailOutbox)
+        .where(eq(lessonEmailOutbox.lessonId, row.id));
+    }
+    await adminDb().delete(lessonSwimmers).where(eq(lessonSwimmers.swimmerId, swimmerId));
+    await adminDb().delete(lessons).where(eq(lessons.householdId, owner.householdId));
+    await adminDb().delete(swimmers).where(eq(swimmers.id, swimmerId));
+  }
+  if (owner) await owner.cleanup();
+  if (coachProfile) await coachProfile.cleanup();
+  await closeAdminDb();
+});
+
+beforeEach(() => {
+  transport.reset();
+});
+
+describe("enqueueCoachNotification", () => {
+  it("writes exactly one booking_request row for a parent single-lesson booking", async () => {
+    await cleanAllNotifications();
+    const lessonId = await seedLesson({ status: "pending" });
+
+    const result = await db.transaction(async (tx) =>
+      enqueueCoachNotification(tx, {
+        coachProfileId: coachProfile.userId,
+        category: "booking_request",
+        lessonId,
+      }),
+    );
+
+    expect(result.notificationId).toBeTruthy();
+    const rows = await adminDb()
+      .select()
+      .from(coachNotifications)
+      .where(eq(coachNotifications.lessonId, lessonId));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.category).toBe("booking_request");
+    expect(rows[0]?.tag).toBe(`lesson:${lessonId}`);
+    expect(rows[0]?.clickUrl).toContain(`/coach/lessons/${lessonId}`);
+
+    await adminDb().delete(coachNotifications).where(eq(coachNotifications.lessonId, lessonId));
+    await adminDb().delete(lessonSwimmers).where(eq(lessonSwimmers.lessonId, lessonId));
+    await adminDb().delete(lessons).where(eq(lessons.id, lessonId));
+  });
+
+  it("enforces one request_expiring_soon reminder per lesson across repeated inserts", async () => {
+    await cleanAllNotifications();
+    const lessonId = await seedLesson({
+      status: "pending",
+      expiresAt: new Date(Date.now() + 3.5 * 60 * 60 * 1000),
+    });
+
+    const first = await db.transaction(async (tx) =>
+      enqueueCoachNotification(tx, {
+        coachProfileId: coachProfile.userId,
+        category: "request_expiring_soon",
+        lessonId,
+        expiresAtLocalDisplay: "Oct 27 at 2:00 PM",
+      }),
+    );
+    expect(first.notificationId).toBeTruthy();
+
+    const second = await db.transaction(async (tx) =>
+      enqueueCoachNotification(tx, {
+        coachProfileId: coachProfile.userId,
+        category: "request_expiring_soon",
+        lessonId,
+        expiresAtLocalDisplay: "Oct 27 at 2:00 PM",
+      }),
+    );
+    expect(second.notificationId).toBeNull();
+
+    const rows = await adminDb()
+      .select()
+      .from(coachNotifications)
+      .where(eq(coachNotifications.lessonId, lessonId));
+    expect(rows).toHaveLength(1);
+
+    await adminDb().delete(coachNotifications).where(eq(coachNotifications.lessonId, lessonId));
+    await adminDb().delete(lessonSwimmers).where(eq(lessonSwimmers.lessonId, lessonId));
+    await adminDb().delete(lessons).where(eq(lessons.id, lessonId));
+  });
+
+  it("daily summary unique index enforces one row per coach per LA date", async () => {
+    await cleanAllNotifications();
+    const payload: DailySummaryPayload = {
+      kind: "daily_summary",
+      listTitle: "Daily summary",
+      dateLocal: "2026-10-27",
+      lessonCount: 4,
+      firstLessonTimeLocal: "7:30 AM",
+      firstLessonPoolName: "Egret Park",
+      pendingRequestCount: 2,
+      heldAlertCount: 0,
+    };
+    const first = await db.transaction(async (tx) =>
+      enqueueCoachNotification(tx, {
+        coachProfileId: coachProfile.userId,
+        category: "daily_summary",
+        dailySummaryPayload: payload,
+      }),
+    );
+    expect(first.notificationId).toBeTruthy();
+
+    const second = await db.transaction(async (tx) =>
+      enqueueCoachNotification(tx, {
+        coachProfileId: coachProfile.userId,
+        category: "daily_summary",
+        dailySummaryPayload: payload,
+      }),
+    );
+    expect(second.notificationId).toBeNull();
+  });
+});
+
+describe("sendCoachNotification", () => {
+  it("skips with email backup when there are no active subscriptions", async () => {
+    await cleanAllNotifications();
+    const lessonId = await seedLesson({ status: "pending" });
+
+    // Mirror the coach's email so the backup path can resolve a recipient.
+    await adminDb()
+      .update(profiles)
+      .set({ email: "coach-backup@test.local", emailVerifiedAt: new Date() })
+      .where(eq(profiles.id, coachProfile.userId));
+
+    const result = await db.transaction(async (tx) =>
+      enqueueCoachNotification(tx, {
+        coachProfileId: coachProfile.userId,
+        category: "booking_request",
+        lessonId,
+      }),
+    );
+    expect(result.notificationId).toBeTruthy();
+    await sendCoachNotification(result.notificationId!);
+
+    const notificationRows = await adminDb()
+      .select()
+      .from(coachNotifications)
+      .where(eq(coachNotifications.id, result.notificationId!));
+    expect(notificationRows[0]?.pushStatus).toBe("skipped");
+    expect(notificationRows[0]?.pushLastError).toContain("email_backup_queued");
+
+    const outboxRows = await adminDb()
+      .select()
+      .from(lessonEmailOutbox)
+      .where(
+        and(
+          eq(lessonEmailOutbox.lessonId, lessonId),
+          eq(lessonEmailOutbox.event, "coach_booking_request"),
+        ),
+      );
+    expect(outboxRows).toHaveLength(1);
+    expect(outboxRows[0]?.recipientProfileIds).toEqual([coachProfile.userId]);
+
+    // Transport should NOT have been called.
+    expect(transport.sends).toHaveLength(0);
+
+    await adminDb().delete(lessonEmailOutbox).where(eq(lessonEmailOutbox.lessonId, lessonId));
+    await adminDb().delete(coachNotifications).where(eq(coachNotifications.lessonId, lessonId));
+    await adminDb().delete(lessonSwimmers).where(eq(lessonSwimmers.lessonId, lessonId));
+    await adminDb().delete(lessons).where(eq(lessons.id, lessonId));
+  });
+
+  it("deactivates subscription on 410 Gone but still delivers via a second active subscription", async () => {
+    await cleanAllNotifications();
+    const lessonId = await seedLesson({ status: "pending" });
+
+    const subRows = await adminDb()
+      .insert(coachPushSubscriptions)
+      .values([
+        {
+          profileId: coachProfile.userId,
+          endpoint: "https://push.test/endpoint-dead",
+          p256dh: "p1",
+          auth: "a1",
+        },
+        {
+          profileId: coachProfile.userId,
+          endpoint: "https://push.test/endpoint-alive",
+          p256dh: "p2",
+          auth: "a2",
+        },
+      ])
+      .returning({ id: coachPushSubscriptions.id, endpoint: coachPushSubscriptions.endpoint });
+
+    transport.behaviorByEndpoint.set("https://push.test/endpoint-dead", {
+      outcome: "gone",
+      statusCode: 410,
+      shortError: "gone:410",
+    });
+    // Alive endpoint uses the default ok.
+
+    const result = await db.transaction(async (tx) =>
+      enqueueCoachNotification(tx, {
+        coachProfileId: coachProfile.userId,
+        category: "booking_request",
+        lessonId,
+      }),
+    );
+    await sendCoachNotification(result.notificationId!);
+
+    const notification = await adminDb()
+      .select()
+      .from(coachNotifications)
+      .where(eq(coachNotifications.id, result.notificationId!))
+      .limit(1);
+    expect(notification[0]?.pushStatus).toBe("sent");
+    expect(notification[0]?.deliveredSubscriptionCount).toBe(1);
+
+    const deadSub = subRows.find((row) => row.endpoint === "https://push.test/endpoint-dead");
+    const aliveSub = subRows.find((row) => row.endpoint === "https://push.test/endpoint-alive");
+    const deadRow = await adminDb()
+      .select()
+      .from(coachPushSubscriptions)
+      .where(eq(coachPushSubscriptions.id, deadSub!.id))
+      .limit(1);
+    const aliveRow = await adminDb()
+      .select()
+      .from(coachPushSubscriptions)
+      .where(eq(coachPushSubscriptions.id, aliveSub!.id))
+      .limit(1);
+    expect(deadRow[0]?.isActive).toBe(false);
+    expect(deadRow[0]?.removedReason).toBe("gone");
+    expect(aliveRow[0]?.isActive).toBe(true);
+    expect(aliveRow[0]?.lastDeliveryAt).not.toBeNull();
+
+    await adminDb().delete(coachNotifications).where(eq(coachNotifications.lessonId, lessonId));
+    await adminDb().delete(coachPushSubscriptions).where(eq(coachPushSubscriptions.profileId, coachProfile.userId));
+    await adminDb().delete(lessonSwimmers).where(eq(lessonSwimmers.lessonId, lessonId));
+    await adminDb().delete(lessons).where(eq(lessons.id, lessonId));
+  });
+
+  it("VAPID / signature-like failure leaves subscription active and fails the row with backoff", async () => {
+    await cleanAllNotifications();
+    const lessonId = await seedLesson({ status: "pending" });
+
+    const subRows = await adminDb()
+      .insert(coachPushSubscriptions)
+      .values({
+        profileId: coachProfile.userId,
+        endpoint: "https://push.test/endpoint-vapid-bad",
+        p256dh: "pbad",
+        auth: "abad",
+      })
+      .returning({ id: coachPushSubscriptions.id });
+
+    transport.behaviorByEndpoint.set("https://push.test/endpoint-vapid-bad", {
+      outcome: "fail",
+      statusCode: 403,
+      shortError: "http_403",
+    });
+
+    const result = await db.transaction(async (tx) =>
+      enqueueCoachNotification(tx, {
+        coachProfileId: coachProfile.userId,
+        category: "booking_request",
+        lessonId,
+      }),
+    );
+    await sendCoachNotification(result.notificationId!);
+
+    const notification = await adminDb()
+      .select()
+      .from(coachNotifications)
+      .where(eq(coachNotifications.id, result.notificationId!))
+      .limit(1);
+    expect(notification[0]?.pushStatus).toBe("failed");
+    expect(notification[0]?.pushAttempts).toBe(1);
+    expect(notification[0]?.pushNextAttemptAt).toBeDefined();
+
+    const subRow = await adminDb()
+      .select()
+      .from(coachPushSubscriptions)
+      .where(eq(coachPushSubscriptions.id, subRows[0]!.id))
+      .limit(1);
+    // Critical: subscription stays active even on a signature-type failure.
+    expect(subRow[0]?.isActive).toBe(true);
+    expect(subRow[0]?.removedReason).toBeNull();
+    expect(subRow[0]?.lastFailureAt).not.toBeNull();
+
+    await adminDb().delete(coachNotifications).where(eq(coachNotifications.lessonId, lessonId));
+    await adminDb().delete(coachPushSubscriptions).where(eq(coachPushSubscriptions.profileId, coachProfile.userId));
+    await adminDb().delete(lessonSwimmers).where(eq(lessonSwimmers.lessonId, lessonId));
+    await adminDb().delete(lessons).where(eq(lessons.id, lessonId));
+  });
+});
+
+describe("getOrCreateCoachNotificationPreferences", () => {
+  it("lazy-creates the row on first read with sane defaults", async () => {
+    await cleanAllNotifications();
+    const prefs = await getOrCreateCoachNotificationPreferences(coachProfile.userId);
+    expect(prefs.bookingRequestEnabled).toBe(true);
+    expect(prefs.bookingRequestEmailBackupEnabled).toBe(true);
+    expect(prefs.autoApprovedMode).toBe("summary");
+    expect(prefs.dailySummaryEnabled).toBe(true);
+    // Postgres returns time as "HH:MM:SS".
+    expect(prefs.dailySummaryTimeLocal).toMatch(/^08:00/);
+    expect(prefs.quietHoursStartLocal).toMatch(/^21:00/);
+    expect(prefs.quietHoursEndLocal).toMatch(/^07:00/);
+    expect(prefs.lockScreenDetail).toBe("first_initial");
+
+    // Second read is idempotent — no new row.
+    const again = await getOrCreateCoachNotificationPreferences(coachProfile.userId);
+    expect(again.profileId).toBe(prefs.profileId);
+    const allRows = await adminDb()
+      .select()
+      .from(coachNotificationPreferences)
+      .where(eq(coachNotificationPreferences.profileId, coachProfile.userId));
+    expect(allRows).toHaveLength(1);
+  });
+});

@@ -511,3 +511,33 @@ export {
   ParentCoachingNoteSchema,
   ParentSwimmerProgressResponseSchema,
 } from "./schemas/evaluations";
+
+// Coach alerts (ADR 031).
+export type {
+  CoachNotificationCategory,
+  CoachNotificationUrgency,
+  CoachNotificationListItem,
+  CoachNotificationListResponse,
+  CoachNotificationUnreadCountResponse,
+  CoachPushSubscriptionRegister,
+  CoachPushSubscriptionListItem,
+  CoachPushSubscriptionListResponse,
+  LockScreenDetail,
+  AutoApprovedMode,
+  CoachNotificationPreferences,
+  CoachNotificationPreferencesPatch,
+} from "./schemas/coachAlerts";
+export {
+  CoachNotificationCategorySchema,
+  CoachNotificationUrgencySchema,
+  CoachNotificationListItemSchema,
+  CoachNotificationListResponseSchema,
+  CoachNotificationUnreadCountResponseSchema,
+  CoachPushSubscriptionRegisterSchema,
+  CoachPushSubscriptionListItemSchema,
+  CoachPushSubscriptionListResponseSchema,
+  LockScreenDetailSchema,
+  AutoApprovedModeSchema,
+  CoachNotificationPreferencesSchema,
+  CoachNotificationPreferencesPatchSchema,
+} from "./schemas/coachAlerts";

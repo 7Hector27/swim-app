@@ -1935,7 +1935,7 @@ lessonsRouter.delete(
       });
     });
 
-    notifyCoachOfChange(id);
+    notifyCoachOfChange(id, "canceled", { actorIsCoach: isCoach });
     res.status(204).end();
     // Reconcile Google Calendar after the response. For a cancel this will
     // delete the event if one exists; a never-synced lesson is a safe no-op.
@@ -2215,7 +2215,10 @@ lessonsRouter.patch(
     }
     const rescheduleOutboxIds = updatedLesson.outboxIds;
 
-    notifyCoachOfChange(id);
+    notifyCoachOfChange(id, "rescheduled", {
+      actorIsCoach: isCoach,
+      previousStartsAt: existingLesson.startsAt,
+    });
 
     const result = isCoach
       ? await loadLessonWithSwimmers(id)

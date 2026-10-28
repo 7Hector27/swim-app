@@ -15,6 +15,13 @@ import {
 import { enqueueLessonEmail } from "../services/emails/outbox";
 import { sendLessonEmailOutboxRow } from "../services/emails/sender";
 import { drainLessonEmailOutbox, scrubLessonEmailPayloads } from "../services/emails/drain";
+import {
+  composeDailyCoachSummary,
+  drainCoachNotifications,
+  enqueueExpiringRequestReminders,
+  releaseHeldCoachNotifications,
+  scrubCoachNotificationPayloads,
+} from "../services/notifications/drain";
 import type { RequestHandler } from "express";
 
 // Promote the per-tick light pass to a full pass when last_full_reconcile_at
@@ -177,6 +184,55 @@ internalRouter.post(
       );
     }
 
+    // Coach push notifications (ADR 031): four new passes, all bounded,
+    // all idempotent. Each pass has its own try/catch so one failure can't
+    // starve the others.
+    let coachReleaseResult = { releasedToPending: 0, releasedToSummarized: 0 };
+    let coachExpiringResult = { enqueued: 0 };
+    let coachDailySummaryResult = { inserted: 0 };
+    let coachDrainResult = { drained: 0, abandoned: 0 };
+    let coachScrubResult = { scrubbed: 0, deadSubscriptionsPurged: 0 };
+    try {
+      coachReleaseResult = await releaseHeldCoachNotifications();
+    } catch (err) {
+      req.log.error(
+        { err: err instanceof Error ? err.message : String(err) },
+        "cron/tick coach release-held failed",
+      );
+    }
+    try {
+      coachExpiringResult = await enqueueExpiringRequestReminders();
+    } catch (err) {
+      req.log.error(
+        { err: err instanceof Error ? err.message : String(err) },
+        "cron/tick coach expiring-reminder failed",
+      );
+    }
+    try {
+      coachDailySummaryResult = await composeDailyCoachSummary();
+    } catch (err) {
+      req.log.error(
+        { err: err instanceof Error ? err.message : String(err) },
+        "cron/tick coach daily-summary failed",
+      );
+    }
+    try {
+      coachDrainResult = await drainCoachNotifications();
+    } catch (err) {
+      req.log.error(
+        { err: err instanceof Error ? err.message : String(err) },
+        "cron/tick coach push drain failed",
+      );
+    }
+    try {
+      coachScrubResult = await scrubCoachNotificationPayloads();
+    } catch (err) {
+      req.log.error(
+        { err: err instanceof Error ? err.message : String(err) },
+        "cron/tick coach scrub failed",
+      );
+    }
+
     req.log.info(
       {
         expiredCount: expired.length,
@@ -186,6 +242,14 @@ internalRouter.post(
         emailDrained: emailDrainResult.drained,
         emailAbandoned: emailDrainResult.abandoned,
         emailScrubbed: emailScrubResult.scrubbed,
+        coachReleasedPending: coachReleaseResult.releasedToPending,
+        coachReleasedSummarized: coachReleaseResult.releasedToSummarized,
+        coachExpiringEnqueued: coachExpiringResult.enqueued,
+        coachDailySummaryInserted: coachDailySummaryResult.inserted,
+        coachDrained: coachDrainResult.drained,
+        coachAbandoned: coachDrainResult.abandoned,
+        coachScrubbed: coachScrubResult.scrubbed,
+        coachDeadSubsPurged: coachScrubResult.deadSubscriptionsPurged,
       },
       "cron/tick",
     );
@@ -198,6 +262,14 @@ internalRouter.post(
       emailDrained: emailDrainResult.drained,
       emailAbandoned: emailDrainResult.abandoned,
       emailScrubbed: emailScrubResult.scrubbed,
+      coachReleasedPending: coachReleaseResult.releasedToPending,
+      coachReleasedSummarized: coachReleaseResult.releasedToSummarized,
+      coachExpiringEnqueued: coachExpiringResult.enqueued,
+      coachDailySummaryInserted: coachDailySummaryResult.inserted,
+      coachDrained: coachDrainResult.drained,
+      coachAbandoned: coachDrainResult.abandoned,
+      coachScrubbed: coachScrubResult.scrubbed,
+      coachDeadSubsPurged: coachScrubResult.deadSubscriptionsPurged,
     });
   }),
 );

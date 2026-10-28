@@ -1090,8 +1090,10 @@ export const coachNotifications = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     // Keyed by profile, not coach, so a future parent-facing push feature
     // fits the same table without a migration. The sender filters by
-    // profile.role='coach' when the current scope is coach-only.
-    profileId: uuid("profile_id").notNull().references(() => profiles.id, { onDelete: "restrict" }),
+    // profile.role='coach' when the current scope is coach-only. CASCADE:
+    // notifications are not standalone audit records; when the profile is
+    // removed, their notification history goes with it.
+    profileId: uuid("profile_id").notNull().references(() => profiles.id, { onDelete: "cascade" }),
     // One of: 'booking_request', 'request_expiring_soon', 'parent_change',
     // 'calendar_disconnected', 'auto_approved_summary', 'daily_summary'.
     category: text("category").notNull(),
@@ -1101,10 +1103,12 @@ export const coachNotifications = pgTable(
     // Quiet-hours bypass is a SEPARATE gate (starts_at < now()+12h) that
     // the sender computes at send time.
     urgency: text("urgency").notNull(),
-    // Set for per-lesson categories.
-    lessonId: uuid("lesson_id").references(() => lessons.id, { onDelete: "restrict" }),
-    // Set when the alert describes a batch.
-    batchId: uuid("batch_id").references(() => bookingBatches.id, { onDelete: "restrict" }),
+    // Set for per-lesson categories. CASCADE: a notification about a
+    // lesson has no standalone audit value once the lesson row is gone;
+    // the payload scrubs after 30 days regardless.
+    lessonId: uuid("lesson_id").references(() => lessons.id, { onDelete: "cascade" }),
+    // Set when the alert describes a batch. Same CASCADE reasoning.
+    batchId: uuid("batch_id").references(() => bookingBatches.id, { onDelete: "cascade" }),
     // Frozen render inputs — the push body is composed at send time from
     // this payload plus the coach's lock_screen_detail setting so a later
     // preference change does not retroactively repaint a scheduled push.

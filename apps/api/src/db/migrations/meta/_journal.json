@@ -407,6 +407,20 @@
       "when": 1793154014853,
       "tag": "0057_coach_alerts",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1793155693977,
+      "tag": "0058_coach_notifications_cascade",
+      "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1793155922181,
+      "tag": "0059_coach_notifications_profile_cascade",
+      "breakpoints": true
     }
   ]
 }
