@@ -31,6 +31,7 @@ export default function CoachNotificationBell({ variant = "header" }: Props) {
   const [items, setItems] = useState<CoachNotificationListItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [listError, setListError] = useState(false);
+  const [markAllError, setMarkAllError] = useState(false);
   const [animateBadge, setAnimateBadge] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -155,10 +156,21 @@ export default function CoachNotificationBell({ variant = "header" }: Props) {
   }
 
   async function handleMarkAll() {
+    // Snapshot the pre-update state so a failed PATCH can revert cleanly;
+    // without this the optimistic "all read" would stick even after the
+    // server rejected the write and the coach would never know.
+    const previousItems = items;
+    const previousUnreadCount = unreadCount;
     const now = new Date().toISOString();
     setItems((rows) => rows.map((row) => ({ ...row, readAt: row.readAt ?? now })));
     setUnreadCount(0);
-    await markAllNotificationsRead();
+    setMarkAllError(false);
+    const result = await markAllNotificationsRead();
+    if (!result.ok) {
+      setItems(previousItems);
+      setUnreadCount(previousUnreadCount);
+      setMarkAllError(true);
+    }
   }
 
   const badgeLabel =
@@ -187,6 +199,11 @@ export default function CoachNotificationBell({ variant = "header" }: Props) {
           Mark all as read
         </button>
       </div>
+      {markAllError && (
+        <p role="alert" className="px-5 py-2 text-xs text-danger border-b border-divider-section">
+          Could not mark all as read. Try again.
+        </p>
+      )}
       <div className="max-h-[60vh] overflow-y-auto">
         <NotificationList
           items={items}
