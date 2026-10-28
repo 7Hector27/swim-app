@@ -449,6 +449,15 @@ interface ListRowInput {
   batchId: string | null;
 }
 
+// `lockScreenDetail` is the coach's CURRENT setting at list-render
+// time, not the setting active when the alert was enqueued. That is
+// deliberate: the in-app list sits behind login (not visible from a
+// shoulder-surf on a locked phone), so the privacy posture of the lock
+// screen does not apply. Flipping first_initial → full_name retro-
+// actively broadens old rows; full_name → first_initial retro-actively
+// narrows them. The lock-screen push itself was composed at send time
+// and is immutable on the device. Keep the renderer pure — pass the
+// current pref in, do not read it off the payload.
 function buildListItem(
   row: ListRowInput,
   lockScreenDetail: "first_initial" | "full_name",
