@@ -5,6 +5,7 @@ import type {
   SlotState,
   SlotWithState,
 } from "@swim-app/shared";
+import { bookingWindowEnd } from "@swim-app/shared";
 import { effectiveHours } from "./effectiveHours";
 
 export interface SlotParams {
@@ -263,11 +264,14 @@ export function computeAvailableSlots(params: SlotParams): Slot[] {
   const minStartMs = skipMinAdvance
     ? nowUtc.getTime()
     : nowUtc.getTime() + config.bookingMinAdvanceHours * 60 * MIN_MS;
-  const maxStartMs =
-    nowUtc.getTime() + config.bookingMaxAdvanceWeeks * 7 * 24 * 60 * MIN_MS;
+  const windowEndDate = bookingWindowEnd(nowUtc, config.bookingMaxAdvanceWeeks);
 
   return slots
-    .filter((s) => s.startsAt.getTime() >= minStartMs && s.startsAt.getTime() <= maxStartMs)
+    .filter(
+      (s) =>
+        s.startsAt.getTime() >= minStartMs &&
+        getDateInLA(s.startsAt) <= windowEndDate,
+    )
     .sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
 }
 
@@ -359,10 +363,9 @@ export function diagnoseSlotRejection(
   const minStartMs = skipMinAdvance
     ? nowUtc.getTime()
     : nowUtc.getTime() + config.bookingMinAdvanceHours * 60 * MIN_MS;
-  const maxStartMs =
-    nowUtc.getTime() + config.bookingMaxAdvanceWeeks * 7 * 24 * 60 * MIN_MS;
+  const windowEndDate = bookingWindowEnd(nowUtc, config.bookingMaxAdvanceWeeks);
   if (slotStartMs < minStartMs) return "too_soon";
-  if (slotStartMs > maxStartMs) return "too_far";
+  if (getDateInLA(new Date(slotStartMs)) > windowEndDate) return "too_far";
 
   // Fall-through: unlikely but keeps the type total. Treat as outside hours
   // (e.g. a slot not on a 15-min boundary inside the window).
@@ -417,7 +420,7 @@ export function classifyDaySlots(params: SlotParams): SlotWithState[] {
   const minMs = skipMinAdvance
     ? nowMs
     : nowMs + config.bookingMinAdvanceHours * 60 * MIN_MS;
-  const maxMs = nowMs + config.bookingMaxAdvanceWeeks * 7 * 24 * 60 * MIN_MS;
+  const windowEndDate = bookingWindowEnd(nowUtc, config.bookingMaxAdvanceWeeks);
 
   const result: SlotWithState[] = [];
 
@@ -436,7 +439,7 @@ export function classifyDaySlots(params: SlotParams): SlotWithState[] {
         mergedForbidden.some(([fStart, fEnd]) => t < fEnd && slotEnd > fStart)
       ) {
         state = "unavailable";
-      } else if (t > maxMs) {
+      } else if (getDateInLA(new Date(t)) > windowEndDate) {
         state = "not_open_yet";
       } else {
         state = "available";

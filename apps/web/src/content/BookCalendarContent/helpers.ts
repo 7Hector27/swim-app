@@ -1,5 +1,6 @@
-import { isApiBody } from "@/lib/mapZodErrors";
+import { bookingWindowEnd, laCalendarDate } from "@swim-app/shared";
 import type { WeekDayAvailability } from "@swim-app/shared";
+import { isApiBody } from "@/lib/mapZodErrors";
 
 export type BookingState =
   | { status: "idle" }
@@ -229,24 +230,17 @@ const ERROR_CODE_MESSAGES: Record<string, string> = {
   slot_unavailable: "That time isn't available anymore. Pick another one.",
 };
 
-// LA calendar date (YYYY-MM-DD) corresponding to a UTC epoch ms. Mirrors the
-// server's `getDateInLA`, so the client measures the booking window the same
-// way the server does.
+// LA calendar date (YYYY-MM-DD) corresponding to a UTC epoch ms. Re-exported
+// here (same semantics as the server's `getDateInLA`) so existing imports keep
+// working.
 export function laDateFromMs(ms: number): string {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/Los_Angeles",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(new Date(ms));
-  const get = (type: string) => parts.find((part) => part.type === type)?.value ?? "";
-  return `${get("year")}-${get("month")}-${get("day")}`;
+  return laCalendarDate(ms);
 }
 
-// Last LA calendar date inside the rolling booking window. Mirrors the server
-// rule: `getDateInLA(now + bookingMaxAdvanceWeeks * 7 days)`.
+// Last LA calendar date inside the rolling booking window. Delegates to the
+// shared helper so client and server see the exact same window boundary.
 export function maxBookableDateLA(bookingMaxAdvanceWeeks: number, nowMs: number): string {
-  return laDateFromMs(nowMs + bookingMaxAdvanceWeeks * 7 * 24 * 60 * 60 * 1000);
+  return bookingWindowEnd(new Date(nowMs), bookingMaxAdvanceWeeks);
 }
 
 export function firstAvailableDayInWeek(

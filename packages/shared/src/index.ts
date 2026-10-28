@@ -126,6 +126,7 @@ export { calculateAge } from "./lib/calculateAge";
 export { todayLA } from "./lib/todayLA";
 export { isSafeReturnTo } from "./lib/isSafeReturnTo";
 export { parseSwimTime, formatSwimTime } from "./lib/swimTime";
+export { bookingWindowEnd, isAfterBookingWindow, laCalendarDate } from "./lib/bookingWindow";
 
 export type {
   LessonLocation,

@@ -40,6 +40,8 @@ import {
   RangeAvailabilityQuerySchema,
   UpdateLessonBodySchema,
   UpcomingLessonsQuerySchema,
+  bookingWindowEnd,
+  isAfterBookingWindow,
 } from "@swim-app/shared";
 import { db } from "../db/client";
 import {
@@ -410,9 +412,7 @@ lessonsRouter.get(
 
     const nowUtc = getNowUtc();
     const todayDateLA = getDateInLA(nowUtc);
-    const maxAdvanceDateLA = getDateInLA(
-      new Date(nowUtc.getTime() + config.bookingMaxAdvanceWeeks * 7 * 24 * 60 * 60 * 1000),
-    );
+    const maxAdvanceDateLA = bookingWindowEnd(nowUtc, config.bookingMaxAdvanceWeeks);
 
     // Coach-only: skip the 16-hour notice-window filter. A parent passing
     // the flag is ignored and still sees the normal rule applied.
@@ -576,13 +576,12 @@ lessonsRouter.post(
     }
 
     const minMs = nowUtc.getTime() + config.bookingMinAdvanceHours * 60 * 60 * 1000;
-    const maxMs = nowUtc.getTime() + config.bookingMaxAdvanceWeeks * 7 * 24 * 60 * 60 * 1000;
 
     if (startsAt.getTime() < minMs) {
       res.status(422).json({ error: "too_soon" });
       return;
     }
-    if (startsAt.getTime() > maxMs) {
+    if (isAfterBookingWindow(startsAt, nowUtc, config.bookingMaxAdvanceWeeks)) {
       res.status(422).json({ error: "too_far" });
       return;
     }
@@ -791,10 +790,11 @@ function classifyBatchPick(
   const startsAtMs = candidate.startsAt.getTime();
   const nowMs = ctx.nowUtc.getTime();
   const minAdvMs = ctx.config.bookingMinAdvanceHours * 60 * 60 * 1000;
-  const maxAdvMs = ctx.config.bookingMaxAdvanceWeeks * 7 * 24 * 60 * 60 * 1000;
 
   if (startsAtMs < nowMs) return { state: "past", reason: "too_soon" };
-  if (startsAtMs > nowMs + maxAdvMs) return { state: "not_open_yet", reason: "too_far" };
+  if (isAfterBookingWindow(candidate.startsAt, ctx.nowUtc, ctx.config.bookingMaxAdvanceWeeks)) {
+    return { state: "not_open_yet", reason: "too_far" };
+  }
   if (startsAtMs < nowMs + minAdvMs) return { state: "too_soon", reason: "too_soon" };
 
   const laDate = getDateInLA(candidate.startsAt);
@@ -2075,12 +2075,11 @@ lessonsRouter.patch(
       // Coach can move a lesson inside the min-advance window; parents cannot.
       if (!isCoach) {
         const minMs = nowUtc.getTime() + config.bookingMinAdvanceHours * 60 * 60 * 1000;
-        const maxMs = nowUtc.getTime() + config.bookingMaxAdvanceWeeks * 7 * 24 * 60 * 60 * 1000;
         if (newStartsAt.getTime() < minMs) {
           res.status(422).json({ error: "too_soon" });
           return;
         }
-        if (newStartsAt.getTime() > maxMs) {
+        if (isAfterBookingWindow(newStartsAt, nowUtc, config.bookingMaxAdvanceWeeks)) {
           res.status(422).json({ error: "too_far" });
           return;
         }
