@@ -2,7 +2,20 @@
 // POST /internal/cron/tick. All sequential, bounded, never throw past
 // their own internal catches. See ADR 031 and docs/plans/coach-alerts.md.
 
-import { and, asc, between, count, eq, gte, inArray, lt, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  between,
+  count,
+  eq,
+  exists,
+  gte,
+  inArray,
+  isNull,
+  lt,
+  or,
+  sql,
+} from "drizzle-orm";
 
 import { db } from "../../db/client";
 import {
@@ -10,8 +23,10 @@ import {
   coachNotificationPreferences,
   coachPushSubscriptions,
   lessonLocations,
+  lessonSwimmers,
   lessons,
   profiles,
+  swimmers,
 } from "../../db/schema";
 import { logger as rootLogger } from "../../logger";
 import { formatLessonTimeDisplay } from "../emails/format";
@@ -319,6 +334,24 @@ export async function composeDailyCoachSummary(): Promise<DailySummaryResult> {
     // Compute today's lessons (approved/completed, LA date == today),
     // pending-request count, auto-approved count since the previous
     // summary, and the count of released held alerts in the last 24h.
+    //
+    // Exclude lessons where every swimmer is archived — per
+    // docs/accounts.md every swimmer query must explicitly scope out
+    // archived rows. The EXISTS clause below asks "does this lesson
+    // have at least one active swimmer?"; a lesson with only archived
+    // swimmers is dead data and should not count toward the day's load.
+    const hasActiveSwimmer = exists(
+      db
+        .select({ one: sql`1` })
+        .from(lessonSwimmers)
+        .innerJoin(swimmers, eq(lessonSwimmers.swimmerId, swimmers.id))
+        .where(
+          and(
+            eq(lessonSwimmers.lessonId, lessons.id),
+            isNull(swimmers.archivedAt),
+          ),
+        ),
+    );
     const todaysLessons = await db
       .select({
         startsAt: lessons.startsAt,
@@ -330,6 +363,7 @@ export async function composeDailyCoachSummary(): Promise<DailySummaryResult> {
         and(
           inArray(lessons.status, ["approved", "completed"]),
           sql`(${lessons.startsAt} AT TIME ZONE 'America/Los_Angeles')::date = ${dateLocal}::date`,
+          hasActiveSwimmer,
         ),
       )
       .orderBy(asc(lessons.startsAt));
@@ -337,7 +371,7 @@ export async function composeDailyCoachSummary(): Promise<DailySummaryResult> {
     const pendingCountRow = await db
       .select({ count: count() })
       .from(lessons)
-      .where(eq(lessons.status, "pending"));
+      .where(and(eq(lessons.status, "pending"), hasActiveSwimmer));
     const pendingCount = pendingCountRow[0]?.count ?? 0;
 
     const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
