@@ -9,8 +9,10 @@
 import { render as renderReactEmail } from "@react-email/render";
 import type { ReactElement } from "react";
 import { getEnv } from "../../lib/env";
+import type { BookingRequestLessonPayload } from "../notifications/types";
 import type { LessonEmailEvent, LessonEmailPayload } from "./types";
 import BookingRequested from "./templates/BookingRequested";
+import CoachBookingRequest from "./templates/CoachBookingRequest";
 import LessonCanceled from "./templates/LessonCanceled";
 import LessonConfirmed from "./templates/LessonConfirmed";
 import LessonRescheduled from "./templates/LessonRescheduled";
@@ -30,12 +32,15 @@ const SUBJECT_PREFIX: Record<LessonEmailEvent, string> = {
   request_expired: "Request expired",
   lesson_canceled: "Lesson canceled",
   lesson_rescheduled: "Lesson rescheduled",
+  coach_booking_request: "New booking request",
 };
 
 export async function renderEmail(
   event: LessonEmailEvent,
-  payload: LessonEmailPayload,
+  payload: LessonEmailPayload | BookingRequestLessonPayload,
 ): Promise<RenderedEmail> {
+  // Both payload shapes carry `startsAtLocalDisplay` as a string, so the
+  // subject assembly is uniform. Templates branch on the event below.
   const subject = `${SUBJECT_PREFIX[event]}: ${payload.startsAtLocalDisplay}`;
   // SITE_URL is required by env.ts (defaulted to localhost in local, pinned
   // to a non-localhost URL in dev/prod), so getEnv() either returns a usable
@@ -55,22 +60,30 @@ export async function renderEmail(
 
 function selectTemplate(
   event: LessonEmailEvent,
-  payload: LessonEmailPayload,
+  payload: LessonEmailPayload | BookingRequestLessonPayload,
   siteUrl: string,
   replyToEmail: string | null,
 ): ReactElement {
+  if (event === "coach_booking_request") {
+    return CoachBookingRequest({
+      payload: payload as BookingRequestLessonPayload,
+      siteUrl,
+      replyToEmail,
+    });
+  }
+  const lessonPayload = payload as LessonEmailPayload;
   switch (event) {
     case "booking_requested":
-      return BookingRequested({ payload, siteUrl, replyToEmail });
+      return BookingRequested({ payload: lessonPayload, siteUrl, replyToEmail });
     case "lesson_confirmed":
-      return LessonConfirmed({ payload, siteUrl, replyToEmail });
+      return LessonConfirmed({ payload: lessonPayload, siteUrl, replyToEmail });
     case "request_declined":
-      return RequestDeclined({ payload, siteUrl, replyToEmail });
+      return RequestDeclined({ payload: lessonPayload, siteUrl, replyToEmail });
     case "request_expired":
-      return RequestExpired({ payload, siteUrl, replyToEmail });
+      return RequestExpired({ payload: lessonPayload, siteUrl, replyToEmail });
     case "lesson_canceled":
-      return LessonCanceled({ payload, siteUrl, replyToEmail });
+      return LessonCanceled({ payload: lessonPayload, siteUrl, replyToEmail });
     case "lesson_rescheduled":
-      return LessonRescheduled({ payload, siteUrl, replyToEmail });
+      return LessonRescheduled({ payload: lessonPayload, siteUrl, replyToEmail });
   }
 }

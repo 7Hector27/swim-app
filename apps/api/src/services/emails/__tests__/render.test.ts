@@ -59,6 +59,41 @@ describe("renderEmail — subjects", () => {
   });
 });
 
+describe("renderEmail — coach_booking_request (ADR 031 email backup)", () => {
+  const coachPayload = {
+    kind: "booking_request_lesson" as const,
+    listTitle: "New booking request",
+    lessonId: "77777777-8888-9999-aaaa-bbbbbbbbbbbb",
+    swimmerFirstNamesWithInitial: ["Alex R."],
+    swimmerFullNames: ["Alex Rodriguez"],
+    startsAtLocalDisplay: "Tue, Oct 27, 2026 at 4:30 PM",
+    locationName: "Egret Park",
+  };
+
+  it("uses the plan's colon-prefixed subject", async () => {
+    const { subject } = await renderEmail("coach_booking_request", coachPayload);
+    expect(subject).toBe("New booking request: Tue, Oct 27, 2026 at 4:30 PM");
+  });
+
+  it("renders the lock-screen-safe swimmer initial, not full last name", async () => {
+    const { html, text } = await renderEmail("coach_booking_request", coachPayload);
+    expect(html).toContain("Alex R.");
+    expect(html).not.toContain("Rodriguez");
+    expect(text).toContain("Alex R.");
+    expect(text).not.toContain("Rodriguez");
+  });
+
+  it("renders the deep link to the coach lesson detail", async () => {
+    const { html } = await renderEmail("coach_booking_request", coachPayload);
+    expect(html).toContain("/coach/lessons/77777777-8888-9999-aaaa-bbbbbbbbbbbb");
+  });
+
+  it("produces non-empty plain text alternative", async () => {
+    const { text } = await renderEmail("coach_booking_request", coachPayload);
+    expect(text.length).toBeGreaterThan(0);
+  });
+});
+
 describe("renderEmail — every template", () => {
   it.each(ALL_EVENTS)(
     "%s: subject, deep link, lesson time, plain text, no em dash, no calendar.google.com",
