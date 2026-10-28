@@ -117,7 +117,7 @@ Transactional outbox for parent-facing booking emails. One row per state transit
 | `id` | `uuid` | no | `gen_random_uuid()` | Primary key |
 | `lesson_id` | `uuid` | yes | — | FK → `lessons.id` (`ON DELETE RESTRICT`). Non-null for per-lesson events; null for batch events. Became nullable in migration 0055. |
 | `batch_id` | `uuid` | yes | — | FK → `booking_batches.id` (`ON DELETE RESTRICT`). Non-null for batch events; null for per-lesson events. Added in migration 0055. The `lesson_email_outbox_scope_exactly_one` CHECK enforces that each row sets exactly one of `lesson_id` / `batch_id`. |
-| `event` | `text` | no | — | CHECK IN (`booking_requested`, `lesson_confirmed`, `request_declined`, `request_expired`, `lesson_canceled`, `lesson_rescheduled`, `batch_booked`, `batch_approved`, `batch_canceled`). |
+| `event` | `text` | no | — | CHECK IN (`booking_requested`, `lesson_confirmed`, `request_declined`, `request_expired`, `lesson_canceled`, `lesson_rescheduled`, `batch_booked`, `batch_approved`, `batch_canceled`, `coach_booking_request`). `coach_booking_request` is the email backup sent to the coach when a new booking request lands and the coach has zero active push subscriptions (migration 0057 per ADR 031). |
 | `sequence` | `integer` | no | — | Per-(`lesson_id`, `event`) counter for per-lesson rows and per-(`batch_id`, `event`) counter for batch rows. Two partial unique indexes enforce the dedup separately in each namespace. |
 | `recipient_profile_ids` | `uuid[]` | no | — | Snapshot of household owner + manager profile ids at write time. Email verification re-checked at send time. |
 | `ics_method` | `text` | yes | — | `REQUEST`, `CANCEL`, or NULL. NULL means "no `.ics` attached" — used for `booking_requested` and decline/expire from pending. Paired with `ics_sequence` (both or neither). |
@@ -204,6 +204,107 @@ One row per coach while a Google Calendar integration exists. Created on first c
 | `updated_at` | `timestamptz` | no | `now()` | Auto-updated. |
 
 Index: `UNIQUE (coach_profile_id)`.
+
+RLS is enabled. Policies TBD.
+
+---
+
+### `coach_notifications`
+
+Transactional outbox for coach push notifications. One row per state-change event; written inside the same `db.transaction()` as the state change it records. The row powers both push delivery and the coach's in-app notification list. Drained by the post-commit microtask sender and the `POST /internal/cron/tick` push drain. Added in migration 0057. See ADR 031.
+
+| Column | Type | Nullable | Default | Notes |
+|---|---|---|---|---|
+| `id` | `uuid` | no | `gen_random_uuid()` | Primary key |
+| `profile_id` | `uuid` | no | — | FK → `profiles.id` (`ON DELETE RESTRICT`). Keyed by profile (not coach) so a future parent-facing push feature shares the table. |
+| `category` | `text` | no | — | CHECK IN (`booking_request`, `request_expiring_soon`, `parent_change`, `calendar_disconnected`, `auto_approved_summary`, `daily_summary`). |
+| `urgency` | `text` | no | — | CHECK IN (`standard`, `urgent`). Server-computed: `urgent` when the affected lesson's `starts_at` is before midnight tomorrow in LA. Drives the UI accent and the Web Push `urgency` header. The quiet-hours bypass is a separate send-time gate (`starts_at < now()+12h`), not this flag. |
+| `lesson_id` | `uuid` | yes | — | FK → `lessons.id` (`ON DELETE RESTRICT`). Set for per-lesson categories. |
+| `batch_id` | `uuid` | yes | — | FK → `booking_batches.id` (`ON DELETE RESTRICT`). Set when the alert describes a batch. |
+| `payload` | `jsonb` | no | — | Frozen render inputs. The push body is composed at send time from this plus the coach's `lock_screen_detail` setting so a preference change does not retroactively repaint a scheduled push. Scrubbed to `{_scrubbed_at}` by the cron retention pass once the row is terminal and >30 days old. |
+| `click_url` | `text` | no | — | Deep link the service worker opens on tap. Scrubbed by the retention pass alongside `payload`. |
+| `tag` | `text` | no | — | Notification tag the push service uses to collapse successive pushes on the device. `lesson:<id>`, `batch:<id>`, `calendar-disconnected:<coachId>`, `daily-summary:<dateLocal>`. |
+| `read_at` | `timestamptz` | yes | — | Set by `POST /coach/notifications/:id/read`. The in-app list sorts unread-first. |
+| `push_status` | `text` | no | `'pending'` | CHECK IN (`pending`, `held`, `summarized`, `sending`, `sent`, `failed`, `skipped`, `superseded`, `abandoned`). `held` is the quiet-hours release-pending state; `summarized` is terminal and means the daily summary covers the alert so no individual push fires. |
+| `release_at` | `timestamptz` | yes | — | Non-null only when `push_status='held'`. Set to the end of the coach's quiet-hours window in LA, resolved to UTC. |
+| `push_attempts` | `integer` | no | `0` | Incremented on every attempt that reaches the transport layer. |
+| `push_claimed_until` | `timestamptz` | yes | — | Non-null only while `push_status='sending'`. Set to `now() + 2 minutes`. Expired claims are recoverable by the next drain. |
+| `push_last_error` | `text` | yes | — | Short transport error summary. No names, no addresses, no endpoint URLs. |
+| `push_last_attempt_at` | `timestamptz` | yes | — | |
+| `push_next_attempt_at` | `timestamptz` | no | `now()` | Backoff schedule. On failure the sender sets this to `now() + min(2^attempts, 30) minutes`. |
+| `push_sent_at` | `timestamptz` | yes | — | Set once when at least one subscription accepted the push with a 2xx. |
+| `delivered_subscription_count` | `integer` | no | `0` | Per-row counter of subscriptions that accepted this push. |
+| `created_at` | `timestamptz` | no | `now()` | |
+| `updated_at` | `timestamptz` | no | `now()` | Auto-updated. |
+
+Constraints:
+- CHECK on `category`, `urgency`, `push_status`.
+- CHECK `(push_status='sending') = (push_claimed_until IS NOT NULL)`.
+- CHECK `(push_status='held') = (release_at IS NOT NULL)`.
+- CHECK scope: `category IN ('booking_request','request_expiring_soon','parent_change','auto_approved_summary')` requires exactly one of `lesson_id`/`batch_id` to be non-null; `category IN ('calendar_disconnected','daily_summary')` requires both to be null.
+- Partial unique index on `(profile_id, lesson_id, category) WHERE lesson_id IS NOT NULL` — enforces one `request_expiring_soon` reminder per lesson across cron ticks.
+- Partial unique index on `(profile_id, batch_id, category) WHERE batch_id IS NOT NULL`.
+- Partial unique index on `(profile_id, (payload->>'dateLocal')) WHERE category = 'daily_summary'` — the durable idempotency key for the daily summary.
+
+Indexes:
+- Partial index on `(push_next_attempt_at) WHERE push_status IN ('pending','failed','sending')` — drain hot path.
+- Partial index on `(release_at) WHERE push_status = 'held'` — `releaseHeldCoachNotifications` lookup.
+- `(profile_id, read_at NULLS FIRST, created_at DESC)` — in-app list.
+- `(profile_id, created_at DESC)` — timeline debug.
+
+RLS is enabled. Policies TBD.
+
+---
+
+### `coach_push_subscriptions`
+
+One row per browser push subscription per device. Rows are per profile (not coach-only) so a future parent-facing push feature uses the same table. Only 404 Gone / 410 Not Found from the push service deactivate a row; VAPID or other signature errors leave the row intact and fail the send with backoff. Added in migration 0057. See ADR 031.
+
+| Column | Type | Nullable | Default | Notes |
+|---|---|---|---|---|
+| `id` | `uuid` | no | `gen_random_uuid()` | Primary key |
+| `profile_id` | `uuid` | no | — | FK → `profiles.id` (`ON DELETE CASCADE`). |
+| `endpoint` | `text` | no | — | Push service endpoint URL. Unique with `profile_id` — the same browser re-subscribing to the same endpoint is an idempotent upsert; a new endpoint creates a new row. |
+| `p256dh` | `text` | no | — | Base64url public key from `PushSubscription.getKey('p256dh')`. |
+| `auth` | `text` | no | — | Base64url auth secret from `PushSubscription.getKey('auth')`. |
+| `user_agent` | `text` | yes | — | Captured from the register request's `User-Agent` header. Rendered on `/account` as a short label derived at display time. |
+| `is_active` | `boolean` | no | `true` | Flipped to `false` **only** on 404/410 from the push service. VAPID / signature errors, 400, 403, 413, 429, and 5xx keep the row active and fail the send with backoff. |
+| `removed_reason` | `text` | yes | — | CHECK IN (`gone`, `coach_disabled`). Non-null only when `is_active=false`. |
+| `last_delivery_at` | `timestamptz` | yes | — | Updated on every 2xx push delivery. |
+| `last_failure_at` | `timestamptz` | yes | — | Updated on every non-2xx response from the push service. |
+| `created_at` | `timestamptz` | no | `now()` | |
+| `updated_at` | `timestamptz` | no | `now()` | Auto-updated. |
+
+Constraints:
+- `UNIQUE (profile_id, endpoint)` — a browser's endpoint is unique per profile.
+- CHECK pair: `is_active=false` is required to set `removed_reason`.
+
+Index: `(profile_id, is_active)` — the sender's fan-out query.
+
+RLS is enabled. Policies TBD.
+
+---
+
+### `coach_notification_preferences`
+
+One row per profile. **Rows are created lazily on first read** via `getOrCreateCoachNotificationPreferences(profileId)` — `INSERT ... ON CONFLICT DO NOTHING` — not by a signup trigger. Reads from the sender, settings endpoints, and `/account` all go through this helper. Added in migration 0057. See ADR 031.
+
+| Column | Type | Nullable | Default | Notes |
+|---|---|---|---|---|
+| `profile_id` | `uuid` | no | — | PK; FK → `profiles.id` (`ON DELETE CASCADE`). |
+| `booking_request_enabled` | `boolean` | no | `true` | |
+| `booking_request_email_backup_enabled` | `boolean` | no | `true` | When the coach has zero active push subscriptions, the sender writes a `lesson_email_outbox` row with `event='coach_booking_request'` instead of a push. |
+| `request_expiring_soon_enabled` | `boolean` | no | `true` | |
+| `parent_change_enabled` | `boolean` | no | `true` | |
+| `auto_approved_mode` | `text` | no | `'summary'` | CHECK IN (`off`, `summary`, `immediate`). Default rolls auto-approved rows into the daily summary count. `calendar_disconnected` has no toggle. |
+| `daily_summary_enabled` | `boolean` | no | `true` | When true, held alerts move to `summarized` on release and are counted in the summary; when false, held alerts release individually. |
+| `daily_summary_time_local` | `time` | no | `'08:00'` | LA-local time. The compose pass fires when `now()@LA >= this value` AND no row for the coach + today's LA date exists. |
+| `quiet_hours_enabled` | `boolean` | no | `true` | |
+| `quiet_hours_start_local` | `time` | no | `'21:00'` | |
+| `quiet_hours_end_local` | `time` | no | `'07:00'` | When `end < start`, the window crosses midnight — the sender's time check handles both forms. |
+| `lock_screen_detail` | `text` | no | `'first_initial'` | CHECK IN (`first_initial`, `full_name`). Governs the push body string the renderer emits. |
+| `created_at` | `timestamptz` | no | `now()` | |
+| `updated_at` | `timestamptz` | no | `now()` | Auto-updated. |
 
 RLS is enabled. Policies TBD.
 

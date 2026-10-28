@@ -62,6 +62,12 @@ const RawEnvSchema = z.object({
   RESEND_API_KEY: z.string().optional(),
   EMAIL_SMTP_HOST: z.string().optional(),
   EMAIL_SMTP_PORT: z.coerce.number().int().positive().optional(),
+  // Coach alerts (ADR 031). All three required on every environment —
+  // deployed and local — once the feature ships. Local keeps a sender
+  // no-op when all three are absent (same shape as EmailEnv).
+  VAPID_PUBLIC_KEY: z.string().optional(),
+  VAPID_PRIVATE_KEY: z.string().optional(),
+  VAPID_SUBJECT: z.string().optional(),
 });
 
 export interface GoogleOAuthEnv {
@@ -81,6 +87,12 @@ export interface EmailEnv {
   smtpPort: number | undefined;
 }
 
+export interface VapidEnv {
+  publicKey: string;
+  privateKey: string;
+  subject: string;
+}
+
 export interface ApiEnv {
   nodeEnv: "development" | "test" | "production";
   appEnv: "local" | "dev" | "prod";
@@ -97,6 +109,9 @@ export interface ApiEnv {
   // becomes a no-op in that case so writes don't accumulate. Non-null on dev
   // and prod (parser enforces).
   email: EmailEnv | undefined;
+  // Undefined when APP_ENV=local AND no VAPID_* vars are set — the coach
+  // alert sender becomes a no-op in that case. Required on dev/prod.
+  vapid: VapidEnv | undefined;
 }
 
 export function parseEnv(raw: Record<string, string | undefined>): ApiEnv {
@@ -122,6 +137,7 @@ export function parseEnv(raw: Record<string, string | undefined>): ApiEnv {
 
   const googleOAuth = parseGoogleOAuthEnv(parsed);
   const email = parseEmailEnv(parsed);
+  const vapid = parseVapidEnv(parsed);
 
   const isDeployed = parsed.APP_ENV === "dev" || parsed.APP_ENV === "prod";
   if (isDeployed) {
@@ -141,6 +157,7 @@ export function parseEnv(raw: Record<string, string | undefined>): ApiEnv {
     }
     issues.push(...validateGoogleOAuthForDeployed(parsed));
     issues.push(...validateEmailForDeployed(parsed));
+    issues.push(...validateVapidForDeployed(parsed));
     if (issues.length > 0) {
       throw new EnvValidationError(issues);
     }
@@ -159,6 +176,7 @@ export function parseEnv(raw: Record<string, string | undefined>): ApiEnv {
     cronSecret: parsed.CRON_SECRET,
     googleOAuth,
     email,
+    vapid,
   };
 }
 
@@ -289,6 +307,53 @@ function validateEmailForDeployed(parsed: RawParsedEnv): string[] {
     if (!parsed.RESEND_API_KEY || !parsed.RESEND_API_KEY.startsWith("re_")) {
       issues.push("RESEND_API_KEY: required and must start with 're_' when APP_ENV is 'dev' or 'prod'");
     }
+  }
+  return issues;
+}
+
+// VAPID subject must be either a mailto: URL or an https: URL per RFC 8292.
+// We don't enforce beyond "has an @ for mailto, has a dot for https" — the
+// push service rejects malformed subjects at send time and we log loudly.
+const VAPID_SUBJECT_RE = /^(mailto:[^\s@]+@[^\s@]+\.[^\s@]+|https:\/\/[^\s/]+\.[^\s/]+.*)$/;
+// Base64url charset (RFC 4648 §5). The web-push library accepts base64url
+// strings without padding; the browser's `applicationServerKey` conversion
+// also expects this format. We only validate shape here — size checks are
+// skipped because the push service surfaces mismatches at send time.
+const BASE64URL_RE = /^[A-Za-z0-9_-]+$/;
+
+function parseVapidEnv(parsed: RawParsedEnv): VapidEnv | undefined {
+  const { VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT } = parsed;
+  if (!VAPID_PUBLIC_KEY || !VAPID_PRIVATE_KEY || !VAPID_SUBJECT) {
+    return undefined;
+  }
+  if (!BASE64URL_RE.test(VAPID_PUBLIC_KEY) || !BASE64URL_RE.test(VAPID_PRIVATE_KEY)) {
+    return undefined;
+  }
+  if (!VAPID_SUBJECT_RE.test(VAPID_SUBJECT)) return undefined;
+  return {
+    publicKey: VAPID_PUBLIC_KEY,
+    privateKey: VAPID_PRIVATE_KEY,
+    subject: VAPID_SUBJECT,
+  };
+}
+
+function validateVapidForDeployed(parsed: RawParsedEnv): string[] {
+  const issues: string[] = [];
+  const { VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT } = parsed;
+  if (!VAPID_PUBLIC_KEY) {
+    issues.push("VAPID_PUBLIC_KEY: required when APP_ENV is 'dev' or 'prod'");
+  } else if (!BASE64URL_RE.test(VAPID_PUBLIC_KEY)) {
+    issues.push("VAPID_PUBLIC_KEY: must be base64url (chars [A-Za-z0-9_-], no padding)");
+  }
+  if (!VAPID_PRIVATE_KEY) {
+    issues.push("VAPID_PRIVATE_KEY: required when APP_ENV is 'dev' or 'prod'");
+  } else if (!BASE64URL_RE.test(VAPID_PRIVATE_KEY)) {
+    issues.push("VAPID_PRIVATE_KEY: must be base64url (chars [A-Za-z0-9_-], no padding)");
+  }
+  if (!VAPID_SUBJECT) {
+    issues.push("VAPID_SUBJECT: required when APP_ENV is 'dev' or 'prod'");
+  } else if (!VAPID_SUBJECT_RE.test(VAPID_SUBJECT)) {
+    issues.push("VAPID_SUBJECT: must be a mailto:… or https://… URL");
   }
   return issues;
 }

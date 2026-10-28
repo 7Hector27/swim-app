@@ -91,23 +91,33 @@ function getTransport(): EmailTransport | null {
 
 export async function sendLessonEmailOutboxRow(outboxId: string): Promise<void> {
   try {
-    // Peek at the row's scope BEFORE claiming so we route to the correct
-    // sender path. The claim transactions below also narrow via
+    // Peek at the row's scope + event BEFORE claiming so we route to the
+    // correct sender path. The claim transactions below also narrow via
     // isNotNull(lesson_id) / isNotNull(batch_id), so a mis-routed call
     // just no-ops (nothing is claimed).
+    //
+    // coach_booking_request rows are the ADR 031 email backup. The batch
+    // variant has lesson_id=null, batch_id!=null — if we routed it to
+    // sendBatchInner it would be rejected (BATCH_EVENTS filter) because
+    // the payload shape doesn't match the batch_* events. Route all
+    // coach_booking_request rows (lesson- or batch-scoped) through the
+    // dedicated backup sender instead.
     const peek = await db
       .select({
+        event: lessonEmailOutbox.event,
         lessonId: lessonEmailOutbox.lessonId,
         batchId: lessonEmailOutbox.batchId,
       })
       .from(lessonEmailOutbox)
       .where(eq(lessonEmailOutbox.id, outboxId))
       .limit(1);
-    const scope = peek[0];
-    if (!scope) return;
-    if (scope.lessonId !== null) {
+    const row = peek[0];
+    if (!row) return;
+    if (row.event === "coach_booking_request") {
+      await sendCoachBookingBackupInner(outboxId);
+    } else if (row.lessonId !== null) {
       await sendInner(outboxId);
-    } else if (scope.batchId !== null) {
+    } else if (row.batchId !== null) {
       await sendBatchInner(outboxId);
     }
   } catch (err) {
@@ -460,6 +470,141 @@ async function finalizeFailed(
       claimedUntil: null,
     })
     .where(eq(lessonEmailOutbox.id, outboxId));
+}
+
+// ─── Coach booking backup sender (ADR 031) ──────────────────────────────
+//
+// coach_booking_request rows are the email backup fired when a parent
+// submits a (single or batch) booking request and the coach has zero
+// active push subscriptions. These rows live in lesson_email_outbox but
+// have a different payload shape (CoachNotificationPayload, not
+// LessonEmailPayload) and no .ics attachment, so they get their own
+// claim/render path instead of flowing through sendInner / sendBatchInner.
+
+interface ClaimedCoachBackupRow {
+  id: string;
+  lessonId: string | null;
+  batchId: string | null;
+  event: LessonEmailEvent;
+  recipientProfileIds: string[];
+  payload: unknown;
+  attempts: number;
+}
+
+async function claimCoachBackupRow(outboxId: string): Promise<ClaimedCoachBackupRow | null> {
+  const nowAtClaim = new Date();
+  return await db.transaction(async (tx) => {
+    const rows = await tx
+      .select({
+        id: lessonEmailOutbox.id,
+        lessonId: lessonEmailOutbox.lessonId,
+        batchId: lessonEmailOutbox.batchId,
+        event: lessonEmailOutbox.event,
+        recipientProfileIds: lessonEmailOutbox.recipientProfileIds,
+        payload: lessonEmailOutbox.payload,
+        status: lessonEmailOutbox.status,
+        attempts: lessonEmailOutbox.attempts,
+        claimedUntil: lessonEmailOutbox.claimedUntil,
+      })
+      .from(lessonEmailOutbox)
+      .where(
+        and(
+          eq(lessonEmailOutbox.id, outboxId),
+          eq(lessonEmailOutbox.event, "coach_booking_request"),
+          or(
+            inArray(lessonEmailOutbox.status, ["pending", "failed"]),
+            and(
+              eq(lessonEmailOutbox.status, "sending"),
+              lt(lessonEmailOutbox.claimedUntil, nowAtClaim),
+            ),
+          ),
+        ),
+      )
+      .for("update", { skipLocked: true })
+      .limit(1);
+    const row = rows[0];
+    if (!row) return null;
+
+    const leaseUntil = new Date(Date.now() + CLAIM_LEASE_MS);
+    await tx
+      .update(lessonEmailOutbox)
+      .set({
+        status: "sending",
+        claimedUntil: leaseUntil,
+        lastAttemptAt: new Date(),
+      })
+      .where(eq(lessonEmailOutbox.id, outboxId));
+    return {
+      id: row.id,
+      lessonId: row.lessonId,
+      batchId: row.batchId,
+      event: row.event as LessonEmailEvent,
+      recipientProfileIds: row.recipientProfileIds,
+      payload: row.payload,
+      attempts: row.attempts,
+    };
+  });
+}
+
+async function sendCoachBookingBackupInner(outboxId: string): Promise<void> {
+  const transport = getTransport();
+  if (!transport) {
+    await finalizeSkipped(outboxId, "transport_not_configured");
+    return;
+  }
+  const claimed = await claimCoachBackupRow(outboxId);
+  if (!claimed) return;
+
+  const deliverable = await resolveRecipients(claimed.recipientProfileIds);
+  if (deliverable.length === 0) {
+    await finalizeSkipped(outboxId, "no_deliverable_recipients");
+    return;
+  }
+
+  // The renderEmail dispatch picks the single-lesson vs batch template
+  // from payload.kind, so we hand the payload through untouched.
+  const rendered = await renderEmail(
+    claimed.event,
+    claimed.payload as Parameters<typeof renderEmail>[1],
+  );
+
+  const emailEnv = getEnv().email!;
+  const result = await transport.send({
+    from: emailEnv.from,
+    replyTo: emailEnv.replyTo,
+    to: deliverable,
+    subject: rendered.subject,
+    text: rendered.text,
+    ...(rendered.html && { html: rendered.html }),
+    idempotencyKey: outboxId,
+  });
+
+  if (result.ok) {
+    await finalizeSent(outboxId, result.providerMessageId);
+    log.info(
+      {
+        outboxId,
+        scope: claimed.lessonId !== null ? "lesson" : "batch",
+        event: claimed.event,
+        attempts: claimed.attempts + 1,
+        transport: emailEnv.transport,
+      },
+      "coach-booking-backup sent",
+    );
+    return;
+  }
+  await finalizeFailed(outboxId, result.error?.kind ?? "unexpected", result.errorMessage);
+  log.warn(
+    {
+      outboxId,
+      scope: claimed.lessonId !== null ? "lesson" : "batch",
+      event: claimed.event,
+      transport: emailEnv.transport,
+      attempts: claimed.attempts + 1,
+      errorKind: result.error?.kind,
+    },
+    "coach-booking-backup send failed",
+  );
 }
 
 // ─── Batch sender (ADR 030) ─────────────────────────────────────────────

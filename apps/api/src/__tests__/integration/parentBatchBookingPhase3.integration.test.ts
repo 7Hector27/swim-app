@@ -27,6 +27,7 @@ import {
   availabilityConfig,
   availabilitySeasons,
   bookingBatches,
+  coachNotifications,
   householdAuditLog,
   lessonEmailOutbox,
   lessonLocations,
@@ -148,23 +149,30 @@ async function purgeStalePinnedWindowArtifacts(): Promise<void> {
     new Set(stale.map((row) => row.batchId).filter((id): id is string => id !== null)),
   );
   if (lessonIds.length > 0) {
+    await adminDb().delete(coachNotifications).where(inArray(coachNotifications.lessonId, lessonIds));
     await adminDb().delete(lessonEmailOutbox).where(inArray(lessonEmailOutbox.lessonId, lessonIds));
     await adminDb().delete(lessonSwimmers).where(inArray(lessonSwimmers.lessonId, lessonIds));
     await adminDb().delete(lessons).where(inArray(lessons.id, lessonIds));
   }
   if (batchIds.length > 0) {
+    await adminDb().delete(coachNotifications).where(inArray(coachNotifications.batchId, batchIds));
     await adminDb().delete(lessonEmailOutbox).where(inArray(lessonEmailOutbox.batchId, batchIds));
     await adminDb().delete(bookingBatches).where(inArray(bookingBatches.id, batchIds));
   }
 }
 
 async function cleanupHouseholdBatchArtifacts(householdId: string): Promise<void> {
+  // Drain in-flight notify* stubs so their INSERTs land against still-
+  // live FK targets. See parentBatchBooking's cleanup for details.
+  await lessonApproval.__settlePendingCoachAlertsForTests();
+
   const batchRows = await adminDb()
     .select({ id: bookingBatches.id })
     .from(bookingBatches)
     .where(eq(bookingBatches.householdId, householdId));
   const batchIds = batchRows.map((row) => row.id);
   if (batchIds.length > 0) {
+    await adminDb().delete(coachNotifications).where(inArray(coachNotifications.batchId, batchIds));
     await adminDb().delete(lessonEmailOutbox).where(inArray(lessonEmailOutbox.batchId, batchIds));
   }
   const lessonRows = await adminDb()
@@ -173,6 +181,7 @@ async function cleanupHouseholdBatchArtifacts(householdId: string): Promise<void
     .where(eq(lessons.householdId, householdId));
   const lessonIds = lessonRows.map((row) => row.id);
   if (lessonIds.length > 0) {
+    await adminDb().delete(coachNotifications).where(inArray(coachNotifications.lessonId, lessonIds));
     await adminDb().delete(lessonEmailOutbox).where(inArray(lessonEmailOutbox.lessonId, lessonIds));
     await adminDb().delete(lessonSwimmers).where(inArray(lessonSwimmers.lessonId, lessonIds));
     await adminDb().delete(lessons).where(inArray(lessons.id, lessonIds));
@@ -783,12 +792,15 @@ describe("Phase 3 — DELETE /lessons/batch/:batchId/remaining", () => {
   it("P6: cancel-remaining fires notifyCoachOfBatchChange once, not notifyCoachOfChange N times", async () => {
     await withAllDaysEnabled(async () => {
       const trustId = await seedTrust();
+      // The stubs now take a tx and return Promise<string | null>; mocks
+      // resolve to null so the post-commit queueCoachNotificationSend
+      // call sees "nothing to send."
       const batchChangeSpy = vi
         .spyOn(lessonApproval, "notifyCoachOfBatchChange")
-        .mockImplementation(() => {});
+        .mockImplementation(async () => null);
       const perLessonSpy = vi
         .spyOn(lessonApproval, "notifyCoachOfChange")
-        .mockImplementation(() => {});
+        .mockImplementation(async () => null);
       try {
         const startDate = futureLaDate(305);
         const weekday = isoWeekdayFor(startDate);
@@ -808,9 +820,13 @@ describe("Phase 3 — DELETE /lessons/batch/:batchId/remaining", () => {
         expect(cancel.status).toBe(200);
 
         expect(batchChangeSpy).toHaveBeenCalledTimes(1);
-        expect(batchChangeSpy).toHaveBeenCalledWith(batchId, "canceled_remaining", {
-          lessonCount: lessonIds.length,
-        });
+        // First arg is now the tx; assert the remaining three positionally.
+        expect(batchChangeSpy).toHaveBeenCalledWith(
+          expect.anything(),
+          batchId,
+          "canceled_remaining",
+          { lessonCount: lessonIds.length },
+        );
         expect(perLessonSpy).not.toHaveBeenCalled();
       } finally {
         batchChangeSpy.mockRestore();
@@ -828,12 +844,14 @@ describe("Phase 3 — POST /lessons/batch coach notification", () => {
   it("P7: a successful batch submit fires notifyBatchBookingCreated once with the summary and not notifyBookingCreated per lesson", async () => {
     await withAllDaysEnabled(async () => {
       const trustId = await seedTrust();
+      // Stubs now take a tx and return Promise<string | null>; mocks
+      // resolve to null so queueCoachNotificationSend becomes a no-op.
       const batchSpy = vi
         .spyOn(lessonApproval, "notifyBatchBookingCreated")
-        .mockImplementation(() => {});
+        .mockImplementation(async () => null);
       const perLessonSpy = vi
         .spyOn(lessonApproval, "notifyBookingCreated")
-        .mockImplementation(() => {});
+        .mockImplementation(async () => null);
       try {
         const startDate = futureLaDate(335);
         const weekday = isoWeekdayFor(startDate);
@@ -845,10 +863,12 @@ describe("Phase 3 — POST /lessons/batch coach notification", () => {
         await waitForOutboxTerminal(outboxId);
 
         expect(batchSpy).toHaveBeenCalledTimes(1);
-        expect(batchSpy).toHaveBeenCalledWith(batchId, {
-          confirmedCount: lessonIds.length,
-          pendingCount: 0,
-        });
+        // First arg is the tx now; assert the remaining positionally.
+        expect(batchSpy).toHaveBeenCalledWith(
+          expect.anything(),
+          batchId,
+          { confirmedCount: lessonIds.length, pendingCount: 0 },
+        );
         expect(perLessonSpy).not.toHaveBeenCalled();
       } finally {
         batchSpy.mockRestore();

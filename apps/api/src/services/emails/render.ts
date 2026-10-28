@@ -9,8 +9,14 @@
 import { render as renderReactEmail } from "@react-email/render";
 import type { ReactElement } from "react";
 import { getEnv } from "../../lib/env";
+import type {
+  BookingRequestBatchPayload,
+  BookingRequestLessonPayload,
+} from "../notifications/types";
 import type { LessonEmailEvent, LessonEmailPayload } from "./types";
 import BookingRequested from "./templates/BookingRequested";
+import CoachBookingBatchRequest from "./templates/CoachBookingBatchRequest";
+import CoachBookingRequest from "./templates/CoachBookingRequest";
 import LessonCanceled from "./templates/LessonCanceled";
 import LessonConfirmed from "./templates/LessonConfirmed";
 import LessonRescheduled from "./templates/LessonRescheduled";
@@ -30,13 +36,20 @@ const SUBJECT_PREFIX: Record<LessonEmailEvent, string> = {
   request_expired: "Request expired",
   lesson_canceled: "Lesson canceled",
   lesson_rescheduled: "Lesson rescheduled",
+  coach_booking_request: "New booking request",
 };
+
+type CoachBackupPayload = BookingRequestLessonPayload | BookingRequestBatchPayload;
+type AnyEmailPayload = LessonEmailPayload | CoachBackupPayload;
 
 export async function renderEmail(
   event: LessonEmailEvent,
-  payload: LessonEmailPayload,
+  payload: AnyEmailPayload,
 ): Promise<RenderedEmail> {
-  const subject = `${SUBJECT_PREFIX[event]}: ${payload.startsAtLocalDisplay}`;
+  // Subject assembly varies by payload shape: parent/lesson rows carry
+  // `startsAtLocalDisplay`; batch coach-backup rows carry
+  // `firstStartsAtLocalDisplay`. The dispatch below picks the right one.
+  const subject = `${SUBJECT_PREFIX[event]}: ${pickSubjectWhen(payload)}`;
   // SITE_URL is required by env.ts (defaulted to localhost in local, pinned
   // to a non-localhost URL in dev/prod), so getEnv() either returns a usable
   // siteUrl or throws at boot. No silent fallback here — a misconfigured
@@ -53,24 +66,44 @@ export async function renderEmail(
   return { subject, text, html };
 }
 
+function pickSubjectWhen(payload: AnyEmailPayload): string {
+  // Batch coach-backup rows carry firstStartsAtLocalDisplay; everything
+  // else uses startsAtLocalDisplay. Branch on the discriminated kind.
+  if ("kind" in payload && payload.kind === "booking_request_batch") {
+    return payload.firstStartsAtLocalDisplay;
+  }
+  return (payload as LessonEmailPayload | BookingRequestLessonPayload).startsAtLocalDisplay;
+}
+
 function selectTemplate(
   event: LessonEmailEvent,
-  payload: LessonEmailPayload,
+  payload: AnyEmailPayload,
   siteUrl: string,
   replyToEmail: string | null,
 ): ReactElement {
+  if (event === "coach_booking_request") {
+    if ("kind" in payload && payload.kind === "booking_request_batch") {
+      return CoachBookingBatchRequest({ payload, siteUrl, replyToEmail });
+    }
+    return CoachBookingRequest({
+      payload: payload as BookingRequestLessonPayload,
+      siteUrl,
+      replyToEmail,
+    });
+  }
+  const lessonPayload = payload as LessonEmailPayload;
   switch (event) {
     case "booking_requested":
-      return BookingRequested({ payload, siteUrl, replyToEmail });
+      return BookingRequested({ payload: lessonPayload, siteUrl, replyToEmail });
     case "lesson_confirmed":
-      return LessonConfirmed({ payload, siteUrl, replyToEmail });
+      return LessonConfirmed({ payload: lessonPayload, siteUrl, replyToEmail });
     case "request_declined":
-      return RequestDeclined({ payload, siteUrl, replyToEmail });
+      return RequestDeclined({ payload: lessonPayload, siteUrl, replyToEmail });
     case "request_expired":
-      return RequestExpired({ payload, siteUrl, replyToEmail });
+      return RequestExpired({ payload: lessonPayload, siteUrl, replyToEmail });
     case "lesson_canceled":
-      return LessonCanceled({ payload, siteUrl, replyToEmail });
+      return LessonCanceled({ payload: lessonPayload, siteUrl, replyToEmail });
     case "lesson_rescheduled":
-      return LessonRescheduled({ payload, siteUrl, replyToEmail });
+      return LessonRescheduled({ payload: lessonPayload, siteUrl, replyToEmail });
   }
 }

@@ -79,6 +79,7 @@ import {
   notifyBookingCreated,
   notifyCoachOfBatchChange,
   notifyCoachOfChange,
+  queueCoachNotificationSend,
 } from "../lib/lessonApproval";
 import { syncLessonToGoogle } from "../services/googleCalendarSync";
 import { enqueueLessonEmail } from "../services/emails/outbox";
@@ -679,7 +680,16 @@ lessonsRouter.post(
         initiatedBy: "parent",
       });
 
-      return { lesson: inserted, outboxId };
+      // Coach alert row (ADR 031). Written inside the same tx as the lesson
+      // insert so a rollback also rolls back the notification. The send
+      // itself fires in a post-commit microtask below.
+      const coachNotificationId = await notifyBookingCreated(
+        tx,
+        inserted.id,
+        inserted.status === "approved",
+      );
+
+      return { lesson: inserted, outboxId, coachNotificationId };
     });
 
     if ("rejected" in newLesson) {
@@ -697,9 +707,13 @@ lessonsRouter.post(
       res.status(422).json({ error: "slot_unavailable" });
       return;
     }
-    const { lesson: committedLesson, outboxId: committedOutboxId } = newLesson;
+    const {
+      lesson: committedLesson,
+      outboxId: committedOutboxId,
+      coachNotificationId,
+    } = newLesson;
 
-    notifyBookingCreated(committedLesson.id, committedLesson.status === "approved");
+    queueCoachNotificationSend(coachNotificationId);
 
     // Fetch swimmers for response.
     const swimmerResponseRows = await db
@@ -1098,6 +1112,7 @@ lessonsRouter.post(
       batch: typeof bookingBatches.$inferSelect;
       lessons: (typeof lessons.$inferSelect)[];
       outboxId: string;
+      coachNotificationId: string | null;
     };
     try {
       result = await db.transaction(async (tx) => {
@@ -1398,10 +1413,21 @@ lessonsRouter.post(
         },
       });
 
+      // Coach alert row (ADR 031). Inside the same tx so a rollback
+      // includes the notification. The send fires in a post-commit
+      // microtask below.
+      const confirmedCountInTx = insertedLessons.filter((lesson) => lesson.status === "approved").length;
+      const pendingCountInTx = insertedLessons.filter((lesson) => lesson.status === "pending").length;
+      const coachNotificationId = await notifyBatchBookingCreated(tx, batch.id, {
+        confirmedCount: confirmedCountInTx,
+        pendingCount: pendingCountInTx,
+      });
+
       return {
         batch,
         lessons: insertedLessons,
         outboxId,
+        coachNotificationId,
       };
       });
     } catch (err) {
@@ -1442,8 +1468,9 @@ lessonsRouter.post(
     // Coach notification fires once with a batch summary. The inbox-count
     // argument that justified a single parent email for the batch applies
     // to the coach's channel too — notifyBookingCreated's per-lesson stub
-    // would otherwise fire N times per submission.
-    notifyBatchBookingCreated(result.batch.id, { confirmedCount, pendingCount });
+    // would otherwise fire N times per submission. The row itself was
+    // written inside the batch tx; this just queues the send.
+    queueCoachNotificationSend(result.coachNotificationId);
 
     const response: BatchSubmitSuccessResponse = {
       batchId: result.batch.id,
@@ -1762,10 +1789,21 @@ lessonsRouter.delete(
         },
       });
 
+      // Coach alert row (ADR 031). Inside the same tx so a rollback also
+      // rolls back the notification. The send fires in a post-commit
+      // microtask below.
+      const coachNotificationId = await notifyCoachOfBatchChange(
+        tx,
+        batchId,
+        "canceled_remaining",
+        { lessonCount: allIds.length },
+      );
+
       return {
         kind: "canceled" as const,
         canceledIds: allIds,
         outboxId,
+        coachNotificationId,
       };
     });
 
@@ -1781,10 +1819,9 @@ lessonsRouter.delete(
 
     // One coach notification per batch cancel, not per lesson — mirrors
     // the single-lesson notifyCoachOfChange hook but at the batch grain so
-    // the coach's channel sees a summary.
-    notifyCoachOfBatchChange(batchId, "canceled_remaining", {
-      lessonCount: result.canceledIds.length,
-    });
+    // the coach's channel sees a summary. Row was written in the tx above;
+    // this just queues the send.
+    queueCoachNotificationSend(result.coachNotificationId);
 
     const body: BatchCancelRemainingResponse = {
       batchId,
@@ -1920,7 +1957,7 @@ lessonsRouter.delete(
       return;
     }
 
-    const cancelOutboxId = await db.transaction(async (tx) => {
+    const cancelResult = await db.transaction(async (tx) => {
       await tx
         .update(lessons)
         .set({ status: "canceled", canceledAt: new Date(), canceledBy: profileId })
@@ -1928,19 +1965,28 @@ lessonsRouter.delete(
 
       // Parent booking email outbox (ADR 028). Writes CANCEL .ics iff a
       // prior invite was issued; sends a plain-content email otherwise.
-      return await enqueueLessonEmail(tx, {
+      const cancelOutboxId = await enqueueLessonEmail(tx, {
         lessonId: id,
         event: "lesson_canceled",
         actorRole: isCoach ? "coach" : "parent",
       });
+
+      // Coach alert row (ADR 031). Inside the same tx so a rollback also
+      // rolls back the notification. The notify helper no-ops when the
+      // actor is the coach.
+      const coachNotificationId = await notifyCoachOfChange(tx, id, "canceled", {
+        actorIsCoach: isCoach,
+      });
+
+      return { cancelOutboxId, coachNotificationId };
     });
 
-    notifyCoachOfChange(id);
     res.status(204).end();
+    queueCoachNotificationSend(cancelResult.coachNotificationId);
     // Reconcile Google Calendar after the response. For a cancel this will
     // delete the event if one exists; a never-synced lesson is a safe no-op.
     queueMicrotask(() => { void syncLessonToGoogle(id); });
-    queueMicrotask(() => { void sendLessonEmailOutboxRow(cancelOutboxId); });
+    queueMicrotask(() => { void sendLessonEmailOutboxRow(cancelResult.cancelOutboxId); });
   }),
 );
 
@@ -2191,7 +2237,15 @@ lessonsRouter.patch(
         );
       }
 
-      return { updated, outboxIds };
+      // Coach alert row (ADR 031). Written in the same tx as the lesson
+      // update so a rollback also rolls back the notification. No-op when
+      // the actor is the coach.
+      const coachNotificationId = await notifyCoachOfChange(tx, id, "rescheduled", {
+        actorIsCoach: isCoach,
+        previousStartsAt: existingLesson!.startsAt,
+      });
+
+      return { updated, outboxIds, coachNotificationId };
     });
 
     if (!updatedLesson || "rejected" in updatedLesson) {
@@ -2214,8 +2268,7 @@ lessonsRouter.patch(
       return;
     }
     const rescheduleOutboxIds = updatedLesson.outboxIds;
-
-    notifyCoachOfChange(id);
+    queueCoachNotificationSend(updatedLesson.coachNotificationId);
 
     const result = isCoach
       ? await loadLessonWithSwimmers(id)

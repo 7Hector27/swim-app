@@ -7,7 +7,13 @@ export type LessonEmailEvent =
   | "request_declined"
   | "request_expired"
   | "lesson_canceled"
-  | "lesson_rescheduled";
+  | "lesson_rescheduled"
+  // Email backup to the coach when a new booking request lands and the
+  // coach has zero active push subscriptions. Payload is a
+  // CoachNotificationPayload (BookingRequestLessonPayload), NOT a
+  // LessonEmailPayload — the render dispatch picks the right template.
+  // See ADR 031.
+  | "coach_booking_request";
 
 export type LessonEmailStatus =
   | "pending"

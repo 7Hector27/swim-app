@@ -5,6 +5,7 @@ import { capitalizeFirst } from "@/lib/capitalizeFirst";
 
 import EditProfileForm from "./EditProfileForm";
 import GoogleCalendarCard from "./GoogleCalendarCard";
+import NotificationsSection from "./NotificationsSection";
 import { logout } from "./actions";
 
 interface AccountContentProps {
@@ -15,6 +16,9 @@ interface AccountContentProps {
   googleConnectError: boolean;
   // True when the DELETE /coach/calendar call failed (?google=disconnect_error).
   googleDisconnectError: boolean;
+  // Threaded down to PushSubscriptionManager so client code never touches
+  // @/lib/env. Undefined when not configured (local dev without VAPID keys).
+  vapidPublicKey: string | undefined;
 }
 
 export default function AccountContent({
@@ -22,6 +26,7 @@ export default function AccountContent({
   googleCalendarStatus,
   googleConnectError,
   googleDisconnectError,
+  vapidPublicKey,
 }: AccountContentProps) {
   // Hide the card entirely when the API hasn't been configured for Google
   // (dev without env vars, or an API deploy that doesn't support it) and
@@ -59,6 +64,10 @@ export default function AccountContent({
               connectError={googleConnectError}
               disconnectError={googleDisconnectError}
             />
+          )}
+
+          {profile.role === "coach" && (
+            <NotificationsSection vapidPublicKey={vapidPublicKey} />
           )}
 
           <form action={logout}>

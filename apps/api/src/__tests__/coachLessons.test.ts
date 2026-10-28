@@ -67,9 +67,12 @@ vi.mock("../db/client", () => ({
 
 vi.mock("../lib/lessonApproval", () => ({
   needsApproval: vi.fn(),
-  notifyBookingCreated: vi.fn(),
+  // Takes (tx, lessonId, autoApproved); mocked to resolve to null so the
+  // post-commit queueCoachNotificationSend becomes a no-op.
+  notifyBookingCreated: vi.fn().mockResolvedValue(null),
   notifyLessonApproved: vi.fn(),
   notifyLessonDeclined: vi.fn(),
+  queueCoachNotificationSend: vi.fn(),
   chargeLessonComplete: vi.fn(),
 }));
 

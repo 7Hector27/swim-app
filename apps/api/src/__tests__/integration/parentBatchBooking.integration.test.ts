@@ -50,6 +50,8 @@ import type {
 } from "../../services/emails/transport";
 import { __resetEnvCacheForTests } from "../../lib/env";
 import { __setClockForTests } from "../../lib/clock";
+import { __settlePendingCoachAlertsForTests } from "../../lib/lessonApproval";
+import { coachNotifications } from "../../db/schema";
 
 // Pin the server clock to a far-future Monday morning so every test runs
 // against the same instant. Mon 2035-11-05 10:00 America/Los_Angeles under
@@ -215,12 +217,18 @@ async function purgeStalePinnedWindowArtifacts(): Promise<void> {
   );
   if (lessonIds.length > 0) {
     await adminDb()
+      .delete(coachNotifications)
+      .where(inArray(coachNotifications.lessonId, lessonIds));
+    await adminDb()
       .delete(lessonEmailOutbox)
       .where(inArray(lessonEmailOutbox.lessonId, lessonIds));
     await adminDb().delete(lessonSwimmers).where(inArray(lessonSwimmers.lessonId, lessonIds));
     await adminDb().delete(lessons).where(inArray(lessons.id, lessonIds));
   }
   if (batchIds.length > 0) {
+    await adminDb()
+      .delete(coachNotifications)
+      .where(inArray(coachNotifications.batchId, batchIds));
     await adminDb()
       .delete(lessonEmailOutbox)
       .where(inArray(lessonEmailOutbox.batchId, batchIds));
@@ -229,12 +237,24 @@ async function purgeStalePinnedWindowArtifacts(): Promise<void> {
 }
 
 async function cleanupHouseholdBatchArtifacts(householdId: string): Promise<void> {
+  // Drain in-flight notify* stubs first. Each stub writes a
+  // coach_notifications row and (for batch booking_request with zero
+  // active subscriptions) a lesson_email_outbox coach_booking_request
+  // row. Both rows reference the lesson or batch with FKs that would
+  // block deletion. Settling here guarantees every INSERT lands against
+  // still-live FK targets, and the explicit cleanup below removes the
+  // resulting rows before the lesson/batch deletes run.
+  await __settlePendingCoachAlertsForTests();
+
   const batchRows = await adminDb()
     .select({ id: bookingBatches.id })
     .from(bookingBatches)
     .where(eq(bookingBatches.householdId, householdId));
   const batchIds = batchRows.map((row) => row.id);
   if (batchIds.length > 0) {
+    await adminDb()
+      .delete(coachNotifications)
+      .where(inArray(coachNotifications.batchId, batchIds));
     await adminDb()
       .delete(lessonEmailOutbox)
       .where(inArray(lessonEmailOutbox.batchId, batchIds));
@@ -245,6 +265,9 @@ async function cleanupHouseholdBatchArtifacts(householdId: string): Promise<void
     .where(eq(lessons.householdId, householdId));
   const lessonIds = lessonRows.map((row) => row.id);
   if (lessonIds.length > 0) {
+    await adminDb()
+      .delete(coachNotifications)
+      .where(inArray(coachNotifications.lessonId, lessonIds));
     await adminDb()
       .delete(lessonEmailOutbox)
       .where(inArray(lessonEmailOutbox.lessonId, lessonIds));

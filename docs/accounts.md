@@ -18,7 +18,7 @@ No role: public visitors, and kids under 13 (no accounts ever).
 - Birth dates from signup are checked, then discarded.
 - The API enforces every permission. Every table has RLS on with no policies, which denies all access on purpose: the browser's public key can't read anything, and the API connects as the database owner.
 - The app role is read from the database on every request, never from the JWT.
-- Tokens are verified against Supabase's auth server on every request via `getUser`, not decoded locally. Revoked sessions and banned users are rejected immediately rather than being allowed until the JWT's `exp` claim expires.
+- Tokens are verified against Supabase's auth server on every request via `getUser`, not decoded locally. Revoked sessions and banned users are rejected immediately rather than being allowed until the JWT's `exp` claim expires. The verification happens in the Express API's `requireUser` middleware — the single source of truth for session liveness. Next.js route handlers under `apps/web/src/app/api/` are **thin proxies**: they use `supabase.auth.getSession()` only to extract the access token from the SSR cookie and forward it as a Bearer header to the API, which re-verifies via `getUser`. Proxies never make authorization decisions themselves.
 - **Every signup path must pass `emailRedirectTo`** when calling Supabase's signup API. The confirmation email template (`supabase/templates/confirmation.html`) builds the confirmation link as `{{ .RedirectTo }}&token_hash=…` with no fallback — if `emailRedirectTo` is omitted, `.RedirectTo` is empty and the link is broken. Normal signup sets it to `/auth/confirm?`; invite signup sets it to `/auth/confirm?returnTo=<encoded>`.
 
 ## Households
@@ -104,3 +104,12 @@ Coaches access swimmer data through dedicated `/coach/swimmers` routes protected
 - **Clubs are never deleted, only deactivated.** Setting `is_active = false` on a `clubs` row hides it from new registrations but preserves all existing `swimmer_clubs` references. Hard-deleting a club is blocked by the `ON DELETE RESTRICT` FK on `swimmer_clubs.club_id`.
 - Public pages show opted-in swimmers only, as first name and last initial. Never birth date, contact info, or school.
 - Never log names, birth dates, emails, or notes.
+
+## Coach alerts (web push)
+
+Coach notifications are delivered via standard Web Push to the coach's registered browsers / installed PWA (ADR 031). Four rules govern what information crosses the push transport:
+
+- **Minimum useful signal on the lock screen.** The push body carries swimmer first name + last initial, day, time, and pool name by default. The coach can broaden to full swimmer name under a per-coach `lock_screen_detail` preference. The server never sends parent contact information, decline reasons, or full home-pool addresses through the push transport. Full detail (parent names, addresses, decline reasons) remains behind the deep link, inside the authenticated app.
+- **Payload is scoped to the coach.** Every push row targets exactly one coach profile. Parent-facing push is explicitly out of scope in v1; the `coach_push_subscriptions` table is keyed by profile id so a later parent-facing feature does not require a schema migration, but no parent push is built or sent today.
+- **Logs follow the same rule as everywhere else.** No swimmer last names, parent names, email addresses, home addresses, decline reasons, or notes appear in sender log lines. The sender keys off `notification_id`, `category`, `profile_id`, counts, and short transport error summaries.
+- **Dead subscriptions clean themselves.** When a push service returns 410 Gone or 404 Not Found, the subscription row is flipped to `is_active = false` and no further pushes are attempted for that endpoint. The `/account` page shows a persistent banner when a coach has zero active subscriptions so a half-configured laptop does not leave the coach blind.

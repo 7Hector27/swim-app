@@ -20,6 +20,8 @@ import { getActiveCoachProfileId } from "../lib/coachProfile";
 import { getEnv } from "../lib/env";
 import { logger } from "../logger";
 import { decryptToken } from "../lib/tokenEncryption";
+import { queueCoachNotificationSend } from "../lib/lessonApproval";
+import { enqueueCoachNotification } from "./notifications/outbox";
 import * as googleClient from "./googleCalendarClient";
 
 // Hardcoded per ADR 027.
@@ -593,10 +595,13 @@ async function markLessonSyncFailed(
 }
 
 async function markNeedsReconnect(lessonId: string, coachProfileId: string): Promise<void> {
-  // One transaction: flip the integration to needs_reconnect and record the
-  // lesson failure so the lesson UI reflects reality.
-  await db.transaction(async (tx) => {
-    const now = new Date();
+  // One transaction: flip the integration to needs_reconnect, record the
+  // lesson failure so the lesson UI reflects reality, AND enqueue the
+  // coach_disconnected alert so the coach learns within seconds (ADR 031).
+  // Atomic — if any step fails the alert row rolls back with the integration
+  // flip. The send fires in a post-commit microtask below.
+  const now = new Date();
+  const coachNotificationId = await db.transaction(async (tx) => {
     await tx
       .update(coachCalendarIntegrations)
       .set({ status: "needs_reconnect", needsReconnectSince: now, lastSyncAttemptedAt: now })
@@ -609,7 +614,18 @@ async function markNeedsReconnect(lessonId: string, coachProfileId: string): Pro
         calendarSyncAttempts: sql`${lessons.calendarSyncAttempts} + 1`,
       })
       .where(eq(lessons.id, lessonId));
+    const result = await enqueueCoachNotification(tx, {
+      coachProfileId,
+      category: "calendar_disconnected",
+      calendarDisconnectedPayload: {
+        kind: "calendar_disconnected",
+        listTitle: "Google Calendar disconnected",
+        needsReconnectSinceUtc: now.toISOString(),
+      },
+    });
+    return result.notificationId;
   });
+  queueCoachNotificationSend(coachNotificationId);
 }
 
 function sleep(ms: number): Promise<void> {

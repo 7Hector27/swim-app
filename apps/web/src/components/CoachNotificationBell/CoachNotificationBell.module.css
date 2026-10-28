@@ -1,0 +1,142 @@
+/* Bell + panel animations. Keep motion in a module so Tailwind utilities
+   stay doing layout and tokens, and the custom easing isn't repeated in a
+   dozen style props. */
+
+/* Desktop dropdown. CSS-visible only at tablet+; the mobile-sheet rules
+   below handle the narrow viewport. No JavaScript breakpoint detection,
+   so there is no first-render flash of the wrong surface. */
+.panel {
+  display: none;
+  transform-origin: top right;
+  transition:
+    transform 180ms var(--ease-out-strong, cubic-bezier(0.23, 1, 0.32, 1)),
+    opacity 180ms var(--ease-out-strong, cubic-bezier(0.23, 1, 0.32, 1));
+}
+
+@media (min-width: 769px) {
+  .panel {
+    display: block;
+  }
+}
+
+@starting-style {
+  .panel {
+    transform: scale(0.96);
+    opacity: 0;
+  }
+}
+
+.panel[data-origin="top-left"] {
+  transform-origin: top left;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panel {
+    transition: opacity 120ms linear;
+  }
+
+  @starting-style {
+    .panel {
+      transform: none;
+      opacity: 0;
+    }
+  }
+}
+
+/* Mobile sheet + backdrop. Rendered as plain divs (not a native
+   <dialog>) so the breakpoint hide can be pure CSS; a native dialog's
+   showModal() cannot be guarded by display: none. CSS-visible only
+   below tablet; hidden otherwise. */
+.sheetBackdrop {
+  display: block;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 40;
+  transition: opacity 240ms var(--ease-drawer, cubic-bezier(0.32, 0.72, 0, 1));
+}
+
+@starting-style {
+  .sheetBackdrop {
+    opacity: 0;
+  }
+}
+
+@media (min-width: 769px) {
+  .sheetBackdrop {
+    display: none;
+  }
+}
+
+.sheet {
+  display: flex;
+  flex-direction: column;
+  position: fixed;
+  inset: auto 0 0 0;
+  margin: 0;
+  width: 100%;
+  max-width: 100%;
+  max-height: 80vh;
+  z-index: 50;
+  border: 0;
+  border-top: 1px solid var(--color-border);
+  border-radius: var(--radius-card) var(--radius-card) 0 0;
+  background: var(--color-section);
+  color: var(--color-text-on-section);
+  padding: 0;
+  overflow: hidden;
+
+  transition:
+    transform 240ms var(--ease-drawer, cubic-bezier(0.32, 0.72, 0, 1)),
+    opacity 240ms var(--ease-drawer, cubic-bezier(0.32, 0.72, 0, 1));
+}
+
+@starting-style {
+  .sheet {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+}
+
+@media (min-width: 769px) {
+  .sheet {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sheet,
+  .sheetBackdrop {
+    transition: opacity 150ms;
+  }
+
+  @starting-style {
+    .sheet {
+      transform: none;
+      opacity: 0;
+    }
+  }
+}
+
+/* Pulse on the badge count change — soft, no bouncing. */
+.badgePulse {
+  animation: badgePulse 420ms var(--ease-out-strong, cubic-bezier(0.23, 1, 0.32, 1));
+}
+
+@keyframes badgePulse {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.18);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .badgePulse {
+    animation: none;
+  }
+}

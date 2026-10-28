@@ -30,5 +30,13 @@ export default tseslint.config(
       globals: globals.node,
     },
   },
+  {
+    // Service worker runs in its own global scope — `self`, `caches`,
+    // `fetch`, `atob`, `URL`, etc. are all provided by the environment.
+    files: ["apps/web/public/sw.js"],
+    languageOptions: {
+      globals: { ...globals.serviceworker, ...globals.browser },
+    },
+  },
   prettier,
 );

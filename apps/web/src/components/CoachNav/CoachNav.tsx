@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+import CoachNotificationBell from "@/components/CoachNotificationBell";
 import ProfileMenu from "@/components/ProfileMenu";
 import ThemeLogo from "@/components/ThemeLogo";
 import ThemeToggle from "@/components/ThemeToggle";
@@ -296,7 +297,8 @@ export default function CoachNav() {
             })}
           </nav>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 tablet:gap-3">
+            <CoachNotificationBell />
             <ThemeToggle />
             <ProfileMenu />
           </div>

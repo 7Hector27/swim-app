@@ -1,9 +1,20 @@
-import { vi, describe, it, expect, beforeEach } from "vitest";
+import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 
 import type { ParentSwimmer } from "@swim-app/shared";
 
+// Freeze "now" to a point before every slot in the fixture (which sits
+// on 2026-11-02 and later). Without this, the real wall clock creeps
+// toward the fixture week, interacts with maxBookableDateLA(Date.now())
+// inside BookCalendarContent, and shifts classifyBatchPick's past-slot
+// cutoff between runs — a classic nondeterminism source. Only Date is
+// faked so testing-library's waitFor keeps running real setTimeout
+// (the preview debounce still fires naturally).
+const FROZEN_NOW = new Date("2026-10-20T18:00:00.000Z");
+
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(FROZEN_NOW);
   HTMLDialogElement.prototype.showModal = vi.fn(function (this: HTMLDialogElement) {
     this.setAttribute("open", "");
   });
@@ -14,6 +25,20 @@ beforeEach(() => {
     Element.prototype.scrollIntoView = vi.fn();
   }
   vi.clearAllMocks();
+  // Default preview resolution so a test that never customizes the mock
+  // (e.g., the taken-by-picks tests, which only read client-side
+  // classification state) does not crash when the 350ms debounced
+  // previewBatchAction fires and `await mock()` returns `undefined`.
+  // The `.kind === "ok"` branch takes an empty picks array, so no
+  // flagged state leaks into the DOM.
+  mockPreview.mockResolvedValue({
+    kind: "ok",
+    data: { picks: [], needsApproval: false, holdId: null },
+  });
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 vi.mock("next/navigation", () => ({

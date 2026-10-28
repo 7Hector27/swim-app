@@ -17,6 +17,10 @@ const fullGoogle = {
   GOOGLE_OAUTH_STATE_SECRET: validGoogleStateSecret,
 };
 
+const validVapidPublicKey = "B".repeat(87);
+const validVapidPrivateKey = "k".repeat(43);
+const validVapidSubject = "mailto:ops@send.axiomaquatics.io";
+
 const prodDeployBase = {
   ...baseEnv,
   NODE_ENV: "production",
@@ -32,6 +36,9 @@ const prodDeployBase = {
   EMAIL_TRANSPORT: "resend",
   EMAIL_FROM: "Axiom Aquatics <lessons@send.axiomaquatics.io>",
   RESEND_API_KEY: "re_test_key",
+  VAPID_PUBLIC_KEY: validVapidPublicKey,
+  VAPID_PRIVATE_KEY: validVapidPrivateKey,
+  VAPID_SUBJECT: validVapidSubject,
 };
 
 const devDeployBase = {
@@ -346,6 +353,44 @@ describe("parseEnv — Google OAuth (local branch)", () => {
   it("returns googleOAuth=undefined when the state secret is too short", () => {
     const env = parseEnv({ ...baseEnv, ...fullGoogle, GOOGLE_OAUTH_STATE_SECRET: "short" });
     expect(env.googleOAuth).toBeUndefined();
+  });
+});
+
+describe("parseEnv — VAPID (coach alerts)", () => {
+  it("local: returns vapid=undefined when none of the three keys are set", () => {
+    const env = parseEnv({ ...baseEnv });
+    expect(env.vapid).toBeUndefined();
+  });
+
+  it("local: returns a populated vapid env when all three keys are set", () => {
+    const env = parseEnv({
+      ...baseEnv,
+      VAPID_PUBLIC_KEY: validVapidPublicKey,
+      VAPID_PRIVATE_KEY: validVapidPrivateKey,
+      VAPID_SUBJECT: validVapidSubject,
+    });
+    expect(env.vapid).toBeDefined();
+    expect(env.vapid?.publicKey).toBe(validVapidPublicKey);
+  });
+
+  it("dev: rejects a missing VAPID_PUBLIC_KEY", () => {
+    const raw = { ...devDeployBase } as Record<string, string | undefined>;
+    delete raw.VAPID_PUBLIC_KEY;
+    expectIssue(raw, /VAPID_PUBLIC_KEY/);
+  });
+
+  it("dev: rejects a non-base64url VAPID_PRIVATE_KEY", () => {
+    expectIssue(
+      { ...devDeployBase, VAPID_PRIVATE_KEY: "has/slashes+and=padding" },
+      /VAPID_PRIVATE_KEY.*base64url/,
+    );
+  });
+
+  it("prod: rejects a malformed VAPID_SUBJECT", () => {
+    expectIssue(
+      { ...prodDeployBase, VAPID_SUBJECT: "not-a-url" },
+      /VAPID_SUBJECT/,
+    );
   });
 });
 

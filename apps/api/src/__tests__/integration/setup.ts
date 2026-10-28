@@ -78,3 +78,10 @@ process.env["EMAIL_TRANSPORT"] ??= "smtp";
 process.env["EMAIL_FROM"] ??= "Axiom Aquatics Test <lessons@test.local>";
 process.env["EMAIL_SMTP_HOST"] ??= "127.0.0.1";
 process.env["EMAIL_SMTP_PORT"] ??= "54325";
+
+// Coach push notifications (ADR 031). The transport is injected via
+// __setSenderTransportForTests in tests that exercise the sender; the
+// VAPID env is still required to pass env parsing.
+process.env["VAPID_PUBLIC_KEY"] ??= "B".repeat(87);
+process.env["VAPID_PRIVATE_KEY"] ??= "k".repeat(43);
+process.env["VAPID_SUBJECT"] ??= "mailto:ops@test.local";

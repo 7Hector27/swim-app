@@ -66,12 +66,17 @@ vi.mock("../lib/slots", async () => {
 });
 
 vi.mock("../lib/lessonApproval", () => ({
-  needsApproval:         mockNeedsApproval,
-  notifyBookingCreated:  vi.fn(),
-  notifyLessonApproved:  vi.fn(),
-  notifyLessonDeclined:  vi.fn(),
-  notifyCoachOfChange:   vi.fn(),
-  chargeLessonComplete:  vi.fn(),
+  needsApproval:               mockNeedsApproval,
+  // Enqueue helpers now take (tx, ...) and return Promise<string | null>.
+  // Mocks resolve to null so queueCoachNotificationSend is a no-op.
+  notifyBookingCreated:        vi.fn().mockResolvedValue(null),
+  notifyLessonApproved:        vi.fn(),
+  notifyLessonDeclined:        vi.fn(),
+  notifyCoachOfChange:         vi.fn().mockResolvedValue(null),
+  notifyBatchBookingCreated:   vi.fn().mockResolvedValue(null),
+  notifyCoachOfBatchChange:    vi.fn().mockResolvedValue(null),
+  queueCoachNotificationSend:  vi.fn(),
+  chargeLessonComplete:        vi.fn(),
 }));
 
 vi.mock("../services/googleCalendarSync", () => ({

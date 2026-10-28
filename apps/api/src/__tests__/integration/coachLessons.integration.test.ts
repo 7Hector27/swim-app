@@ -7,6 +7,7 @@ import {
   adminDb,
   closeAdminDb,
   createTestUser,
+  settleAndCleanupCoachNotificationsForHousehold,
   type TestUser,
 } from "./helpers";
 import {
@@ -113,6 +114,9 @@ beforeAll(async () => {
 afterAll(async () => {
   if (swimmerId) {
     // Outbox rows reference lessons with ON DELETE RESTRICT (ADR 028).
+    // coach_notifications also references lessons with ON DELETE RESTRICT
+    // (ADR 031) — settle and purge first.
+    await settleAndCleanupCoachNotificationsForHousehold(owner.householdId);
     const ownerLessonIds = await adminDb()
       .select({ id: lessons.id })
       .from(lessons)
@@ -160,7 +164,9 @@ describe("PATCH /lessons/:id coach reschedule (integration)", () => {
       expect(res.status).toBe(422);
       expect(res.body.error).toBe("slot_unavailable");
 
-      // Cleanup — outbox rows first (ON DELETE RESTRICT on lesson_id).
+      // Cleanup — settle notify* stubs and purge coach_notifications
+      // first (ON DELETE RESTRICT, ADR 031), then outbox rows (ADR 028).
+      await settleAndCleanupCoachNotificationsForHousehold(owner.householdId);
       await adminDb()
         .delete(lessonEmailOutbox)
         .where(inArray(lessonEmailOutbox.lessonId, [lessonAId, lessonBId]));
@@ -228,7 +234,9 @@ describe("PATCH /lessons/:id coach reschedule (integration)", () => {
       expect(res.status).toBe(422);
       expect(res.body.error).toBe("slot_unavailable");
 
-      // Cleanup fake lessons, then lesson Y. Outbox rows first.
+      // Cleanup fake lessons, then lesson Y. Settle + purge coach_notifications
+      // first (ADR 031), then outbox rows (ADR 028).
+      await settleAndCleanupCoachNotificationsForHousehold(owner.householdId);
       const allIds = [...fakeLessonIds, lessonYId];
       await adminDb()
         .delete(lessonEmailOutbox)

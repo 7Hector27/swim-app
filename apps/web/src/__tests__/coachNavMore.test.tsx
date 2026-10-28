@@ -19,6 +19,10 @@ vi.mock("@/components/ProfileMenu", () => ({
   default: () => <div data-testid="profile-menu" />,
 }));
 
+vi.mock("@/components/CoachNotificationBell", () => ({
+  default: () => <div data-testid="coach-notification-bell" />,
+}));
+
 vi.mock("@/components/ThemeLogo", () => ({
   default: () => <div data-testid="theme-logo" />,
 }));
