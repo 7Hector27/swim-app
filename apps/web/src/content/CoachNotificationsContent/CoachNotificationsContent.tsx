@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 
 import type { CoachNotificationListItem } from "@swim-app/shared";
 
-import { formatTimeAgo } from "@/components/CoachNotificationBell/CoachNotificationBell";
+import { formatTimeAgo } from "@/lib/formatTimeAgo";
 import {
   fetchNotifications,
   markAllNotificationsRead,
