@@ -1044,7 +1044,7 @@ export const lessonEmailOutbox = pgTable(
       .where(sql`batch_id IS NOT NULL`),
     check(
       "lesson_email_outbox_event_valid",
-      sql`${table.event} IN ('booking_requested', 'lesson_confirmed', 'request_declined', 'request_expired', 'lesson_canceled', 'lesson_rescheduled', 'batch_booked', 'batch_approved', 'batch_canceled')`,
+      sql`${table.event} IN ('booking_requested', 'lesson_confirmed', 'request_declined', 'request_expired', 'lesson_canceled', 'lesson_rescheduled', 'batch_booked', 'batch_approved', 'batch_canceled', 'coach_booking_request')`,
     ),
     check(
       "lesson_email_outbox_status_valid",
@@ -1074,6 +1074,239 @@ export const lessonEmailOutbox = pgTable(
     index("lesson_email_outbox_lesson_created_idx").on(table.lessonId, table.createdAt.desc()),
     // Same debug use for batch rows.
     index("lesson_email_outbox_batch_created_idx").on(table.batchId, table.createdAt.desc()),
+  ],
+).enableRLS();
+
+// ── Coach alerts (ADR 031) ──────────────────────────────────────────────────
+
+// Transactional outbox for coach push notifications. One row per state change
+// event. Written inside the same db.transaction() as the state change it
+// records (CLAUDE.md's audit-log rule), drained by the post-commit microtask
+// sender and the POST /internal/cron/tick drain. The row powers both push
+// delivery and the coach's in-app notification list. See ADR 031.
+export const coachNotifications = pgTable(
+  "coach_notifications",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // Keyed by profile, not coach, so a future parent-facing push feature
+    // fits the same table without a migration. The sender filters by
+    // profile.role='coach' when the current scope is coach-only.
+    profileId: uuid("profile_id").notNull().references(() => profiles.id, { onDelete: "restrict" }),
+    // One of: 'booking_request', 'request_expiring_soon', 'parent_change',
+    // 'calendar_disconnected', 'auto_approved_summary', 'daily_summary'.
+    category: text("category").notNull(),
+    // 'standard' | 'urgent'. Server-computed: urgent when the affected
+    // lesson's starts_at is before midnight tomorrow in LA (today or
+    // tomorrow). Drives the UI accent and the Web Push urgency header.
+    // Quiet-hours bypass is a SEPARATE gate (starts_at < now()+12h) that
+    // the sender computes at send time.
+    urgency: text("urgency").notNull(),
+    // Set for per-lesson categories.
+    lessonId: uuid("lesson_id").references(() => lessons.id, { onDelete: "restrict" }),
+    // Set when the alert describes a batch.
+    batchId: uuid("batch_id").references(() => bookingBatches.id, { onDelete: "restrict" }),
+    // Frozen render inputs — the push body is composed at send time from
+    // this payload plus the coach's lock_screen_detail setting so a later
+    // preference change does not retroactively repaint a scheduled push.
+    payload: jsonb("payload").notNull(),
+    // Deep link the service worker opens on tap. Per-category routing is
+    // documented in ADR 031.
+    clickUrl: text("click_url").notNull(),
+    // Notification tag — the browser surface collapses successive pushes
+    // sharing a tag. 'lesson:<id>', 'batch:<id>',
+    // 'calendar-disconnected:<coachId>', 'daily-summary:<dateLocal>'.
+    tag: text("tag").notNull(),
+    // Set by POST /coach/notifications/:id/read.
+    readAt: timestamp("read_at", { withTimezone: true }),
+    // 'pending' | 'held' | 'summarized' | 'sending' | 'sent' | 'failed' |
+    // 'skipped' | 'superseded' | 'abandoned'. 'held' is the quiet-hours
+    // terminal-until-release state. When release_at passes AND the coach's
+    // daily summary is ON, the row flips to 'summarized' (lock-screen push
+    // stays silent, in-app list keeps the row, daily summary counts it).
+    // When daily summary is OFF, the row flips back to 'pending'.
+    pushStatus: text("push_status").notNull().default("pending"),
+    // Non-null only when push_status='held'. Set to the end of the coach's
+    // quiet-hours window in LA, resolved to UTC at write/hold time.
+    releaseAt: timestamp("release_at", { withTimezone: true }),
+    pushAttempts: integer("push_attempts").notNull().default(0),
+    // Non-null only while push_status='sending'. Set to now() + 2 minutes.
+    pushClaimedUntil: timestamp("push_claimed_until", { withTimezone: true }),
+    // Short error summary. Never contains names, addresses, or endpoint URLs
+    // — see docs/accounts.md logging rules.
+    pushLastError: text("push_last_error"),
+    pushLastAttemptAt: timestamp("push_last_attempt_at", { withTimezone: true }),
+    // Backoff schedule. On failure the sender sets this to now() + min(2^
+    // attempts, 30) minutes.
+    pushNextAttemptAt: timestamp("push_next_attempt_at", { withTimezone: true }).notNull().defaultNow(),
+    // Set once when at least one subscription accepted the push with 2xx.
+    pushSentAt: timestamp("push_sent_at", { withTimezone: true }),
+    // Per-row counter of subscriptions that accepted this push.
+    deliveredSubscriptionCount: integer("delivered_subscription_count").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdateFn(() => new Date()),
+  },
+  (table) => [
+    check(
+      "coach_notifications_category_valid",
+      sql`${table.category} IN ('booking_request', 'request_expiring_soon', 'parent_change', 'calendar_disconnected', 'auto_approved_summary', 'daily_summary')`,
+    ),
+    check(
+      "coach_notifications_urgency_valid",
+      sql`${table.urgency} IN ('standard', 'urgent')`,
+    ),
+    check(
+      "coach_notifications_push_status_valid",
+      sql`${table.pushStatus} IN ('pending', 'held', 'summarized', 'sending', 'sent', 'failed', 'skipped', 'superseded', 'abandoned')`,
+    ),
+    // Claim pair invariant: sending iff claimed_until is set.
+    check(
+      "coach_notifications_claim_pair",
+      sql`(${table.pushStatus} = 'sending') = (${table.pushClaimedUntil} IS NOT NULL)`,
+    ),
+    // Held pair invariant: held iff release_at is set.
+    check(
+      "coach_notifications_held_pair",
+      sql`(${table.pushStatus} = 'held') = (${table.releaseAt} IS NOT NULL)`,
+    ),
+    // Scope rules: per-lesson categories carry lesson_id xor batch_id;
+    // calendar_disconnected and daily_summary carry neither.
+    check(
+      "coach_notifications_scope_valid",
+      sql`(
+        (${table.category} IN ('booking_request', 'request_expiring_soon', 'parent_change', 'auto_approved_summary')
+         AND ((CASE WHEN ${table.lessonId} IS NOT NULL THEN 1 ELSE 0 END)
+            + (CASE WHEN ${table.batchId} IS NOT NULL THEN 1 ELSE 0 END) = 1))
+        OR (${table.category} IN ('calendar_disconnected', 'daily_summary')
+            AND ${table.lessonId} IS NULL AND ${table.batchId} IS NULL)
+      )`,
+    ),
+    // At most one request_expiring_soon reminder per lesson, across
+    // repeated cron ticks. Also covers the (future) auto_approved_summary
+    // 'immediate' mode so a lesson can't double-up.
+    uniqueIndex("coach_notifications_lesson_category_uq")
+      .on(table.profileId, table.lessonId, table.category)
+      .where(sql`lesson_id IS NOT NULL`),
+    // Same rule for batch-scoped alerts.
+    uniqueIndex("coach_notifications_batch_category_uq")
+      .on(table.profileId, table.batchId, table.category)
+      .where(sql`batch_id IS NOT NULL`),
+    // Durable idempotency for the daily summary: one row per coach per LA
+    // date. The compose pass inserts speculatively on every tick after the
+    // threshold; this index drops every attempt after the first.
+    uniqueIndex("coach_notifications_daily_summary_uq")
+      .on(table.profileId, sql`(payload->>'dateLocal')`)
+      .where(sql`category = 'daily_summary'`),
+    // Drain hot path — matches lesson_email_outbox's drain index.
+    index("coach_notifications_drain_idx")
+      .on(table.pushNextAttemptAt)
+      .where(sql`push_status IN ('pending', 'failed', 'sending')`),
+    // releaseHeldCoachNotifications lookup.
+    index("coach_notifications_release_idx")
+      .on(table.releaseAt)
+      .where(sql`push_status = 'held'`),
+    // In-app list primary read: unread first, newest first.
+    index("coach_notifications_list_idx").on(
+      table.profileId,
+      sql`read_at NULLS FIRST`,
+      table.createdAt.desc(),
+    ),
+    // Timeline debug.
+    index("coach_notifications_profile_created_idx").on(table.profileId, table.createdAt.desc()),
+  ],
+).enableRLS();
+
+// One row per browser push subscription per device. Rows are per profile, not
+// coach-only, so a future parent-facing push feature uses the same table.
+// Only 404 Gone / 410 Not Found from the push service deactivate a row —
+// VAPID or other signature errors leave every row intact and fail the send
+// with backoff (see ADR 031).
+export const coachPushSubscriptions = pgTable(
+  "coach_push_subscriptions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    profileId: uuid("profile_id").notNull().references(() => profiles.id, { onDelete: "cascade" }),
+    // Push service endpoint URL — unique per profile. If the same browser
+    // re-subscribes to the same endpoint, the register upsert is a no-op;
+    // a new endpoint creates a new row.
+    endpoint: text("endpoint").notNull(),
+    // Base64url public key from PushSubscription.getKey('p256dh').
+    p256dh: text("p256dh").notNull(),
+    // Base64url auth secret from PushSubscription.getKey('auth').
+    auth: text("auth").notNull(),
+    // Captured from the request's user-agent header at register time.
+    // Trimmed to 200 chars. Rendered on /account as a short label derived
+    // at display time ("Chrome on macOS", "Safari on iOS PWA", etc.) — the
+    // raw UA is retained for debugging but never logged.
+    userAgent: text("user_agent"),
+    // Flipped to false only on 404/410 from the push service. VAPID /
+    // signature errors do NOT deactivate (would mass-wipe every device on
+    // a misconfiguration); they fail the send with backoff instead.
+    isActive: boolean("is_active").notNull().default(true),
+    // 'gone' (push service returned 404/410) or 'coach_disabled' (coach
+    // removed from /account). Non-null only when is_active=false.
+    removedReason: text("removed_reason"),
+    lastDeliveryAt: timestamp("last_delivery_at", { withTimezone: true }),
+    lastFailureAt: timestamp("last_failure_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdateFn(() => new Date()),
+  },
+  (table) => [
+    unique("coach_push_subscriptions_profile_endpoint_uq").on(table.profileId, table.endpoint),
+    check(
+      "coach_push_subscriptions_removed_reason_valid",
+      sql`${table.removedReason} IS NULL OR ${table.removedReason} IN ('gone', 'coach_disabled')`,
+    ),
+    check(
+      "coach_push_subscriptions_removed_reason_pair",
+      sql`(${table.isActive} = true AND ${table.removedReason} IS NULL)
+        OR (${table.isActive} = false)`,
+    ),
+    index("coach_push_subscriptions_profile_active_idx").on(table.profileId, table.isActive),
+  ],
+).enableRLS();
+
+// One row per profile. Rows are created lazily on first read via
+// `getOrCreateCoachNotificationPreferences(profileId)` — INSERT ... ON
+// CONFLICT DO NOTHING — not by the signup trigger. See ADR 031.
+export const coachNotificationPreferences = pgTable(
+  "coach_notification_preferences",
+  {
+    profileId: uuid("profile_id").primaryKey().references(() => profiles.id, { onDelete: "cascade" }),
+    bookingRequestEnabled: boolean("booking_request_enabled").notNull().default(true),
+    // When true AND the coach has zero active push subscriptions, the
+    // sender writes a lesson_email_outbox row with event='coach_booking_
+    // request' instead of a push.
+    bookingRequestEmailBackupEnabled: boolean("booking_request_email_backup_enabled").notNull().default(true),
+    requestExpiringSoonEnabled: boolean("request_expiring_soon_enabled").notNull().default(true),
+    parentChangeEnabled: boolean("parent_change_enabled").notNull().default(true),
+    // 'off' | 'summary' | 'immediate'. 'summary' is the default — auto-
+    // approved rows roll into the daily summary count rather than firing
+    // immediately. calendar_disconnected has no toggle; it is always on.
+    autoApprovedMode: text("auto_approved_mode").notNull().default("summary"),
+    dailySummaryEnabled: boolean("daily_summary_enabled").notNull().default(true),
+    // LA-local time; the compose pass fires when now()@LA >= this value
+    // AND no row for the coach + today's LA date exists.
+    dailySummaryTimeLocal: time("daily_summary_time_local").notNull().default("08:00"),
+    quietHoursEnabled: boolean("quiet_hours_enabled").notNull().default(true),
+    quietHoursStartLocal: time("quiet_hours_start_local").notNull().default("21:00"),
+    // When end < start, the window crosses midnight — the sender's time
+    // check handles both forms.
+    quietHoursEndLocal: time("quiet_hours_end_local").notNull().default("07:00"),
+    // 'first_initial' | 'full_name'. Default follows the "minimum useful
+    // signal on the lock screen" rule from docs/accounts.md.
+    lockScreenDetail: text("lock_screen_detail").notNull().default("first_initial"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdateFn(() => new Date()),
+  },
+  (table) => [
+    check(
+      "coach_notification_preferences_auto_approved_mode_valid",
+      sql`${table.autoApprovedMode} IN ('off', 'summary', 'immediate')`,
+    ),
+    check(
+      "coach_notification_preferences_lock_screen_detail_valid",
+      sql`${table.lockScreenDetail} IN ('first_initial', 'full_name')`,
+    ),
   ],
 ).enableRLS();
 

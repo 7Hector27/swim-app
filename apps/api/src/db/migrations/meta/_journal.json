@@ -400,6 +400,13 @@
       "when": 1793031080649,
       "tag": "0056_booking_batches_weekly_pattern_jsonb",
       "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1793154014853,
+      "tag": "0057_coach_alerts",
+      "breakpoints": true
     }
   ]
 }
