@@ -1090,9 +1090,13 @@ export const coachNotifications = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     // Keyed by profile, not coach, so a future parent-facing push feature
     // fits the same table without a migration. The sender filters by
-    // profile.role='coach' when the current scope is coach-only. CASCADE:
-    // notifications are not standalone audit records; when the profile is
-    // removed, their notification history goes with it.
+    // profile.role='coach' when the current scope is coach-only. CASCADE
+    // is the product-correct choice for the (future) account deletion
+    // flow in docs/accounts.md: when a profile is hard-deleted, their
+    // notifications go with them (payload scrubs after 30 days anyway, so
+    // there is no audit value in dangling notifications). Matches
+    // coach_push_subscriptions.profile_id and
+    // coach_notification_preferences.profile_id which are both CASCADE.
     profileId: uuid("profile_id").notNull().references(() => profiles.id, { onDelete: "cascade" }),
     // One of: 'booking_request', 'request_expiring_soon', 'parent_change',
     // 'calendar_disconnected', 'auto_approved_summary', 'daily_summary'.
@@ -1103,12 +1107,16 @@ export const coachNotifications = pgTable(
     // Quiet-hours bypass is a SEPARATE gate (starts_at < now()+12h) that
     // the sender computes at send time.
     urgency: text("urgency").notNull(),
-    // Set for per-lesson categories. CASCADE: a notification about a
-    // lesson has no standalone audit value once the lesson row is gone;
-    // the payload scrubs after 30 days regardless.
-    lessonId: uuid("lesson_id").references(() => lessons.id, { onDelete: "cascade" }),
-    // Set when the alert describes a batch. Same CASCADE reasoning.
-    batchId: uuid("batch_id").references(() => bookingBatches.id, { onDelete: "cascade" }),
+    // Set for per-lesson categories. RESTRICT because lessons are never
+    // hard-deleted in production — they soft-delete via status='canceled'.
+    // A dangling notification can't occur in the live app. Tests delete
+    // coach_notifications before deleting lessons (see parentBatchBooking's
+    // cleanup helper and coachAlerts.integration.test.ts).
+    lessonId: uuid("lesson_id").references(() => lessons.id, { onDelete: "restrict" }),
+    // Set when the alert describes a batch. RESTRICT for the same reason:
+    // booking_batches rows are immutable after insert (ADR 030) and never
+    // hard-deleted in production.
+    batchId: uuid("batch_id").references(() => bookingBatches.id, { onDelete: "restrict" }),
     // Frozen render inputs — the push body is composed at send time from
     // this payload plus the coach's lock_screen_detail setting so a later
     // preference change does not retroactively repaint a scheduled push.

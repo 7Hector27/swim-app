@@ -13,6 +13,7 @@ import {
   adminDb,
   closeAdminDb,
   createTestUser,
+  settleAndCleanupCoachNotificationsForHousehold,
   type TestUser,
 } from "./helpers";
 import { fromZonedTime } from "date-fns-tz";
@@ -178,6 +179,11 @@ async function findFirstAvailableSlotForCoach(
 
 // Deletes everything the coach booking tests might create for a household.
 async function wipeHouseholdBookingArtifacts(householdId: string): Promise<void> {
+  // Settle in-flight notify* stubs and remove any coach_notifications
+  // referencing this household's lessons. coach_notifications.lesson_id
+  // is ON DELETE RESTRICT (ADR 031: production never hard-deletes
+  // lessons; tests delete in the right order).
+  await settleAndCleanupCoachNotificationsForHousehold(householdId);
   const lessonRows = await adminDb()
     .select({ id: lessons.id })
     .from(lessons)

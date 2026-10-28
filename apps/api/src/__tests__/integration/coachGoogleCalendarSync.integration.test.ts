@@ -52,7 +52,13 @@ import {
   runFullSyncPass,
   syncLessonToGoogle,
 } from "../../services/googleCalendarSync";
-import { adminDb, closeAdminDb, createTestUser, type TestUser } from "./helpers";
+import {
+  adminDb,
+  closeAdminDb,
+  createTestUser,
+  settleAndCleanupCoachNotificationsForHousehold,
+  type TestUser,
+} from "./helpers";
 
 __resetEnvCacheForTests();
 const app = createApp(pino({ level: "silent" }));
@@ -220,6 +226,11 @@ async function clearIntegrationAndLessons(): Promise<void> {
   );
   // Only clear this test's household's lessons so parallel integration test
   // files that run in the same DB aren't affected.
+  //
+  // Settle in-flight notify* stubs and remove any coach_notifications
+  // referencing this household's lessons. coach_notifications.lesson_id is
+  // ON DELETE RESTRICT (ADR 031).
+  await settleAndCleanupCoachNotificationsForHousehold(owner.householdId);
   const householdLessons = await adminDb()
     .select({ id: lessons.id })
     .from(lessons)
@@ -972,7 +983,9 @@ describe("POST /lessons regression: auto-approved bookings must sync", () => {
       expect(row.calendarSyncAttempts).toBeGreaterThanOrEqual(1);
       expect(row.googleCalendarEventId).toBe(stripDashes(newLessonId));
 
-      // Cleanup the booking so it doesn't collide with later tests.
+      // Cleanup the booking so it doesn't collide with later tests. Settle
+      // and purge coach_notifications first (ADR 031).
+      await settleAndCleanupCoachNotificationsForHousehold(owner.householdId);
       await adminDb()
         .delete(lessonEmailOutbox)
         .where(inArray(lessonEmailOutbox.lessonId, [newLessonId, priorApprovedId]));

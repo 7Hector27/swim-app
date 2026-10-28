@@ -3,10 +3,21 @@
 // attests their age so requireUser accepts them, and returns a cleanup fn.
 
 import { createClient } from "@supabase/supabase-js";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import { householdAuditLog, householdMembers, households, meetSwims, profiles, swimmerClubs, swimmers } from "../../db/schema";
+import {
+  coachNotifications,
+  householdAuditLog,
+  householdMembers,
+  households,
+  lessons,
+  meetSwims,
+  profiles,
+  swimmerClubs,
+  swimmers,
+} from "../../db/schema";
+import { __settlePendingCoachAlertsForTests } from "../../lib/lessonApproval";
 
 // All env vars are validated in setup.ts before any test code runs.
 // These getters use non-null assertions since setup.ts guarantees presence.
@@ -48,6 +59,30 @@ export async function closeAdminDb(): Promise<void> {
     await adminPool.end();
     adminPool = null;
     adminDbSingleton = null;
+  }
+}
+
+/**
+ * Settle in-flight notify* stub work, then delete every coach_notifications
+ * row that references the given household's lessons. Call this BEFORE
+ * deleting lessons / batches / households in test cleanup — the
+ * coach_notifications.lesson_id and .batch_id FKs are ON DELETE RESTRICT
+ * (ADR 031: in production, lessons and batches are never hard-deleted, so
+ * RESTRICT is correct for the live app and tests delete in the right order).
+ */
+export async function settleAndCleanupCoachNotificationsForHousehold(
+  householdId: string,
+): Promise<void> {
+  await __settlePendingCoachAlertsForTests();
+  const lessonRows = await adminDb()
+    .select({ id: lessons.id })
+    .from(lessons)
+    .where(eq(lessons.householdId, householdId));
+  const lessonIds = lessonRows.map((row) => row.id);
+  if (lessonIds.length > 0) {
+    await adminDb()
+      .delete(coachNotifications)
+      .where(inArray(coachNotifications.lessonId, lessonIds));
   }
 }
 

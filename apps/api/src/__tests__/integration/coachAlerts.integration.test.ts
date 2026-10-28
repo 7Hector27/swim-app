@@ -22,6 +22,7 @@ import {
   adminDb,
   closeAdminDb,
   createTestUser,
+  settleAndCleanupCoachNotificationsForHousehold,
   type TestUser,
 } from "./helpers";
 import {
@@ -95,7 +96,10 @@ async function seedLesson(opts: {
   startsAt?: Date;
   expiresAt?: Date | null;
 }): Promise<string> {
-  const startsAt = opts.startsAt ?? new Date(Date.now() + 48 * 60 * 60 * 1000);
+  // Default to 2 hours out so the sender's 12-hour starts_at bypass
+  // (ADR 031) always fires, regardless of whether wall-clock time is
+  // currently inside the default quiet-hours window.
+  const startsAt = opts.startsAt ?? new Date(Date.now() + 2 * 60 * 60 * 1000);
   const row = await adminDb()
     .insert(lessons)
     .values({
@@ -115,6 +119,9 @@ async function seedLesson(opts: {
 }
 
 async function cleanAllNotifications(): Promise<void> {
+  // Drain in-flight notify* stubs so any pending INSERT lands before we
+  // purge the tables.
+  await settleAndCleanupCoachNotificationsForHousehold(owner.householdId);
   await adminDb()
     .delete(coachNotifications)
     .where(eq(coachNotifications.profileId, coachProfile.userId));
@@ -340,7 +347,9 @@ describe("sendCoachNotification", () => {
       })
       .returning({ id: bookingBatches.id });
     const batchId = batchRows[0]!.id;
-    const base = Date.now() + 48 * 60 * 60 * 1000;
+    // 2 / 4 / 6 hours out — all inside the 12-hour bypass window so the
+    // sender's email-backup branch runs regardless of wall-clock quiet hours.
+    const base = Date.now() + 2 * 60 * 60 * 1000;
     const lessonIds: string[] = [];
     for (let index = 0; index < 3; index++) {
       const insertedLesson = await adminDb()
@@ -348,7 +357,7 @@ describe("sendCoachNotification", () => {
         .values({
           householdId: owner.householdId,
           locationId,
-          startsAt: new Date(base + index * 24 * 60 * 60 * 1000),
+          startsAt: new Date(base + index * 2 * 60 * 60 * 1000),
           durationMinutes: 30,
           type: "private",
           status: "pending",

@@ -7,6 +7,7 @@ import {
   adminDb,
   closeAdminDb,
   createTestUser,
+  settleAndCleanupCoachNotificationsForHousehold,
   type TestUser,
 } from "./helpers";
 import {
@@ -155,6 +156,8 @@ afterAll(async () => {
     .select({ id: lessons.id })
     .from(lessons)
     .where(eq(lessons.householdId, owner.householdId));
+  // Settle and purge coach_notifications first (ADR 031 FK is RESTRICT).
+  await settleAndCleanupCoachNotificationsForHousehold(owner.householdId);
   if (householdLessonIds.length > 0) {
     const ids = householdLessonIds.map((row) => row.id);
     await adminDb()
@@ -180,6 +183,9 @@ afterAll(async () => {
 
 async function cleanupLessons(ids: string[]): Promise<void> {
   if (ids.length === 0) return;
+  // Settle notify* stubs and purge coach_notifications before deleting
+  // lessons (ADR 031 FK is RESTRICT).
+  await settleAndCleanupCoachNotificationsForHousehold(owner.householdId);
   await adminDb()
     .delete(lessonEmailOutbox)
     .where(inArray(lessonEmailOutbox.lessonId, ids));

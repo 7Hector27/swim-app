@@ -8,6 +8,7 @@ import {
   closeAdminDb,
   createTestUser,
   createTestUserInHousehold,
+  settleAndCleanupCoachNotificationsForHousehold,
   type TestUser,
 } from "./helpers";
 import {
@@ -90,6 +91,9 @@ afterAll(async () => {
       .select({ id: lessons.id })
       .from(lessons)
       .where(eq(lessons.householdId, owner.householdId));
+    // coach_notifications.lesson_id is ON DELETE RESTRICT (ADR 031):
+    // settle in-flight notify* stubs and purge coach_notifications first.
+    await settleAndCleanupCoachNotificationsForHousehold(owner.householdId);
     if (ownerLessonIds.length > 0) {
       await adminDb()
         .delete(lessonEmailOutbox)
@@ -219,8 +223,11 @@ describe("POST /lessons (integration)", () => {
 
         expect(failBody.error).toBe("slot_unavailable");
 
-        // Clean up lessons created in this test — outbox rows first because
-        // of the ON DELETE RESTRICT FK (ADR 028).
+        // Clean up lessons created in this test — settle notify* stubs and
+        // purge coach_notifications first (ADR 031 FK is ON DELETE RESTRICT),
+        // then outbox rows (ADR 028 same reason).
+        await settleAndCleanupCoachNotificationsForHousehold(owner2.householdId);
+        await settleAndCleanupCoachNotificationsForHousehold(owner.householdId);
         const concLessonIds = await adminDb()
           .select({ id: lessons.id })
           .from(lessons)
