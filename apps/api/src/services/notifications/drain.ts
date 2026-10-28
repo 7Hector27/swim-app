@@ -396,12 +396,18 @@ export async function scrubCoachNotificationPayloads(): Promise<ScrubCoachResult
     .from(coachNotifications)
     .where(
       and(
+        // Include `held` so rows that never got released (release pass
+        // stalled, daily-summary promotion missed) still have their
+        // payloads scrubbed at the 30-day mark. The 30-day retention is
+        // what the ADR commits to; a held-forever row would otherwise
+        // hold a swimmer name indefinitely.
         inArray(coachNotifications.pushStatus, [
           "sent",
           "skipped",
           "superseded",
           "abandoned",
           "summarized",
+          "held",
         ]),
         sql`coalesce(${coachNotifications.pushSentAt}, ${coachNotifications.pushLastAttemptAt}, ${coachNotifications.updatedAt}) < ${cutoff.toISOString()}::timestamptz`,
         sql`${coachNotifications.payload} ? 'listTitle'`,
