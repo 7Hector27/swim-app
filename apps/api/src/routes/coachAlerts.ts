@@ -42,6 +42,7 @@ import { asyncHandler } from "../middleware/asyncHandler";
 import { validate } from "../middleware/validate";
 import {
   getOrCreateCoachNotificationPreferences,
+  readCoachNotificationPreferences,
   updateCoachNotificationPreferences,
 } from "../services/notifications/preferences";
 import { createPushTransport } from "../services/notifications/pushTransport";
@@ -250,7 +251,10 @@ coachAlertsRouter.get(
   "/notifications",
   validate({}),
   asyncHandler(async (req, res) => {
-    const prefs = await getOrCreateCoachNotificationPreferences(req.profile.id);
+    // Read-only — a notifications list fetch should never create a
+    // preferences row. Only PATCH /notifications/preferences and the
+    // sender write. See services/notifications/preferences.ts.
+    const prefs = await readCoachNotificationPreferences(req.profile.id);
 
     const rows = await db
       .select({

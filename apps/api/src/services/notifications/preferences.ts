@@ -52,6 +52,44 @@ export async function getOrCreateCoachNotificationPreferences(
   return mapRow(row);
 }
 
+/**
+ * Read-only companion to `getOrCreateCoachNotificationPreferences`.
+ * Returns the stored row when it exists, or the default-value row (not
+ * persisted) when it does not. Call this from read paths — the GET
+ * notifications list, the devices read, etc. — so a stray caller cannot
+ * provision a preferences row via a read. Only explicit writes (settings
+ * PATCH, the sender's send-time read) should create.
+ */
+export async function readCoachNotificationPreferences(
+  profileId: string,
+  tx: Tx = db,
+): Promise<CoachNotificationPreferencesRow> {
+  const rows = await tx
+    .select()
+    .from(coachNotificationPreferences)
+    .where(eq(coachNotificationPreferences.profileId, profileId))
+    .limit(1);
+  const row = rows[0];
+  if (row) return mapRow(row);
+  // Defaults mirror the column defaults in db/schema.ts. Keeping them
+  // here as a literal (rather than echoing a SELECT) means reads never
+  // need to touch the DB a second time to resolve the row.
+  return {
+    profileId,
+    bookingRequestEnabled: true,
+    bookingRequestEmailBackupEnabled: true,
+    requestExpiringSoonEnabled: true,
+    parentChangeEnabled: true,
+    autoApprovedMode: "summary",
+    dailySummaryEnabled: true,
+    dailySummaryTimeLocal: "08:00:00",
+    quietHoursEnabled: true,
+    quietHoursStartLocal: "21:00:00",
+    quietHoursEndLocal: "07:00:00",
+    lockScreenDetail: "first_initial",
+  };
+}
+
 export async function updateCoachNotificationPreferences(
   profileId: string,
   patch: Partial<Omit<CoachNotificationPreferencesRow, "profileId">>,
