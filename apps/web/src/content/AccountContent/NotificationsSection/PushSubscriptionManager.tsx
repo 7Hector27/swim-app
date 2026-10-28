@@ -46,6 +46,17 @@ export default function PushSubscriptionManager({ vapidPublicKey, initialSupport
   const [testStatus, setTestStatus] = useState<TestStatus>("idle");
   const [removingId, setRemovingId] = useState<string | null>(null);
   const didInit = useRef(false);
+  // The "Sent" badge after a successful test clears after 2.5s. Track
+  // the timer in a ref and clear it on unmount so a late tick cannot
+  // call setTestStatus against a dead component.
+  const testTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (testTimeoutRef.current !== null) {
+        clearTimeout(testTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const refreshSubscriptions = useCallback(async () => {
     const result = await fetchPushSubscriptions();
@@ -151,7 +162,11 @@ export default function PushSubscriptionManager({ vapidPublicKey, initialSupport
     const result = await sendTestPush();
     setTestStatus(result.ok ? "sent" : "error");
     if (result.ok) {
-      setTimeout(() => setTestStatus((state) => (state === "sent" ? "idle" : state)), 2500);
+      if (testTimeoutRef.current !== null) clearTimeout(testTimeoutRef.current);
+      testTimeoutRef.current = setTimeout(() => {
+        testTimeoutRef.current = null;
+        setTestStatus((state) => (state === "sent" ? "idle" : state));
+      }, 2500);
     }
   }
 
