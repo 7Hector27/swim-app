@@ -104,3 +104,12 @@ Coaches access swimmer data through dedicated `/coach/swimmers` routes protected
 - **Clubs are never deleted, only deactivated.** Setting `is_active = false` on a `clubs` row hides it from new registrations but preserves all existing `swimmer_clubs` references. Hard-deleting a club is blocked by the `ON DELETE RESTRICT` FK on `swimmer_clubs.club_id`.
 - Public pages show opted-in swimmers only, as first name and last initial. Never birth date, contact info, or school.
 - Never log names, birth dates, emails, or notes.
+
+## Coach alerts (web push)
+
+Coach notifications are delivered via standard Web Push to the coach's registered browsers / installed PWA (ADR 031). Four rules govern what information crosses the push transport:
+
+- **Minimum useful signal on the lock screen.** The push body carries swimmer first name + last initial, day, time, and pool name by default. The coach can broaden to full swimmer name under a per-coach `lock_screen_detail` preference. The server never sends parent contact information, decline reasons, or full home-pool addresses through the push transport. Full detail (parent names, addresses, decline reasons) remains behind the deep link, inside the authenticated app.
+- **Payload is scoped to the coach.** Every push row targets exactly one coach profile. Parent-facing push is explicitly out of scope in v1; the `coach_push_subscriptions` table is keyed by profile id so a later parent-facing feature does not require a schema migration, but no parent push is built or sent today.
+- **Logs follow the same rule as everywhere else.** No swimmer last names, parent names, email addresses, home addresses, decline reasons, or notes appear in sender log lines. The sender keys off `notification_id`, `category`, `profile_id`, counts, and short transport error summaries.
+- **Dead subscriptions clean themselves.** When a push service returns 410 Gone or 404 Not Found, the subscription row is flipped to `is_active = false` and no further pushes are attempted for that endpoint. The `/account` page shows a persistent banner when a coach has zero active subscriptions so a half-configured laptop does not leave the coach blind.
