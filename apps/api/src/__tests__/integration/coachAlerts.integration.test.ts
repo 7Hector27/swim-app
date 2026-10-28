@@ -27,6 +27,7 @@ import {
 } from "./helpers";
 import {
   bookingBatches,
+  coachCalendarIntegrations,
   coachNotifications,
   coachNotificationPreferences,
   coachPushSubscriptions,
@@ -38,6 +39,10 @@ import {
   swimmers,
 } from "../../db/schema";
 import { db } from "../../db/client";
+import {
+  notifyBookingCreated,
+  notifyCoachOfChange,
+} from "../../lib/lessonApproval";
 import { enqueueCoachNotification } from "../../services/notifications/outbox";
 import {
   sendCoachNotification,
@@ -580,5 +585,286 @@ describe("getOrCreateCoachNotificationPreferences", () => {
       .from(coachNotificationPreferences)
       .where(eq(coachNotificationPreferences.profileId, coachProfile.userId));
     expect(allRows).toHaveLength(1);
+  });
+});
+
+// ADR 031's audit-log rule applied to notifications: the enqueue goes
+// inside the same db.transaction() as the state change it records. These
+// tests verify both halves of the invariant on real DB code paths, not
+// through HTTP (the HTTP routes exercise the same helpers).
+describe("notify* stubs are atomic with the lesson transaction", () => {
+  it("rolls back the notification when the lesson transaction throws", async () => {
+    await cleanAllNotifications();
+    // Count rows before — the test proves the delta is 0, not that the
+    // table is empty (other suites may share the coach's profile_id).
+    const beforeRows = await adminDb()
+      .select({ id: coachNotifications.id })
+      .from(coachNotifications)
+      .where(eq(coachNotifications.profileId, coachProfile.userId));
+
+    // Insert a lesson, enqueue the alert in the SAME tx, then force a
+    // rollback by throwing. Nothing should persist — not the lesson, not
+    // the notification. We assert both.
+    const sentinel = "forced rollback for atomicity test";
+    let threw: unknown = null;
+    const lessonId = crypto.randomUUID();
+    try {
+      await db.transaction(async (tx) => {
+        await tx.insert(lessons).values({
+          id: lessonId,
+          householdId: owner.householdId,
+          locationId,
+          startsAt: new Date(Date.now() + 2 * 60 * 60 * 1000),
+          durationMinutes: 30,
+          type: "private",
+          status: "pending",
+          requestedBy: owner.userId,
+          expiresAt: new Date(Date.now() + 2 * 60 * 60 * 1000 - 16 * 60 * 60 * 1000),
+        });
+        await tx.insert(lessonSwimmers).values({ lessonId, swimmerId });
+        await notifyBookingCreated(tx, lessonId, false);
+        throw new Error(sentinel);
+      });
+    } catch (err) {
+      threw = err;
+    }
+    expect(threw).toBeInstanceOf(Error);
+    expect((threw as Error).message).toBe(sentinel);
+
+    const lessonRows = await adminDb()
+      .select({ id: lessons.id })
+      .from(lessons)
+      .where(eq(lessons.id, lessonId));
+    expect(lessonRows).toHaveLength(0);
+
+    const afterRows = await adminDb()
+      .select({ id: coachNotifications.id })
+      .from(coachNotifications)
+      .where(eq(coachNotifications.profileId, coachProfile.userId));
+    expect(afterRows.length).toBe(beforeRows.length);
+  });
+
+  it("commits exactly one notification when the lesson transaction commits", async () => {
+    await cleanAllNotifications();
+    const lessonId = crypto.randomUUID();
+    const result = await db.transaction(async (tx) => {
+      await tx.insert(lessons).values({
+        id: lessonId,
+        householdId: owner.householdId,
+        locationId,
+        startsAt: new Date(Date.now() + 2 * 60 * 60 * 1000),
+        durationMinutes: 30,
+        type: "private",
+        status: "pending",
+        requestedBy: owner.userId,
+        expiresAt: new Date(Date.now() + 2 * 60 * 60 * 1000 - 16 * 60 * 60 * 1000),
+      });
+      await tx.insert(lessonSwimmers).values({ lessonId, swimmerId });
+      return await notifyBookingCreated(tx, lessonId, false);
+    });
+
+    expect(result).not.toBeNull();
+    const rows = await adminDb()
+      .select()
+      .from(coachNotifications)
+      .where(eq(coachNotifications.lessonId, lessonId));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.category).toBe("booking_request");
+
+    await adminDb().delete(coachNotifications).where(eq(coachNotifications.lessonId, lessonId));
+    await adminDb().delete(lessonSwimmers).where(eq(lessonSwimmers.lessonId, lessonId));
+    await adminDb().delete(lessons).where(eq(lessons.id, lessonId));
+  });
+
+  it("notifyCoachOfChange is also rolled back with its tx", async () => {
+    await cleanAllNotifications();
+    const lessonId = await seedLesson({ status: "approved" });
+    const beforeRows = await adminDb()
+      .select({ id: coachNotifications.id })
+      .from(coachNotifications)
+      .where(eq(coachNotifications.profileId, coachProfile.userId));
+
+    let threw: unknown = null;
+    try {
+      await db.transaction(async (tx) => {
+        await tx
+          .update(lessons)
+          .set({ status: "canceled", canceledAt: new Date(), canceledBy: owner.userId })
+          .where(eq(lessons.id, lessonId));
+        await notifyCoachOfChange(tx, lessonId, "canceled");
+        throw new Error("rollback");
+      });
+    } catch (err) {
+      threw = err;
+    }
+    expect(threw).toBeInstanceOf(Error);
+
+    // Lesson status should still be approved — the whole tx rolled back.
+    const lessonRow = await adminDb()
+      .select({ status: lessons.status })
+      .from(lessons)
+      .where(eq(lessons.id, lessonId))
+      .limit(1);
+    expect(lessonRow[0]?.status).toBe("approved");
+
+    const afterRows = await adminDb()
+      .select({ id: coachNotifications.id })
+      .from(coachNotifications)
+      .where(eq(coachNotifications.profileId, coachProfile.userId));
+    expect(afterRows.length).toBe(beforeRows.length);
+
+    await adminDb().delete(lessonSwimmers).where(eq(lessonSwimmers.lessonId, lessonId));
+    await adminDb().delete(lessons).where(eq(lessons.id, lessonId));
+  });
+});
+
+// ADR 031 says the calendar_disconnected alert row is written inside the
+// same transaction as the integration status flip. These tests cover both
+// halves of that contract directly against the DB — the real flipper
+// (markNeedsReconnect in services/googleCalendarSync.ts) is private, but
+// its atomic shape is reproduced here using the same primitives.
+describe("calendar_disconnected is atomic with the needs_reconnect flip", () => {
+  it("rolls back both the integration flip and the alert row on throw", async () => {
+    await cleanAllNotifications();
+
+    // Seed a bare active integration row for the coach (no real token
+    // material; the test never calls Google).
+    const existing = await adminDb()
+      .select({ id: coachCalendarIntegrations.id })
+      .from(coachCalendarIntegrations)
+      .where(eq(coachCalendarIntegrations.coachProfileId, coachProfile.userId))
+      .limit(1);
+    if (existing.length === 0) {
+      await adminDb().insert(coachCalendarIntegrations).values({
+        coachProfileId: coachProfile.userId,
+        googleAccountEmail: null,
+        googleCalendarId: "cal-id-test",
+        status: "active",
+        scope: null,
+      });
+    } else {
+      await adminDb()
+        .update(coachCalendarIntegrations)
+        .set({ status: "active", needsReconnectSince: null })
+        .where(eq(coachCalendarIntegrations.coachProfileId, coachProfile.userId));
+    }
+
+    let threw: unknown = null;
+    try {
+      await db.transaction(async (tx) => {
+        await tx
+          .update(coachCalendarIntegrations)
+          .set({ status: "needs_reconnect", needsReconnectSince: new Date() })
+          .where(eq(coachCalendarIntegrations.coachProfileId, coachProfile.userId));
+        await enqueueCoachNotification(tx, {
+          coachProfileId: coachProfile.userId,
+          category: "calendar_disconnected",
+          calendarDisconnectedPayload: {
+            kind: "calendar_disconnected",
+            listTitle: "Google Calendar disconnected",
+            needsReconnectSinceUtc: new Date().toISOString(),
+          },
+        });
+        throw new Error("force rollback");
+      });
+    } catch (err) {
+      threw = err;
+    }
+    expect(threw).toBeInstanceOf(Error);
+
+    // Integration should still be active.
+    const integrationRow = await adminDb()
+      .select({ status: coachCalendarIntegrations.status })
+      .from(coachCalendarIntegrations)
+      .where(eq(coachCalendarIntegrations.coachProfileId, coachProfile.userId))
+      .limit(1);
+    expect(integrationRow[0]?.status).toBe("active");
+
+    // No calendar_disconnected alert row for this coach.
+    const alertRows = await adminDb()
+      .select({ id: coachNotifications.id })
+      .from(coachNotifications)
+      .where(
+        and(
+          eq(coachNotifications.profileId, coachProfile.userId),
+          eq(coachNotifications.category, "calendar_disconnected"),
+        ),
+      );
+    expect(alertRows).toHaveLength(0);
+  });
+
+  it("commits both the integration flip and the alert row together", async () => {
+    await cleanAllNotifications();
+
+    const existing = await adminDb()
+      .select({ id: coachCalendarIntegrations.id })
+      .from(coachCalendarIntegrations)
+      .where(eq(coachCalendarIntegrations.coachProfileId, coachProfile.userId))
+      .limit(1);
+    if (existing.length === 0) {
+      await adminDb().insert(coachCalendarIntegrations).values({
+        coachProfileId: coachProfile.userId,
+        googleAccountEmail: null,
+        googleCalendarId: "cal-id-test",
+        status: "active",
+        scope: null,
+      });
+    } else {
+      await adminDb()
+        .update(coachCalendarIntegrations)
+        .set({ status: "active", needsReconnectSince: null })
+        .where(eq(coachCalendarIntegrations.coachProfileId, coachProfile.userId));
+    }
+
+    const now = new Date();
+    const result = await db.transaction(async (tx) => {
+      await tx
+        .update(coachCalendarIntegrations)
+        .set({ status: "needs_reconnect", needsReconnectSince: now })
+        .where(eq(coachCalendarIntegrations.coachProfileId, coachProfile.userId));
+      return await enqueueCoachNotification(tx, {
+        coachProfileId: coachProfile.userId,
+        category: "calendar_disconnected",
+        calendarDisconnectedPayload: {
+          kind: "calendar_disconnected",
+          listTitle: "Google Calendar disconnected",
+          needsReconnectSinceUtc: now.toISOString(),
+        },
+      });
+    });
+    expect(result.notificationId).toBeTruthy();
+
+    const integrationRow = await adminDb()
+      .select({ status: coachCalendarIntegrations.status })
+      .from(coachCalendarIntegrations)
+      .where(eq(coachCalendarIntegrations.coachProfileId, coachProfile.userId))
+      .limit(1);
+    expect(integrationRow[0]?.status).toBe("needs_reconnect");
+
+    const alertRows = await adminDb()
+      .select()
+      .from(coachNotifications)
+      .where(
+        and(
+          eq(coachNotifications.profileId, coachProfile.userId),
+          eq(coachNotifications.category, "calendar_disconnected"),
+        ),
+      );
+    expect(alertRows).toHaveLength(1);
+    expect(alertRows[0]?.tag).toBe(`calendar-disconnected:${coachProfile.userId}`);
+
+    // Reset the integration row so later test files/suites see 'active'.
+    await adminDb()
+      .update(coachCalendarIntegrations)
+      .set({ status: "active", needsReconnectSince: null })
+      .where(eq(coachCalendarIntegrations.coachProfileId, coachProfile.userId));
+    await adminDb()
+      .delete(coachNotifications)
+      .where(
+        and(
+          eq(coachNotifications.profileId, coachProfile.userId),
+          eq(coachNotifications.category, "calendar_disconnected"),
+        ),
+      );
   });
 });

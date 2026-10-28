@@ -58,7 +58,12 @@ import { asyncHandler } from "../middleware/asyncHandler";
 import { mapConfigRow, mapSeasonRow, mapOverrideRow } from "../lib/availabilityMappers";
 import { computeCoachBookingWarnings } from "../lib/coachBookingWarnings";
 import { nowUtc as getNowUtc } from "../lib/clock";
-import { notifyBookingCreated, notifyLessonApproved, notifyLessonDeclined } from "../lib/lessonApproval";
+import {
+  notifyBookingCreated,
+  notifyLessonApproved,
+  notifyLessonDeclined,
+  queueCoachNotificationSend,
+} from "../lib/lessonApproval";
 import { syncLessonToGoogle } from "../services/googleCalendarSync";
 import { enqueueLessonEmail } from "../services/emails/outbox";
 import { sendLessonEmailOutboxRow } from "../services/emails/sender";
@@ -1389,16 +1394,23 @@ coachLessonsRouter.post(
         initiatedBy: "coach",
       });
 
-      return { lesson: inserted, outboxId };
+      // Coach alert row (ADR 031). Auto-approved category because the
+      // coach booked it themselves. Inside the tx so a rollback also
+      // rolls back the notification. The current single-coach stub
+      // writes to self; a multi-coach future would route to the booking
+      // coach via the lesson's coach_id column.
+      const coachNotificationId = await notifyBookingCreated(tx, inserted.id, true);
+
+      return { lesson: inserted, outboxId, coachNotificationId };
     });
 
     if (!result) {
       res.status(422).json({ error: "slot_unavailable" });
       return;
     }
-    const { lesson: committed, outboxId } = result;
+    const { lesson: committed, outboxId, coachNotificationId } = result;
 
-    notifyBookingCreated(committed.id, true);
+    queueCoachNotificationSend(coachNotificationId);
 
     // Response: fetch swimmers for the response body.
     const swimmerResponseRows = await db

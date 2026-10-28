@@ -76,10 +76,15 @@ vi.mock("../lib/slots", async (importActual) => {
 
 vi.mock("../lib/lessonApproval", () => ({
   needsApproval: mockNeedsApproval,
-  notifyBookingCreated: vi.fn(),
+  // Enqueue stubs now take a tx and return Promise<string | null>; mocks
+  // resolve to null so queueCoachNotificationSend becomes a no-op.
+  notifyBookingCreated: vi.fn().mockResolvedValue(null),
   notifyLessonApproved: vi.fn(),
   notifyLessonDeclined: vi.fn(),
-  notifyCoachOfChange: vi.fn(),
+  notifyCoachOfChange: vi.fn().mockResolvedValue(null),
+  notifyBatchBookingCreated: vi.fn().mockResolvedValue(null),
+  notifyCoachOfBatchChange: vi.fn().mockResolvedValue(null),
+  queueCoachNotificationSend: vi.fn(),
   chargeLessonComplete: vi.fn(),
 }));
 
