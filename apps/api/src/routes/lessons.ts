@@ -862,18 +862,32 @@ function suggestionsForPick(
     .map((entry) => ({ startsAt: entry.startsAt.toISOString() }));
 }
 
+// Union of every swimmer referenced by a batch body — manual mode flattens
+// across picks, weekly mode flattens across pattern entries. Each pick (or
+// pattern entry) owns its own set per ADR 030 phase 2.
+function collectBatchSwimmerIds(body: BatchPreviewBody | BatchSubmitBody): string[] {
+  const seen = new Set<string>();
+  if (body.mode === "manual") {
+    for (const pick of body.picks) for (const id of pick.swimmerIds) seen.add(id);
+  } else {
+    for (const pair of body.pattern) for (const id of pair.swimmerIds) seen.add(id);
+  }
+  return Array.from(seen);
+}
+
 async function assertBatchHouseholdAndSwimmers(
-  body: { householdId: string; swimmerIds: string[]; locationId: string },
+  body: BatchPreviewBody | BatchSubmitBody,
   callerHouseholdId: string,
 ): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
   if (body.householdId !== callerHouseholdId) {
     return { ok: false, status: 403, error: "Forbidden" };
   }
+  const batchSwimmerIds = collectBatchSwimmerIds(body);
   const swimmerRows = await db
     .select({ id: swimmers.id, householdId: swimmers.householdId })
     .from(swimmers)
-    .where(and(isActiveSwimmer, inArray(swimmers.id, body.swimmerIds)));
-  if (swimmerRows.length !== body.swimmerIds.length) {
+    .where(and(isActiveSwimmer, inArray(swimmers.id, batchSwimmerIds)));
+  if (swimmerRows.length !== batchSwimmerIds.length) {
     return { ok: false, status: 422, error: "One or more swimmers not found or archived" };
   }
   if (swimmerRows.some((swimmer) => swimmer.householdId !== callerHouseholdId)) {
@@ -956,6 +970,7 @@ lessonsRouter.post(
           index,
           startsAt: new Date(pick.startsAt),
           durationMinutes: pick.durationMinutes,
+          swimmerIds: pick.swimmerIds,
         }))
       : expandWeeklyCandidates({
           pattern: body.pattern,
@@ -976,6 +991,7 @@ lessonsRouter.post(
         index: candidate.index,
         startsAt: candidate.startsAt.toISOString(),
         durationMinutes: candidate.durationMinutes,
+        swimmerIds: candidate.swimmerIds,
         state: classified.state,
       };
       if (classified.state === "available") return base;
@@ -1037,6 +1053,7 @@ lessonsRouter.post(
         index,
         startsAt: new Date(pick.startsAt),
         durationMinutes: pick.durationMinutes,
+        swimmerIds: pick.swimmerIds,
       }));
     } else {
       const expanded = expandWeeklyCandidates({
@@ -1094,6 +1111,10 @@ lessonsRouter.post(
                 weekday: pair.weekday,
                 timeOfDay: pair.timeOfDay,
                 durationMinutes: pair.durationMinutes,
+                // Per-entry swimmers (ADR 030 phase 2) must round-trip through
+                // the stored pattern so cancel-remaining + any future re-expansion
+                // can rebuild each candidate's swimmer set from the batch row.
+                swimmerIds: pair.swimmerIds,
               })),
             )
           : null;
@@ -1182,19 +1203,33 @@ lessonsRouter.post(
       }
 
       const approvalRequired = await needsApproval(householdId, body.locationId, tx);
-      const type: "private" | "family" = body.swimmerIds.length === 1 ? "private" : "family";
       const now = new Date();
       const sixteenHoursMs = 16 * 60 * 60 * 1000;
+
+      // Generate each lesson's id up front so every downstream insert and
+      // payload mapping (lesson_swimmers rows, per-lesson email names,
+      // approved-id snapshot) can key by the pick's own id. No positional
+      // zipping between the insert's returning array and picksAsc.
+      const picksWithIds = picksAsc.map((pick) => ({
+        ...pick,
+        id: crypto.randomUUID() as string,
+      }));
 
       const insertedLessons = await tx
         .insert(lessons)
         .values(
-          picksAsc.map((pick) => ({
+          picksWithIds.map((pick) => ({
+            id: pick.id,
             householdId,
             locationId: body.locationId,
             startsAt: pick.startsAt,
             durationMinutes: pick.durationMinutes,
-            type,
+            // Per-lesson type derivation (ADR 030 phase 2): private when a
+            // single swimmer, family when two or more. Lets one batch mix
+            // private and family rows under one booking.
+            type: (pick.swimmerIds.length === 1 ? "private" : "family") as
+              | "private"
+              | "family",
             status: (approvalRequired ? "pending" : "approved") as "pending" | "approved",
             requestedBy: profileId,
             batchId: batch.id,
@@ -1206,8 +1241,8 @@ lessonsRouter.post(
         .returning();
 
       await tx.insert(lessonSwimmers).values(
-        insertedLessons.flatMap((lesson) =>
-          body.swimmerIds.map((swimmerId) => ({ lessonId: lesson.id, swimmerId })),
+        picksWithIds.flatMap((pick) =>
+          pick.swimmerIds.map((swimmerId) => ({ lessonId: pick.id, swimmerId })),
         ),
       );
 
@@ -1237,12 +1272,34 @@ lessonsRouter.post(
         );
       const recipientProfileIds = recipientRows.map((row) => row.profileId);
 
+      // Build the batch-wide and per-lesson swimmer name maps in one join.
+      // batchFirstNames (deduped union) feeds the email intro + ICS summary;
+      // perLessonFirstNames feeds the per-lesson list in the summary email.
+      const batchSwimmerIds = collectBatchSwimmerIds(body);
       const swimmerNameRows = await tx
-        .select({ firstName: swimmers.firstName })
+        .select({ id: swimmers.id, firstName: swimmers.firstName })
         .from(swimmers)
-        .where(inArray(swimmers.id, body.swimmerIds))
+        .where(inArray(swimmers.id, batchSwimmerIds))
         .orderBy(swimmers.firstName);
+      const firstNameById = new Map(
+        swimmerNameRows.map((row) => [row.id, row.firstName] as const),
+      );
       const swimmerFirstNames = swimmerNameRows.map((row) => row.firstName);
+      // Key per-lesson first names by the generated lesson id so the
+      // payload mapping and email render can look them up without relying
+      // on insertedLessons preserving picksAsc order.
+      const firstNamesByLessonId = new Map(
+        picksWithIds.map(
+          (pick) =>
+            [
+              pick.id,
+              pick.swimmerIds
+                .map((id) => firstNameById.get(id))
+                .filter((name): name is string => name !== undefined)
+                .sort((a, b) => a.localeCompare(b)),
+            ] as const,
+        ),
+      );
 
       const locationRows = await tx
         .select({
@@ -1294,6 +1351,7 @@ lessonsRouter.post(
           durationMinutes: lesson.durationMinutes,
           status: lesson.status,
           calendarSequence: lesson.calendarSequence,
+          swimmerFirstNames: firstNamesByLessonId.get(lesson.id) ?? [],
         })),
       };
 
@@ -1325,7 +1383,7 @@ lessonsRouter.post(
           batchId: batch.id,
           mode: body.mode,
           locationId: body.locationId,
-          swimmerIds: body.swimmerIds,
+          swimmerIds: batchSwimmerIds,
           lessonIds: insertedLessons.map((lesson) => lesson.id),
           lessonCount: insertedLessons.length,
           ...(body.mode === "weekly"
@@ -1589,14 +1647,27 @@ lessonsRouter.delete(
         );
       const recipientProfileIds = recipientRows.map((row) => row.profileId);
 
-      const sampleLessonId = toCancel[0]!.id;
-      const swimmerRows = await tx
-        .select({ firstName: swimmers.firstName })
+      // Per-lesson swimmer first names so the batch email can render each
+      // row's kids. The batch-wide `swimmerFirstNames` field below is the
+      // sorted union across all canceled lessons for the email intro.
+      const perLessonSwimmerRows = await tx
+        .select({
+          lessonId: lessonSwimmers.lessonId,
+          firstName: swimmers.firstName,
+        })
         .from(lessonSwimmers)
         .innerJoin(swimmers, eq(lessonSwimmers.swimmerId, swimmers.id))
-        .where(eq(lessonSwimmers.lessonId, sampleLessonId))
+        .where(inArray(lessonSwimmers.lessonId, allIds))
         .orderBy(swimmers.firstName);
-      const swimmerFirstNames = swimmerRows.map((row) => row.firstName);
+      const firstNamesByLessonId = new Map<string, string[]>();
+      for (const row of perLessonSwimmerRows) {
+        const list = firstNamesByLessonId.get(row.lessonId) ?? [];
+        list.push(row.firstName);
+        firstNamesByLessonId.set(row.lessonId, list);
+      }
+      const swimmerFirstNames = Array.from(
+        new Set(perLessonSwimmerRows.map((row) => row.firstName)),
+      ).sort((a, b) => a.localeCompare(b));
 
       const locationId = toCancel[0]!.locationId;
       const locationRows = await tx
@@ -1619,6 +1690,7 @@ lessonsRouter.delete(
         startsAtUtc: lesson.startsAt.toISOString(),
         durationMinutes: lesson.durationMinutes as 30 | 45 | 60,
         status: "canceled" as const,
+        swimmerFirstNames: firstNamesByLessonId.get(lesson.id) ?? [],
         // Pre-bump value. Every canceled lesson was bumped by one above, so
         // the sender's filter check (live === stored + 1) passes for both
         // invited and pending-only rows. wasInvited distinguishes the two:

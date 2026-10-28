@@ -6,12 +6,13 @@ import type {
 
 export type BookingMode = "single" | "multiple" | "recurring";
 
-// A single pick in multiple mode. Each pick carries its own length so a batch
-// can mix 30, 45, and 60-minute lessons. Recurring mode uses the equivalent
-// shape via BatchPatternPair's durationMinutes.
+// A single pick in multiple mode. Each pick carries its own length AND its
+// own swimmer set (ADR 030 phase 2) so a batch can interleave different kids
+// across picks. Recurring mode uses the equivalent shape via BatchPatternPair.
 export interface MultiplePick {
   startsAt: string;
   durationMinutes: LessonDurationMinutes;
+  swimmerIds: string[];
 }
 
 export function pickReasonCopy(state: BatchPickState): string {

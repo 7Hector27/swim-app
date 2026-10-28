@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import type {
   CoachHouseholdSearchResult,
   LessonLocation,
@@ -10,13 +10,15 @@ import { LESSON_DURATION_MINUTES } from "@swim-app/shared";
 import WeekGrid from "@/content/BookCalendarContent/WeekGrid";
 import PhoneDayStrip from "@/content/BookCalendarContent/PhoneDayStrip";
 import PhoneTimeList from "@/content/BookCalendarContent/PhoneTimeList";
-import WeekNav from "@/content/BookCalendarContent/WeekNav";
+import WeekNav, { type WeekNavDot } from "@/content/BookCalendarContent/WeekNav";
 import Legend from "@/content/BookCalendarContent/Legend";
 import {
   addDaysToDateStr,
   getMondayOfWeek,
   formatDayLabel,
+  maxBookableDateLA,
 } from "@/content/BookCalendarContent/helpers";
+import { useWeekPrefetch } from "@/content/BookCalendarContent/useWeekPrefetch";
 import {
   fetchCoachRangeAction,
   fetchCoachWeekLessonsAction,
@@ -126,9 +128,49 @@ export default function Step2TimePicker({
   const selectedLocation =
     locationOptions.find((option) => option.id === locationId) ?? null;
 
+  const todayMondayStr = useMemo(() => getMondayOfWeek(today), [today]);
+  const bookingMaxAdvanceWeeks = weekData?.bookingMaxAdvanceWeeks ?? 10;
+  const maxAdvanceDateLA = useMemo(
+    () => maxBookableDateLA(bookingMaxAdvanceWeeks, Date.now()),
+    [bookingMaxAdvanceWeeks],
+  );
+  const nextMondayStr = addDaysToDateStr(mondayStr, 7);
+  const prevMondayStr = addDaysToDateStr(mondayStr, -7);
+  const disableNextWeek = nextMondayStr > maxAdvanceDateLA;
+  const disablePrevWeek = prevMondayStr < todayMondayStr;
+
+  const weekMondays = useMemo(() => {
+    const list: string[] = [];
+    let monday = todayMondayStr;
+    while (monday <= maxAdvanceDateLA) {
+      list.push(monday);
+      monday = addDaysToDateStr(monday, 7);
+    }
+    return list;
+  }, [todayMondayStr, maxAdvanceDateLA]);
+
+  const weekPrefetch = useWeekPrefetch({
+    windowStart: todayMondayStr,
+    windowEnd: maxAdvanceDateLA,
+    fetchWeek: useCallback(
+      (monday: string) => {
+        if (locationId === null) return Promise.resolve(null);
+        return fetchCoachRangeAction({
+          date: monday,
+          durationMinutes,
+          locationId,
+        });
+      },
+      [locationId, durationMinutes],
+    ),
+  });
+
   useEffect(() => {
     if (locationId === null) return;
     setFetchError(null);
+    const cached = weekPrefetch.readFromCache(mondayStr);
+    if (cached !== null) setWeekData(cached);
+    const fetchEpoch = weekPrefetch.beginFetch();
     startFetching(async () => {
       const result = await fetchCoachRangeAction({
         date: mondayStr,
@@ -140,8 +182,20 @@ export default function Step2TimePicker({
         return;
       }
       setWeekData(result);
+      weekPrefetch.onWeekFetched(mondayStr, result, fetchEpoch);
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mondayStr, durationMinutes, locationId]);
+
+  const weekDots = useMemo<WeekNavDot[]>(() => {
+    return weekMondays.map((weekMonday) => {
+      const hasOpenValue = weekPrefetch.hasOpenByMonday.get(weekMonday);
+      return {
+        mondayStr: weekMonday,
+        ...(hasOpenValue !== undefined && { hasOpen: hasOpenValue }),
+      };
+    });
+  }, [weekMondays, weekPrefetch.hasOpenByMonday]);
 
   // Fetch every lesson in the week (any location) for the overlap check.
   // Decoupled from the slot-grid fetch above because location + duration
@@ -181,6 +235,24 @@ export default function Step2TimePicker({
 
   function handleWeekToday() {
     setMondayStr(getMondayOfWeek(today));
+    setSelectedStartsAt(null);
+  }
+
+  function handleJumpToMonday(monday: string) {
+    if (monday === mondayStr) return;
+    setMondayStr(monday);
+    setSelectedStartsAt(null);
+  }
+
+  function handleLocationChange(id: string) {
+    weekPrefetch.reset();
+    setLocationId(id);
+    setSelectedStartsAt(null);
+  }
+
+  function handleDurationChange(d: 30 | 45 | 60) {
+    weekPrefetch.reset();
+    setDurationMinutes(d);
     setSelectedStartsAt(null);
   }
 
@@ -293,10 +365,7 @@ export default function Step2TimePicker({
             <button
               key={option.id}
               type="button"
-              onClick={() => {
-                setLocationId(option.id);
-                setSelectedStartsAt(null);
-              }}
+              onClick={() => handleLocationChange(option.id)}
               aria-pressed={option.id === locationId}
               className={`min-h-[40px] px-4 rounded-button border text-sm font-semibold transition-colors duration-150 motion-reduce:transition-none active:scale-[0.97] ${
                 option.id === locationId ? activeTabClass : inactiveTabClass
@@ -316,10 +385,7 @@ export default function Step2TimePicker({
             <button
               key={minutes}
               type="button"
-              onClick={() => {
-                setDurationMinutes(minutes);
-                setSelectedStartsAt(null);
-              }}
+              onClick={() => handleDurationChange(minutes)}
               aria-pressed={minutes === durationMinutes}
               className={`min-h-[40px] px-4 rounded-button border text-sm font-semibold transition-colors duration-150 motion-reduce:transition-none active:scale-[0.97] ${
                 minutes === durationMinutes ? activeTabClass : inactiveTabClass
@@ -340,6 +406,9 @@ export default function Step2TimePicker({
             onNext={handleWeekNext}
             onToday={handleWeekToday}
             todayStr={today}
+            disablePrev={disablePrevWeek}
+            disableNext={disableNextWeek}
+            dots={{ weeks: weekDots, onJump: handleJumpToMonday }}
           />
           <Legend />
 

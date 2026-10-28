@@ -24,6 +24,10 @@ export interface BatchEmailLesson {
   startsAtUtc: string;
   durationMinutes: LessonDurationMinutes;
   status: BatchLessonStatus;
+  // Per-lesson swimmer first names, alphabetical. Snapshotted at outbox-
+  // write time (ADR 030 phase 2). Lets the summary email render which
+  // kids are on each lesson when a batch mixes swimmer sets.
+  swimmerFirstNames: string[];
   // The SEQUENCE value that was issued for this lesson's VEVENT in the
   // triggering outbox write. For batch_booked and batch_approved, this is
   // the pre-bump value (what the invite's SEQUENCE: line should be). For
@@ -40,7 +44,13 @@ export interface BatchEmailLesson {
   wasInvited?: boolean;
 }
 
-export type BatchPatternPair = SharedBatchPatternPair;
+// The embedded weekly block is an archival snapshot of the pattern as stored
+// in booking_batches. Nothing re-expands it, so swimmerIds is optional here
+// to match rows written before ADR 030 phase 2 that don't carry per-pair
+// swimmer sets. New writes always include it.
+export type BatchPatternPair = Omit<SharedBatchPatternPair, "swimmerIds"> & {
+  swimmerIds?: string[];
+};
 
 export interface BatchEmailPayload {
   batchId: string;

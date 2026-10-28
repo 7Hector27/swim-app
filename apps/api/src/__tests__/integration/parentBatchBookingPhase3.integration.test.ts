@@ -325,8 +325,14 @@ async function submitBatch(opts: {
       mode: "weekly",
       householdId: owner.householdId,
       locationId,
-      swimmerIds: [swimmerId],
-      pattern: [{ weekday: opts.weekday, timeOfDay: "16:30", durationMinutes: 30 }],
+      pattern: [
+        {
+          weekday: opts.weekday,
+          timeOfDay: "16:30",
+          durationMinutes: 30,
+          swimmerIds: [swimmerId],
+        },
+      ],
       startDate: opts.startDate,
       weeks: opts.weeks,
     });

@@ -20,13 +20,20 @@ interface Props {
   locationId: string | null;
   durationMinutes: 30 | 45 | 60;
   swimmerIds: string[];
-  isLoading: boolean;
-  showSwimmerError: boolean;
+  // Nonce that increments every time the parent asks us to replay the
+  // "no swimmer picked" feedback. Each new value re-fires the scroll +
+  // highlight + focus side effects so repeated taps on Confirm or Review
+  // always get fresh feedback, not just the first.
+  swimmerErrorNonce: number;
+  // "Who's swimming" (Single) vs "Who's swimming in new picks" (Multiple +
+  // Recurring, where each pick stores its own swimmers at tap time).
+  swimmerLabel?: string;
   // Label for the length chips. In Multiple and Recurring the chips only set
   // the length for the NEXT pick, so the label makes that explicit; existing
   // picks keep their own length and get edited in the pick list / pattern
   // list.
   durationLabel?: string;
+  isLoading: boolean;
   onLocationChange: (id: string) => void;
   onDurationChange: (d: 30 | 45 | 60) => void;
   onSwimmersChange: (ids: string[]) => void;
@@ -42,8 +49,10 @@ const CHIP_BASE =
 const CHIP_ACTIVE = "border-accent bg-accent/10 text-accent";
 const CHIP_INACTIVE = "border-border text-text hover:bg-surface-soft";
 
-// Length of the "please pick a swimmer" highlight pulse. Matches the
-// transition declared in the section className below.
+// Length of the "please pick a swimmer" highlight pulse. The useEffect
+// re-arms this timeout on every nonce bump so each tap replays the
+// animation cleanly, respecting prefers-reduced-motion via the CSS
+// transition-shadow + motion-reduce guard below.
 const HIGHLIGHT_MS = 1600;
 
 function CheckIcon() {
@@ -88,27 +97,35 @@ export default function CalendarConfigRow({
   locationId,
   durationMinutes,
   swimmerIds,
-  isLoading,
-  showSwimmerError,
+  swimmerErrorNonce,
+  swimmerLabel = "Who\u2019s swimming",
   durationLabel = "Length",
+  isLoading,
   onLocationChange,
   onDurationChange,
   onSwimmersChange,
 }: Props) {
   const swimmerSectionRef = useRef<HTMLDivElement>(null);
-  const swimmerErrorRef = useRef<HTMLParagraphElement>(null);
+  const firstSwimmerChipRef = useRef<HTMLButtonElement>(null);
   const [highlight, setHighlight] = useState(false);
+  const errorVisible = swimmerErrorNonce > 0 && swimmerIds.length === 0;
 
   useEffect(() => {
-    if (!showSwimmerError || swimmerIds.length !== 0) return;
-    // scrollIntoView is missing in some test environments; guard it so the
-    // highlight + focus still run.
+    if (swimmerErrorNonce === 0) return;
+    if (swimmerIds.length !== 0) return;
+    // Flip highlight off before on so a repeat tap with the same nonce-after-
+    // selection pattern still restarts the transition. React batches both
+    // state updates, so this still fires exactly once per nonce bump.
+    setHighlight(false);
     swimmerSectionRef.current?.scrollIntoView?.({ behavior: "smooth", block: "center" });
-    swimmerErrorRef.current?.focus({ preventScroll: true });
-    setHighlight(true);
+    firstSwimmerChipRef.current?.focus({ preventScroll: true });
+    const start = requestAnimationFrame(() => setHighlight(true));
     const timer = setTimeout(() => setHighlight(false), HIGHLIGHT_MS);
-    return () => clearTimeout(timer);
-  }, [showSwimmerError, swimmerIds.length]);
+    return () => {
+      cancelAnimationFrame(start);
+      clearTimeout(timer);
+    };
+  }, [swimmerErrorNonce, swimmerIds.length]);
 
   function toggleSwimmer(id: string) {
     if (swimmerIds.includes(id)) {
@@ -164,21 +181,20 @@ export default function CalendarConfigRow({
           data-highlight={highlight ? "true" : undefined}
           data-testid="swimmer-picker"
           className={`rounded-card -mx-2 px-2 py-2 transition-shadow duration-300 motion-reduce:transition-none ${
-            highlight
-              ? "ring-2 ring-danger bg-danger/5"
-              : "ring-0 bg-transparent"
+            highlight ? "ring-2 ring-danger bg-danger/5" : "ring-0 bg-transparent"
           }`}
         >
-          <p className={LABEL}>Who&rsquo;s swimming</p>
+          <p className={LABEL}>{swimmerLabel}</p>
           {swimmers.length > 1 && (
             <p className="text-xs text-text-secondary mb-2">Tap everyone who&rsquo;s swimming</p>
           )}
           <div className="flex flex-wrap gap-2">
-            {swimmers.map((swimmer) => {
+            {swimmers.map((swimmer, index) => {
               const isActive = swimmerIds.includes(swimmer.id);
               return (
                 <button
                   key={swimmer.id}
+                  ref={index === 0 ? firstSwimmerChipRef : undefined}
                   type="button"
                   onClick={() => toggleSwimmer(swimmer.id)}
                   disabled={isLoading}
@@ -198,15 +214,12 @@ export default function CalendarConfigRow({
           </div>
           {isFamilyLesson && (
             <p className="text-xs text-text-secondary mt-2">
-              Family lesson · {swimmerIds.length}
+              Family lesson &middot; {swimmerIds.length}
             </p>
           )}
-          {showSwimmerError && swimmerIds.length === 0 && (
+          {errorVisible && (
             <p
-              ref={swimmerErrorRef}
               role="alert"
-              tabIndex={-1}
-              style={{ outline: "none" }}
               className="text-sm font-semibold text-danger mt-2"
               data-testid="swimmer-error"
             >
