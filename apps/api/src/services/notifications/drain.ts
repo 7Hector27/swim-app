@@ -409,7 +409,13 @@ export async function scrubCoachNotificationPayloads(): Promise<ScrubCoachResult
     scrubbed = ids.length;
   }
 
-  // Hard-delete dead subscriptions older than 90 days.
+  // Hard-delete dead subscriptions older than 90 days. `last_failure_at`
+  // is null for rows that were deactivated via `coach_disabled` (coach
+  // removed the device from /account) and never saw a push-service
+  // failure, so a bare `lt(lastFailureAt, cutoff)` would ignore them
+  // forever. Fall back to `updated_at` (always non-null) via coalesce so
+  // the age check applies to every deactivated row regardless of
+  // removedReason.
   const deadCutoff = new Date(Date.now() - DEAD_SUBSCRIPTION_AGE_DAYS * 24 * 60 * 60 * 1000);
   const deadRows = await db
     .select({ id: coachPushSubscriptions.id })
@@ -417,7 +423,7 @@ export async function scrubCoachNotificationPayloads(): Promise<ScrubCoachResult
     .where(
       and(
         eq(coachPushSubscriptions.isActive, false),
-        lt(coachPushSubscriptions.lastFailureAt, deadCutoff),
+        sql`coalesce(${coachPushSubscriptions.lastFailureAt}, ${coachPushSubscriptions.updatedAt}) < ${deadCutoff.toISOString()}::timestamptz`,
       ),
     )
     .limit(DEAD_SUBSCRIPTION_LIMIT_PER_TICK);
