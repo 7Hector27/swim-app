@@ -32,7 +32,12 @@ interface ParentSwimmerProgressContentProps {
   scoreHistory?: ScoreHistoryResponse;
 }
 
-const EMPTY_SCORE_HISTORY: ScoreHistoryResponse = { points: [], recentChanges: [], milestones: [] };
+const EMPTY_SCORE_HISTORY: ScoreHistoryResponse = {
+  points: [],
+  recentChanges: [],
+  milestones: [],
+  faultTrends: [],
+};
 
 function startGradeIsDanger(result: StartGradeResult): boolean {
   return result.status === "not_legal";

@@ -727,7 +727,7 @@ evaluationsRouter.get(
       return;
     }
 
-    const result = await computeScoreHistory(swimmerId);
+    const result = await computeScoreHistory(swimmerId, { includeFaultTrends: true });
     req.log.info({ swimmerId, pointCount: result.points.length }, "swimmer score history fetched");
     res.json(result);
   }),

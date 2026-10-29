@@ -369,6 +369,9 @@ describe("GET /swimmers/:id/score-history (parent)", () => {
     // Walk every nested object; no key may be exactly "faultTags".
     const serialized = JSON.stringify(res.body);
     expect(serialized.includes("faultTags")).toBe(false);
+    // faultTrends is coach-only; parent response must always ship an empty
+    // array even when the swimmer has tagged ratings on the coach side.
+    expect(res.body.faultTrends).toEqual([]);
   });
 
   it("voided ratings don't produce a point", async () => {

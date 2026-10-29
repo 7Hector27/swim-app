@@ -589,6 +589,65 @@ describe("GET /coach/swimmers/:id/score-history", () => {
     }
   });
 
+  it("coach fault trends count tagged ratings per date and parent response hides them", async () => {
+    const swimmerId = await createTestSwimmer();
+    try {
+      // d1: two free-kick ratings on the same date, both tagged with the same
+      // declared fault — count=2 for that date.
+      await postSession(coach, swimmerId, "freestyle", "2026-10-20", [
+        {
+          skillId: freeKickSkillId,
+          grade: 2,
+          notLegal: false,
+          noConcept: false,
+          side: null,
+          capacityValue: null,
+          capacityUnit: null,
+          measurementValue: null,
+          measurementUnit: null,
+          note: null,
+          faultTags: ["breaks down 2nd length"],
+          ratedAt: "2026-10-20T10:00:00.000Z",
+        },
+      ]);
+      // d2: one rating, no faults — count=0.
+      await postSession(coach, swimmerId, "freestyle", "2026-10-25", [
+        freshRating(freeKickSkillId, 3, "2026-10-25T10:00:00.000Z"),
+      ]);
+      // d3: tagged again — count=1.
+      await postSession(coach, swimmerId, "freestyle", "2026-10-28", [
+        {
+          skillId: freeKickSkillId,
+          grade: 2,
+          notLegal: false,
+          noConcept: false,
+          side: null,
+          capacityValue: null,
+          capacityUnit: null,
+          measurementValue: null,
+          measurementUnit: null,
+          note: null,
+          faultTags: ["breaks down 2nd length"],
+          ratedAt: "2026-10-28T10:00:00.000Z",
+        },
+      ]);
+
+      const history = await getScoreHistory(coach, swimmerId);
+      expect(history.faultTrends).toHaveLength(1);
+      const trend = history.faultTrends[0]!;
+      expect(trend.faultTag).toBe("breaks down 2nd length");
+      // Each session date in the window gets a point; counts include zeros so
+      // the UI can show the tag going quiet.
+      const byDate = new Map(trend.points.map((point) => [point.sessionDate, point.count]));
+      expect(byDate.get("2026-10-20")).toBe(1);
+      expect(byDate.get("2026-10-25")).toBe(0);
+      expect(byDate.get("2026-10-28")).toBe(1);
+    } finally {
+      await cleanSwimmerData(swimmerId);
+      await hardDeleteSwimmer(swimmerId);
+    }
+  });
+
   it("milestones are empty for a swimmer with no ratings or meet swims", async () => {
     const swimmerId = await createTestSwimmer();
     try {

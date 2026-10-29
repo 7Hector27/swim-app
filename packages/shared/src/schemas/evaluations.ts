@@ -579,12 +579,31 @@ export const ScoreHistoryMilestoneSchema = z.discriminatedUnion("type", [
 ]);
 export type ScoreHistoryMilestone = z.infer<typeof ScoreHistoryMilestoneSchema>;
 
+// Fault-tag trend series. One entry per fault tag the swimmer received in the
+// last 90 days (relative to the request); points cover every session date in
+// that window the swimmer had any rating, so a tag's trend can show it going
+// to zero. Coach-only — the parent route always returns an empty array for
+// faultTrends so a parent client can't observe negative coaching language.
+export const ScoreHistoryFaultTrendPointSchema = z.object({
+  sessionDate: z.string().date(),
+  count: z.number().int().nonnegative(),
+});
+export type ScoreHistoryFaultTrendPoint = z.infer<typeof ScoreHistoryFaultTrendPointSchema>;
+
+export const ScoreHistoryFaultTrendSchema = z.object({
+  faultTag: z.string(),
+  points: z.array(ScoreHistoryFaultTrendPointSchema),
+});
+export type ScoreHistoryFaultTrend = z.infer<typeof ScoreHistoryFaultTrendSchema>;
+
 export const ScoreHistoryResponseSchema = z.object({
   points: z.array(ScoreHistoryPointSchema),
   // Newest first, capped at the 20 most recent effective-grade transitions.
   recentChanges: z.array(ScoreHistoryRecentChangeSchema),
   // Newest first. One entry per unique criterion-and-subject pair.
   milestones: z.array(ScoreHistoryMilestoneSchema),
+  // Coach-only. Parent route returns [].
+  faultTrends: z.array(ScoreHistoryFaultTrendSchema),
 });
 export type ScoreHistoryResponse = z.infer<typeof ScoreHistoryResponseSchema>;
 

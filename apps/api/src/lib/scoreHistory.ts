@@ -1,9 +1,10 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, gte, inArray, isNull } from "drizzle-orm";
 import { db } from "../db/client";
 import {
   evaluationSessions,
   meetSwims,
   meets,
+  ratingFaultTags,
   skillCategories,
   skillDependencies,
   skillRatings,
@@ -24,9 +25,22 @@ import {
   type ScoreHistoryStart,
   type ScoreHistoryLevelCounts,
   type ScoreHistoryMilestone,
+  type ScoreHistoryFaultTrend,
   type ScoreHistoryRecentChange,
   type SkillGrade,
 } from "@swim-app/shared";
+
+export type ComputeScoreHistoryOptions = {
+  // When true, the response includes the coach-only fault-trend series.
+  // Parent callers must pass false (or omit) so the fault data never reaches
+  // the parent client.
+  includeFaultTrends?: boolean;
+  // Anchor for the 90-day fault-trend window. Injectable so integration tests
+  // can pin the window instead of relying on wall-clock time.
+  now?: Date;
+};
+
+const FAULT_TREND_WINDOW_DAYS = 90;
 
 const HEAD_POSITION_SLUGS = {
   free: "head-position-free",
@@ -126,7 +140,10 @@ function rowToRecord(row: FullRow): RatingRecord {
 // weakerSideGrade, headPositionOverall, calculateStartGrade) over only the
 // ratings whose session_date ≤ the point's date, so values at each date match
 // what the live progress endpoint would return if later ratings did not exist.
-export async function computeScoreHistory(swimmerId: string): Promise<ScoreHistoryResponse> {
+export async function computeScoreHistory(
+  swimmerId: string,
+  options: ComputeScoreHistoryOptions = {},
+): Promise<ScoreHistoryResponse> {
   const ratingRows: FullRow[] = await db
     .select({
       slug: skills.slug,
@@ -524,7 +541,69 @@ export async function computeScoreHistory(swimmerId: string): Promise<ScoreHisto
     return keyA.localeCompare(keyB);
   });
 
-  return { points, recentChanges, milestones };
+  // Fault trends (coach-only). Walks ratingFaultTags joined to live
+  // skill_ratings in the 90-day window ending at `options.now ?? new Date()`
+  // and groups counts per (faultTag, session_date). Zero-fills every session
+  // date in the window the swimmer had any rating so a declining tag can be
+  // seen going to zero. Parent callers must pass includeFaultTrends=false so
+  // the fault data never reaches the parent response.
+  const faultTrends: ScoreHistoryFaultTrend[] = [];
+  if (options.includeFaultTrends) {
+    const anchor = options.now ?? new Date();
+    const windowStart = new Date(anchor);
+    windowStart.setUTCDate(windowStart.getUTCDate() - FAULT_TREND_WINDOW_DAYS);
+    const windowStartIso = windowStart.toISOString().slice(0, 10);
+
+    // ratingRows carries parent session_ids but not rating ids, so re-query
+    // live rating ids in the window keyed to session_date.
+    const windowRatings = await db
+      .select({
+        ratingId: skillRatings.id,
+        sessionDate: evaluationSessions.sessionDate,
+      })
+      .from(skillRatings)
+      .innerJoin(evaluationSessions, eq(evaluationSessions.id, skillRatings.sessionId))
+      .where(
+        and(
+          eq(skillRatings.swimmerId, swimmerId),
+          isNull(skillRatings.voidedAt),
+          isNull(skillRatings.supersededAt),
+          gte(evaluationSessions.sessionDate, windowStartIso),
+        ),
+      );
+
+    const faultRows = windowRatings.length === 0
+      ? []
+      : await db
+          .select({
+            ratingId: ratingFaultTags.ratingId,
+            faultTag: ratingFaultTags.faultTag,
+          })
+          .from(ratingFaultTags)
+          .where(inArray(ratingFaultTags.ratingId, windowRatings.map((row) => row.ratingId)));
+
+    const dateByRatingId = new Map(windowRatings.map((row) => [row.ratingId, row.sessionDate]));
+    const windowDates = [...new Set(windowRatings.map((row) => row.sessionDate))].sort();
+    const countsByTag = new Map<string, Map<string, number>>();
+    for (const row of faultRows) {
+      const date = dateByRatingId.get(row.ratingId);
+      if (!date) continue;
+      const perDate = countsByTag.get(row.faultTag) ?? new Map<string, number>();
+      perDate.set(date, (perDate.get(date) ?? 0) + 1);
+      countsByTag.set(row.faultTag, perDate);
+    }
+
+    for (const [faultTag, perDate] of countsByTag) {
+      const points = windowDates.map((date) => ({
+        sessionDate: date,
+        count: perDate.get(date) ?? 0,
+      }));
+      faultTrends.push({ faultTag, points });
+    }
+    faultTrends.sort((trendA, trendB) => trendA.faultTag.localeCompare(trendB.faultTag));
+  }
+
+  return { points, recentChanges, milestones, faultTrends };
 }
 
 function rowToSkillGrade(row: FullRow): SkillGrade {
