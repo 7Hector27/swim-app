@@ -1,4 +1,4 @@
-import { vi, describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
+import { vi, describe, it, expect, beforeEach } from "vitest";
 import request from "supertest";
 import pino from "pino";
 import { UpcomingLessonsResponseSchema } from "@swim-app/shared";
@@ -332,15 +332,11 @@ function swimmerResponseSelect() {
   return { from: vi.fn().mockReturnValue({ innerJoin }) };
 }
 
-beforeAll(() => {
-  vi.useFakeTimers({ now: ANCHOR_NOW });
-});
-
-afterAll(() => {
-  vi.useRealTimers();
-});
-
+// The global setup pins Date to a different instant per test, so re-pin
+// to ANCHOR_NOW here so the booking-window math (too_soon/too_far,
+// lesson_in_past) resolves against the time the fixtures were built for.
 beforeEach(() => {
+  vi.setSystemTime(ANCHOR_NOW);
   vi.resetAllMocks();
 });
 

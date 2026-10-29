@@ -1,4 +1,5 @@
 import "@testing-library/jest-dom/vitest";
+import { afterEach, beforeEach, vi } from "vitest";
 
 // publicEnv validates at module load, so provide placeholder values before any
 // test file imports a module that touches the env schema. Tests that assert
@@ -22,3 +23,23 @@ globalThis.IntersectionObserver = class {
 if (typeof Element !== "undefined" && typeof Element.prototype.scrollIntoView !== "function") {
   Element.prototype.scrollIntoView = function scrollIntoView() {};
 }
+
+// Pin the clock for every test by default so no test silently depends on the
+// real wall clock. Only Date is faked so setTimeout, setInterval, and
+// queueMicrotask remain real — testing-library's waitFor and React's
+// scheduler keep polling with real timers. Tests that need a specific instant
+// (fixture dates, DST boundaries, "today is a Tuesday") call
+// vi.setSystemTime themselves; tests that need all timers faked call
+// vi.useFakeTimers() with their own options and the explicit call overrides.
+// Monday 10:00 LA sits inside most fixture weeks and keeps weekday-based
+// tests deterministic.
+const DEFAULT_FROZEN_NOW = new Date("2026-10-26T17:00:00.000Z");
+
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(DEFAULT_FROZEN_NOW);
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});

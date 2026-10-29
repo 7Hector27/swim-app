@@ -991,6 +991,11 @@ describe("EvaluateContent — server draft banner", () => {
   });
 
   it("debounced server save is scheduled after draft changes", async () => {
+    // The global setup pins Date via useFakeTimers({ toFake: ["Date"] }), so
+    // reset to real first — a second useFakeTimers() while fake-Date is
+    // already active doesn't re-apply the default setTimeout faking, and
+    // advanceTimersByTime would only move Date forward.
+    vi.useRealTimers();
     vi.useFakeTimers();
 
     const { saveDraft: mockSaveDraft, deleteDraft: mockDeleteDraft } = await import("../content/EvaluateContent/actions");
