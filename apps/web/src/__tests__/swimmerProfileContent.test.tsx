@@ -68,6 +68,7 @@ const emptyProgress: ParentSwimmerProgressResponse = {
   headPositionOverall: null,
   coachingPriorities: [],
   latestCoachingNotes: [],
+  latestCoachingPriority: null,
 };
 
 const emptyPersonalBests: ParentPersonalBestsResponse = { personalBests: [] };
@@ -149,6 +150,29 @@ describe("SwimmerProfileContent — empty states", () => {
       pastLessons: { ok: false },
     });
     expect(screen.getByText(/Couldn't load lessons/i)).toBeInTheDocument();
+  });
+});
+
+describe("SwimmerProfileContent — current focus card", () => {
+  it("renders the latest coach-written priority with its date", () => {
+    const progress: ParentSwimmerProgressResponse = {
+      ...emptyProgress,
+      latestCoachingPriority: {
+        text: "Steady exhale under water",
+        sessionDate: "2026-10-14",
+      },
+    };
+    render_({ progress: { ok: true, data: progress } });
+    const card = screen.getByTestId("current-focus-priority");
+    expect(card).toHaveTextContent("Steady exhale under water");
+    expect(card).toHaveTextContent(/From/i);
+  });
+
+  it("renders nothing in the card body when the swimmer has no priority ever", () => {
+    render_(); // emptyProgress has latestCoachingPriority: null
+    expect(screen.queryByTestId("current-focus-priority")).toBeNull();
+    // The card falls back to the 'No evaluations recorded yet' empty state.
+    expect(screen.getByText(/No evaluations recorded yet/i)).toBeInTheDocument();
   });
 });
 

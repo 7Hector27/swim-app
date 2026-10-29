@@ -1185,14 +1185,24 @@ describe("Per-pick swimmers in Multiple mode", () => {
       },
     });
 
-    await waitFor(() => {
-      expect(mockPreview).toHaveBeenCalled();
-    });
-    const lastCall = mockPreview.mock.calls.at(-1)!;
-    const sentBody = lastCall[0] as {
+    // The 350ms debounced preview can fire between act boundaries with a
+    // stale 1-pick body before the second slot click lands under load, so
+    // `mock.calls.at(-1)` was racy. Wait for the specific 2-pick call and
+    // assert on that one directly — the stale 1-pick call, if present, is
+    // irrelevant to what we're testing.
+    type SentBody = {
       mode: string;
       picks?: Array<{ startsAt: string; swimmerIds: string[] }>;
     };
+    const findTwoPickCall = (): SentBody | undefined =>
+      mockPreview.mock.calls
+        .map((call) => call[0] as SentBody)
+        .find((body) => body.picks?.length === 2);
+
+    await waitFor(() => {
+      expect(findTwoPickCall()).toBeDefined();
+    });
+    const sentBody = findTwoPickCall()!;
     expect(sentBody.mode).toBe("manual");
     expect(sentBody.picks?.[0]?.swimmerIds).toEqual([twoSwimmers[0]!.id]);
     expect(sentBody.picks?.[1]?.swimmerIds).toEqual([twoSwimmers[1]!.id]);

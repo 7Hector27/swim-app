@@ -32,6 +32,7 @@ const emptyProgress: ParentSwimmerProgressResponse = {
   headPositionOverall: null,
   coachingPriorities: [],
   latestCoachingNotes: [],
+  latestCoachingPriority: null,
 };
 
 const categories: CategoriesResponse = [];
@@ -246,5 +247,41 @@ describe("ParentSwimmerProgressContent", () => {
     );
     expect(screen.getByText(/L 3/)).toBeInTheDocument();
     expect(screen.getByText(/R 4/)).toBeInTheDocument();
+  });
+
+  // Regression: when the API returns latestCoachingPriority = null (swimmer
+  // has never had a priority written), the "Current focus" section is hidden
+  // entirely. No placeholder, no empty box.
+  it("hides Current focus when no priority has ever been written", () => {
+    render(
+      <ParentSwimmerProgressContent
+        swimmer={swimmer}
+        progress={emptyProgress}
+        categories={categories}
+      />,
+    );
+    expect(screen.queryByTestId("parent-progress-current-focus")).toBeNull();
+  });
+
+  it("renders Current focus with the coach's text and the evaluation date", () => {
+    const progress: ParentSwimmerProgressResponse = {
+      ...emptyProgress,
+      latestCoachingPriority: {
+        text: "Rotate the hips more on each stroke",
+        sessionDate: "2026-10-14",
+      },
+    };
+    render(
+      <ParentSwimmerProgressContent
+        swimmer={swimmer}
+        progress={progress}
+        categories={categories}
+      />,
+    );
+    const section = screen.getByTestId("parent-progress-current-focus");
+    expect(section).toHaveTextContent("Rotate the hips more on each stroke");
+    // Date-string rendering uses the UTC-anchored formatter in helpers.ts so
+    // the day is "Oct 14, 2026" regardless of the test runner's TZ.
+    expect(section).toHaveTextContent(/From Oct 14, 2026/);
   });
 });

@@ -39,3 +39,17 @@ export const SPECIAL_DESCRIPTIONS = {
   nc: "Hasn't grasped the basic idea of this skill yet",
   notAssessed: "This skill hasn't been evaluated yet",
 };
+
+// Short date for the "From ..." byline under the Current focus text, e.g.
+// "Oct 14, 2026". Session dates arrive as YYYY-MM-DD; parse via Date.UTC so
+// local-time rendering doesn't shift the day.
+export function formatProgressSessionDate(sessionDate: string): string {
+  const [year, month, day] = sessionDate.split("-").map(Number);
+  if (year === undefined || month === undefined || day === undefined) return sessionDate;
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(Date.UTC(year, month - 1, day)));
+}

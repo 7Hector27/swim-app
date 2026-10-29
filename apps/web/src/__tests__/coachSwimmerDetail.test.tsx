@@ -1,5 +1,5 @@
 import { vi, describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 
 vi.mock("@/components/SiteNav", () => ({ default: () => <nav /> }));
 vi.mock("@/components/AddNoteForm", () => ({ default: () => <div data-testid="add-note-form" /> }));
@@ -114,7 +114,9 @@ describe("CoachSwimmerDetailContent", () => {
         golfScoreTrends={[]}
       />,
     );
-    // Grade "3" should appear inside Current Levels
+    // Current levels lives on its own tab in the new layout. Switch to it
+    // before asserting the grade is on-screen.
+    fireEvent.click(screen.getByRole("tab", { name: /current levels/i }));
     expect(screen.getByText("3")).toBeInTheDocument();
   });
 
@@ -156,7 +158,74 @@ describe("CoachSwimmerDetailContent", () => {
         golfScoreTrends={[]}
       />,
     );
+    fireEvent.click(screen.getByRole("tab", { name: /current levels/i }));
     const history = screen.getByTestId("skills-history");
     expect(history).toHaveAttribute("data-swimmer-id", SWIMMER_ID);
+  });
+
+  it("renders the resolved club name, not the club id", () => {
+    const CLUB_ID = "00000000-0000-0000-dddd-000000000001";
+    render(
+      <CoachSwimmerDetailContent
+        swimmer={{
+          ...TEST_SWIMMER,
+          clubs: [
+            {
+              id: "00000000-0000-0000-eeee-000000000001",
+              swimmerId: SWIMMER_ID,
+              clubId: CLUB_ID,
+              clubName: "Terrapins",
+              otherClubName: null,
+              createdAt: "2024-01-01T00:00:00Z",
+              updatedAt: "2024-01-01T00:00:00Z",
+            },
+          ],
+        }}
+        grades={{}}
+        startGrades={{}}
+        coachingPriorities={[]}
+        categories={[]}
+        timelineItems={[]}
+        swims={[]}
+        personalBests={[]}
+        meets={[]}
+        drafts={[]}
+        golfScoreTrends={[]}
+      />,
+    );
+    expect(screen.getByText("Terrapins")).toBeInTheDocument();
+    expect(screen.queryByText(CLUB_ID)).toBeNull();
+  });
+
+  it("renders otherClubName when provided", () => {
+    render(
+      <CoachSwimmerDetailContent
+        swimmer={{
+          ...TEST_SWIMMER,
+          clubs: [
+            {
+              id: "00000000-0000-0000-eeee-000000000002",
+              swimmerId: SWIMMER_ID,
+              clubId: null,
+              clubName: null,
+              otherClubName: "Backyard Pool Crew",
+              createdAt: "2024-01-01T00:00:00Z",
+              updatedAt: "2024-01-01T00:00:00Z",
+            },
+          ],
+        }}
+        grades={{}}
+        startGrades={{}}
+        coachingPriorities={[]}
+        categories={[]}
+        timelineItems={[]}
+        swims={[]}
+        personalBests={[]}
+        meets={[]}
+        drafts={[]}
+        golfScoreTrends={[]}
+      />,
+    );
+    expect(screen.getByText("Backyard Pool Crew")).toBeInTheDocument();
   });
 });

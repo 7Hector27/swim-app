@@ -1,4 +1,5 @@
 import type { CoachBookingWarnings } from "@swim-app/shared";
+import { isAfterBookingWindow } from "@swim-app/shared";
 import { effectiveHours } from "./effectiveHours";
 import type { availabilityConfig, blockedTimes, travelBufferOverrides } from "../db/schema";
 import type { mapOverrideRow, mapSeasonRow } from "./availabilityMappers";
@@ -46,7 +47,6 @@ export function computeCoachBookingWarnings(
 
   const startMs = startsAt.getTime();
   const endMs = startMs + durationMinutes * 60_000;
-  const nowMs = nowUtc.getTime();
 
   // outsideHours: no teaching window on this LA day, OR the slot's LA
   // wall-clock range doesn't fit entirely inside one of the day's windows.
@@ -78,9 +78,13 @@ export function computeCoachBookingWarnings(
     });
   }
 
-  // maxAdvanceExceeded: start is further out than bookingMaxAdvanceWeeks.
-  const maxAdvanceMs = nowMs + config.bookingMaxAdvanceWeeks * 7 * 24 * 60 * 60 * 1000;
-  const maxAdvanceExceeded = startMs > maxAdvanceMs;
+  // maxAdvanceExceeded: start's LA date is past the Sunday ending the Nth
+  // booking week (shared.bookingWindowEnd semantics).
+  const maxAdvanceExceeded = isAfterBookingWindow(
+    startsAt,
+    nowUtc,
+    config.bookingMaxAdvanceWeeks,
+  );
 
   // travelBufferViolated: another lesson at a different pool is within its
   // configured travel-buffer-minutes window of this slot's start or end.

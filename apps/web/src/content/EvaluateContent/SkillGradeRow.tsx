@@ -1,9 +1,10 @@
 "use client";
 
-import type { SkillForRating } from "@swim-app/shared";
-import type { SkillDraft } from "./helpers";
+import type { SkillForRating, SwimmerSkillsResponse } from "@swim-app/shared";
+import type { EvaluateFieldIssue, SkillDraft } from "./helpers";
 import GradeSelector from "./GradeSelector";
 import DetailsPanel from "./DetailsPanel";
+import PrevBadge from "./PrevBadge";
 
 interface SkillGradeRowProps {
   skill: SkillForRating;
@@ -11,25 +12,38 @@ interface SkillGradeRowProps {
   label: string;
   draft: SkillDraft;
   onChange: (key: string, patch: Partial<SkillDraft>) => void;
+  issues?: EvaluateFieldIssue[];
+  // Latest saved grade for this skill (and side, for per-side skills). Fed
+  // from SwimmerSkillsResponse["grades"] on the server page.
+  prevGrade?: SwimmerSkillsResponse["grades"][string];
 }
 
-export default function SkillGradeRow({ skill, draftKey, label, draft, onChange }: SkillGradeRowProps) {
+export default function SkillGradeRow({ skill, draftKey, label, draft, onChange, issues = [], prevGrade }: SkillGradeRowProps) {
+  const gradeIssue = issues.find((issue) => issue.field === "grade");
+  const notLegalIssue = issues.find((issue) => issue.field === "notLegal");
+  const detailsPanelIssues = issues.filter(
+    (issue) => issue.field === "measurementValue" || issue.field === "capacityValue",
+  );
+  const hasDetailsIssue = detailsPanelIssues.length > 0;
   return (
     <fieldset
       id={`skill-${draftKey}`}
-      className={`flex flex-col gap-3 p-3 rounded border ${draft.notLegal ? "border-l-[3px]" : ""}`}
+      className={`flex flex-col gap-3 p-4 rounded-lg border ${draft.notLegal ? "border-l-[3px]" : ""}`}
       style={{
         borderColor: draft.notLegal ? "var(--color-danger)" : "var(--color-border)",
       }}
     >
-      <legend className="font-semibold text-sm px-1" style={{ color: "var(--color-text)" }}>
-        {label}
+      <legend className="flex items-center gap-2 flex-wrap px-1">
+        <span className="font-semibold text-sm" style={{ color: "var(--color-text)" }}>
+          {label}
+        </span>
+        <PrevBadge value={prevGrade} />
         {draft.notLegal && (
           <span
-            className="ml-2 text-xs font-bold px-1.5 py-0.5 rounded"
+            className="text-xs font-bold px-1.5 py-0.5 rounded"
             style={{ color: "var(--color-danger)", backgroundColor: "transparent", border: "1px solid var(--color-danger)" }}
           >
-            DQ
+            Not legal
           </span>
         )}
       </legend>
@@ -73,6 +87,21 @@ export default function SkillGradeRow({ skill, draftKey, label, draft, onChange 
         }}
         labelPrefix={label}
       />
+
+      {gradeIssue && (
+        <p
+          id={`${draftKey}-grade-error`}
+          className="text-xs"
+          style={{ color: "var(--color-danger)" }}
+        >
+          {gradeIssue.message}
+        </p>
+      )}
+      {notLegalIssue && (
+        <p className="text-xs" style={{ color: "var(--color-danger)" }}>
+          {notLegalIssue.message}
+        </p>
+      )}
 
       {skill.descriptors.length > 0 && draft.grade !== null && (() => {
         const descriptor = skill.descriptors.find((d) => d.level === draft.grade);
@@ -125,16 +154,32 @@ export default function SkillGradeRow({ skill, draftKey, label, draft, onChange 
           type="button"
           onClick={() => onChange(draftKey, { detailsOpen: !draft.detailsOpen })}
           className="min-h-[44px] px-3 rounded border text-xs font-semibold transition-colors flex items-center gap-1"
-          style={{ borderColor: "var(--color-border)", color: "var(--color-text-secondary)", backgroundColor: "transparent" }}
+          style={{
+            borderColor: hasDetailsIssue ? "var(--color-danger)" : "var(--color-border)",
+            color: hasDetailsIssue ? "var(--color-danger)" : "var(--color-text-secondary)",
+            backgroundColor: "transparent",
+          }}
           aria-expanded={draft.detailsOpen}
         >
-          {draft.detailsOpen ? "Hide details" : "Add details"}
+          {draft.detailsOpen ? "Hide details" : hasDetailsIssue ? "Fix details" : "Add details"}
           <span aria-hidden="true">{draft.detailsOpen ? "▲" : "▼"}</span>
         </button>
       </div>
 
+      {hasDetailsIssue && !draft.detailsOpen && (
+        <p className="text-xs" style={{ color: "var(--color-danger)" }}>
+          {detailsPanelIssues[0]!.message}
+        </p>
+      )}
+
       {draft.detailsOpen && (
-        <DetailsPanel skill={skill} draft={draft} draftKey={draftKey} onChange={onChange} />
+        <DetailsPanel
+          skill={skill}
+          draft={draft}
+          draftKey={draftKey}
+          onChange={onChange}
+          issues={detailsPanelIssues}
+        />
       )}
     </fieldset>
   );

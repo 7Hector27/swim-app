@@ -1,15 +1,16 @@
 import Link from "next/link";
 
 import type {
+  LatestCoachingPriority,
   ParentSwimmerProgressResponse,
-  ProgressCoachingPriority,
 } from "@swim-app/shared";
 
 import type { SectionResult } from "./SwimmerProfileContent";
+import { formatRelativeDay } from "./helpers";
 
 interface ProgressSnapshotSectionProps {
   result: SectionResult<ParentSwimmerProgressResponse>;
-  priority: ProgressCoachingPriority | null;
+  priority: LatestCoachingPriority | null;
   swimmerId: string;
 }
 
@@ -43,7 +44,12 @@ export default function ProgressSnapshotSection({
         )}
       </div>
       {priority ? (
-        <p className="text-sm font-semibold text-text">{priority.targetName}</p>
+        <div className="flex flex-col gap-1" data-testid="current-focus-priority">
+          <p className="text-sm font-semibold text-text">{priority.text}</p>
+          <p className="text-xs text-text-secondary">
+            From {formatRelativeDay(priority.sessionDate)}
+          </p>
+        </div>
       ) : (
         <p className="text-xs text-text-secondary">
           No evaluations recorded yet. Check back after the next practice.

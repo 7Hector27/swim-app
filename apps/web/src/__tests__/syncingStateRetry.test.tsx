@@ -158,6 +158,11 @@ describe("SyncingState Retry — instant success", () => {
 
 describe("SyncingState Retry — poll until run finishes", () => {
   it("holds the pending state and shows the result only after status reports syncRunInProgress=false", async () => {
+    // The global setup pins Date via useFakeTimers({ toFake: ["Date"] }), so
+    // reset to real first — a second useFakeTimers call while fake-Date is
+    // already active doesn't re-apply the default setTimeout faking that
+    // advanceTimersByTimeAsync depends on.
+    vi.useRealTimers();
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const retryBody: RetryAllFailedResponse = { attempted: 2, succeeded: 2, failed: 0 };
     // First status call after retry: still in progress.

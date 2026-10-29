@@ -56,13 +56,11 @@ import BookCalendarContent from "../content/BookCalendarContent";
 // ── Pure helpers ────────────────────────────────────────────────────────────
 
 describe("maxBookableDateLA", () => {
-  it("mirrors server rule: now + weeks*7 days, projected to the LA date", () => {
-    // 2026-10-26 Monday 10:00 LA = 2026-10-26T17:00:00Z (PDT, UTC-7)
+  it("returns the Sunday of week N counting the current LA week as week 1", () => {
+    // 2026-10-26 Monday 10:00 LA = 2026-10-26T17:00:00Z (PDT, UTC-7).
+    // Week 1 = Mon 2026-10-26 → Sun 2026-11-01. Week 2 Sun = 2026-11-08.
     const nowMs = Date.parse("2026-10-26T17:00:00Z");
-    // +2 weeks → 2026-11-09 Mon 10:00 LA (DST ended on Nov 1 — now PST, UTC-8).
-    // The raw UTC math adds 14*86400 s, landing 2026-11-09T17:00:00Z, which in
-    // LA is 2026-11-09 09:00 — still the same calendar day.
-    expect(maxBookableDateLA(2, nowMs)).toBe("2026-11-09");
+    expect(maxBookableDateLA(2, nowMs)).toBe("2026-11-08");
   });
 });
 
@@ -145,13 +143,13 @@ const swimmers: ParentSwimmer[] = [
 
 const locations = [{ id: LOCATION_ID, name: "Egret Park", isHomePool: true }];
 
-// With bookingMaxAdvanceWeeks=2 and now=2026-10-26T17:00Z, the max LA date is
-// 2026-11-09. The week of Nov 9-15 straddles the boundary (Mon 11-09 open,
-// everything after is not_open_yet). The next week (Nov 16-22) is fully past.
+// With bookingMaxAdvanceWeeks=3 and now=2026-10-26T17:00Z (Mon of week 1),
+// week 3 ends Sun 2026-11-15. The week of Nov 9-15 is the last fully in-window
+// week; the following week (Nov 16-22) is entirely past.
 const WEEK_NOV_02: WeekAvailabilityResponse = {
   needsApproval: false,
   maxDailyLessonMinutes: 240,
-  bookingMaxAdvanceWeeks: 2,
+  bookingMaxAdvanceWeeks: 3,
   days: [
     {
       date: "2026-11-02",
@@ -170,7 +168,7 @@ const WEEK_NOV_02: WeekAvailabilityResponse = {
 const WEEK_NOV_09_PARTIAL: WeekAvailabilityResponse = {
   needsApproval: false,
   maxDailyLessonMinutes: 240,
-  bookingMaxAdvanceWeeks: 2,
+  bookingMaxAdvanceWeeks: 3,
   days: [
     {
       date: "2026-11-09",
@@ -180,9 +178,9 @@ const WEEK_NOV_09_PARTIAL: WeekAvailabilityResponse = {
       teachingWindows: [{ start: "15:00", end: "15:30" }],
       slots: [
         { startsAt: "2026-11-09T23:00:00.000Z", state: "available" },
-        // Second slot in the same day lands past the exact UTC cutoff — the
-        // server marks it not_open_yet. This simulates the "partially open
-        // last week" case: the slot must be shown but non-tappable.
+        // Second slot in the same day lands past the LA window end — the
+        // server marks it not_open_yet. Mirrors the shape the server emits
+        // when a teaching window's late slot slips past the Sunday boundary.
         { startsAt: "2026-11-09T23:15:00.000Z", state: "not_open_yet" },
       ],
     },
@@ -212,8 +210,9 @@ describe("Booking window — week arrow", () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2026-10-26T17:00:00Z"));
 
-    // Load week of 2026-11-09 — the last in-window Monday for a 2-week window
-    // starting 2026-10-26. The next Monday (2026-11-16) is past the window.
+    // Load week of 2026-11-09 — the Monday of week 3 (last in-window week) for
+    // a 3-week window starting Mon 2026-10-26. Next Monday Nov 16 falls past
+    // the window end (Sun Nov 15).
     mockFetchRange.mockResolvedValueOnce(WEEK_NOV_09_PARTIAL);
     await renderCalendar(WEEK_NOV_09_PARTIAL);
 
@@ -229,6 +228,33 @@ describe("Booking window — week arrow", () => {
 
     const nextBtn = screen.getByLabelText(/Next week/i) as HTMLButtonElement;
     expect(nextBtn.disabled).toBe(false);
+  });
+
+  it("stops week navigation at week 10 for the production bookingMaxAdvanceWeeks", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-26T17:00:00Z"));
+    // Today Mon 2026-10-26 = Mon of week 1. Week 10 Sun = 2027-01-03.
+    // Loading the Monday of week 10 (2026-12-28) must leave next-week disabled.
+    const WEEK_10_START: WeekAvailabilityResponse = {
+      needsApproval: false,
+      maxDailyLessonMinutes: 240,
+      bookingMaxAdvanceWeeks: 10,
+      days: [
+        {
+          date: "2026-12-28",
+          dayState: "open",
+          openCount: 1,
+          totalCount: 1,
+          teachingWindows: [{ start: "15:00", end: "15:30" }],
+          slots: [{ startsAt: "2026-12-28T23:00:00.000Z", state: "available" }],
+        },
+      ],
+    };
+    mockFetchRange.mockResolvedValueOnce(WEEK_10_START);
+    await renderCalendar(WEEK_10_START);
+
+    const nextBtn = screen.getByLabelText(/Next week/i) as HTMLButtonElement;
+    expect(nextBtn.disabled).toBe(true);
   });
 });
 
@@ -317,10 +343,10 @@ describe("Booking window — recurring stepper", () => {
     const slots = screen.getAllByRole("button", { name: /3:00 PM/i });
     fireEvent.click(slots[0]!);
 
-    // With bookingMaxAdvanceWeeks=2 and today 2026-10-26 (Mon), window ends
-    // 2026-11-09. The pattern [Mon] starts from today (Oct 26) because the
-    // tapped Nov 2 is later than today — so weeks 1-3 are Mon Oct 26, Nov 2,
-    // Nov 9. Default is 4; the effect clamps it to 3.
+    // With bookingMaxAdvanceWeeks=3 and today 2026-10-26 (Mon of week 1),
+    // window ends Sun 2026-11-15. Pattern [Mon] from today → Mondays Oct 26,
+    // Nov 2, Nov 9 fit; Nov 16 doesn't. Default stepper is 4; the clamp caps
+    // it at 3.
     await waitFor(() => {
       expect(screen.getByTestId("recurring-weeks-value").textContent).toContain("3 wks");
     });

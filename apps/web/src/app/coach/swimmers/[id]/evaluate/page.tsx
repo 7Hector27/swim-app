@@ -7,7 +7,7 @@ import AccountInactiveScreen from "@/components/AccountInactiveScreen";
 import EvaluateContent from "@/content/EvaluateContent";
 import { requireAuth } from "@/lib/requireAuth";
 import { fetchCoachSwimmerDetail } from "@/lib/api/coachSwimmers";
-import { fetchScreens } from "@/lib/api/evaluations";
+import { fetchScreens, fetchSwimmerSkills } from "@/lib/api/evaluations";
 
 export const metadata: Metadata = {
   title: "Evaluate · Axiom Aquatics",
@@ -26,9 +26,10 @@ export default async function EvaluatePage({ params, searchParams }: EvaluatePag
   ]);
   if (!auth) return <AccountInactiveScreen />;
 
-  const [swimmerResult, screensResult] = await Promise.all([
+  const [swimmerResult, screensResult, skillsResult] = await Promise.all([
     fetchCoachSwimmerDetail(id, auth.accessToken),
     fetchScreens(auth.accessToken),
+    fetchSwimmerSkills(id, auth.accessToken),
   ]);
 
   if (!swimmerResult.ok) {
@@ -39,6 +40,10 @@ export default async function EvaluatePage({ params, searchParams }: EvaluatePag
   if (!screensResult.ok) {
     throw new Error(`Failed to load screens (status ${screensResult.status})`);
   }
+
+  // Prev grades are a nice-to-have context chip on each skill card. If the
+  // endpoint fails we show "New" badges rather than failing the whole page.
+  const prevGrades = skillsResult.ok ? skillsResult.data.grades : {};
 
   const resolvedParams = resolvedSearchParams as Record<string, string | undefined>;
   const resumeDraftId = resolvedParams["resumeDraft"];
@@ -59,6 +64,7 @@ export default async function EvaluatePage({ params, searchParams }: EvaluatePag
     <EvaluateContent
       swimmer={swimmerResult.swimmer}
       screens={screensResult.screens}
+      prevGrades={prevGrades}
       {...(resumeDraft !== undefined && { resumeDraft })}
     />
   );

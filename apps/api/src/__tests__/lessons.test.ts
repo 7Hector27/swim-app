@@ -1,4 +1,4 @@
-import { vi, describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
+import { vi, describe, it, expect, beforeEach } from "vitest";
 import request from "supertest";
 import pino from "pino";
 import { UpcomingLessonsResponseSchema } from "@swim-app/shared";
@@ -332,15 +332,11 @@ function swimmerResponseSelect() {
   return { from: vi.fn().mockReturnValue({ innerJoin }) };
 }
 
-beforeAll(() => {
-  vi.useFakeTimers({ now: ANCHOR_NOW });
-});
-
-afterAll(() => {
-  vi.useRealTimers();
-});
-
+// The global setup pins Date to a different instant per test, so re-pin
+// to ANCHOR_NOW here so the booking-window math (too_soon/too_far,
+// lesson_in_past) resolves against the time the fixtures were built for.
 beforeEach(() => {
+  vi.setSystemTime(ANCHOR_NOW);
   vi.resetAllMocks();
 });
 
@@ -1021,6 +1017,30 @@ describe("POST /lessons", () => {
       .post("/lessons")
       .set("Authorization", "Bearer token")
       .send({ ...validBody, startsAt: tooFarStart });
+
+    expect(res.status).toBe(422);
+    expect(res.body.error).toBe("too_far");
+  });
+
+  it("rejects a slot one day past the Sunday ending week 10", async () => {
+    authAs(parentProfile);
+    // ANCHOR_NOW = Mon 2026-11-02 LA, bookingMaxAdvanceWeeks=10.
+    // Week 10 Sun = 2026-11-02 + 69 days = 2027-01-10. One day past = Mon 2027-01-11.
+    const oneDayPast = new Date("2027-01-11T20:00:00.000Z").toISOString();
+
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(parentProfile))
+      .mockReturnValueOnce(requireHouseholdMemberSelect())
+      .mockReturnValueOnce(limitSelect([namedLocationRow]))
+      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([swimmerRow]) }) })
+      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([configRow]) }) })
+      .mockReturnValueOnce({ from: vi.fn().mockResolvedValue([schoolYearSeason]) })
+      .mockReturnValueOnce({ from: vi.fn().mockResolvedValue([]) });
+
+    const res = await request(app)
+      .post("/lessons")
+      .set("Authorization", "Bearer token")
+      .send({ ...validBody, startsAt: oneDayPast });
 
     expect(res.status).toBe(422);
     expect(res.body.error).toBe("too_far");

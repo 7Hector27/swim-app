@@ -1,5 +1,5 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 // mockUseActionState lets individual tests inject a specific action state.
@@ -166,10 +166,18 @@ describe("CoachSwimmerDetailContent — times", () => {
     golfScoreTrends: [],
   };
 
+  // The times section lives inside the "Times" tab in the new layout. This
+  // helper opens that tab before each assertion so the tests are still
+  // scoped to visible content, not the entire DOM tree.
+  function openTimesTab() {
+    fireEvent.click(screen.getByRole("tab", { name: /^times$/i }));
+  }
+
   it("renders Times heading", () => {
     render(
       <CoachSwimmerDetailContent {...baseProps} swims={[]} personalBests={[]} />,
     );
+    openTimesTab();
     expect(screen.getByRole("heading", { name: "Times" })).toBeInTheDocument();
   });
 
@@ -177,6 +185,7 @@ describe("CoachSwimmerDetailContent — times", () => {
     render(
       <CoachSwimmerDetailContent {...baseProps} swims={[]} personalBests={[]} />,
     );
+    openTimesTab();
     expect(screen.getByText(/no times recorded yet/i)).toBeInTheDocument();
   });
 
@@ -184,6 +193,7 @@ describe("CoachSwimmerDetailContent — times", () => {
     render(
       <CoachSwimmerDetailContent {...baseProps} swims={[testSwim]} personalBests={[]} />,
     );
+    openTimesTab();
     expect(screen.getByText("58.30")).toBeInTheDocument();
   });
 
@@ -195,6 +205,7 @@ describe("CoachSwimmerDetailContent — times", () => {
         personalBests={[testPersonalBest]}
       />,
     );
+    openTimesTab();
     expect(screen.getByText("PB")).toBeInTheDocument();
   });
 
@@ -206,13 +217,15 @@ describe("CoachSwimmerDetailContent — times", () => {
         personalBests={[testPersonalBest]}
       />,
     );
+    openTimesTab();
     expect(screen.getByText(/personal bests/i)).toBeInTheDocument();
   });
 
-  it("renders the Add meet time and Add practice swim buttons", () => {
+  it("renders the Add meet time and Add practice swim buttons inside the Times tab", () => {
     render(
       <CoachSwimmerDetailContent {...baseProps} swims={[]} personalBests={[]} />,
     );
+    openTimesTab();
     expect(screen.getByRole("button", { name: /add meet time/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /add practice swim/i })).toBeInTheDocument();
   });
@@ -229,6 +242,7 @@ describe("CoachSwimmerDetailContent — times", () => {
     render(
       <CoachSwimmerDetailContent {...baseProps} swims={[practiceSwim]} personalBests={[]} />,
     );
+    openTimesTab();
     expect(screen.getByText("Practice")).toBeInTheDocument();
   });
 
@@ -249,7 +263,26 @@ describe("CoachSwimmerDetailContent — times", () => {
         personalBests={[pbForPractice]}
       />,
     );
+    openTimesTab();
     expect(screen.queryByText("PB")).not.toBeInTheDocument();
+  });
+
+  it("header 'Add time' button jumps to the Times tab and opens the meet form", () => {
+    render(
+      <CoachSwimmerDetailContent {...baseProps} swims={[]} personalBests={[]} />,
+    );
+    // Starts on the Feed tab — the Times "+ Add meet time" button isn't visible.
+    expect(screen.queryByRole("button", { name: /^\+ add meet time$/i })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /^add time$/i }));
+
+    // After tapping the header button, the Times tab is active and the
+    // AddSwimForm has opened in meet mode (its Review button is the
+    // identifying landmark).
+    expect(
+      screen.getByRole("tab", { name: /^times$/i }),
+    ).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("button", { name: /^review$/i })).toBeInTheDocument();
   });
 });
 

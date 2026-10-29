@@ -1,6 +1,11 @@
 import type { ParentSwimmer, ParentSwimmerProgressResponse, CategoriesResponse, StartGradeResult } from "@swim-app/shared";
 import ParentSkillProgressRow from "./ParentSkillProgressRow";
-import { formatStartGradeDisplay, currentLevelDisplay, currentLevelIsDanger } from "./helpers";
+import {
+  formatProgressSessionDate,
+  formatStartGradeDisplay,
+  currentLevelDisplay,
+  currentLevelIsDanger,
+} from "./helpers";
 
 interface ParentSwimmerProgressContentProps {
   swimmer: ParentSwimmer;
@@ -95,8 +100,24 @@ export default function ParentSwimmerProgressContent({
 
           {!hasAnyData && (
             <p className="text-sm text-text-secondary">
-              No evaluations recorded yet — check back after the next practice session.
+              No evaluations recorded yet. Check back after the next practice session.
             </p>
+          )}
+
+          {/* Current focus (coach's own words from the most recent non-voided
+              evaluation with a priority). Hidden entirely when no priority has
+              ever been written. */}
+          {progress.latestCoachingPriority && (
+            <section
+              className="flex flex-col gap-2 rounded-card border border-border p-4"
+              data-testid="parent-progress-current-focus"
+            >
+              <h2 className="font-bold text-sm text-text">Current focus</h2>
+              <p className="text-sm text-text">{progress.latestCoachingPriority.text}</p>
+              <p className="text-xs text-text-secondary">
+                From {formatProgressSessionDate(progress.latestCoachingPriority.sessionDate)}
+              </p>
+            </section>
           )}
 
           {/* What to work on next */}

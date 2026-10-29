@@ -114,6 +114,16 @@ describe("GET /swimmers/:id/progress (parent)", () => {
             orderBy: vi.fn().mockResolvedValue([sessionRow]),
           }),
         }),
+      })
+      // latest-priority query: .select().from().where().orderBy().limit(1)
+      .mockReturnValueOnce({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            orderBy: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue([sessionRow]),
+            }),
+          }),
+        }),
       });
 
     const res = await request(app)
@@ -154,6 +164,16 @@ describe("GET /swimmers/:id/progress (parent)", () => {
             orderBy: vi.fn().mockResolvedValue(sessionRows),
           }),
         }),
+      })
+      // latest-priority query (same latest row)
+      .mockReturnValueOnce({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            orderBy: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue([sessionRows[0]]),
+            }),
+          }),
+        }),
       });
 
     const res = await request(app)
@@ -186,6 +206,16 @@ describe("GET /swimmers/:id/progress (parent)", () => {
             orderBy: vi.fn().mockResolvedValue(sessionRows),
           }),
         }),
+      })
+      // latest-priority query (no non-voided sessions)
+      .mockReturnValueOnce({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            orderBy: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue([]),
+            }),
+          }),
+        }),
       });
 
     const res = await request(app)
@@ -194,5 +224,142 @@ describe("GET /swimmers/:id/progress (parent)", () => {
 
     expect(res.status).toBe(200);
     expect(res.body.latestCoachingNotes).toHaveLength(0);
+    expect(res.body.latestCoachingPriority).toBeNull();
+  });
+
+  // Regression: coaching priority is optional starting with migration 0061.
+  // The parent view falls back to the most recent non-null priority from a
+  // session with at least one non-voided rating.
+  it("returns latestCoachingPriority = null when no session has a priority", async () => {
+    authAs(profileParent);
+
+    const sessionRows = [
+      { screenSlug: "freestyle", sessionDate: "2025-06-02", coachingPriority: null },
+    ];
+
+    mockComputeSwimmerProgress.mockResolvedValue(emptyProgressResult);
+
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(profileParent))
+      .mockReturnValueOnce(householdMemberSelect(HOUSEHOLD_ID, "owner"))
+      .mockReturnValueOnce(householdSwimmerSelect(SWIMMER_ID))
+      .mockReturnValueOnce({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            orderBy: vi.fn().mockResolvedValue(sessionRows),
+          }),
+        }),
+      })
+      .mockReturnValueOnce({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            orderBy: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue([]),
+            }),
+          }),
+        }),
+      });
+
+    const res = await request(app)
+      .get(`/swimmers/${SWIMMER_ID}/progress`)
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(200);
+    expect(res.body.latestCoachingNotes).toHaveLength(0);
+    expect(res.body.latestCoachingPriority).toBeNull();
+  });
+
+  it("returns latestCoachingPriority = { text, sessionDate } when one exists", async () => {
+    authAs(profileParent);
+
+    const latestRow = {
+      sessionDate: "2025-06-10",
+      coachingPriority: "Rotate the hips more",
+    };
+    const perScreen = [
+      { screenSlug: "freestyle", sessionDate: "2025-06-10", coachingPriority: "Rotate the hips more" },
+      { screenSlug: "backstroke", sessionDate: "2025-05-01", coachingPriority: "Head stillness" },
+    ];
+
+    mockComputeSwimmerProgress.mockResolvedValue(emptyProgressResult);
+
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(profileParent))
+      .mockReturnValueOnce(householdMemberSelect(HOUSEHOLD_ID, "owner"))
+      .mockReturnValueOnce(householdSwimmerSelect(SWIMMER_ID))
+      .mockReturnValueOnce({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            orderBy: vi.fn().mockResolvedValue(perScreen),
+          }),
+        }),
+      })
+      .mockReturnValueOnce({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            orderBy: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue([latestRow]),
+            }),
+          }),
+        }),
+      });
+
+    const res = await request(app)
+      .get(`/swimmers/${SWIMMER_ID}/progress`)
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(200);
+    expect(res.body.latestCoachingPriority).toEqual({
+      text: "Rotate the hips more",
+      sessionDate: "2025-06-10",
+    });
+  });
+
+  // Fully-voided evaluations are filtered at the SQL layer via the EXISTS
+  // clause. This test mimics the SQL contract: the latest-priority query
+  // never returns a session whose every rating is voided, so from the
+  // route's point of view the earlier non-voided session wins.
+  it("falls back to an earlier non-voided session when the newest session is fully voided", async () => {
+    authAs(profileParent);
+
+    const sessionRows = [
+      { screenSlug: "freestyle", sessionDate: "2025-06-10", coachingPriority: "Latest (voided)" },
+      { screenSlug: "freestyle", sessionDate: "2025-06-01", coachingPriority: "Earlier (live)" },
+    ];
+    // The SQL EXISTS filter yields only the earlier row.
+    const latestRow = { sessionDate: "2025-06-01", coachingPriority: "Earlier (live)" };
+
+    mockComputeSwimmerProgress.mockResolvedValue(emptyProgressResult);
+
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(profileParent))
+      .mockReturnValueOnce(householdMemberSelect(HOUSEHOLD_ID, "owner"))
+      .mockReturnValueOnce(householdSwimmerSelect(SWIMMER_ID))
+      .mockReturnValueOnce({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            orderBy: vi.fn().mockResolvedValue(sessionRows),
+          }),
+        }),
+      })
+      .mockReturnValueOnce({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            orderBy: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue([latestRow]),
+            }),
+          }),
+        }),
+      });
+
+    const res = await request(app)
+      .get(`/swimmers/${SWIMMER_ID}/progress`)
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(200);
+    expect(res.body.latestCoachingPriority).toEqual({
+      text: "Earlier (live)",
+      sessionDate: "2025-06-01",
+    });
   });
 });
