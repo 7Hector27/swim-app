@@ -237,6 +237,7 @@ export async function computeSwimmerProgress(
       and(
         eq(skillRatings.swimmerId, swimmerId),
         isNull(skillRatings.voidedAt),
+        isNull(skillRatings.supersededAt),
       ),
     )
     .orderBy(desc(skillRatings.ratedAt), desc(skillRatings.createdAt), asc(skillRatings.id));

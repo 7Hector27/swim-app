@@ -77,11 +77,16 @@ parentProgressRouter.get(
           and(
             eq(evaluationSessions.swimmerId, swimmerId),
             isNotNull(evaluationSessions.coachingPriority),
-            // Correlated EXISTS: skip sessions whose every rating is voided.
+            // Correlated EXISTS: skip sessions whose every rating is voided or
+            // superseded. A session where every rating has been corrected is
+            // still a non-empty session as long as at least one correction
+            // row (supersedes_rating_id set, superseded_at null) exists —
+            // that row satisfies this EXISTS.
             sql`EXISTS (
               SELECT 1 FROM ${skillRatings}
               WHERE ${skillRatings.sessionId} = ${evaluationSessions.id}
                 AND ${skillRatings.voidedAt} IS NULL
+                AND ${skillRatings.supersededAt} IS NULL
             )`,
           ),
         )

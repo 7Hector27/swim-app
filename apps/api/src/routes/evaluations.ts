@@ -763,6 +763,7 @@ evaluationsRouter.get(
         and(
           eq(skillRatings.swimmerId, swimmerId),
           isNull(skillRatings.voidedAt),
+          isNull(skillRatings.supersededAt),
           eq(skills.type, "score"),
           isNotNull(skillRatings.golfScoreCategory),
         ),
@@ -847,6 +848,7 @@ evaluationsRouter.get(
                   eq(skills.slug, skillEntry.slug),
                   eq(skillRatings.golfScoreCategory, category),
                   isNull(skillRatings.voidedAt),
+                  isNull(skillRatings.supersededAt),
                   isNotNull(skillRatings.measurementValue),
                   inArray(skillRatings.swimmerId, cohortIds),
                   eq(skills.type, "score"),
