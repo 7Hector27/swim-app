@@ -547,8 +547,17 @@ describe("DELETE /ratings/:id", () => {
 describe("DELETE /sessions/:id", () => {
   // requireUser calls db.select().from(profiles).where(...) — resolves directly (no .limit())
   // session lookup calls db.select({...}).from(evaluationSessions).where(...).limit(1) — needs .limit()
+  // correction probe calls db.select({...}).from(skillRatings).where(...).limit(1) — needs .limit()
 
   function sessionSelect(rows: Array<{ id: string; coachId: string; createdAt: Date }>) {
+    const limit = vi.fn().mockResolvedValue(rows);
+    const where = vi.fn().mockReturnValue({ limit });
+    return { from: vi.fn().mockReturnValue({ where }) };
+  }
+
+  // ADR 032: once the session has any supersede-related rating, DELETE
+  // refuses with 409. The happy path returns an empty array here.
+  function correctionProbeSelect(rows: Array<{ id: string }>) {
     const limit = vi.fn().mockResolvedValue(rows);
     const where = vi.fn().mockReturnValue({ limit });
     return { from: vi.fn().mockReturnValue({ where }) };
@@ -610,14 +619,29 @@ describe("DELETE /sessions/:id", () => {
     authAs(profileCoach);
     const recentSession = { id: SESSION_ID, coachId: COACH_ID, createdAt: new Date() };
     mockDbSelect
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachRouter requireUser (once)
-      .mockReturnValueOnce(sessionSelect([recentSession])); // session lookup — recent
+      .mockReturnValueOnce(requireUserSelect(profileCoach))     // coachRouter requireUser (once)
+      .mockReturnValueOnce(sessionSelect([recentSession]))      // session lookup — recent
+      .mockReturnValueOnce(correctionProbeSelect([]));          // correction probe — none
     mockDbTransaction.mockResolvedValue(undefined);
     await request(app)
       .delete(`/coach/sessions/${SESSION_ID}`)
       .set("Authorization", "Bearer token")
       .expect(204);
     expect(mockDbTransaction).toHaveBeenCalled();
+  });
+
+  it("has corrections → 409", async () => {
+    authAs(profileCoach);
+    const recentSession = { id: SESSION_ID, coachId: COACH_ID, createdAt: new Date() };
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(profileCoach))         // coachRouter requireUser (once)
+      .mockReturnValueOnce(sessionSelect([recentSession]))          // session lookup — recent
+      .mockReturnValueOnce(correctionProbeSelect([{ id: "r" }]));   // probe finds a correction
+    await request(app)
+      .delete(`/coach/sessions/${SESSION_ID}`)
+      .set("Authorization", "Bearer token")
+      .expect(409);
+    expect(mockDbTransaction).not.toHaveBeenCalled();
   });
 });
 
