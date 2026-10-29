@@ -1,5 +1,14 @@
 import "@testing-library/jest-dom/vitest";
+import { configure } from "@testing-library/react";
 import { afterEach, beforeEach, vi } from "vitest";
+
+// Testing Library's default findBy/waitFor timeout is 1000ms. Under full-suite
+// load (pnpm test running api + web + shared, jsdom + React 19 scheduler +
+// mocked server actions), components routinely need longer than that to mount,
+// render, resolve suspense, and settle useEffect. 3000ms is still far below
+// vitest's default per-test timeout (5000ms) and keeps real latency bugs in
+// range to be noticed.
+configure({ asyncUtilTimeout: 3000 });
 
 // publicEnv validates at module load, so provide placeholder values before any
 // test file imports a module that touches the env schema. Tests that assert
