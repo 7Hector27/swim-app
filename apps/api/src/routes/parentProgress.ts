@@ -66,7 +66,7 @@ parentProgressRouter.get(
         })
         .from(evaluationSessions)
         .where(eq(evaluationSessions.swimmerId, swimmerId))
-        .orderBy(desc(evaluationSessions.sessionDate)),
+        .orderBy(desc(evaluationSessions.sessionDate), desc(evaluationSessions.createdAt)),
       db
         .select({
           sessionDate: evaluationSessions.sessionDate,
