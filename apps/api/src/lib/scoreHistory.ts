@@ -6,6 +6,7 @@ import {
   headPositionOverall,
   latestEffectiveRatings,
   weakerSideGrade,
+  MASTERY_LEVEL,
   type GradeMap,
   type PerStrokeGrades,
   type RatingRecord,
@@ -13,6 +14,8 @@ import {
   type ScoreHistoryPoint,
   type ScoreHistoryCategoryRollup,
   type ScoreHistoryStart,
+  type ScoreHistoryLevelCounts,
+  type SkillGrade,
 } from "@swim-app/shared";
 
 const HEAD_POSITION_SLUGS = {
@@ -42,6 +45,30 @@ function collapseSidedGrades(grades: GradeMap): GradeMap {
     }
   }
   return collapsed;
+}
+
+// Numeric value of a SkillGrade for arithmetic (gain summation, mastery check).
+// Returns null for anything that isn't a plain 1..5 — not_legal, no_concept,
+// and null all read as "not a progress-countable level."
+function numericGrade(grade: SkillGrade | undefined): number | null {
+  if (grade === undefined || grade === null) return null;
+  if (grade === "not_legal" || grade === "no_concept") return null;
+  return grade;
+}
+
+function emptyLevelCounts(): ScoreHistoryLevelCounts {
+  return { level1: 0, level2: 0, level3: 0, level4: 0, level5: 0, notLegal: 0, noConcept: 0 };
+}
+
+function tallyLevel(counts: ScoreHistoryLevelCounts, grade: SkillGrade | undefined): void {
+  if (grade === undefined || grade === null) return;
+  if (grade === "not_legal") counts.notLegal += 1;
+  else if (grade === "no_concept") counts.noConcept += 1;
+  else if (grade === 1) counts.level1 += 1;
+  else if (grade === 2) counts.level2 += 1;
+  else if (grade === 3) counts.level3 += 1;
+  else if (grade === 4) counts.level4 += 1;
+  else if (grade === 5) counts.level5 += 1;
 }
 
 type FullRow = {
@@ -171,6 +198,25 @@ export async function computeScoreHistory(swimmerId: string): Promise<ScoreHisto
     }
   }
 
+  // Baseline per plain slug: the first collapsed grade that slug ever had.
+  // Built by walking dates in ascending order and recording the first time
+  // each slug appears in the collapsed GradeMap. This becomes the reference
+  // for "levels gained" and the "no concept / unrated → learned" transition.
+  const firstCollapsedGradeBySlug = new Map<string, SkillGrade>();
+  const collapsedByDate = new Map<string, GradeMap>();
+  for (const date of sortedDates) {
+    const asOfRecords = ratingRows
+      .filter((row) => row.sessionDate <= date)
+      .map(rowToRecord);
+    const collapsed = collapseSidedGrades(latestEffectiveRatings(asOfRecords));
+    collapsedByDate.set(date, collapsed);
+    for (const [slug, grade] of Object.entries(collapsed)) {
+      if (!firstCollapsedGradeBySlug.has(slug)) {
+        firstCollapsedGradeBySlug.set(slug, grade);
+      }
+    }
+  }
+
   const points: ScoreHistoryPoint[] = [];
   for (const date of sortedDates) {
     const asOfRecords: RatingRecord[] = ratingRows
@@ -178,7 +224,7 @@ export async function computeScoreHistory(swimmerId: string): Promise<ScoreHisto
       .map(rowToRecord);
 
     const grades = latestEffectiveRatings(asOfRecords);
-    const collapsed = collapseSidedGrades(grades);
+    const collapsed = collapsedByDate.get(date) ?? collapseSidedGrades(grades);
 
     const perStroke: PerStrokeGrades = {
       ...(collapsed[HEAD_POSITION_SLUGS.free] !== undefined && { free: collapsed[HEAD_POSITION_SLUGS.free] }),
@@ -214,6 +260,28 @@ export async function computeScoreHistory(swimmerId: string): Promise<ScoreHisto
       grade: calculateStartGrade(start.componentSlugs, asOfRecords),
     }));
 
+    // Progression tallies. Scanned over the collapsed GradeMap so counts
+    // live at the per-skill granularity, not per-rating.
+    const counts = emptyLevelCounts();
+    let totalLevelsGained = 0;
+    let skillsMastered = 0;
+    let skillsLearned = 0;
+    for (const [slug, grade] of Object.entries(collapsed)) {
+      tallyLevel(counts, grade);
+      const numeric = numericGrade(grade);
+      if (numeric !== null && numeric >= MASTERY_LEVEL) skillsMastered += 1;
+      const baseline = firstCollapsedGradeBySlug.get(slug);
+      const baselineNumeric = numericGrade(baseline);
+      if (numeric !== null && baselineNumeric !== null && numeric > baselineNumeric) {
+        totalLevelsGained += numeric - baselineNumeric;
+      }
+      // "Learned": the swimmer has reached a numeric 1..5 grade on this
+      // skill. Prior state before any rating is "unrated" (absent from the
+      // map), so hitting numeric is itself the transition. not_legal and
+      // no_concept don't count as learned; a numeric grade later does.
+      if (numeric !== null) skillsLearned += 1;
+    }
+
     // Every date in sortedDates came from a non-voided rating, so the
     // session row must exist. Fall back to the empty string if a race ever
     // drops it — the chart's deep link will 404 on the server rather than
@@ -225,6 +293,10 @@ export async function computeScoreHistory(swimmerId: string): Promise<ScoreHisto
       headPositionOverall: headPosOverall,
       categoryRollups,
       starts: startEntries,
+      counts,
+      totalLevelsGained,
+      skillsMastered,
+      skillsLearned,
     });
   }
 

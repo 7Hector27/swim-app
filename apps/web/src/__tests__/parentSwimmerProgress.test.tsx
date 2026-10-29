@@ -310,6 +310,10 @@ describe("ParentSwimmerProgressContent — charts", () => {
           },
         ],
         starts: [],
+        counts: { level1: 0, level2: 0, level3: 0, level4: 0, level5: 0, notLegal: 0, noConcept: 0 },
+        totalLevelsGained: 0,
+        skillsMastered: 0,
+        skillsLearned: 0,
       })),
     };
   }

@@ -21,6 +21,8 @@ export {
 } from "./lib/dependencyMap";
 export type { SkillGrade, BuiltOnGraph, GradeMap, SortOrderMap, RatingRecord, PerStrokeGrades, ChainEntry } from "./lib/dependencyMap";
 
+export { MASTERY_LEVEL } from "./lib/mastery";
+
 export type { HealthResponse } from "./schemas/health";
 export { HealthQuerySchema, HealthResponseSchema } from "./schemas/health";
 
@@ -458,6 +460,7 @@ export type {
   GolfScoreTrendsResponse,
   ScoreHistoryCategoryRollup,
   ScoreHistoryStart,
+  ScoreHistoryLevelCounts,
   ScoreHistoryPoint,
   ScoreHistoryResponse,
   GetSessionRating,
@@ -503,6 +506,7 @@ export {
   GolfScoreTrendsResponseSchema,
   ScoreHistoryCategoryRollupSchema,
   ScoreHistoryStartSchema,
+  ScoreHistoryLevelCountsSchema,
   ScoreHistoryPointSchema,
   ScoreHistoryResponseSchema,
   GetSessionRatingSchema,

@@ -459,6 +459,23 @@ export const ScoreHistoryStartSchema = z.object({
 });
 export type ScoreHistoryStart = z.infer<typeof ScoreHistoryStartSchema>;
 
+// Per-date progression tallies. Keys are the plain (side-collapsed) skill
+// slug — side-rated skills roll up via `weakerSideGrade` first so coaches
+// read these counts in "skills," not "ratings." Voided and corrected
+// ratings are dropped exactly like the existing calculations do (via
+// `latestEffectiveRatings`), so the counts match what the live progress
+// endpoint would report at the same moment in time.
+export const ScoreHistoryLevelCountsSchema = z.object({
+  level1: z.number().int().nonnegative(),
+  level2: z.number().int().nonnegative(),
+  level3: z.number().int().nonnegative(),
+  level4: z.number().int().nonnegative(),
+  level5: z.number().int().nonnegative(),
+  notLegal: z.number().int().nonnegative(),
+  noConcept: z.number().int().nonnegative(),
+});
+export type ScoreHistoryLevelCounts = z.infer<typeof ScoreHistoryLevelCountsSchema>;
+
 export const ScoreHistoryPointSchema = z.object({
   sessionDate: z.string().date(),
   // ADR 032: lets the hero / start / golf-score chart link to a specific
@@ -468,6 +485,21 @@ export const ScoreHistoryPointSchema = z.object({
   headPositionOverall: z.number().int().min(1).max(5).nullable(),
   categoryRollups: z.array(ScoreHistoryCategoryRollupSchema),
   starts: z.array(ScoreHistoryStartSchema),
+  // Progression tallies as of this date (collapsed by side).
+  counts: ScoreHistoryLevelCountsSchema,
+  // Sum of max(0, currentGrade - firstEverGrade) over every skill that has
+  // ever been assessed. Positive-only — a skill drop doesn't subtract. The
+  // baseline per skill is its first collapsed grade across the full timeline
+  // (not its state on date 1, which may predate that skill's first rating).
+  totalLevelsGained: z.number().int().nonnegative(),
+  // Count of skills whose current collapsed grade is a numeric value at or
+  // above MASTERY_LEVEL. Skills in `not_legal` or `no_concept` don't count,
+  // even if their phantom numeric grade would otherwise reach mastery.
+  skillsMastered: z.number().int().nonnegative(),
+  // Count of skills currently at a numeric 1..5 grade. The transition from
+  // "unrated" or "no concept" into numeric is the "learned" moment; this
+  // metric is the running total of skills past that transition.
+  skillsLearned: z.number().int().nonnegative(),
 });
 export type ScoreHistoryPoint = z.infer<typeof ScoreHistoryPointSchema>;
 

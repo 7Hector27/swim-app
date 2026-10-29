@@ -290,6 +290,120 @@ describe("GET /coach/swimmers/:id/score-history", () => {
     }
   });
 
+  it("counts rated skills at each level and tallies progression per date", async () => {
+    const swimmerId = await createTestSwimmer();
+    try {
+      // Date 1: free-kick at 2 (one skill rated at level 2).
+      await postSession(coach, swimmerId, "freestyle", "2026-10-01", [
+        freshRating(freeKickSkillId, 2, "2026-10-01T10:00:00.000Z"),
+      ]);
+      // Date 2: free-kick upgraded to 4 (mastery). Starts: reaction=4.
+      await postSession(coach, swimmerId, "freestyle", "2026-10-10", [
+        freshRating(freeKickSkillId, 4, "2026-10-10T10:00:00.000Z"),
+      ]);
+      await postSession(coach, swimmerId, "starts", "2026-10-10", [
+        freshRating(trackStartReactionSkillId, 4, "2026-10-10T10:05:00.000Z"),
+      ]);
+
+      const history = await getScoreHistory(coach, swimmerId);
+      expect(history.points).toHaveLength(2);
+
+      // Date 1: one skill at level 2 → counts.level2 = 1, nothing mastered,
+      // nothing gained vs. baseline (first-ever grade is 2 itself), one skill
+      // learned (baseline was absent before this session).
+      const point1 = history.points[0]!;
+      expect(point1.counts.level2).toBe(1);
+      expect(point1.counts.level1).toBe(0);
+      expect(point1.counts.level4).toBe(0);
+      expect(point1.counts.notLegal).toBe(0);
+      expect(point1.counts.noConcept).toBe(0);
+      expect(point1.totalLevelsGained).toBe(0);
+      expect(point1.skillsMastered).toBe(0);
+      expect(point1.skillsLearned).toBe(1);
+
+      // Date 2: free-kick is 4 (gained 4-2=2 levels, mastered); reaction is 4
+      // (its own baseline is 4 so no gain; mastered). skillsLearned = 2.
+      const point2 = history.points[1]!;
+      expect(point2.counts.level4).toBe(2);
+      expect(point2.counts.level2).toBe(0);
+      expect(point2.totalLevelsGained).toBe(2);
+      expect(point2.skillsMastered).toBe(2);
+      expect(point2.skillsLearned).toBe(2);
+    } finally {
+      await cleanSwimmerData(swimmerId);
+      await hardDeleteSwimmer(swimmerId);
+    }
+  });
+
+  it("drops voided and superseded ratings from counts (progression tallies match live calculations)", async () => {
+    const swimmerId = await createTestSwimmer();
+    try {
+      // Date 1: free-kick = 1 (should become the baseline).
+      const date1 = await postSession(coach, swimmerId, "freestyle", "2026-10-01", [
+        freshRating(freeKickSkillId, 1, "2026-10-01T10:00:00.000Z"),
+      ]);
+      // Date 2: a bad rating gets voided before anyone acts on it.
+      const date2 = await postSession(coach, swimmerId, "freestyle", "2026-10-05", [
+        freshRating(freeKickSkillId, 2, "2026-10-05T10:00:00.000Z"),
+      ]);
+      const voidRes = await request(app)
+        .patch(`/coach/ratings/${date2.ratingIds[0]}/void`)
+        .set("Authorization", `Bearer ${coach.accessToken}`)
+        .send({ reason: "Not that rating" });
+      expect(voidRes.status).toBe(200);
+      // Date 3: a correction supersedes date 1's grade from 1 to 3.
+      const sessionsRes = await request(app)
+        .get(`/coach/sessions/${date1.sessionId}`)
+        .set("Authorization", `Bearer ${coach.accessToken}`);
+      expect(sessionsRes.status).toBe(200);
+      const existingRating = (sessionsRes.body as { ratings: Array<{ ratingId: string }> }).ratings[0];
+      const patchRes = await request(app)
+        .patch(`/coach/sessions/${date1.sessionId}`)
+        .set("Authorization", `Bearer ${coach.accessToken}`)
+        .send({
+          sessionDate: "2026-10-01",
+          context: "practice",
+          coachingPriority: "Focus",
+          breathingPattern: "every_3",
+          ratings: [
+            {
+              ratingId: existingRating!.ratingId,
+              grade: 3,
+              notLegal: false,
+              noConcept: false,
+              side: null,
+              capacityValue: null,
+              capacityUnit: null,
+              measurementValue: null,
+              measurementUnit: null,
+              golfScoreCategory: null,
+              note: null,
+              faultTags: [],
+            },
+          ],
+        });
+      expect(patchRes.status).toBe(200);
+
+      const history = await getScoreHistory(coach, swimmerId);
+      // Date 2's rating was voided but no other ratings exist for that date,
+      // so the whole date drops out. Date 1's effective grade is now the
+      // correction (3) — the voided and superseded rows must not inflate
+      // the level counts.
+      expect(history.points.map((point) => point.sessionDate)).toEqual(["2026-10-01"]);
+      const only = history.points[0]!;
+      expect(only.counts.level1).toBe(0);
+      expect(only.counts.level2).toBe(0);
+      expect(only.counts.level3).toBe(1);
+      // Baseline is the earliest effective grade (3 after correction); no gain.
+      expect(only.totalLevelsGained).toBe(0);
+      expect(only.skillsMastered).toBe(0);
+      expect(only.skillsLearned).toBe(1);
+    } finally {
+      await cleanSwimmerData(swimmerId);
+      await hardDeleteSwimmer(swimmerId);
+    }
+  });
+
   it("reports response time for a swimmer with 30 evaluations", async () => {
     const swimmerId = await createTestSwimmer();
     try {

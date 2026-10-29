@@ -44,6 +44,42 @@ const emptyProgress: SwimmerProgressResponse = {
 };
 
 const emptyScoreHistory: ScoreHistoryResponse = { points: [] };
+
+// Backfill the progression fields that every ScoreHistoryPoint now carries.
+// Tests built before those fields existed only care about the pre-progression
+// shape, so defaulting to zeros here keeps those cases byte-identical.
+const EMPTY_LEVEL_COUNTS = {
+  level1: 0,
+  level2: 0,
+  level3: 0,
+  level4: 0,
+  level5: 0,
+  notLegal: 0,
+  noConcept: 0,
+} as const;
+function makeScorePoint(overrides: {
+  sessionDate: string;
+  sessionId: string;
+  headPositionOverall: number | null;
+  categoryRollups?: ScoreHistoryResponse["points"][number]["categoryRollups"];
+  starts?: ScoreHistoryResponse["points"][number]["starts"];
+  counts?: ScoreHistoryResponse["points"][number]["counts"];
+  totalLevelsGained?: number;
+  skillsMastered?: number;
+  skillsLearned?: number;
+}): ScoreHistoryResponse["points"][number] {
+  return {
+    sessionDate: overrides.sessionDate,
+    sessionId: overrides.sessionId,
+    headPositionOverall: overrides.headPositionOverall,
+    categoryRollups: overrides.categoryRollups ?? [],
+    starts: overrides.starts ?? [],
+    counts: overrides.counts ?? { ...EMPTY_LEVEL_COUNTS },
+    totalLevelsGained: overrides.totalLevelsGained ?? 0,
+    skillsMastered: overrides.skillsMastered ?? 0,
+    skillsLearned: overrides.skillsLearned ?? 0,
+  };
+}
 const emptyGolfScore: GolfScoreTrendsResponse = { trends: [] };
 const emptyCategories: CategoriesResponse = [];
 
@@ -171,13 +207,13 @@ describe("SwimmerProgressContent — one-evaluation state", () => {
     };
     const scoreHistory: ScoreHistoryResponse = {
       points: [
-        {
+        makeScorePoint({
           sessionDate: "2026-10-25",
           sessionId: "ssss0000-0000-0000-0000-000000000001",
           headPositionOverall: null,
           categoryRollups: [],
           starts: [],
-        },
+        }),
       ],
     };
     renderPage({ progress, scoreHistory });
@@ -257,7 +293,7 @@ describe("SwimmerProgressContent — sections", () => {
   };
   const scoreHistory: ScoreHistoryResponse = {
     points: [
-      {
+      makeScorePoint({
         sessionDate: "2026-10-11",
         sessionId: "ssss0000-0000-0000-0000-000000000011",
         headPositionOverall: 3,
@@ -265,8 +301,8 @@ describe("SwimmerProgressContent — sections", () => {
           { categoryId: FREE_CAT_ID, categorySlug: "freestyle", categoryName: "Freestyle", average: 3, assessedCount: 1, totalCount: 10 },
         ],
         starts: [{ slug: "track-start", name: "Track Start", grade: { status: "in_progress", missing: [] } }],
-      },
-      {
+      }),
+      makeScorePoint({
         sessionDate: "2026-10-25",
         sessionId: "ssss0000-0000-0000-0000-000000000025",
         headPositionOverall: 4,
@@ -274,7 +310,7 @@ describe("SwimmerProgressContent — sections", () => {
           { categoryId: FREE_CAT_ID, categorySlug: "freestyle", categoryName: "Freestyle", average: 4, assessedCount: 2, totalCount: 10 },
         ],
         starts: [{ slug: "track-start", name: "Track Start", grade: { status: "graded", grade: 4 } }],
-      },
+      }),
     ],
   };
   const golfScore: GolfScoreTrendsResponse = {
@@ -450,20 +486,16 @@ describe("SwimmerProgressContent — Edit affordances (ADR 032)", () => {
 
   const scoreHistory: ScoreHistoryResponse = {
     points: [
-      {
+      makeScorePoint({
         sessionDate: "2026-10-11",
         sessionId: SESSION_A,
         headPositionOverall: 2,
-        categoryRollups: [],
-        starts: [],
-      },
-      {
+      }),
+      makeScorePoint({
         sessionDate: "2026-10-25",
         sessionId: SESSION_B,
         headPositionOverall: 4,
-        categoryRollups: [],
-        starts: [],
-      },
+      }),
     ],
   };
 
