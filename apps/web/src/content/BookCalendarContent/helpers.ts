@@ -1,4 +1,4 @@
-import { bookingWindowEnd, laCalendarDate } from "@swim-app/shared";
+import { bookingWindowEnd } from "@swim-app/shared";
 import type { WeekDayAvailability } from "@swim-app/shared";
 import { isApiBody } from "@/lib/mapZodErrors";
 
@@ -229,13 +229,6 @@ const ERROR_CODE_MESSAGES: Record<string, string> = {
   too_far: "You can only book lessons up to 10 weeks in advance.",
   slot_unavailable: "That time isn't available anymore. Pick another one.",
 };
-
-// LA calendar date (YYYY-MM-DD) corresponding to a UTC epoch ms. Re-exported
-// here (same semantics as the server's `getDateInLA`) so existing imports keep
-// working.
-export function laDateFromMs(ms: number): string {
-  return laCalendarDate(ms);
-}
 
 // Last LA calendar date inside the rolling booking window. Delegates to the
 // shared helper so client and server see the exact same window boundary.
