@@ -41,7 +41,7 @@ const emptyProgress: ParentSwimmerProgressResponse = {
 };
 
 const categories: CategoriesResponse = [];
-const emptyScoreHistory: ScoreHistoryResponse = { points: [] };
+const emptyScoreHistory: ScoreHistoryResponse = { points: [], recentChanges: [] };
 
 describe("ParentSwimmerProgressContent", () => {
   it("shows empty state when no evaluations", () => {
@@ -315,6 +315,7 @@ describe("ParentSwimmerProgressContent — charts", () => {
         skillsMastered: 0,
         skillsLearned: 0,
       })),
+      recentChanges: [],
     };
   }
 

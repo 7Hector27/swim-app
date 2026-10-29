@@ -503,8 +503,28 @@ export const ScoreHistoryPointSchema = z.object({
 });
 export type ScoreHistoryPoint = z.infer<typeof ScoreHistoryPointSchema>;
 
+// Last-20 effective-grade transitions across every (skill, side) key. Level-ups
+// and drops both land here; the direction flag lets the UI mark drops without
+// re-deriving numeric order (not_legal / no_concept aren't numerically ordered
+// with 1..5). `fromGrade` and `toGrade` are the SkillGrade union; the first
+// rating of a skill produces no change event — the milestones list owns
+// first-ever rated transitions.
+export const ScoreHistoryRecentChangeSchema = z.object({
+  skillSlug: z.string(),
+  skillName: z.string(),
+  side: RatingSideSchema.nullable(),
+  fromGrade: SkillGradeSchema,
+  toGrade: SkillGradeSchema,
+  direction: z.enum(["up", "down"]),
+  sessionDate: z.string().date(),
+  sessionId: z.string().uuid(),
+});
+export type ScoreHistoryRecentChange = z.infer<typeof ScoreHistoryRecentChangeSchema>;
+
 export const ScoreHistoryResponseSchema = z.object({
   points: z.array(ScoreHistoryPointSchema),
+  // Newest first, capped at the 20 most recent effective-grade transitions.
+  recentChanges: z.array(ScoreHistoryRecentChangeSchema),
 });
 export type ScoreHistoryResponse = z.infer<typeof ScoreHistoryResponseSchema>;
 

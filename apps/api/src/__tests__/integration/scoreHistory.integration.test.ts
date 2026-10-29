@@ -404,6 +404,46 @@ describe("GET /coach/swimmers/:id/score-history", () => {
     }
   });
 
+  it("recentChanges reports the newest 20 effective-grade transitions with drops marked", async () => {
+    const swimmerId = await createTestSwimmer();
+    try {
+      // Four freestyle sessions on the same free-kick skill:
+      //   d1: 2 → first-ever rating, no change event.
+      //   d2: 4 → level-up (2 → 4, direction=up).
+      //   d3: 3 → drop (4 → 3, direction=down).
+      //   d4: 3 → equal, no change event.
+      await postSession(coach, swimmerId, "freestyle", "2026-10-01", [
+        freshRating(freeKickSkillId, 2, "2026-10-01T10:00:00.000Z"),
+      ]);
+      await postSession(coach, swimmerId, "freestyle", "2026-10-05", [
+        freshRating(freeKickSkillId, 4, "2026-10-05T10:00:00.000Z"),
+      ]);
+      await postSession(coach, swimmerId, "freestyle", "2026-10-10", [
+        freshRating(freeKickSkillId, 3, "2026-10-10T10:00:00.000Z"),
+      ]);
+      await postSession(coach, swimmerId, "freestyle", "2026-10-15", [
+        freshRating(freeKickSkillId, 3, "2026-10-15T10:00:00.000Z"),
+      ]);
+
+      const history = await getScoreHistory(coach, swimmerId);
+      expect(history.recentChanges).toHaveLength(2);
+      // Newest first.
+      const [newest, older] = history.recentChanges;
+      expect(newest!.sessionDate).toBe("2026-10-10");
+      expect(newest!.fromGrade).toBe(4);
+      expect(newest!.toGrade).toBe(3);
+      expect(newest!.direction).toBe("down");
+      expect(newest!.skillSlug).toBe("free-kick");
+      expect(older!.sessionDate).toBe("2026-10-05");
+      expect(older!.fromGrade).toBe(2);
+      expect(older!.toGrade).toBe(4);
+      expect(older!.direction).toBe("up");
+    } finally {
+      await cleanSwimmerData(swimmerId);
+      await hardDeleteSwimmer(swimmerId);
+    }
+  });
+
   it("reports response time for a swimmer with 30 evaluations", async () => {
     const swimmerId = await createTestSwimmer();
     try {

@@ -15,6 +15,7 @@ import {
   type ScoreHistoryCategoryRollup,
   type ScoreHistoryStart,
   type ScoreHistoryLevelCounts,
+  type ScoreHistoryRecentChange,
   type SkillGrade,
 } from "@swim-app/shared";
 
@@ -71,8 +72,21 @@ function tallyLevel(counts: ScoreHistoryLevelCounts, grade: SkillGrade | undefin
   else if (grade === 5) counts.level5 += 1;
 }
 
+// Ordering for change detection between two SkillGrades. Returns 0 when the
+// two states are equal, a positive number when `after` is better, negative
+// when worse. `no_concept` and `not_legal` aren't on the 1..5 scale, so we
+// treat them as "below 1" by convention — a move from `not_legal` to a
+// numeric grade is a level-up, a move from numeric to `not_legal` is a drop.
+function gradeRank(grade: SkillGrade): number {
+  if (grade === null) return -Infinity;
+  if (grade === "no_concept") return 0;
+  if (grade === "not_legal") return 0.5;
+  return grade;
+}
+
 type FullRow = {
   slug: string;
+  skillName: string;
   grade: number | null;
   notLegal: boolean;
   noConcept: boolean;
@@ -80,6 +94,7 @@ type FullRow = {
   ratedAt: Date;
   voidedAt: Date | null;
   supersededAt: Date | null;
+  sessionId: string;
   sessionDate: string;
 };
 
@@ -106,6 +121,7 @@ export async function computeScoreHistory(swimmerId: string): Promise<ScoreHisto
   const ratingRows: FullRow[] = await db
     .select({
       slug: skills.slug,
+      skillName: skills.name,
       grade: skillRatings.grade,
       notLegal: skillRatings.notLegal,
       noConcept: skillRatings.noConcept,
@@ -113,6 +129,7 @@ export async function computeScoreHistory(swimmerId: string): Promise<ScoreHisto
       ratedAt: skillRatings.ratedAt,
       voidedAt: skillRatings.voidedAt,
       supersededAt: skillRatings.supersededAt,
+      sessionId: skillRatings.sessionId,
       sessionDate: evaluationSessions.sessionDate,
     })
     .from(skillRatings)
@@ -300,5 +317,59 @@ export async function computeScoreHistory(swimmerId: string): Promise<ScoreHisto
     });
   }
 
-  return { points };
+  // Recent effective-grade changes across all (skill, side) keys. Walks each
+  // key's non-voided, non-superseded ratings in temporal order and emits a
+  // transition when the SkillGrade changes. Equal consecutive grades don't
+  // emit. First-ever ratings don't emit (first-rated transitions are a
+  // milestone, not a change). Capped at the 20 newest by sessionDate.
+  const liveRatings = ratingRows.filter((row) => row.voidedAt === null && row.supersededAt === null);
+  const byKey = new Map<string, FullRow[]>();
+  for (const row of liveRatings) {
+    const key = row.side !== null ? `${row.slug}:${row.side}` : row.slug;
+    const existing = byKey.get(key);
+    if (existing) existing.push(row);
+    else byKey.set(key, [row]);
+  }
+  const allChanges: ScoreHistoryRecentChange[] = [];
+  for (const [, rows] of byKey) {
+    rows.sort((rowA, rowB) => rowA.ratedAt.getTime() - rowB.ratedAt.getTime());
+    for (let index = 1; index < rows.length; index++) {
+      const previous = rows[index - 1]!;
+      const current = rows[index]!;
+      const fromGrade = rowToSkillGrade(previous);
+      const toGrade = rowToSkillGrade(current);
+      if (fromGrade === null || toGrade === null) continue;
+      if (gradesEqual(fromGrade, toGrade)) continue;
+      const direction = gradeRank(toGrade) >= gradeRank(fromGrade) ? "up" : "down";
+      allChanges.push({
+        skillSlug: current.slug,
+        skillName: current.skillName,
+        side: current.side,
+        fromGrade,
+        toGrade,
+        direction,
+        sessionDate: current.sessionDate,
+        sessionId: current.sessionId,
+      });
+    }
+  }
+  allChanges.sort((changeA, changeB) => {
+    if (changeA.sessionDate !== changeB.sessionDate) {
+      return changeA.sessionDate < changeB.sessionDate ? 1 : -1;
+    }
+    return changeA.skillName.localeCompare(changeB.skillName);
+  });
+  const recentChanges = allChanges.slice(0, 20);
+
+  return { points, recentChanges };
+}
+
+function rowToSkillGrade(row: FullRow): SkillGrade {
+  if (row.notLegal) return "not_legal";
+  if (row.noConcept) return "no_concept";
+  return (row.grade as 1 | 2 | 3 | 4 | 5 | null);
+}
+
+function gradesEqual(gradeA: SkillGrade, gradeB: SkillGrade): boolean {
+  return gradeA === gradeB;
 }

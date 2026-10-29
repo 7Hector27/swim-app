@@ -50,7 +50,9 @@ export default async function ParentSwimmerProgressPage({ params }: Props) {
   const categories = categoriesResult.ok ? categoriesResult.categories : [];
   // Charts gracefully degrade when score-history fails: the page still renders
   // without them (same pattern as the coach progress page).
-  const scoreHistory = scoreHistoryResult.ok ? scoreHistoryResult.data : { points: [] };
+  const scoreHistory = scoreHistoryResult.ok
+    ? scoreHistoryResult.data
+    : { points: [], recentChanges: [] };
 
   return (
     <ParentSwimmerProgressContent

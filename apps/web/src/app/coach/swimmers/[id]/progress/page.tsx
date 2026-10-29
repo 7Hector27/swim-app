@@ -49,7 +49,9 @@ export default async function SwimmerProgressPage({ params }: ProgressPageProps)
   // Charts gracefully degrade when score-history or golf-score fail: the
   // page still renders with the per-skill list and the empty charts fall back
   // to their own "not enough data" copy.
-  const scoreHistory = scoreHistoryResult.ok ? scoreHistoryResult.data : { points: [] };
+  const scoreHistory = scoreHistoryResult.ok
+    ? scoreHistoryResult.data
+    : { points: [], recentChanges: [] };
   const golfScore = golfScoreResult.ok ? golfScoreResult.data : { trends: [] };
 
   // Pin "now" on the server so recency text ("Rated 3 days ago") renders
