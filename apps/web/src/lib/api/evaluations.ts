@@ -11,6 +11,8 @@ import {
   type SwimmerProgressResponse,
   GolfScoreTrendsResponseSchema,
   type GolfScoreTrendsResponse,
+  ScoreHistoryResponseSchema,
+  type ScoreHistoryResponse,
 } from "@swim-app/shared";
 
 export type FetchCategoriesResult =
@@ -142,6 +144,29 @@ export async function fetchGolfScoreTrends(
   const parsed = GolfScoreTrendsResponseSchema.safeParse(body);
   if (!parsed.success) return { ok: false, status: 200 };
   return { ok: true, data: parsed.data };
+}
+
+export type FetchScoreHistoryResult =
+  | { ok: true; data: ScoreHistoryResponse }
+  | { ok: false; status: number };
+
+export async function fetchScoreHistory(
+  swimmerId: string,
+  accessToken: string,
+): Promise<FetchScoreHistoryResult> {
+  try {
+    const response = await fetch(
+      `${process.env.NEXT_PUBLIC_API_URL}/coach/swimmers/${swimmerId}/score-history`,
+      { headers: { Authorization: `Bearer ${accessToken}` }, cache: "no-store" },
+    );
+    if (!response.ok) return { ok: false, status: response.status };
+    const body: unknown = await response.json();
+    const parsed = ScoreHistoryResponseSchema.safeParse(body);
+    if (!parsed.success) return { ok: false, status: 500 };
+    return { ok: true, data: parsed.data };
+  } catch {
+    return { ok: false, status: 500 };
+  }
 }
 
 export type VoidRatingResult = { ok: true } | { ok: false; status: number };

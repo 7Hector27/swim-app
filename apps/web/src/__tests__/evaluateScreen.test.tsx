@@ -1025,3 +1025,96 @@ describe("EvaluateContent — server draft banner", () => {
     vi.useRealTimers();
   });
 });
+
+// ── Deep link from progress page: ?skill=<slug> ───────────────────────────────
+
+describe("EvaluateContent — deep link ?skill=<slug>", () => {
+  const originalLocation = window.location;
+  let scrollSpy: ReturnType<typeof vi.fn>;
+  const originalScroll = Element.prototype.scrollIntoView;
+
+  function setSearch(search: string) {
+    Object.defineProperty(window, "location", {
+      writable: true,
+      configurable: true,
+      value: { ...originalLocation, search, href: `http://localhost/${search}` },
+    });
+  }
+
+  beforeEach(() => {
+    localStorage.clear();
+    vi.mocked(submitEvaluation).mockResolvedValue({ status: "idle" });
+    mockFetch.mockResolvedValue({ ok: true, json: async () => ({ suggestion: null }) });
+    scrollSpy = vi.fn();
+    Element.prototype.scrollIntoView = scrollSpy;
+  });
+
+  afterEach(() => {
+    localStorage.clear();
+    vi.clearAllMocks();
+    Element.prototype.scrollIntoView = originalScroll;
+    Object.defineProperty(window, "location", {
+      writable: true,
+      configurable: true,
+      value: originalLocation,
+    });
+  });
+
+  it("auto-selects the first matching screen when no draft is in progress", async () => {
+    setSearch("?skill=back-kick");
+
+    render(<EvaluateContent swimmer={SWIMMER_DETAIL} screens={TEST_SCREENS} prevGrades={{}} />);
+
+    await waitFor(() => {
+      const select = screen.getByRole("combobox") as HTMLSelectElement;
+      expect(select.value).toBe(SCREEN_B_SLUG);
+    });
+  });
+
+  it("scrolls to the skill when the current screen already contains it", async () => {
+    // Restore the already-selected screen via localStorage so draft.screenSlug
+    // is "freestyle" on first render.
+    localStorage.setItem(metaKey(SWIMMER_ID), JSON.stringify({
+      screenSlug: SCREEN_A_SLUG,
+      sessionDate: "2026-10-14",
+      context: "practice",
+      coachingPriority: "",
+      breathingPattern: "every_3",
+    }));
+    localStorage.setItem(skillsKey(SWIMMER_ID, SCREEN_A_SLUG), JSON.stringify({ skills: {} }));
+
+    setSearch("?skill=free-kick");
+
+    render(<EvaluateContent swimmer={SWIMMER_DETAIL} screens={TEST_SCREENS} prevGrades={{}} />);
+
+    await waitFor(() => {
+      expect(scrollSpy).toHaveBeenCalled();
+      expect(scrollSpy.mock.calls.some((call) =>
+        typeof call[0] === "object" && call[0].block === "center",
+      )).toBe(true);
+    });
+  });
+
+  it("does not touch an in-progress draft when the deep-linked skill belongs to a different screen", async () => {
+    // Draft is in progress on freestyle. Click a backstroke-only skill link.
+    localStorage.setItem(metaKey(SWIMMER_ID), JSON.stringify({
+      screenSlug: SCREEN_A_SLUG,
+      sessionDate: "2026-10-14",
+      context: "practice",
+      coachingPriority: "Keep this",
+      breathingPattern: "every_3",
+    }));
+    localStorage.setItem(skillsKey(SWIMMER_ID, SCREEN_A_SLUG), JSON.stringify({ skills: {} }));
+    setSearch("?skill=back-kick");
+
+    render(<EvaluateContent swimmer={SWIMMER_DETAIL} screens={TEST_SCREENS} prevGrades={{}} />);
+
+    // Priority stays — draft wasn't blown away.
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText(/main focus/i)).toHaveValue("Keep this");
+    });
+    // Screen stayed on freestyle.
+    const select = screen.getByRole("combobox") as HTMLSelectElement;
+    expect(select.value).toBe(SCREEN_A_SLUG);
+  });
+});

@@ -5,7 +5,12 @@ import AccountInactiveScreen from "@/components/AccountInactiveScreen";
 import SwimmerProgressContent from "@/content/SwimmerProgressContent";
 import { requireAuth } from "@/lib/requireAuth";
 import { fetchCoachSwimmerDetail } from "@/lib/api/coachSwimmers";
-import { fetchSwimmerProgress, fetchSkillCategories } from "@/lib/api/evaluations";
+import {
+  fetchGolfScoreTrends,
+  fetchScoreHistory,
+  fetchSkillCategories,
+  fetchSwimmerProgress,
+} from "@/lib/api/evaluations";
 
 export const metadata: Metadata = {
   title: "Progress · Axiom Aquatics",
@@ -19,11 +24,14 @@ export default async function SwimmerProgressPage({ params }: ProgressPageProps)
   const [auth, { id }] = await Promise.all([requireAuth(), params]);
   if (!auth) return <AccountInactiveScreen />;
 
-  const [swimmerResult, progressResult, categoriesResult] = await Promise.all([
-    fetchCoachSwimmerDetail(id, auth.accessToken),
-    fetchSwimmerProgress(id, auth.accessToken),
-    fetchSkillCategories(auth.accessToken),
-  ]);
+  const [swimmerResult, progressResult, categoriesResult, scoreHistoryResult, golfScoreResult] =
+    await Promise.all([
+      fetchCoachSwimmerDetail(id, auth.accessToken),
+      fetchSwimmerProgress(id, auth.accessToken),
+      fetchSkillCategories(auth.accessToken),
+      fetchScoreHistory(id, auth.accessToken),
+      fetchGolfScoreTrends(id, auth.accessToken),
+    ]);
 
   if (!swimmerResult.ok) {
     if (swimmerResult.status === 404) notFound();
@@ -38,12 +46,26 @@ export default async function SwimmerProgressPage({ params }: ProgressPageProps)
   }
 
   const categories = categoriesResult.ok ? categoriesResult.categories : [];
+  // Charts gracefully degrade when score-history or golf-score fail: the
+  // page still renders with the per-skill list and the empty charts fall back
+  // to their own "not enough data" copy.
+  const scoreHistory = scoreHistoryResult.ok ? scoreHistoryResult.data : { points: [] };
+  const golfScore = golfScoreResult.ok ? golfScoreResult.data : { trends: [] };
+
+  // Pin "now" on the server so recency text ("Rated 3 days ago") renders
+  // identically during SSR and client hydration — without this, the server
+  // and the client each call `new Date()` and may land on different day
+  // counts near midnight.
+  const nowIso = new Date().toISOString();
 
   return (
     <SwimmerProgressContent
       swimmer={swimmerResult.swimmer}
       progress={progressResult.data}
       categories={categories}
+      scoreHistory={scoreHistory}
+      golfScore={golfScore}
+      nowIso={nowIso}
     />
   );
 }

@@ -136,6 +136,92 @@ export default function EvaluateContent({ swimmer, screens, prevGrades, resumeDr
     }
   }, [swimmer.id, metaKey, skillsKey, resumeDraft]);
 
+  // Deep link: ?skill=<slug> on arrival from the progress page's "What to work
+  // on next" list. Scrolls to the matching skill and opens its section tab.
+  // Picks a screen when none is set yet; never clobbers an in-progress draft
+  // on a different screen (silent fallback — the coach can switch manually).
+  //
+  // Declared BEFORE the save-to-localStorage effect so it reads the pristine
+  // stored value before `save` overwrites it with the initial empty draft on
+  // the first commit.
+  const deepLinkConsumedRef = useRef(false);
+  const deepLinkSlugRef = useRef<string | null>(
+    typeof window !== "undefined"
+      ? new URLSearchParams(window.location.search).get("skill")
+      : null,
+  );
+  useEffect(() => {
+    if (deepLinkConsumedRef.current) return;
+    const slug = deepLinkSlugRef.current;
+    if (slug === null) {
+      deepLinkConsumedRef.current = true;
+      return;
+    }
+    const currentScreen = screens.find((screen) => screen.screenSlug === draft.screenSlug);
+    const currentSkill = currentScreen?.skills.find((skill) => skill.slug === slug) ?? null;
+    if (currentSkill !== null && currentScreen !== undefined) {
+      const sections = SCREEN_SECTIONS[currentScreen.screenSlug] ?? [];
+      const sectionIndex = sections.findIndex((section) => section.slugs.includes(slug));
+      if (sectionIndex >= 0) setActiveSectionIndex(sectionIndex);
+      const skillId = currentSkill.id;
+      requestAnimationFrame(() => {
+        document
+          .getElementById(`skill-${skillId}`)
+          ?.scrollIntoView({ behavior: "smooth", block: "center" });
+      });
+      deepLinkConsumedRef.current = true;
+      deepLinkSlugRef.current = null;
+      return;
+    }
+    if (draft.screenSlug === "") {
+      // The restore effect fires on the same commit as this one and updates
+      // draft asynchronously, so draft.screenSlug can still read "" even
+      // when a stored draft exists. Peek at localStorage directly.
+      //
+      //   - stored screen already contains the target: wait (don't mark
+      //     consumed). When restore flushes, the effect re-runs with
+      //     currentScreen set and the top branch does the scroll.
+      //   - stored screen is set to something else: honor the in-progress
+      //     draft, don't switch screens, don't scroll.
+      //   - nothing stored: pick the first screen containing the target.
+      let storedScreenSlug: string | null = null;
+      try {
+        const metaRaw = localStorage.getItem(metaKey);
+        if (metaRaw) {
+          const meta = JSON.parse(metaRaw) as { screenSlug?: string };
+          storedScreenSlug = typeof meta.screenSlug === "string" ? meta.screenSlug : null;
+        }
+      } catch {
+        // ignore
+      }
+      if (storedScreenSlug && storedScreenSlug !== "") {
+        const storedScreen = screens.find((screen) => screen.screenSlug === storedScreenSlug);
+        const storedHasSlug = storedScreen?.skills.some((skill) => skill.slug === slug) ?? false;
+        if (storedHasSlug) {
+          // Wait for restore to flush; the effect re-runs with the new
+          // draft.screenSlug and the top branch takes over.
+          return;
+        }
+        deepLinkConsumedRef.current = true;
+        deepLinkSlugRef.current = null;
+        return;
+      }
+      const matching = screens.find((screen) =>
+        screen.skills.some((skill) => skill.slug === slug),
+      );
+      if (matching) {
+        handleScreenChange(matching.screenSlug);
+      } else {
+        deepLinkConsumedRef.current = true;
+        deepLinkSlugRef.current = null;
+      }
+      return;
+    }
+    deepLinkConsumedRef.current = true;
+    deepLinkSlugRef.current = null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [screens, draft.screenSlug]);
+
   // Persist draft to localStorage on every change
   useEffect(() => {
     try {

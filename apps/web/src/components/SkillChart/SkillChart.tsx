@@ -27,12 +27,14 @@ interface SkillChartProps {
 
 function formatSessionDate(dateStr: string): string {
   const [year, month, day] = dateStr.split("-").map(Number);
+  // Build the instant at noon UTC so Intl.DateTimeFormat in the LA zone
+  // (UTC-7/-8) always resolves to the same calendar day on server + client.
   return new Intl.DateTimeFormat("en-US", {
     month: "short",
     day: "numeric",
     year: "numeric",
     timeZone: "America/Los_Angeles",
-  }).format(new Date(year!, month! - 1, day!));
+  }).format(new Date(Date.UTC(year!, month! - 1, day!, 12)));
 }
 
 export default function SkillChart({ history, skillName }: SkillChartProps) {

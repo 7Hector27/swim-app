@@ -1,14 +1,22 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
-import type { CoachSwimmerDetail, SwimmerProgressResponse, CategoriesResponse } from "@swim-app/shared";
+import { render, screen, within } from "@testing-library/react";
+import type {
+  CoachSwimmerDetail,
+  SwimmerProgressResponse,
+  CategoriesResponse,
+  ScoreHistoryResponse,
+  GolfScoreTrendsResponse,
+} from "@swim-app/shared";
 
 vi.mock("@/components/SiteNav", () => ({ default: () => <nav /> }));
 
 import SwimmerProgressContent from "../content/SwimmerProgressContent/SwimmerProgressContent";
 
 const SWIMMER_ID = "aaaa0000-0000-0000-0000-000000000001";
-const SKILL_ID = "bbbb0000-0000-0000-0000-000000000001";
-const CAT_ID = "cccc0000-0000-0000-0000-000000000001";
+const FREE_SKILL_ID = "bbbb0000-0000-0000-0000-000000000001";
+const SIDED_SKILL_ID = "dddd0000-0000-0000-0000-000000000001";
+const FREE_CAT_ID = "cccc0000-0000-0000-0000-000000000001";
+const BREATH_CAT_ID = "cccc0000-0000-0000-0000-000000000002";
 
 const swimmer: CoachSwimmerDetail = {
   id: SWIMMER_ID,
@@ -35,245 +43,359 @@ const emptyProgress: SwimmerProgressResponse = {
   coachingPriorities: [],
 };
 
-const categories: CategoriesResponse = [];
+const emptyScoreHistory: ScoreHistoryResponse = { points: [] };
+const emptyGolfScore: GolfScoreTrendsResponse = { trends: [] };
+const emptyCategories: CategoriesResponse = [];
 
-describe("SwimmerProgressContent", () => {
-  it("shows empty state when no evaluations", () => {
-    render(
-      <SwimmerProgressContent
-        swimmer={swimmer}
-        progress={emptyProgress}
-        categories={categories}
-      />,
-    );
+const NOW_ISO = "2026-10-29T18:00:00.000Z";
+
+function renderPage(overrides: {
+  progress?: SwimmerProgressResponse;
+  categories?: CategoriesResponse;
+  scoreHistory?: ScoreHistoryResponse;
+  golfScore?: GolfScoreTrendsResponse;
+}) {
+  return render(
+    <SwimmerProgressContent
+      swimmer={swimmer}
+      progress={overrides.progress ?? emptyProgress}
+      categories={overrides.categories ?? emptyCategories}
+      scoreHistory={overrides.scoreHistory ?? emptyScoreHistory}
+      golfScore={overrides.golfScore ?? emptyGolfScore}
+      nowIso={NOW_ISO}
+    />,
+  );
+}
+
+function makeSkill(options: {
+  id: string;
+  slug: string;
+  name: string;
+  categoryId: string;
+  categoryName: string;
+  grade?: 1 | 2 | 3 | 4 | 5 | null;
+  notLegal?: boolean;
+  noConcept?: boolean;
+  ratedPerSide?: boolean;
+  currentLeft?: SwimmerProgressResponse["skills"][number]["currentLeft"];
+  currentRight?: SwimmerProgressResponse["skills"][number]["currentRight"];
+  history?: SwimmerProgressResponse["skills"][number]["history"];
+}): SwimmerProgressResponse["skills"][number] {
+  const current =
+    options.ratedPerSide
+      ? null
+      : {
+          grade: options.grade ?? 3,
+          notLegal: options.notLegal ?? false,
+          noConcept: options.noConcept ?? false,
+          capacityValue: null,
+          capacityUnit: null,
+          measurementValue: null,
+          measurementUnit: null,
+        };
+  return {
+    skillId: options.id,
+    slug: options.slug,
+    name: options.name,
+    categoryId: options.categoryId,
+    categoryName: options.categoryName,
+    type: "rubric",
+    unit: null,
+    ratedPerSide: options.ratedPerSide ?? false,
+    parentSkillId: null,
+    current,
+    currentLeft: options.currentLeft ?? null,
+    currentRight: options.currentRight ?? null,
+    history: options.history ?? [],
+  };
+}
+
+function makePoint(options: {
+  id: string;
+  sessionDate: string;
+  grade: 1 | 2 | 3 | 4 | 5 | null;
+  faultTags?: string[];
+  notLegal?: boolean;
+}): SwimmerProgressResponse["skills"][number]["history"][number] {
+  return {
+    id: options.id,
+    grade: options.grade,
+    notLegal: options.notLegal ?? false,
+    noConcept: false,
+    side: null,
+    capacityValue: null,
+    capacityUnit: null,
+    measurementValue: null,
+    measurementUnit: null,
+    context: "practice",
+    faultTags: options.faultTags ?? [],
+    ratedAt: `${options.sessionDate}T18:00:00.000Z`,
+    sessionDate: options.sessionDate,
+  };
+}
+
+describe("SwimmerProgressContent — empty state", () => {
+  it("renders the empty-state card and a 'Start first evaluation' CTA", () => {
+    renderPage({});
     expect(screen.getByText(/no evaluations recorded yet/i)).toBeInTheDocument();
+    const cta = screen.getByRole("link", { name: /start first evaluation/i });
+    expect(cta).toHaveAttribute("href", `/coach/swimmers/${SWIMMER_ID}/evaluate`);
+    // No chart sections should render.
+    expect(screen.queryByText(/head position overall/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/category snapshot/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/skills/i)).not.toBeInTheDocument();
   });
+});
 
-  it("shows skill current level", () => {
+describe("SwimmerProgressContent — one-evaluation state", () => {
+  it("renders the page with the trend-unlock hint and a single-point hero", () => {
     const progress: SwimmerProgressResponse = {
       ...emptyProgress,
       skills: [
-        {
-          skillId: SKILL_ID,
-          slug: "freestyle-kick",
+        makeSkill({
+          id: FREE_SKILL_ID,
+          slug: "free-kick",
           name: "Freestyle Kick",
-          categoryId: CAT_ID,
+          categoryId: FREE_CAT_ID,
           categoryName: "Freestyle",
-          type: "rubric",
-          unit: null,
-          ratedPerSide: false,
-          parentSkillId: null,
-          current: {
-            grade: 3,
-            notLegal: false,
-            noConcept: false,
-            capacityValue: null,
-            capacityUnit: null,
-            measurementValue: null,
-            measurementUnit: null,
-          },
-          currentLeft: null,
-          currentRight: null,
-          history: [],
+          grade: 3,
+          history: [makePoint({ id: "p-only", sessionDate: "2026-10-25", grade: 3 })],
+        }),
+      ],
+    };
+    const scoreHistory: ScoreHistoryResponse = {
+      points: [
+        {
+          sessionDate: "2026-10-25",
+          headPositionOverall: null,
+          categoryRollups: [],
+          starts: [],
         },
       ],
     };
-    render(
-      <SwimmerProgressContent
-        swimmer={swimmer}
-        progress={progress}
-        categories={categories}
-      />,
-    );
+    renderPage({ progress, scoreHistory });
+    expect(screen.getAllByText(/head position overall/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/trends unlock after the second rating/i)).toBeInTheDocument();
+    // The expandable per-skill row is present.
     expect(screen.getByText("Freestyle Kick")).toBeInTheDocument();
-    expect(screen.getByText("3")).toBeInTheDocument();
   });
+});
 
-  it("shows Not legal in danger style", () => {
-    const progress: SwimmerProgressResponse = {
-      ...emptyProgress,
-      skills: [
-        {
-          skillId: SKILL_ID,
-          slug: "freestyle-kick",
-          name: "Freestyle Kick",
-          categoryId: CAT_ID,
-          categoryName: "Freestyle",
-          type: "rubric",
-          unit: null,
-          ratedPerSide: false,
-          parentSkillId: null,
-          current: {
-            grade: 2,
-            notLegal: true,
-            noConcept: false,
-            capacityValue: null,
-            capacityUnit: null,
-            measurementValue: null,
-            measurementUnit: null,
-          },
-          currentLeft: null,
-          currentRight: null,
-          history: [],
-        },
-      ],
-    };
-    render(
-      <SwimmerProgressContent
-        swimmer={swimmer}
-        progress={progress}
-        categories={categories}
-      />,
-    );
-    expect(screen.getByText("DQ")).toBeInTheDocument();
-  });
-
-  it("shows Not assessed for skills from categories without data", () => {
-    const cats: CategoriesResponse = [
+describe("SwimmerProgressContent — sections", () => {
+  const progress: SwimmerProgressResponse = {
+    headPositionOverall: 4,
+    coachingPriorities: [
       {
-        id: CAT_ID,
-        slug: "freestyle",
-        name: "Freestyle",
-        sortOrder: 1,
-        skills: [
+        targetSlug: "free-pull",
+        targetName: "Pull",
+        chain: [
+          { slug: "free-pull", name: "Pull", notAssessed: false },
+          { slug: "free-catch", name: "Catch", notAssessed: false },
+          { slug: "finger-spacing", name: "Finger spacing", notAssessed: true },
+        ],
+      },
+    ],
+    startProgress: [
+      {
+        slug: "track-start",
+        name: "Track Start",
+        grade: { status: "graded", grade: 4 },
+        components: [],
+      },
+    ],
+    skills: [
+      makeSkill({
+        id: FREE_SKILL_ID,
+        slug: "free-kick",
+        name: "Freestyle Kick",
+        categoryId: FREE_CAT_ID,
+        categoryName: "Freestyle",
+        grade: 2,
+        notLegal: true,
+        history: [
+          makePoint({ id: "p1", sessionDate: "2026-10-25", grade: 2, notLegal: true, faultTags: ["dropped elbow"] }),
+          makePoint({ id: "p2", sessionDate: "2026-10-18", grade: 3, faultTags: ["dropped elbow", "breaks down 2nd length"] }),
+        ],
+      }),
+      makeSkill({
+        id: SIDED_SKILL_ID,
+        slug: "free-bilateral-breathing",
+        name: "Bilateral breathing",
+        categoryId: BREATH_CAT_ID,
+        categoryName: "Breathing",
+        ratedPerSide: true,
+        currentLeft: {
+          grade: 3,
+          notLegal: false,
+          noConcept: false,
+          capacityValue: null,
+          capacityUnit: null,
+          measurementValue: null,
+          measurementUnit: null,
+        },
+        currentRight: {
+          grade: null,
+          notLegal: false,
+          noConcept: true,
+          capacityValue: null,
+          capacityUnit: null,
+          measurementValue: null,
+          measurementUnit: null,
+        },
+        history: [
+          makePoint({ id: "pL", sessionDate: "2026-10-25", grade: 3 }),
+        ],
+      }),
+    ],
+  };
+  const scoreHistory: ScoreHistoryResponse = {
+    points: [
+      {
+        sessionDate: "2026-10-11",
+        headPositionOverall: 3,
+        categoryRollups: [
+          { categoryId: FREE_CAT_ID, categorySlug: "freestyle", categoryName: "Freestyle", average: 3, assessedCount: 1, totalCount: 10 },
+        ],
+        starts: [{ slug: "track-start", name: "Track Start", grade: { status: "in_progress", missing: [] } }],
+      },
+      {
+        sessionDate: "2026-10-25",
+        headPositionOverall: 4,
+        categoryRollups: [
+          { categoryId: FREE_CAT_ID, categorySlug: "freestyle", categoryName: "Freestyle", average: 4, assessedCount: 2, totalCount: 10 },
+        ],
+        starts: [{ slug: "track-start", name: "Track Start", grade: { status: "graded", grade: 4 } }],
+      },
+    ],
+  };
+  const golfScore: GolfScoreTrendsResponse = {
+    trends: [
+      {
+        skillSlug: "free-golf-score",
+        skillName: "Freestyle golf score",
+        byCategory: [
           {
-            id: SKILL_ID,
-            slug: "freestyle-kick",
-            name: "Freestyle Kick",
-            type: "rubric",
-            unit: null,
-            stroke: null,
-            ratedPerSide: false,
-            notLegalAllowed: false,
-            parentSkillId: null,
-            sortOrder: 1,
-            faultTags: [],
-            descriptors: [],
+            category: "push_off_in_water",
+            points: [
+              { ratedAt: "2026-10-25T18:00:00.000Z", sessionDate: "2026-10-25", grade: 3, measurementValue: "29.5" },
+              { ratedAt: "2026-10-11T18:00:00.000Z", sessionDate: "2026-10-11", grade: 3, measurementValue: "30.4" },
+            ],
+            ageBands: { bandCount: 12, p25: 25.0, p50: 28.0, p75: 32.0 },
           },
         ],
       },
-    ];
-    render(
-      <SwimmerProgressContent
-        swimmer={swimmer}
-        progress={emptyProgress}
-        categories={cats}
-      />,
-    );
-    expect(screen.getByText("Freestyle Kick")).toBeInTheDocument();
-    expect(screen.getAllByText("Not assessed").length).toBeGreaterThan(0);
+    ],
+  };
+
+  it("renders every top-level section", () => {
+    renderPage({ progress, scoreHistory, golfScore });
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(/Maya.*Progress/);
+    expect(screen.getByRole("heading", { name: /what to work on next/i })).toBeInTheDocument();
+    expect(screen.getAllByText(/head position overall/i).length).toBeGreaterThan(0);
+    expect(screen.getByRole("heading", { name: /category snapshot/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /^starts$/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /^golf score$/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /fault tags/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /session cadence/i })).toBeInTheDocument();
+    // Per-skill list category label
+    expect(screen.getAllByText("Freestyle").length).toBeGreaterThan(0);
   });
 
-  it("shows start grade section", () => {
-    const progress: SwimmerProgressResponse = {
-      ...emptyProgress,
-      startProgress: [
-        {
-          slug: "track-start",
-          name: "Track Start",
-          grade: { status: "graded", grade: 4 },
-          components: [
-            {
-              slug: "reaction-time",
-              name: "Reaction Time",
-              current: {
-                grade: 4,
-                notLegal: false,
-                noConcept: false,
-                capacityValue: null,
-                capacityUnit: null,
-                measurementValue: null,
-                measurementUnit: null,
-              },
-            },
-          ],
-        },
-      ],
-    };
-    render(
-      <SwimmerProgressContent
-        swimmer={swimmer}
-        progress={progress}
-        categories={categories}
-      />,
-    );
-    expect(screen.getByText("Track Start")).toBeInTheDocument();
-    expect(screen.getAllByText("4").length).toBeGreaterThan(0);
-  });
-
-  it("shows L and R badges for side-rated skills", () => {
-    const SIDED_ID = "dddd0000-0000-0000-0000-000000000001";
-    const progress: SwimmerProgressResponse = {
-      ...emptyProgress,
-      skills: [
-        {
-          skillId: SIDED_ID,
-          slug: "freestyle-breathing",
-          name: "Freestyle Breathing",
-          categoryId: CAT_ID,
-          categoryName: "Freestyle",
-          type: "rubric",
-          unit: null,
-          ratedPerSide: true,
-          parentSkillId: null,
-          current: null,
-          currentLeft: {
-            grade: 3,
-            notLegal: false,
-            noConcept: false,
-            capacityValue: null,
-            capacityUnit: null,
-            measurementValue: null,
-            measurementUnit: null,
-          },
-          currentRight: {
-            grade: 4,
-            notLegal: false,
-            noConcept: false,
-            capacityValue: null,
-            capacityUnit: null,
-            measurementValue: null,
-            measurementUnit: null,
-          },
-          history: [],
-        },
-      ],
-    };
-    render(
-      <SwimmerProgressContent
-        swimmer={swimmer}
-        progress={progress}
-        categories={categories}
-      />,
-    );
-    expect(screen.getByText("Freestyle Breathing")).toBeInTheDocument();
+  it("spells out 'Not legal' and 'No concept' as pills", () => {
+    renderPage({ progress, scoreHistory, golfScore });
+    expect(screen.getByText("Not legal")).toBeInTheDocument();
+    // Right side is no_concept
+    expect(screen.getByText("R No concept")).toBeInTheDocument();
+    // Left side is grade 3
     expect(screen.getByText("L 3")).toBeInTheDocument();
-    expect(screen.getByText("R 4")).toBeInTheDocument();
   });
 
-  it("shows coaching priority with chain names", () => {
-    const progress: SwimmerProgressResponse = {
-      ...emptyProgress,
-      coachingPriorities: [
-        {
-          targetSlug: "freestyle-stroke",
-          targetName: "Freestyle Stroke",
-          chain: [
-            { slug: "freestyle-stroke", name: "Freestyle Stroke", notAssessed: false },
-            { slug: "core-stability", name: "Core Stability", notAssessed: true },
-          ],
-        },
-      ],
-    };
-    render(
+  it("renders fault-tag frequency entries (coach only)", () => {
+    renderPage({ progress, scoreHistory, golfScore });
+    expect(screen.getByText("dropped elbow")).toBeInTheDocument();
+    expect(screen.getByText("breaks down 2nd length")).toBeInTheDocument();
+  });
+
+  it("evaluate deep links use ?skill=<slug>", () => {
+    renderPage({ progress, scoreHistory, golfScore });
+    const priorityLink = screen.getAllByRole("link", { name: "Pull" })[0]!;
+    expect(priorityLink).toHaveAttribute(
+      "href",
+      `/coach/swimmers/${SWIMMER_ID}/evaluate?skill=free-pull`,
+    );
+    // Chain name links too
+    const catchLink = screen.getByRole("link", { name: "Catch" });
+    expect(catchLink).toHaveAttribute(
+      "href",
+      `/coach/swimmers/${SWIMMER_ID}/evaluate?skill=free-catch`,
+    );
+    // The skill row name itself is also a link to the deep eval
+    const skillLink = screen.getByRole("link", { name: "Freestyle Kick" });
+    expect(skillLink).toHaveAttribute(
+      "href",
+      `/coach/swimmers/${SWIMMER_ID}/evaluate?skill=free-kick`,
+    );
+  });
+
+  it("Evaluate top button links to the plain evaluate route", () => {
+    renderPage({ progress, scoreHistory, golfScore });
+    const btn = screen.getByRole("link", { name: /^evaluate$/i });
+    expect(btn).toHaveAttribute("href", `/coach/swimmers/${SWIMMER_ID}/evaluate`);
+  });
+
+  it("priority chain entries flagged notAssessed get a '(check this)' hint", () => {
+    renderPage({ progress, scoreHistory, golfScore });
+    expect(screen.getByText(/finger spacing \(check this\)/i)).toBeInTheDocument();
+  });
+
+  it("renders deterministically (hydration-safe): HTML identical across two renders with same props, modulo React useId counters", () => {
+    // useId generates incremented identifiers (_r_0_, _r_1_, …) across renders
+    // in the same jsdom test, which is irrelevant to hydration (React 19
+    // serializes a stable server identifier). Everything else — chart text,
+    // dates, aria labels, order — must be byte-identical, or SSR vs.
+    // hydration can mismatch.
+    const normalizeIds = (html: string): string => html.replace(/_r_[^_]+_/g, "_r_X_");
+
+    const { container: firstContainer, unmount } = render(
       <SwimmerProgressContent
         swimmer={swimmer}
         progress={progress}
-        categories={categories}
+        categories={emptyCategories}
+        scoreHistory={scoreHistory}
+        golfScore={golfScore}
+        nowIso={NOW_ISO}
       />,
     );
-    expect(screen.getByText(/what to work on next/i)).toBeInTheDocument();
-    expect(screen.getAllByText("Freestyle Stroke").length).toBeGreaterThan(0);
-    expect(screen.getByText(/not assessed yet/i)).toBeInTheDocument();
+    const firstHtml = normalizeIds(firstContainer.innerHTML);
+    unmount();
+
+    const { container: secondContainer } = render(
+      <SwimmerProgressContent
+        swimmer={swimmer}
+        progress={progress}
+        categories={emptyCategories}
+        scoreHistory={scoreHistory}
+        golfScore={golfScore}
+        nowIso={NOW_ISO}
+      />,
+    );
+    expect(normalizeIds(secondContainer.innerHTML)).toBe(firstHtml);
+  });
+
+  it("groups skills under their category in the Skills column", () => {
+    renderPage({
+      progress,
+      scoreHistory,
+      golfScore,
+      categories: [
+        { id: FREE_CAT_ID, slug: "freestyle", name: "Freestyle", sortOrder: 3, skills: [] },
+        { id: BREATH_CAT_ID, slug: "breathing", name: "Breathing", sortOrder: 2, skills: [] },
+      ],
+    });
+    // Both categories appear as disclosure headers in the Skills column
+    const skillsHeading = screen.getByRole("heading", { name: /^skills$/i });
+    const skillsSection = skillsHeading.parentElement as HTMLElement;
+    expect(within(skillsSection).getByText("Freestyle")).toBeInTheDocument();
+    expect(within(skillsSection).getByText("Breathing")).toBeInTheDocument();
   });
 });
