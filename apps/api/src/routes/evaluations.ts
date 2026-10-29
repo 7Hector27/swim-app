@@ -366,6 +366,7 @@ evaluationsRouter.get(
         side: skillRatings.side,
         ratedAt: skillRatings.ratedAt,
         voidedAt: skillRatings.voidedAt,
+        supersededAt: skillRatings.supersededAt,
         skillId: skillRatings.skillId,
         parentSkillId: skills.parentSkillId,
         skillType: skills.type,
@@ -384,6 +385,7 @@ evaluationsRouter.get(
       noConcept: row.noConcept,
       ratedAt: row.ratedAt.toISOString(),
       voidedAt: row.voidedAt?.toISOString() ?? null,
+      supersededAt: row.supersededAt?.toISOString() ?? null,
     }));
 
     const grades: GradeMap = latestEffectiveRatings(ratingRecords);
@@ -604,6 +606,7 @@ evaluationsRouter.get(
         side: skillRatings.side,
         ratedAt: skillRatings.ratedAt,
         voidedAt: skillRatings.voidedAt,
+        supersededAt: skillRatings.supersededAt,
         sortOrder: skills.sortOrder,
       })
       .from(skillRatings)
@@ -618,6 +621,7 @@ evaluationsRouter.get(
       noConcept: row.noConcept,
       ratedAt: row.ratedAt.toISOString(),
       voidedAt: row.voidedAt?.toISOString() ?? null,
+      supersededAt: row.supersededAt?.toISOString() ?? null,
     }));
 
     const grades: GradeMap = latestEffectiveRatings(ratingRecords);

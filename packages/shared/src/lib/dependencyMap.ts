@@ -32,6 +32,10 @@ export const RatingRecordSchema = z
     noConcept: z.boolean(),
     ratedAt: z.string(),
     voidedAt: z.string().nullable(),
+    // Set on predecessor rows when a correction row supersedes them. The
+    // filter in latestEffectiveRatings drops any row with this field set,
+    // the same way voided rows are dropped. ADR 032.
+    supersededAt: z.string().nullable(),
   })
   .superRefine((val, ctx) => {
     // grade 1–5 when noConcept is false; grade null when noConcept is true.
@@ -111,10 +115,13 @@ export function headPositionOverall(
   return Math.max(1, Math.floor(sum / count)) as 1 | 2 | 3 | 4 | 5;
 }
 
-// Returns the latest non-voided grade per skill (or per skill+side for sided skills)
-// from a swimmer's rating history. The key is `skillSlug` for non-sided skills and
-// `skillSlug:side` for side-rated skills. notLegal and noConcept flags take precedence
-// over the numeric grade field. Skills where every rating has been voided are absent.
+// Returns the latest non-voided, non-superseded grade per skill (or per
+// skill+side for sided skills) from a swimmer's rating history. The key is
+// `skillSlug` for non-sided skills and `skillSlug:side` for side-rated skills.
+// notLegal and noConcept flags take precedence over the numeric grade field.
+// Skills where every rating has been voided or superseded are absent.
+// Superseded predecessors drop out exactly the same way voids do (ADR 032):
+// the correction row is the one that counts.
 export function latestEffectiveRatings(history: RatingRecord[]): GradeMap {
   const byKey = new Map<string, RatingRecord[]>();
   for (const record of history) {
@@ -132,7 +139,9 @@ export function latestEffectiveRatings(history: RatingRecord[]): GradeMap {
     const sorted = [...records].sort(
       (recordA, recordB) => Date.parse(recordB.ratedAt) - Date.parse(recordA.ratedAt),
     );
-    const latest = sorted.find((record) => record.voidedAt === null);
+    const latest = sorted.find(
+      (record) => record.voidedAt === null && record.supersededAt === null,
+    );
     if (latest === undefined) continue;
     if (latest.notLegal) {
       result[key] = "not_legal";

@@ -459,6 +459,126 @@ export const ScoreHistoryResponseSchema = z.object({
 });
 export type ScoreHistoryResponse = z.infer<typeof ScoreHistoryResponseSchema>;
 
+// ── Session edit (ADR 032) ─────────────────────────────────────────────────
+// GET /coach/sessions/:id and PATCH /coach/sessions/:id live under the coach
+// router. GET returns the current effective state of a session (non-voided,
+// non-superseded ratings only). PATCH diffs the submitted state against that
+// and writes supersede rows for changed ratings plus one in-place UPDATE for
+// changed session metadata, all in a single transaction with one audit log
+// row recording previous and new values per changed field.
+
+// Rating body for PATCH: references the current effective rating by its id
+// (never the predecessor's id). All fields that could be changed are present.
+// Re-runs the same per-rating validators as the create flow so there is one
+// source of truth for grade / notLegal / noConcept / measurement pairs.
+const PatchSessionRatingBodySchemaBase = z.object({
+  ratingId: z.string().uuid(),
+  grade: z.number().int().min(1).max(5).nullable(),
+  notLegal: z.boolean(),
+  noConcept: z.boolean(),
+  side: RatingSideSchema.nullable(),
+  capacityValue: z.string().nullable(),
+  capacityUnit: CapacityUnitSchema.nullable(),
+  measurementValue: z.string().nullable(),
+  measurementUnit: MeasurementUnitSchema.nullable(),
+  golfScoreCategory: GolfScoreCategorySchema.nullable().optional().default(null),
+  note: z.string().nullable(),
+  faultTags: z.array(z.string()),
+});
+
+export const PatchSessionRatingBodySchema = PatchSessionRatingBodySchemaBase.superRefine((val, ctx) => {
+  const gradeValid =
+    (!val.noConcept && val.grade !== null) ||
+    (val.noConcept && val.grade === null);
+  if (!gradeValid) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "grade must be 1-5 when noConcept is false; grade must be null when noConcept is true",
+      path: ["grade"],
+    });
+  }
+  if (val.notLegal && val.grade === null) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "notLegal requires a non-null grade",
+      path: ["notLegal"],
+    });
+  }
+  if ((val.capacityValue === null) !== (val.capacityUnit === null)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "capacityValue and capacityUnit must both be present or both be absent",
+      path: ["capacityValue"],
+    });
+  }
+  if ((val.measurementValue === null) !== (val.measurementUnit === null)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "measurementValue and measurementUnit must both be present or both be absent",
+      path: ["measurementValue"],
+    });
+  }
+});
+export type PatchSessionRatingBody = z.infer<typeof PatchSessionRatingBodySchema>;
+
+export const PatchSessionBodySchema = z.object({
+  sessionDate: z.string().date(),
+  context: EvaluationContextSchema,
+  // Empty string normalizes to null at the API boundary. Null is the "no
+  // priority" state; empty is never meaningful (matches ADR 022 + 0061).
+  coachingPriority: z.string().min(1).nullable(),
+  breathingPattern: BreathingPatternSchema.nullable(),
+  ratings: z.array(PatchSessionRatingBodySchema),
+});
+export type PatchSessionBody = z.infer<typeof PatchSessionBodySchema>;
+
+export const PatchSessionResponseSchema = z.object({
+  sessionId: z.string().uuid(),
+  writeCount: z.number().int().nonnegative(),
+});
+export type PatchSessionResponse = z.infer<typeof PatchSessionResponseSchema>;
+
+export const GetSessionRatingSchema = z.object({
+  // Current effective rating id. When the rating has never been corrected
+  // this equals rootRatingId; after a correction, it's the leaf.
+  ratingId: z.string().uuid(),
+  rootRatingId: z.string().uuid(),
+  skillId: z.string().uuid(),
+  slug: z.string(),
+  grade: z.number().int().min(1).max(5).nullable(),
+  notLegal: z.boolean(),
+  noConcept: z.boolean(),
+  side: RatingSideSchema.nullable(),
+  capacityValue: z.string().nullable(),
+  capacityUnit: CapacityUnitSchema.nullable(),
+  measurementValue: z.string().nullable(),
+  measurementUnit: MeasurementUnitSchema.nullable(),
+  golfScoreCategory: GolfScoreCategorySchema.nullable(),
+  note: z.string().nullable(),
+  faultTags: z.array(z.string()),
+  // Preserved observation time; equals the original rated_at even on
+  // correction rows.
+  ratedAt: z.string().datetime({ offset: true }),
+  // True when this is a correction leaf (supersedes_rating_id IS NOT NULL).
+  edited: z.boolean(),
+});
+export type GetSessionRating = z.infer<typeof GetSessionRatingSchema>;
+
+export const GetSessionResponseSchema = z.object({
+  sessionId: z.string().uuid(),
+  screenSlug: z.string(),
+  swimmerId: z.string().uuid(),
+  categoryId: z.string().uuid().nullable(),
+  sessionDate: z.string().date(),
+  context: EvaluationContextSchema,
+  coachingPriority: z.string().nullable(),
+  breathingPattern: BreathingPatternSchema.nullable(),
+  edited: z.boolean(),
+  editedAt: z.string().datetime({ offset: true }).nullable(),
+  ratings: z.array(GetSessionRatingSchema),
+});
+export type GetSessionResponse = z.infer<typeof GetSessionResponseSchema>;
+
 // Parent-facing progress schemas — no fault tags
 export const ParentProgressRatingPointSchema = ProgressRatingPointSchema.omit({ faultTags: true });
 export type ParentProgressRatingPoint = z.infer<typeof ParentProgressRatingPointSchema>;

@@ -460,6 +460,11 @@ export type {
   ScoreHistoryStart,
   ScoreHistoryPoint,
   ScoreHistoryResponse,
+  GetSessionRating,
+  GetSessionResponse,
+  PatchSessionRatingBody,
+  PatchSessionBody,
+  PatchSessionResponse,
 } from "./schemas/evaluations";
 export {
   EvaluationContextSchema,
@@ -497,6 +502,11 @@ export {
   ScoreHistoryStartSchema,
   ScoreHistoryPointSchema,
   ScoreHistoryResponseSchema,
+  GetSessionRatingSchema,
+  GetSessionResponseSchema,
+  PatchSessionRatingBodySchema,
+  PatchSessionBodySchema,
+  PatchSessionResponseSchema,
 } from "./schemas/evaluations";
 export type {
   SkillCurrentLevel,

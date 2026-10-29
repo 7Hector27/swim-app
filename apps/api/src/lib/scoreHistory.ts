@@ -52,6 +52,7 @@ type FullRow = {
   side: "left" | "right" | null;
   ratedAt: Date;
   voidedAt: Date | null;
+  supersededAt: Date | null;
   sessionDate: string;
 };
 
@@ -64,6 +65,7 @@ function rowToRecord(row: FullRow): RatingRecord {
     noConcept: row.noConcept,
     ratedAt: row.ratedAt.toISOString(),
     voidedAt: row.voidedAt?.toISOString() ?? null,
+    supersededAt: row.supersededAt?.toISOString() ?? null,
   };
 }
 
@@ -83,6 +85,7 @@ export async function computeScoreHistory(swimmerId: string): Promise<ScoreHisto
       side: skillRatings.side,
       ratedAt: skillRatings.ratedAt,
       voidedAt: skillRatings.voidedAt,
+      supersededAt: skillRatings.supersededAt,
       sessionDate: evaluationSessions.sessionDate,
     })
     .from(skillRatings)

@@ -58,7 +58,9 @@ export async function computeSwimmerProgress(
   options: { audience?: "coach" | "parent" } = {},
 ): Promise<SwimmerProgressResponse> {
   const audience = options.audience ?? "coach";
-  // Query A: all ratings (including voided) for computation
+  // Query A: all ratings (including voided and superseded) for computation.
+  // latestEffectiveRatings drops both voided and superseded rows at the same
+  // filter step (ADR 032); we fetch everything and let the filter decide.
   const allRatingRows = await db
     .select({
       slug: skills.slug,
@@ -68,6 +70,7 @@ export async function computeSwimmerProgress(
       side: skillRatings.side,
       ratedAt: skillRatings.ratedAt,
       voidedAt: skillRatings.voidedAt,
+      supersededAt: skillRatings.supersededAt,
       skillId: skillRatings.skillId,
       sortOrder: skills.sortOrder,
     })
@@ -83,6 +86,7 @@ export async function computeSwimmerProgress(
     noConcept: row.noConcept,
     ratedAt: row.ratedAt.toISOString(),
     voidedAt: row.voidedAt?.toISOString() ?? null,
+    supersededAt: row.supersededAt?.toISOString() ?? null,
   }));
 
   const grades: GradeMap = latestEffectiveRatings(allRatingRecords);
