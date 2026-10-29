@@ -16,6 +16,7 @@ import { validate } from "../middleware/validate";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { isActiveSwimmer } from "../db/queries";
 import { computeSwimmerProgress } from "../lib/progressCalculation";
+import { computeScoreHistory } from "../lib/scoreHistory";
 import {
   type CreateSessionBody,
   type CreateSessionResponse,
@@ -694,6 +695,26 @@ evaluationsRouter.get(
 
     const result = await computeSwimmerProgress(swimmerId);
     req.log.info({ swimmerId, skillCount: result.skills.length }, "swimmer progress fetched");
+    res.json(result);
+  }),
+);
+
+// ── GET /swimmers/:id/score-history ───────────────────────────────────────────
+
+evaluationsRouter.get(
+  "/:id/score-history",
+  validate({ params: SwimmerIdParamsSchema }),
+  asyncHandler(async (req, res) => {
+    const { id: swimmerId } = req.params as unknown as SwimmerIdParams;
+
+    const swimmer = await findActiveSwimmer(swimmerId);
+    if (!swimmer) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+
+    const result = await computeScoreHistory(swimmerId);
+    req.log.info({ swimmerId, pointCount: result.points.length }, "swimmer score history fetched");
     res.json(result);
   }),
 );

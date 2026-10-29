@@ -421,6 +421,44 @@ export const GolfScoreTrendsResponseSchema = z.object({
 });
 export type GolfScoreTrendsResponse = z.infer<typeof GolfScoreTrendsResponseSchema>;
 
+// ── Score history ─────────────────────────────────────────────────────────────
+// Server-side computeAsOf: one point per non-voided session date, each carrying
+// head-position overall (2.4), per-category rollups (2.5), and start-grade
+// progression (2.7) computed from the ratings known as of that date.
+
+export const ScoreHistoryCategoryRollupSchema = z.object({
+  categoryId: z.string().uuid(),
+  categorySlug: z.string(),
+  categoryName: z.string(),
+  // Mean of effective 1–5 grades across the category's non-archived skills,
+  // with no_concept excluded from the denominator and not_legal counting as 0.
+  // null when nothing in the category is assessed yet.
+  average: z.number().nullable(),
+  assessedCount: z.number().int().nonnegative(),
+  totalCount: z.number().int().nonnegative(),
+});
+export type ScoreHistoryCategoryRollup = z.infer<typeof ScoreHistoryCategoryRollupSchema>;
+
+export const ScoreHistoryStartSchema = z.object({
+  slug: z.string(),
+  name: z.string(),
+  grade: StartGradeResultSchema,
+});
+export type ScoreHistoryStart = z.infer<typeof ScoreHistoryStartSchema>;
+
+export const ScoreHistoryPointSchema = z.object({
+  sessionDate: z.string().date(),
+  headPositionOverall: z.number().int().min(1).max(5).nullable(),
+  categoryRollups: z.array(ScoreHistoryCategoryRollupSchema),
+  starts: z.array(ScoreHistoryStartSchema),
+});
+export type ScoreHistoryPoint = z.infer<typeof ScoreHistoryPointSchema>;
+
+export const ScoreHistoryResponseSchema = z.object({
+  points: z.array(ScoreHistoryPointSchema),
+});
+export type ScoreHistoryResponse = z.infer<typeof ScoreHistoryResponseSchema>;
+
 // Parent-facing progress schemas — no fault tags
 export const ParentProgressRatingPointSchema = ProgressRatingPointSchema.omit({ faultTags: true });
 export type ParentProgressRatingPoint = z.infer<typeof ParentProgressRatingPointSchema>;

@@ -456,6 +456,10 @@ export type {
   GolfScoreCategoryTrend,
   GolfScoreTrend,
   GolfScoreTrendsResponse,
+  ScoreHistoryCategoryRollup,
+  ScoreHistoryStart,
+  ScoreHistoryPoint,
+  ScoreHistoryResponse,
 } from "./schemas/evaluations";
 export {
   EvaluationContextSchema,
@@ -489,6 +493,10 @@ export {
   GolfScoreCategoryTrendSchema,
   GolfScoreTrendSchema,
   GolfScoreTrendsResponseSchema,
+  ScoreHistoryCategoryRollupSchema,
+  ScoreHistoryStartSchema,
+  ScoreHistoryPointSchema,
+  ScoreHistoryResponseSchema,
 } from "./schemas/evaluations";
 export type {
   SkillCurrentLevel,
