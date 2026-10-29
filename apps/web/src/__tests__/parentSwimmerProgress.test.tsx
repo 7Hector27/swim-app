@@ -46,6 +46,7 @@ const emptyScoreHistory: ScoreHistoryResponse = {
   recentChanges: [],
   milestones: [],
   faultTrends: [],
+  measurements: [],
 };
 
 describe("ParentSwimmerProgressContent", () => {
@@ -323,6 +324,7 @@ describe("ParentSwimmerProgressContent — charts", () => {
       recentChanges: [],
       milestones: [],
       faultTrends: [],
+      measurements: [],
     };
   }
 

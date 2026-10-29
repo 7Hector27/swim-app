@@ -648,11 +648,75 @@ describe("GET /coach/swimmers/:id/score-history", () => {
     }
   });
 
-  it("milestones are empty for a swimmer with no ratings or meet swims", async () => {
+  it("measurements series carry per-skill values in order with higher/lower-better direction", async () => {
+    const swimmerId = await createTestSwimmer();
+    try {
+      const tempoRows = await adminDb()
+        .select({ id: skills.id })
+        .from(skills)
+        .where(eq(skills.slug, "free-tempo"))
+        .limit(1);
+      if (!tempoRows[0]) throw new Error("free-tempo missing — run pnpm db:sync-catalog");
+      const freeTempoSkillId = tempoRows[0].id;
+
+      // Two rated tempos on two dates — ascending time series, higher = better.
+      await postSession(coach, swimmerId, "freestyle", "2026-10-01", [
+        {
+          skillId: freeTempoSkillId,
+          grade: 3,
+          notLegal: false,
+          noConcept: false,
+          side: null,
+          capacityValue: null,
+          capacityUnit: null,
+          measurementValue: "48",
+          measurementUnit: "stroke_cycles_per_minute",
+          note: null,
+          faultTags: [],
+          ratedAt: "2026-10-01T10:00:00.000Z",
+        },
+      ]);
+      await postSession(coach, swimmerId, "freestyle", "2026-10-10", [
+        {
+          skillId: freeTempoSkillId,
+          grade: 4,
+          notLegal: false,
+          noConcept: false,
+          side: null,
+          capacityValue: null,
+          capacityUnit: null,
+          measurementValue: "54",
+          measurementUnit: "stroke_cycles_per_minute",
+          note: null,
+          faultTags: [],
+          ratedAt: "2026-10-10T10:00:00.000Z",
+        },
+      ]);
+
+      const history = await getScoreHistory(coach, swimmerId);
+      const tempo = history.measurements.find((series) => series.skillSlug === "free-tempo");
+      expect(tempo).toBeDefined();
+      expect(tempo!.unit).toBe("stroke_cycles_per_minute");
+      expect(tempo!.direction).toBe("higher_better");
+      expect(tempo!.points.map((point) => ({ date: point.sessionDate, value: point.value }))).toEqual([
+        { date: "2026-10-01", value: 48 },
+        { date: "2026-10-10", value: 54 },
+      ]);
+    } finally {
+      await cleanSwimmerData(swimmerId);
+      await hardDeleteSwimmer(swimmerId);
+    }
+  });
+
+  it("milestones, measurements, recentChanges and faultTrends are all empty for a swimmer with no ratings or meet swims", async () => {
     const swimmerId = await createTestSwimmer();
     try {
       const history = await getScoreHistory(coach, swimmerId);
       expect(history.milestones).toEqual([]);
+      expect(history.measurements).toEqual([]);
+      expect(history.recentChanges).toEqual([]);
+      expect(history.faultTrends).toEqual([]);
+      expect(history.points).toEqual([]);
     } finally {
       await hardDeleteSwimmer(swimmerId);
     }

@@ -596,6 +596,28 @@ export const ScoreHistoryFaultTrendSchema = z.object({
 });
 export type ScoreHistoryFaultTrend = z.infer<typeof ScoreHistoryFaultTrendSchema>;
 
+// Per-skill measurement series. One entry per (skill, unit) pair the swimmer
+// has non-voided measurement values for; split by unit so a coach who changed
+// unit mid-history gets two cleanly separated lines rather than a smoothed
+// mix. Direction lets the chart orient its "better" axis without hardcoding
+// per-unit rules in the UI.
+export const ScoreHistoryMeasurementPointSchema = z.object({
+  sessionDate: z.string().date(),
+  sessionId: z.string().uuid(),
+  value: z.number(),
+});
+export type ScoreHistoryMeasurementPoint = z.infer<typeof ScoreHistoryMeasurementPointSchema>;
+
+export const ScoreHistoryMeasurementSeriesSchema = z.object({
+  skillSlug: z.string(),
+  skillName: z.string(),
+  unit: MeasurementUnitSchema,
+  direction: z.enum(["higher_better", "lower_better"]),
+  // Ascending by sessionDate.
+  points: z.array(ScoreHistoryMeasurementPointSchema),
+});
+export type ScoreHistoryMeasurementSeries = z.infer<typeof ScoreHistoryMeasurementSeriesSchema>;
+
 export const ScoreHistoryResponseSchema = z.object({
   points: z.array(ScoreHistoryPointSchema),
   // Newest first, capped at the 20 most recent effective-grade transitions.
@@ -604,6 +626,8 @@ export const ScoreHistoryResponseSchema = z.object({
   milestones: z.array(ScoreHistoryMilestoneSchema),
   // Coach-only. Parent route returns [].
   faultTrends: z.array(ScoreHistoryFaultTrendSchema),
+  // One series per (skill, unit) with at least one measured rating.
+  measurements: z.array(ScoreHistoryMeasurementSeriesSchema),
 });
 export type ScoreHistoryResponse = z.infer<typeof ScoreHistoryResponseSchema>;
 

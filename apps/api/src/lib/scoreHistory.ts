@@ -26,9 +26,22 @@ import {
   type ScoreHistoryLevelCounts,
   type ScoreHistoryMilestone,
   type ScoreHistoryFaultTrend,
+  type ScoreHistoryMeasurementSeries,
   type ScoreHistoryRecentChange,
+  type MeasurementUnit,
   type SkillGrade,
 } from "@swim-app/shared";
+
+// Direction mapping per measurement unit. stroke_count and seconds reward
+// lower values (less drag, faster swim); stroke_cycles_per_minute and feet
+// reward higher values (tempo, distance). Centralized here so a UI chart can
+// read the direction off the response rather than hardcoding its own table.
+const MEASUREMENT_DIRECTION: Record<MeasurementUnit, "higher_better" | "lower_better"> = {
+  stroke_cycles_per_minute: "higher_better",
+  stroke_count: "lower_better",
+  seconds: "lower_better",
+  feet: "higher_better",
+};
 
 export type ComputeScoreHistoryOptions = {
   // When true, the response includes the coach-only fault-trend series.
@@ -603,7 +616,64 @@ export async function computeScoreHistory(
     faultTrends.sort((trendA, trendB) => trendA.faultTag.localeCompare(trendB.faultTag));
   }
 
-  return { points, recentChanges, milestones, faultTrends };
+  // Measurement series: for every (skill, unit) with at least one live rating
+  // that carries a non-null measurementValue, emit an ascending time series.
+  // Splitting by unit means a coach who changed unit mid-history gets two
+  // cleanly separated lines rather than a smoothed mix of incompatible scales.
+  const measurementRows = await db
+    .select({
+      skillSlug: skills.slug,
+      skillName: skills.name,
+      measurementValue: skillRatings.measurementValue,
+      measurementUnit: skillRatings.measurementUnit,
+      sessionId: skillRatings.sessionId,
+      sessionDate: evaluationSessions.sessionDate,
+      ratedAt: skillRatings.ratedAt,
+    })
+    .from(skillRatings)
+    .innerJoin(skills, eq(skills.id, skillRatings.skillId))
+    .innerJoin(evaluationSessions, eq(evaluationSessions.id, skillRatings.sessionId))
+    .where(
+      and(
+        eq(skillRatings.swimmerId, swimmerId),
+        isNull(skillRatings.voidedAt),
+        isNull(skillRatings.supersededAt),
+      ),
+    );
+
+  const measurementSeriesByKey = new Map<string, ScoreHistoryMeasurementSeries>();
+  for (const row of measurementRows) {
+    if (row.measurementValue === null || row.measurementUnit === null) continue;
+    const unit = row.measurementUnit as MeasurementUnit;
+    const key = `${row.skillSlug}|${unit}`;
+    const parsed = Number(row.measurementValue);
+    if (!Number.isFinite(parsed)) continue;
+    const existing = measurementSeriesByKey.get(key);
+    const point = { sessionDate: row.sessionDate, sessionId: row.sessionId, value: parsed };
+    if (existing) {
+      existing.points.push(point);
+    } else {
+      measurementSeriesByKey.set(key, {
+        skillSlug: row.skillSlug,
+        skillName: row.skillName,
+        unit,
+        direction: MEASUREMENT_DIRECTION[unit],
+        points: [point],
+      });
+    }
+  }
+  const measurements = [...measurementSeriesByKey.values()];
+  for (const series of measurements) {
+    series.points.sort((pointA, pointB) =>
+      pointA.sessionDate < pointB.sessionDate ? -1 : pointA.sessionDate > pointB.sessionDate ? 1 : 0,
+    );
+  }
+  measurements.sort((seriesA, seriesB) => {
+    if (seriesA.skillSlug !== seriesB.skillSlug) return seriesA.skillSlug.localeCompare(seriesB.skillSlug);
+    return seriesA.unit.localeCompare(seriesB.unit);
+  });
+
+  return { points, recentChanges, milestones, faultTrends, measurements };
 }
 
 function rowToSkillGrade(row: FullRow): SkillGrade {

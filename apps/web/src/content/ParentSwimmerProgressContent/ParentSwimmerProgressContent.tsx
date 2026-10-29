@@ -37,6 +37,7 @@ const EMPTY_SCORE_HISTORY: ScoreHistoryResponse = {
   recentChanges: [],
   milestones: [],
   faultTrends: [],
+  measurements: [],
 };
 
 function startGradeIsDanger(result: StartGradeResult): boolean {

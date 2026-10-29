@@ -48,6 +48,7 @@ const emptyScoreHistory: ScoreHistoryResponse = {
   recentChanges: [],
   milestones: [],
   faultTrends: [],
+  measurements: [],
 };
 
 // Backfill the progression fields that every ScoreHistoryPoint now carries.
@@ -223,6 +224,7 @@ describe("SwimmerProgressContent — one-evaluation state", () => {
       recentChanges: [],
       milestones: [],
       faultTrends: [],
+      measurements: [],
     };
     renderPage({ progress, scoreHistory });
     expect(screen.getAllByText(/head position overall/i).length).toBeGreaterThan(0);
@@ -323,6 +325,7 @@ describe("SwimmerProgressContent — sections", () => {
     recentChanges: [],
     milestones: [],
     faultTrends: [],
+    measurements: [],
   };
   const golfScore: GolfScoreTrendsResponse = {
     trends: [
@@ -511,6 +514,7 @@ describe("SwimmerProgressContent — Edit affordances (ADR 032)", () => {
     recentChanges: [],
     milestones: [],
     faultTrends: [],
+    measurements: [],
   };
 
   it("hero chart renders an Edit link for the selected point with a sanitized returnTo", () => {
