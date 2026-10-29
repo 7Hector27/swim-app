@@ -1,6 +1,6 @@
 "use client";
 
-import type { SkillForRating, StartGradeResult, RatingRecord } from "@swim-app/shared";
+import type { SkillForRating, StartGradeResult, RatingRecord, SwimmerSkillsResponse } from "@swim-app/shared";
 import { calculateStartGrade } from "@swim-app/shared";
 import type { SkillDraft } from "./helpers";
 import SkillGradeRow from "./SkillGradeRow";
@@ -29,7 +29,7 @@ function StartGradePill({ result }: StartGradePillProps) {
   if (result.status === "not_legal") {
     return (
       <span className="text-xs px-2 py-0.5 rounded border font-bold" style={{ borderColor: "var(--color-danger)", color: "var(--color-danger)" }}>
-        DQ
+        Not legal
       </span>
     );
   }
@@ -46,9 +46,10 @@ interface StartGroupSectionProps {
   components: SkillForRating[];
   draftSkills: Record<string, SkillDraft>;
   onChange: (key: string, patch: Partial<SkillDraft>) => void;
+  prevGrades?: SwimmerSkillsResponse["grades"];
 }
 
-export default function StartGroupSection({ parent, components, draftSkills, onChange }: StartGroupSectionProps) {
+export default function StartGroupSection({ parent, components, draftSkills, onChange, prevGrades }: StartGroupSectionProps) {
   // Build RatingRecords from current draft for the component skills
   const ratingRecords: RatingRecord[] = [];
   for (const skill of components) {
@@ -99,6 +100,8 @@ export default function StartGroupSection({ parent, components, draftSkills, onC
       <div className="flex flex-col gap-3 pl-4 border-l" style={{ borderColor: "var(--color-border)" }}>
         {components.map((skill) => {
           if (skill.ratedPerSide) {
+            const prevLeft = prevGrades?.[`${skill.slug}:left`];
+            const prevRight = prevGrades?.[`${skill.slug}:right`];
             return (
               <SideRatedRowPair
                 key={skill.id}
@@ -106,9 +109,12 @@ export default function StartGroupSection({ parent, components, draftSkills, onC
                 leftDraft={draftSkills[`${skill.id}:left`] ?? defaultSkillDraft()}
                 rightDraft={draftSkills[`${skill.id}:right`] ?? defaultSkillDraft()}
                 onChange={onChange}
+                {...(prevLeft !== undefined && { prevGradeLeft: prevLeft })}
+                {...(prevRight !== undefined && { prevGradeRight: prevRight })}
               />
             );
           }
+          const prev = prevGrades?.[skill.slug];
           return (
             <SkillGradeRow
               key={skill.id}
@@ -117,6 +123,7 @@ export default function StartGroupSection({ parent, components, draftSkills, onC
               label={skill.name}
               draft={draftSkills[skill.id] ?? defaultSkillDraft()}
               onChange={onChange}
+              {...(prev !== undefined && { prevGrade: prev })}
             />
           );
         })}

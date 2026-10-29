@@ -1,9 +1,10 @@
 "use client";
 
-import type { SkillForRating } from "@swim-app/shared";
+import type { SkillForRating, SwimmerSkillsResponse } from "@swim-app/shared";
 import type { EvaluateFieldIssue, SkillDraft } from "./helpers";
 import GradeSelector from "./GradeSelector";
 import DetailsPanel from "./DetailsPanel";
+import PrevBadge from "./PrevBadge";
 
 interface SkillGradeRowProps {
   skill: SkillForRating;
@@ -12,9 +13,12 @@ interface SkillGradeRowProps {
   draft: SkillDraft;
   onChange: (key: string, patch: Partial<SkillDraft>) => void;
   issues?: EvaluateFieldIssue[];
+  // Latest saved grade for this skill (and side, for per-side skills). Fed
+  // from SwimmerSkillsResponse["grades"] on the server page.
+  prevGrade?: SwimmerSkillsResponse["grades"][string];
 }
 
-export default function SkillGradeRow({ skill, draftKey, label, draft, onChange, issues = [] }: SkillGradeRowProps) {
+export default function SkillGradeRow({ skill, draftKey, label, draft, onChange, issues = [], prevGrade }: SkillGradeRowProps) {
   const gradeIssue = issues.find((issue) => issue.field === "grade");
   const notLegalIssue = issues.find((issue) => issue.field === "notLegal");
   const detailsPanelIssues = issues.filter(
@@ -24,19 +28,22 @@ export default function SkillGradeRow({ skill, draftKey, label, draft, onChange,
   return (
     <fieldset
       id={`skill-${draftKey}`}
-      className={`flex flex-col gap-3 p-3 rounded border ${draft.notLegal ? "border-l-[3px]" : ""}`}
+      className={`flex flex-col gap-3 p-4 rounded-lg border ${draft.notLegal ? "border-l-[3px]" : ""}`}
       style={{
         borderColor: draft.notLegal ? "var(--color-danger)" : "var(--color-border)",
       }}
     >
-      <legend className="font-semibold text-sm px-1" style={{ color: "var(--color-text)" }}>
-        {label}
+      <legend className="flex items-center gap-2 flex-wrap px-1">
+        <span className="font-semibold text-sm" style={{ color: "var(--color-text)" }}>
+          {label}
+        </span>
+        <PrevBadge value={prevGrade} />
         {draft.notLegal && (
           <span
-            className="ml-2 text-xs font-bold px-1.5 py-0.5 rounded"
+            className="text-xs font-bold px-1.5 py-0.5 rounded"
             style={{ color: "var(--color-danger)", backgroundColor: "transparent", border: "1px solid var(--color-danger)" }}
           >
-            DQ
+            Not legal
           </span>
         )}
       </legend>

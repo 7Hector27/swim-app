@@ -69,6 +69,18 @@
   .pb-tab-safe {
     padding-bottom: calc(3.35rem + env(safe-area-inset-bottom, 0px));
   }
+
+  /* Hide the native scrollbar chrome while keeping the element fully
+     scrollable by touch, trackpad, mouse wheel, and keyboard. Reusable
+     across any horizontal tab row or chip strip that would otherwise show
+     a stub scrollbar on desktop. */
+  .scrollbar-none {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
 }
 
 /* FAQ ::details-content — progressive enhancement for browsers that support it */

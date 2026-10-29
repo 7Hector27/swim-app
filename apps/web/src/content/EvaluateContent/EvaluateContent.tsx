@@ -6,6 +6,7 @@ import type {
   EvaluationDraft,
   ScreensResponse,
   SkillForRating,
+  SwimmerSkillsResponse,
 } from "@swim-app/shared";
 import { calculateBilateralBreathingGrade } from "@swim-app/shared";
 import AddNoteForm from "@/components/AddNoteForm";
@@ -30,16 +31,17 @@ import StartGroupSection from "./StartGroupSection";
 import SkillGradeRow from "./SkillGradeRow";
 import SideRatedRowPair from "./SideRatedRowPair";
 import CalculatedSkillRow from "./CalculatedSkillRow";
-import EvalSectionHeader from "./EvalSectionHeader";
+import SectionTabs from "./SectionTabs";
 import UndoToast from "./UndoToast";
 
 interface EvaluateContentProps {
   swimmer: CoachSwimmerDetail;
   screens: ScreensResponse;
+  prevGrades: SwimmerSkillsResponse["grades"];
   resumeDraft?: EvaluationDraft;
 }
 
-export default function EvaluateContent({ swimmer, screens, resumeDraft }: EvaluateContentProps) {
+export default function EvaluateContent({ swimmer, screens, prevGrades, resumeDraft }: EvaluateContentProps) {
   const metaKey = useMemo(() => `evaluate-draft-meta-${swimmer.id}`, [swimmer.id]);
   const skillsKey = useCallback((slug: string) => `evaluate-draft-skills-${swimmer.id}-${slug}`, [swimmer.id]);
 
@@ -72,8 +74,8 @@ export default function EvaluateContent({ swimmer, screens, resumeDraft }: Evalu
     }
     return initialSessionDraft();
   });
-  const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
   const [skillSearch, setSkillSearch] = useState("");
+  const [activeSectionIndex, setActiveSectionIndex] = useState(0);
   const [depSuggestion, setDepSuggestion] = useState<
     | { status: "idle" }
     | { status: "loading" }
@@ -314,6 +316,9 @@ export default function EvaluateContent({ swimmer, screens, resumeDraft }: Evalu
       breathingPattern: needsBreathing ? prev.breathingPattern : null,
       skills,
     }));
+    // Reset to the first section whenever the screen changes so the coach
+    // isn't dropped into an unrelated section index from the previous screen.
+    setActiveSectionIndex(0);
   }
 
   function handleResumeBannerDraft() {
@@ -345,6 +350,7 @@ export default function EvaluateContent({ swimmer, screens, resumeDraft }: Evalu
     setServerDraftId(bannerDraft.id);
     setBannerDraft(null);
     setShowBannerConfirm(false);
+    setActiveSectionIndex(0);
   }
 
   function handleStartFreshConfirmed() {
@@ -378,22 +384,10 @@ export default function EvaluateContent({ swimmer, screens, resumeDraft }: Evalu
     () => (selectedScreen ? buildRatingKeys(selectedScreen.skills, draft.skills) : []),
     [selectedScreen, draft.skills],
   );
-  // Save is enabled whenever the coach isn't mid-submit. Everything else runs
-  // through the client-side validator on tap so the coach gets inline field
-  // guidance instead of a disabled button with no feedback.
   const submitEnabled = !isPending;
 
-  // Client-side pre-save validation issues. Set on each Save tap; cleared on
-  // the next valid submission. These live separately from the server's
-  // `state.issues` so a successful submit doesn't silently resurrect stale
-  // client messages (and vice versa).
   const [clientIssues, setClientIssues] = useState<EvaluateFieldIssue[]>([]);
-  // Bumped on every Save tap (valid or invalid) so the scroll + highlight
-  // effect re-fires each time, even when the issue set is identical to the
-  // previous tap.
   const [tapNonce, setTapNonce] = useState(0);
-  // Separate nonce for server-returned issues so a 422 scrolls to the first
-  // field without colliding with a client tap in flight.
   const [serverIssueNonce, setServerIssueNonce] = useState(0);
 
   const serverIssues: EvaluateFieldIssue[] = useMemo(
@@ -401,16 +395,12 @@ export default function EvaluateContent({ swimmer, screens, resumeDraft }: Evalu
     [state],
   );
 
-  // Bump the server-issue nonce whenever a new server error arrives.
   useEffect(() => {
     if (state.status === "error" && serverIssues.length > 0) {
       setServerIssueNonce((prev) => prev + 1);
     }
   }, [state, serverIssues.length]);
 
-  // The merged issues list the UI renders. Client issues take precedence
-  // while they're set (coach hasn't tried again yet); otherwise fall back to
-  // the last server-returned set.
   const activeIssues = clientIssues.length > 0 ? clientIssues : serverIssues;
 
   const issuesByDraftKey = useMemo(() => {
@@ -436,8 +426,59 @@ export default function EvaluateContent({ swimmer, screens, resumeDraft }: Evalu
   );
   const ratingsIssue = sessionLevelIssues.find((issue) => issue.field === "ratings");
 
+  const screenSections = selectedScreen !== null
+    ? (SCREEN_SECTIONS[selectedScreen.screenSlug] ?? null)
+    : null;
+
+  const sectionGroups = selectedScreen !== null && screenSections !== null
+    ? buildSectionGroups(selectedScreen, screenSections)
+    : null;
+
+  // Which section does a given rating-key (`${skillId}` or `${skillId}:side`)
+  // belong to? Used to switch to the right tab before scrolling to the issue.
+  const sectionIndexForSkillId = useMemo(() => {
+    if (sectionGroups === null) return (): number | null => null;
+    const map = new Map<string, number>();
+    sectionGroups.forEach((section, index) => {
+      for (const skill of section.skills) {
+        map.set(skill.id, index);
+      }
+    });
+    return (skillId: string): number | null => map.get(skillId) ?? null;
+  }, [sectionGroups]);
+
+  // Per-section rated / total counts for the tab chips.
+  const sectionCounts = useMemo(() => {
+    if (sectionGroups === null) return [] as Array<{ name: string; count: number; completed: number }>;
+    return sectionGroups.map((section) => {
+      let completed = 0;
+      const ratable = section.skills.filter((skill) => skill.type !== "rollup");
+      for (const skill of ratable) {
+        const keys = skill.ratedPerSide
+          ? [`${skill.id}:left`, `${skill.id}:right`]
+          : [skill.id];
+        if (keys.some((key) => {
+          const skillDraft = draft.skills[key];
+          if (!skillDraft) return false;
+          return (
+            skillDraft.grade !== null ||
+            skillDraft.noConcept ||
+            skillDraft.notLegal ||
+            skillDraft.measurementValue !== ""
+          );
+        })) {
+          completed += 1;
+        }
+      }
+      return { name: section.name, count: ratable.length, completed };
+    });
+  }, [sectionGroups, draft.skills]);
+
   // Scroll to and focus the first invalid field whenever the coach taps Save
-  // with issues, OR whenever a new server 422 arrives. Honors reduced motion.
+  // with issues, OR whenever a new server 422 arrives. If the issue lives in
+  // a non-active section, switch the tab first (via rAF) so the DOM anchor
+  // exists on the second frame. Session-level issues scroll synchronously —
+  // their anchors are always mounted.
   useEffect(() => {
     if (activeIssues.length === 0) return;
     if (tapNonce === 0 && serverIssueNonce === 0) return;
@@ -446,23 +487,48 @@ export default function EvaluateContent({ swimmer, screens, resumeDraft }: Evalu
     if (!first) return;
     const anchor = anchorIdForIssue(first, ratingKeys);
     if (!anchor) return;
-    const el = document.getElementById(anchor);
-    if (!el) return;
+
     const prefersReducedMotion =
       typeof window !== "undefined" &&
       typeof window.matchMedia === "function" &&
       window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    el.scrollIntoView({
-      behavior: prefersReducedMotion ? "auto" : "smooth",
-      block: "center",
-    });
-    const focusTarget =
-      el.querySelector<HTMLElement>(
+
+    function doScroll() {
+      const el = document.getElementById(anchor!);
+      if (!el) return;
+      el.scrollIntoView({
+        behavior: prefersReducedMotion ? "auto" : "smooth",
+        block: "center",
+      });
+      const focusTarget = el.querySelector<HTMLElement>(
         "input:not([type='hidden']), select, textarea, [role='group'] button, button[type='button']",
       );
-    focusTarget?.focus({ preventScroll: true });
-    // Intentional: re-scrolling on every tap is a product requirement, so the
-    // nonces are the primary trigger; activeIssues identity isn't.
+      focusTarget?.focus({ preventScroll: true });
+    }
+
+    // Per-skill issue: switch to the section that owns the skill (if we're
+    // not already there) and wait a frame so the anchor is mounted before
+    // scrolling. Otherwise, scroll synchronously.
+    let needsSectionSwitch = false;
+    if (first.ratingIndex !== undefined) {
+      const key = ratingKeys[first.ratingIndex];
+      if (key !== undefined) {
+        const skillId = key.split(":")[0] ?? key;
+        const index = sectionIndexForSkillId(skillId);
+        if (index !== null && index !== activeSectionIndex) {
+          setActiveSectionIndex(index);
+          needsSectionSwitch = true;
+        }
+      }
+    }
+
+    if (needsSectionSwitch) {
+      requestAnimationFrame(doScroll);
+    } else {
+      doScroll();
+    }
+    // Intentional: nonces drive this effect; activeIssues identity isn't a
+    // dependency so re-renders without a new tap don't re-scroll.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tapNonce, serverIssueNonce]);
 
@@ -490,37 +556,88 @@ export default function EvaluateContent({ swimmer, screens, resumeDraft }: Evalu
     ratings: ratingsArray,
   });
 
-  const screenSections = selectedScreen !== null
-    ? (SCREEN_SECTIONS[selectedScreen.screenSlug] ?? null)
-    : null;
-
-  const sectionGroups = selectedScreen !== null && screenSections !== null
-    ? buildSectionGroups(selectedScreen, screenSections)
-    : null;
-
   const searchResults = useMemo(() => {
     if (!skillSearch.trim() || !sectionGroups) return [];
     const query = skillSearch.toLowerCase();
     const seen = new Set<string>();
-    const results: Array<{ skill: SkillForRating; sectionName: string }> = [];
-    for (const section of sectionGroups) {
+    const results: Array<{ skill: SkillForRating; sectionIndex: number; sectionName: string }> = [];
+    sectionGroups.forEach((section, index) => {
       for (const skill of section.skills) {
         if (skill.type === "rollup") continue;
         if (skill.name.toLowerCase().includes(query) && !seen.has(skill.id)) {
-          results.push({ skill, sectionName: section.name });
+          results.push({ skill, sectionIndex: index, sectionName: section.name });
           seen.add(skill.id);
         }
       }
-    }
+    });
     return results.slice(0, 8);
   }, [skillSearch, sectionGroups]);
 
-  function jumpToSkill(skill: SkillForRating, sectionName: string) {
-    setOpenSections((prev) => ({ ...prev, [sectionName]: true }));
+  function jumpToSkill(skill: SkillForRating, sectionIndex: number) {
+    setActiveSectionIndex(sectionIndex);
     setSkillSearch("");
     requestAnimationFrame(() => {
       document.getElementById(`skill-${skill.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
     });
+  }
+
+  function renderSkill(skill: SkillForRating, screen: typeof screens[number]) {
+    const label = skill.name;
+    if (skill.type === "rollup") {
+      let calculatedGrade: 1 | 2 | 3 | 4 | 5 | null = null;
+      if (skill.slug === "free-bilateral-breathing") {
+        const breathingSkill = screen.skills.find((s) => s.slug === "breathing-timing-free");
+        if (breathingSkill) {
+          const leftGrade = draft.skills[`${breathingSkill.id}:left`]?.grade ?? null;
+          const rightGrade = draft.skills[`${breathingSkill.id}:right`]?.grade ?? null;
+          calculatedGrade = calculateBilateralBreathingGrade(leftGrade, rightGrade);
+        }
+      }
+      const prev = prevGrades[skill.slug];
+      return (
+        <CalculatedSkillRow
+          key={skill.id}
+          skill={skill}
+          label={label}
+          calculatedGrade={calculatedGrade}
+          {...(prev !== undefined && { prevGrade: prev })}
+        />
+      );
+    }
+    if (skill.ratedPerSide) {
+      const leftIssues = issuesByDraftKey.get(`${skill.id}:left`);
+      const rightIssues = issuesByDraftKey.get(`${skill.id}:right`);
+      const prevLeft = prevGrades[`${skill.slug}:left`];
+      const prevRight = prevGrades[`${skill.slug}:right`];
+      return (
+        <SideRatedRowPair
+          key={skill.id}
+          skill={skill}
+          label={label}
+          leftDraft={draft.skills[`${skill.id}:left`] ?? defaultSkillDraft()}
+          rightDraft={draft.skills[`${skill.id}:right`] ?? defaultSkillDraft()}
+          onChange={patchSkill}
+          {...(leftIssues !== undefined && { leftIssues })}
+          {...(rightIssues !== undefined && { rightIssues })}
+          {...(prevLeft !== undefined && { prevGradeLeft: prevLeft })}
+          {...(prevRight !== undefined && { prevGradeRight: prevRight })}
+        />
+      );
+    }
+    const rowIssues = issuesByDraftKey.get(skill.id);
+    const prev = prevGrades[skill.slug];
+    return (
+      <SkillGradeRow
+        key={skill.id}
+        skill={skill}
+        draftKey={skill.id}
+        label={label}
+        draft={draft.skills[skill.id] ?? defaultSkillDraft()}
+        onChange={patchSkill}
+        {...(rowIssues !== undefined && { issues: rowIssues })}
+        {...(prev !== undefined && { prevGrade: prev })}
+      />
+    );
   }
 
   // ── Success screen ────────────────────────────────────────────────────────────
@@ -565,9 +682,22 @@ export default function EvaluateContent({ swimmer, screens, resumeDraft }: Evalu
 
   // ── Main form ─────────────────────────────────────────────────────────────────
 
+  const activeSection = sectionGroups?.[activeSectionIndex] ?? null;
+  const startParentIds = selectedScreen
+    ? new Set(
+        selectedScreen.skills
+          .filter(
+            (skill) =>
+              skill.parentSkillId === null &&
+              selectedScreen.skills.some((other) => other.parentSkillId === skill.id),
+          )
+          .map((skill) => skill.id),
+      )
+    : new Set<string>();
+
   return (
-    <div className="flex flex-col flex-1">
-      <main className="flex-1 px-page py-8">
+    <div className="flex flex-col flex-1 min-h-screen">
+      <main className="flex-1 px-page pt-6 pb-28">
         <div className="mx-auto max-w-content flex flex-col gap-6">
           <div className="flex flex-col gap-2">
             <a
@@ -677,182 +807,116 @@ export default function EvaluateContent({ swimmer, screens, resumeDraft }: Evalu
               issues={sessionSetupIssues}
             />
 
-            {/* Skills */}
-            {selectedScreen !== null && (() => {
-              const screen = selectedScreen;
-              function renderSkill(skill: SkillForRating, _sectionName: string) {
-                const label = skill.name;
-                if (skill.type === "rollup") {
-                  let calculatedGrade: 1 | 2 | 3 | 4 | 5 | null = null;
-                  if (skill.slug === "free-bilateral-breathing") {
-                    const breathingSkill = screen.skills.find((s) => s.slug === "breathing-timing-free");
-                    if (breathingSkill) {
-                      const leftGrade = draft.skills[`${breathingSkill.id}:left`]?.grade ?? null;
-                      const rightGrade = draft.skills[`${breathingSkill.id}:right`]?.grade ?? null;
-                      calculatedGrade = calculateBilateralBreathingGrade(leftGrade, rightGrade);
-                    }
-                  }
-                  return (
-                    <CalculatedSkillRow
-                      key={skill.id}
-                      skill={skill}
-                      label={label}
-                      calculatedGrade={calculatedGrade}
-                    />
-                  );
-                }
-                if (skill.ratedPerSide) {
-                  const leftIssues = issuesByDraftKey.get(`${skill.id}:left`);
-                  const rightIssues = issuesByDraftKey.get(`${skill.id}:right`);
-                  return (
-                    <SideRatedRowPair
-                      key={skill.id}
-                      skill={skill}
-                      label={label}
-                      leftDraft={draft.skills[`${skill.id}:left`] ?? defaultSkillDraft()}
-                      rightDraft={draft.skills[`${skill.id}:right`] ?? defaultSkillDraft()}
-                      onChange={patchSkill}
-                      {...(leftIssues !== undefined && { leftIssues })}
-                      {...(rightIssues !== undefined && { rightIssues })}
-                    />
-                  );
-                }
-                const rowIssues = issuesByDraftKey.get(skill.id);
-                return (
-                  <SkillGradeRow
-                    key={skill.id}
-                    skill={skill}
-                    draftKey={skill.id}
-                    label={label}
-                    draft={draft.skills[skill.id] ?? defaultSkillDraft()}
-                    onChange={patchSkill}
-                    {...(rowIssues !== undefined && { issues: rowIssues })}
-                  />
-                );
-              }
+            {/* Skills — card grid under sticky section tabs */}
+            {selectedScreen !== null && (
+              <div className="flex flex-col gap-4">
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <h2 className="font-bold text-sm" style={{ color: "var(--color-text)" }}>
+                    Skills · {selectedScreen.name}
+                  </h2>
+                </div>
 
-              if (sectionGroups !== null) {
-                const startParentIds = new Set(
-                  selectedScreen.skills
-                    .filter(
-                      (skill) =>
-                        skill.parentSkillId === null &&
-                        selectedScreen.skills.some((other) => other.parentSkillId === skill.id),
-                    )
-                    .map((skill) => skill.id),
-                );
-                return (
-                  <div className="flex flex-col gap-4">
-                    <h2 className="font-bold text-sm" style={{ color: "var(--color-text)" }}>
-                      Skills — {selectedScreen.name}
-                    </h2>
-                    <div className="relative">
-                      <input
-                        type="search"
-                        placeholder="Search skills…"
-                        value={skillSearch}
-                        onChange={(event) => setSkillSearch(event.target.value)}
-                        className="w-full border border-border rounded px-3 py-2 text-sm min-h-[44px] text-text"
-                        style={{ backgroundColor: "transparent" }}
-                      />
-                      {searchResults.length > 0 && (
-                        <ul
-                          className="absolute z-10 w-full mt-1 rounded border border-border overflow-auto"
-                          style={{
-                            backgroundColor: "var(--color-surface)",
-                            maxHeight: "240px",
-                          }}
-                        >
-                          {searchResults.map(({ skill, sectionName }) => (
-                            <li key={`${skill.id}:${sectionName}`}>
-                              <button
-                                type="button"
-                                onClick={() => jumpToSkill(skill, sectionName)}
-                                className="w-full text-left px-3 py-2 text-sm text-text"
-                              >
-                                {skill.name}
-                                <span className="ml-2 text-xs text-text-secondary">
-                                  {sectionName}
-                                </span>
-                              </button>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
-                    {sectionGroups.map((section) => (
-                      <EvalSectionHeader
-                        key={section.name}
-                        name={section.name}
-                        skillCount={section.skills.length}
-                        isOpen={openSections[section.name] ?? true}
-                        onToggle={() => setOpenSections((prev) => ({
-                          ...prev,
-                          [section.name]: !(prev[section.name] ?? true),
-                        }))}
-                      >
-                        {section.skills.map((skill) => {
-                          if (startParentIds.has(skill.id)) {
-                            const components = selectedScreen.skills.filter(
-                              (other) => other.parentSkillId === skill.id,
-                            );
-                            return (
+                <div className="relative">
+                  <input
+                    type="search"
+                    placeholder="Search skills…"
+                    value={skillSearch}
+                    onChange={(event) => setSkillSearch(event.target.value)}
+                    className="w-full border border-border rounded px-3 py-2 text-sm min-h-[44px] text-text"
+                    style={{ backgroundColor: "transparent" }}
+                  />
+                  {searchResults.length > 0 && (
+                    <ul
+                      className="absolute z-10 w-full mt-1 rounded border border-border overflow-auto bg-background"
+                      style={{ maxHeight: "240px" }}
+                    >
+                      {searchResults.map(({ skill, sectionIndex, sectionName }) => (
+                        <li key={`${skill.id}:${sectionIndex}`}>
+                          <button
+                            type="button"
+                            onClick={() => jumpToSkill(skill, sectionIndex)}
+                            className="w-full text-left px-3 py-2 text-sm text-text"
+                          >
+                            {skill.name}
+                            <span className="ml-2 text-xs text-text-secondary">
+                              {sectionName}
+                            </span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+
+                {sectionGroups !== null && activeSection !== null ? (
+                  <>
+                    <SectionTabs
+                      sections={sectionCounts}
+                      activeIndex={activeSectionIndex}
+                      onSelect={setActiveSectionIndex}
+                    />
+                    <section
+                      id={DOM_IDS.ratings}
+                      aria-label={`${activeSection.name} skills`}
+                      className="grid grid-cols-1 tablet:grid-cols-2 gap-4"
+                    >
+                      {activeSection.skills.map((skill) => {
+                        if (startParentIds.has(skill.id)) {
+                          const components = selectedScreen.skills.filter(
+                            (other) => other.parentSkillId === skill.id,
+                          );
+                          return (
+                            <div key={skill.id} className="tablet:col-span-2">
                               <StartGroupSection
-                                key={skill.id}
                                 parent={skill}
                                 components={components}
                                 draftSkills={draft.skills}
                                 onChange={patchSkill}
+                                prevGrades={prevGrades}
                               />
-                            );
-                          }
-                          return renderSkill(skill, section.name);
-                        })}
-                      </EvalSectionHeader>
-                    ))}
-                  </div>
-                );
-              }
-
-              // Fallback: flat list when no section config exists for this screen
-              const startParentIds = new Set(
-                selectedScreen.skills
-                  .filter(
-                    (skill) =>
-                      skill.parentSkillId === null &&
-                      selectedScreen.skills.some((other) => other.parentSkillId === skill.id),
-                  )
-                  .map((skill) => skill.id),
-              );
-              const startParents = selectedScreen.skills.filter((skill) => startParentIds.has(skill.id));
-              const standaloneSkills = selectedScreen.skills.filter(
-                (skill) =>
-                  !startParentIds.has(skill.id) &&
-                  (skill.parentSkillId === null || !startParentIds.has(skill.parentSkillId ?? "")),
-              );
-              return (
-                <div className="flex flex-col gap-4">
-                  <h2 className="font-bold text-sm" style={{ color: "var(--color-text)" }}>
-                    Skills — {selectedScreen.name}
-                  </h2>
-
-                  {startParents.map((parent) => (
-                    <StartGroupSection
-                      key={parent.id}
-                      parent={parent}
-                      components={selectedScreen.skills.filter((other) => other.parentSkillId === parent.id)}
-                      draftSkills={draft.skills}
-                      onChange={patchSkill}
-                    />
-                  ))}
-
-                  {standaloneSkills.map((skill) => renderSkill(skill, ""))}
-                </div>
-              );
-            })()}
+                            </div>
+                          );
+                        }
+                        return renderSkill(skill, selectedScreen);
+                      })}
+                    </section>
+                  </>
+                ) : (
+                  // Fallback for screens without a SCREEN_SECTIONS entry: no
+                  // tabs, just a flat grid of every skill in the screen.
+                  <section
+                    id={DOM_IDS.ratings}
+                    className="grid grid-cols-1 tablet:grid-cols-2 gap-4"
+                  >
+                    {selectedScreen.skills
+                      .filter(
+                        (skill) =>
+                          !startParentIds.has(skill.id) &&
+                          (skill.parentSkillId === null || !startParentIds.has(skill.parentSkillId ?? "")),
+                      )
+                      .map((skill) => renderSkill(skill, selectedScreen))}
+                    {selectedScreen.skills
+                      .filter((skill) => startParentIds.has(skill.id))
+                      .map((parent) => (
+                        <div key={parent.id} className="tablet:col-span-2">
+                          <StartGroupSection
+                            parent={parent}
+                            components={selectedScreen.skills.filter(
+                              (other) => other.parentSkillId === parent.id,
+                            )}
+                            draftSkills={draft.skills}
+                            onChange={patchSkill}
+                            prevGrades={prevGrades}
+                          />
+                        </div>
+                      ))}
+                  </section>
+                )}
+              </div>
+            )}
 
             {ratingsIssue && (
-              <p id={DOM_IDS.ratings} className="text-xs" style={{ color: "var(--color-danger)" }}>
+              <p id={DOM_IDS.ratings + "-error"} className="text-xs" style={{ color: "var(--color-danger)" }}>
                 {ratingsIssue.message}
               </p>
             )}
@@ -865,13 +929,18 @@ export default function EvaluateContent({ swimmer, screens, resumeDraft }: Evalu
               {...(coachingPriorityIssue !== undefined && { issue: coachingPriorityIssue })}
             />
 
-            <div className="flex gap-3 flex-wrap">
+            {/* Sticky save bar. On phone the single column pushes the actions
+                to the thumb line; on tablet they stay on the same row. The
+                safe-area inset handles iOS home-indicator overlap. */}
+            <div
+              className="sticky bottom-0 left-0 right-0 -mx-page px-page py-3 border-t border-border bg-background flex items-center gap-3 flex-wrap"
+              style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom, 0px))" }}
+            >
               <button
                 type="submit"
                 disabled={!submitEnabled}
-                className="inline-flex items-center justify-center px-5 min-h-[44px] font-bold text-sm rounded"
+                className="inline-flex items-center justify-center px-5 min-h-[48px] font-bold text-sm rounded-[var(--radius-button)] flex-1 tablet:flex-initial"
                 style={{
-                  borderRadius: "var(--radius-button)",
                   backgroundColor: "var(--color-button-primary-background)",
                   color: "var(--color-button-primary-text)",
                   opacity: submitEnabled ? 1 : 0.5,
@@ -884,7 +953,7 @@ export default function EvaluateContent({ swimmer, screens, resumeDraft }: Evalu
                 type="button"
                 onClick={handleSaveDraft}
                 disabled={draft.screenSlug === "" || draftSaveState === "saving"}
-                className="inline-flex items-center justify-center px-5 min-h-[44px] font-semibold text-sm rounded-[var(--radius-button)] border border-border text-text"
+                className="inline-flex items-center justify-center px-5 min-h-[48px] font-semibold text-sm rounded-[var(--radius-button)] border border-border text-text"
               >
                 {draftSaveState === "saving" ? "Saving..." : draftSaveState === "saved" ? "Draft saved" : draftSaveState === "error" ? "Save failed" : "Save as draft"}
               </button>

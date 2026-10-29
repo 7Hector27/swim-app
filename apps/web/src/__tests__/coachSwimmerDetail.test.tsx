@@ -1,5 +1,5 @@
 import { vi, describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 
 vi.mock("@/components/SiteNav", () => ({ default: () => <nav /> }));
 vi.mock("@/components/AddNoteForm", () => ({ default: () => <div data-testid="add-note-form" /> }));
@@ -114,7 +114,9 @@ describe("CoachSwimmerDetailContent", () => {
         golfScoreTrends={[]}
       />,
     );
-    // Grade "3" should appear inside Current Levels
+    // Current levels lives on its own tab in the new layout. Switch to it
+    // before asserting the grade is on-screen.
+    fireEvent.click(screen.getByRole("tab", { name: /current levels/i }));
     expect(screen.getByText("3")).toBeInTheDocument();
   });
 
@@ -156,6 +158,7 @@ describe("CoachSwimmerDetailContent", () => {
         golfScoreTrends={[]}
       />,
     );
+    fireEvent.click(screen.getByRole("tab", { name: /current levels/i }));
     const history = screen.getByTestId("skills-history");
     expect(history).toHaveAttribute("data-swimmer-id", SWIMMER_ID);
   });
