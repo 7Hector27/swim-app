@@ -11,7 +11,11 @@ export interface EvaluateFieldIssue {
 export type EvaluateState =
   | { status: "idle" }
   | { status: "error"; message: string; issues?: EvaluateFieldIssue[] }
-  | { status: "saved"; sessionId: string; ratingIds: string[] };
+  | { status: "saved"; sessionId: string; ratingIds: string[] }
+  // ADR 032: PATCH /coach/sessions/:id returned 409 because another tab
+  // superseded one of the ratings. The client refetches the session and
+  // shows a "This evaluation was edited elsewhere" banner.
+  | { status: "stale" };
 
 const GENERIC_INVALID = "Some inputs are invalid. Please check and retry.";
 

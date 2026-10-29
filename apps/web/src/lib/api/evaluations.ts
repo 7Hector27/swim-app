@@ -18,6 +18,8 @@ import {
   PatchSessionResponseSchema,
   type PatchSessionBody,
   type PatchSessionResponse,
+  GetEvaluationsResponseSchema,
+  type GetEvaluationsResponse,
 } from "@swim-app/shared";
 
 export type FetchCategoriesResult =
@@ -223,6 +225,35 @@ export async function patchSession(
     if (!response.ok) return { ok: false, status: response.status };
     const payload: unknown = await response.json();
     const parsed = PatchSessionResponseSchema.safeParse(payload);
+    if (!parsed.success) return { ok: false, status: 500 };
+    return { ok: true, data: parsed.data };
+  } catch {
+    return { ok: false, status: 500 };
+  }
+}
+
+export type FetchSwimmerEvaluationsResult =
+  | { ok: true; data: GetEvaluationsResponse }
+  | { ok: false; status: number };
+
+export async function fetchSwimmerEvaluations(
+  swimmerId: string,
+  accessToken: string,
+  options: { cursor?: string; limit?: number } = {},
+): Promise<FetchSwimmerEvaluationsResult> {
+  try {
+    const params = new URLSearchParams();
+    if (options.limit !== undefined) params.set("limit", String(options.limit));
+    if (options.cursor !== undefined) params.set("cursor", options.cursor);
+    const query = params.toString();
+    const url = `${process.env.NEXT_PUBLIC_API_URL}/coach/swimmers/${swimmerId}/evaluations${query ? `?${query}` : ""}`;
+    const response = await fetch(url, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      cache: "no-store",
+    });
+    if (!response.ok) return { ok: false, status: response.status };
+    const body: unknown = await response.json();
+    const parsed = GetEvaluationsResponseSchema.safeParse(body);
     if (!parsed.success) return { ok: false, status: 500 };
     return { ok: true, data: parsed.data };
   } catch {

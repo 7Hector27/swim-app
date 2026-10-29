@@ -30,12 +30,16 @@ import {
   type GetSessionRating,
   type PatchSessionBody,
   type PatchSessionResponse,
+  type GetEvaluationsItem,
+  type GetEvaluationsResponse,
+  type GetEvaluationsQuery,
   CreateSessionBodySchema,
   VoidRatingBodySchema,
   DependencyMapQuerySchema,
   CoachSkillRatingSchema,
   GolfScoreCategorySchema,
   PatchSessionBodySchema,
+  GetEvaluationsQuerySchema,
   findDeepestLowFoundation,
   headPositionOverall,
   latestEffectiveRatings,
@@ -729,6 +733,120 @@ evaluationsRouter.get(
   }),
 );
 
+// ── GET /swimmers/:id/evaluations ─────────────────────────────────────────────
+// Paginated list of a swimmer's past evaluations, newest first. Powers the
+// Evaluations section on /coach/swimmers/[id] and the full-list page at
+// /coach/swimmers/[id]/evaluations. ADR 032.
+
+const EVALUATIONS_CURSOR_SEP = ":::";
+
+function encodeEvaluationsCursor(sessionDate: string, sessionId: string): string {
+  return Buffer.from(`${sessionDate}${EVALUATIONS_CURSOR_SEP}${sessionId}`, "utf8").toString("base64url");
+}
+
+function decodeEvaluationsCursor(cursor: string): { sessionDate: string; sessionId: string } | null {
+  try {
+    const decoded = Buffer.from(cursor, "base64url").toString("utf8");
+    const sep = decoded.indexOf(EVALUATIONS_CURSOR_SEP);
+    if (sep < 0) return null;
+    const sessionDate = decoded.slice(0, sep);
+    const sessionId = decoded.slice(sep + EVALUATIONS_CURSOR_SEP.length);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(sessionDate)) return null;
+    if (!/^[0-9a-fA-F-]{36}$/.test(sessionId)) return null;
+    return { sessionDate, sessionId };
+  } catch {
+    return null;
+  }
+}
+
+evaluationsRouter.get(
+  "/:id/evaluations",
+  validate({ params: SwimmerIdParamsSchema, query: GetEvaluationsQuerySchema }),
+  asyncHandler(async (req, res) => {
+    const { id: swimmerId } = req.params as unknown as SwimmerIdParams;
+    const query = req.query as unknown as GetEvaluationsQuery;
+
+    const swimmer = await findActiveSwimmer(swimmerId);
+    if (!swimmer) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+
+    const cursor = query.cursor ? decodeEvaluationsCursor(query.cursor) : null;
+    const limit = query.limit;
+
+    // Fetch one more than the limit so we can tell whether there's a next
+    // page without a second COUNT query. Pagination is keyed on
+    // (sessionDate DESC, sessionId DESC) so same-date corrections tie-break.
+    const sessionRows = await db
+      .select({
+        id: evaluationSessions.id,
+        screenSlug: evaluationSessions.screenSlug,
+        sessionDate: evaluationSessions.sessionDate,
+        context: evaluationSessions.context,
+        coachingPriority: evaluationSessions.coachingPriority,
+        editedAt: evaluationSessions.editedAt,
+        createdAt: evaluationSessions.createdAt,
+      })
+      .from(evaluationSessions)
+      .where(
+        cursor
+          ? and(
+              eq(evaluationSessions.swimmerId, swimmerId),
+              sql`(${evaluationSessions.sessionDate}, ${evaluationSessions.id}) < (${cursor.sessionDate}::date, ${cursor.sessionId}::uuid)`,
+            )
+          : eq(evaluationSessions.swimmerId, swimmerId),
+      )
+      .orderBy(desc(evaluationSessions.sessionDate), desc(evaluationSessions.id))
+      .limit(limit + 1);
+
+    const hasMore = sessionRows.length > limit;
+    const pageRows = hasMore ? sessionRows.slice(0, limit) : sessionRows;
+
+    // Rating counts per session (non-voided, non-superseded) in one grouped
+    // query. Zero-count sessions still appear in the list — they can exist
+    // if every rating was voided, and the coach can decide whether to delete
+    // or re-rate.
+    const countRows = pageRows.length > 0
+      ? await db
+          .select({
+            sessionId: skillRatings.sessionId,
+            count: sql<number>`count(*)::int`.as("count"),
+          })
+          .from(skillRatings)
+          .where(
+            and(
+              inArray(skillRatings.sessionId, pageRows.map((row) => row.id)),
+              isNull(skillRatings.voidedAt),
+              isNull(skillRatings.supersededAt),
+            ),
+          )
+          .groupBy(skillRatings.sessionId)
+      : [];
+    const countBySessionId = new Map(countRows.map((row) => [row.sessionId, row.count]));
+
+    const evaluations: GetEvaluationsItem[] = pageRows.map((row) => ({
+      sessionId: row.id,
+      screenSlug: row.screenSlug,
+      screenName: SCREEN_NAMES[row.screenSlug] ?? row.screenSlug,
+      sessionDate: row.sessionDate,
+      context: row.context,
+      coachingPriority: row.coachingPriority,
+      ratingCount: countBySessionId.get(row.id) ?? 0,
+      edited: row.editedAt !== null,
+      editedAt: row.editedAt?.toISOString() ?? null,
+      createdAt: row.createdAt.toISOString(),
+    }));
+
+    const lastRow = pageRows[pageRows.length - 1];
+    const nextCursor = hasMore && lastRow ? encodeEvaluationsCursor(lastRow.sessionDate, lastRow.id) : null;
+
+    const response: GetEvaluationsResponse = { evaluations, nextCursor };
+    req.log.info({ swimmerId, count: evaluations.length, hasMore }, "swimmer evaluations list fetched");
+    res.json(response);
+  }),
+);
+
 // ── GET /swimmers/:id/golf-score-trends ───────────────────────────────────────
 
 function computePercentile(sorted: number[], p: number): number {
@@ -757,6 +875,7 @@ evaluationsRouter.get(
         measurementValue: skillRatings.measurementValue,
         golfScoreCategory: skillRatings.golfScoreCategory,
         ratedAt: skillRatings.ratedAt,
+        sessionId: skillRatings.sessionId,
         sessionDate: evaluationSessions.sessionDate,
         skillId: skills.id,
         slug: skills.slug,
@@ -889,6 +1008,7 @@ evaluationsRouter.get(
           points: points.map((point) => ({
             ratedAt: point.ratedAt.toISOString(),
             sessionDate: point.sessionDate,
+            sessionId: point.sessionId,
             grade: point.grade,
             measurementValue: point.measurementValue ?? null,
           })),

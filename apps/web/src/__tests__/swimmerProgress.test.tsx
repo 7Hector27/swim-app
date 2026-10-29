@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, within, fireEvent } from "@testing-library/react";
 import type {
   CoachSwimmerDetail,
   SwimmerProgressResponse,
@@ -116,9 +116,13 @@ function makePoint(options: {
   grade: 1 | 2 | 3 | 4 | 5 | null;
   faultTags?: string[];
   notLegal?: boolean;
+  sessionId?: string;
+  edited?: boolean;
+  previousValue?: SwimmerProgressResponse["skills"][number]["history"][number]["previousValue"];
 }): SwimmerProgressResponse["skills"][number]["history"][number] {
   return {
     id: options.id,
+    sessionId: options.sessionId ?? "ssss0000-0000-0000-0000-000000000001",
     grade: options.grade,
     notLegal: options.notLegal ?? false,
     noConcept: false,
@@ -127,6 +131,8 @@ function makePoint(options: {
     capacityUnit: null,
     measurementValue: null,
     measurementUnit: null,
+    edited: options.edited ?? false,
+    previousValue: options.previousValue ?? null,
     context: "practice",
     faultTags: options.faultTags ?? [],
     ratedAt: `${options.sessionDate}T18:00:00.000Z`,
@@ -167,6 +173,7 @@ describe("SwimmerProgressContent — one-evaluation state", () => {
       points: [
         {
           sessionDate: "2026-10-25",
+          sessionId: "ssss0000-0000-0000-0000-000000000001",
           headPositionOverall: null,
           categoryRollups: [],
           starts: [],
@@ -252,6 +259,7 @@ describe("SwimmerProgressContent — sections", () => {
     points: [
       {
         sessionDate: "2026-10-11",
+        sessionId: "ssss0000-0000-0000-0000-000000000011",
         headPositionOverall: 3,
         categoryRollups: [
           { categoryId: FREE_CAT_ID, categorySlug: "freestyle", categoryName: "Freestyle", average: 3, assessedCount: 1, totalCount: 10 },
@@ -260,6 +268,7 @@ describe("SwimmerProgressContent — sections", () => {
       },
       {
         sessionDate: "2026-10-25",
+        sessionId: "ssss0000-0000-0000-0000-000000000025",
         headPositionOverall: 4,
         categoryRollups: [
           { categoryId: FREE_CAT_ID, categorySlug: "freestyle", categoryName: "Freestyle", average: 4, assessedCount: 2, totalCount: 10 },
@@ -277,8 +286,8 @@ describe("SwimmerProgressContent — sections", () => {
           {
             category: "push_off_in_water",
             points: [
-              { ratedAt: "2026-10-25T18:00:00.000Z", sessionDate: "2026-10-25", grade: 3, measurementValue: "29.5" },
-              { ratedAt: "2026-10-11T18:00:00.000Z", sessionDate: "2026-10-11", grade: 3, measurementValue: "30.4" },
+              { ratedAt: "2026-10-25T18:00:00.000Z", sessionDate: "2026-10-25", sessionId: "ssss0000-0000-0000-0000-000000000025", grade: 3, measurementValue: "29.5" },
+              { ratedAt: "2026-10-11T18:00:00.000Z", sessionDate: "2026-10-11", sessionId: "ssss0000-0000-0000-0000-000000000011", grade: 3, measurementValue: "30.4" },
             ],
             ageBands: { bandCount: 12, p25: 25.0, p50: 28.0, p75: 32.0 },
           },
@@ -397,5 +406,106 @@ describe("SwimmerProgressContent — sections", () => {
     const skillsSection = skillsHeading.parentElement as HTMLElement;
     expect(within(skillsSection).getByText("Freestyle")).toBeInTheDocument();
     expect(within(skillsSection).getByText("Breathing")).toBeInTheDocument();
+  });
+});
+
+// ── Edit affordances (ADR 032) ────────────────────────────────────────────────
+
+describe("SwimmerProgressContent — Edit affordances (ADR 032)", () => {
+  const SESSION_A = "ssss0000-0000-0000-0000-00000000a001";
+  const SESSION_B = "ssss0000-0000-0000-0000-00000000a002";
+
+  const historyWithEdit = [
+    makePoint({
+      id: "p-latest",
+      sessionDate: "2026-10-25",
+      grade: 4,
+      sessionId: SESSION_B,
+      edited: true,
+      previousValue: 2,
+    }),
+    makePoint({
+      id: "p-prev",
+      sessionDate: "2026-10-11",
+      grade: 2,
+      sessionId: SESSION_A,
+    }),
+  ];
+
+  const progress: SwimmerProgressResponse = {
+    ...emptyProgress,
+    headPositionOverall: 4,
+    skills: [
+      makeSkill({
+        id: FREE_SKILL_ID,
+        slug: "free-kick",
+        name: "Freestyle Kick",
+        categoryId: FREE_CAT_ID,
+        categoryName: "Freestyle",
+        grade: 4,
+        history: historyWithEdit,
+      }),
+    ],
+  };
+
+  const scoreHistory: ScoreHistoryResponse = {
+    points: [
+      {
+        sessionDate: "2026-10-11",
+        sessionId: SESSION_A,
+        headPositionOverall: 2,
+        categoryRollups: [],
+        starts: [],
+      },
+      {
+        sessionDate: "2026-10-25",
+        sessionId: SESSION_B,
+        headPositionOverall: 4,
+        categoryRollups: [],
+        starts: [],
+      },
+    ],
+  };
+
+  it("hero chart renders an Edit link for the selected point with a sanitized returnTo", () => {
+    renderPage({ progress, scoreHistory });
+    // Simulate selecting the latest head-position point by clicking its
+    // enlarged hitbox. The tooltip-driven detail line is unselected by default.
+    const hitboxes = document.querySelectorAll("circle[pointer-events='all']");
+    expect(hitboxes.length).toBeGreaterThan(0);
+    fireEvent.pointerDown(hitboxes[hitboxes.length - 1]!);
+    const link = screen.getByTestId("hero-trend-edit-link");
+    const href = link.getAttribute("href") ?? "";
+    expect(href).toContain(`/coach/swimmers/${SWIMMER_ID}/evaluate`);
+    expect(href).toContain(`editSession=${SESSION_B}`);
+    expect(href).toContain(`returnTo=${encodeURIComponent(`/coach/swimmers/${SWIMMER_ID}/progress`)}`);
+  });
+
+  it("SkillChart renders hollow-ring points for edited history rows", () => {
+    renderPage({ progress, scoreHistory });
+    // Expand the skill row so the sparkline + edit list render.
+    fireEvent.click(screen.getByRole("button", { name: /expand freestyle kick/i }));
+    const edited = screen.getAllByTestId("skill-chart-edited-point");
+    expect(edited.length).toBeGreaterThan(0);
+  });
+
+  it("SkillChart sr-only table annotates edited rows with '(edited, was N)'", () => {
+    renderPage({ progress, scoreHistory });
+    fireEvent.click(screen.getByRole("button", { name: /expand freestyle kick/i }));
+    expect(screen.getByText(/4 \(edited, was 2\)/)).toBeInTheDocument();
+  });
+
+  it("SkillChart renders per-point Edit links that deep-link to editSession + skill slug", () => {
+    renderPage({ progress, scoreHistory });
+    fireEvent.click(screen.getByRole("button", { name: /expand freestyle kick/i }));
+    const links = screen.getAllByTestId("skill-chart-edit-link");
+    expect(links.length).toBe(historyWithEdit.length);
+    const hrefs = links.map((anchor) => anchor.getAttribute("href") ?? "");
+    expect(hrefs.some((href) => href.includes(`editSession=${SESSION_A}`))).toBe(true);
+    expect(hrefs.some((href) => href.includes(`editSession=${SESSION_B}`))).toBe(true);
+    for (const href of hrefs) {
+      expect(href).toContain("skill=free-kick");
+      expect(href).toContain(`returnTo=${encodeURIComponent(`/coach/swimmers/${SWIMMER_ID}/progress`)}`);
+    }
   });
 });

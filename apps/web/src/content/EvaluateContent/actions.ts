@@ -1,9 +1,14 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { CreateSessionBodySchema } from "@swim-app/shared";
+import {
+  CreateSessionBodySchema,
+  PatchSessionBodySchema,
+  isSafeReturnTo,
+} from "@swim-app/shared";
 import type { SaveDraftBody } from "@swim-app/shared";
 import { createClient } from "@/lib/supabase/server";
+import { publicEnv } from "@/lib/env";
 import type { EvaluateState } from "./helpers";
 import { mapSubmitResponse, mapZodIssuesToFieldIssues } from "./helpers";
 
@@ -117,6 +122,73 @@ export async function fetchDependencyMapAction(
   const data: unknown = await response.json().catch(() => null);
   const chain = (data as { suggestion?: Array<{ slug: string; grade: unknown; sortOrder: number }> | null } | null)?.suggestion ?? null;
   return { ok: true, chain };
+}
+
+// PATCH /coach/sessions/:id as a server action (ADR 032). Mirrors
+// submitEvaluation: reads bodyJson out of the FormData, forwards the auth
+// token server-to-server, and returns an EvaluateState so useActionState can
+// drive the submit button. On success, redirects to a sanitized returnTo.
+// On 409 (stale ratingId), returns a dedicated status the client uses to
+// show the "edited elsewhere" banner and refetch.
+export async function patchSessionAction(
+  sessionId: string,
+  returnTo: string,
+  _prev: EvaluateState,
+  formData: FormData,
+): Promise<EvaluateState> {
+  const supabase = await createClient();
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) redirect("/login");
+
+  const rawJson = formData.get("bodyJson");
+  if (typeof rawJson !== "string") {
+    return { status: "error", message: "Something went wrong. Please try again." };
+  }
+
+  let raw: unknown;
+  try {
+    raw = JSON.parse(rawJson);
+  } catch {
+    return { status: "error", message: "Something went wrong. Please try again." };
+  }
+
+  const parsed = PatchSessionBodySchema.safeParse(raw);
+  if (!parsed.success) {
+    const issues = mapZodIssuesToFieldIssues(parsed.error.issues);
+    return {
+      status: "error",
+      message: "Some inputs are invalid. Please check and retry.",
+      issues,
+    };
+  }
+
+  const response = await fetch(
+    `${process.env.NEXT_PUBLIC_API_URL}/coach/sessions/${sessionId}`,
+    {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(parsed.data),
+    },
+  );
+
+  if (response.status === 401) redirect("/api/signout");
+
+  // 409 means one of the submitted ratingIds was already superseded by
+  // another tab since the GET. The client refetches and shows a banner.
+  if (response.status === 409) {
+    return { status: "stale" };
+  }
+
+  if (response.status === 200) {
+    const safe = isSafeReturnTo(returnTo, publicEnv.siteUrl) ? returnTo : null;
+    redirect(safe ?? "/dashboard");
+  }
+
+  const body: unknown = await response.json().catch(() => null);
+  return mapSubmitResponse(response.status, body);
 }
 
 export async function fetchServerDraftsAction(swimmerId: string): Promise<import("@swim-app/shared").EvaluationDraft[]> {

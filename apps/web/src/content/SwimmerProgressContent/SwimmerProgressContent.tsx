@@ -5,23 +5,25 @@ import type {
   ScoreHistoryResponse,
   SwimmerProgressResponse,
 } from "@swim-app/shared";
-import HeroTrendChart from "./charts/HeroTrendChart";
+import HeroTrendChart from "@/components/HeroTrendChart";
+import CategoryTrendsGrid from "@/components/CategoryTrendsGrid";
+import StartProgression from "@/components/StartProgression";
+import {
+  categoryTrendSeries,
+  headPositionSeries,
+  latestCategorySnapshot,
+  startSeries,
+} from "@/lib/progressCharts";
 import CategoryRadar from "./charts/CategoryRadar";
-import CategoryTrendsGrid from "./charts/CategoryTrendsGrid";
-import StartProgression from "./charts/StartProgression";
 import GolfScoreCard from "./charts/GolfScoreCard";
 import FaultTagBars from "./charts/FaultTagBars";
 import SessionCadence from "./charts/SessionCadence";
 import SkillRow from "./SkillRow";
 import WhatToWorkOn from "./WhatToWorkOn";
 import {
-  categoryTrendSeries,
   faultTagFrequency,
-  headPositionSeries,
   headPositionTrailingDelta,
-  latestCategorySnapshot,
   sessionCadence,
-  startSeries,
 } from "./helpers";
 
 interface SwimmerProgressContentProps {
@@ -61,6 +63,17 @@ export default function SwimmerProgressContent({
   const faultTags = faultTagFrequency(progress);
   const cadence = sessionCadence(progress, now);
 
+  // ADR 032: deep-link back to this page (with a URL-safe returnTo) so
+  // save-changes brings the coach straight back to progress. We pass
+  // serializable context — not a function — because this component is a
+  // server component and the children are client components; Next.js refuses
+  // function props across that boundary. The children build the href using
+  // evaluationEditHref().
+  const editContext = {
+    swimmerId: swimmer.id,
+    returnTo: `/coach/swimmers/${swimmer.id}/progress`,
+  };
+
   const hasAnyData =
     progress.skills.length > 0 ||
     progress.startProgress.some(
@@ -95,6 +108,7 @@ export default function SwimmerProgressContent({
                   title="Head position overall"
                   current={progress.headPositionOverall}
                   points={headPosPoints}
+                  editContext={editContext}
                   {...(trailing !== undefined && { trailingDeltaLabel: trailing })}
                 />
                 {isOneEvaluation && (
@@ -108,7 +122,7 @@ export default function SwimmerProgressContent({
                 <h2 className="text-lg font-heading text-text" style={{ fontVariationSettings: "\"SOFT\" 100, \"WONK\" 0" }}>
                   Category snapshot
                 </h2>
-                <div className="max-w-[360px] mx-auto w-full">
+                <div className="max-w-[360px] tablet:max-w-[480px] desktop:max-w-[560px] mx-auto w-full">
                   <CategoryRadar categories={categorySnapshot} />
                 </div>
                 {!isOneEvaluation && (
@@ -138,7 +152,7 @@ export default function SwimmerProgressContent({
                 ) : (
                   <div className="flex flex-col gap-5">
                     {starts.map((start) => (
-                      <StartProgression key={start.slug} name={start.name} points={start.points} />
+                      <StartProgression key={start.slug} name={start.name} points={start.points} editContext={editContext} />
                     ))}
                   </div>
                 )}
@@ -153,7 +167,7 @@ export default function SwimmerProgressContent({
                     <p className="text-xs text-text-secondary">Lower is better. Band shows age-group 25th to 75th percentile.</p>
                   </div>
                   {golfScore.trends.map((trend) => (
-                    <GolfScoreCard key={trend.skillSlug} trend={trend} />
+                    <GolfScoreCard key={trend.skillSlug} trend={trend} editContext={editContext} />
                   ))}
                 </section>
               )}
@@ -201,6 +215,7 @@ export default function SwimmerProgressContent({
                         skill={skill}
                         swimmerId={swimmer.id}
                         nowIso={now.toISOString()}
+                        editContext={editContext}
                       />
                     ))}
                   </ul>

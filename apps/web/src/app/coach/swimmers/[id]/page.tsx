@@ -7,7 +7,12 @@ import AccountInactiveScreen from "@/components/AccountInactiveScreen";
 import CoachSwimmerDetailContent from "@/content/CoachSwimmerDetailContent";
 import { requireAuth } from "@/lib/requireAuth";
 import { fetchCoachSwimmerDetail, fetchSwimmerTimeline } from "@/lib/api/coachSwimmers";
-import { fetchSwimmerSkills, fetchSkillCategories, fetchGolfScoreTrends } from "@/lib/api/evaluations";
+import {
+  fetchGolfScoreTrends,
+  fetchSkillCategories,
+  fetchSwimmerEvaluations,
+  fetchSwimmerSkills,
+} from "@/lib/api/evaluations";
 import { fetchSwimmerMeetSwims, fetchMeets } from "@/lib/api/meets";
 
 export const metadata: Metadata = {
@@ -22,20 +27,31 @@ export default async function CoachSwimmerPage({ params }: CoachSwimmerPageProps
   const [auth, { id }] = await Promise.all([requireAuth(), params]);
   if (!auth) return <AccountInactiveScreen />;
 
-  const [swimmerResult, skillsResult, categoriesResult, timelineResult, swimsResult, meetsResult, draftsRes, golfScoreTrendsResult] =
-    await Promise.all([
-      fetchCoachSwimmerDetail(id, auth.accessToken),
-      fetchSwimmerSkills(id, auth.accessToken),
-      fetchSkillCategories(auth.accessToken),
-      fetchSwimmerTimeline(id, auth.accessToken),
-      fetchSwimmerMeetSwims(id, auth.accessToken),
-      fetchMeets(auth.accessToken),
-      fetch(`${process.env.NEXT_PUBLIC_API_URL}/coach/swimmers/${id}/drafts`, {
-        headers: { Authorization: `Bearer ${auth.accessToken}` },
-        cache: "no-store",
-      }),
-      fetchGolfScoreTrends(id, auth.accessToken),
-    ]);
+  const [
+    swimmerResult,
+    skillsResult,
+    categoriesResult,
+    timelineResult,
+    swimsResult,
+    meetsResult,
+    draftsRes,
+    golfScoreTrendsResult,
+    evaluationsResult,
+  ] = await Promise.all([
+    fetchCoachSwimmerDetail(id, auth.accessToken),
+    fetchSwimmerSkills(id, auth.accessToken),
+    fetchSkillCategories(auth.accessToken),
+    fetchSwimmerTimeline(id, auth.accessToken),
+    fetchSwimmerMeetSwims(id, auth.accessToken),
+    fetchMeets(auth.accessToken),
+    fetch(`${process.env.NEXT_PUBLIC_API_URL}/coach/swimmers/${id}/drafts`, {
+      headers: { Authorization: `Bearer ${auth.accessToken}` },
+      cache: "no-store",
+    }),
+    fetchGolfScoreTrends(id, auth.accessToken),
+    // Only need the top 5 for the detail page's Evaluations section.
+    fetchSwimmerEvaluations(id, auth.accessToken, { limit: 5 }),
+  ]);
 
   if (!swimmerResult.ok) {
     if (swimmerResult.status === 404) notFound();
@@ -54,6 +70,8 @@ export default async function CoachSwimmerPage({ params }: CoachSwimmerPageProps
   const parsed = DraftsListResponseSchema.safeParse(draftsRes.ok ? await draftsRes.json().catch(() => null) : null);
   const swimmerDrafts = parsed.success ? parsed.data.drafts : [];
   const golfScoreTrends = golfScoreTrendsResult.ok ? golfScoreTrendsResult.data.trends : [];
+  // Fail-soft: a failed evaluations fetch degrades to the empty-state copy.
+  const evaluationsList = evaluationsResult.ok ? evaluationsResult.data.evaluations : [];
 
   return (
     <CoachSwimmerDetailContent
@@ -68,6 +86,7 @@ export default async function CoachSwimmerPage({ params }: CoachSwimmerPageProps
       meets={meets}
       drafts={swimmerDrafts}
       golfScoreTrends={golfScoreTrends}
+      evaluations={evaluationsList}
     />
   );
 }

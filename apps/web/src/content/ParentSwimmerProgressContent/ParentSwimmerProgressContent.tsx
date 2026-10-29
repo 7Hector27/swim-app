@@ -1,4 +1,18 @@
-import type { ParentSwimmer, ParentSwimmerProgressResponse, CategoriesResponse, StartGradeResult } from "@swim-app/shared";
+import type {
+  CategoriesResponse,
+  ParentSwimmer,
+  ParentSwimmerProgressResponse,
+  ScoreHistoryResponse,
+  StartGradeResult,
+} from "@swim-app/shared";
+import HeroTrendChart from "@/components/HeroTrendChart";
+import CategoryTrendsGrid from "@/components/CategoryTrendsGrid";
+import StartProgression from "@/components/StartProgression";
+import {
+  categoryTrendSeries,
+  headPositionSeries,
+  startSeries,
+} from "@/lib/progressCharts";
 import ParentSkillProgressRow from "./ParentSkillProgressRow";
 import {
   formatProgressSessionDate,
@@ -11,7 +25,14 @@ interface ParentSwimmerProgressContentProps {
   swimmer: ParentSwimmer;
   progress: ParentSwimmerProgressResponse;
   categories: CategoriesResponse;
+  // Charts need an oldest-to-newest set of session-level snapshots. The
+  // backend always sends one (empty when the swimmer has no evaluations); the
+  // prop is optional only so existing unit tests that pre-date the charts
+  // don't have to be rewritten for the empty case.
+  scoreHistory?: ScoreHistoryResponse;
 }
+
+const EMPTY_SCORE_HISTORY: ScoreHistoryResponse = { points: [] };
 
 function startGradeIsDanger(result: StartGradeResult): boolean {
   return result.status === "not_legal";
@@ -21,7 +42,13 @@ export default function ParentSwimmerProgressContent({
   swimmer,
   progress,
   categories,
+  scoreHistory = EMPTY_SCORE_HISTORY,
 }: ParentSwimmerProgressContentProps) {
+  const headPosPoints = headPositionSeries(scoreHistory);
+  const categoryTrends = categoryTrendSeries(scoreHistory);
+  const startTrends = startSeries(scoreHistory);
+  const totalPoints = scoreHistory.points.length;
+  const hasEnoughForTrend = totalPoints >= 2;
   const slugToName = new Map<string, string>();
   for (const cat of categories) {
     for (const skill of cat.skills) {
@@ -155,21 +182,51 @@ export default function ParentSwimmerProgressContent({
             </section>
           )}
 
-          {/* Head position overall */}
-          {progress.headPositionOverall !== null && (
+          {/* Head position overall. Trend chart when there's enough data,
+              single number otherwise. The chart carries the current value as
+              its hero figure, so the plain fallback only shows when the
+              trend hasn't unlocked. */}
+          {progress.headPositionOverall !== null && hasEnoughForTrend && (
+            <section
+              className="p-4 tablet:p-6 rounded-[var(--radius-card)] border"
+              style={{ borderColor: "var(--color-border)" }}
+              data-testid="parent-progress-head-position-trend"
+            >
+              <HeroTrendChart
+                title="Head position overall"
+                current={progress.headPositionOverall}
+                points={headPosPoints}
+              />
+            </section>
+          )}
+          {progress.headPositionOverall !== null && !hasEnoughForTrend && (
             <section className="flex flex-col gap-1">
-              <h2 className="font-bold text-sm text-text">
-                Head Position Overall
-              </h2>
-              <p className="text-2xl font-bold text-accent">
-                {progress.headPositionOverall}
-              </p>
+              <h2 className="font-bold text-sm text-text">Head Position Overall</h2>
+              <p className="text-2xl font-bold text-accent">{progress.headPositionOverall}</p>
+              {totalPoints === 1 && (
+                <p className="text-xs text-text-secondary italic">
+                  The trend unlocks after the second rating.
+                </p>
+              )}
+            </section>
+          )}
+
+          {/* Category trends over time. Only renders when there are two or
+              more non-voided evaluations (otherwise every mini-line would be
+              a dot and the section would read as empty). */}
+          {hasEnoughForTrend && categoryTrends.length > 0 && (
+            <section
+              className="flex flex-col gap-3"
+              data-testid="parent-progress-category-trends"
+            >
+              <h2 className="font-bold text-sm text-text">Category trends</h2>
+              <CategoryTrendsGrid categories={categoryTrends} />
             </section>
           )}
 
           {/* Starts */}
           {progress.startProgress.length > 0 && (
-            <section className="flex flex-col gap-3">
+            <section className="flex flex-col gap-3" data-testid="parent-progress-starts">
               <h2 className="font-bold text-sm text-text">
                 Starts
               </h2>
@@ -177,8 +234,9 @@ export default function ParentSwimmerProgressContent({
                 {progress.startProgress.map((start) => {
                   const gradeText = formatStartGradeDisplay(start.grade, getSlugName);
                   const isDanger = startGradeIsDanger(start.grade);
+                  const trend = startTrends.find((entry) => entry.slug === start.slug);
                   return (
-                    <li key={start.slug} className="flex flex-col gap-1">
+                    <li key={start.slug} className="flex flex-col gap-2">
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-semibold text-text">
                           {start.name}
@@ -217,6 +275,9 @@ export default function ParentSwimmerProgressContent({
                           </li>
                         ))}
                       </ul>
+                      {trend && hasEnoughForTrend && (
+                        <StartProgression name={start.name} points={trend.points} />
+                      )}
                     </li>
                   );
                 })}

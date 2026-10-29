@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { SkillGradeSchema } from "../lib/dependencyMap";
 import { StartGradeResultSchema } from "../lib/startGrade";
 import { StrokeSchema } from "./skills";
 
@@ -268,8 +269,15 @@ export const SkillCurrentLevelSchema = z.object({
 });
 export type SkillCurrentLevel = z.infer<typeof SkillCurrentLevelSchema>;
 
+// ADR 032: `edited` is true when this history point is a correction leaf
+// (supersedes_rating_id IS NOT NULL). `previousValue` is the pre-correction
+// grade walked one hop back through supersedes_rating_id — SkillGrade covers
+// 1..5 plus `not_legal` / `no_concept` so edits off a special state render
+// correctly. Null on uncorrected points. `sessionId` is the session the point
+// belongs to; the per-point Edit affordance deep-links through it.
 export const ProgressRatingPointSchema = z.object({
   id: z.string().uuid(),
+  sessionId: z.string().uuid(),
   grade: z.number().int().min(1).max(5).nullable(),
   notLegal: z.boolean(),
   noConcept: z.boolean(),
@@ -282,6 +290,8 @@ export const ProgressRatingPointSchema = z.object({
   faultTags: z.array(z.string()),
   ratedAt: z.string().datetime({ offset: true }),
   sessionDate: z.string().date(),
+  edited: z.boolean(),
+  previousValue: SkillGradeSchema.nullable(),
 });
 export type ProgressRatingPoint = z.infer<typeof ProgressRatingPointSchema>;
 
@@ -389,6 +399,9 @@ export type DraftsListResponse = z.infer<typeof DraftsListResponseSchema>;
 export const GolfScoreTrendPointSchema = z.object({
   ratedAt: z.string().datetime({ offset: true }),
   sessionDate: z.string().date(),
+  // ADR 032: lets the chart's selected-point "Edit this evaluation" link
+  // deep-link into the Evaluate page in edit mode.
+  sessionId: z.string().uuid(),
   grade: z.number().int().min(1).max(5).nullable(),
   measurementValue: z.string().nullable(),
 });
@@ -448,6 +461,10 @@ export type ScoreHistoryStart = z.infer<typeof ScoreHistoryStartSchema>;
 
 export const ScoreHistoryPointSchema = z.object({
   sessionDate: z.string().date(),
+  // ADR 032: lets the hero / start / golf-score chart link to a specific
+  // session's edit page. When multiple sessions share a date, the latest
+  // one is the primary.
+  sessionId: z.string().uuid(),
   headPositionOverall: z.number().int().min(1).max(5).nullable(),
   categoryRollups: z.array(ScoreHistoryCategoryRollupSchema),
   starts: z.array(ScoreHistoryStartSchema),
@@ -578,6 +595,37 @@ export const GetSessionResponseSchema = z.object({
   ratings: z.array(GetSessionRatingSchema),
 });
 export type GetSessionResponse = z.infer<typeof GetSessionResponseSchema>;
+
+// GET /coach/swimmers/:id/evaluations — paginated list of a swimmer's past
+// evaluations, newest first. The list page and the swimmer-detail card both
+// consume this. Cursor is opaque: encodes the (sessionDate, sessionId) of
+// the last item so same-date corrections tie-break deterministically.
+export const GetEvaluationsItemSchema = z.object({
+  sessionId: z.string().uuid(),
+  screenSlug: z.string(),
+  screenName: z.string(),
+  sessionDate: z.string().date(),
+  context: EvaluationContextSchema,
+  coachingPriority: z.string().nullable(),
+  // Number of live (non-voided, non-superseded) ratings on this session.
+  ratingCount: z.number().int().nonnegative(),
+  edited: z.boolean(),
+  editedAt: z.string().datetime({ offset: true }).nullable(),
+  createdAt: z.string().datetime({ offset: true }),
+});
+export type GetEvaluationsItem = z.infer<typeof GetEvaluationsItemSchema>;
+
+export const GetEvaluationsResponseSchema = z.object({
+  evaluations: z.array(GetEvaluationsItemSchema),
+  nextCursor: z.string().nullable(),
+});
+export type GetEvaluationsResponse = z.infer<typeof GetEvaluationsResponseSchema>;
+
+export const GetEvaluationsQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).optional().default(20),
+  cursor: z.string().optional(),
+});
+export type GetEvaluationsQuery = z.infer<typeof GetEvaluationsQuerySchema>;
 
 // Parent-facing progress schemas — no fault tags
 export const ParentProgressRatingPointSchema = ProgressRatingPointSchema.omit({ faultTags: true });

@@ -20,6 +20,7 @@ import {
   type BuiltOnGraph,
   type SortOrderMap,
   type PerStrokeGrades,
+  type SkillGrade,
   type SwimmerProgressResponse,
   type SkillCurrentLevel,
   type StartProgress,
@@ -38,6 +39,7 @@ type SkillBucket = {
   parentSkillId: string | null;
   points: Array<{
     id: string;
+    sessionId: string;
     grade: 1 | 2 | 3 | 4 | 5 | null;
     notLegal: boolean;
     noConcept: boolean;
@@ -50,6 +52,8 @@ type SkillBucket = {
     faultTags: string[];
     ratedAt: string;
     sessionDate: string;
+    edited: boolean;
+    previousValue: SkillGrade | null;
   }>;
 };
 
@@ -203,10 +207,15 @@ export async function computeSwimmerProgress(
     return (fullSortOrder[priorityA.targetSlug] ?? 0) - (fullSortOrder[priorityB.targetSlug] ?? 0);
   });
 
-  // Query B: non-voided ratings with session context for the display
+  // Query B: non-voided, non-superseded ratings with session context for the
+  // display. supersedesRatingId tells us whether this history point is a
+  // correction leaf (and if so, we read the predecessor's effective grade
+  // below for `previousValue`). sessionId powers the per-point Edit link.
   const displayRatingRows = await db
     .select({
       ratingId: skillRatings.id,
+      sessionId: skillRatings.sessionId,
+      supersedesRatingId: skillRatings.supersedesRatingId,
       grade: skillRatings.grade,
       notLegal: skillRatings.notLegal,
       noConcept: skillRatings.noConcept,
@@ -241,6 +250,34 @@ export async function computeSwimmerProgress(
       ),
     )
     .orderBy(desc(skillRatings.ratedAt), desc(skillRatings.createdAt), asc(skillRatings.id));
+
+  // For every correction leaf in the display rows, fetch its predecessor's
+  // effective grade so the UI can render "(edited, was N)". We fetch
+  // predecessors even if they are themselves voided/superseded — the point
+  // of previousValue is to show the pre-correction value, not to filter
+  // again. SkillGrade covers 1..5 plus "not_legal" / "no_concept".
+  const predecessorIds = displayRatingRows
+    .map((row) => row.supersedesRatingId)
+    .filter((id): id is string => id !== null);
+  const previousGradeById = new Map<string, SkillGrade>();
+  if (predecessorIds.length > 0) {
+    const predecessorRows = await db
+      .select({
+        id: skillRatings.id,
+        grade: skillRatings.grade,
+        notLegal: skillRatings.notLegal,
+        noConcept: skillRatings.noConcept,
+      })
+      .from(skillRatings)
+      .where(inArray(skillRatings.id, predecessorIds));
+    for (const predecessor of predecessorRows) {
+      let value: SkillGrade;
+      if (predecessor.notLegal) value = "not_legal";
+      else if (predecessor.noConcept) value = "no_concept";
+      else value = predecessor.grade as 1 | 2 | 3 | 4 | 5 | null;
+      previousGradeById.set(predecessor.id, value);
+    }
+  }
 
   // Fetch fault tags for displayed ratings — skipped for parent audience
   const faultTagsMap = new Map<string, string[]>();
@@ -305,6 +342,7 @@ export async function computeSwimmerProgress(
     const existing = skillBuckets.get(row.skillId);
     const point = {
       id: row.ratingId,
+      sessionId: row.sessionId,
       grade: row.grade as 1 | 2 | 3 | 4 | 5 | null,
       notLegal: row.notLegal,
       noConcept: row.noConcept,
@@ -317,6 +355,11 @@ export async function computeSwimmerProgress(
       faultTags: faultTagsMap.get(row.ratingId) ?? [],
       ratedAt: row.ratedAt.toISOString(),
       sessionDate: row.sessionDate,
+      edited: row.supersedesRatingId !== null,
+      previousValue:
+        row.supersedesRatingId !== null
+          ? previousGradeById.get(row.supersedesRatingId) ?? null
+          : null,
     };
 
     if (existing) {
@@ -354,6 +397,7 @@ export async function computeSwimmerProgress(
   for (const bucket of skillBuckets.values()) {
     const history = bucket.points.slice(0, 12).map((point) => ({
       id: point.id,
+      sessionId: point.sessionId,
       grade: point.grade,
       notLegal: point.notLegal,
       noConcept: point.noConcept,
@@ -366,6 +410,8 @@ export async function computeSwimmerProgress(
       faultTags: point.faultTags,
       ratedAt: point.ratedAt,
       sessionDate: point.sessionDate,
+      edited: point.edited,
+      previousValue: point.previousValue,
     }));
 
     if (bucket.ratedPerSide) {

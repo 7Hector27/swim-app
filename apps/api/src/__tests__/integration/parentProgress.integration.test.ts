@@ -241,3 +241,170 @@ describe("GET /swimmers/:id/progress", () => {
     await coach.cleanup();
   });
 });
+
+// ── GET /swimmers/:id/score-history (parent route) ─────────────────────────
+
+describe("GET /swimmers/:id/score-history (parent)", () => {
+  // Coaches created inside this block cannot be cleaned up until every
+  // evaluation session they wrote has been deleted (ON DELETE RESTRICT on
+  // evaluation_sessions.coach_id). Collect them and clean up in afterAll.
+  const seedCoaches: TestUser[] = [];
+
+  afterAll(async () => {
+    await adminDb().delete(skillRatings).where(eq(skillRatings.swimmerId, swimmerId));
+    await adminDb().delete(evaluationSessions).where(eq(evaluationSessions.swimmerId, swimmerId));
+    for (const coach of seedCoaches) {
+      await coach.cleanup();
+    }
+  });
+
+  async function seedRating(options: {
+    grade: 1 | 2 | 3 | 4 | 5;
+    sessionDate: string;
+    ratedAt: string;
+    faultTags?: string[];
+  }): Promise<{ ratingId: string; coach: TestUser }> {
+    const coach = await createTestUser("parent-sh-seed-coach");
+    await adminDb().update(profiles).set({ role: "coach" }).where(eq(profiles.id, coach.userId));
+    seedCoaches.push(coach);
+    const sessionRes = await request(app)
+      .post(`/coach/swimmers/${swimmerId}/sessions`)
+      .set("Authorization", `Bearer ${coach.accessToken}`)
+      .send({
+        screenSlug: "freestyle",
+        breathingPattern: "every_3",
+        sessionDate: options.sessionDate,
+        context: "practice",
+        coachingPriority: "Kick",
+        ratings: [
+          {
+            skillId,
+            grade: options.grade,
+            notLegal: false,
+            noConcept: false,
+            side: null,
+            capacityValue: null,
+            capacityUnit: null,
+            measurementValue: null,
+            measurementUnit: null,
+            note: null,
+            faultTags: options.faultTags ?? [],
+            ratedAt: options.ratedAt,
+          },
+        ],
+      });
+    expect(sessionRes.status).toBe(201);
+    const ratingId = (sessionRes.body as { ratingIds: string[] }).ratingIds[0]!;
+    return { ratingId, coach };
+  }
+
+  async function clearSwimmerSessions(): Promise<void> {
+    await adminDb().delete(skillRatings).where(eq(skillRatings.swimmerId, swimmerId));
+    await adminDb().delete(evaluationSessions).where(eq(evaluationSessions.swimmerId, swimmerId));
+  }
+
+  it("a swimmer with no evaluations returns an empty points array", async () => {
+    // Runs first so no prior test's data leaks in.
+    await clearSwimmerSessions();
+    const res = await request(app)
+      .get(`/swimmers/${swimmerId}/score-history`)
+      .set("Authorization", `Bearer ${owner.accessToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ points: [] });
+  });
+
+  it("owner gets 200 and viewer (household member) gets 200; other household gets 404", async () => {
+    await clearSwimmerSessions();
+    await seedRating({ grade: 3, sessionDate: "2026-10-12", ratedAt: "2026-10-12T10:00:00.000Z" });
+
+    const ownerRes = await request(app)
+      .get(`/swimmers/${swimmerId}/score-history`)
+      .set("Authorization", `Bearer ${owner.accessToken}`);
+    expect(ownerRes.status).toBe(200);
+    expect(Array.isArray(ownerRes.body.points)).toBe(true);
+    expect(ownerRes.body.points.length).toBeGreaterThan(0);
+
+    const viewerRes = await request(app)
+      .get(`/swimmers/${swimmerId}/score-history`)
+      .set("Authorization", `Bearer ${viewer.accessToken}`);
+    expect(viewerRes.status).toBe(200);
+
+    const otherRes = await request(app)
+      .get(`/swimmers/${swimmerId}/score-history`)
+      .set("Authorization", `Bearer ${otherHousehold.accessToken}`);
+    expect(otherRes.status).toBe(404);
+  });
+
+  it("coach token gets 403 (requireParent)", async () => {
+    const coach = await createTestUser("parent-sh-coach-role");
+    await adminDb().update(profiles).set({ role: "coach" }).where(eq(profiles.id, coach.userId));
+
+    const res = await request(app)
+      .get(`/swimmers/${swimmerId}/score-history`)
+      .set("Authorization", `Bearer ${coach.accessToken}`);
+    expect(res.status).toBe(403);
+
+    await coach.cleanup();
+  });
+
+  it("missing Authorization gets 401", async () => {
+    const res = await request(app).get(`/swimmers/${swimmerId}/score-history`);
+    expect(res.status).toBe(401);
+  });
+
+  it("response never carries faultTags", async () => {
+    await clearSwimmerSessions();
+    await seedRating({
+      grade: 4,
+      sessionDate: "2026-10-13",
+      ratedAt: "2026-10-13T10:00:00.000Z",
+      faultTags: ["breaks down 2nd length"],
+    });
+
+    const res = await request(app)
+      .get(`/swimmers/${swimmerId}/score-history`)
+      .set("Authorization", `Bearer ${owner.accessToken}`);
+    expect(res.status).toBe(200);
+
+    // Walk every nested object; no key may be exactly "faultTags".
+    const serialized = JSON.stringify(res.body);
+    expect(serialized.includes("faultTags")).toBe(false);
+  });
+
+  it("voided ratings don't produce a point", async () => {
+    await clearSwimmerSessions();
+    await seedRating({ grade: 3, sessionDate: "2026-10-14", ratedAt: "2026-10-14T10:00:00.000Z" });
+    const second = await seedRating({
+      grade: 1,
+      sessionDate: "2026-10-15",
+      ratedAt: "2026-10-15T10:00:00.000Z",
+    });
+
+    // Void with the coach that wrote the rating — the void endpoint checks
+    // the authenticated coach matches the rating's coach_id.
+    const voidRes = await request(app)
+      .patch(`/coach/ratings/${second.ratingId}/void`)
+      .set("Authorization", `Bearer ${second.coach.accessToken}`)
+      .send({ reason: "Err" });
+    expect(voidRes.status).toBe(200);
+
+    const res = await request(app)
+      .get(`/swimmers/${swimmerId}/score-history`)
+      .set("Authorization", `Bearer ${owner.accessToken}`);
+    expect(res.status).toBe(200);
+    const dates = (res.body.points as Array<{ sessionDate: string }>).map((point) => point.sessionDate);
+    expect(dates).toEqual(["2026-10-14"]);
+  });
+
+  it("a swimmer with one evaluation returns exactly one point", async () => {
+    await clearSwimmerSessions();
+    await seedRating({ grade: 4, sessionDate: "2026-10-16", ratedAt: "2026-10-16T10:00:00.000Z" });
+
+    const res = await request(app)
+      .get(`/swimmers/${swimmerId}/score-history`)
+      .set("Authorization", `Bearer ${owner.accessToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body.points).toHaveLength(1);
+    expect(res.body.points[0].sessionDate).toBe("2026-10-16");
+  });
+});

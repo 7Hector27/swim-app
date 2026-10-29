@@ -15,6 +15,7 @@ import { requireParent } from "../middleware/requireParent";
 import { requireHouseholdMember } from "../middleware/requireHouseholdMember";
 import { requireHouseholdSwimmer } from "../middleware/requireHouseholdSwimmer";
 import { computeSwimmerProgress } from "../lib/progressCalculation";
+import { computeScoreHistory } from "../lib/scoreHistory";
 import {
   formatSwimTime,
   IdParamsSchema,
@@ -147,6 +148,27 @@ parentProgressRouter.get(
 
     req.log.info({ swimmerId, skillCount: parentSkills.length }, "parent swimmer progress fetched");
     res.json(response);
+  }),
+);
+
+// GET /swimmers/:id/score-history: parent-facing time-series for charts.
+// Reuses the same computation as the coach endpoint. The response contains
+// only derived aggregates (head position overall, per-category averages,
+// start grade progression) and never leaks fault tags, voided rows, or coach
+// notes. Access is gated by the same middleware chain as the parent progress
+// route: parent role, member of the swimmer's household, swimmer is active.
+parentProgressRouter.get(
+  "/:id/score-history",
+  requireUser,
+  requireParent,
+  validate({ params: IdParamsSchema }),
+  requireHouseholdMember,
+  requireHouseholdSwimmer,
+  asyncHandler(async (req, res) => {
+    const { id: swimmerId } = req.params as unknown as IdParams;
+    const result = await computeScoreHistory(swimmerId);
+    req.log.info({ swimmerId, pointCount: result.points.length }, "parent score history fetched");
+    res.json(result);
   }),
 );
 

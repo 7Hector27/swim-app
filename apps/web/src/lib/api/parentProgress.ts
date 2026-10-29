@@ -5,6 +5,8 @@ import {
   type ParentSwimmerProgressResponse,
   ParentSwimmerSchema,
   type ParentSwimmer,
+  ScoreHistoryResponseSchema,
+  type ScoreHistoryResponse,
 } from "@swim-app/shared";
 
 export type FetchParentSwimmerProgressResult =
@@ -48,6 +50,29 @@ export async function fetchParentSwimmer(
     const parsed = ParentSwimmerSchema.safeParse(body);
     if (!parsed.success) return { ok: false, status: 500 };
     return { ok: true, swimmer: parsed.data };
+  } catch {
+    return { ok: false, status: 500 };
+  }
+}
+
+export type FetchParentScoreHistoryResult =
+  | { ok: true; data: ScoreHistoryResponse }
+  | { ok: false; status: number };
+
+export async function fetchParentScoreHistory(
+  swimmerId: string,
+  accessToken: string,
+): Promise<FetchParentScoreHistoryResult> {
+  try {
+    const response = await fetch(
+      `${process.env.NEXT_PUBLIC_API_URL}/swimmers/${swimmerId}/score-history`,
+      { headers: { Authorization: `Bearer ${accessToken}` }, cache: "no-store" },
+    );
+    if (!response.ok) return { ok: false, status: response.status };
+    const body: unknown = await response.json();
+    const parsed = ScoreHistoryResponseSchema.safeParse(body);
+    if (!parsed.success) return { ok: false, status: 500 };
+    return { ok: true, data: parsed.data };
   } catch {
     return { ok: false, status: 500 };
   }

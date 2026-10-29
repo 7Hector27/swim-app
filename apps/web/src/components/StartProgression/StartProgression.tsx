@@ -2,17 +2,21 @@
 
 import { useId, useRef, useState } from "react";
 import type { StartGradeResult } from "@swim-app/shared";
-import { formatMonthDay, formatSessionDate } from "../helpers";
+import { formatMonthDay, formatSessionDate } from "@/lib/progressCharts";
+import { evaluationEditHref, type EvaluationEditContext } from "@/lib/evaluationEditHref";
 
 interface StartProgressionProps {
   name: string;
-  points: Array<{ sessionDate: string; grade: StartGradeResult }>;
+  points: Array<{ sessionDate: string; grade: StartGradeResult; sessionId?: string }>;
+  // ADR 032: serializable edit context. The client builds the href itself so
+  // nothing crosses the RSC boundary as a function.
+  editContext?: EvaluationEditContext;
 }
 
 const PHONE_MIN_HEIGHT_PX = 200;
 const TABLET_MIN_HEIGHT_PX = 260;
 
-export default function StartProgression({ name, points }: StartProgressionProps) {
+export default function StartProgression({ name, points, editContext }: StartProgressionProps) {
   const titleId = useId();
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
@@ -226,8 +230,19 @@ export default function StartProgression({ name, points }: StartProgressionProps
         </svg>
       </div>
       {selected && (
-        <p className="text-xs text-text-secondary tabular-nums">
-          {formatSessionDate(selected.sessionDate)} · {statusLabel(selected.grade)}
+        <p className="text-xs text-text-secondary tabular-nums flex items-center flex-wrap gap-x-3 gap-y-1">
+          <span>
+            {formatSessionDate(selected.sessionDate)} · {statusLabel(selected.grade)}
+          </span>
+          {editContext && selected.sessionId && (
+            <a
+              href={evaluationEditHref(editContext, selected.sessionId)}
+              className="text-link hover:text-link-hover font-semibold"
+              data-testid="start-progression-edit-link"
+            >
+              Edit this evaluation →
+            </a>
+          )}
         </p>
       )}
     </div>

@@ -2,10 +2,14 @@
 
 import { useId, useState } from "react";
 import type { GolfScoreTrend } from "@swim-app/shared";
-import { formatMonthDay, formatSessionDate } from "../helpers";
+import { formatMonthDay, formatSessionDate } from "@/lib/progressCharts";
+import { evaluationEditHref, type EvaluationEditContext } from "@/lib/evaluationEditHref";
 
 interface GolfScoreCardProps {
   trend: GolfScoreTrend;
+  // ADR 032: serializable edit context used by the selected-point link.
+  // Server callers must not pass a function here.
+  editContext?: EvaluationEditContext;
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -17,11 +21,16 @@ const CATEGORY_LABELS: Record<string, string> = {
 const PHONE_MIN_HEIGHT_PX = 200;
 const TABLET_MIN_HEIGHT_PX = 260;
 
-export default function GolfScoreCard({ trend }: GolfScoreCardProps) {
+export default function GolfScoreCard({ trend, editContext }: GolfScoreCardProps) {
   return (
     <div className="flex flex-col gap-4">
       {trend.byCategory.map((categoryTrend) => (
-        <GolfCategory key={categoryTrend.category} skillName={trend.skillName} categoryTrend={categoryTrend} />
+        <GolfCategory
+          key={categoryTrend.category}
+          skillName={trend.skillName}
+          categoryTrend={categoryTrend}
+          {...(editContext && { editContext })}
+        />
       ))}
     </div>
   );
@@ -30,9 +39,11 @@ export default function GolfScoreCard({ trend }: GolfScoreCardProps) {
 function GolfCategory({
   skillName,
   categoryTrend,
+  editContext,
 }: {
   skillName: string;
   categoryTrend: GolfScoreTrend["byCategory"][number];
+  editContext?: EvaluationEditContext;
 }) {
   const titleId = useId();
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
@@ -234,9 +245,20 @@ function GolfCategory({
         </svg>
       </div>
       {selected && (
-        <p className="text-xs text-text-secondary tabular-nums">
-          {formatSessionDate(selected.sessionDate)} · {Number(selected.measurementValue).toFixed(1)}s
-          {selected.grade !== null ? ` · grade ${selected.grade}` : ""}
+        <p className="text-xs text-text-secondary tabular-nums flex items-center flex-wrap gap-x-3 gap-y-1">
+          <span>
+            {formatSessionDate(selected.sessionDate)} · {Number(selected.measurementValue).toFixed(1)}s
+            {selected.grade !== null ? ` · grade ${selected.grade}` : ""}
+          </span>
+          {editContext && selected.sessionId && (
+            <a
+              href={evaluationEditHref(editContext, selected.sessionId)}
+              className="text-link hover:text-link-hover font-semibold"
+              data-testid="golf-score-edit-link"
+            >
+              Edit this evaluation →
+            </a>
+          )}
         </p>
       )}
     </div>

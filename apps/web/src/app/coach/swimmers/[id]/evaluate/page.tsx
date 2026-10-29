@@ -1,13 +1,14 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
-import { EvaluationDraftSchema } from "@swim-app/shared";
-import type { EvaluationDraft } from "@swim-app/shared";
+import { EvaluationDraftSchema, isSafeReturnTo } from "@swim-app/shared";
+import type { EvaluationDraft, GetSessionResponse } from "@swim-app/shared";
 
 import AccountInactiveScreen from "@/components/AccountInactiveScreen";
 import EvaluateContent from "@/content/EvaluateContent";
 import { requireAuth } from "@/lib/requireAuth";
 import { fetchCoachSwimmerDetail } from "@/lib/api/coachSwimmers";
-import { fetchScreens, fetchSwimmerSkills } from "@/lib/api/evaluations";
+import { fetchScreens, fetchSession, fetchSwimmerSkills } from "@/lib/api/evaluations";
+import { publicEnv } from "@/lib/env";
 
 export const metadata: Metadata = {
   title: "Evaluate · Axiom Aquatics",
@@ -60,12 +61,40 @@ export default async function EvaluatePage({ params, searchParams }: EvaluatePag
     }
   }
 
+  // Edit mode (ADR 032): ?editSession=<id> pre-fills the form from the
+  // target session. A sanitized ?returnTo deep-links back to the caller
+  // after a successful PATCH. ?skill=<slug> still scrolls to that skill.
+  const editSessionId = resolvedParams["editSession"];
+  let editSession: GetSessionResponse | undefined;
+  if (editSessionId) {
+    const result = await fetchSession(editSessionId, auth.accessToken);
+    if (!result.ok) {
+      if (result.status === 404 || result.status === 403) notFound();
+      throw new Error(`Failed to load session for edit (status ${result.status})`);
+    }
+    if (result.data.swimmerId !== id) {
+      // Session belongs to a different swimmer; treat as not found.
+      notFound();
+    }
+    editSession = result.data;
+  }
+
+  const returnToParam = resolvedParams["returnTo"] ?? null;
+  // Mirror the signup sanitizer. Falls back to the swimmer page when the
+  // param is missing, unsafe, or decode-fails.
+  const safeReturnTo =
+    returnToParam && isSafeReturnTo(returnToParam, publicEnv.siteUrl)
+      ? returnToParam
+      : `/coach/swimmers/${id}`;
+
   return (
     <EvaluateContent
       swimmer={swimmerResult.swimmer}
       screens={screensResult.screens}
       prevGrades={prevGrades}
       {...(resumeDraft !== undefined && { resumeDraft })}
+      {...(editSession !== undefined && { editSession })}
+      returnTo={safeReturnTo}
     />
   );
 }

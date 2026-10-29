@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { SkillCurrentLevel, SwimmerProgressResponse } from "@swim-app/shared";
 import TrendLine from "@/components/TrendLine";
 import SkillChart from "@/components/SkillChart";
+import type { EvaluationEditContext } from "@/lib/evaluationEditHref";
 import { evaluateHrefFor, formatRecency } from "./helpers";
 
 type SkillProgress = SwimmerProgressResponse["skills"][number];
@@ -14,9 +15,13 @@ interface SkillRowProps {
   // ISO string captured server-side so recency text is identical during SSR
   // and client hydration. Omitting it lets tests fall back to real time.
   nowIso?: string;
+  // ADR 032: serializable edit context (swimmerId + returnTo). SkillRow adds
+  // the skill slug here before handing it to SkillChart so the deep link
+  // scrolls to this skill.
+  editContext?: EvaluationEditContext;
 }
 
-export default function SkillRow({ skill, swimmerId, nowIso }: SkillRowProps) {
+export default function SkillRow({ skill, swimmerId, nowIso, editContext }: SkillRowProps) {
   const [open, setOpen] = useState(false);
   const latestPoint = skill.history[0];
   const now = nowIso !== undefined ? new Date(nowIso) : new Date();
@@ -86,7 +91,11 @@ export default function SkillRow({ skill, swimmerId, nowIso }: SkillRowProps) {
             </p>
           )}
           {skill.history.length > 0 ? (
-            <SkillChart history={skill.history} skillName={skill.name} />
+            <SkillChart
+              history={skill.history}
+              skillName={skill.name}
+              {...(editContext && { editContext: { ...editContext, skillSlug: skill.slug } })}
+            />
           ) : (
             <p className="text-xs text-text-secondary italic">No rated sessions yet.</p>
           )}

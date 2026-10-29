@@ -3,7 +3,11 @@ import { notFound, redirect } from "next/navigation";
 import AccountInactiveScreen from "@/components/AccountInactiveScreen";
 import ParentSwimmerProgressContent from "@/content/ParentSwimmerProgressContent";
 import { requireAuth } from "@/lib/requireAuth";
-import { fetchParentSwimmer, fetchParentSwimmerProgress } from "@/lib/api/parentProgress";
+import {
+  fetchParentScoreHistory,
+  fetchParentSwimmer,
+  fetchParentSwimmerProgress,
+} from "@/lib/api/parentProgress";
 import { fetchSkillCategories } from "@/lib/api/evaluations";
 
 export const metadata: Metadata = {
@@ -23,11 +27,13 @@ export default async function ParentSwimmerProgressPage({ params }: Props) {
     redirect(`/coach/swimmers/${id}/progress`);
   }
 
-  const [swimmerResult, progressResult, categoriesResult] = await Promise.all([
-    fetchParentSwimmer(id, auth.accessToken),
-    fetchParentSwimmerProgress(id, auth.accessToken),
-    fetchSkillCategories(auth.accessToken),
-  ]);
+  const [swimmerResult, progressResult, categoriesResult, scoreHistoryResult] =
+    await Promise.all([
+      fetchParentSwimmer(id, auth.accessToken),
+      fetchParentSwimmerProgress(id, auth.accessToken),
+      fetchSkillCategories(auth.accessToken),
+      fetchParentScoreHistory(id, auth.accessToken),
+    ]);
 
   if (!swimmerResult.ok) {
     if (swimmerResult.status === 404) notFound();
@@ -42,12 +48,16 @@ export default async function ParentSwimmerProgressPage({ params }: Props) {
   }
 
   const categories = categoriesResult.ok ? categoriesResult.categories : [];
+  // Charts gracefully degrade when score-history fails: the page still renders
+  // without them (same pattern as the coach progress page).
+  const scoreHistory = scoreHistoryResult.ok ? scoreHistoryResult.data : { points: [] };
 
   return (
     <ParentSwimmerProgressContent
       swimmer={swimmerResult.swimmer}
       progress={progressResult.data}
       categories={categories}
+      scoreHistory={scoreHistory}
     />
   );
 }

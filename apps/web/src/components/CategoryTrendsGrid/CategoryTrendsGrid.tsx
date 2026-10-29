@@ -1,6 +1,6 @@
 "use client";
 
-import { formatSessionDate } from "../helpers";
+import { formatSessionDate } from "@/lib/progressCharts";
 
 interface CategoryTrendPoint {
   sessionDate: string;

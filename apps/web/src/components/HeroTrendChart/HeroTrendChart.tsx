@@ -1,11 +1,16 @@
 "use client";
 
 import { useId, useMemo, useRef, useState } from "react";
-import { formatMonthDay, formatSessionDate } from "../helpers";
+import { formatMonthDay, formatSessionDate } from "@/lib/progressCharts";
+import { evaluationEditHref, type EvaluationEditContext } from "@/lib/evaluationEditHref";
 
 interface HeroPoint {
   sessionDate: string;
   value: number | null;
+  // ADR 032: when a point carries a sessionId and the caller supplies
+  // editContext, the selected-point detail line renders an "Edit this
+  // evaluation" link.
+  sessionId?: string;
 }
 
 interface HeroTrendChartProps {
@@ -13,6 +18,9 @@ interface HeroTrendChartProps {
   title: string;
   current: number | null;
   trailingDeltaLabel?: string;
+  // ADR 032: serializable context used to build the Edit link client-side.
+  // Server callers must not pass a function here (crosses the RSC boundary).
+  editContext?: EvaluationEditContext;
   // Minimum SVG viewBox height. 200 on phones, 260+ at tablet/desktop (via CSS
   // aspect-ratio). The viewBox gets the smaller baseline so phone layouts stay
   // compact; the responsive aspect-ratio stretches drawing on wider screens.
@@ -21,7 +29,7 @@ interface HeroTrendChartProps {
 const PHONE_MIN_HEIGHT_PX = 200;
 const TABLET_MIN_HEIGHT_PX = 260;
 
-export default function HeroTrendChart({ points, title, current, trailingDeltaLabel }: HeroTrendChartProps) {
+export default function HeroTrendChart({ points, title, current, trailingDeltaLabel, editContext }: HeroTrendChartProps) {
   const titleId = useId();
   const descId = useId();
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -249,8 +257,19 @@ export default function HeroTrendChart({ points, title, current, trailingDeltaLa
       </div>
 
       {selectedPoint && selectedPoint.value !== null && (
-        <p className="text-xs tabular-nums text-text-secondary">
-          {formatSessionDate(selectedPoint.sessionDate)} · grade {selectedPoint.value}
+        <p className="text-xs tabular-nums text-text-secondary flex items-center flex-wrap gap-x-3 gap-y-1">
+          <span>
+            {formatSessionDate(selectedPoint.sessionDate)} · grade {selectedPoint.value}
+          </span>
+          {editContext && selectedPoint.sessionId && (
+            <a
+              href={evaluationEditHref(editContext, selectedPoint.sessionId)}
+              className="text-link hover:text-link-hover font-semibold"
+              data-testid="hero-trend-edit-link"
+            >
+              Edit this evaluation →
+            </a>
+          )}
         </p>
       )}
     </div>

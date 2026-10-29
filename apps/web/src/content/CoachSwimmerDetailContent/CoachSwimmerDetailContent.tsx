@@ -4,6 +4,7 @@ import { useActionState, useMemo, useRef, useState } from "react";
 import {
   type CoachSwimmerDetail,
   type EvaluationDraft,
+  type GetEvaluationsItem,
   type GolfScoreTrend,
   type League,
   type CategoriesResponse,
@@ -18,6 +19,7 @@ import {
 
 import AddNoteForm from "@/components/AddNoteForm";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import EvaluationsList from "@/components/EvaluationsList";
 import AddSwimForm from "./AddSwimForm";
 import GolfScoreTrends from "./GolfScoreTrends";
 import HidePublicButton from "./HidePublicButton";
@@ -39,6 +41,10 @@ interface CoachSwimmerDetailContentProps {
   meets: MeetResponse[];
   drafts: EvaluationDraft[];
   golfScoreTrends: GolfScoreTrend[];
+  // Top 5 past evaluations for the Evaluations section (ADR 032). Driven by
+  // GET /coach/swimmers/:id/evaluations. Optional so existing unit tests
+  // that pre-date this section keep rendering with an empty state.
+  evaluations?: GetEvaluationsItem[];
 }
 
 const LEAGUE_LABELS: Record<League, string> = {
@@ -384,6 +390,7 @@ export default function CoachSwimmerDetailContent({
   meets,
   drafts,
   golfScoreTrends,
+  evaluations = [],
 }: CoachSwimmerDetailContentProps) {
   const [activeTab, setActiveTab] = useState<TabId>("feed");
   const [timesFormMode, setTimesFormMode] = useState<"closed" | "meet" | "practice">("closed");
@@ -429,41 +436,6 @@ export default function CoachSwimmerDetailContent({
     timelineItems.find(
       (item) => item.type === "coaching_priority" || item.type === "rating_note",
     )?.createdAt ?? null;
-
-  // Recent evaluations: timeline is flat, so we group by tiedTo.sessionId
-  // and take the newest createdAt per session. This gives Jason a tidy
-  // "Oct 25 · 11 ratings" row even without a session-container endpoint.
-  const recentEvaluations = useMemo(() => {
-    const bySession = new Map<
-      string,
-      { sessionId: string; createdAt: string; ratingCount: number; priorityBody: string | null }
-    >();
-    for (const item of timelineItems) {
-      const sessionId = item.tiedTo?.sessionId;
-      if (!sessionId) continue;
-      if (item.type !== "rating_note" && item.type !== "coaching_priority") continue;
-      const existing = bySession.get(sessionId);
-      if (!existing) {
-        bySession.set(sessionId, {
-          sessionId,
-          createdAt: item.createdAt,
-          ratingCount: item.type === "rating_note" ? 1 : 0,
-          priorityBody: item.type === "coaching_priority" ? item.body : null,
-        });
-      } else {
-        if (item.type === "rating_note") existing.ratingCount += 1;
-        if (item.type === "coaching_priority" && !existing.priorityBody) {
-          existing.priorityBody = item.body;
-        }
-        if (new Date(item.createdAt) > new Date(existing.createdAt)) {
-          existing.createdAt = item.createdAt;
-        }
-      }
-    }
-    return Array.from(bySession.values())
-      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
-      .slice(0, 5);
-  }, [timelineItems]);
 
   // The primary club name shown next to age. Mirrors the resolver used by
   // the roster: otherClubName takes precedence, then resolved clubName.
@@ -697,7 +669,7 @@ export default function CoachSwimmerDetailContent({
                       swimmerId={swimmer.id}
                       categories={categories}
                       timelineItems={timelineItems}
-                      recentEvaluations={recentEvaluations}
+                      evaluations={evaluations}
                     />
                   )}
                   {activeTab === "times" && (
@@ -809,46 +781,38 @@ interface FeedPaneProps {
   swimmerId: string;
   categories: CategoriesResponse;
   timelineItems: TimelineResponse;
-  recentEvaluations: Array<{
-    sessionId: string;
-    createdAt: string;
-    ratingCount: number;
-    priorityBody: string | null;
-  }>;
+  evaluations: GetEvaluationsItem[];
 }
 
-function FeedPane({ swimmerId, categories, timelineItems, recentEvaluations }: FeedPaneProps) {
+function FeedPane({ swimmerId, categories, timelineItems, evaluations }: FeedPaneProps) {
+  const returnTo = `/coach/swimmers/${swimmerId}`;
   return (
     <div className="flex flex-col gap-6">
-      {recentEvaluations.length > 0 && (
-        <section className="flex flex-col gap-3">
+      <section className="flex flex-col gap-3" data-testid="coach-detail-evaluations-section">
+        <div className="flex items-baseline justify-between gap-2">
           <h2 className="font-bold text-sm text-text uppercase tracking-wider">
-            Recent evaluations
+            Evaluations
           </h2>
-          <ul className="flex flex-col divide-y divide-border">
-            {recentEvaluations.map((session) => (
-              <li
-                key={session.sessionId}
-                className="py-2.5 first:pt-0 last:pb-0 flex flex-col gap-1"
-              >
-                <div className="flex items-center justify-between gap-2 flex-wrap">
-                  <span className="font-bold text-sm text-text">
-                    {formatShortDate(session.createdAt)}
-                  </span>
-                  <span className="text-xs text-text-secondary tabular-nums">
-                    {session.ratingCount === 1
-                      ? "1 rating note"
-                      : `${session.ratingCount} rating notes`}
-                  </span>
-                </div>
-                {session.priorityBody && (
-                  <p className="text-sm text-text-secondary leading-snug">{session.priorityBody}</p>
-                )}
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+          {evaluations.length > 0 && (
+            <a
+              href={`/coach/swimmers/${swimmerId}/evaluations`}
+              className="text-xs font-semibold text-link hover:text-link-hover"
+              data-testid="coach-detail-see-all-evaluations"
+            >
+              See all evaluations →
+            </a>
+          )}
+        </div>
+        {evaluations.length === 0 ? (
+          <p className="text-sm text-text-secondary">No evaluations yet.</p>
+        ) : (
+          <EvaluationsList
+            swimmerId={swimmerId}
+            evaluations={evaluations}
+            returnTo={returnTo}
+          />
+        )}
+      </section>
 
       <SwimmerTimeline swimmerId={swimmerId} items={timelineItems} categories={categories} />
 

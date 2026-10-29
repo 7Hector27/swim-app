@@ -1,6 +1,11 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
-import type { ParentSwimmer, ParentSwimmerProgressResponse, CategoriesResponse } from "@swim-app/shared";
+import type {
+  CategoriesResponse,
+  ParentSwimmer,
+  ParentSwimmerProgressResponse,
+  ScoreHistoryResponse,
+} from "@swim-app/shared";
 
 vi.mock("@/components/SiteNav", () => ({ default: () => <nav /> }));
 vi.mock("@/components/TrendLine", () => ({ default: () => null }));
@@ -36,6 +41,7 @@ const emptyProgress: ParentSwimmerProgressResponse = {
 };
 
 const categories: CategoriesResponse = [];
+const emptyScoreHistory: ScoreHistoryResponse = { points: [] };
 
 describe("ParentSwimmerProgressContent", () => {
   it("shows empty state when no evaluations", () => {
@@ -283,5 +289,99 @@ describe("ParentSwimmerProgressContent", () => {
     // Date-string rendering uses the UTC-anchored formatter in helpers.ts so
     // the day is "Oct 14, 2026" regardless of the test runner's TZ.
     expect(section).toHaveTextContent(/From Oct 14, 2026/);
+  });
+});
+
+describe("ParentSwimmerProgressContent — charts", () => {
+  function makeHistory(headPositions: Array<number | null>): ScoreHistoryResponse {
+    return {
+      points: headPositions.map((value, index) => ({
+        sessionDate: `2026-10-${String(index + 1).padStart(2, "0")}`,
+        sessionId: `ssss0000-0000-0000-0000-${String(index + 1).padStart(12, "0")}`,
+        headPositionOverall: value,
+        categoryRollups: [
+          {
+            categoryId: CAT_ID,
+            categorySlug: "freestyle",
+            categoryName: "Freestyle",
+            average: value,
+            assessedCount: value !== null ? 1 : 0,
+            totalCount: 1,
+          },
+        ],
+        starts: [],
+      })),
+    };
+  }
+
+  it("empty state: no charts render when there is no evaluation data", () => {
+    render(
+      <ParentSwimmerProgressContent
+        swimmer={swimmer}
+        progress={emptyProgress}
+        categories={categories}
+        scoreHistory={emptyScoreHistory}
+      />,
+    );
+    expect(screen.queryByTestId("parent-progress-head-position-trend")).toBeNull();
+    expect(screen.queryByTestId("parent-progress-category-trends")).toBeNull();
+  });
+
+  it("one-evaluation state: shows the head-position number but no trend chart", () => {
+    const progress: ParentSwimmerProgressResponse = {
+      ...emptyProgress,
+      headPositionOverall: 3,
+    };
+    render(
+      <ParentSwimmerProgressContent
+        swimmer={swimmer}
+        progress={progress}
+        categories={categories}
+        scoreHistory={makeHistory([3])}
+      />,
+    );
+    expect(screen.queryByTestId("parent-progress-head-position-trend")).toBeNull();
+    expect(screen.getByText(/trend unlocks after the second rating/i)).toBeInTheDocument();
+    expect(screen.queryByTestId("parent-progress-category-trends")).toBeNull();
+  });
+
+  it("renders the hero head position trend chart when there are two or more sessions", () => {
+    const progress: ParentSwimmerProgressResponse = {
+      ...emptyProgress,
+      headPositionOverall: 4,
+    };
+    render(
+      <ParentSwimmerProgressContent
+        swimmer={swimmer}
+        progress={progress}
+        categories={categories}
+        scoreHistory={makeHistory([2, 3, 4])}
+      />,
+    );
+    const chart = screen.getByTestId("parent-progress-head-position-trend");
+    expect(chart).toBeInTheDocument();
+    // Hero chart renders its title as a template literal in an SVG <title> and
+    // a visible eyebrow <p>. One or the other reads with the right text.
+    expect(chart.textContent).toMatch(/Head position overall/i);
+  });
+
+  it("renders the category trends grid when there are two or more sessions", () => {
+    render(
+      <ParentSwimmerProgressContent
+        swimmer={swimmer}
+        progress={emptyProgress}
+        categories={categories}
+        scoreHistory={makeHistory([2, 3, 4])}
+      />,
+    );
+    const grid = screen.getByTestId("parent-progress-category-trends");
+    expect(grid).toBeInTheDocument();
+    expect(grid.textContent).toMatch(/Freestyle/);
+  });
+
+  it("ScoreHistoryResponse never carries faultTags on any point", () => {
+    const history = makeHistory([2, 3]);
+    const serialized = JSON.stringify(history);
+    expect(serialized.includes("faultTags")).toBe(false);
   });
 });

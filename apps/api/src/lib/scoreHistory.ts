@@ -152,6 +152,25 @@ export async function computeScoreHistory(swimmerId: string): Promise<ScoreHisto
   }
   const sortedDates = [...nonVoidedDates].sort();
 
+  // Primary session per date: newest createdAt wins when multiple sessions
+  // share a sessionDate. Lets the chart's "Edit this evaluation" link target
+  // one specific session id (ADR 032).
+  const sessionDateRows = await db
+    .select({
+      id: evaluationSessions.id,
+      sessionDate: evaluationSessions.sessionDate,
+      createdAt: evaluationSessions.createdAt,
+    })
+    .from(evaluationSessions)
+    .where(eq(evaluationSessions.swimmerId, swimmerId));
+  const primarySessionIdByDate = new Map<string, { id: string; createdAt: Date }>();
+  for (const row of sessionDateRows) {
+    const existing = primarySessionIdByDate.get(row.sessionDate);
+    if (!existing || row.createdAt.getTime() > existing.createdAt.getTime()) {
+      primarySessionIdByDate.set(row.sessionDate, { id: row.id, createdAt: row.createdAt });
+    }
+  }
+
   const points: ScoreHistoryPoint[] = [];
   for (const date of sortedDates) {
     const asOfRecords: RatingRecord[] = ratingRows
@@ -195,8 +214,14 @@ export async function computeScoreHistory(swimmerId: string): Promise<ScoreHisto
       grade: calculateStartGrade(start.componentSlugs, asOfRecords),
     }));
 
+    // Every date in sortedDates came from a non-voided rating, so the
+    // session row must exist. Fall back to the empty string if a race ever
+    // drops it — the chart's deep link will 404 on the server rather than
+    // silently misroute to another swimmer's session.
+    const primary = primarySessionIdByDate.get(date);
     points.push({
       sessionDate: date,
+      sessionId: primary?.id ?? "",
       headPositionOverall: headPosOverall,
       categoryRollups,
       starts: startEntries,

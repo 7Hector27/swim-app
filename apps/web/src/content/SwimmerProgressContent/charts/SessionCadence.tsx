@@ -1,6 +1,6 @@
 "use client";
 
-import { formatMonthDay } from "../helpers";
+import { formatMonthDay } from "@/lib/progressCharts";
 
 interface SessionCadenceProps {
   weeks: Array<{ weekStart: string; count: number }>;

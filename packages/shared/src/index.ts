@@ -465,6 +465,9 @@ export type {
   PatchSessionRatingBody,
   PatchSessionBody,
   PatchSessionResponse,
+  GetEvaluationsItem,
+  GetEvaluationsResponse,
+  GetEvaluationsQuery,
 } from "./schemas/evaluations";
 export {
   EvaluationContextSchema,
@@ -507,6 +510,9 @@ export {
   PatchSessionRatingBodySchema,
   PatchSessionBodySchema,
   PatchSessionResponseSchema,
+  GetEvaluationsItemSchema,
+  GetEvaluationsResponseSchema,
+  GetEvaluationsQuerySchema,
 } from "./schemas/evaluations";
 export type {
   SkillCurrentLevel,

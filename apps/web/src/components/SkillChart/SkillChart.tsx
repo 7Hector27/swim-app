@@ -1,5 +1,8 @@
 "use client";
 
+import type { SkillGrade } from "@swim-app/shared";
+import { evaluationEditHref, type EvaluationEditContext } from "@/lib/evaluationEditHref";
+
 const CONTEXT_COLORS: Record<string, string> = {
   drill: "var(--color-text-secondary)",
   practice: "var(--color-accent)",
@@ -18,11 +21,29 @@ type ChartPoint = {
   measurementValue: string | null;
   measurementUnit: string | null;
   faultTags?: string[];
+  // ADR 032: fields used by the Edit affordance and the hollow-ring
+  // treatment on corrected points. sessionId is the session the point
+  // belongs to; edited is true when this point is a correction leaf;
+  // previousValue is the pre-correction grade walked one hop back.
+  sessionId?: string;
+  edited?: boolean;
+  previousValue?: SkillGrade | null;
 };
 
 interface SkillChartProps {
   history: ChartPoint[];
   skillName: string;
+  // ADR 032: serializable context (swimmerId, returnTo, skillSlug) used to
+  // build per-point Edit links client-side. Pass this instead of a function
+  // so the prop survives the server-to-client boundary.
+  editContext?: EvaluationEditContext;
+}
+
+function previousValueLabel(previous: SkillGrade | null | undefined): string | null {
+  if (previous === null || previous === undefined) return null;
+  if (previous === "not_legal") return "Not legal";
+  if (previous === "no_concept") return "No concept";
+  return String(previous);
 }
 
 function formatSessionDate(dateStr: string): string {
@@ -37,7 +58,7 @@ function formatSessionDate(dateStr: string): string {
   }).format(new Date(Date.UTC(year!, month! - 1, day!, 12)));
 }
 
-export default function SkillChart({ history, skillName }: SkillChartProps) {
+export default function SkillChart({ history, skillName, editContext }: SkillChartProps) {
   if (history.length === 0) {
     return <p className="text-xs text-text-secondary py-2">No ratings yet.</p>;
   }
@@ -146,19 +167,74 @@ export default function SkillChart({ history, skillName }: SkillChartProps) {
           }
           if (numericGrade === null) return null;
           const cy = yFor(numericGrade);
+          const color = CONTEXT_COLORS[point.context] ?? "var(--color-accent)";
+          // Edited corrections render as a hollow ring: the surface-soft fill
+          // shows through, with the context color as the stroke. Non-edited
+          // points stay solid.
           return (
             <circle
               key={point.id}
               cx={cx}
               cy={cy}
               r={3}
-              fill={CONTEXT_COLORS[point.context] ?? "var(--color-accent)"}
-              stroke="var(--color-surface-soft)"
-              strokeWidth={1}
+              fill={point.edited ? "var(--color-surface-soft)" : color}
+              stroke={point.edited ? color : "var(--color-surface-soft)"}
+              strokeWidth={point.edited ? 1.5 : 1}
+              data-testid={point.edited ? "skill-chart-edited-point" : undefined}
             />
           );
         })}
       </svg>
+
+      {/* Per-point Edit affordances. newest first, matching the original
+          history order. Hidden when no editContext is supplied (parent view). */}
+      {editContext && (
+        <ul
+          className="flex flex-col divide-y"
+          style={{ borderColor: "var(--color-border)", borderTopWidth: "1px", borderBottomWidth: "1px" }}
+          data-testid="skill-chart-edit-list"
+        >
+          {history.map((point) => {
+            const gradeLabel = point.notLegal
+              ? "Not legal"
+              : point.noConcept
+                ? "No concept"
+                : point.grade !== null
+                  ? String(point.grade)
+                  : "—";
+            return (
+              <li
+                key={point.id}
+                className="flex items-center justify-between gap-3 py-2 text-xs"
+              >
+                <span className="text-text-secondary tabular-nums flex items-center gap-2">
+                  <span>{formatSessionDate(point.sessionDate)}</span>
+                  <span className="capitalize">· {point.context}</span>
+                  <span>· grade {gradeLabel}</span>
+                  {point.edited && (
+                    <span
+                      className="font-semibold px-1.5 py-0.5 rounded-md"
+                      style={{ backgroundColor: "var(--color-border)", color: "var(--color-text)" }}
+                      data-testid="skill-chart-edited-pill"
+                    >
+                      Edited
+                    </span>
+                  )}
+                </span>
+                {point.sessionId && (
+                  <a
+                    href={evaluationEditHref(editContext, point.sessionId)}
+                    className="min-h-[44px] inline-flex items-center font-semibold text-link hover:text-link-hover"
+                    data-testid="skill-chart-edit-link"
+                  >
+                    Edit →
+                  </a>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
 
       {/* Accessible table */}
       <table className="sr-only">
@@ -174,30 +250,34 @@ export default function SkillChart({ history, skillName }: SkillChartProps) {
           </tr>
         </thead>
         <tbody>
-          {points.map((point) => (
-            <tr key={point.id}>
-              <td>{formatSessionDate(point.sessionDate)}</td>
-              <td className="capitalize">{point.context}</td>
-              <td>
-                {point.notLegal
-                  ? "Not legal (DQ)"
-                  : point.noConcept
-                    ? "No concept"
-                    : String(point.grade ?? "—")}
-              </td>
-              <td>
-                {point.capacityValue !== null
-                  ? `${point.capacityValue} ${point.capacityUnit ?? ""}`
-                  : "—"}
-              </td>
-              <td>
-                {point.measurementValue !== null
-                  ? `${point.measurementValue} ${point.measurementUnit ?? ""}`
-                  : "—"}
-              </td>
-              <td>{point.faultTags && point.faultTags.length > 0 ? point.faultTags.join(", ") : "—"}</td>
-            </tr>
-          ))}
+          {points.map((point) => {
+            const previousLabel = previousValueLabel(point.previousValue);
+            return (
+              <tr key={point.id}>
+                <td>{formatSessionDate(point.sessionDate)}</td>
+                <td className="capitalize">{point.context}</td>
+                <td>
+                  {point.notLegal
+                    ? "Not legal (DQ)"
+                    : point.noConcept
+                      ? "No concept"
+                      : String(point.grade ?? "—")}
+                  {point.edited && previousLabel ? ` (edited, was ${previousLabel})` : point.edited ? " (edited)" : ""}
+                </td>
+                <td>
+                  {point.capacityValue !== null
+                    ? `${point.capacityValue} ${point.capacityUnit ?? ""}`
+                    : "—"}
+                </td>
+                <td>
+                  {point.measurementValue !== null
+                    ? `${point.measurementValue} ${point.measurementUnit ?? ""}`
+                    : "—"}
+                </td>
+                <td>{point.faultTags && point.faultTags.length > 0 ? point.faultTags.join(", ") : "—"}</td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
