@@ -52,7 +52,7 @@ export default async function ParentSwimmerProgressPage({ params }: Props) {
   // without them (same pattern as the coach progress page).
   const scoreHistory = scoreHistoryResult.ok
     ? scoreHistoryResult.data
-    : { points: [], recentChanges: [] };
+    : { points: [], recentChanges: [], milestones: [] };
 
   return (
     <ParentSwimmerProgressContent

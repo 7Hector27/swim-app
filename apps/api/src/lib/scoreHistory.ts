@@ -1,6 +1,14 @@
-import { eq, isNull } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { db } from "../db/client";
-import { evaluationSessions, skillCategories, skillRatings, skills } from "../db/schema";
+import {
+  evaluationSessions,
+  meetSwims,
+  meets,
+  skillCategories,
+  skillDependencies,
+  skillRatings,
+  skills,
+} from "../db/schema";
 import {
   calculateStartGrade,
   headPositionOverall,
@@ -15,6 +23,7 @@ import {
   type ScoreHistoryCategoryRollup,
   type ScoreHistoryStart,
   type ScoreHistoryLevelCounts,
+  type ScoreHistoryMilestone,
   type ScoreHistoryRecentChange,
   type SkillGrade,
 } from "@swim-app/shared";
@@ -361,7 +370,161 @@ export async function computeScoreHistory(swimmerId: string): Promise<ScoreHisto
   });
   const recentChanges = allChanges.slice(0, 20);
 
-  return { points, recentChanges };
+  // Milestones. Walks dates in ascending order and emits each milestone the
+  // first time its criterion is satisfied, so a swimmer sees at most one of
+  // each (type, subject) pair. Rating-based milestones (legal / learned /
+  // mastered / unlocked) share the per-date collapsedByDate map so they drop
+  // voided and superseded rows exactly like the counts above. Personal-best
+  // milestones come from a separate meet-swim stream and use the meet's
+  // swumOn date as their sessionDate.
+  const milestones: ScoreHistoryMilestone[] = [];
+
+  const nameBySlug = new Map(allSkillRows.map((row) => [row.slug, row.name]));
+  const slugById = new Map(allSkillRows.map((row) => [row.id, row.slug]));
+  const depRows = await db
+    .select({
+      skillId: skillDependencies.skillId,
+      dependsOnSkillId: skillDependencies.dependsOnSkillId,
+    })
+    .from(skillDependencies);
+  const prereqSlugsBySlug = new Map<string, string[]>();
+  for (const row of depRows) {
+    const childSlug = slugById.get(row.skillId);
+    const prereqSlug = slugById.get(row.dependsOnSkillId);
+    if (!childSlug || !prereqSlug) continue;
+    const existing = prereqSlugsBySlug.get(childSlug);
+    if (existing) existing.push(prereqSlug);
+    else prereqSlugsBySlug.set(childSlug, [prereqSlug]);
+  }
+
+  const seenLearned = new Set<string>();
+  const everNotLegal = new Set<string>();
+  const seenLegal = new Set<string>();
+  const seenMastered = new Set<string>();
+  const seenUnlocked = new Set<string>();
+
+  for (const date of sortedDates) {
+    const collapsed = collapsedByDate.get(date) ?? {};
+    const primarySessionId = primarySessionIdByDate.get(date)?.id ?? "";
+
+    for (const [slug, grade] of Object.entries(collapsed)) {
+      if (grade === "not_legal") everNotLegal.add(slug);
+      const numeric = numericGrade(grade);
+      const skillName = nameBySlug.get(slug) ?? slug;
+
+      if (numeric !== null && everNotLegal.has(slug) && !seenLegal.has(slug)) {
+        milestones.push({
+          type: "skill_legal",
+          sessionDate: date,
+          sessionId: primarySessionId,
+          skillSlug: slug,
+          skillName,
+        });
+        seenLegal.add(slug);
+      }
+
+      if (numeric !== null && !seenLearned.has(slug)) {
+        milestones.push({
+          type: "skill_learned",
+          sessionDate: date,
+          sessionId: primarySessionId,
+          skillSlug: slug,
+          skillName,
+        });
+        seenLearned.add(slug);
+      }
+
+      if (numeric !== null && numeric >= MASTERY_LEVEL && !seenMastered.has(slug)) {
+        milestones.push({
+          type: "skill_mastered",
+          sessionDate: date,
+          sessionId: primarySessionId,
+          skillSlug: slug,
+          skillName,
+        });
+        seenMastered.add(slug);
+      }
+    }
+
+    // Prereq-driven unlocks: emit for every catalog skill whose declared
+    // prerequisites are now all at numeric 1..5. Independent of whether the
+    // dependent skill itself has been rated — the milestone is the gate
+    // opening, not the first swim through it.
+    for (const [childSlug, prereqSlugs] of prereqSlugsBySlug) {
+      if (seenUnlocked.has(childSlug)) continue;
+      const allMet = prereqSlugs.every(
+        (prereqSlug) => numericGrade(collapsed[prereqSlug]) !== null,
+      );
+      if (allMet) {
+        milestones.push({
+          type: "skill_unlocked",
+          sessionDate: date,
+          sessionId: primarySessionId,
+          skillSlug: childSlug,
+          skillName: nameBySlug.get(childSlug) ?? childSlug,
+        });
+        seenUnlocked.add(childSlug);
+      }
+    }
+  }
+
+  // Personal bests: walk meet swims chronologically and emit on every new
+  // minimum per (eventDistance, eventStroke, course). The first time an
+  // event is swum counts as a PB — there's no earlier time to beat.
+  const meetSwimRows = await db
+    .select({
+      eventDistance: meetSwims.eventDistance,
+      eventStroke: meetSwims.eventStroke,
+      course: meetSwims.course,
+      swumOn: meetSwims.swumOn,
+      timeHundredths: meetSwims.timeHundredths,
+      createdAt: meetSwims.createdAt,
+      meetName: meets.name,
+    })
+    .from(meetSwims)
+    .leftJoin(meets, eq(meets.id, meetSwims.meetId))
+    .where(and(eq(meetSwims.swimmerId, swimmerId), eq(meetSwims.swimType, "meet")));
+  meetSwimRows.sort((rowA, rowB) => {
+    if (rowA.swumOn !== rowB.swumOn) return rowA.swumOn < rowB.swumOn ? -1 : 1;
+    return rowA.createdAt.getTime() - rowB.createdAt.getTime();
+  });
+  const bestTimeByEvent = new Map<string, number>();
+  for (const row of meetSwimRows) {
+    const key = `${row.eventDistance}|${row.eventStroke}|${row.course}`;
+    const previous = bestTimeByEvent.get(key);
+    if (previous === undefined || row.timeHundredths < previous) {
+      bestTimeByEvent.set(key, row.timeHundredths);
+      milestones.push({
+        type: "personal_best",
+        sessionDate: row.swumOn,
+        eventDistance: row.eventDistance,
+        eventStroke: row.eventStroke,
+        course: row.course,
+        timeHundredths: row.timeHundredths,
+        meetName: row.meetName,
+      });
+    }
+  }
+
+  // Newest first with a deterministic tiebreak so repeat queries render in
+  // the same order even when several milestones land on one date.
+  milestones.sort((milestoneA, milestoneB) => {
+    if (milestoneA.sessionDate !== milestoneB.sessionDate) {
+      return milestoneA.sessionDate < milestoneB.sessionDate ? 1 : -1;
+    }
+    if (milestoneA.type !== milestoneB.type) {
+      return milestoneA.type.localeCompare(milestoneB.type);
+    }
+    const keyA = milestoneA.type === "personal_best"
+      ? `${milestoneA.eventStroke}|${milestoneA.eventDistance}|${milestoneA.course}`
+      : milestoneA.skillSlug;
+    const keyB = milestoneB.type === "personal_best"
+      ? `${milestoneB.eventStroke}|${milestoneB.eventDistance}|${milestoneB.course}`
+      : milestoneB.skillSlug;
+    return keyA.localeCompare(keyB);
+  });
+
+  return { points, recentChanges, milestones };
 }
 
 function rowToSkillGrade(row: FullRow): SkillGrade {

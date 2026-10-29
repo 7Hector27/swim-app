@@ -8,7 +8,15 @@ import pino from "pino";
 import { createApp } from "../../app";
 import { adminDb, closeAdminDb, createTestUser, hardDeleteSwimmer } from "./helpers";
 import type { TestUser } from "./helpers";
-import { evaluationSessions, profiles, skillRatings, skills, swimmers } from "../../db/schema";
+import {
+  evaluationSessions,
+  meetSwims,
+  meets,
+  profiles,
+  skillRatings,
+  skills,
+  swimmers,
+} from "../../db/schema";
 import syncCatalogFn from "../../db/scripts/syncCatalogFn";
 import type { ScoreHistoryResponse, SwimmerProgressResponse } from "@swim-app/shared";
 
@@ -101,12 +109,14 @@ function freshRating(skillId: string, grade: number, ratedAt: string): RatingBod
 
 let coach: TestUser;
 let freeKickSkillId: string;
+let freeHorizontalAlignmentSkillId: string;
 let trackStartReactionSkillId: string;
 let trackStartHeightSkillId: string;
 
 async function cleanSwimmerData(swimmerId: string): Promise<void> {
   await adminDb().delete(skillRatings).where(eq(skillRatings.swimmerId, swimmerId));
   await adminDb().delete(evaluationSessions).where(eq(evaluationSessions.swimmerId, swimmerId));
+  await adminDb().delete(meetSwims).where(eq(meetSwims.swimmerId, swimmerId));
 }
 
 async function createTestSwimmer(): Promise<string> {
@@ -153,6 +163,14 @@ beforeAll(async () => {
     .limit(1);
   if (!heightRows[0]) throw new Error("track-start-height missing — run pnpm db:sync-catalog");
   trackStartHeightSkillId = heightRows[0].id;
+
+  const alignmentRows = await adminDb()
+    .select({ id: skills.id })
+    .from(skills)
+    .where(eq(skills.slug, "free-horizontal-alignment"))
+    .limit(1);
+  if (!alignmentRows[0]) throw new Error("free-horizontal-alignment missing — run pnpm db:sync-catalog");
+  freeHorizontalAlignmentSkillId = alignmentRows[0].id;
 });
 
 afterAll(async () => {
@@ -440,6 +458,143 @@ describe("GET /coach/swimmers/:id/score-history", () => {
       expect(older!.direction).toBe("up");
     } finally {
       await cleanSwimmerData(swimmerId);
+      await hardDeleteSwimmer(swimmerId);
+    }
+  });
+
+  it("milestones detect each type: legal, learned, mastered, unlocked, personal best", async () => {
+    const swimmerId = await createTestSwimmer();
+    try {
+      // d1: rate the prereq. free-horizontal-alignment is free-kick's declared
+      // dependency, so this should emit skill_learned for it AND skill_unlocked
+      // for free-kick (the gate opens even though free-kick isn't rated yet).
+      await postSession(coach, swimmerId, "freestyle", "2026-10-01", [
+        freshRating(freeHorizontalAlignmentSkillId, 3, "2026-10-01T10:00:00.000Z"),
+      ]);
+      // d2: rate free-kick as not_legal (phantom grade=1 required by the
+      // not_legal_requires_grade check constraint). No milestones emit here —
+      // not_legal isn't "learned" and we need a later numeric to produce legal.
+      await postSession(coach, swimmerId, "freestyle", "2026-10-05", [
+        {
+          skillId: freeKickSkillId,
+          grade: 1,
+          notLegal: true,
+          noConcept: false,
+          side: null,
+          capacityValue: null,
+          capacityUnit: null,
+          measurementValue: null,
+          measurementUnit: null,
+          note: null,
+          faultTags: [],
+          ratedAt: "2026-10-05T10:00:00.000Z",
+        },
+      ]);
+      // d3: rate free-kick at 3 — emits both skill_legal (previously not_legal)
+      // and skill_learned (first numeric).
+      await postSession(coach, swimmerId, "freestyle", "2026-10-10", [
+        freshRating(freeKickSkillId, 3, "2026-10-10T10:00:00.000Z"),
+      ]);
+      // d4: rate free-kick at 5 — emits skill_mastered.
+      await postSession(coach, swimmerId, "freestyle", "2026-10-15", [
+        freshRating(freeKickSkillId, 5, "2026-10-15T10:00:00.000Z"),
+      ]);
+
+      // Seed meet swims directly: two swims in the same event (50 free scy).
+      // 32.00s → PB (first-ever time). 30.00s on a later date → faster PB.
+      // A 33.00s swim in between is slower than the current PB and must not emit.
+      const meetRows = await adminDb()
+        .insert(meets)
+        .values({
+          name: "Winter Classic",
+          meetDate: "2026-11-01",
+          course: "scy",
+          createdBy: coach.userId,
+        })
+        .returning({ id: meets.id });
+      const meetId = meetRows[0]!.id;
+      await adminDb().insert(meetSwims).values([
+        {
+          swimmerId,
+          meetId,
+          swimType: "meet",
+          eventDistance: 50,
+          eventStroke: "free",
+          course: "scy",
+          swumOn: "2026-11-01",
+          timeHundredths: 3200,
+          createdBy: coach.userId,
+        },
+        {
+          swimmerId,
+          meetId,
+          swimType: "meet",
+          eventDistance: 50,
+          eventStroke: "free",
+          course: "scy",
+          swumOn: "2026-11-05",
+          timeHundredths: 3300,
+          createdBy: coach.userId,
+        },
+        {
+          swimmerId,
+          meetId,
+          swimType: "meet",
+          eventDistance: 50,
+          eventStroke: "free",
+          course: "scy",
+          swumOn: "2026-11-10",
+          timeHundredths: 3000,
+          createdBy: coach.userId,
+        },
+      ]);
+
+      const history = await getScoreHistory(coach, swimmerId);
+      const kickLearned = history.milestones.filter(
+        (milestone) => milestone.type === "skill_learned" && milestone.skillSlug === "free-kick",
+      );
+      const kickLegal = history.milestones.filter(
+        (milestone) => milestone.type === "skill_legal" && milestone.skillSlug === "free-kick",
+      );
+      const kickMastered = history.milestones.filter(
+        (milestone) => milestone.type === "skill_mastered" && milestone.skillSlug === "free-kick",
+      );
+      const kickUnlocked = history.milestones.filter(
+        (milestone) => milestone.type === "skill_unlocked" && milestone.skillSlug === "free-kick",
+      );
+      expect(kickLearned).toHaveLength(1);
+      expect(kickLearned[0]!.sessionDate).toBe("2026-10-10");
+      expect(kickLegal).toHaveLength(1);
+      expect(kickLegal[0]!.sessionDate).toBe("2026-10-10");
+      expect(kickMastered).toHaveLength(1);
+      expect(kickMastered[0]!.sessionDate).toBe("2026-10-15");
+      expect(kickUnlocked).toHaveLength(1);
+      expect(kickUnlocked[0]!.sessionDate).toBe("2026-10-01");
+
+      const pbs = history.milestones.filter((milestone) => milestone.type === "personal_best");
+      expect(pbs).toHaveLength(2);
+      // Newest first.
+      expect(pbs[0]!.sessionDate).toBe("2026-11-10");
+      expect(pbs[0]!.type === "personal_best" && pbs[0]!.timeHundredths).toBe(3000);
+      expect(pbs[1]!.sessionDate).toBe("2026-11-01");
+      expect(pbs[1]!.type === "personal_best" && pbs[1]!.timeHundredths).toBe(3200);
+
+      // Overall ordering: newest first.
+      const dates = history.milestones.map((milestone) => milestone.sessionDate);
+      const sorted = [...dates].sort().reverse();
+      expect(dates).toEqual(sorted);
+    } finally {
+      await cleanSwimmerData(swimmerId);
+      await hardDeleteSwimmer(swimmerId);
+    }
+  });
+
+  it("milestones are empty for a swimmer with no ratings or meet swims", async () => {
+    const swimmerId = await createTestSwimmer();
+    try {
+      const history = await getScoreHistory(coach, swimmerId);
+      expect(history.milestones).toEqual([]);
+    } finally {
       await hardDeleteSwimmer(swimmerId);
     }
   });

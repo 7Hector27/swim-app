@@ -521,10 +521,70 @@ export const ScoreHistoryRecentChangeSchema = z.object({
 });
 export type ScoreHistoryRecentChange = z.infer<typeof ScoreHistoryRecentChangeSchema>;
 
+// Milestones: discrete events worth celebrating. Each variant records the
+// first time a criterion was met; a swimmer sees at most one milestone of
+// a given type per skill or per event tuple. Newest-first ordering is applied
+// at the end — the UI renders this as a scrolling list of wins.
+export const ScoreHistoryMilestoneSchema = z.discriminatedUnion("type", [
+  // A stroke or skill moving from `not_legal` to a numeric 1..5 grade on the
+  // collapsed timeline. Emitted the first date the slug reaches legal after
+  // having been not_legal at any earlier point.
+  z.object({
+    type: z.literal("skill_legal"),
+    sessionDate: z.string().date(),
+    sessionId: z.string().uuid(),
+    skillSlug: z.string(),
+    skillName: z.string(),
+  }),
+  // First time a skill's collapsed grade reaches numeric 1..5 (from unrated
+  // or `no_concept`). The "learned" moment, independent of the specific level.
+  z.object({
+    type: z.literal("skill_learned"),
+    sessionDate: z.string().date(),
+    sessionId: z.string().uuid(),
+    skillSlug: z.string(),
+    skillName: z.string(),
+  }),
+  // First time a skill's collapsed grade reaches MASTERY_LEVEL.
+  z.object({
+    type: z.literal("skill_mastered"),
+    sessionDate: z.string().date(),
+    sessionId: z.string().uuid(),
+    skillSlug: z.string(),
+    skillName: z.string(),
+  }),
+  // A catalog skill whose declared prerequisites (skill_dependencies table)
+  // have all reached numeric 1..5 on the swimmer's timeline. Emits once per
+  // skill the first date every prereq is satisfied, independent of whether
+  // the dependent skill itself has been rated.
+  z.object({
+    type: z.literal("skill_unlocked"),
+    sessionDate: z.string().date(),
+    sessionId: z.string().uuid(),
+    skillSlug: z.string(),
+    skillName: z.string(),
+  }),
+  // A new personal best from a meet swim. One milestone per (eventDistance,
+  // eventStroke, course) tuple each time a faster meet time is recorded; the
+  // first meet time for a tuple also qualifies as a PB.
+  z.object({
+    type: z.literal("personal_best"),
+    sessionDate: z.string().date(),
+    eventDistance: z.number().int(),
+    eventStroke: z.enum(["free", "back", "breast", "fly", "im"]),
+    course: z.enum(["scy", "scm", "lcm"]),
+    timeHundredths: z.number().int().positive(),
+    meetName: z.string().nullable(),
+  }),
+]);
+export type ScoreHistoryMilestone = z.infer<typeof ScoreHistoryMilestoneSchema>;
+
 export const ScoreHistoryResponseSchema = z.object({
   points: z.array(ScoreHistoryPointSchema),
   // Newest first, capped at the 20 most recent effective-grade transitions.
   recentChanges: z.array(ScoreHistoryRecentChangeSchema),
+  // Newest first. One entry per unique criterion-and-subject pair.
+  milestones: z.array(ScoreHistoryMilestoneSchema),
 });
 export type ScoreHistoryResponse = z.infer<typeof ScoreHistoryResponseSchema>;
 

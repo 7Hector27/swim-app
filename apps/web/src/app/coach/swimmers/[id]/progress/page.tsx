@@ -51,7 +51,7 @@ export default async function SwimmerProgressPage({ params }: ProgressPageProps)
   // to their own "not enough data" copy.
   const scoreHistory = scoreHistoryResult.ok
     ? scoreHistoryResult.data
-    : { points: [], recentChanges: [] };
+    : { points: [], recentChanges: [], milestones: [] };
   const golfScore = golfScoreResult.ok ? golfScoreResult.data : { trends: [] };
 
   // Pin "now" on the server so recency text ("Rated 3 days ago") renders
