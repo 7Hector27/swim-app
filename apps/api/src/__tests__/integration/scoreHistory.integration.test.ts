@@ -174,6 +174,9 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  // Drop any meets this coach created during tests before deleting the
+  // coach's profile — the meets.created_by FK blocks the profile delete.
+  await adminDb().delete(meets).where(eq(meets.createdBy, coach.userId));
   await coach.cleanup();
   await closeAdminDb();
 });

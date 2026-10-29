@@ -310,7 +310,13 @@ describe("GET /swimmers/:id/score-history (parent)", () => {
       .get(`/swimmers/${swimmerId}/score-history`)
       .set("Authorization", `Bearer ${owner.accessToken}`);
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ points: [] });
+    expect(res.body).toEqual({
+      points: [],
+      recentChanges: [],
+      milestones: [],
+      faultTrends: [],
+      measurements: [],
+    });
   });
 
   it("owner gets 200 and viewer (household member) gets 200; other household gets 404", async () => {
