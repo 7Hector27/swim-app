@@ -25,11 +25,16 @@ import {
   type GolfScoreTrend,
   type GolfScoreCategoryTrend,
   type GolfScoreAgeBands,
+  type GetSessionResponse,
+  type GetSessionRating,
+  type PatchSessionBody,
+  type PatchSessionResponse,
   CreateSessionBodySchema,
   VoidRatingBodySchema,
   DependencyMapQuerySchema,
   CoachSkillRatingSchema,
   GolfScoreCategorySchema,
+  PatchSessionBodySchema,
   findDeepestLowFoundation,
   headPositionOverall,
   latestEffectiveRatings,
@@ -948,6 +953,153 @@ sessionsRouter.delete(
 
     req.log.info({ sessionId, coachId }, "session deleted");
     res.status(204).end();
+  }),
+);
+
+// ── GET /sessions/:id ─────────────────────────────────────────────────────────
+// Returns the current effective state of one session owned by the caller.
+// Non-voided, non-superseded ratings only. Used to pre-fill the Evaluate
+// page when the coach opens an edit from the swimmer page or progress page.
+// ADR 032.
+
+sessionsRouter.get(
+  "/:id",
+  validate({ params: SessionIdParamsSchema }),
+  asyncHandler(async (req, res) => {
+    const { id: sessionId } = req.params as unknown as SessionIdParams;
+    const coachId = req.profile.id;
+
+    const sessionRows = await db
+      .select({
+        id: evaluationSessions.id,
+        swimmerId: evaluationSessions.swimmerId,
+        coachId: evaluationSessions.coachId,
+        categoryId: evaluationSessions.categoryId,
+        screenSlug: evaluationSessions.screenSlug,
+        sessionDate: evaluationSessions.sessionDate,
+        context: evaluationSessions.context,
+        coachingPriority: evaluationSessions.coachingPriority,
+        breathingPattern: evaluationSessions.breathingPattern,
+        editedAt: evaluationSessions.editedAt,
+      })
+      .from(evaluationSessions)
+      .where(eq(evaluationSessions.id, sessionId))
+      .limit(1);
+
+    const session = sessionRows[0];
+    if (!session || session.coachId !== coachId) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+
+    // Current effective ratings = non-voided + non-superseded. Each row also
+    // carries its own id and whichever `supersedes_rating_id` it holds (null
+    // for an original, set for a correction leaf). rootRatingId is the chain
+    // root — equal to id when the rating has never been corrected.
+    const ratingRows = await db
+      .select({
+        id: skillRatings.id,
+        supersedesRatingId: skillRatings.supersedesRatingId,
+        skillId: skillRatings.skillId,
+        slug: skills.slug,
+        grade: skillRatings.grade,
+        notLegal: skillRatings.notLegal,
+        noConcept: skillRatings.noConcept,
+        side: skillRatings.side,
+        capacityValue: skillRatings.capacityValue,
+        capacityUnit: skillRatings.capacityUnit,
+        measurementValue: skillRatings.measurementValue,
+        measurementUnit: skillRatings.measurementUnit,
+        golfScoreCategory: skillRatings.golfScoreCategory,
+        note: skillRatings.note,
+        ratedAt: skillRatings.ratedAt,
+      })
+      .from(skillRatings)
+      .innerJoin(skills, eq(skills.id, skillRatings.skillId))
+      .where(
+        and(
+          eq(skillRatings.sessionId, sessionId),
+          isNull(skillRatings.voidedAt),
+          isNull(skillRatings.supersededAt),
+        ),
+      );
+
+    // Walk back through `supersedes_rating_id` to find each rating's root.
+    // Chains are typically length 1 or 2 so a bounded-depth loop is fine.
+    const ratingIds = ratingRows.map((row) => row.id);
+    const rootByLeafId = new Map<string, string>();
+    for (const row of ratingRows) {
+      rootByLeafId.set(row.id, row.id);
+    }
+    const toResolve = ratingRows.filter((row) => row.supersedesRatingId !== null);
+    for (const leaf of toResolve) {
+      let cursor: string | null = leaf.supersedesRatingId;
+      let safety = 0;
+      while (cursor !== null && safety++ < 100) {
+        const predecessorRows = await db
+          .select({ id: skillRatings.id, supersedesRatingId: skillRatings.supersedesRatingId })
+          .from(skillRatings)
+          .where(eq(skillRatings.id, cursor))
+          .limit(1);
+        const predecessor = predecessorRows[0];
+        if (!predecessor) break;
+        if (predecessor.supersedesRatingId === null) {
+          rootByLeafId.set(leaf.id, predecessor.id);
+          break;
+        }
+        cursor = predecessor.supersedesRatingId;
+      }
+    }
+
+    // Fetch fault tags for the live rating ids.
+    const tagRows = ratingIds.length > 0
+      ? await db
+          .select({ ratingId: ratingFaultTags.ratingId, faultTag: ratingFaultTags.faultTag })
+          .from(ratingFaultTags)
+          .where(inArray(ratingFaultTags.ratingId, ratingIds))
+      : [];
+    const tagsByRatingId = new Map<string, string[]>();
+    for (const tag of tagRows) {
+      const existing = tagsByRatingId.get(tag.ratingId) ?? [];
+      existing.push(tag.faultTag);
+      tagsByRatingId.set(tag.ratingId, existing);
+    }
+
+    const ratings: GetSessionRating[] = ratingRows.map((row) => ({
+      ratingId: row.id,
+      rootRatingId: rootByLeafId.get(row.id) ?? row.id,
+      skillId: row.skillId,
+      slug: row.slug,
+      grade: row.grade as 1 | 2 | 3 | 4 | 5 | null,
+      notLegal: row.notLegal,
+      noConcept: row.noConcept,
+      side: row.side,
+      capacityValue: row.capacityValue,
+      capacityUnit: row.capacityUnit,
+      measurementValue: row.measurementValue,
+      measurementUnit: row.measurementUnit,
+      golfScoreCategory: row.golfScoreCategory as GetSessionRating["golfScoreCategory"],
+      note: row.note,
+      faultTags: tagsByRatingId.get(row.id) ?? [],
+      ratedAt: row.ratedAt.toISOString(),
+      edited: row.supersedesRatingId !== null,
+    }));
+
+    const response: GetSessionResponse = {
+      sessionId: session.id,
+      screenSlug: session.screenSlug,
+      swimmerId: session.swimmerId,
+      categoryId: session.categoryId,
+      sessionDate: session.sessionDate,
+      context: session.context,
+      coachingPriority: session.coachingPriority,
+      breathingPattern: session.breathingPattern as GetSessionResponse["breathingPattern"],
+      edited: session.editedAt !== null,
+      editedAt: session.editedAt?.toISOString() ?? null,
+      ratings,
+    };
+
+    res.json(response);
   }),
 );
 
