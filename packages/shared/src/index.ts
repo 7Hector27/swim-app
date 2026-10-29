@@ -132,7 +132,7 @@ export {
   deviationFromBest,
 } from "./lib/swimTime";
 export { bookingWindowEnd, isAfterBookingWindow, laCalendarDate } from "./lib/bookingWindow";
-export { displayUnitToMeasurementEnum } from "./lib/measurementUnit";
+export { displayUnitToMeasurementEnum, INTENTIONALLY_UNMAPPED_CATALOG_UNITS } from "./lib/measurementUnit";
 
 export type {
   LessonLocation,
