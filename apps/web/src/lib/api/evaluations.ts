@@ -13,6 +13,11 @@ import {
   type GolfScoreTrendsResponse,
   ScoreHistoryResponseSchema,
   type ScoreHistoryResponse,
+  GetSessionResponseSchema,
+  type GetSessionResponse,
+  PatchSessionResponseSchema,
+  type PatchSessionBody,
+  type PatchSessionResponse,
 } from "@swim-app/shared";
 
 export type FetchCategoriesResult =
@@ -162,6 +167,62 @@ export async function fetchScoreHistory(
     if (!response.ok) return { ok: false, status: response.status };
     const body: unknown = await response.json();
     const parsed = ScoreHistoryResponseSchema.safeParse(body);
+    if (!parsed.success) return { ok: false, status: 500 };
+    return { ok: true, data: parsed.data };
+  } catch {
+    return { ok: false, status: 500 };
+  }
+}
+
+export type FetchSessionResult =
+  | { ok: true; data: GetSessionResponse }
+  | { ok: false; status: number };
+
+export async function fetchSession(
+  sessionId: string,
+  accessToken: string,
+): Promise<FetchSessionResult> {
+  try {
+    const response = await fetch(
+      `${process.env.NEXT_PUBLIC_API_URL}/coach/sessions/${sessionId}`,
+      { headers: { Authorization: `Bearer ${accessToken}` }, cache: "no-store" },
+    );
+    if (!response.ok) return { ok: false, status: response.status };
+    const body: unknown = await response.json();
+    const parsed = GetSessionResponseSchema.safeParse(body);
+    if (!parsed.success) return { ok: false, status: 500 };
+    return { ok: true, data: parsed.data };
+  } catch {
+    return { ok: false, status: 500 };
+  }
+}
+
+export type PatchSessionResult =
+  | { ok: true; data: PatchSessionResponse }
+  // 409 means a submitted ratingId was superseded by another tab between the
+  // GET and the PATCH; the caller should refetch and resubmit.
+  | { ok: false; status: number };
+
+export async function patchSession(
+  sessionId: string,
+  body: PatchSessionBody,
+  accessToken: string,
+): Promise<PatchSessionResult> {
+  try {
+    const response = await fetch(
+      `${process.env.NEXT_PUBLIC_API_URL}/coach/sessions/${sessionId}`,
+      {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      },
+    );
+    if (!response.ok) return { ok: false, status: response.status };
+    const payload: unknown = await response.json();
+    const parsed = PatchSessionResponseSchema.safeParse(payload);
     if (!parsed.success) return { ok: false, status: 500 };
     return { ok: true, data: parsed.data };
   } catch {
