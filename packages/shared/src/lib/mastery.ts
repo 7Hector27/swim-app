@@ -2,4 +2,4 @@
 // considered mastered when its collapsed-by-side effective grade is at or
 // above this level. Kept configurable in one place so coaches / docs can
 // move the bar without a schema rev.
-export const MASTERY_LEVEL = 4;
+export const MASTERY_LEVEL = 5;

@@ -297,12 +297,12 @@ describe("GET /coach/swimmers/:id/score-history", () => {
       await postSession(coach, swimmerId, "freestyle", "2026-10-01", [
         freshRating(freeKickSkillId, 2, "2026-10-01T10:00:00.000Z"),
       ]);
-      // Date 2: free-kick upgraded to 4 (mastery). Starts: reaction=4.
+      // Date 2: free-kick upgraded to 5 (mastery). Starts: reaction=5.
       await postSession(coach, swimmerId, "freestyle", "2026-10-10", [
-        freshRating(freeKickSkillId, 4, "2026-10-10T10:00:00.000Z"),
+        freshRating(freeKickSkillId, 5, "2026-10-10T10:00:00.000Z"),
       ]);
       await postSession(coach, swimmerId, "starts", "2026-10-10", [
-        freshRating(trackStartReactionSkillId, 4, "2026-10-10T10:05:00.000Z"),
+        freshRating(trackStartReactionSkillId, 5, "2026-10-10T10:05:00.000Z"),
       ]);
 
       const history = await getScoreHistory(coach, swimmerId);
@@ -314,19 +314,19 @@ describe("GET /coach/swimmers/:id/score-history", () => {
       const point1 = history.points[0]!;
       expect(point1.counts.level2).toBe(1);
       expect(point1.counts.level1).toBe(0);
-      expect(point1.counts.level4).toBe(0);
+      expect(point1.counts.level5).toBe(0);
       expect(point1.counts.notLegal).toBe(0);
       expect(point1.counts.noConcept).toBe(0);
       expect(point1.totalLevelsGained).toBe(0);
       expect(point1.skillsMastered).toBe(0);
       expect(point1.skillsLearned).toBe(1);
 
-      // Date 2: free-kick is 4 (gained 4-2=2 levels, mastered); reaction is 4
-      // (its own baseline is 4 so no gain; mastered). skillsLearned = 2.
+      // Date 2: free-kick is 5 (gained 5-2=3 levels, mastered); reaction is 5
+      // (its own baseline is 5 so no gain; mastered). skillsLearned = 2.
       const point2 = history.points[1]!;
-      expect(point2.counts.level4).toBe(2);
+      expect(point2.counts.level5).toBe(2);
       expect(point2.counts.level2).toBe(0);
-      expect(point2.totalLevelsGained).toBe(2);
+      expect(point2.totalLevelsGained).toBe(3);
       expect(point2.skillsMastered).toBe(2);
       expect(point2.skillsLearned).toBe(2);
     } finally {
