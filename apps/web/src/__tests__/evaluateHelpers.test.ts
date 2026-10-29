@@ -5,7 +5,6 @@ import {
   buildSkillGroups,
   buildSectionGroups,
   buildRatingsArray,
-  canSubmit,
   validateSubmission,
   sortIssuesForScroll,
   anchorIdForIssue,
@@ -178,56 +177,6 @@ describe("buildSectionGroups", () => {
     const result = buildSectionGroups(screen, partialSections);
     const sectionNames = result.map((s) => s.name);
     expect(sectionNames).not.toContain("Empty Section");
-  });
-});
-
-// ── canSubmit ─────────────────────────────────────────────────────────────────
-
-describe("canSubmit", () => {
-  const baseDraft = {
-    screenSlug: "fundamentals",
-    sessionDate: "2026-10-16",
-    context: "practice" as const,
-    coachingPriority: "Work on kick",
-    breathingPattern: null,
-    skills: {},
-  };
-
-  it("returns true when all required fields are set for a non-breathing screen", () => {
-    expect(canSubmit(baseDraft, 1, false)).toBe(true);
-  });
-
-  it("returns false when ratingsCount is 0", () => {
-    expect(canSubmit(baseDraft, 0, false)).toBe(false);
-  });
-
-  it("returns false when isPending is true", () => {
-    expect(canSubmit(baseDraft, 1, true)).toBe(false);
-  });
-
-  it("returns false for freestyle screen with breathingPattern null", () => {
-    const draft = { ...baseDraft, screenSlug: "freestyle", breathingPattern: null as null };
-    expect(canSubmit(draft, 1, false)).toBe(false);
-  });
-
-  it("returns true for freestyle screen with breathingPattern set", () => {
-    const draft = { ...baseDraft, screenSlug: "freestyle", breathingPattern: "every_3" as const };
-    expect(canSubmit(draft, 1, false)).toBe(true);
-  });
-
-  it("returns false for butterfly screen with breathingPattern null", () => {
-    const draft = { ...baseDraft, screenSlug: "butterfly", breathingPattern: null as null };
-    expect(canSubmit(draft, 1, false)).toBe(false);
-  });
-
-  it("returns true for butterfly screen with breathingPattern set", () => {
-    const draft = { ...baseDraft, screenSlug: "butterfly", breathingPattern: "every_2" as const };
-    expect(canSubmit(draft, 1, false)).toBe(true);
-  });
-
-  it("does not require breathingPattern for backstroke screen", () => {
-    const draft = { ...baseDraft, screenSlug: "backstroke", breathingPattern: null as null };
-    expect(canSubmit(draft, 1, false)).toBe(true);
   });
 });
 

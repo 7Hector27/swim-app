@@ -22,8 +22,9 @@ import SkillGradeRow from "../content/EvaluateContent/SkillGradeRow";
 import CalculatedSkillRow from "../content/EvaluateContent/CalculatedSkillRow";
 import StartGroupSection from "../content/EvaluateContent/StartGroupSection";
 import UndoToast from "../content/EvaluateContent/UndoToast";
+import SectionTabs from "../content/EvaluateContent/SectionTabs";
 import EvaluateContent from "../content/EvaluateContent/EvaluateContent";
-import { canSubmit, buildRatingsArray, defaultSkillDraft, initialSessionDraft } from "../content/EvaluateContent/helpers";
+import { buildRatingsArray, defaultSkillDraft } from "../content/EvaluateContent/helpers";
 import { submitEvaluation } from "../content/EvaluateContent/actions";
 import type { SkillForRating, ScreensResponse, CoachSwimmerDetail } from "@swim-app/shared";
 
@@ -93,34 +94,6 @@ function makeComponent(index: number): SkillForRating {
 const COMPONENTS = [1, 2, 3, 4, 5, 6].map(makeComponent);
 
 // ── Helper tests ──────────────────────────────────────────────────────────────
-
-describe("canSubmit", () => {
-  it("returns true when coachingPriority is empty (optional)", () => {
-    const draft = {
-      ...initialSessionDraft(),
-      screenSlug: "freestyle",
-      sessionDate: "2026-10-14",
-      context: "practice" as const,
-      breathingPattern: "every_3" as const,
-    };
-    expect(canSubmit(draft, 1, false)).toBe(true);
-  });
-
-  it("returns false when no ratings", () => {
-    const draft = { ...initialSessionDraft(), screenSlug: "freestyle", sessionDate: "2026-10-14", context: "practice" as const, coachingPriority: "Fix kick" };
-    expect(canSubmit(draft, 0, false)).toBe(false);
-  });
-
-  it("returns false when isPending", () => {
-    const draft = { ...initialSessionDraft(), screenSlug: "freestyle", sessionDate: "2026-10-14", context: "practice" as const, coachingPriority: "Fix kick" };
-    expect(canSubmit(draft, 1, true)).toBe(false);
-  });
-
-  it("returns true when all fields present", () => {
-    const draft = { ...initialSessionDraft(), screenSlug: "freestyle", sessionDate: "2026-10-14", context: "practice" as const, coachingPriority: "Fix kick", breathingPattern: "every_3" as const };
-    expect(canSubmit(draft, 1, false)).toBe(true);
-  });
-});
 
 describe("buildRatingsArray", () => {
   it("excludes not-assessed skills (grade null + noConcept false)", () => {
@@ -195,11 +168,14 @@ describe("SkillGradeRow — Not legal", () => {
     expect(onChange).toHaveBeenCalledWith("skill-1", { notLegal: true });
   });
 
-  it("shows DQ badge when draft.notLegal is true", () => {
+  it("shows the Not legal badge when draft.notLegal is true", () => {
     const onChange = vi.fn();
     const draft = { ...defaultSkillDraft(), grade: 2 as const, notLegal: true };
     render(<SkillGradeRow skill={SKILL} draftKey="skill-1" label="Kick" draft={draft} onChange={onChange} />);
-    expect(screen.getByText("DQ")).toBeInTheDocument();
+    // Both the "Not legal" toggle button AND the DQ-replacement badge render
+    // this text; the test asserts the badge is present by requiring at least
+    // two matches (button + badge).
+    expect(screen.getAllByText("Not legal").length).toBeGreaterThanOrEqual(2);
   });
 });
 
@@ -213,6 +189,52 @@ describe("SkillGradeRow — notLegalAllowed gating", () => {
   it("shows Not legal button when notLegalAllowed is true", () => {
     render(<SkillGradeRow skill={SKILL} draftKey="s" label="Kick" draft={{ ...defaultSkillDraft(), grade: 3 as const }} onChange={vi.fn()} />);
     expect(screen.getByRole("button", { name: /not legal/i })).toBeInTheDocument();
+  });
+});
+
+describe("SkillGradeRow — previous rating badge", () => {
+  it("renders the swimmer's prior numeric grade next to the skill name", () => {
+    render(
+      <SkillGradeRow
+        skill={SKILL}
+        draftKey="skill-1"
+        label="Kick"
+        draft={defaultSkillDraft()}
+        onChange={vi.fn()}
+        prevGrade={3}
+      />,
+    );
+    const badge = screen.getByLabelText(/previous rating: 3/i);
+    expect(badge).toBeInTheDocument();
+    expect(badge.textContent).toMatch(/last/i);
+    expect(badge.textContent).toMatch(/3/);
+  });
+
+  it("renders a Not legal badge when the prior rating was not_legal", () => {
+    render(
+      <SkillGradeRow
+        skill={SKILL}
+        draftKey="skill-1"
+        label="Kick"
+        draft={defaultSkillDraft()}
+        onChange={vi.fn()}
+        prevGrade={"not_legal"}
+      />,
+    );
+    expect(screen.getByLabelText(/previous rating: not legal/i)).toBeInTheDocument();
+  });
+
+  it("renders a New badge when there's no prior rating", () => {
+    render(
+      <SkillGradeRow
+        skill={SKILL}
+        draftKey="skill-1"
+        label="Kick"
+        draft={defaultSkillDraft()}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByLabelText(/no previous rating/i)).toBeInTheDocument();
   });
 });
 
@@ -288,7 +310,7 @@ describe("StartGroupSection", () => {
     expect(pill.textContent).toBe("3");
   });
 
-  it("shows DQ when any component is not legal", () => {
+  it("shows Not legal when any component is not legal", () => {
     const draftSkills: Record<string, ReturnType<typeof defaultSkillDraft>> = {};
     for (const comp of COMPONENTS) {
       draftSkills[comp.id] = { ...defaultSkillDraft(), grade: 3 as const };
@@ -302,7 +324,7 @@ describe("StartGroupSection", () => {
         onChange={vi.fn()}
       />,
     );
-    expect(screen.getAllByText("DQ").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("Not legal").length).toBeGreaterThanOrEqual(1);
   });
 });
 
@@ -379,7 +401,7 @@ describe("draft persistence — full component", () => {
     }));
     localStorage.setItem(skillsKey(SWIMMER_ID, SCREEN_A_SLUG), JSON.stringify({ skills: {} }));
 
-    render(<EvaluateContent swimmer={SWIMMER_DETAIL} screens={TEST_SCREENS} />);
+    render(<EvaluateContent swimmer={SWIMMER_DETAIL} screens={TEST_SCREENS} prevGrades={{}} />);
 
     await waitFor(() => {
       expect(
@@ -397,7 +419,7 @@ describe("draft persistence — full component", () => {
       breathingPattern: null,
     }));
 
-    render(<EvaluateContent swimmer={SWIMMER_DETAIL} screens={TEST_SCREENS} />);
+    render(<EvaluateContent swimmer={SWIMMER_DETAIL} screens={TEST_SCREENS} prevGrades={{}} />);
 
     await act(async () => {});
 
@@ -412,7 +434,7 @@ describe("draft persistence — full component", () => {
       skills: { [SKILL_B_ID]: { ...defaultSkillDraft(), grade: 5 } },
     }));
 
-    render(<EvaluateContent swimmer={SWIMMER_DETAIL} screens={TEST_SCREENS} />);
+    render(<EvaluateContent swimmer={SWIMMER_DETAIL} screens={TEST_SCREENS} prevGrades={{}} />);
 
     const select = screen.getByRole("combobox");
 
@@ -451,7 +473,7 @@ describe("draft persistence — full component", () => {
     });
 
     const { container } = render(
-      <EvaluateContent swimmer={SWIMMER_DETAIL} screens={TEST_SCREENS} />,
+      <EvaluateContent swimmer={SWIMMER_DETAIL} screens={TEST_SCREENS} prevGrades={{}} />,
     );
 
     await waitFor(() => {
@@ -515,6 +537,7 @@ describe("EvaluateContent — section headers for screen-sectioned screens", () 
       <EvaluateContent
         swimmer={SWIMMER_DETAIL}
         screens={freestyleScreens}
+        prevGrades={{}}
       />,
     );
 
@@ -572,7 +595,7 @@ describe("EvaluateContent — breathing pattern selector", () => {
   });
 
   it("shows breathing pattern selector for freestyle screen", async () => {
-    render(<EvaluateContent swimmer={SWIMMER_DETAIL} screens={freestyleScreens} />);
+    render(<EvaluateContent swimmer={SWIMMER_DETAIL} screens={freestyleScreens} prevGrades={{}} />);
     const select = screen.getByRole("combobox");
     fireEvent.change(select, { target: { value: "freestyle" } });
     await waitFor(() => {
@@ -581,7 +604,7 @@ describe("EvaluateContent — breathing pattern selector", () => {
   });
 
   it("shows breathing pattern selector for butterfly screen", async () => {
-    render(<EvaluateContent swimmer={SWIMMER_DETAIL} screens={freestyleScreens} />);
+    render(<EvaluateContent swimmer={SWIMMER_DETAIL} screens={freestyleScreens} prevGrades={{}} />);
     const select = screen.getByRole("combobox");
     fireEvent.change(select, { target: { value: "butterfly" } });
     await waitFor(() => {
@@ -590,7 +613,7 @@ describe("EvaluateContent — breathing pattern selector", () => {
   });
 
   it("does not show breathing pattern selector for backstroke screen", async () => {
-    render(<EvaluateContent swimmer={SWIMMER_DETAIL} screens={freestyleScreens} />);
+    render(<EvaluateContent swimmer={SWIMMER_DETAIL} screens={freestyleScreens} prevGrades={{}} />);
     const select = screen.getByRole("combobox");
     fireEvent.change(select, { target: { value: "backstroke" } });
     await waitFor(() => {
@@ -639,6 +662,76 @@ describe("UndoToast", () => {
     await vi.waitFor(() => {
       expect(deleteSessionAction).toHaveBeenCalledWith(SESSION_ID);
     });
+  });
+});
+
+// ── SectionTabs ───────────────────────────────────────────────────────────────
+
+describe("SectionTabs", () => {
+  const TEST_SECTIONS = [
+    { name: "Start", count: 2, completed: 0 },
+    { name: "Underwaters", count: 2, completed: 1 },
+    { name: "Breakout", count: 1, completed: 0 },
+  ];
+
+  it("scrolls the active tab into view when activeIndex changes, but not on first mount", () => {
+    const spy = vi.fn();
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = spy;
+
+    try {
+      const { rerender } = render(
+        <SectionTabs sections={TEST_SECTIONS} activeIndex={0} onSelect={() => {}} />,
+      );
+      // First mount: no scroll (don't jiggle the strip on page load).
+      expect(spy).not.toHaveBeenCalled();
+
+      rerender(
+        <SectionTabs sections={TEST_SECTIONS} activeIndex={2} onSelect={() => {}} />,
+      );
+      // Switching to a different tab (as validation-jump does): scroll it in.
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(spy).toHaveBeenCalledWith(
+        expect.objectContaining({ inline: "nearest", block: "nearest" }),
+      );
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
+  });
+
+  it("hides the scrollbar via the reusable utility class", () => {
+    render(<SectionTabs sections={TEST_SECTIONS} activeIndex={0} onSelect={() => {}} />);
+    const nav = screen.getByRole("navigation", { name: /evaluation sections/i });
+    expect(nav.className).toMatch(/\bscrollbar-none\b/);
+  });
+
+  it("honors prefers-reduced-motion when scrolling into view", () => {
+    const spy = vi.fn();
+    const originalScroll = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = spy;
+    const matchMediaSpy = vi.spyOn(window, "matchMedia").mockImplementation((query) => ({
+      matches: query === "(prefers-reduced-motion: reduce)",
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      onchange: null,
+      dispatchEvent: vi.fn(() => true),
+    }));
+
+    try {
+      const { rerender } = render(
+        <SectionTabs sections={TEST_SECTIONS} activeIndex={0} onSelect={() => {}} />,
+      );
+      rerender(
+        <SectionTabs sections={TEST_SECTIONS} activeIndex={1} onSelect={() => {}} />,
+      );
+      expect(spy).toHaveBeenCalledWith(expect.objectContaining({ behavior: "auto" }));
+    } finally {
+      Element.prototype.scrollIntoView = originalScroll;
+      matchMediaSpy.mockRestore();
+    }
   });
 });
 
@@ -704,7 +797,7 @@ describe("EvaluateContent — pre-save validation", () => {
 
   it("blocks the submit, surfaces per-field + summary alerts, and scrolls to the first missing field", async () => {
     const { container } = render(
-      <EvaluateContent swimmer={SWIMMER_DETAIL} screens={VALIDATION_SCREENS} />,
+      <EvaluateContent swimmer={SWIMMER_DETAIL} screens={VALIDATION_SCREENS} prevGrades={{}} />,
     );
     const form = await setupAlmostCompleteForm(container);
 
@@ -739,7 +832,7 @@ describe("EvaluateContent — pre-save validation", () => {
     });
 
     const { container } = render(
-      <EvaluateContent swimmer={SWIMMER_DETAIL} screens={VALIDATION_SCREENS} />,
+      <EvaluateContent swimmer={SWIMMER_DETAIL} screens={VALIDATION_SCREENS} prevGrades={{}} />,
     );
     const form = await setupAlmostCompleteForm(container);
 
@@ -760,7 +853,7 @@ describe("EvaluateContent — pre-save validation", () => {
 
   it("re-scrolls on every tap, not just the first", async () => {
     const { container } = render(
-      <EvaluateContent swimmer={SWIMMER_DETAIL} screens={VALIDATION_SCREENS} />,
+      <EvaluateContent swimmer={SWIMMER_DETAIL} screens={VALIDATION_SCREENS} prevGrades={{}} />,
     );
     const form = await setupAlmostCompleteForm(container);
 
@@ -791,7 +884,7 @@ describe("EvaluateContent — pre-save validation", () => {
     }));
 
     const { container } = render(
-      <EvaluateContent swimmer={SWIMMER_DETAIL} screens={VALIDATION_SCREENS} />,
+      <EvaluateContent swimmer={SWIMMER_DETAIL} screens={VALIDATION_SCREENS} prevGrades={{}} />,
     );
     const form = await setupAlmostCompleteForm(container);
 
@@ -837,7 +930,7 @@ describe("EvaluateContent — server draft banner", () => {
   });
 
   it("shows the resume banner when a server draft exists for the selected screen", async () => {
-    render(<EvaluateContent swimmer={SWIMMER_DETAIL} screens={TEST_SCREENS} />);
+    render(<EvaluateContent swimmer={SWIMMER_DETAIL} screens={TEST_SCREENS} prevGrades={{}} />);
 
     const select = screen.getByRole("combobox");
     fireEvent.change(select, { target: { value: DRAFT_SCREEN } });
@@ -852,7 +945,7 @@ describe("EvaluateContent — server draft banner", () => {
     const { fetchServerDraftsAction } = await import("../content/EvaluateContent/actions");
     vi.mocked(fetchServerDraftsAction).mockResolvedValue([]);
 
-    render(<EvaluateContent swimmer={SWIMMER_DETAIL} screens={TEST_SCREENS} />);
+    render(<EvaluateContent swimmer={SWIMMER_DETAIL} screens={TEST_SCREENS} prevGrades={{}} />);
     const select = screen.getByRole("combobox");
     fireEvent.change(select, { target: { value: DRAFT_SCREEN } });
 
@@ -861,7 +954,7 @@ describe("EvaluateContent — server draft banner", () => {
   });
 
   it("clicking Start fresh shows a confirm prompt", async () => {
-    render(<EvaluateContent swimmer={SWIMMER_DETAIL} screens={TEST_SCREENS} />);
+    render(<EvaluateContent swimmer={SWIMMER_DETAIL} screens={TEST_SCREENS} prevGrades={{}} />);
     const select = screen.getByRole("combobox");
     fireEvent.change(select, { target: { value: DRAFT_SCREEN } });
 
@@ -877,7 +970,7 @@ describe("EvaluateContent — server draft banner", () => {
   });
 
   it("clicking Delete draft calls DELETE on the draft and dismisses the banner", async () => {
-    render(<EvaluateContent swimmer={SWIMMER_DETAIL} screens={TEST_SCREENS} />);
+    render(<EvaluateContent swimmer={SWIMMER_DETAIL} screens={TEST_SCREENS} prevGrades={{}} />);
     const select = screen.getByRole("combobox");
     fireEvent.change(select, { target: { value: DRAFT_SCREEN } });
 
@@ -911,7 +1004,7 @@ describe("EvaluateContent — server draft banner", () => {
       return Promise.resolve({ ok: true, json: async () => ({ suggestion: null }) });
     });
 
-    render(<EvaluateContent swimmer={SWIMMER_DETAIL} screens={TEST_SCREENS} />);
+    render(<EvaluateContent swimmer={SWIMMER_DETAIL} screens={TEST_SCREENS} prevGrades={{}} />);
 
     const select = screen.getByRole("combobox");
     fireEvent.change(select, { target: { value: DRAFT_SCREEN } });

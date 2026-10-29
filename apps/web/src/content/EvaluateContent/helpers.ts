@@ -280,21 +280,6 @@ export function initialSessionDraft(): SessionDraft {
   };
 }
 
-// Legacy guard, kept for drafts/tests that still read it. The form itself
-// delegates to validateSubmission on tap, which treats coachingPriority as
-// optional (empty is a valid submission starting with migration 0061).
-export function canSubmit(draft: SessionDraft, ratingsCount: number, isPending: boolean): boolean {
-  const needsBreathingPattern = draft.screenSlug === "freestyle" || draft.screenSlug === "butterfly";
-  return (
-    draft.screenSlug !== "" &&
-    draft.sessionDate !== "" &&
-    draft.context !== null &&
-    (!needsBreathingPattern || draft.breathingPattern !== null) &&
-    ratingsCount > 0 &&
-    !isPending
-  );
-}
-
 // Accepts any object that has a skills array of SkillForRating — works for both
 // SkillCategoryWithSkills (legacy) and ScreenWithSkills.
 type SkillContainer = { skills: import("@swim-app/shared").SkillForRating[] };
