@@ -69,7 +69,7 @@ export default function AddSwimForm({
 
   const distances = VALID_EVENTS[stroke] ?? [];
   const canReview =
-    timeString !== null && swumOn !== "" && (meets === undefined || true);
+    timeString !== null && swumOn !== "" && (meets === undefined || meetId !== "");
 
   const matchingBest = personalBests.find(
     (pb) => pb.eventDistance === distance && pb.eventStroke === stroke && pb.course === course,

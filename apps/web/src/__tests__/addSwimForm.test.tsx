@@ -202,3 +202,38 @@ describe("AddSwimForm — deviation warning on review step", () => {
     expect(screen.queryByTestId("deviation-warning")).not.toBeInTheDocument();
   });
 });
+
+describe("AddSwimForm — meet mode requires a meet selection", () => {
+  const meet = {
+    id: "22222222-0000-0000-0000-000000000001",
+    name: "Spring Invitational",
+    meetDate: "2025-06-15",
+    course: "scy" as const,
+    swimCount: 0,
+    createdAt: "2025-05-01T00:00:00Z",
+    updatedAt: "2025-05-01T00:00:00Z",
+  };
+
+  it("keeps Review disabled when no meet is picked, and enables it after one is", async () => {
+    const user = userEvent.setup();
+    render(
+      <AddSwimForm
+        swimmerId={SWIMMER_ID}
+        swimmerName="Alex"
+        meets={[meet]}
+        personalBests={[]}
+        onSuccess={() => {}}
+      />,
+    );
+
+    await user.type(screen.getByLabelText(/time/i), "10234");
+    await user.type(screen.getByLabelText(/date/i), "2025-06-15");
+
+    const reviewButton = screen.getByRole("button", { name: /^review$/i });
+    expect(reviewButton).toBeDisabled();
+
+    await user.selectOptions(screen.getByLabelText(/meet/i), meet.id);
+
+    expect(reviewButton).toBeEnabled();
+  });
+});
