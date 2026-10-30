@@ -1,12 +1,12 @@
 import {
   ParentPersonalBestsResponseSchema,
   type ParentPersonalBestsResponse,
+  ParentScoreHistoryResponseSchema,
+  type ParentScoreHistoryResponse,
   ParentSwimmerProgressResponseSchema,
   type ParentSwimmerProgressResponse,
   ParentSwimmerSchema,
   type ParentSwimmer,
-  ScoreHistoryResponseSchema,
-  type ScoreHistoryResponse,
 } from "@swim-app/shared";
 
 export type FetchParentSwimmerProgressResult =
@@ -56,7 +56,7 @@ export async function fetchParentSwimmer(
 }
 
 export type FetchParentScoreHistoryResult =
-  | { ok: true; data: ScoreHistoryResponse }
+  | { ok: true; data: ParentScoreHistoryResponse }
   | { ok: false; status: number };
 
 export async function fetchParentScoreHistory(
@@ -70,7 +70,10 @@ export async function fetchParentScoreHistory(
     );
     if (!response.ok) return { ok: false, status: response.status };
     const body: unknown = await response.json();
-    const parsed = ScoreHistoryResponseSchema.safeParse(body);
+    // Strict parent-facing schema: `.strict()` rejects any extra keys, so
+    // a `faultTrends` field slipping into the response trips here instead
+    // of silently reaching a parent component.
+    const parsed = ParentScoreHistoryResponseSchema.safeParse(body);
     if (!parsed.success) return { ok: false, status: 500 };
     return { ok: true, data: parsed.data };
   } catch {

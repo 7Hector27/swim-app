@@ -6,7 +6,7 @@ import type {
   ParentPersonalBestsResponse,
   ParentSwimmer,
   ParentSwimmerProgressResponse,
-  ScoreHistoryResponse,
+  ParentScoreHistoryResponse,
   UpcomingLesson,
 } from "@swim-app/shared";
 
@@ -34,7 +34,7 @@ interface SwimmerProfileContentProps {
   // Latest category rollups power the small radar on the Progress card.
   // Comes from GET /swimmers/:id/score-history on the server, with the parent
   // route's visibility rules already applied.
-  scoreHistory: SectionResult<ScoreHistoryResponse>;
+  scoreHistory: SectionResult<ParentScoreHistoryResponse>;
   personalBests: SectionResult<ParentPersonalBestsResponse>;
   upcomingLessons: SectionResult<UpcomingLesson[]>;
   pastLessons: SectionResult<UpcomingLesson[]>;

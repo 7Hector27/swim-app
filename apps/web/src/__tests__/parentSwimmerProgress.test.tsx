@@ -2,9 +2,9 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import type {
   CategoriesResponse,
+  ParentScoreHistoryResponse,
   ParentSwimmer,
   ParentSwimmerProgressResponse,
-  ScoreHistoryResponse,
 } from "@swim-app/shared";
 
 vi.mock("@/components/SiteNav", () => ({ default: () => <nav /> }));
@@ -41,11 +41,10 @@ const emptyProgress: ParentSwimmerProgressResponse = {
 };
 
 const categories: CategoriesResponse = [];
-const emptyScoreHistory: ScoreHistoryResponse = {
+const emptyScoreHistory: ParentScoreHistoryResponse = {
   points: [],
   recentChanges: [],
   milestones: [],
-  faultTrends: [],
   measurements: [],
 };
 
@@ -299,7 +298,7 @@ describe("ParentSwimmerProgressContent", () => {
 });
 
 describe("ParentSwimmerProgressContent — charts", () => {
-  function makeHistory(headPositions: Array<number | null>): ScoreHistoryResponse {
+  function makeHistory(headPositions: Array<number | null>): ParentScoreHistoryResponse {
     return {
       points: headPositions.map((value, index) => ({
         sessionDate: `2026-10-${String(index + 1).padStart(2, "0")}`,
@@ -323,7 +322,6 @@ describe("ParentSwimmerProgressContent — charts", () => {
       })),
       recentChanges: [],
       milestones: [],
-      faultTrends: [],
       measurements: [],
     };
   }
@@ -394,9 +392,8 @@ describe("ParentSwimmerProgressContent — charts", () => {
     expect(grid.textContent).toMatch(/Freestyle/);
   });
 
-  it("ScoreHistoryResponse never carries faultTags on any point", () => {
-    const history = makeHistory([2, 3]);
-    const serialized = JSON.stringify(history);
-    expect(serialized.includes("faultTags")).toBe(false);
-  });
+  // Note: the real parent-route leak check lives in the API integration
+  // suite (parentProgress.integration.test.ts). A fixture-based assertion
+  // here would only prove the type definition shape — not that the server
+  // actually strips coach-only fields.
 });

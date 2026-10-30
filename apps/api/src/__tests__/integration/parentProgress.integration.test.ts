@@ -358,7 +358,7 @@ describe("GET /swimmers/:id/score-history (parent)", () => {
     expect(res.status).toBe(401);
   });
 
-  it("response never carries faultTags", async () => {
+  it("response never carries faultTags or faultTrends — faultTrends key must be absent, not empty", async () => {
     await clearSwimmerSessions();
     await seedRating({
       grade: 4,
@@ -372,12 +372,15 @@ describe("GET /swimmers/:id/score-history (parent)", () => {
       .set("Authorization", `Bearer ${owner.accessToken}`);
     expect(res.status).toBe(200);
 
-    // Walk every nested object; no key may be exactly "faultTags".
+    // Walk every nested object; no key may be exactly "faultTags" (per-point)
+    // or "faultTrends" (top-level coach-only series).
     const serialized = JSON.stringify(res.body);
     expect(serialized.includes("faultTags")).toBe(false);
-    // faultTrends is coach-only; parent response must always ship an empty
-    // array even when the swimmer has tagged ratings on the coach side.
-    expect(res.body.faultTrends).toEqual([]);
+    expect(serialized.includes("faultTrends")).toBe(false);
+    // Serialization-boundary invariant: the parent route runs the response
+    // through ParentScoreHistoryResponseSchema.strict() which omits
+    // faultTrends. The key must be ABSENT entirely, not just empty-array.
+    expect(Object.prototype.hasOwnProperty.call(res.body, "faultTrends")).toBe(false);
   });
 
   it("voided ratings don't produce a point", async () => {

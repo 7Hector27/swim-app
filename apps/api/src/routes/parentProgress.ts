@@ -20,6 +20,7 @@ import {
   formatSwimTime,
   IdParamsSchema,
   ParentPersonalBestsResponseSchema,
+  ParentScoreHistoryResponseSchema,
   ParentSwimmerProgressResponseSchema,
   SCREEN_NAMES,
   type IdParams,
@@ -166,9 +167,17 @@ parentProgressRouter.get(
   requireHouseholdSwimmer,
   asyncHandler(async (req, res) => {
     const { id: swimmerId } = req.params as unknown as IdParams;
-    const result = await computeScoreHistory(swimmerId);
-    req.log.info({ swimmerId, pointCount: result.points.length }, "parent score history fetched");
-    res.json(result);
+    // Pass includeFaultTrends:false EXPLICITLY so the contract isn't tied
+    // to a library default; the result still carries a `faultTrends: []`
+    // field, which the parent-facing schema strips below so the key is
+    // absent from the response — a serialization-boundary invariant that
+    // `.strict()` catches at parse time if a refactor ever changes the
+    // computation to include fault data.
+    const raw = await computeScoreHistory(swimmerId, { includeFaultTrends: false });
+    const { faultTrends: _faultTrends, ...parentFacing } = raw;
+    const body = ParentScoreHistoryResponseSchema.parse(parentFacing);
+    req.log.info({ swimmerId, pointCount: body.points.length }, "parent score history fetched");
+    res.json(body);
   }),
 );
 

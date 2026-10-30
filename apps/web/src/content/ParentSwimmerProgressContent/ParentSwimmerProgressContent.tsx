@@ -2,7 +2,7 @@ import type {
   CategoriesResponse,
   ParentSwimmer,
   ParentSwimmerProgressResponse,
-  ScoreHistoryResponse,
+  ParentScoreHistoryResponse,
   StartGradeResult,
 } from "@swim-app/shared";
 import CategoryTrendsGrid from "@/components/CategoryTrendsGrid";
@@ -28,14 +28,13 @@ interface ParentSwimmerProgressContentProps {
   // backend always sends one (empty when the swimmer has no evaluations); the
   // prop is optional only so existing unit tests that pre-date the charts
   // don't have to be rewritten for the empty case.
-  scoreHistory?: ScoreHistoryResponse;
+  scoreHistory?: ParentScoreHistoryResponse;
 }
 
-const EMPTY_SCORE_HISTORY: ScoreHistoryResponse = {
+const EMPTY_SCORE_HISTORY: ParentScoreHistoryResponse = {
   points: [],
   recentChanges: [],
   milestones: [],
-  faultTrends: [],
   measurements: [],
 };
 

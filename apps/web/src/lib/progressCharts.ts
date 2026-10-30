@@ -1,5 +1,10 @@
 import type { ScoreHistoryResponse, StartGradeResult } from "@swim-app/shared";
 
+// The helpers below only ever read `points`; narrow the parameter so both
+// the full (coach) ScoreHistoryResponse and the parent-facing variant that
+// omits coach-only fields accept here.
+type ScoreHistoryPointsOnly = Pick<ScoreHistoryResponse, "points">;
+
 // Session dates are stored as YYYY-MM-DD strings (no timezone). The server
 // may be in UTC and the client in any zone; constructing a Date with the
 // local-time constructor would produce different instants on each side and
@@ -32,7 +37,7 @@ export function formatMonthDay(dateStr: string): string {
 // Pulls head-position-overall as an oldest-first series from score history.
 // sessionId is threaded through so HeroTrendChart can deep-link to edit mode.
 export function headPositionSeries(
-  history: ScoreHistoryResponse,
+  history: ScoreHistoryPointsOnly,
 ): Array<{ sessionDate: string; value: number | null; sessionId: string }> {
   return history.points.map((point) => ({
     sessionDate: point.sessionDate,
@@ -43,7 +48,7 @@ export function headPositionSeries(
 
 // Per-category trend series indexed from the first point's rollups so the
 // shape stays stable across time.
-export function categoryTrendSeries(history: ScoreHistoryResponse): Array<{
+export function categoryTrendSeries(history: ScoreHistoryPointsOnly): Array<{
   categoryId: string;
   name: string;
   points: Array<{ sessionDate: string; value: number | null }>;
@@ -60,7 +65,7 @@ export function categoryTrendSeries(history: ScoreHistoryResponse): Array<{
   }));
 }
 
-export function latestCategorySnapshot(history: ScoreHistoryResponse): Array<{
+export function latestCategorySnapshot(history: ScoreHistoryPointsOnly): Array<{
   categoryId: string;
   name: string;
   average: number | null;
@@ -81,7 +86,7 @@ export function latestCategorySnapshot(history: ScoreHistoryResponse): Array<{
 // Per-start progression series from score history. Order and names are taken
 // from the first point so a newly-rated start doesn't rearrange earlier points.
 // sessionId is threaded through so StartProgression can deep-link to edit mode.
-export function startSeries(history: ScoreHistoryResponse): Array<{
+export function startSeries(history: ScoreHistoryPointsOnly): Array<{
   slug: string;
   name: string;
   points: Array<{ sessionDate: string; grade: StartGradeResult; sessionId: string }>;

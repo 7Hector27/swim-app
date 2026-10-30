@@ -624,12 +624,25 @@ export const ScoreHistoryResponseSchema = z.object({
   recentChanges: z.array(ScoreHistoryRecentChangeSchema),
   // Newest first. One entry per unique criterion-and-subject pair.
   milestones: z.array(ScoreHistoryMilestoneSchema),
-  // Coach-only. Parent route returns [].
+  // Coach-only. Parent route returns a response that omits this key entirely
+  // (see ParentScoreHistoryResponseSchema below).
   faultTrends: z.array(ScoreHistoryFaultTrendSchema),
   // One series per (skill, unit) with at least one measured rating.
   measurements: z.array(ScoreHistoryMeasurementSeriesSchema),
 });
 export type ScoreHistoryResponse = z.infer<typeof ScoreHistoryResponseSchema>;
+
+// Parent-facing variant. `faultTrends` is coach-only; this schema makes that
+// a serialization-boundary invariant rather than an implicit option default.
+// The key must be ABSENT in the response (not empty) — Zod's `.strict()`
+// refuses any extra keys at parse time, so a future refactor that stops
+// stripping fault data trips here instead of silently reaching a parent
+// client. Imported by apps/api/src/routes/parentProgress.ts and
+// apps/web/src/lib/api/parentProgress.ts.
+export const ParentScoreHistoryResponseSchema = ScoreHistoryResponseSchema
+  .omit({ faultTrends: true })
+  .strict();
+export type ParentScoreHistoryResponse = z.infer<typeof ParentScoreHistoryResponseSchema>;
 
 // ── Session edit (ADR 032) ─────────────────────────────────────────────────
 // GET /coach/sessions/:id and PATCH /coach/sessions/:id live under the coach

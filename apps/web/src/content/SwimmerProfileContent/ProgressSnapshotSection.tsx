@@ -2,7 +2,7 @@ import Link from "next/link";
 
 import type {
   ParentSwimmerProgressResponse,
-  ScoreHistoryResponse,
+  ParentScoreHistoryResponse,
 } from "@swim-app/shared";
 
 import CategoryRadar from "@/content/SwimmerProgressContent/charts/CategoryRadar";
@@ -11,7 +11,7 @@ import type { SectionResult } from "./SwimmerProfileContent";
 
 interface ProgressSnapshotSectionProps {
   result: SectionResult<ParentSwimmerProgressResponse>;
-  scoreHistory: SectionResult<ScoreHistoryResponse>;
+  scoreHistory: SectionResult<ParentScoreHistoryResponse>;
   swimmerId: string;
 }
 
@@ -83,7 +83,7 @@ export default function ProgressSnapshotSection({
 // the radar component. Returns an empty list when the swimmer has no evals
 // (points[] is empty), so the radar block gracefully doesn't render.
 function latestCategorySnapshot(
-  scoreHistory: ScoreHistoryResponse,
+  scoreHistory: ParentScoreHistoryResponse,
 ): Array<{ name: string; average: number | null; assessedCount: number }> {
   const latest = scoreHistory.points[scoreHistory.points.length - 1];
   if (!latest) return [];
