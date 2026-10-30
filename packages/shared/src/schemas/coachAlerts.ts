@@ -67,6 +67,22 @@ export const CoachPushSubscriptionListResponseSchema = z.object({
 });
 export type CoachPushSubscriptionListResponse = z.infer<typeof CoachPushSubscriptionListResponseSchema>;
 
+// Result of POST /coach/push/test. The handler sends to every active
+// subscription; a per-subscription failure records its reason so the
+// account page can show the first one to the coach. `reason` is already
+// human-readable and safe to render (endpoint URL + keys stripped).
+export const CoachPushTestResponseSchema = z.object({
+  deliveredCount: z.number().int().nonnegative(),
+  subscriptionCount: z.number().int().nonnegative(),
+  errors: z.array(
+    z.object({
+      statusCode: z.number().int().nullable(),
+      reason: z.string(),
+    }),
+  ),
+});
+export type CoachPushTestResponse = z.infer<typeof CoachPushTestResponseSchema>;
+
 // Lock-screen detail options.
 export const LockScreenDetailSchema = z.enum(["first_initial", "full_name"]);
 export type LockScreenDetail = z.infer<typeof LockScreenDetailSchema>;

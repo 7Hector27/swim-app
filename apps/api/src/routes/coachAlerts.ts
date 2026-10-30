@@ -24,11 +24,13 @@ import {
   CoachNotificationUnreadCountResponseSchema,
   CoachPushSubscriptionListResponseSchema,
   CoachPushSubscriptionRegisterSchema,
+  CoachPushTestResponseSchema,
   type CoachNotificationListItem,
   type CoachNotificationListResponse,
   type CoachNotificationPreferences,
   type CoachPushSubscriptionListItem,
   type CoachPushSubscriptionRegister,
+  type CoachPushTestResponse,
 } from "@swim-app/shared";
 import { z } from "zod";
 
@@ -202,6 +204,7 @@ coachAlertsRouter.post(
     };
     const now = new Date();
     let deliveredCount = 0;
+    const errors: CoachPushTestResponse["errors"] = [];
     for (const subscription of subscriptions) {
       const result = await transport.send(subscription, pushBody);
       if (result.outcome === "ok") {
@@ -219,6 +222,10 @@ coachAlertsRouter.post(
             lastFailureAt: now,
           })
           .where(eq(coachPushSubscriptions.id, subscription.id));
+        errors.push({
+          statusCode: result.statusCode,
+          reason: "This device is no longer registered. Re-enable notifications to use it again.",
+        });
       } else {
         await db
           .update(coachPushSubscriptions)
@@ -228,16 +235,47 @@ coachAlertsRouter.post(
           {
             subscriptionId: subscription.id,
             statusCode: result.statusCode,
-            error: result.shortError,
+            shortError: result.shortError,
+            errorName: result.logDetail?.errorName ?? null,
+            errorMessage: result.logDetail?.errorMessage ?? null,
+            errorCode: result.logDetail?.errorCode ?? null,
+            bodyPreview: result.logDetail?.bodyPreview ?? null,
           },
           "coach-alerts test push failed",
         );
+        errors.push({
+          statusCode: result.statusCode,
+          reason: humanizePushError(result.statusCode, result.shortError, result.logDetail?.errorCode ?? null),
+        });
       }
     }
 
-    res.json({ deliveredCount, subscriptionCount: subscriptions.length });
+    const body: CoachPushTestResponse = {
+      deliveredCount,
+      subscriptionCount: subscriptions.length,
+      errors,
+    };
+    res.json(CoachPushTestResponseSchema.parse(body));
   }),
 );
+
+// Map a push failure to a short, non-identifying string the coach can act
+// on. Never surface raw web-push errors — they frequently include the push
+// endpoint URL, which identifies the device to anyone with log access.
+function humanizePushError(
+  statusCode: number | null,
+  shortError: string | null,
+  errorCode: string | null,
+): string {
+  if (statusCode === 400) return "The push service rejected the request.";
+  if (statusCode === 401 || statusCode === 403) return "The push service rejected the server's VAPID credentials.";
+  if (statusCode === 413) return "The notification payload was too large.";
+  if (statusCode === 429) return "The push service is rate-limiting this server. Try again shortly.";
+  if (statusCode !== null && statusCode >= 500) return "The push service is currently unavailable. Try again shortly.";
+  if (errorCode) return `The push service was unreachable (${errorCode}).`;
+  if (shortError && shortError.startsWith("net:")) return `The push service was unreachable (${shortError.slice(4)}).`;
+  return "Could not deliver the test notification.";
+}
 
 // ── In-app notification list ─────────────────────────────────────────────────
 

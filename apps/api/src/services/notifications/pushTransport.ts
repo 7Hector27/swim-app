@@ -26,6 +26,22 @@ export interface PushAttemptResult {
   // Short, log-safe string describing the error. Never contains endpoint
   // URLs or payload content.
   shortError: string | null;
+  // Full structured detail for logging. Redacted of URLs and long base64url
+  // tokens so it is safe to drop into req.log without further scrubbing.
+  // Null on success.
+  logDetail: PushErrorLogDetail | null;
+}
+
+export interface PushErrorLogDetail {
+  errorName: string | null;
+  errorMessage: string | null;
+  // Node network / fs error code (ENETUNREACH, ETIMEDOUT, ENOTFOUND, …).
+  errorCode: string | null;
+  statusCode: number | null;
+  // web-push's WebPushError includes the response body from the push
+  // service — e.g. "Unauthorized Registration" or a JSON error blob.
+  // Capped and redacted.
+  bodyPreview: string | null;
 }
 
 export interface PushSubscriptionInput {
@@ -64,6 +80,35 @@ export function __resetPushTransportForTests(): void {
   cachedConfigured = false;
 }
 
+// Called from the API boot sequence (index.ts) so a malformed VAPID
+// subject, key, or public/private mismatch stops the server with a
+// readable error instead of surfacing per-request as an opaque "Error"
+// at send time. No-op in local without VAPID env — matches the sender's
+// no-op behavior and keeps `pnpm dev` working with a bare .env.
+export class VapidStartupError extends Error {
+  readonly cause: unknown;
+  constructor(message: string, cause: unknown) {
+    super(message);
+    this.name = "VapidStartupError";
+    this.cause = cause;
+  }
+}
+
+export function validateVapidAtStartup(): void {
+  const vapid = getEnv().vapid;
+  if (!vapid) return;
+  try {
+    webpush.setVapidDetails(vapid.subject, vapid.publicKey, vapid.privateKey);
+    cachedConfigured = true;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new VapidStartupError(
+      `VAPID configuration is invalid: web-push rejected the subject or keys at startup — ${message}`,
+      err,
+    );
+  }
+}
+
 export function createPushTransport(): PushTransport | null {
   if (!ensureConfigured()) return null;
   return {
@@ -80,7 +125,7 @@ export function createPushTransport(): PushTransport | null {
       };
       try {
         await webpush.sendNotification(sub, payload, options);
-        return { outcome: "ok", statusCode: 201, shortError: null };
+        return { outcome: "ok", statusCode: 201, shortError: null, logDetail: null };
       } catch (err) {
         return classifyError(err);
       }
@@ -89,35 +134,65 @@ export function createPushTransport(): PushTransport | null {
 }
 
 function classifyError(err: unknown): PushAttemptResult {
-  // web-push throws WebPushError with .statusCode on push-service responses.
-  const statusCode = extractStatusCode(err);
+  const detail = extractLogDetail(err);
+  const statusCode = detail.statusCode;
   if (statusCode === 404 || statusCode === 410) {
     return {
       outcome: "gone",
       statusCode,
       shortError: `gone:${statusCode}`,
+      logDetail: detail,
     };
   }
-  const kind = statusCode ? `http_${statusCode}` : classifyNonHttp(err);
+  const kind = statusCode ? `http_${statusCode}` : classifyNonHttp(err, detail);
   return {
     outcome: "fail",
     statusCode,
     shortError: kind,
+    logDetail: detail,
   };
 }
 
-function extractStatusCode(err: unknown): number | null {
-  if (!err || typeof err !== "object") return null;
-  const maybe = err as { statusCode?: unknown };
-  if (typeof maybe.statusCode === "number") return maybe.statusCode;
-  return null;
+function extractLogDetail(err: unknown): PushErrorLogDetail {
+  if (!err || typeof err !== "object") {
+    return {
+      errorName: typeof err === "string" ? "string" : null,
+      errorMessage: typeof err === "string" ? redactSecrets(err).slice(0, 500) : null,
+      errorCode: null,
+      statusCode: null,
+      bodyPreview: null,
+    };
+  }
+  const obj = err as Record<string, unknown>;
+  const name = typeof obj.name === "string" ? obj.name.slice(0, 100) : null;
+  const rawMessage = typeof obj.message === "string" ? obj.message : null;
+  const message = rawMessage ? redactSecrets(rawMessage).slice(0, 500) : null;
+  const code = typeof obj.code === "string" ? obj.code.slice(0, 60) : null;
+  const statusCode = typeof obj.statusCode === "number" ? obj.statusCode : null;
+  // WebPushError.body is a string. Guard the shape anyway.
+  const rawBody = obj.body;
+  const bodyPreview =
+    typeof rawBody === "string" && rawBody.length > 0
+      ? redactSecrets(rawBody).slice(0, 500)
+      : null;
+  return { errorName: name, errorMessage: message, errorCode: code, statusCode, bodyPreview };
 }
 
-function classifyNonHttp(err: unknown): string {
+// Prefer Node's `.code` for network errors (ENETUNREACH, ETIMEDOUT, …) so
+// operators can tell "push service unreachable" from "crypto rejected the
+// VAPID signature." Fall back to the error name for everything else.
+function classifyNonHttp(err: unknown, detail: PushErrorLogDetail): string {
+  if (detail.errorCode) return `net:${detail.errorCode}`;
+  if (detail.errorName && detail.errorName.length > 0) return detail.errorName;
   if (!err || typeof err !== "object") return "unknown";
-  const maybeName = (err as { name?: unknown }).name;
-  if (typeof maybeName === "string" && maybeName.length > 0) {
-    return maybeName.slice(0, 60);
-  }
   return "unknown";
+}
+
+// Scrub values that could identify a subscription or expose a key:
+// 1. Any http(s) URL — push endpoint URLs embed per-subscription tokens.
+// 2. Long base64url runs — p256dh/auth and VAPID keys look like this.
+function redactSecrets(text: string): string {
+  return text
+    .replace(/https?:\/\/\S+/g, "[redacted-url]")
+    .replace(/\b[A-Za-z0-9_-]{32,}\b/g, "[redacted]");
 }
