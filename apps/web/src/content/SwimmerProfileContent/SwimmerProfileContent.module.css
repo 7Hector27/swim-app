@@ -1,25 +1,23 @@
 /*
-  Three layouts share the same DOM. The outer wrapper matches /dashboard
-  exactly: `mx-auto max-w-content px-page pt-10 pb-tab-safe tablet:pt-14
-  tablet:pb-32`. This file controls the inner body.
+  Two layouts share the same DOM. The outer wrapper matches /dashboard:
+  `mx-auto max-w-content px-page pt-10 pb-tab-safe tablet:pt-14 tablet:pb-32`.
+  This file controls the inner body.
 
-    Mobile  (<769px): flex-column. The sidebar group sits after the main
-                       group in the DOM; mobile `order` values below shuffle
-                       the real sections so the visual mobile order
-                       (Dashboard, Hero, Stats, NextLesson, PBs, Progress,
-                       Lessons, Toggle) is preserved exactly as it is today.
+    Phone (<769px):   single flex-column. The main group and sidebar group
+                      are both `display: contents`, so their children stack
+                      in the outer flex. `order` values re-sequence the DOM
+                      into the phone visual order:
+                        Dashboard, Hero, NextLesson, Progress,
+                        Lessons, PBs, Toggle.
 
-    Tablet  (769-1247): also flex-column, one wide stack, with each section
-                       using its own internal responsive grid (stats 4-across,
-                       PBs 3-col, lessons 2-col). There is no sidebar at
-                       tablet; sections span the full content width.
+    Tablet + desktop (>=769): two-column grid. Main is roughly two thirds,
+                      sidebar roughly one third. Each column stacks its own
+                      cards independently so a short card never leaves a hole
+                      in the row. Nav and hero still span the full width above
+                      the two columns.
 
-    Desktop (1248+):   two-column grid, dashboard-style. Hero spans both
-                       columns on its own row at the top. Below, main (flex-1)
-                       holds a nested grid (NextLesson + ProgressSnapshot
-                       side-by-side, then PBs, then Lessons), while the
-                       sticky right sidebar (300px) carries Stats and the
-                       public toggle.
+                      Main stack  (DOM order): NextLesson, Lessons, PBs.
+                      Sidebar stack (DOM order): Progress, Toggle.
 */
 
 .layout {
@@ -28,8 +26,9 @@
   gap: 1.5rem;
 }
 
-/* On mobile and tablet the main/sidebar wrappers vanish from the layout
-   so their children stack directly in the outer flex. */
+/* On phone the two groups collapse out of the DOM so their children stack
+   directly in the outer flex, with the per-child `order` values below
+   driving the final sequence. */
 .mainGroup,
 .sidebarGroup {
   display: contents;
@@ -37,61 +36,54 @@
 
 .nav      { order: 1; }
 .hero     { order: 2; }
-.stats    { order: 3; }
-.next     { order: 4; }
-.pbs      { order: 5; }
-.focus    { order: 6; }
-.lessons  { order: 7; }
-.toggle   { order: 8; }
+.next     { order: 3; }
+.focus    { order: 4; }
+.lessons  { order: 5; }
+.pbs      { order: 6; }
+.toggle   { order: 7; }
 
-@media (min-width: 1248px) {
+@media (min-width: 769px) {
   .layout {
     display: grid;
-    grid-template-columns: 1fr 300px;
+    grid-template-columns: 2fr 1fr;
     grid-template-areas:
       "nav     nav"
       "hero    hero"
       "main    sidebar";
-    column-gap: 2rem;
+    column-gap: 1.5rem;
     row-gap: 1.5rem;
     align-items: start;
   }
 
-  /* The outer grid places things by grid-area; the two groups below handle
-     their own internal flow. Reset the mobile `order` values so flex order
-     inside each group falls back to DOM order. */
-  .nav, .hero, .stats, .next, .pbs, .focus, .lessons, .toggle {
+  /* Reset the phone order values so DOM order drives flex order inside each
+     column; column grouping is purely by grid-area at this size. */
+  .nav, .hero, .next, .pbs, .focus, .lessons, .toggle {
     order: 0;
   }
 
   .nav  { grid-area: nav; }
   .hero { grid-area: hero; }
 
-  /* Main column: nested grid. Next lesson + current focus share a row,
-     then PBs and lessons each take their own full-width row. */
   .mainGroup {
     grid-area: main;
-    display: grid;
-    grid-template-columns: 3fr 2fr;
-    grid-template-areas:
-      "next    focus"
-      "pbs     pbs"
-      "lessons lessons";
-    column-gap: 1.5rem;
-    row-gap: 1.5rem;
-    align-items: start;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
   }
-  .next    { grid-area: next; }
-  .focus   { grid-area: focus; }
-  .pbs     { grid-area: pbs; }
-  .lessons { grid-area: lessons; }
 
-  /* Sidebar: sticky, holds stats and the leaderboard toggle. */
   .sidebarGroup {
     grid-area: sidebar;
     display: flex;
     flex-direction: column;
-    gap: 1.25rem;
+    gap: 1.5rem;
+  }
+}
+
+@media (min-width: 1248px) {
+  /* At desktop widths the sidebar sticks under the hero while the main
+     column scrolls past; its own content scrolls when it exceeds the
+     viewport. */
+  .sidebarGroup {
     position: sticky;
     top: 1.5rem;
     align-self: start;

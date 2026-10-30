@@ -4,13 +4,14 @@ import { useActionState, useCallback, useEffect, useMemo, useRef, useState } fro
 import type {
   CoachSwimmerDetail,
   EvaluationDraft,
+  GetSessionResponse,
   ScreensResponse,
   SkillForRating,
   SwimmerSkillsResponse,
 } from "@swim-app/shared";
 import { calculateBilateralBreathingGrade } from "@swim-app/shared";
 import AddNoteForm from "@/components/AddNoteForm";
-import { deleteDraft, fetchDependencyMapAction, fetchServerDraftsAction, saveDraft, submitEvaluation } from "./actions";
+import { deleteDraft, fetchDependencyMapAction, fetchServerDraftsAction, patchSessionAction, saveDraft, submitEvaluation } from "./actions";
 import type { EvaluateFieldIssue, EvaluateState, SessionDraft, SkillDraft } from "./helpers";
 import {
   defaultSkillDraft,
@@ -39,13 +40,63 @@ interface EvaluateContentProps {
   screens: ScreensResponse;
   prevGrades: SwimmerSkillsResponse["grades"];
   resumeDraft?: EvaluationDraft;
+  // ADR 032: when present, the page runs in edit mode. The session's state
+  // pre-fills the form; drafts and the server-draft banner are suppressed;
+  // the submit button says "Save changes" and POSTs to PATCH.
+  editSession?: GetSessionResponse;
+  // Sanitized return URL used after a successful save in edit mode. The
+  // route always passes one through `isSafeReturnTo`; this is optional only
+  // so existing unit tests don't have to pass it. Falls back to the swimmer
+  // page.
+  returnTo?: string;
 }
 
-export default function EvaluateContent({ swimmer, screens, prevGrades, resumeDraft }: EvaluateContentProps) {
+export default function EvaluateContent({
+  swimmer,
+  screens,
+  prevGrades,
+  resumeDraft,
+  editSession,
+  returnTo,
+}: EvaluateContentProps) {
+  const isEditMode = editSession !== undefined;
+  const effectiveReturnTo = returnTo ?? `/coach/swimmers/${swimmer.id}`;
   const metaKey = useMemo(() => `evaluate-draft-meta-${swimmer.id}`, [swimmer.id]);
   const skillsKey = useCallback((slug: string) => `evaluate-draft-skills-${swimmer.id}-${slug}`, [swimmer.id]);
 
   const [draft, setDraft] = useState<SessionDraft>(() => {
+    // ADR 032: edit mode pre-fills from the fetched session. Key format
+    // matches the create flow: `${skillId}` for non-sided, `${skillId}:left`
+    // or `${skillId}:right` for sided ratings. ratingId is tracked separately
+    // (see editRatingIdByKeyRef below) so the PATCH body can address each
+    // rating by its id.
+    if (editSession) {
+      const skills: Record<string, SkillDraft> = {};
+      for (const rating of editSession.ratings) {
+        const key = rating.side !== null ? `${rating.skillId}:${rating.side}` : rating.skillId;
+        skills[key] = {
+          grade: rating.grade as 1 | 2 | 3 | 4 | 5 | null,
+          notLegal: rating.notLegal,
+          noConcept: rating.noConcept,
+          capacityValue: rating.capacityValue ?? "",
+          capacityUnit: rating.capacityUnit,
+          measurementValue: rating.measurementValue ?? "",
+          measurementUnit: rating.measurementUnit,
+          note: rating.note ?? "",
+          faultTags: rating.faultTags,
+          detailsOpen: false,
+          golfScoreCategory: rating.golfScoreCategory,
+        };
+      }
+      return {
+        screenSlug: editSession.screenSlug,
+        sessionDate: editSession.sessionDate,
+        context: editSession.context,
+        coachingPriority: editSession.coachingPriority ?? "",
+        breathingPattern: editSession.breathingPattern,
+        skills,
+      };
+    }
     if (resumeDraft) {
       const skills: Record<string, SkillDraft> = {};
       for (const [key, entry] of Object.entries(resumeDraft.payload)) {
@@ -74,6 +125,19 @@ export default function EvaluateContent({ swimmer, screens, prevGrades, resumeDr
     }
     return initialSessionDraft();
   });
+
+  // In edit mode, map draft keys back to the live ratingIds for the PATCH
+  // body. Refreshed when the 409 banner triggers a re-fetch.
+  const editRatingIdByKeyRef = useRef<Map<string, string>>(
+    new Map(
+      editSession?.ratings.map((rating) => [
+        rating.side !== null ? `${rating.skillId}:${rating.side}` : rating.skillId,
+        rating.ratingId,
+      ]) ?? [],
+    ),
+  );
+  // "This evaluation was edited elsewhere" banner on 409.
+  const [staleBanner, setStaleBanner] = useState(false);
   const [skillSearch, setSkillSearch] = useState("");
   const [activeSectionIndex, setActiveSectionIndex] = useState(0);
   const [depSuggestion, setDepSuggestion] = useState<
@@ -100,11 +164,14 @@ export default function EvaluateContent({ swimmer, screens, prevGrades, resumeDr
   // Always-current draft ref for save-on-hide
   const pendingDraftRef = useRef(draft);
 
-  // Restore draft from localStorage on mount (skip if resumeDraft was provided)
+  // Restore draft from localStorage on mount (skip when a resumeDraft was
+  // provided, and skip entirely in edit mode — ADR 032 says edit mode is a
+  // one-shot form that doesn't touch the draft).
   useEffect(() => {
     if (mountedRef.current) return;
     mountedRef.current = true;
     if (resumeDraft) return;
+    if (isEditMode) return;
     try {
       const meta = JSON.parse(localStorage.getItem(metaKey) ?? "null");
       if (meta && typeof meta === "object") {
@@ -134,10 +201,98 @@ export default function EvaluateContent({ swimmer, screens, prevGrades, resumeDr
     } catch {
       // ignore
     }
-  }, [swimmer.id, metaKey, skillsKey, resumeDraft]);
+  }, [swimmer.id, metaKey, skillsKey, resumeDraft, isEditMode]);
 
-  // Persist draft to localStorage on every change
+  // Deep link: ?skill=<slug> on arrival from the progress page's "What to work
+  // on next" list. Scrolls to the matching skill and opens its section tab.
+  // Picks a screen when none is set yet; never clobbers an in-progress draft
+  // on a different screen (silent fallback — the coach can switch manually).
+  //
+  // Declared BEFORE the save-to-localStorage effect so it reads the pristine
+  // stored value before `save` overwrites it with the initial empty draft on
+  // the first commit.
+  const deepLinkConsumedRef = useRef(false);
+  const deepLinkSlugRef = useRef<string | null>(
+    typeof window !== "undefined"
+      ? new URLSearchParams(window.location.search).get("skill")
+      : null,
+  );
   useEffect(() => {
+    if (deepLinkConsumedRef.current) return;
+    const slug = deepLinkSlugRef.current;
+    if (slug === null) {
+      deepLinkConsumedRef.current = true;
+      return;
+    }
+    const currentScreen = screens.find((screen) => screen.screenSlug === draft.screenSlug);
+    const currentSkill = currentScreen?.skills.find((skill) => skill.slug === slug) ?? null;
+    if (currentSkill !== null && currentScreen !== undefined) {
+      const sections = SCREEN_SECTIONS[currentScreen.screenSlug] ?? [];
+      const sectionIndex = sections.findIndex((section) => section.slugs.includes(slug));
+      if (sectionIndex >= 0) setActiveSectionIndex(sectionIndex);
+      const skillId = currentSkill.id;
+      requestAnimationFrame(() => {
+        document
+          .getElementById(`skill-${skillId}`)
+          ?.scrollIntoView({ behavior: "smooth", block: "center" });
+      });
+      deepLinkConsumedRef.current = true;
+      deepLinkSlugRef.current = null;
+      return;
+    }
+    if (draft.screenSlug === "") {
+      // The restore effect fires on the same commit as this one and updates
+      // draft asynchronously, so draft.screenSlug can still read "" even
+      // when a stored draft exists. Peek at localStorage directly.
+      //
+      //   - stored screen already contains the target: wait (don't mark
+      //     consumed). When restore flushes, the effect re-runs with
+      //     currentScreen set and the top branch does the scroll.
+      //   - stored screen is set to something else: honor the in-progress
+      //     draft, don't switch screens, don't scroll.
+      //   - nothing stored: pick the first screen containing the target.
+      let storedScreenSlug: string | null = null;
+      try {
+        const metaRaw = localStorage.getItem(metaKey);
+        if (metaRaw) {
+          const meta = JSON.parse(metaRaw) as { screenSlug?: string };
+          storedScreenSlug = typeof meta.screenSlug === "string" ? meta.screenSlug : null;
+        }
+      } catch {
+        // ignore
+      }
+      if (storedScreenSlug && storedScreenSlug !== "") {
+        const storedScreen = screens.find((screen) => screen.screenSlug === storedScreenSlug);
+        const storedHasSlug = storedScreen?.skills.some((skill) => skill.slug === slug) ?? false;
+        if (storedHasSlug) {
+          // Wait for restore to flush; the effect re-runs with the new
+          // draft.screenSlug and the top branch takes over.
+          return;
+        }
+        deepLinkConsumedRef.current = true;
+        deepLinkSlugRef.current = null;
+        return;
+      }
+      const matching = screens.find((screen) =>
+        screen.skills.some((skill) => skill.slug === slug),
+      );
+      if (matching) {
+        handleScreenChange(matching.screenSlug);
+      } else {
+        deepLinkConsumedRef.current = true;
+        deepLinkSlugRef.current = null;
+      }
+      return;
+    }
+    deepLinkConsumedRef.current = true;
+    deepLinkSlugRef.current = null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [screens, draft.screenSlug]);
+
+  // Persist draft to localStorage on every change. Suppressed in edit mode
+  // — ADR 032 says edit mode never writes draft state locally.
+  useEffect(() => {
+    if (isEditMode) return;
     try {
       localStorage.setItem(metaKey, JSON.stringify({
         screenSlug: draft.screenSlug,
@@ -152,7 +307,7 @@ export default function EvaluateContent({ swimmer, screens, prevGrades, resumeDr
     } catch {
       // ignore
     }
-  }, [draft, swimmer.id, metaKey, skillsKey]);
+  }, [draft, swimmer.id, metaKey, skillsKey, isEditMode]);
 
   // Fetch dep suggestion when screenSlug changes
   useEffect(() => {
@@ -174,7 +329,16 @@ export default function EvaluateContent({ swimmer, screens, prevGrades, resumeDr
       });
   }, [draft.screenSlug, swimmer.id]);
 
-  const boundAction = useMemo(() => submitEvaluation.bind(null, swimmer.id), [swimmer.id]);
+  // ADR 032: in edit mode the form action is the PATCH wrapper, bound to
+  // the target session id and the sanitized returnTo. In create mode it's
+  // the existing submitEvaluation action.
+  const boundAction = useMemo(
+    () =>
+      isEditMode
+        ? patchSessionAction.bind(null, editSession!.sessionId, effectiveReturnTo)
+        : submitEvaluation.bind(null, swimmer.id),
+    [isEditMode, editSession, effectiveReturnTo, swimmer.id],
+  );
   const [state, formAction, isPending] = useActionState<EvaluateState, FormData>(
     boundAction,
     { status: "idle" },
@@ -201,15 +365,26 @@ export default function EvaluateContent({ swimmer, screens, prevGrades, resumeDr
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.status, metaKey, skillsKey]);
 
+  // ADR 032: on a 409 from PATCH, show the banner and let the coach decide
+  // whether to review and resubmit. The server already refuses the save, so
+  // nothing of theirs is lost; keeping local edits around means they can
+  // adjust and retry without re-entering everything. If they want a fresh
+  // read of the server state, they can navigate away and back.
+  useEffect(() => {
+    if (state.status === "stale") setStaleBanner(true);
+  }, [state.status]);
+
   // Keep pendingDraftRef in sync with latest draft
   useEffect(() => {
     pendingDraftRef.current = draft;
   }, [draft]);
 
-  // Fetch server drafts once on mount
+  // Fetch server drafts once on mount. Skipped in edit mode (no draft list
+  // to merge with).
   useEffect(() => {
     if (serverDraftsFetchedRef.current) return;
     serverDraftsFetchedRef.current = true;
+    if (isEditMode) return;
     fetchServerDraftsAction(swimmer.id)
       .then((drafts) => {
         const map = new Map<string, import("@swim-app/shared").EvaluationDraft>();
@@ -219,10 +394,12 @@ export default function EvaluateContent({ swimmer, screens, prevGrades, resumeDr
         setServerDraftsBySlug(map);
       })
       .catch(() => null);
-  }, [swimmer.id]);
+  }, [swimmer.id, isEditMode]);
 
-  // Show banner when current screen has a server draft (not already loaded)
+  // Show banner when current screen has a server draft (not already loaded).
+  // Suppressed in edit mode.
   useEffect(() => {
+    if (isEditMode) return;
     if (!draft.screenSlug || serverDraftsBySlug.size === 0) return;
     const found = serverDraftsBySlug.get(draft.screenSlug);
     if (found && found.id !== serverDraftId) {
@@ -233,14 +410,16 @@ export default function EvaluateContent({ swimmer, screens, prevGrades, resumeDr
     }
     // serverDraftId intentionally omitted — only re-evaluate when slug or server list changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draft.screenSlug, serverDraftsBySlug]);
+  }, [draft.screenSlug, serverDraftsBySlug, isEditMode]);
 
-  // Debounced server autosave — fires ~20s after last draft change
+  // Debounced server autosave — fires ~20s after last draft change. Skipped
+  // in edit mode (no server draft row to update).
   useEffect(() => {
     if (isFirstDraftRenderRef.current) {
       isFirstDraftRenderRef.current = false;
       return;
     }
+    if (isEditMode) return;
     if (!draft.screenSlug) return;
     draftChangedRef.current = true;
     if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
@@ -249,8 +428,10 @@ export default function EvaluateContent({ swimmer, screens, prevGrades, resumeDr
     }, 20_000);
   }, [draft]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Save on page hide (tab close, navigate away) — clears debounce timer
+  // Save on page hide (tab close, navigate away) — clears debounce timer.
+  // Suppressed in edit mode.
   useEffect(() => {
+    if (isEditMode) return;
     function onHide() {
       if (!pendingDraftRef.current.screenSlug || !draftChangedRef.current) return;
       if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
@@ -261,7 +442,7 @@ export default function EvaluateContent({ swimmer, screens, prevGrades, resumeDr
       document.removeEventListener("visibilitychange", onHide);
       if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isEditMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function saveDraftNow(draftToSave: SessionDraft): Promise<void> {
     if (!draftToSave.screenSlug) return;
@@ -547,14 +728,46 @@ export default function EvaluateContent({ swimmer, screens, prevGrades, resumeDr
   // Empty / whitespace-only priority goes over the wire as null so the API
   // writes NULL to the DB rather than hitting the `<> ''` check constraint.
   const trimmedPriority = draft.coachingPriority.trim();
-  const bodyJson = JSON.stringify({
-    screenSlug: draft.screenSlug,
-    sessionDate: draft.sessionDate,
-    context: draft.context,
-    coachingPriority: trimmedPriority.length > 0 ? trimmedPriority : null,
-    breathingPattern: draft.breathingPattern,
-    ratings: ratingsArray,
-  });
+  const bodyJson = isEditMode
+    ? JSON.stringify({
+        sessionDate: draft.sessionDate,
+        context: draft.context,
+        coachingPriority: trimmedPriority.length > 0 ? trimmedPriority : null,
+        breathingPattern: draft.breathingPattern,
+        // PATCH body expects per-rating objects keyed by ratingId. Every
+        // draft row that maps to a live ratingId is forwarded. Rows the
+        // coach has not touched produce no-op diffs on the server.
+        ratings: ratingsArray.flatMap((rating) => {
+          const key =
+            rating.side !== null ? `${rating.skillId}:${rating.side}` : rating.skillId;
+          const ratingId = editRatingIdByKeyRef.current.get(key);
+          if (!ratingId) return [];
+          return [
+            {
+              ratingId,
+              grade: rating.grade,
+              notLegal: rating.notLegal,
+              noConcept: rating.noConcept,
+              side: rating.side,
+              capacityValue: rating.capacityValue,
+              capacityUnit: rating.capacityUnit,
+              measurementValue: rating.measurementValue,
+              measurementUnit: rating.measurementUnit,
+              golfScoreCategory: rating.golfScoreCategory,
+              note: rating.note,
+              faultTags: rating.faultTags,
+            },
+          ];
+        }),
+      })
+    : JSON.stringify({
+        screenSlug: draft.screenSlug,
+        sessionDate: draft.sessionDate,
+        context: draft.context,
+        coachingPriority: trimmedPriority.length > 0 ? trimmedPriority : null,
+        breathingPattern: draft.breathingPattern,
+        ratings: ratingsArray,
+      });
 
   const searchResults = useMemo(() => {
     if (!skillSearch.trim() || !sectionGroups) return [];
@@ -651,11 +864,16 @@ export default function EvaluateContent({ swimmer, screens, prevGrades, resumeDr
               Evaluation saved for {swimmer.firstName}
             </h1>
 
-            <UndoToast
-              swimmer={swimmer}
-              sessionId={state.sessionId}
-              savedAt={savedAtRef.current}
-            />
+            {/* UndoToast only applies to brand-new evaluations. ADR 032 edit
+                mode preserves the pre-correction row via the supersede chain,
+                so an undo-via-delete would never be the right action here. */}
+            {!isEditMode && (
+              <UndoToast
+                swimmer={swimmer}
+                sessionId={state.sessionId}
+                savedAt={savedAtRef.current}
+              />
+            )}
 
             <section className="flex flex-col gap-3">
               <h2 className="font-bold text-sm" style={{ color: "var(--color-text)" }}>
@@ -741,7 +959,22 @@ export default function EvaluateContent({ swimmer, screens, prevGrades, resumeDr
             </p>
           )}
 
-          {bannerDraft !== null && (
+          {staleBanner && (
+            <div
+              role="alert"
+              className="p-3 rounded border text-sm"
+              style={{
+                borderColor: "var(--color-danger)",
+                color: "var(--color-text)",
+                backgroundColor: "var(--color-background)",
+              }}
+              data-testid="evaluate-stale-banner"
+            >
+              This evaluation was edited elsewhere. Review and save again.
+            </div>
+          )}
+
+          {!isEditMode && bannerDraft !== null && (
             <div
               role="alert"
               className="flex flex-col gap-2 p-3 rounded border border-border text-sm text-text"
@@ -805,6 +1038,9 @@ export default function EvaluateContent({ swimmer, screens, prevGrades, resumeDr
               onScreenChange={handleScreenChange}
               onChange={(patch) => setDraft((prev) => ({ ...prev, ...patch }))}
               issues={sessionSetupIssues}
+              {...(isEditMode && selectedScreen !== null && {
+                screenLockedName: selectedScreen.name,
+              })}
             />
 
             {/* Skills — card grid under sticky section tabs */}
@@ -946,17 +1182,20 @@ export default function EvaluateContent({ swimmer, screens, prevGrades, resumeDr
                   opacity: submitEnabled ? 1 : 0.5,
                   cursor: submitEnabled ? "pointer" : "not-allowed",
                 }}
+                data-testid="evaluate-submit-button"
               >
-                {isPending ? "Saving..." : "Save evaluation"}
+                {isPending ? "Saving..." : isEditMode ? "Save changes" : "Save evaluation"}
               </button>
-              <button
-                type="button"
-                onClick={handleSaveDraft}
-                disabled={draft.screenSlug === "" || draftSaveState === "saving"}
-                className="inline-flex items-center justify-center px-5 min-h-[48px] font-semibold text-sm rounded-[var(--radius-button)] border border-border text-text"
-              >
-                {draftSaveState === "saving" ? "Saving..." : draftSaveState === "saved" ? "Draft saved" : draftSaveState === "error" ? "Save failed" : "Save as draft"}
-              </button>
+              {!isEditMode && (
+                <button
+                  type="button"
+                  onClick={handleSaveDraft}
+                  disabled={draft.screenSlug === "" || draftSaveState === "saving"}
+                  className="inline-flex items-center justify-center px-5 min-h-[48px] font-semibold text-sm rounded-[var(--radius-button)] border border-border text-text"
+                >
+                  {draftSaveState === "saving" ? "Saving..." : draftSaveState === "saved" ? "Draft saved" : draftSaveState === "error" ? "Save failed" : "Save as draft"}
+                </button>
+              )}
             </div>
           </form>
         </div>

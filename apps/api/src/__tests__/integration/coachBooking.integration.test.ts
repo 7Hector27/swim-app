@@ -77,20 +77,42 @@ async function makeCoach(userId: string): Promise<void> {
 
 // Open every day on every season (and on the fallback config, in case there
 // are no seasons covering the test date) so the slot search does not care
-// which weekday "today" happens to be.
+// which weekday "today" happens to be. Also pins each season's weekday
+// teaching window to the config defaults (16:00 to 20:00): the tests below
+// pick deterministic "now" instants assuming that default (e.g. test 6 pins
+// 14:00 LA so the first slot sits 2h out). A developer-modified season that
+// starts at, say, 14:00 LA would otherwise collide with the pinned "now"
+// and the POST would reject with start_in_past. Restored exactly as found
+// in finally so local tweaks survive the run.
 async function withAllDaysEnabled<T>(fn: () => Promise<T>): Promise<T> {
+  const configRows = await adminDb().select().from(availabilityConfig).limit(1);
+  const originalConfig = configRows[0]
+    ? {
+        id: configRows[0].id,
+        defaultTeachesDays: configRows[0].defaultTeachesDays,
+        defaultStartTime: configRows[0].defaultStartTime,
+        defaultEndTime: configRows[0].defaultEndTime,
+      }
+    : null;
   const seasons = await adminDb().select().from(availabilitySeasons);
-  const originalSeasons = seasons.map((season) => ({ id: season.id, teachesDays: season.teachesDays }));
+  const originalSeasons = seasons.map((season) => ({
+    id: season.id,
+    teachesDays: season.teachesDays,
+    weekdayStartTime: season.weekdayStartTime,
+    weekdayEndTime: season.weekdayEndTime,
+  }));
+  const weekdayStart = originalConfig?.defaultStartTime ?? "16:00:00";
+  const weekdayEnd = originalConfig?.defaultEndTime ?? "20:00:00";
   for (const season of seasons) {
     await adminDb()
       .update(availabilitySeasons)
-      .set({ teachesDays: [1, 2, 3, 4, 5, 6, 7] })
+      .set({
+        teachesDays: [1, 2, 3, 4, 5, 6, 7],
+        weekdayStartTime: weekdayStart,
+        weekdayEndTime: weekdayEnd,
+      })
       .where(eq(availabilitySeasons.id, season.id));
   }
-  const configRows = await adminDb().select().from(availabilityConfig).limit(1);
-  const originalConfig = configRows[0]
-    ? { id: configRows[0].id, defaultTeachesDays: configRows[0].defaultTeachesDays }
-    : null;
   if (originalConfig) {
     await adminDb()
       .update(availabilityConfig)
@@ -103,7 +125,11 @@ async function withAllDaysEnabled<T>(fn: () => Promise<T>): Promise<T> {
     for (const original of originalSeasons) {
       await adminDb()
         .update(availabilitySeasons)
-        .set({ teachesDays: original.teachesDays })
+        .set({
+          teachesDays: original.teachesDays,
+          weekdayStartTime: original.weekdayStartTime,
+          weekdayEndTime: original.weekdayEndTime,
+        })
         .where(eq(availabilitySeasons.id, original.id));
     }
     if (originalConfig) {

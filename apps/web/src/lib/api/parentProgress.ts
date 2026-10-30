@@ -1,6 +1,8 @@
 import {
   ParentPersonalBestsResponseSchema,
   type ParentPersonalBestsResponse,
+  ParentScoreHistoryResponseSchema,
+  type ParentScoreHistoryResponse,
   ParentSwimmerProgressResponseSchema,
   type ParentSwimmerProgressResponse,
   ParentSwimmerSchema,
@@ -48,6 +50,32 @@ export async function fetchParentSwimmer(
     const parsed = ParentSwimmerSchema.safeParse(body);
     if (!parsed.success) return { ok: false, status: 500 };
     return { ok: true, swimmer: parsed.data };
+  } catch {
+    return { ok: false, status: 500 };
+  }
+}
+
+export type FetchParentScoreHistoryResult =
+  | { ok: true; data: ParentScoreHistoryResponse }
+  | { ok: false; status: number };
+
+export async function fetchParentScoreHistory(
+  swimmerId: string,
+  accessToken: string,
+): Promise<FetchParentScoreHistoryResult> {
+  try {
+    const response = await fetch(
+      `${process.env.NEXT_PUBLIC_API_URL}/swimmers/${swimmerId}/score-history`,
+      { headers: { Authorization: `Bearer ${accessToken}` }, cache: "no-store" },
+    );
+    if (!response.ok) return { ok: false, status: response.status };
+    const body: unknown = await response.json();
+    // Strict parent-facing schema: `.strict()` rejects any extra keys, so
+    // a `faultTrends` field slipping into the response trips here instead
+    // of silently reaching a parent component.
+    const parsed = ParentScoreHistoryResponseSchema.safeParse(body);
+    if (!parsed.success) return { ok: false, status: 500 };
+    return { ok: true, data: parsed.data };
   } catch {
     return { ok: false, status: 500 };
   }

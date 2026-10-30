@@ -8,6 +8,7 @@ const BILATERAL_SKILL_ID   = "eeee0000-0000-0000-0000-000000000001";
 const BREATHING_SKILL_ID   = "ffff0000-0000-0000-0000-000000000001";
 const BILATERAL_LEFT_ID    = "1111aaaa-0000-0000-0000-000000000001";
 const BILATERAL_RIGHT_ID   = "2222aaaa-0000-0000-0000-000000000001";
+const SESSION_ID           = "3333aaaa-0000-0000-0000-000000000001";
 
 const ratedAt = new Date("2025-06-01T10:00:00.000Z");
 
@@ -99,6 +100,8 @@ const displayRatingRows = [
     categoryName: "Freestyle",
     context: "practice",
     sessionDate: "2025-06-01",
+    sessionId: SESSION_ID,
+    supersedesRatingId: null,
   },
 ];
 
@@ -177,6 +180,8 @@ const bilateralDisplayRows = [
     categoryName: "Freestyle",
     context: "practice",
     sessionDate: "2025-06-01",
+    sessionId: SESSION_ID,
+    supersedesRatingId: null,
   },
   {
     ratingId: BILATERAL_RIGHT_ID,
@@ -201,6 +206,8 @@ const bilateralDisplayRows = [
     categoryName: "Freestyle",
     context: "practice",
     sessionDate: "2025-06-01",
+    sessionId: SESSION_ID,
+    supersedesRatingId: null,
   },
 ];
 

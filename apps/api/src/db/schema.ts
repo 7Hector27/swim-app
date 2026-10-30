@@ -608,6 +608,10 @@ export const evaluationSessions = pgTable(
     // The parent UI falls back to the most recent non-null priority from any
     // session with at least one non-voided rating.
     coachingPriority: text("coaching_priority"),
+    // Set to now() by the PATCH endpoint whenever any editable session field
+    // actually changes, OR whenever a rating correction is written against
+    // this session. Drives the "Edited" badge in the coach UI. ADR 032.
+    editedAt: timestamp("edited_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdateFn(() => new Date()),
   },
@@ -621,8 +625,11 @@ export const evaluationSessions = pgTable(
 ).enableRLS();
 
 // Ratings are append-only: after insert the only columns that change are the
-// three void fields (voided_at, void_reason, void_by), set atomically by the
-// void endpoint. All other mutations are forbidden at the API layer (E-3).
+// three void fields (voided_at, void_reason, void_by) OR the three supersede
+// fields (superseded_at, superseded_by, superseded_by_rating_id). All other
+// mutations are forbidden by the skill_ratings_append_only trigger
+// (migration 0020, relaxed in 0062). Corrections live as new rows that point
+// back to the predecessor via supersedes_rating_id; see ADR 032.
 export const skillRatings = pgTable(
   "skill_ratings",
   {
@@ -648,7 +655,16 @@ export const skillRatings = pgTable(
     voidedAt: timestamp("voided_at", { withTimezone: true }),
     voidReason: text("void_reason"),
     voidBy: uuid("void_by").references(() => profiles.id, { onDelete: "restrict" }),
+    // Supersede fields: set together on the predecessor when a correction row
+    // is written. Mirror of the void triplet.
+    supersededAt: timestamp("superseded_at", { withTimezone: true }),
+    supersededBy: uuid("superseded_by").references(() => profiles.id, { onDelete: "restrict" }),
+    supersededByRatingId: uuid("superseded_by_rating_id").references((): AnyPgColumn => skillRatings.id, { onDelete: "restrict" }),
+    // Backward link on the correction row only. Null on the original.
+    supersedesRatingId: uuid("supersedes_rating_id").references((): AnyPgColumn => skillRatings.id, { onDelete: "restrict" }),
     // When the coach observed the skill (may differ from row insert time).
+    // A correction row inherits its predecessor's rated_at — observation time
+    // is preserved, correction time lives on created_at and in the audit log.
     ratedAt: timestamp("rated_at", { withTimezone: true }).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdateFn(() => new Date()),
@@ -681,6 +697,12 @@ export const skillRatings = pgTable(
       "void_fields_consistent",
       sql`(${table.voidedAt} IS NULL AND ${table.voidReason} IS NULL AND ${table.voidBy} IS NULL)
           OR (${table.voidedAt} IS NOT NULL AND ${table.voidReason} IS NOT NULL AND ${table.voidBy} IS NOT NULL)`,
+    ),
+    // All three supersede fields are set together or all are null.
+    check(
+      "supersede_fields_consistent",
+      sql`(${table.supersededAt} IS NULL AND ${table.supersededBy} IS NULL AND ${table.supersededByRatingId} IS NULL)
+          OR (${table.supersededAt} IS NOT NULL AND ${table.supersededBy} IS NOT NULL AND ${table.supersededByRatingId} IS NOT NULL)`,
     ),
   ],
 ).enableRLS();

@@ -1,6 +1,11 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
-import type { ParentSwimmer, ParentSwimmerProgressResponse, CategoriesResponse } from "@swim-app/shared";
+import type {
+  CategoriesResponse,
+  ParentScoreHistoryResponse,
+  ParentSwimmer,
+  ParentSwimmerProgressResponse,
+} from "@swim-app/shared";
 
 vi.mock("@/components/SiteNav", () => ({ default: () => <nav /> }));
 vi.mock("@/components/TrendLine", () => ({ default: () => null }));
@@ -36,6 +41,12 @@ const emptyProgress: ParentSwimmerProgressResponse = {
 };
 
 const categories: CategoriesResponse = [];
+const emptyScoreHistory: ParentScoreHistoryResponse = {
+  points: [],
+  recentChanges: [],
+  milestones: [],
+  measurements: [],
+};
 
 describe("ParentSwimmerProgressContent", () => {
   it("shows empty state when no evaluations", () => {
@@ -284,4 +295,104 @@ describe("ParentSwimmerProgressContent", () => {
     // the day is "Oct 14, 2026" regardless of the test runner's TZ.
     expect(section).toHaveTextContent(/From Oct 14, 2026/);
   });
+});
+
+describe("ParentSwimmerProgressContent — charts", () => {
+  function makeHistory(headPositions: Array<number | null>): ParentScoreHistoryResponse {
+    return {
+      points: headPositions.map((value, index) => ({
+        sessionDate: `2026-10-${String(index + 1).padStart(2, "0")}`,
+        headPositionOverall: value,
+        categoryRollups: [
+          {
+            categoryId: CAT_ID,
+            categorySlug: "freestyle",
+            categoryName: "Freestyle",
+            average: value,
+            assessedCount: value !== null ? 1 : 0,
+            totalCount: 1,
+          },
+        ],
+        starts: [],
+        counts: { level1: 0, level2: 0, level3: 0, level4: 0, level5: 0, notLegal: 0, noConcept: 0 },
+        totalLevelsGained: 0,
+        skillsMastered: 0,
+        skillsLearned: 0,
+      })),
+      recentChanges: [],
+      milestones: [],
+      measurements: [],
+    };
+  }
+
+  it("empty state: no charts render when there is no evaluation data", () => {
+    render(
+      <ParentSwimmerProgressContent
+        swimmer={swimmer}
+        progress={emptyProgress}
+        categories={categories}
+        scoreHistory={emptyScoreHistory}
+      />,
+    );
+    expect(screen.queryByTestId("parent-progress-head-position-trend")).toBeNull();
+    expect(screen.queryByTestId("parent-progress-category-trends")).toBeNull();
+  });
+
+  it("one-evaluation state: no head-position section renders (hero chart removed)", () => {
+    const progress: ParentSwimmerProgressResponse = {
+      ...emptyProgress,
+      headPositionOverall: 3,
+    };
+    render(
+      <ParentSwimmerProgressContent
+        swimmer={swimmer}
+        progress={progress}
+        categories={categories}
+        scoreHistory={makeHistory([3])}
+      />,
+    );
+    expect(screen.queryByTestId("parent-progress-head-position-trend")).toBeNull();
+    // The old "trend unlocks after the second rating" hint was tied to the
+    // deleted hero section; it must not render anywhere now.
+    expect(screen.queryByText(/trend unlocks after the second rating/i)).toBeNull();
+    expect(screen.queryByText(/head position overall/i)).toBeNull();
+    expect(screen.queryByTestId("parent-progress-category-trends")).toBeNull();
+  });
+
+  it("multi-session state: still no head-position chart (hero removed) but category trends appear", () => {
+    const progress: ParentSwimmerProgressResponse = {
+      ...emptyProgress,
+      headPositionOverall: 4,
+    };
+    render(
+      <ParentSwimmerProgressContent
+        swimmer={swimmer}
+        progress={progress}
+        categories={categories}
+        scoreHistory={makeHistory([2, 3, 4])}
+      />,
+    );
+    expect(screen.queryByTestId("parent-progress-head-position-trend")).toBeNull();
+    expect(screen.queryByText(/head position overall/i)).toBeNull();
+    expect(screen.getByTestId("parent-progress-category-trends")).toBeInTheDocument();
+  });
+
+  it("renders the category trends grid when there are two or more sessions", () => {
+    render(
+      <ParentSwimmerProgressContent
+        swimmer={swimmer}
+        progress={emptyProgress}
+        categories={categories}
+        scoreHistory={makeHistory([2, 3, 4])}
+      />,
+    );
+    const grid = screen.getByTestId("parent-progress-category-trends");
+    expect(grid).toBeInTheDocument();
+    expect(grid.textContent).toMatch(/Freestyle/);
+  });
+
+  // Note: the real parent-route leak check lives in the API integration
+  // suite (parentProgress.integration.test.ts). A fixture-based assertion
+  // here would only prove the type definition shape — not that the server
+  // actually strips coach-only fields.
 });

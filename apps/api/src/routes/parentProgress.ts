@@ -15,10 +15,12 @@ import { requireParent } from "../middleware/requireParent";
 import { requireHouseholdMember } from "../middleware/requireHouseholdMember";
 import { requireHouseholdSwimmer } from "../middleware/requireHouseholdSwimmer";
 import { computeSwimmerProgress } from "../lib/progressCalculation";
+import { computeScoreHistory } from "../lib/scoreHistory";
 import {
   formatSwimTime,
   IdParamsSchema,
   ParentPersonalBestsResponseSchema,
+  ParentScoreHistoryResponseSchema,
   ParentSwimmerProgressResponseSchema,
   SCREEN_NAMES,
   type IdParams,
@@ -77,11 +79,16 @@ parentProgressRouter.get(
           and(
             eq(evaluationSessions.swimmerId, swimmerId),
             isNotNull(evaluationSessions.coachingPriority),
-            // Correlated EXISTS: skip sessions whose every rating is voided.
+            // Correlated EXISTS: skip sessions whose every rating is voided or
+            // superseded. A session where every rating has been corrected is
+            // still a non-empty session as long as at least one correction
+            // row (supersedes_rating_id set, superseded_at null) exists —
+            // that row satisfies this EXISTS.
             sql`EXISTS (
               SELECT 1 FROM ${skillRatings}
               WHERE ${skillRatings.sessionId} = ${evaluationSessions.id}
                 AND ${skillRatings.voidedAt} IS NULL
+                AND ${skillRatings.supersededAt} IS NULL
             )`,
           ),
         )
@@ -142,6 +149,53 @@ parentProgressRouter.get(
 
     req.log.info({ swimmerId, skillCount: parentSkills.length }, "parent swimmer progress fetched");
     res.json(response);
+  }),
+);
+
+// GET /swimmers/:id/score-history: parent-facing time-series for charts.
+// Reuses the same computation as the coach endpoint. The response contains
+// only derived aggregates (head position overall, per-category averages,
+// start grade progression) and never leaks fault tags, voided rows, or coach
+// notes. Access is gated by the same middleware chain as the parent progress
+// route: parent role, member of the swimmer's household, swimmer is active.
+parentProgressRouter.get(
+  "/:id/score-history",
+  requireUser,
+  requireParent,
+  validate({ params: IdParamsSchema }),
+  requireHouseholdMember,
+  requireHouseholdSwimmer,
+  asyncHandler(async (req, res) => {
+    const { id: swimmerId } = req.params as unknown as IdParams;
+    // Pass includeFaultTrends:false EXPLICITLY so the contract isn't tied
+    // to a library default; the result still carries a `faultTrends: []`
+    // field and sessionIds on every point / recentChange / milestone /
+    // measurement point. The parent-facing shape omits both — fault data
+    // because parents never see negative coaching language, sessionIds
+    // because they exist to deep-link to the coach edit page which parents
+    // can't reach (ADR 032). Both omissions are serialization-boundary
+    // invariants: `.strict()` on the parent schema rejects any slip-through
+    // at parse time instead of silently reaching a parent client.
+    const raw = await computeScoreHistory(swimmerId, { includeFaultTrends: false });
+    const parentFacing = {
+      points: raw.points.map(({ sessionId: _sessionId, ...rest }) => rest),
+      recentChanges: raw.recentChanges.map(({ sessionId: _sessionId, ...rest }) => rest),
+      milestones: raw.milestones.map((milestone) =>
+        milestone.type === "personal_best"
+          ? milestone
+          : (() => {
+              const { sessionId: _sessionId, ...rest } = milestone;
+              return rest;
+            })(),
+      ),
+      measurements: raw.measurements.map((series) => ({
+        ...series,
+        points: series.points.map(({ sessionId: _sessionId, ...rest }) => rest),
+      })),
+    };
+    const body = ParentScoreHistoryResponseSchema.parse(parentFacing);
+    req.log.info({ swimmerId, pointCount: body.points.length }, "parent score history fetched");
+    res.json(body);
   }),
 );
 

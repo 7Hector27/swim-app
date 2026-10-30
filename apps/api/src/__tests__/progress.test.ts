@@ -133,6 +133,8 @@ function setupProgressMocks() {
       categoryName: "Freestyle",
       context: "practice",
       sessionDate: "2025-06-01",
+      sessionId: "ssss0000-0000-0000-0000-000000000001",
+      supersedesRatingId: null,
     },
   ];
 
@@ -269,6 +271,8 @@ describe("GET /coach/swimmers/:id/progress", () => {
         categoryName: "Freestyle",
         context: "practice",
         sessionDate: "2025-06-01",
+        sessionId: "ssss0000-0000-0000-0000-000000000001",
+        supersedesRatingId: null,
       },
       {
         ratingId: "ratingid3-0000-0000-0000-000000000001",
@@ -293,6 +297,8 @@ describe("GET /coach/swimmers/:id/progress", () => {
         categoryName: "Freestyle",
         context: "practice",
         sessionDate: "2025-06-01",
+        sessionId: "ssss0000-0000-0000-0000-000000000001",
+        supersedesRatingId: null,
       },
     ];
 
@@ -448,6 +454,8 @@ describe("GET /coach/swimmers/:id/progress", () => {
         categoryName: "Test",
         context: "practice",
         sessionDate: "2025-06-01",
+        sessionId: "ssss0000-0000-0000-0000-000000000001",
+        supersedesRatingId: null,
       },
     ];
 
@@ -528,6 +536,8 @@ describe("GET /coach/swimmers/:id/progress", () => {
         categoryName: "Freestyle",
         context: "practice",
         sessionDate: "2025-06-01",
+        sessionId: "ssss0000-0000-0000-0000-000000000001",
+        supersedesRatingId: null,
       },
     ];
 

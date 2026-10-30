@@ -71,6 +71,7 @@ export default function StartGroupSection({ parent, components, draftSkills, onC
           noConcept: true,
           ratedAt: new Date().toISOString(),
           voidedAt: null,
+          supersededAt: null,
         });
       } else if (draft.grade !== null) {
         ratingRecords.push({
@@ -81,6 +82,7 @@ export default function StartGroupSection({ parent, components, draftSkills, onC
           noConcept: false,
           ratedAt: new Date().toISOString(),
           voidedAt: null,
+          supersededAt: null,
         });
       }
     }

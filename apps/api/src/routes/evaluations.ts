@@ -1,9 +1,10 @@
 import { Router } from "express";
-import { and, asc, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/client";
 import {
   evaluationSessions,
+  householdAuditLog,
   ratingFaultTags,
   skillCategories,
   skillDependencies,
@@ -16,6 +17,7 @@ import { validate } from "../middleware/validate";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { isActiveSwimmer } from "../db/queries";
 import { computeSwimmerProgress } from "../lib/progressCalculation";
+import { computeScoreHistory } from "../lib/scoreHistory";
 import {
   type CreateSessionBody,
   type CreateSessionResponse,
@@ -24,11 +26,21 @@ import {
   type GolfScoreTrend,
   type GolfScoreCategoryTrend,
   type GolfScoreAgeBands,
+  type GetSessionResponse,
+  type GetSessionRating,
+  type PatchSessionBody,
+  type PatchSessionResponse,
+  type GetEvaluationsItem,
+  type GetEvaluationsResponse,
+  type GetEvaluationsQuery,
   CreateSessionBodySchema,
   VoidRatingBodySchema,
   DependencyMapQuerySchema,
   CoachSkillRatingSchema,
   GolfScoreCategorySchema,
+  PatchSessionBodySchema,
+  GetEvaluationsQuerySchema,
+  ScoreHistoryResponseSchema,
   findDeepestLowFoundation,
   headPositionOverall,
   latestEffectiveRatings,
@@ -47,7 +59,8 @@ import {
   SCREEN_SLUGS,
   SCREEN_NAMES,
   type ScreenSlug,
-  displayUnitToMeasurementEnum,
+  validateRatingAgainstSkill,
+  type RatingSkillDef,
 } from "@swim-app/shared";
 
 const RatingIdParamsSchema = z.object({ id: z.string().uuid() });
@@ -138,7 +151,12 @@ evaluationsRouter.post(
 
     const skillMap = new Map(allSkillRows.map((skill) => [skill.id, skill]));
 
-    // Per-rating cross-field validation
+    // Per-rating cross-field validation. The seven cross-field rules that
+    // the PATCH flow also runs are factored into validateRatingAgainstSkill
+    // in packages/shared so both routes reject the same inputs by
+    // construction. The create-only checks (skill lookup, screen-skill
+    // membership) stay here because they depend on request-local state the
+    // shared validator doesn't see.
     for (const [index, ratingInput] of body.ratings.entries()) {
       const skill = skillMap.get(ratingInput.skillId);
 
@@ -150,105 +168,29 @@ evaluationsRouter.post(
         return;
       }
 
-      // Rollup skills are calculated — they cannot be rated directly
-      if (skill.type === "rollup") {
+      const skillDef: RatingSkillDef = {
+        type: skill.type,
+        ratedPerSide: skill.ratedPerSide,
+        notLegalAllowed: skill.notLegalAllowed,
+        unit: skill.unit,
+        allowedFaultTags: skill.faultTags ?? [],
+      };
+      const issue = validateRatingAgainstSkill(skillDef, ratingInput, "skillId");
+      if (issue) {
         res.status(422).json({
           error: "Validation error",
-          issues: [{ path: [`ratings[${index}].skillId`], message: "Rollup skills are calculated and cannot be rated directly" }],
+          issues: [{ path: ["ratings", index, issue.field], message: issue.message }],
         });
         return;
       }
 
-      // golfScoreCategory: required for score-type skills, null for others
-      if (skill.type === "score" && ratingInput.golfScoreCategory === null && !ratingInput.noConcept) {
-        res.status(422).json({
-          error: "Validation error",
-          issues: [{ path: [`ratings[${index}].golfScoreCategory`], message: "Golf score category is required for score skills" }],
-        });
-        return;
-      }
-      if (skill.type !== "score" && ratingInput.golfScoreCategory !== null) {
-        res.status(422).json({
-          error: "Validation error",
-          issues: [{ path: [`ratings[${index}].golfScoreCategory`], message: "Golf score category only applies to score skills" }],
-        });
-        return;
-      }
-
-      // Skill must be in the screen's skill list (by slug)
+      // Create-only: skill must be in the screen's skill list (by slug).
       if (!screenSkillSlugs.has(skill.slug)) {
         res.status(422).json({
           error: "Validation error",
           issues: [{ path: [`ratings[${index}].skillId`], message: "Skill does not belong to the session screen" }],
         });
         return;
-      }
-
-      // side required when ratedPerSide, must be absent otherwise
-      if (skill.ratedPerSide && ratingInput.side === null) {
-        res.status(422).json({
-          error: "Validation error",
-          issues: [{ path: [`ratings[${index}].side`], message: "side is required for this skill" }],
-        });
-        return;
-      }
-      if (!skill.ratedPerSide && ratingInput.side !== null) {
-        res.status(422).json({
-          error: "Validation error",
-          issues: [{ path: [`ratings[${index}].side`], message: "side must be absent for this skill" }],
-        });
-        return;
-      }
-
-      // fault tags must be in skill.faultTags
-      const allowedFaultTags = skill.faultTags ?? [];
-      for (const tag of ratingInput.faultTags) {
-        if (!allowedFaultTags.includes(tag)) {
-          res.status(422).json({
-            error: "Validation error",
-            issues: [{ path: [`ratings[${index}].faultTags`], message: `Invalid fault tag: ${tag}` }],
-          });
-          return;
-        }
-      }
-
-      // not_legal is only allowed on skills with notLegalAllowed = true
-      if (ratingInput.notLegal && !skill.notLegalAllowed) {
-        res.status(422).json({
-          error: "Validation error",
-          issues: [{ path: [`ratings[${index}].notLegal`], message: "Not legal is not allowed for this skill" }],
-        });
-        return;
-      }
-
-      // measurement only allowed on measured skills
-      if (
-        (ratingInput.measurementValue !== null || ratingInput.measurementUnit !== null) &&
-        skill.type !== "measured"
-      ) {
-        res.status(422).json({
-          error: "Validation error",
-          issues: [{ path: [`ratings[${index}].measurementValue`], message: "Measurements only allowed on measured skills" }],
-        });
-        return;
-      }
-
-      // measurement unit must match skill.unit when present. `skill.unit` is
-      // the catalog's free-text display label (e.g. "cycles/min"); the submitted
-      // `measurementUnit` is the DB enum ("stroke_cycles_per_minute"). Map via
-      // the shared helper so the comparison is on equal footing.
-      if (
-        ratingInput.measurementUnit !== null &&
-        skill.unit !== null
-      ) {
-        const expectedEnum = displayUnitToMeasurementEnum(skill.unit);
-        if (expectedEnum !== null && ratingInput.measurementUnit !== expectedEnum) {
-          res.status(422).json({
-            error: "Validation error",
-            issues: [{ path: ["ratings", index, "measurementUnit"], message: `Measurement unit must be ${skill.unit}` }],
-          });
-          return;
-        }
       }
     }
 
@@ -365,6 +307,7 @@ evaluationsRouter.get(
         side: skillRatings.side,
         ratedAt: skillRatings.ratedAt,
         voidedAt: skillRatings.voidedAt,
+        supersededAt: skillRatings.supersededAt,
         skillId: skillRatings.skillId,
         parentSkillId: skills.parentSkillId,
         skillType: skills.type,
@@ -383,6 +326,7 @@ evaluationsRouter.get(
       noConcept: row.noConcept,
       ratedAt: row.ratedAt.toISOString(),
       voidedAt: row.voidedAt?.toISOString() ?? null,
+      supersededAt: row.supersededAt?.toISOString() ?? null,
     }));
 
     const grades: GradeMap = latestEffectiveRatings(ratingRecords);
@@ -603,6 +547,7 @@ evaluationsRouter.get(
         side: skillRatings.side,
         ratedAt: skillRatings.ratedAt,
         voidedAt: skillRatings.voidedAt,
+        supersededAt: skillRatings.supersededAt,
         sortOrder: skills.sortOrder,
       })
       .from(skillRatings)
@@ -617,6 +562,7 @@ evaluationsRouter.get(
       noConcept: row.noConcept,
       ratedAt: row.ratedAt.toISOString(),
       voidedAt: row.voidedAt?.toISOString() ?? null,
+      supersededAt: row.supersededAt?.toISOString() ?? null,
     }));
 
     const grades: GradeMap = latestEffectiveRatings(ratingRecords);
@@ -698,6 +644,145 @@ evaluationsRouter.get(
   }),
 );
 
+// ── GET /swimmers/:id/score-history ───────────────────────────────────────────
+
+evaluationsRouter.get(
+  "/:id/score-history",
+  validate({ params: SwimmerIdParamsSchema }),
+  asyncHandler(async (req, res) => {
+    const { id: swimmerId } = req.params as unknown as SwimmerIdParams;
+
+    const swimmer = await findActiveSwimmer(swimmerId);
+    if (!swimmer) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+
+    const raw = await computeScoreHistory(swimmerId, { includeFaultTrends: true });
+    // Parse the computation output through the shared schema before emitting
+    // so the server contract is enforced symmetrically with the parent route
+    // (which uses ParentScoreHistoryResponseSchema). A field drift between
+    // the lib and the schema trips here instead of reaching the client.
+    const body = ScoreHistoryResponseSchema.parse(raw);
+    req.log.info({ swimmerId, pointCount: body.points.length }, "swimmer score history fetched");
+    res.json(body);
+  }),
+);
+
+// ── GET /swimmers/:id/evaluations ─────────────────────────────────────────────
+// Paginated list of a swimmer's past evaluations, newest first. Powers the
+// Evaluations section on /coach/swimmers/[id] and the full-list page at
+// /coach/swimmers/[id]/evaluations. ADR 032.
+
+const EVALUATIONS_CURSOR_SEP = ":::";
+
+function encodeEvaluationsCursor(sessionDate: string, sessionId: string): string {
+  return Buffer.from(`${sessionDate}${EVALUATIONS_CURSOR_SEP}${sessionId}`, "utf8").toString("base64url");
+}
+
+function decodeEvaluationsCursor(cursor: string): { sessionDate: string; sessionId: string } | null {
+  try {
+    const decoded = Buffer.from(cursor, "base64url").toString("utf8");
+    const sep = decoded.indexOf(EVALUATIONS_CURSOR_SEP);
+    if (sep < 0) return null;
+    const sessionDate = decoded.slice(0, sep);
+    const sessionId = decoded.slice(sep + EVALUATIONS_CURSOR_SEP.length);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(sessionDate)) return null;
+    if (!/^[0-9a-fA-F-]{36}$/.test(sessionId)) return null;
+    return { sessionDate, sessionId };
+  } catch {
+    return null;
+  }
+}
+
+evaluationsRouter.get(
+  "/:id/evaluations",
+  validate({ params: SwimmerIdParamsSchema, query: GetEvaluationsQuerySchema }),
+  asyncHandler(async (req, res) => {
+    const { id: swimmerId } = req.params as unknown as SwimmerIdParams;
+    const query = req.query as unknown as GetEvaluationsQuery;
+
+    const swimmer = await findActiveSwimmer(swimmerId);
+    if (!swimmer) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+
+    const cursor = query.cursor ? decodeEvaluationsCursor(query.cursor) : null;
+    const limit = query.limit;
+
+    // Fetch one more than the limit so we can tell whether there's a next
+    // page without a second COUNT query. Pagination is keyed on
+    // (sessionDate DESC, sessionId DESC) so same-date corrections tie-break.
+    const sessionRows = await db
+      .select({
+        id: evaluationSessions.id,
+        screenSlug: evaluationSessions.screenSlug,
+        sessionDate: evaluationSessions.sessionDate,
+        context: evaluationSessions.context,
+        coachingPriority: evaluationSessions.coachingPriority,
+        editedAt: evaluationSessions.editedAt,
+        createdAt: evaluationSessions.createdAt,
+      })
+      .from(evaluationSessions)
+      .where(
+        cursor
+          ? and(
+              eq(evaluationSessions.swimmerId, swimmerId),
+              sql`(${evaluationSessions.sessionDate}, ${evaluationSessions.id}) < (${cursor.sessionDate}::date, ${cursor.sessionId}::uuid)`,
+            )
+          : eq(evaluationSessions.swimmerId, swimmerId),
+      )
+      .orderBy(desc(evaluationSessions.sessionDate), desc(evaluationSessions.id))
+      .limit(limit + 1);
+
+    const hasMore = sessionRows.length > limit;
+    const pageRows = hasMore ? sessionRows.slice(0, limit) : sessionRows;
+
+    // Rating counts per session (non-voided, non-superseded) in one grouped
+    // query. Zero-count sessions still appear in the list — they can exist
+    // if every rating was voided, and the coach can decide whether to delete
+    // or re-rate.
+    const countRows = pageRows.length > 0
+      ? await db
+          .select({
+            sessionId: skillRatings.sessionId,
+            count: sql<number>`count(*)::int`.as("count"),
+          })
+          .from(skillRatings)
+          .where(
+            and(
+              inArray(skillRatings.sessionId, pageRows.map((row) => row.id)),
+              isNull(skillRatings.voidedAt),
+              isNull(skillRatings.supersededAt),
+            ),
+          )
+          .groupBy(skillRatings.sessionId)
+      : [];
+    const countBySessionId = new Map(countRows.map((row) => [row.sessionId, row.count]));
+
+    const evaluations: GetEvaluationsItem[] = pageRows.map((row) => ({
+      sessionId: row.id,
+      screenSlug: row.screenSlug,
+      screenName: SCREEN_NAMES[row.screenSlug] ?? row.screenSlug,
+      sessionDate: row.sessionDate,
+      context: row.context,
+      coachingPriority: row.coachingPriority,
+      ratingCount: countBySessionId.get(row.id) ?? 0,
+      edited: row.editedAt !== null,
+      editedAt: row.editedAt?.toISOString() ?? null,
+      createdAt: row.createdAt.toISOString(),
+    }));
+
+    const lastRow = pageRows[pageRows.length - 1];
+    const nextCursor = hasMore && lastRow ? encodeEvaluationsCursor(lastRow.sessionDate, lastRow.id) : null;
+
+    const response: GetEvaluationsResponse = { evaluations, nextCursor };
+    req.log.info({ swimmerId, count: evaluations.length, hasMore }, "swimmer evaluations list fetched");
+    res.json(response);
+  }),
+);
+
 // ── GET /swimmers/:id/golf-score-trends ───────────────────────────────────────
 
 function computePercentile(sorted: number[], p: number): number {
@@ -726,6 +811,7 @@ evaluationsRouter.get(
         measurementValue: skillRatings.measurementValue,
         golfScoreCategory: skillRatings.golfScoreCategory,
         ratedAt: skillRatings.ratedAt,
+        sessionId: skillRatings.sessionId,
         sessionDate: evaluationSessions.sessionDate,
         skillId: skills.id,
         slug: skills.slug,
@@ -738,6 +824,7 @@ evaluationsRouter.get(
         and(
           eq(skillRatings.swimmerId, swimmerId),
           isNull(skillRatings.voidedAt),
+          isNull(skillRatings.supersededAt),
           eq(skills.type, "score"),
           isNotNull(skillRatings.golfScoreCategory),
         ),
@@ -822,6 +909,7 @@ evaluationsRouter.get(
                   eq(skills.slug, skillEntry.slug),
                   eq(skillRatings.golfScoreCategory, category),
                   isNull(skillRatings.voidedAt),
+                  isNull(skillRatings.supersededAt),
                   isNotNull(skillRatings.measurementValue),
                   inArray(skillRatings.swimmerId, cohortIds),
                   eq(skills.type, "score"),
@@ -856,6 +944,7 @@ evaluationsRouter.get(
           points: points.map((point) => ({
             ratedAt: point.ratedAt.toISOString(),
             sessionDate: point.sessionDate,
+            sessionId: point.sessionId,
             grade: point.grade,
             measurementValue: point.measurementValue ?? null,
           })),
@@ -913,6 +1002,24 @@ sessionsRouter.delete(
       return;
     }
 
+    // Once a session has corrections, the hard-delete path would wipe the
+    // audit chain and leave orphan references via supersedes_rating_id FKs.
+    // Reject with 409 so the coach uses void-and-re-rate instead. ADR 032.
+    const correctionProbe = await db
+      .select({ id: skillRatings.id })
+      .from(skillRatings)
+      .where(
+        and(
+          eq(skillRatings.sessionId, sessionId),
+          sql`(${skillRatings.supersededAt} IS NOT NULL OR ${skillRatings.supersedesRatingId} IS NOT NULL)`,
+        ),
+      )
+      .limit(1);
+    if (correctionProbe[0]) {
+      res.status(409).json({ error: "Session has corrections; delete is not allowed." });
+      return;
+    }
+
     await db.transaction(async (tx) => {
       // fault tags cascade-delete when ratings are deleted
       await tx.delete(skillRatings).where(eq(skillRatings.sessionId, sessionId));
@@ -921,6 +1028,529 @@ sessionsRouter.delete(
 
     req.log.info({ sessionId, coachId }, "session deleted");
     res.status(204).end();
+  }),
+);
+
+// ── GET /sessions/:id ─────────────────────────────────────────────────────────
+// Returns the current effective state of one session owned by the caller.
+// Non-voided, non-superseded ratings only. Used to pre-fill the Evaluate
+// page when the coach opens an edit from the swimmer page or progress page.
+// ADR 032.
+
+sessionsRouter.get(
+  "/:id",
+  validate({ params: SessionIdParamsSchema }),
+  asyncHandler(async (req, res) => {
+    const { id: sessionId } = req.params as unknown as SessionIdParams;
+    const coachId = req.profile.id;
+
+    const sessionRows = await db
+      .select({
+        id: evaluationSessions.id,
+        swimmerId: evaluationSessions.swimmerId,
+        coachId: evaluationSessions.coachId,
+        categoryId: evaluationSessions.categoryId,
+        screenSlug: evaluationSessions.screenSlug,
+        sessionDate: evaluationSessions.sessionDate,
+        context: evaluationSessions.context,
+        coachingPriority: evaluationSessions.coachingPriority,
+        breathingPattern: evaluationSessions.breathingPattern,
+        editedAt: evaluationSessions.editedAt,
+      })
+      .from(evaluationSessions)
+      .where(eq(evaluationSessions.id, sessionId))
+      .limit(1);
+
+    const session = sessionRows[0];
+    if (!session || session.coachId !== coachId) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+
+    // Current effective ratings = non-voided + non-superseded. Each row also
+    // carries its own id and whichever `supersedes_rating_id` it holds (null
+    // for an original, set for a correction leaf). rootRatingId is the chain
+    // root — equal to id when the rating has never been corrected.
+    const ratingRows = await db
+      .select({
+        id: skillRatings.id,
+        supersedesRatingId: skillRatings.supersedesRatingId,
+        skillId: skillRatings.skillId,
+        slug: skills.slug,
+        grade: skillRatings.grade,
+        notLegal: skillRatings.notLegal,
+        noConcept: skillRatings.noConcept,
+        side: skillRatings.side,
+        capacityValue: skillRatings.capacityValue,
+        capacityUnit: skillRatings.capacityUnit,
+        measurementValue: skillRatings.measurementValue,
+        measurementUnit: skillRatings.measurementUnit,
+        golfScoreCategory: skillRatings.golfScoreCategory,
+        note: skillRatings.note,
+        ratedAt: skillRatings.ratedAt,
+      })
+      .from(skillRatings)
+      .innerJoin(skills, eq(skills.id, skillRatings.skillId))
+      .where(
+        and(
+          eq(skillRatings.sessionId, sessionId),
+          isNull(skillRatings.voidedAt),
+          isNull(skillRatings.supersededAt),
+        ),
+      );
+
+    // Resolve each live rating to its chain root by walking back through
+    // `supersedes_rating_id`. Chains are typically length 1 or 2; the loop
+    // issues one batched `inArray` query per depth level rather than one
+    // query per hop per rating, so the whole walk is 1-2 queries regardless
+    // of how many ratings were corrected. The 100-iteration cap is a
+    // defence-in-depth against a malformed chain cycle.
+    const ratingIds = ratingRows.map((row) => row.id);
+    const rootByLeafId = new Map<string, string>();
+    for (const row of ratingRows) {
+      rootByLeafId.set(row.id, row.id);
+    }
+    // Pending[leafId] = the predecessor id we still need to walk from.
+    const pending = new Map<string, string>();
+    for (const row of ratingRows) {
+      if (row.supersedesRatingId !== null) {
+        pending.set(row.id, row.supersedesRatingId);
+      }
+    }
+    let safety = 0;
+    while (pending.size > 0 && safety++ < 100) {
+      const cursorIds = Array.from(new Set(pending.values()));
+      const predecessorRows = await db
+        .select({ id: skillRatings.id, supersedesRatingId: skillRatings.supersedesRatingId })
+        .from(skillRatings)
+        .where(inArray(skillRatings.id, cursorIds));
+      const predecessorById = new Map<string, string | null>();
+      for (const row of predecessorRows) {
+        predecessorById.set(row.id, row.supersedesRatingId);
+      }
+      for (const [leafId, cursor] of pending) {
+        if (!predecessorById.has(cursor)) {
+          // Predecessor missing (shouldn't happen given the FK, but keep the
+          // leaf as its own root rather than erroring the whole response).
+          pending.delete(leafId);
+          continue;
+        }
+        const next = predecessorById.get(cursor) ?? null;
+        if (next === null) {
+          rootByLeafId.set(leafId, cursor);
+          pending.delete(leafId);
+        } else {
+          pending.set(leafId, next);
+        }
+      }
+    }
+
+    // Fetch fault tags for the live rating ids.
+    const tagRows = ratingIds.length > 0
+      ? await db
+          .select({ ratingId: ratingFaultTags.ratingId, faultTag: ratingFaultTags.faultTag })
+          .from(ratingFaultTags)
+          .where(inArray(ratingFaultTags.ratingId, ratingIds))
+      : [];
+    const tagsByRatingId = new Map<string, string[]>();
+    for (const tag of tagRows) {
+      const existing = tagsByRatingId.get(tag.ratingId) ?? [];
+      existing.push(tag.faultTag);
+      tagsByRatingId.set(tag.ratingId, existing);
+    }
+
+    const ratings: GetSessionRating[] = ratingRows.map((row) => ({
+      ratingId: row.id,
+      rootRatingId: rootByLeafId.get(row.id) ?? row.id,
+      skillId: row.skillId,
+      slug: row.slug,
+      grade: row.grade as 1 | 2 | 3 | 4 | 5 | null,
+      notLegal: row.notLegal,
+      noConcept: row.noConcept,
+      side: row.side,
+      capacityValue: row.capacityValue,
+      capacityUnit: row.capacityUnit,
+      measurementValue: row.measurementValue,
+      measurementUnit: row.measurementUnit,
+      golfScoreCategory: row.golfScoreCategory as GetSessionRating["golfScoreCategory"],
+      note: row.note,
+      faultTags: tagsByRatingId.get(row.id) ?? [],
+      ratedAt: row.ratedAt.toISOString(),
+      edited: row.supersedesRatingId !== null,
+    }));
+
+    const response: GetSessionResponse = {
+      sessionId: session.id,
+      screenSlug: session.screenSlug,
+      swimmerId: session.swimmerId,
+      categoryId: session.categoryId,
+      sessionDate: session.sessionDate,
+      context: session.context,
+      coachingPriority: session.coachingPriority,
+      breathingPattern: session.breathingPattern as GetSessionResponse["breathingPattern"],
+      edited: session.editedAt !== null,
+      editedAt: session.editedAt?.toISOString() ?? null,
+      ratings,
+    };
+
+    res.json(response);
+  }),
+);
+
+// ── PATCH /sessions/:id ───────────────────────────────────────────────────────
+// Edits a past evaluation (ADR 032). Session metadata changes happen in place
+// as a single UPDATE; rating changes write new rows that supersede their
+// predecessors. One audit log row records the per-field previous and new
+// values for session metadata plus the ids of corrected ratings. Everything
+// is inside one db.transaction() per CLAUDE.md's audit-log rule.
+
+type SessionMetadataFieldDiff = {
+  field: "sessionDate" | "context" | "coachingPriority" | "breathingPattern";
+  previous: string | null;
+  new: string | null;
+};
+
+type RatingFieldKey =
+  | "grade"
+  | "notLegal"
+  | "noConcept"
+  | "side"
+  | "capacityValue"
+  | "capacityUnit"
+  | "measurementValue"
+  | "measurementUnit"
+  | "golfScoreCategory"
+  | "note"
+  | "faultTags";
+
+function arraysEqualUnordered(left: string[], right: string[]): boolean {
+  if (left.length !== right.length) return false;
+  const sortedLeft = [...left].sort();
+  const sortedRight = [...right].sort();
+  for (let index = 0; index < sortedLeft.length; index++) {
+    if (sortedLeft[index] !== sortedRight[index]) return false;
+  }
+  return true;
+}
+
+sessionsRouter.patch(
+  "/:id",
+  validate({ params: SessionIdParamsSchema, body: PatchSessionBodySchema }),
+  asyncHandler(async (req, res) => {
+    const { id: sessionId } = req.params as unknown as SessionIdParams;
+    const body = req.body as PatchSessionBody;
+    const coachId = req.profile.id;
+
+    // Load the session row. Verify owner.
+    const sessionRows = await db
+      .select({
+        id: evaluationSessions.id,
+        swimmerId: evaluationSessions.swimmerId,
+        coachId: evaluationSessions.coachId,
+        screenSlug: evaluationSessions.screenSlug,
+        sessionDate: evaluationSessions.sessionDate,
+        context: evaluationSessions.context,
+        coachingPriority: evaluationSessions.coachingPriority,
+        breathingPattern: evaluationSessions.breathingPattern,
+        editedAt: evaluationSessions.editedAt,
+        householdId: swimmers.householdId,
+      })
+      .from(evaluationSessions)
+      .innerJoin(swimmers, eq(swimmers.id, evaluationSessions.swimmerId))
+      .where(eq(evaluationSessions.id, sessionId))
+      .limit(1);
+
+    const session = sessionRows[0];
+    if (!session || session.coachId !== coachId) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+
+    // Load every live rating in this session plus its skill shape, keyed by
+    // id so the diff step is a direct lookup.
+    const liveRatingRows = await db
+      .select({
+        id: skillRatings.id,
+        skillId: skillRatings.skillId,
+        slug: skills.slug,
+        type: skills.type,
+        unit: skills.unit,
+        ratedPerSide: skills.ratedPerSide,
+        notLegalAllowed: skills.notLegalAllowed,
+        allowedFaultTags: skills.faultTags,
+        grade: skillRatings.grade,
+        notLegal: skillRatings.notLegal,
+        noConcept: skillRatings.noConcept,
+        side: skillRatings.side,
+        capacityValue: skillRatings.capacityValue,
+        capacityUnit: skillRatings.capacityUnit,
+        measurementValue: skillRatings.measurementValue,
+        measurementUnit: skillRatings.measurementUnit,
+        golfScoreCategory: skillRatings.golfScoreCategory,
+        note: skillRatings.note,
+        voidedAt: skillRatings.voidedAt,
+        supersededAt: skillRatings.supersededAt,
+        ratedAt: skillRatings.ratedAt,
+      })
+      .from(skillRatings)
+      .innerJoin(skills, eq(skills.id, skillRatings.skillId))
+      .where(eq(skillRatings.sessionId, sessionId));
+
+    const liveById = new Map(liveRatingRows.map((row) => [row.id, row]));
+
+    const tagRows = liveRatingRows.length > 0
+      ? await db
+          .select({ ratingId: ratingFaultTags.ratingId, faultTag: ratingFaultTags.faultTag })
+          .from(ratingFaultTags)
+          .where(inArray(ratingFaultTags.ratingId, liveRatingRows.map((row) => row.id)))
+      : [];
+    const tagsByRatingId = new Map<string, string[]>();
+    for (const tag of tagRows) {
+      const existing = tagsByRatingId.get(tag.ratingId) ?? [];
+      existing.push(tag.faultTag);
+      tagsByRatingId.set(tag.ratingId, existing);
+    }
+
+    // Walk the body: resolve each submitted ratingId, bail on 404 / 409.
+    type RatingDiff = {
+      live: typeof liveRatingRows[number];
+      body: typeof body.ratings[number];
+      changedFields: RatingFieldKey[];
+    };
+    const ratingDiffs: RatingDiff[] = [];
+
+    for (const [index, ratingBody] of body.ratings.entries()) {
+      const live = liveById.get(ratingBody.ratingId);
+      if (!live) {
+        // Rating doesn't belong to this session — treat as not found. Covers
+        // both "ratingId forged" and "voided between GET and PATCH" (voided
+        // rows are read here but we 404 against the body's 'live effective
+        // rating' assumption below).
+        res.status(404).json({ error: "Not found" });
+        return;
+      }
+      if (live.voidedAt !== null) {
+        res.status(404).json({ error: "Not found" });
+        return;
+      }
+      if (live.supersededAt !== null) {
+        res.status(409).json({
+          error: "Stale rating; refetch and resubmit",
+          ratingId: ratingBody.ratingId,
+        });
+        return;
+      }
+
+      // Per-rating validation — shared with the create flow via
+      // validateRatingAgainstSkill. The predicate set and error messages
+      // match the CREATE route by construction.
+      const skillDef: RatingSkillDef = {
+        type: live.type,
+        ratedPerSide: live.ratedPerSide,
+        notLegalAllowed: live.notLegalAllowed,
+        unit: live.unit,
+        allowedFaultTags: live.allowedFaultTags ?? [],
+      };
+      const issue = validateRatingAgainstSkill(skillDef, ratingBody, "ratingId");
+      if (issue) {
+        res.status(422).json({
+          error: "Validation error",
+          issues: [{ path: ["ratings", index, issue.field], message: issue.message }],
+        });
+        return;
+      }
+
+      // Diff per field. `faultTags` compares as an unordered multiset.
+      const changedFields: RatingFieldKey[] = [];
+      if ((live.grade ?? null) !== ratingBody.grade) changedFields.push("grade");
+      if (live.notLegal !== ratingBody.notLegal) changedFields.push("notLegal");
+      if (live.noConcept !== ratingBody.noConcept) changedFields.push("noConcept");
+      if ((live.side ?? null) !== ratingBody.side) changedFields.push("side");
+      if ((live.capacityValue ?? null) !== ratingBody.capacityValue) changedFields.push("capacityValue");
+      if ((live.capacityUnit ?? null) !== ratingBody.capacityUnit) changedFields.push("capacityUnit");
+      if ((live.measurementValue ?? null) !== ratingBody.measurementValue) changedFields.push("measurementValue");
+      if ((live.measurementUnit ?? null) !== ratingBody.measurementUnit) changedFields.push("measurementUnit");
+      if ((live.golfScoreCategory ?? null) !== ratingBody.golfScoreCategory) changedFields.push("golfScoreCategory");
+      if ((live.note ?? null) !== ratingBody.note) changedFields.push("note");
+      if (!arraysEqualUnordered(tagsByRatingId.get(live.id) ?? [], ratingBody.faultTags)) {
+        changedFields.push("faultTags");
+      }
+
+      if (changedFields.length > 0) {
+        ratingDiffs.push({ live, body: ratingBody, changedFields });
+      }
+    }
+
+    // Normalize empty / whitespace-only coaching priority to null (same rule
+    // as the create flow).
+    const normalizedPriority = body.coachingPriority === null
+      ? null
+      : body.coachingPriority.trim().length === 0
+        ? null
+        : body.coachingPriority;
+
+    // Session metadata diff.
+    const sessionFieldsChanged: SessionMetadataFieldDiff[] = [];
+    if (session.sessionDate !== body.sessionDate) {
+      sessionFieldsChanged.push({ field: "sessionDate", previous: session.sessionDate, new: body.sessionDate });
+    }
+    if (session.context !== body.context) {
+      sessionFieldsChanged.push({ field: "context", previous: session.context, new: body.context });
+    }
+    if ((session.coachingPriority ?? null) !== (normalizedPriority ?? null)) {
+      sessionFieldsChanged.push({
+        field: "coachingPriority",
+        previous: session.coachingPriority ?? null,
+        new: normalizedPriority ?? null,
+      });
+    }
+    if ((session.breathingPattern ?? null) !== (body.breathingPattern ?? null)) {
+      sessionFieldsChanged.push({
+        field: "breathingPattern",
+        previous: session.breathingPattern ?? null,
+        new: body.breathingPattern ?? null,
+      });
+    }
+
+    // Session-level invariants retained from the create flow. The same checks
+    // that reject a create apply to an edit.
+    if (body.sessionDate !== session.sessionDate || body.context !== session.context) {
+      // Water confidence / race was a create-time rule; preserve it on edit.
+      if (session.screenSlug === "water-confidence" && body.context === "race") {
+        res.status(422).json({
+          error: "Validation error",
+          issues: [{ path: ["context"], message: "Water confidence sessions do not support race context" }],
+        });
+        return;
+      }
+    }
+    if (session.screenSlug === "freestyle" || session.screenSlug === "butterfly") {
+      if (body.breathingPattern === null) {
+        res.status(422).json({
+          error: "Validation error",
+          issues: [{ path: ["breathingPattern"], message: "breathingPattern is required for freestyle and butterfly screens" }],
+        });
+        return;
+      }
+    } else if (body.breathingPattern !== null) {
+      res.status(422).json({
+        error: "Validation error",
+        issues: [{ path: ["breathingPattern"], message: "breathingPattern must be null for this screen" }],
+      });
+      return;
+    }
+
+    // No-op PATCH: write nothing, no audit row, 200 { writeCount: 0 }.
+    if (ratingDiffs.length === 0 && sessionFieldsChanged.length === 0) {
+      const response: PatchSessionResponse = { sessionId, writeCount: 0 };
+      res.status(200).json(response);
+      return;
+    }
+
+    const result = await db.transaction(async (tx) => {
+      let writeCount = 0;
+
+      if (sessionFieldsChanged.length > 0) {
+        await tx
+          .update(evaluationSessions)
+          .set({
+            sessionDate: body.sessionDate,
+            context: body.context,
+            coachingPriority: normalizedPriority,
+            breathingPattern: body.breathingPattern,
+            editedAt: new Date(),
+          })
+          .where(eq(evaluationSessions.id, sessionId));
+        writeCount += 1;
+      }
+
+      const ratingsChangedPayload: Array<{
+        ratingId: string;
+        newRatingId: string;
+        fieldsChanged: RatingFieldKey[];
+      }> = [];
+
+      for (const diff of ratingDiffs) {
+        const insertRows = await tx
+          .insert(skillRatings)
+          .values({
+            sessionId,
+            swimmerId: session.swimmerId,
+            skillId: diff.live.skillId,
+            coachId,
+            grade: diff.body.grade,
+            notLegal: diff.body.notLegal,
+            noConcept: diff.body.noConcept,
+            side: diff.body.side,
+            capacityValue: diff.body.capacityValue,
+            capacityUnit: diff.body.capacityUnit,
+            measurementValue: diff.body.measurementValue,
+            measurementUnit: diff.body.measurementUnit,
+            golfScoreCategory: diff.body.golfScoreCategory,
+            note: diff.body.note,
+            // Observation time is preserved (ADR 032).
+            ratedAt: diff.live.ratedAt,
+            supersedesRatingId: diff.live.id,
+          })
+          .returning({ id: skillRatings.id });
+        const newRatingId = insertRows[0]!.id;
+
+        // Full new fault-tag list on the correction row. The old rating's
+        // tags stay in place because the old row stays in the table.
+        if (diff.body.faultTags.length > 0) {
+          await tx.insert(ratingFaultTags).values(
+            diff.body.faultTags.map((tag) => ({ ratingId: newRatingId, faultTag: tag })),
+          );
+        }
+
+        await tx
+          .update(skillRatings)
+          .set({
+            supersededAt: new Date(),
+            supersededBy: coachId,
+            supersededByRatingId: newRatingId,
+          })
+          .where(eq(skillRatings.id, diff.live.id));
+
+        writeCount += 1;
+        ratingsChangedPayload.push({
+          ratingId: diff.live.id,
+          newRatingId,
+          fieldsChanged: diff.changedFields,
+        });
+      }
+
+      // If only ratings changed, also bump the session's edited_at so the
+      // "Edited" badge reflects any correction.
+      if (sessionFieldsChanged.length === 0 && ratingDiffs.length > 0) {
+        await tx
+          .update(evaluationSessions)
+          .set({ editedAt: new Date() })
+          .where(eq(evaluationSessions.id, sessionId));
+      }
+
+      // One audit row per PATCH, inside the same transaction.
+      await tx.insert(householdAuditLog).values({
+        householdId: session.householdId,
+        actorId: coachId,
+        action: "evaluation_edited",
+        targetSwimmerId: session.swimmerId,
+        payload: {
+          sessionId,
+          sessionFieldsChanged,
+          ratingsChanged: ratingsChangedPayload,
+        },
+      });
+
+      return { writeCount };
+    });
+
+    req.log.info(
+      { sessionId, coachId, writeCount: result.writeCount, ratingDiffs: ratingDiffs.length, sessionDiffs: sessionFieldsChanged.length },
+      "session edited",
+    );
+    const response: PatchSessionResponse = { sessionId, writeCount: result.writeCount };
+    res.status(200).json(response);
   }),
 );
 

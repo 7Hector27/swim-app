@@ -30,7 +30,7 @@ export default function ParentSkillProgressRow({ skill }: ParentSkillProgressRow
   }
 
   return (
-    <li className="border-b border-border">
+    <li id={`skill-${skill.slug}`} className="border-b border-border scroll-mt-24">
       <button
         type="button"
         onClick={() => setOpen((prev) => !prev)}

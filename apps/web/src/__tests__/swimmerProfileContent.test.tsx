@@ -7,6 +7,7 @@ import type {
   ParentPersonalBestsResponse,
   ParentSwimmer,
   ParentSwimmerProgressResponse,
+  ParentScoreHistoryResponse,
   UpcomingLesson,
 } from "@swim-app/shared";
 
@@ -73,6 +74,13 @@ const emptyProgress: ParentSwimmerProgressResponse = {
 
 const emptyPersonalBests: ParentPersonalBestsResponse = { personalBests: [] };
 
+const emptyScoreHistory: ParentScoreHistoryResponse = {
+  points: [],
+  recentChanges: [],
+  milestones: [],
+  measurements: [],
+};
+
 function render_(
   overrides: {
     householdRole?: HouseholdRole;
@@ -80,6 +88,9 @@ function render_(
     clubs?: Club[];
     progress?:
       | { ok: true; data: ParentSwimmerProgressResponse }
+      | { ok: false };
+    scoreHistory?:
+      | { ok: true; data: ParentScoreHistoryResponse }
       | { ok: false };
     personalBests?:
       | { ok: true; data: ParentPersonalBestsResponse }
@@ -96,6 +107,7 @@ function render_(
       householdRole={overrides.householdRole ?? "owner"}
       clubs={overrides.clubs ?? baseClubs}
       progress={overrides.progress ?? { ok: true, data: emptyProgress }}
+      scoreHistory={overrides.scoreHistory ?? { ok: true, data: emptyScoreHistory }}
       personalBests={overrides.personalBests ?? { ok: true, data: emptyPersonalBests }}
       upcomingLessons={overrides.upcomingLessons ?? { ok: true, data: [] }}
       pastLessons={overrides.pastLessons ?? { ok: true, data: [] }}
@@ -113,9 +125,16 @@ describe("SwimmerProfileContent — empty states", () => {
     expect(nextLessonSection.textContent).toMatch(/No upcoming lessons/i);
   });
 
-  it("shows 'No evaluations recorded yet' when progress has no priority or notes", () => {
+  it("shows 'No evaluations yet' in the Progress card when the swimmer has no evaluations", () => {
     render_();
-    expect(screen.getByText(/No evaluations recorded yet/i)).toBeInTheDocument();
+    // Scoped to the Progress card — the "Last evaluated" stat tile shows the
+    // same copy, so an unscoped query matches twice.
+    const progressHeading = screen.getByRole("heading", { name: /^progress$/i });
+    const progressCard = progressHeading.closest("section");
+    expect(progressCard).not.toBeNull();
+    expect(progressCard!.textContent).toMatch(/No evaluations yet/i);
+    expect(screen.queryByTestId("progress-radar-link")).toBeNull();
+    expect(screen.queryByTestId("progress-card-cta")).toBeNull();
   });
 
   it("shows 'No meet times recorded yet' when there are no personal bests", () => {
@@ -123,9 +142,12 @@ describe("SwimmerProfileContent — empty states", () => {
     expect(screen.getByText(/No meet times recorded yet/i)).toBeInTheDocument();
   });
 
-  it("shows a 'No lessons scheduled yet' empty state in the lessons list", () => {
+  it("shows 'No lesson history yet' when there are neither upcoming nor past lessons", () => {
     render_();
-    expect(screen.getByText(/No lessons scheduled yet/i)).toBeInTheDocument();
+    // The next-lesson dark card already surfaces "no upcoming" + a Book
+    // button, so the lessons section no longer duplicates either message.
+    expect(screen.getByText(/No lesson history yet/i)).toBeInTheDocument();
+    expect(screen.queryByText(/No lessons scheduled yet/i)).toBeNull();
   });
 
   it("renders a 'Couldn't load' message for progress when the fetch failed", () => {
@@ -153,26 +175,77 @@ describe("SwimmerProfileContent — empty states", () => {
   });
 });
 
-describe("SwimmerProfileContent — current focus card", () => {
-  it("renders the latest coach-written priority with its date", () => {
-    const progress: ParentSwimmerProgressResponse = {
-      ...emptyProgress,
-      latestCoachingPriority: {
-        text: "Steady exhale under water",
+describe("SwimmerProfileContent — Progress card", () => {
+  const scoreHistoryWithRollups: ParentScoreHistoryResponse = {
+    points: [
+      {
         sessionDate: "2026-10-14",
+        headPositionOverall: 3,
+        categoryRollups: [
+          {
+            categoryId: "cat-free",
+            categorySlug: "freestyle",
+            categoryName: "Freestyle",
+            average: 3.2,
+            assessedCount: 4,
+            totalCount: 6,
+          },
+          {
+            categoryId: "cat-fly",
+            categorySlug: "butterfly",
+            categoryName: "Butterfly",
+            average: 2.1,
+            assessedCount: 2,
+            totalCount: 5,
+          },
+        ],
+        starts: [],
+        counts: { level1: 0, level2: 2, level3: 2, level4: 2, level5: 0, notLegal: 0, noConcept: 0 },
+        totalLevelsGained: 4,
+        skillsMastered: 0,
+        skillsLearned: 6,
       },
-    };
-    render_({ progress: { ok: true, data: progress } });
-    const card = screen.getByTestId("current-focus-priority");
-    expect(card).toHaveTextContent("Steady exhale under water");
-    expect(card).toHaveTextContent(/From/i);
+    ],
+    recentChanges: [],
+    milestones: [],
+    measurements: [],
+  };
+
+  it("renders the title, radar, and View progress button when evaluations exist", () => {
+    render_({
+      progress: { ok: true, data: emptyProgress },
+      scoreHistory: { ok: true, data: scoreHistoryWithRollups },
+    });
+    expect(screen.getByRole("heading", { name: /^progress$/i })).toBeInTheDocument();
+    // Focus text and last-evaluated line are no longer part of the Progress
+    // card; only the title + radar + CTA remain.
+    expect(screen.queryByTestId("progress-card-priority")).toBeNull();
+    expect(screen.queryByTestId("progress-card-focus-set")).toBeNull();
+    expect(screen.queryByTestId("progress-card-last-evaluated")).toBeNull();
+    const radarLink = screen.getByTestId("progress-radar-link");
+    expect(radarLink.getAttribute("href")).toBe(
+      `/dashboard/swimmers/${SWIMMER_ID}/progress`,
+    );
+    const cta = screen.getByTestId("progress-card-cta");
+    expect(cta.getAttribute("href")).toBe(
+      `/dashboard/swimmers/${SWIMMER_ID}/progress`,
+    );
   });
 
-  it("renders nothing in the card body when the swimmer has no priority ever", () => {
-    render_(); // emptyProgress has latestCoachingPriority: null
-    expect(screen.queryByTestId("current-focus-priority")).toBeNull();
-    // The card falls back to the 'No evaluations recorded yet' empty state.
-    expect(screen.getByText(/No evaluations recorded yet/i)).toBeInTheDocument();
+  it("shows 'No evaluations yet' with no radar and no CTA when the swimmer is unevaluated", () => {
+    render_(); // emptyProgress + emptyScoreHistory
+    const progressHeading = screen.getByRole("heading", { name: /^progress$/i });
+    const progressCard = progressHeading.closest("section");
+    expect(progressCard).not.toBeNull();
+    expect(progressCard!.textContent).toMatch(/No evaluations yet/i);
+    expect(screen.queryByTestId("progress-radar-link")).toBeNull();
+    expect(screen.queryByTestId("progress-card-cta")).toBeNull();
+    expect(screen.queryByTestId("progress-card-priority")).toBeNull();
+  });
+
+  it("falls back to a 'Couldn't load progress' message when the progress fetch failed", () => {
+    render_({ progress: { ok: false } });
+    expect(screen.getByText(/Couldn't load progress/i)).toBeInTheDocument();
   });
 });
 
@@ -232,16 +305,69 @@ describe("SwimmerProfileContent — wide-layout structure", () => {
     status: "completed",
   };
 
-  it("renders Upcoming and Recent eyebrow headings for the tablet two-column layout", () => {
+  it("renders the Upcoming eyebrow for the tablet two-column layout, regardless of whether a next lesson is already shown", () => {
     render_({
       upcomingLessons: { ok: true, data: [upcomingLesson, upcomingLesson] },
       pastLessons: { ok: true, data: [pastLesson] },
     });
-    // These are hidden on mobile via `hidden tablet:block` but always rendered
-    // in the DOM so the layout can switch purely in CSS. Confirming they exist
-    // keeps the two-column structure wired up.
     expect(screen.getByRole("heading", { name: /^upcoming$/i })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /^after that$/i })).toBeNull();
     expect(screen.getByRole("heading", { name: /^recent$/i })).toBeInTheDocument();
+  });
+
+  it("Recent column caps at 3 rows and renders the See all lessons link when there are more", () => {
+    const extraPast: UpcomingLesson[] = [1, 2, 3, 4, 5].map((offset) => ({
+      ...pastLesson,
+      id: `past-${offset}`,
+      // All in the past; order doesn't matter for the slice test — we just
+      // need > 3 rows to exceed the cap.
+      startsAt: `2026-10-${String(offset).padStart(2, "0")}T16:30:00-07:00`,
+    }));
+    render_({
+      upcomingLessons: { ok: true, data: [] },
+      pastLessons: { ok: true, data: extraPast },
+    });
+    // See-all link renders in the header.
+    const seeAll = screen.getByTestId("see-all-lessons-link");
+    expect(seeAll.getAttribute("href")).toBe("/dashboard/lessons");
+    // Exactly 3 lesson rows render (each row's anchor targets /dashboard/lessons/:id).
+    const lessonRows = screen
+      .getAllByRole("link")
+      .filter((link) => (link.getAttribute("href") ?? "").startsWith("/dashboard/lessons/past-"));
+    expect(lessonRows).toHaveLength(3);
+    // The See-all-lessons link is the only "there's more" affordance; the
+    // "Showing the 3 most recent" text was removed to keep the column calm.
+    expect(screen.queryByText(/Showing the 3 most recent/i)).toBeNull();
+  });
+
+  it("Upcoming column is dropped when the next-lesson card already covers the empty state", () => {
+    render_({
+      upcomingLessons: { ok: true, data: [] },
+      pastLessons: { ok: true, data: [pastLesson] },
+    });
+    // Only the Recent eyebrow heading remains at tablet+.
+    expect(screen.queryByRole("heading", { name: /^upcoming$/i })).toBeNull();
+    expect(screen.getByRole("heading", { name: /^recent$/i })).toBeInTheDocument();
+    // The dark Book card still carries the "no upcoming" message.
+    const nextLessonSection = screen.getByLabelText("Next lesson");
+    expect(nextLessonSection.textContent).toMatch(/No upcoming lessons/i);
+    // The redundant "Nothing else scheduled" tile is gone.
+    expect(screen.queryByText(/Nothing else scheduled/i)).toBeNull();
+  });
+
+  it("no longer renders the four stat tiles (Age, Last evaluated, Upcoming, Leaderboards)", () => {
+    render_({
+      upcomingLessons: { ok: true, data: [] },
+      pastLessons: { ok: true, data: [pastLesson, pastLesson] },
+    });
+    // The four labels used by StatTiles must not appear anywhere on the
+    // profile. Last evaluated moved into the Progress card as a sentence,
+    // not a tile with that exact label.
+    expect(screen.queryByText(/^Age$/)).toBeNull();
+    expect(screen.queryByText(/^Last evaluated$/)).toBeNull();
+    expect(screen.queryByText(/^Upcoming$/)).toBeNull();
+    expect(screen.queryByText(/^Leaderboards$/)).toBeNull();
+    expect(screen.queryByText(/^Lessons so far$/)).toBeNull();
   });
 
   it("per-column failed state scopes the Couldn't load message to that column", () => {
@@ -263,22 +389,22 @@ describe("SwimmerProfileContent — wide-layout structure", () => {
     expect(lessonsHeadings).toHaveLength(1);
   });
 
-  it("groups next-lesson, focus, personal bests, and lessons together in the main group DOM wrapper for the desktop grid", () => {
+  it("groups next-lesson, Lessons, and Personal bests together in the main group DOM wrapper", () => {
     render(
       <SwimmerProfileContent
         swimmer={baseSwimmer}
         householdRole="owner"
         clubs={baseClubs}
         progress={{ ok: true, data: emptyProgress }}
+        scoreHistory={{ ok: true, data: emptyScoreHistory }}
         personalBests={{ ok: true, data: emptyPersonalBests }}
         upcomingLessons={{ ok: true, data: [upcomingLesson, upcomingLesson] }}
         pastLessons={{ ok: true, data: [pastLesson] }}
       />,
     );
     const nextLessonSection = screen.getByLabelText("Next lesson");
-    const focusHeading = screen.getByRole("heading", { name: /^current focus$/i });
-    const pbsHeading = screen.getByRole("heading", { name: /^personal bests$/i });
     const lessonsHeading = screen.getByRole("heading", { name: /^lessons$/i });
+    const pbsHeading = screen.getByRole("heading", { name: /^personal bests$/i });
 
     function nearestWrapper(el: HTMLElement): HTMLElement | null {
       // Walk up until we find the <section> parent's enclosing wrapper <div>.
@@ -287,26 +413,24 @@ describe("SwimmerProfileContent — wide-layout structure", () => {
       return cursor;
     }
     const nextWrapper = nearestWrapper(nextLessonSection as HTMLElement);
-    const focusWrapper = nearestWrapper(focusHeading as HTMLElement);
-    const pbsWrapper = nearestWrapper(pbsHeading as HTMLElement);
     const lessonsWrapper = nearestWrapper(lessonsHeading as HTMLElement);
+    const pbsWrapper = nearestWrapper(pbsHeading as HTMLElement);
     expect(nextWrapper).not.toBeNull();
-    expect(focusWrapper).not.toBeNull();
-    expect(pbsWrapper).not.toBeNull();
     expect(lessonsWrapper).not.toBeNull();
-    // All four wrappers share the same parent (the main group).
-    expect(nextWrapper!.parentElement).toBe(focusWrapper!.parentElement);
-    expect(focusWrapper!.parentElement).toBe(pbsWrapper!.parentElement);
-    expect(pbsWrapper!.parentElement).toBe(lessonsWrapper!.parentElement);
+    expect(pbsWrapper).not.toBeNull();
+    // All three main-column wrappers share the same parent (the main group).
+    expect(nextWrapper!.parentElement).toBe(lessonsWrapper!.parentElement);
+    expect(lessonsWrapper!.parentElement).toBe(pbsWrapper!.parentElement);
   });
 
-  it("groups stats and the public toggle together in the sidebar group DOM wrapper", () => {
+  it("groups Progress and the public toggle in the sidebar group DOM wrapper", () => {
     render(
       <SwimmerProfileContent
         swimmer={baseSwimmer}
         householdRole="owner"
         clubs={baseClubs}
         progress={{ ok: true, data: emptyProgress }}
+        scoreHistory={{ ok: true, data: emptyScoreHistory }}
         personalBests={{ ok: true, data: emptyPersonalBests }}
         upcomingLessons={{ ok: true, data: [upcomingLesson] }}
         pastLessons={{ ok: true, data: [pastLesson] }}
@@ -315,21 +439,18 @@ describe("SwimmerProfileContent — wide-layout structure", () => {
     const toggleHeading = screen.getByRole("heading", {
       name: /show on public leaderboards/i,
     });
-    // Each stat tile has an "Age" label; grab the first one and climb up.
-    const ageLabels = screen.getAllByText(/^age$/i);
-    const ageLabel = ageLabels[0]!;
+    const progressHeading = screen.getByRole("heading", { name: /^progress$/i });
 
-    // Both the StatTiles <section> and the PublicToggleSection <section> live
-    // inside their own wrapper div, which in turn lives inside the sidebar
-    // group wrapper div. Compare the grandparents of the section elements.
-    const statsSection = ageLabel.closest("section");
+    // Each section lives in its own <section> inside a wrapper div inside
+    // the sidebar group div. Compare the grandparents.
+    const progressSection = (progressHeading as HTMLElement).closest("section");
     const toggleSection = (toggleHeading as HTMLElement).closest("section");
-    expect(statsSection).not.toBeNull();
+    expect(progressSection).not.toBeNull();
     expect(toggleSection).not.toBeNull();
-    const statsGroup = statsSection!.parentElement?.parentElement;
+    const progressGroup = progressSection!.parentElement?.parentElement;
     const toggleGroup = toggleSection!.parentElement?.parentElement;
-    expect(statsGroup).not.toBeNull();
+    expect(progressGroup).not.toBeNull();
     expect(toggleGroup).not.toBeNull();
-    expect(statsGroup).toBe(toggleGroup);
+    expect(progressGroup).toBe(toggleGroup);
   });
 });

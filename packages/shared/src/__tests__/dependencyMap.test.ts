@@ -382,7 +382,25 @@ describe("latestEffectiveRatings", () => {
     noConcept = false,
     side: "left" | "right" | null = null,
   ): RatingRecord {
-    return { skillSlug, side, grade, notLegal, noConcept, ratedAt, voidedAt };
+    return { skillSlug, side, grade, notLegal, noConcept, ratedAt, voidedAt, supersededAt: null };
+  }
+
+  function supersededRecord(
+    skillSlug: string,
+    grade: 1 | 2 | 3 | 4 | 5 | null,
+    ratedAt: string,
+    supersededAt: string,
+  ): RatingRecord {
+    return {
+      skillSlug,
+      side: null,
+      grade,
+      notLegal: false,
+      noConcept: false,
+      ratedAt,
+      voidedAt: null,
+      supersededAt,
+    };
   }
 
   it("returns empty map for empty history", () => {
@@ -405,6 +423,32 @@ describe("latestEffectiveRatings", () => {
   it("all ratings voided — skill is absent from result", () => {
     const history = [record("kick", 3, "2026-01-01", "2026-01-10")];
     expect(latestEffectiveRatings(history)).toEqual({});
+  });
+
+  // ADR 032: superseded predecessors are dropped from the filter the same
+  // way voids are. The correction is a separate row (same (slug, side)) with
+  // supersededAt null; it wins.
+  it("supersedes a rating: correction wins; predecessor is dropped", () => {
+    const history = [
+      supersededRecord("kick", 3, "2026-01-01", "2026-01-10"),
+      record("kick", 4, "2026-01-01"), // correction, same observation time
+    ];
+    expect(latestEffectiveRatings(history)).toEqual({ kick: 4 });
+  });
+
+  it("every rating superseded with no live correction — skill is absent", () => {
+    // One predecessor marked superseded; no correction row. Should drop out.
+    const history = [supersededRecord("kick", 3, "2026-01-01", "2026-01-10")];
+    expect(latestEffectiveRatings(history)).toEqual({});
+  });
+
+  it("chain depth 2: second correction wins over the first", () => {
+    const history = [
+      supersededRecord("kick", 3, "2026-01-01", "2026-01-10"), // original
+      supersededRecord("kick", 4, "2026-01-01", "2026-01-20"), // first correction
+      record("kick", 5, "2026-01-01"),                         // leaf correction
+    ];
+    expect(latestEffectiveRatings(history)).toEqual({ kick: 5 });
   });
 
   it("notLegal flag maps to not_legal grade", () => {

@@ -3,7 +3,7 @@
 
 import type { Server } from "http";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import request from "supertest";
 import pino from "pino";
 import { createApp } from "../../app";
@@ -729,12 +729,17 @@ describe("API integration tests — evaluations routes", () => {
     });
 
     it("session created more than 10 minutes ago → 409", async () => {
-      // Backdate the session by 11 minutes via direct update
-      // (created_at is not protected by the append-only trigger on skill_ratings)
-      await adminDb()
-        .update(evaluationSessions)
-        .set({ createdAt: new Date(Date.now() - 11 * 60 * 1000) })
-        .where(eq(evaluationSessions.id, testSessionId));
+      // Backdate the session by 11 minutes. created_at is now protected by
+      // evaluation_sessions_immutable_columns (ADR 032), so we bypass user
+      // triggers for the one write by issuing a raw UPDATE inside a
+      // transaction with session_replication_role = replica.
+      const backdated = new Date(Date.now() - 11 * 60 * 1000).toISOString();
+      await adminDb().transaction(async (tx) => {
+        await tx.execute(sql`SET LOCAL session_replication_role = replica`);
+        await tx.execute(
+          sql`UPDATE evaluation_sessions SET created_at = ${backdated}::timestamptz WHERE id = ${testSessionId}::uuid`,
+        );
+      });
 
       const response = await request(server)
         .delete(`/coach/sessions/${testSessionId}`)

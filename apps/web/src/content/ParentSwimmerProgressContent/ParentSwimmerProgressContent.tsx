@@ -1,4 +1,17 @@
-import type { ParentSwimmer, ParentSwimmerProgressResponse, CategoriesResponse, StartGradeResult } from "@swim-app/shared";
+import type {
+  CategoriesResponse,
+  ParentSwimmer,
+  ParentSwimmerProgressResponse,
+  ParentScoreHistoryResponse,
+  StartGradeResult,
+} from "@swim-app/shared";
+import CategoryTrendsGrid from "@/components/CategoryTrendsGrid";
+import CollapsibleCategory from "@/components/CollapsibleCategory";
+import StartProgression from "@/components/StartProgression";
+import {
+  categoryTrendSeries,
+  startSeries,
+} from "@/lib/progressCharts";
 import ParentSkillProgressRow from "./ParentSkillProgressRow";
 import {
   formatProgressSessionDate,
@@ -11,7 +24,19 @@ interface ParentSwimmerProgressContentProps {
   swimmer: ParentSwimmer;
   progress: ParentSwimmerProgressResponse;
   categories: CategoriesResponse;
+  // Charts need an oldest-to-newest set of session-level snapshots. The
+  // backend always sends one (empty when the swimmer has no evaluations); the
+  // prop is optional only so existing unit tests that pre-date the charts
+  // don't have to be rewritten for the empty case.
+  scoreHistory?: ParentScoreHistoryResponse;
 }
+
+const EMPTY_SCORE_HISTORY: ParentScoreHistoryResponse = {
+  points: [],
+  recentChanges: [],
+  milestones: [],
+  measurements: [],
+};
 
 function startGradeIsDanger(result: StartGradeResult): boolean {
   return result.status === "not_legal";
@@ -21,7 +46,12 @@ export default function ParentSwimmerProgressContent({
   swimmer,
   progress,
   categories,
+  scoreHistory = EMPTY_SCORE_HISTORY,
 }: ParentSwimmerProgressContentProps) {
+  const categoryTrends = categoryTrendSeries(scoreHistory);
+  const startTrends = startSeries(scoreHistory);
+  const totalPoints = scoreHistory.points.length;
+  const hasEnoughForTrend = totalPoints >= 2;
   const slugToName = new Map<string, string>();
   for (const cat of categories) {
     for (const skill of cat.skills) {
@@ -155,21 +185,22 @@ export default function ParentSwimmerProgressContent({
             </section>
           )}
 
-          {/* Head position overall */}
-          {progress.headPositionOverall !== null && (
-            <section className="flex flex-col gap-1">
-              <h2 className="font-bold text-sm text-text">
-                Head Position Overall
-              </h2>
-              <p className="text-2xl font-bold text-accent">
-                {progress.headPositionOverall}
-              </p>
+          {/* Category trends over time. Only renders when there are two or
+              more non-voided evaluations (otherwise every mini-line would be
+              a dot and the section would read as empty). */}
+          {hasEnoughForTrend && categoryTrends.length > 0 && (
+            <section
+              className="flex flex-col gap-3"
+              data-testid="parent-progress-category-trends"
+            >
+              <h2 className="font-bold text-sm text-text">Category trends</h2>
+              <CategoryTrendsGrid categories={categoryTrends} />
             </section>
           )}
 
           {/* Starts */}
           {progress.startProgress.length > 0 && (
-            <section className="flex flex-col gap-3">
+            <section className="flex flex-col gap-3" data-testid="parent-progress-starts">
               <h2 className="font-bold text-sm text-text">
                 Starts
               </h2>
@@ -177,8 +208,9 @@ export default function ParentSwimmerProgressContent({
                 {progress.startProgress.map((start) => {
                   const gradeText = formatStartGradeDisplay(start.grade, getSlugName);
                   const isDanger = startGradeIsDanger(start.grade);
+                  const trend = startTrends.find((entry) => entry.slug === start.slug);
                   return (
-                    <li key={start.slug} className="flex flex-col gap-1">
+                    <li key={start.slug} className="flex flex-col gap-2">
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-semibold text-text">
                           {start.name}
@@ -217,6 +249,9 @@ export default function ParentSwimmerProgressContent({
                           </li>
                         ))}
                       </ul>
+                      {trend && hasEnoughForTrend && (
+                        <StartProgression name={start.name} points={trend.points} />
+                      )}
                     </li>
                   );
                 })}
@@ -224,7 +259,9 @@ export default function ParentSwimmerProgressContent({
             </section>
           )}
 
-          {/* Category skill cards */}
+          {/* Category skill cards. Collapsed by default; a #skill-<slug>
+              hash on page load opens the matching category and scrolls to
+              the row. */}
           {orderedCategories.map(({ id, categoryName, skills: catSkills }) => {
             const assessedIds = new Set(catSkills.map((skill) => skill.skillId));
             const catFromCategories = categories.find((category) => category.id === id);
@@ -238,11 +275,29 @@ export default function ParentSwimmerProgressContent({
                 )
               : [];
 
+            const categorySlugs = [
+              ...catSkills.map((skill) => skill.slug),
+              ...notAssessedSkills.map((skill) => skill.slug),
+            ];
+
             return (
-              <section key={id} className="flex flex-col gap-2">
-                <h2 className="font-bold text-sm text-text">
-                  {categoryName}
-                </h2>
+              <CollapsibleCategory
+                key={id}
+                className="group flex flex-col gap-2"
+                categorySlugs={categorySlugs}
+                summaryClassName="font-bold text-sm text-text cursor-pointer list-none flex items-center gap-2 min-h-[44px]"
+                summary={(
+                  <>
+                    <span aria-hidden="true" className="transition-transform duration-200 group-open:rotate-90">
+                      ›
+                    </span>
+                    <span>{categoryName}</span>
+                    <span className="text-xs font-normal text-text-secondary ml-auto">
+                      {catSkills.length} assessed
+                    </span>
+                  </>
+                )}
+              >
                 <ul className="flex flex-col gap-0">
                   {catSkills.map((skill) => (
                     <ParentSkillProgressRow key={skill.skillId} skill={skill} />
@@ -250,14 +305,15 @@ export default function ParentSwimmerProgressContent({
                   {notAssessedSkills.map((skill) => (
                     <li
                       key={skill.id}
-                      className="flex items-center justify-between border-b border-border py-2 text-sm min-h-[44px]"
+                      id={`skill-${skill.slug}`}
+                      className="flex items-center justify-between border-b border-border py-2 text-sm min-h-[44px] scroll-mt-24"
                     >
                       <span className="text-text">{skill.name}</span>
                       <span className="text-xs text-text-secondary">Not assessed</span>
                     </li>
                   ))}
                 </ul>
-              </section>
+              </CollapsibleCategory>
             );
           })}
         </div>

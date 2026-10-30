@@ -21,6 +21,8 @@ export {
 } from "./lib/dependencyMap";
 export type { SkillGrade, BuiltOnGraph, GradeMap, SortOrderMap, RatingRecord, PerStrokeGrades, ChainEntry } from "./lib/dependencyMap";
 
+export { MASTERY_LEVEL } from "./lib/mastery";
+
 export type { HealthResponse } from "./schemas/health";
 export { HealthQuerySchema, HealthResponseSchema } from "./schemas/health";
 
@@ -133,6 +135,12 @@ export {
 } from "./lib/swimTime";
 export { bookingWindowEnd, isAfterBookingWindow, laCalendarDate } from "./lib/bookingWindow";
 export { displayUnitToMeasurementEnum, INTENTIONALLY_UNMAPPED_CATALOG_UNITS } from "./lib/measurementUnit";
+export { validateRatingAgainstSkill } from "./lib/ratingValidation";
+export type {
+  RatingSkillDef,
+  RatingPayload,
+  RatingValidationIssue,
+} from "./lib/ratingValidation";
 
 export type {
   LessonLocation,
@@ -456,6 +464,26 @@ export type {
   GolfScoreCategoryTrend,
   GolfScoreTrend,
   GolfScoreTrendsResponse,
+  ScoreHistoryCategoryRollup,
+  ScoreHistoryStart,
+  ScoreHistoryLevelCounts,
+  ScoreHistoryPoint,
+  ScoreHistoryRecentChange,
+  ScoreHistoryMilestone,
+  ScoreHistoryFaultTrendPoint,
+  ScoreHistoryFaultTrend,
+  ScoreHistoryMeasurementPoint,
+  ScoreHistoryMeasurementSeries,
+  ScoreHistoryResponse,
+  ParentScoreHistoryResponse,
+  GetSessionRating,
+  GetSessionResponse,
+  PatchSessionRatingBody,
+  PatchSessionBody,
+  PatchSessionResponse,
+  GetEvaluationsItem,
+  GetEvaluationsResponse,
+  GetEvaluationsQuery,
 } from "./schemas/evaluations";
 export {
   EvaluationContextSchema,
@@ -489,6 +517,26 @@ export {
   GolfScoreCategoryTrendSchema,
   GolfScoreTrendSchema,
   GolfScoreTrendsResponseSchema,
+  ScoreHistoryCategoryRollupSchema,
+  ScoreHistoryStartSchema,
+  ScoreHistoryLevelCountsSchema,
+  ScoreHistoryPointSchema,
+  ScoreHistoryRecentChangeSchema,
+  ScoreHistoryMilestoneSchema,
+  ScoreHistoryFaultTrendPointSchema,
+  ScoreHistoryFaultTrendSchema,
+  ScoreHistoryMeasurementPointSchema,
+  ScoreHistoryMeasurementSeriesSchema,
+  ScoreHistoryResponseSchema,
+  ParentScoreHistoryResponseSchema,
+  GetSessionRatingSchema,
+  GetSessionResponseSchema,
+  PatchSessionRatingBodySchema,
+  PatchSessionBodySchema,
+  PatchSessionResponseSchema,
+  GetEvaluationsItemSchema,
+  GetEvaluationsResponseSchema,
+  GetEvaluationsQuerySchema,
 } from "./schemas/evaluations";
 export type {
   SkillCurrentLevel,

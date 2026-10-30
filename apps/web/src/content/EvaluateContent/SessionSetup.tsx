@@ -19,9 +19,19 @@ interface SessionSetupProps {
   onScreenChange: (screenSlug: string) => void;
   onChange: (patch: Partial<SessionDraft>) => void;
   issues?: EvaluateFieldIssue[];
+  // ADR 032: in edit mode the screen is immutable at the DB layer. We hide
+  // the select and show the resolved screen name as a read-only pill.
+  screenLockedName?: string;
 }
 
-export default function SessionSetup({ draft, screens, onScreenChange, onChange, issues = [] }: SessionSetupProps) {
+export default function SessionSetup({
+  draft,
+  screens,
+  onScreenChange,
+  onChange,
+  issues = [],
+  screenLockedName,
+}: SessionSetupProps) {
   const needsBreathing = draft.screenSlug === "freestyle" || draft.screenSlug === "butterfly";
   const screenIssue = issues.find((issue) => issue.field === "screenSlug");
   const breathingIssue = issues.find((issue) => issue.field === "breathingPattern");
@@ -35,27 +45,43 @@ export default function SessionSetup({ draft, screens, onScreenChange, onChange,
         <legend className="font-bold text-sm" style={{ color: "var(--color-text)" }}>
           Screen
         </legend>
-        <select
-          value={draft.screenSlug}
-          onChange={(event) => onScreenChange(event.target.value)}
-          aria-invalid={screenIssue !== undefined || undefined}
-          aria-describedby={screenIssue ? `${DOM_IDS.screenSlug}-error` : undefined}
-          className="border rounded px-3 py-2 text-sm min-h-[44px] max-w-xs"
-          style={{
-            borderColor: screenIssue ? "var(--color-danger)" : "var(--color-border)",
-            color: "var(--color-text)",
-            backgroundColor: "transparent",
-          }}
-        >
-          <option value="">Select screen...</option>
-          {screens.map((screen) => (
-            <option key={screen.screenSlug} value={screen.screenSlug}>{screen.name}</option>
-          ))}
-        </select>
-        {screenIssue && (
-          <p id={`${DOM_IDS.screenSlug}-error`} className="text-xs" style={{ color: "var(--color-danger)" }}>
-            {screenIssue.message}
-          </p>
+        {screenLockedName !== undefined ? (
+          <span
+            data-testid="session-setup-screen-pill"
+            className="inline-flex items-center min-h-[44px] px-3 py-1 rounded-[var(--radius-button)] border text-sm font-semibold max-w-fit"
+            style={{
+              borderColor: "var(--color-border)",
+              color: "var(--color-text)",
+              backgroundColor: "var(--color-background)",
+            }}
+          >
+            {screenLockedName}
+          </span>
+        ) : (
+          <>
+            <select
+              value={draft.screenSlug}
+              onChange={(event) => onScreenChange(event.target.value)}
+              aria-invalid={screenIssue !== undefined || undefined}
+              aria-describedby={screenIssue ? `${DOM_IDS.screenSlug}-error` : undefined}
+              className="border rounded px-3 py-2 text-sm min-h-[44px] max-w-xs"
+              style={{
+                borderColor: screenIssue ? "var(--color-danger)" : "var(--color-border)",
+                color: "var(--color-text)",
+                backgroundColor: "transparent",
+              }}
+            >
+              <option value="">Select screen...</option>
+              {screens.map((screen) => (
+                <option key={screen.screenSlug} value={screen.screenSlug}>{screen.name}</option>
+              ))}
+            </select>
+            {screenIssue && (
+              <p id={`${DOM_IDS.screenSlug}-error`} className="text-xs" style={{ color: "var(--color-danger)" }}>
+                {screenIssue.message}
+              </p>
+            )}
+          </>
         )}
       </fieldset>
 

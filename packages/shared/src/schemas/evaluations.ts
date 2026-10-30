@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { SkillGradeSchema } from "../lib/dependencyMap";
 import { StartGradeResultSchema } from "../lib/startGrade";
 import { StrokeSchema } from "./skills";
 
@@ -268,8 +269,15 @@ export const SkillCurrentLevelSchema = z.object({
 });
 export type SkillCurrentLevel = z.infer<typeof SkillCurrentLevelSchema>;
 
+// ADR 032: `edited` is true when this history point is a correction leaf
+// (supersedes_rating_id IS NOT NULL). `previousValue` is the pre-correction
+// grade walked one hop back through supersedes_rating_id — SkillGrade covers
+// 1..5 plus `not_legal` / `no_concept` so edits off a special state render
+// correctly. Null on uncorrected points. `sessionId` is the session the point
+// belongs to; the per-point Edit affordance deep-links through it.
 export const ProgressRatingPointSchema = z.object({
   id: z.string().uuid(),
+  sessionId: z.string().uuid(),
   grade: z.number().int().min(1).max(5).nullable(),
   notLegal: z.boolean(),
   noConcept: z.boolean(),
@@ -282,6 +290,8 @@ export const ProgressRatingPointSchema = z.object({
   faultTags: z.array(z.string()),
   ratedAt: z.string().datetime({ offset: true }),
   sessionDate: z.string().date(),
+  edited: z.boolean(),
+  previousValue: SkillGradeSchema.nullable(),
 });
 export type ProgressRatingPoint = z.infer<typeof ProgressRatingPointSchema>;
 
@@ -389,6 +399,9 @@ export type DraftsListResponse = z.infer<typeof DraftsListResponseSchema>;
 export const GolfScoreTrendPointSchema = z.object({
   ratedAt: z.string().datetime({ offset: true }),
   sessionDate: z.string().date(),
+  // ADR 032: lets the chart's selected-point "Edit this evaluation" link
+  // deep-link into the Evaluate page in edit mode.
+  sessionId: z.string().uuid(),
   grade: z.number().int().min(1).max(5).nullable(),
   measurementValue: z.string().nullable(),
 });
@@ -420,6 +433,439 @@ export const GolfScoreTrendsResponseSchema = z.object({
   trends: z.array(GolfScoreTrendSchema),
 });
 export type GolfScoreTrendsResponse = z.infer<typeof GolfScoreTrendsResponseSchema>;
+
+// ── Score history ─────────────────────────────────────────────────────────────
+// Server-side computeAsOf: one point per non-voided session date, each carrying
+// head-position overall (2.4), per-category rollups (2.5), and start-grade
+// progression (2.7) computed from the ratings known as of that date.
+
+export const ScoreHistoryCategoryRollupSchema = z.object({
+  categoryId: z.string().uuid(),
+  categorySlug: z.string(),
+  categoryName: z.string(),
+  // Mean of effective 1–5 grades across the category's non-archived skills,
+  // with no_concept excluded from the denominator and not_legal counting as 0.
+  // null when nothing in the category is assessed yet.
+  average: z.number().nullable(),
+  assessedCount: z.number().int().nonnegative(),
+  totalCount: z.number().int().nonnegative(),
+});
+export type ScoreHistoryCategoryRollup = z.infer<typeof ScoreHistoryCategoryRollupSchema>;
+
+export const ScoreHistoryStartSchema = z.object({
+  slug: z.string(),
+  name: z.string(),
+  grade: StartGradeResultSchema,
+});
+export type ScoreHistoryStart = z.infer<typeof ScoreHistoryStartSchema>;
+
+// Per-date progression tallies. Keys are the plain (side-collapsed) skill
+// slug — side-rated skills roll up via `weakerSideGrade` first so coaches
+// read these counts in "skills," not "ratings." Voided and corrected
+// ratings are dropped exactly like the existing calculations do (via
+// `latestEffectiveRatings`), so the counts match what the live progress
+// endpoint would report at the same moment in time.
+export const ScoreHistoryLevelCountsSchema = z.object({
+  level1: z.number().int().nonnegative(),
+  level2: z.number().int().nonnegative(),
+  level3: z.number().int().nonnegative(),
+  level4: z.number().int().nonnegative(),
+  level5: z.number().int().nonnegative(),
+  notLegal: z.number().int().nonnegative(),
+  noConcept: z.number().int().nonnegative(),
+});
+export type ScoreHistoryLevelCounts = z.infer<typeof ScoreHistoryLevelCountsSchema>;
+
+export const ScoreHistoryPointSchema = z.object({
+  sessionDate: z.string().date(),
+  // ADR 032: lets the hero / start / golf-score chart link to a specific
+  // session's edit page. When multiple sessions share a date, the latest
+  // one is the primary.
+  sessionId: z.string().uuid(),
+  headPositionOverall: z.number().int().min(1).max(5).nullable(),
+  categoryRollups: z.array(ScoreHistoryCategoryRollupSchema),
+  starts: z.array(ScoreHistoryStartSchema),
+  // Progression tallies as of this date (collapsed by side).
+  counts: ScoreHistoryLevelCountsSchema,
+  // Sum of max(0, currentGrade - firstEverGrade) over every skill that has
+  // ever been assessed. Positive-only — a skill drop doesn't subtract. The
+  // baseline per skill is its first collapsed grade across the full timeline
+  // (not its state on date 1, which may predate that skill's first rating).
+  totalLevelsGained: z.number().int().nonnegative(),
+  // Count of skills whose current collapsed grade is a numeric value at or
+  // above MASTERY_LEVEL. Skills in `not_legal` or `no_concept` don't count,
+  // even if their phantom numeric grade would otherwise reach mastery.
+  skillsMastered: z.number().int().nonnegative(),
+  // Count of skills currently at a numeric 1..5 grade. The transition from
+  // "unrated" or "no concept" into numeric is the "learned" moment; this
+  // metric is the running total of skills past that transition.
+  skillsLearned: z.number().int().nonnegative(),
+});
+export type ScoreHistoryPoint = z.infer<typeof ScoreHistoryPointSchema>;
+
+// Last-20 effective-grade transitions across every (skill, side) key. Level-ups
+// and drops both land here; the direction flag lets the UI mark drops without
+// re-deriving numeric order (not_legal / no_concept aren't numerically ordered
+// with 1..5). `fromGrade` and `toGrade` are the SkillGrade union; the first
+// rating of a skill produces no change event — the milestones list owns
+// first-ever rated transitions.
+export const ScoreHistoryRecentChangeSchema = z.object({
+  skillSlug: z.string(),
+  skillName: z.string(),
+  side: RatingSideSchema.nullable(),
+  fromGrade: SkillGradeSchema,
+  toGrade: SkillGradeSchema,
+  direction: z.enum(["up", "down"]),
+  sessionDate: z.string().date(),
+  sessionId: z.string().uuid(),
+});
+export type ScoreHistoryRecentChange = z.infer<typeof ScoreHistoryRecentChangeSchema>;
+
+// Milestones: discrete events worth celebrating. Each variant records the
+// first time a criterion was met; a swimmer sees at most one milestone of
+// a given type per skill or per event tuple. Newest-first ordering is applied
+// at the end — the UI renders this as a scrolling list of wins.
+export const ScoreHistoryMilestoneSchema = z.discriminatedUnion("type", [
+  // A stroke or skill moving from `not_legal` to a numeric 1..5 grade on the
+  // collapsed timeline. Emitted the first date the slug reaches legal after
+  // having been not_legal at any earlier point.
+  z.object({
+    type: z.literal("skill_legal"),
+    sessionDate: z.string().date(),
+    sessionId: z.string().uuid(),
+    skillSlug: z.string(),
+    skillName: z.string(),
+  }),
+  // First time a skill's collapsed grade reaches numeric 1..5 (from unrated
+  // or `no_concept`). The "learned" moment, independent of the specific level.
+  z.object({
+    type: z.literal("skill_learned"),
+    sessionDate: z.string().date(),
+    sessionId: z.string().uuid(),
+    skillSlug: z.string(),
+    skillName: z.string(),
+  }),
+  // First time a skill's collapsed grade reaches MASTERY_LEVEL.
+  z.object({
+    type: z.literal("skill_mastered"),
+    sessionDate: z.string().date(),
+    sessionId: z.string().uuid(),
+    skillSlug: z.string(),
+    skillName: z.string(),
+  }),
+  // A catalog skill whose declared prerequisites (skill_dependencies table)
+  // have all reached numeric 1..5 on the swimmer's timeline. Emits once per
+  // skill the first date every prereq is satisfied, independent of whether
+  // the dependent skill itself has been rated.
+  z.object({
+    type: z.literal("skill_unlocked"),
+    sessionDate: z.string().date(),
+    sessionId: z.string().uuid(),
+    skillSlug: z.string(),
+    skillName: z.string(),
+  }),
+  // A new personal best from a meet swim. One milestone per (eventDistance,
+  // eventStroke, course) tuple each time a faster meet time is recorded; the
+  // first meet time for a tuple also qualifies as a PB.
+  z.object({
+    type: z.literal("personal_best"),
+    sessionDate: z.string().date(),
+    eventDistance: z.number().int(),
+    eventStroke: z.enum(["free", "back", "breast", "fly", "im"]),
+    course: z.enum(["scy", "scm", "lcm"]),
+    timeHundredths: z.number().int().positive(),
+    meetName: z.string().nullable(),
+  }),
+]);
+export type ScoreHistoryMilestone = z.infer<typeof ScoreHistoryMilestoneSchema>;
+
+// Fault-tag trend series. One entry per fault tag the swimmer received in the
+// last 90 days (relative to the request); points cover every session date in
+// that window the swimmer had any rating, so a tag's trend can show it going
+// to zero. Coach-only — the parent route always returns an empty array for
+// faultTrends so a parent client can't observe negative coaching language.
+export const ScoreHistoryFaultTrendPointSchema = z.object({
+  sessionDate: z.string().date(),
+  count: z.number().int().nonnegative(),
+});
+export type ScoreHistoryFaultTrendPoint = z.infer<typeof ScoreHistoryFaultTrendPointSchema>;
+
+export const ScoreHistoryFaultTrendSchema = z.object({
+  faultTag: z.string(),
+  points: z.array(ScoreHistoryFaultTrendPointSchema),
+});
+export type ScoreHistoryFaultTrend = z.infer<typeof ScoreHistoryFaultTrendSchema>;
+
+// Per-skill measurement series. One entry per (skill, unit) pair the swimmer
+// has non-voided measurement values for; split by unit so a coach who changed
+// unit mid-history gets two cleanly separated lines rather than a smoothed
+// mix. Direction lets the chart orient its "better" axis without hardcoding
+// per-unit rules in the UI.
+export const ScoreHistoryMeasurementPointSchema = z.object({
+  sessionDate: z.string().date(),
+  sessionId: z.string().uuid(),
+  value: z.number(),
+});
+export type ScoreHistoryMeasurementPoint = z.infer<typeof ScoreHistoryMeasurementPointSchema>;
+
+export const ScoreHistoryMeasurementSeriesSchema = z.object({
+  skillSlug: z.string(),
+  skillName: z.string(),
+  unit: MeasurementUnitSchema,
+  direction: z.enum(["higher_better", "lower_better"]),
+  // Ascending by sessionDate.
+  points: z.array(ScoreHistoryMeasurementPointSchema),
+});
+export type ScoreHistoryMeasurementSeries = z.infer<typeof ScoreHistoryMeasurementSeriesSchema>;
+
+export const ScoreHistoryResponseSchema = z.object({
+  points: z.array(ScoreHistoryPointSchema),
+  // Newest first, capped at the 20 most recent effective-grade transitions.
+  recentChanges: z.array(ScoreHistoryRecentChangeSchema),
+  // Newest first. One entry per unique criterion-and-subject pair.
+  milestones: z.array(ScoreHistoryMilestoneSchema),
+  // Coach-only. Parent route returns a response that omits this key entirely
+  // (see ParentScoreHistoryResponseSchema below).
+  faultTrends: z.array(ScoreHistoryFaultTrendSchema),
+  // One series per (skill, unit) with at least one measured rating.
+  measurements: z.array(ScoreHistoryMeasurementSeriesSchema),
+});
+export type ScoreHistoryResponse = z.infer<typeof ScoreHistoryResponseSchema>;
+
+// Parent-facing variant. Two serialization-boundary invariants:
+//   1. `faultTrends` is coach-only (never surface negative coaching language).
+//   2. `sessionId` on every point / recent change / milestone / measurement
+//      point is coach-only (it exists to link charts to the coach edit page,
+//      which parents can't reach — see ADR 032 and the comment on
+//      ScoreHistoryPointSchema). Parents receive the derived series without
+//      internal session identifiers.
+// Each nested schema below is omitted and `.strict()`-wrapped so a future
+// refactor that reintroduces either key trips here at parse time instead of
+// silently reaching a parent client. Imported by
+// apps/api/src/routes/parentProgress.ts and
+// apps/web/src/lib/api/parentProgress.ts.
+export const ParentScoreHistoryPointSchema = ScoreHistoryPointSchema
+  .omit({ sessionId: true })
+  .strict();
+export type ParentScoreHistoryPoint = z.infer<typeof ParentScoreHistoryPointSchema>;
+
+export const ParentScoreHistoryRecentChangeSchema = ScoreHistoryRecentChangeSchema
+  .omit({ sessionId: true })
+  .strict();
+export type ParentScoreHistoryRecentChange = z.infer<typeof ParentScoreHistoryRecentChangeSchema>;
+
+// Milestones share the `type` discriminator but only the first four variants
+// (skill_legal, skill_learned, skill_mastered, skill_unlocked) carry sessionId.
+// `personal_best` has no sessionId to strip, so it passes through unchanged.
+export const ParentScoreHistoryMilestoneSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("skill_legal"),
+    sessionDate: z.string().date(),
+    skillSlug: z.string(),
+    skillName: z.string(),
+  }).strict(),
+  z.object({
+    type: z.literal("skill_learned"),
+    sessionDate: z.string().date(),
+    skillSlug: z.string(),
+    skillName: z.string(),
+  }).strict(),
+  z.object({
+    type: z.literal("skill_mastered"),
+    sessionDate: z.string().date(),
+    skillSlug: z.string(),
+    skillName: z.string(),
+  }).strict(),
+  z.object({
+    type: z.literal("skill_unlocked"),
+    sessionDate: z.string().date(),
+    skillSlug: z.string(),
+    skillName: z.string(),
+  }).strict(),
+  z.object({
+    type: z.literal("personal_best"),
+    sessionDate: z.string().date(),
+    eventDistance: z.number().int(),
+    eventStroke: z.enum(["free", "back", "breast", "fly", "im"]),
+    course: z.enum(["scy", "scm", "lcm"]),
+    timeHundredths: z.number().int().positive(),
+    meetName: z.string().nullable(),
+  }).strict(),
+]);
+export type ParentScoreHistoryMilestone = z.infer<typeof ParentScoreHistoryMilestoneSchema>;
+
+export const ParentScoreHistoryMeasurementPointSchema = ScoreHistoryMeasurementPointSchema
+  .omit({ sessionId: true })
+  .strict();
+export type ParentScoreHistoryMeasurementPoint = z.infer<typeof ParentScoreHistoryMeasurementPointSchema>;
+
+export const ParentScoreHistoryMeasurementSeriesSchema = z.object({
+  skillSlug: z.string(),
+  skillName: z.string(),
+  unit: MeasurementUnitSchema,
+  direction: z.enum(["higher_better", "lower_better"]),
+  points: z.array(ParentScoreHistoryMeasurementPointSchema),
+}).strict();
+export type ParentScoreHistoryMeasurementSeries = z.infer<typeof ParentScoreHistoryMeasurementSeriesSchema>;
+
+export const ParentScoreHistoryResponseSchema = z.object({
+  points: z.array(ParentScoreHistoryPointSchema),
+  recentChanges: z.array(ParentScoreHistoryRecentChangeSchema),
+  milestones: z.array(ParentScoreHistoryMilestoneSchema),
+  measurements: z.array(ParentScoreHistoryMeasurementSeriesSchema),
+}).strict();
+export type ParentScoreHistoryResponse = z.infer<typeof ParentScoreHistoryResponseSchema>;
+
+// ── Session edit (ADR 032) ─────────────────────────────────────────────────
+// GET /coach/sessions/:id and PATCH /coach/sessions/:id live under the coach
+// router. GET returns the current effective state of a session (non-voided,
+// non-superseded ratings only). PATCH diffs the submitted state against that
+// and writes supersede rows for changed ratings plus one in-place UPDATE for
+// changed session metadata, all in a single transaction with one audit log
+// row recording previous and new values per changed field.
+
+// Rating body for PATCH: references the current effective rating by its id
+// (never the predecessor's id). All fields that could be changed are present.
+// Re-runs the same per-rating validators as the create flow so there is one
+// source of truth for grade / notLegal / noConcept / measurement pairs.
+const PatchSessionRatingBodySchemaBase = z.object({
+  ratingId: z.string().uuid(),
+  grade: z.number().int().min(1).max(5).nullable(),
+  notLegal: z.boolean(),
+  noConcept: z.boolean(),
+  side: RatingSideSchema.nullable(),
+  capacityValue: z.string().nullable(),
+  capacityUnit: CapacityUnitSchema.nullable(),
+  measurementValue: z.string().nullable(),
+  measurementUnit: MeasurementUnitSchema.nullable(),
+  golfScoreCategory: GolfScoreCategorySchema.nullable().optional().default(null),
+  note: z.string().nullable(),
+  faultTags: z.array(z.string()),
+});
+
+export const PatchSessionRatingBodySchema = PatchSessionRatingBodySchemaBase.superRefine((val, ctx) => {
+  const gradeValid =
+    (!val.noConcept && val.grade !== null) ||
+    (val.noConcept && val.grade === null);
+  if (!gradeValid) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "grade must be 1-5 when noConcept is false; grade must be null when noConcept is true",
+      path: ["grade"],
+    });
+  }
+  if (val.notLegal && val.grade === null) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "notLegal requires a non-null grade",
+      path: ["notLegal"],
+    });
+  }
+  if ((val.capacityValue === null) !== (val.capacityUnit === null)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "capacityValue and capacityUnit must both be present or both be absent",
+      path: ["capacityValue"],
+    });
+  }
+  if ((val.measurementValue === null) !== (val.measurementUnit === null)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "measurementValue and measurementUnit must both be present or both be absent",
+      path: ["measurementValue"],
+    });
+  }
+});
+export type PatchSessionRatingBody = z.infer<typeof PatchSessionRatingBodySchema>;
+
+export const PatchSessionBodySchema = z.object({
+  sessionDate: z.string().date(),
+  context: EvaluationContextSchema,
+  // Empty string normalizes to null at the API boundary. Null is the "no
+  // priority" state; empty is never meaningful (matches ADR 022 + 0061).
+  coachingPriority: z.string().min(1).nullable(),
+  breathingPattern: BreathingPatternSchema.nullable(),
+  ratings: z.array(PatchSessionRatingBodySchema),
+});
+export type PatchSessionBody = z.infer<typeof PatchSessionBodySchema>;
+
+export const PatchSessionResponseSchema = z.object({
+  sessionId: z.string().uuid(),
+  writeCount: z.number().int().nonnegative(),
+});
+export type PatchSessionResponse = z.infer<typeof PatchSessionResponseSchema>;
+
+export const GetSessionRatingSchema = z.object({
+  // Current effective rating id. When the rating has never been corrected
+  // this equals rootRatingId; after a correction, it's the leaf.
+  ratingId: z.string().uuid(),
+  rootRatingId: z.string().uuid(),
+  skillId: z.string().uuid(),
+  slug: z.string(),
+  grade: z.number().int().min(1).max(5).nullable(),
+  notLegal: z.boolean(),
+  noConcept: z.boolean(),
+  side: RatingSideSchema.nullable(),
+  capacityValue: z.string().nullable(),
+  capacityUnit: CapacityUnitSchema.nullable(),
+  measurementValue: z.string().nullable(),
+  measurementUnit: MeasurementUnitSchema.nullable(),
+  golfScoreCategory: GolfScoreCategorySchema.nullable(),
+  note: z.string().nullable(),
+  faultTags: z.array(z.string()),
+  // Preserved observation time; equals the original rated_at even on
+  // correction rows.
+  ratedAt: z.string().datetime({ offset: true }),
+  // True when this is a correction leaf (supersedes_rating_id IS NOT NULL).
+  edited: z.boolean(),
+});
+export type GetSessionRating = z.infer<typeof GetSessionRatingSchema>;
+
+export const GetSessionResponseSchema = z.object({
+  sessionId: z.string().uuid(),
+  screenSlug: z.string(),
+  swimmerId: z.string().uuid(),
+  categoryId: z.string().uuid().nullable(),
+  sessionDate: z.string().date(),
+  context: EvaluationContextSchema,
+  coachingPriority: z.string().nullable(),
+  breathingPattern: BreathingPatternSchema.nullable(),
+  edited: z.boolean(),
+  editedAt: z.string().datetime({ offset: true }).nullable(),
+  ratings: z.array(GetSessionRatingSchema),
+});
+export type GetSessionResponse = z.infer<typeof GetSessionResponseSchema>;
+
+// GET /coach/swimmers/:id/evaluations — paginated list of a swimmer's past
+// evaluations, newest first. The list page and the swimmer-detail card both
+// consume this. Cursor is opaque: encodes the (sessionDate, sessionId) of
+// the last item so same-date corrections tie-break deterministically.
+export const GetEvaluationsItemSchema = z.object({
+  sessionId: z.string().uuid(),
+  screenSlug: z.string(),
+  screenName: z.string(),
+  sessionDate: z.string().date(),
+  context: EvaluationContextSchema,
+  coachingPriority: z.string().nullable(),
+  // Number of live (non-voided, non-superseded) ratings on this session.
+  ratingCount: z.number().int().nonnegative(),
+  edited: z.boolean(),
+  editedAt: z.string().datetime({ offset: true }).nullable(),
+  createdAt: z.string().datetime({ offset: true }),
+});
+export type GetEvaluationsItem = z.infer<typeof GetEvaluationsItemSchema>;
+
+export const GetEvaluationsResponseSchema = z.object({
+  evaluations: z.array(GetEvaluationsItemSchema),
+  nextCursor: z.string().nullable(),
+});
+export type GetEvaluationsResponse = z.infer<typeof GetEvaluationsResponseSchema>;
+
+export const GetEvaluationsQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).optional().default(20),
+  cursor: z.string().optional(),
+});
+export type GetEvaluationsQuery = z.infer<typeof GetEvaluationsQuerySchema>;
 
 // Parent-facing progress schemas — no fault tags
 export const ParentProgressRatingPointSchema = ProgressRatingPointSchema.omit({ faultTags: true });
