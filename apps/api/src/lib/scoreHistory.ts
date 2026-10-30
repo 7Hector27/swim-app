@@ -258,13 +258,18 @@ export async function computeScoreHistory(
   // Built by walking dates in ascending order and recording the first time
   // each slug appears in the collapsed GradeMap. This becomes the reference
   // for "levels gained" and the "no concept / unrated → learned" transition.
+  // One pass over `sortedDates` computes the as-of records, grades, and
+  // collapsed GradeMap per date — reused below for category rollups, starts,
+  // and progression tallies instead of filtering ratingRows a second time.
   const firstCollapsedGradeBySlug = new Map<string, SkillGrade>();
   const collapsedByDate = new Map<string, GradeMap>();
+  const asOfRecordsByDate = new Map<string, RatingRecord[]>();
   for (const date of sortedDates) {
     const asOfRecords = ratingRows
       .filter((row) => row.sessionDate <= date)
       .map(rowToRecord);
     const collapsed = collapseSidedGrades(latestEffectiveRatings(asOfRecords));
+    asOfRecordsByDate.set(date, asOfRecords);
     collapsedByDate.set(date, collapsed);
     for (const [slug, grade] of Object.entries(collapsed)) {
       if (!firstCollapsedGradeBySlug.has(slug)) {
@@ -275,12 +280,11 @@ export async function computeScoreHistory(
 
   const points: ScoreHistoryPoint[] = [];
   for (const date of sortedDates) {
-    const asOfRecords: RatingRecord[] = ratingRows
-      .filter((row) => row.sessionDate <= date)
-      .map(rowToRecord);
-
-    const grades = latestEffectiveRatings(asOfRecords);
-    const collapsed = collapsedByDate.get(date) ?? collapseSidedGrades(grades);
+    // Pre-computed in the loop above; never undefined for dates in
+    // sortedDates. The `?? []` fallback keeps TypeScript happy without a
+    // non-null assertion.
+    const asOfRecords = asOfRecordsByDate.get(date) ?? [];
+    const collapsed = collapsedByDate.get(date) ?? {};
 
     const perStroke: PerStrokeGrades = {
       ...(collapsed[HEAD_POSITION_SLUGS.free] !== undefined && { free: collapsed[HEAD_POSITION_SLUGS.free] }),

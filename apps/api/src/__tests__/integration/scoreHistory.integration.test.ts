@@ -725,6 +725,56 @@ describe("GET /coach/swimmers/:id/score-history", () => {
     }
   });
 
+  it("fixed-input parity: a 3-session, 2-skill fixture produces a stable snapshot", async () => {
+    // This test freezes the expected shape of computeScoreHistory for a
+    // small deterministic fixture. It exists so refactors that touch the
+    // internal filter/collapse flow (e.g. the recent dedupe of the per-date
+    // asOfRecords filter) can prove bit-for-bit identical output. If the
+    // numbers below change, something changed semantically — update the
+    // snapshot deliberately, not as a drive-by.
+    const swimmerId = await createTestSwimmer();
+    try {
+      await postSession(coach, swimmerId, "freestyle", "2026-10-01", [
+        freshRating(freeKickSkillId, 2, "2026-10-01T10:00:00.000Z"),
+      ]);
+      await postSession(coach, swimmerId, "freestyle", "2026-10-05", [
+        freshRating(freeKickSkillId, 3, "2026-10-05T10:00:00.000Z"),
+        freshRating(freeHorizontalAlignmentSkillId, 1, "2026-10-05T10:05:00.000Z"),
+      ]);
+      await postSession(coach, swimmerId, "freestyle", "2026-10-10", [
+        freshRating(freeKickSkillId, 5, "2026-10-10T10:00:00.000Z"),
+        freshRating(freeHorizontalAlignmentSkillId, 3, "2026-10-10T10:05:00.000Z"),
+      ]);
+
+      const history = await getScoreHistory(coach, swimmerId);
+      expect(history.points).toHaveLength(3);
+
+      const [first, second, third] = history.points;
+      expect(first!.sessionDate).toBe("2026-10-01");
+      expect(first!.counts).toEqual({ level1: 0, level2: 1, level3: 0, level4: 0, level5: 0, notLegal: 0, noConcept: 0 });
+      expect(first!.totalLevelsGained).toBe(0);
+      expect(first!.skillsMastered).toBe(0);
+      expect(first!.skillsLearned).toBe(1);
+
+      expect(second!.sessionDate).toBe("2026-10-05");
+      expect(second!.counts).toEqual({ level1: 1, level2: 0, level3: 1, level4: 0, level5: 0, notLegal: 0, noConcept: 0 });
+      // free-kick 2 → 3 = +1; free-horizontal-alignment baseline = 1, current = 1 = +0.
+      expect(second!.totalLevelsGained).toBe(1);
+      expect(second!.skillsMastered).toBe(0);
+      expect(second!.skillsLearned).toBe(2);
+
+      expect(third!.sessionDate).toBe("2026-10-10");
+      expect(third!.counts).toEqual({ level1: 0, level2: 0, level3: 1, level4: 0, level5: 1, notLegal: 0, noConcept: 0 });
+      // free-kick 2 → 5 = +3; free-horizontal-alignment 1 → 3 = +2.
+      expect(third!.totalLevelsGained).toBe(5);
+      expect(third!.skillsMastered).toBe(1);
+      expect(third!.skillsLearned).toBe(2);
+    } finally {
+      await cleanSwimmerData(swimmerId);
+      await hardDeleteSwimmer(swimmerId);
+    }
+  });
+
   it("reports response time for a swimmer with 30 evaluations", async () => {
     const swimmerId = await createTestSwimmer();
     try {
