@@ -173,6 +173,52 @@ describe("GET /coach/sessions/:id", () => {
       .set("Authorization", `Bearer ${otherCoach.accessToken}`);
     expect(res.status).toBe(404);
   });
+
+  it("rootRatingId walks past two corrections to the original", async () => {
+    await cleanSwimmerData();
+    const session = await createFreestyleSession({
+      ratings: [{ skillId: freeKickSkillId, grade: 3 }],
+    });
+    const originalId = session.ratingIds[0]!;
+
+    // Correction 1 against the original.
+    const first = await request(app)
+      .patch(`/coach/sessions/${session.sessionId}`)
+      .set("Authorization", `Bearer ${coach.accessToken}`)
+      .send(
+        basePatchBody({
+          ratings: [{ ratingId: originalId, grade: 4, notLegal: false, noConcept: false, side: null, capacityValue: null, capacityUnit: null, measurementValue: null, measurementUnit: null, golfScoreCategory: null, note: null, faultTags: [] }],
+        }),
+      );
+    expect(first.status).toBe(200);
+
+    const correctionRows = await adminDb()
+      .select({ id: skillRatings.id })
+      .from(skillRatings)
+      .where(and(eq(skillRatings.sessionId, session.sessionId), eq(skillRatings.supersedesRatingId, originalId)));
+    const firstLeafId = correctionRows[0]!.id;
+
+    // Correction 2 against correction 1.
+    const second = await request(app)
+      .patch(`/coach/sessions/${session.sessionId}`)
+      .set("Authorization", `Bearer ${coach.accessToken}`)
+      .send(
+        basePatchBody({
+          ratings: [{ ratingId: firstLeafId, grade: 5, notLegal: false, noConcept: false, side: null, capacityValue: null, capacityUnit: null, measurementValue: null, measurementUnit: null, golfScoreCategory: null, note: null, faultTags: [] }],
+        }),
+      );
+    expect(second.status).toBe(200);
+
+    const res = await request(app)
+      .get(`/coach/sessions/${session.sessionId}`)
+      .set("Authorization", `Bearer ${coach.accessToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body.ratings).toHaveLength(1);
+    const leaf = res.body.ratings[0];
+    expect(leaf.grade).toBe(5);
+    expect(leaf.edited).toBe(true);
+    expect(leaf.rootRatingId).toBe(originalId);
+  });
 });
 
 describe("PATCH /coach/sessions/:id — no-op", () => {

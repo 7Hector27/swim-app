@@ -1169,30 +1169,49 @@ sessionsRouter.get(
         ),
       );
 
-    // Walk back through `supersedes_rating_id` to find each rating's root.
-    // Chains are typically length 1 or 2 so a bounded-depth loop is fine.
+    // Resolve each live rating to its chain root by walking back through
+    // `supersedes_rating_id`. Chains are typically length 1 or 2; the loop
+    // issues one batched `inArray` query per depth level rather than one
+    // query per hop per rating, so the whole walk is 1-2 queries regardless
+    // of how many ratings were corrected. The 100-iteration cap is a
+    // defence-in-depth against a malformed chain cycle.
     const ratingIds = ratingRows.map((row) => row.id);
     const rootByLeafId = new Map<string, string>();
     for (const row of ratingRows) {
       rootByLeafId.set(row.id, row.id);
     }
-    const toResolve = ratingRows.filter((row) => row.supersedesRatingId !== null);
-    for (const leaf of toResolve) {
-      let cursor: string | null = leaf.supersedesRatingId;
-      let safety = 0;
-      while (cursor !== null && safety++ < 100) {
-        const predecessorRows = await db
-          .select({ id: skillRatings.id, supersedesRatingId: skillRatings.supersedesRatingId })
-          .from(skillRatings)
-          .where(eq(skillRatings.id, cursor))
-          .limit(1);
-        const predecessor = predecessorRows[0];
-        if (!predecessor) break;
-        if (predecessor.supersedesRatingId === null) {
-          rootByLeafId.set(leaf.id, predecessor.id);
-          break;
+    // Pending[leafId] = the predecessor id we still need to walk from.
+    const pending = new Map<string, string>();
+    for (const row of ratingRows) {
+      if (row.supersedesRatingId !== null) {
+        pending.set(row.id, row.supersedesRatingId);
+      }
+    }
+    let safety = 0;
+    while (pending.size > 0 && safety++ < 100) {
+      const cursorIds = Array.from(new Set(pending.values()));
+      const predecessorRows = await db
+        .select({ id: skillRatings.id, supersedesRatingId: skillRatings.supersedesRatingId })
+        .from(skillRatings)
+        .where(inArray(skillRatings.id, cursorIds));
+      const predecessorById = new Map<string, string | null>();
+      for (const row of predecessorRows) {
+        predecessorById.set(row.id, row.supersedesRatingId);
+      }
+      for (const [leafId, cursor] of pending) {
+        if (!predecessorById.has(cursor)) {
+          // Predecessor missing (shouldn't happen given the FK, but keep the
+          // leaf as its own root rather than erroring the whole response).
+          pending.delete(leafId);
+          continue;
         }
-        cursor = predecessor.supersedesRatingId;
+        const next = predecessorById.get(cursor) ?? null;
+        if (next === null) {
+          rootByLeafId.set(leafId, cursor);
+          pending.delete(leafId);
+        } else {
+          pending.set(leafId, next);
+        }
       }
     }
 
