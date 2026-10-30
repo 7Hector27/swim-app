@@ -16,8 +16,11 @@
 //    first read.
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import request from "supertest";
+import pino from "pino";
 import { and, eq, inArray } from "drizzle-orm";
 
+import { createApp } from "../../app";
 import {
   adminDb,
   closeAdminDb,
@@ -49,7 +52,10 @@ import {
   __setSenderTransportForTests,
   __resetSenderForTests,
 } from "../../services/notifications/sender";
-import { getOrCreateCoachNotificationPreferences } from "../../services/notifications/preferences";
+import {
+  getOrCreateCoachNotificationPreferences,
+  updateCoachNotificationPreferences,
+} from "../../services/notifications/preferences";
 import type {
   PushAttemptResult,
   PushBody,
@@ -563,6 +569,85 @@ describe("sendCoachNotification", () => {
   });
 });
 
+describe("auto_approved_summary push gating", () => {
+  // The plan says auto-approved bookings are summary-only by default and
+  // only push individually when the coach has flipped autoApprovedMode to
+  // 'immediate'. The sender's isCategoryEnabled is the chokepoint; this
+  // test exercises it end-to-end against the real DB.
+
+  async function seedAutoApprovedRowAndSubscription(): Promise<{
+    notificationId: string;
+    lessonId: string;
+  }> {
+    const lessonId = await seedLesson({ status: "approved" });
+    await adminDb().insert(coachPushSubscriptions).values({
+      profileId: coachProfile.userId,
+      endpoint: "https://push.test/auto-approved-endpoint",
+      p256dh: "pp",
+      auth: "aa",
+    });
+    const result = await db.transaction(async (tx) =>
+      enqueueCoachNotification(tx, {
+        coachProfileId: coachProfile.userId,
+        category: "auto_approved_summary",
+        lessonId,
+      }),
+    );
+    return { notificationId: result.notificationId!, lessonId };
+  }
+
+  it("does not push individually when autoApprovedMode is 'summary' (the default)", async () => {
+    await cleanAllNotifications();
+    const { notificationId, lessonId } = await seedAutoApprovedRowAndSubscription();
+
+    // Default preferences: autoApprovedMode = 'summary'.
+    await sendCoachNotification(notificationId);
+
+    expect(transport.sends).toHaveLength(0);
+    const rows = await adminDb()
+      .select()
+      .from(coachNotifications)
+      .where(eq(coachNotifications.id, notificationId));
+    expect(rows[0]?.pushStatus).toBe("skipped");
+    expect(rows[0]?.pushLastError).toBe("category_disabled");
+
+    await adminDb().delete(coachNotifications).where(eq(coachNotifications.lessonId, lessonId));
+    await adminDb()
+      .delete(coachPushSubscriptions)
+      .where(eq(coachPushSubscriptions.profileId, coachProfile.userId));
+    await adminDb().delete(lessonSwimmers).where(eq(lessonSwimmers.lessonId, lessonId));
+    await adminDb().delete(lessons).where(eq(lessons.id, lessonId));
+  });
+
+  it("pushes individually only when the coach flips autoApprovedMode to 'immediate'", async () => {
+    await cleanAllNotifications();
+    await updateCoachNotificationPreferences(coachProfile.userId, {
+      autoApprovedMode: "immediate",
+    });
+    const { notificationId, lessonId } = await seedAutoApprovedRowAndSubscription();
+
+    await sendCoachNotification(notificationId);
+
+    expect(transport.sends).toHaveLength(1);
+    const rows = await adminDb()
+      .select()
+      .from(coachNotifications)
+      .where(eq(coachNotifications.id, notificationId));
+    expect(rows[0]?.pushStatus).toBe("sent");
+
+    // Reset the preference so later tests see the default.
+    await updateCoachNotificationPreferences(coachProfile.userId, {
+      autoApprovedMode: "summary",
+    });
+    await adminDb().delete(coachNotifications).where(eq(coachNotifications.lessonId, lessonId));
+    await adminDb()
+      .delete(coachPushSubscriptions)
+      .where(eq(coachPushSubscriptions.profileId, coachProfile.userId));
+    await adminDb().delete(lessonSwimmers).where(eq(lessonSwimmers.lessonId, lessonId));
+    await adminDb().delete(lessons).where(eq(lessons.id, lessonId));
+  });
+});
+
 describe("getOrCreateCoachNotificationPreferences", () => {
   it("lazy-creates the row on first read with sane defaults", async () => {
     await cleanAllNotifications();
@@ -866,5 +951,80 @@ describe("calendar_disconnected is atomic with the needs_reconnect flip", () => 
           eq(coachNotifications.category, "calendar_disconnected"),
         ),
       );
+  });
+});
+
+// Register-endpoint normalization. The Push API spec says toJSON().keys
+// is base64url, but older Safari builds send standard base64. web-push's
+// crypto layer rejects standard base64 outright, so the server
+// normalizes on write and rejects anything that still isn't base64url
+// after normalization.
+describe("POST /coach/push/subscriptions — key normalization", () => {
+  const app = createApp(pino({ level: "silent" }));
+
+  beforeEach(async () => {
+    await adminDb()
+      .delete(coachPushSubscriptions)
+      .where(eq(coachPushSubscriptions.profileId, coachProfile.userId));
+  });
+
+  it("rewrites standard-base64 keys to base64url and sends with the normalized values", async () => {
+    const standardP256dh = "aGVsbG8rLy93b3JsZA==";
+    const standardAuth = "QS9CKzE=";
+
+    const res = await request(app)
+      .post("/coach/push/subscriptions")
+      .set("Authorization", `Bearer ${coachProfile.accessToken}`)
+      .send({
+        endpoint: "https://push.test/normalize-endpoint",
+        keys: { p256dh: standardP256dh, auth: standardAuth },
+      });
+    expect(res.status).toBe(201);
+
+    const rows = await adminDb()
+      .select()
+      .from(coachPushSubscriptions)
+      .where(eq(coachPushSubscriptions.profileId, coachProfile.userId));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.p256dh).toBe("aGVsbG8rLy93b3JsZA");
+    expect(rows[0]?.auth).toBe("QS9CKzE");
+
+    // Drive a push with the capture transport (set up in beforeAll) and
+    // confirm the sender hands web-push the normalized values — this is
+    // what web-push would have refused with "Unsupported characters set"
+    // before the fix.
+    const lessonId = await seedLesson({ status: "pending" });
+    const enqueue = await db.transaction(async (tx) =>
+      enqueueCoachNotification(tx, {
+        coachProfileId: coachProfile.userId,
+        category: "booking_request",
+        lessonId,
+      }),
+    );
+    await sendCoachNotification(enqueue.notificationId!);
+    expect(transport.sends).toHaveLength(1);
+    expect(transport.sends[0]?.sub.p256dh).toBe("aGVsbG8rLy93b3JsZA");
+    expect(transport.sends[0]?.sub.auth).toBe("QS9CKzE");
+
+    await adminDb().delete(coachNotifications).where(eq(coachNotifications.lessonId, lessonId));
+    await adminDb().delete(lessonSwimmers).where(eq(lessonSwimmers.lessonId, lessonId));
+    await adminDb().delete(lessons).where(eq(lessons.id, lessonId));
+  });
+
+  it("rejects a key with characters outside the base64 alphabet (422)", async () => {
+    const res = await request(app)
+      .post("/coach/push/subscriptions")
+      .set("Authorization", `Bearer ${coachProfile.accessToken}`)
+      .send({
+        endpoint: "https://push.test/bad-key-endpoint",
+        keys: { p256dh: "has spaces and $ignals", auth: "AAAA" },
+      });
+    expect(res.status).toBe(422);
+
+    const rows = await adminDb()
+      .select()
+      .from(coachPushSubscriptions)
+      .where(eq(coachPushSubscriptions.profileId, coachProfile.userId));
+    expect(rows).toHaveLength(0);
   });
 });

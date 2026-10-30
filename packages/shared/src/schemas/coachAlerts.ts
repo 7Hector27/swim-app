@@ -45,14 +45,43 @@ export type CoachNotificationUnreadCountResponse = z.infer<typeof CoachNotificat
 
 // Register endpoint body matches browser PushSubscription.toJSON() so the
 // client passes the subscription through unchanged.
+//
+// Keys arrive from `PushSubscription.toJSON().keys`. The Push API spec
+// says this is base64url, but older Safari builds and some polyfilled
+// callers send standard base64 (`+`, `/`, padding `=`). web-push's
+// crypto layer only accepts base64url and raises "Unsupported characters
+// set use the URL or filename-safe Base64 characters set" for standard
+// base64, so we normalize up front and then validate the shape — any
+// character outside the base64url alphabet after normalization is a bug
+// in the caller and we reject it.
+const BASE64URL_RE = /^[A-Za-z0-9_-]+$/;
+
+function normalizeBase64Url(value: string): string {
+  return value.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+const SubscriptionKeySchema = z
+  .string()
+  .min(1)
+  .transform(normalizeBase64Url)
+  .refine((value) => BASE64URL_RE.test(value), {
+    message: "must be base64 or base64url (chars [A-Za-z0-9_/+-], optional '=' padding)",
+  });
+
 export const CoachPushSubscriptionRegisterSchema = z.object({
   endpoint: z.string().url(),
   keys: z.object({
-    p256dh: z.string().min(1),
-    auth: z.string().min(1),
+    p256dh: SubscriptionKeySchema,
+    auth: SubscriptionKeySchema,
   }),
 });
 export type CoachPushSubscriptionRegister = z.infer<typeof CoachPushSubscriptionRegisterSchema>;
+
+// Exported so the one-time migration backfill and the API test fixtures
+// can run the same transform the HTTP endpoint uses. Keep it a pure
+// function — any divergence from the Zod transform silently drifts the
+// migration away from the live write path.
+export { normalizeBase64Url as normalizeSubscriptionKey };
 
 export const CoachPushSubscriptionListItemSchema = z.object({
   id: z.string().uuid(),

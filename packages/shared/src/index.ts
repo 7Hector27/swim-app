@@ -597,4 +597,5 @@ export {
   AutoApprovedModeSchema,
   CoachNotificationPreferencesSchema,
   CoachNotificationPreferencesPatchSchema,
+  normalizeSubscriptionKey,
 } from "./schemas/coachAlerts";
