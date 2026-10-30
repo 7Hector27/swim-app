@@ -1,8 +1,14 @@
 import "dotenv/config";
 import { EnvValidationError, getEnv } from "./lib/env";
+import { validateVapidAtStartup } from "./services/notifications/pushTransport";
 
 try {
   getEnv();
+  // Fail boot (not first push) if VAPID subject or keys are malformed or
+  // mismatched. web-push's setVapidDetails validates all three; letting a
+  // misconfigured server start would only surface as an opaque "Error" at
+  // first send and look identical to a transient network failure.
+  validateVapidAtStartup();
 } catch (err) {
   const message = err instanceof EnvValidationError || err instanceof Error ? err.message : String(err);
   process.stderr.write(`${message}\n`);

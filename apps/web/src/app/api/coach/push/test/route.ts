@@ -15,11 +15,20 @@ export async function POST(): Promise<NextResponse> {
   if (!token) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
-  const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/coach/push/test`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
-    cache: "no-store",
-  });
+  // If the proxy fetch fails (bad NEXT_PUBLIC_API_URL, DNS, dev network
+  // hiccup), return a readable 502 with a reason instead of letting
+  // Next.js serve its default error HTML — the client parses JSON and
+  // would otherwise show an opaque "Could not send" with no detail.
+  let response: Response;
+  try {
+    response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/coach/push/test`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+    });
+  } catch {
+    return NextResponse.json({ error: "Could not reach the push server." }, { status: 502 });
+  }
   const body: unknown = await response.json().catch(() => null);
   return NextResponse.json(body, { status: response.status });
 }

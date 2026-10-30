@@ -226,7 +226,11 @@ async function sendInner(notificationId: string): Promise<void> {
           subscriptionId: subscription.id,
           category: claimed.category,
           statusCode: result.statusCode,
-          error: result.shortError,
+          shortError: result.shortError,
+          errorName: result.logDetail?.errorName ?? null,
+          errorMessage: result.logDetail?.errorMessage ?? null,
+          errorCode: result.logDetail?.errorCode ?? null,
+          bodyPreview: result.logDetail?.bodyPreview ?? null,
         },
         "coach-notification push failed (subscription kept active)",
       );

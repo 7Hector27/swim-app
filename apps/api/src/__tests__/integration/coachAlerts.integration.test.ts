@@ -73,6 +73,7 @@ class CaptureTransport implements PushTransport {
         outcome: "ok",
         statusCode: 201,
         shortError: null,
+        logDetail: null,
       }
     );
   }
@@ -465,6 +466,7 @@ describe("sendCoachNotification", () => {
       outcome: "gone",
       statusCode: 410,
       shortError: "gone:410",
+      logDetail: null,
     });
     // Alive endpoint uses the default ok.
 
@@ -526,6 +528,7 @@ describe("sendCoachNotification", () => {
       outcome: "fail",
       statusCode: 403,
       shortError: "http_403",
+      logDetail: null,
     });
 
     const result = await db.transaction(async (tx) =>

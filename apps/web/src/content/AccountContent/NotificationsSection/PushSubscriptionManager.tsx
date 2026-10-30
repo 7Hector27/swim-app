@@ -44,6 +44,7 @@ export default function PushSubscriptionManager({ vapidPublicKey, initialSupport
   const [enableStatus, setEnableStatus] = useState<EnableStatus>("idle");
   const [enableError, setEnableError] = useState<string | null>(null);
   const [testStatus, setTestStatus] = useState<TestStatus>("idle");
+  const [testError, setTestError] = useState<string | null>(null);
   const [removingId, setRemovingId] = useState<string | null>(null);
   const didInit = useRef(false);
   // The "Sent" badge after a successful test clears after 2.5s. Track
@@ -158,16 +159,30 @@ export default function PushSubscriptionManager({ vapidPublicKey, initialSupport
   }
 
   async function handleTest() {
+    setTestError(null);
     setTestStatus("sending");
     const result = await sendTestPush();
-    setTestStatus(result.ok ? "sent" : "error");
     if (result.ok) {
+      // Partial failure (some subs delivered, others didn't) still counts
+      // as sent — but surface the first failure so the coach can see what
+      // happened on the devices that didn't get through. Zero deliveries
+      // with errors flips to the error branch and shows the first reason.
+      if (result.data.deliveredCount === 0 && result.data.errors.length > 0) {
+        setTestStatus("error");
+        setTestError(result.data.errors[0]!.reason);
+        return;
+      }
+      setTestStatus("sent");
+      if (result.data.errors.length > 0) setTestError(result.data.errors[0]!.reason);
       if (testTimeoutRef.current !== null) clearTimeout(testTimeoutRef.current);
       testTimeoutRef.current = setTimeout(() => {
         testTimeoutRef.current = null;
         setTestStatus((state) => (state === "sent" ? "idle" : state));
       }, 2500);
+      return;
     }
+    setTestStatus("error");
+    setTestError(result.reason);
   }
 
   // ── Render branches ───────────────────────────────────────────────────────
@@ -251,6 +266,11 @@ export default function PushSubscriptionManager({ vapidPublicKey, initialSupport
                     : "Send test notification"}
             </button>
           </div>
+          {testStatus === "error" && testError && (
+            <p role="alert" className="text-xs text-danger">
+              {testError}
+            </p>
+          )}
 
           {loadingList ? (
             <p className="text-sm text-text-secondary">Loading devices…</p>

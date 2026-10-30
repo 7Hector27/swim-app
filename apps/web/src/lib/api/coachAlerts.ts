@@ -9,11 +9,13 @@ import {
   CoachNotificationPreferencesSchema,
   CoachNotificationUnreadCountResponseSchema,
   CoachPushSubscriptionListResponseSchema,
+  CoachPushTestResponseSchema,
   type CoachNotificationListResponse,
   type CoachNotificationPreferences,
   type CoachNotificationPreferencesPatch,
   type CoachNotificationUnreadCountResponse,
   type CoachPushSubscriptionListResponse,
+  type CoachPushTestResponse,
 } from "@swim-app/shared";
 
 export type ApiResult<T> = { ok: true; data: T } | { ok: false; status: number };
@@ -58,9 +60,32 @@ export async function deletePushSubscription(id: string): Promise<{ ok: boolean;
   return { ok: response.ok, status: response.status };
 }
 
-export async function sendTestPush(): Promise<{ ok: boolean; status: number }> {
-  const response = await fetch("/api/coach/push/test", { method: "POST" });
-  return { ok: response.ok, status: response.status };
+export type SendTestPushResult =
+  | { ok: true; data: CoachPushTestResponse }
+  // Status may be 0 when the proxy fetch fails before a response is formed
+  // (dev-only misconfig). The reason string is always safe to render.
+  | { ok: false; status: number; reason: string };
+
+export async function sendTestPush(): Promise<SendTestPushResult> {
+  let response: Response;
+  try {
+    response = await fetch("/api/coach/push/test", { method: "POST" });
+  } catch {
+    return { ok: false, status: 0, reason: "Could not reach the server." };
+  }
+  const body: unknown = await response.json().catch(() => null);
+  if (!response.ok) {
+    const reason =
+      body !== null && typeof body === "object" && "error" in body && typeof (body as { error: unknown }).error === "string"
+        ? (body as { error: string }).error
+        : "Could not send a test notification.";
+    return { ok: false, status: response.status, reason };
+  }
+  const parsed = CoachPushTestResponseSchema.safeParse(body);
+  if (!parsed.success) {
+    return { ok: false, status: 502, reason: "The server returned an unexpected response." };
+  }
+  return { ok: true, data: parsed.data };
 }
 
 export async function fetchNotifications(): Promise<ApiResult<CoachNotificationListResponse>> {
