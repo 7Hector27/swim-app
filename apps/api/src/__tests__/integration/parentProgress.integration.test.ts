@@ -314,7 +314,6 @@ describe("GET /swimmers/:id/score-history (parent)", () => {
       points: [],
       recentChanges: [],
       milestones: [],
-      faultTrends: [],
       measurements: [],
     });
   });

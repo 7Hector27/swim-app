@@ -34,6 +34,7 @@ let swimmerId: string;
 let freeKickSkillId: string;
 let freeSideSkillId: string;      // breathing-timing-free (rated_per_side)
 let freeGolfSkillId: string;      // free-golf-score (score type)
+let freeHeadSkillId: string;      // free-head-position (notLegalAllowed: false, no side)
 
 async function cleanSwimmerData(): Promise<void> {
   await adminDb().delete(skillRatings).where(eq(skillRatings.swimmerId, swimmerId));
@@ -56,9 +57,10 @@ beforeAll(async () => {
   freeKickSkillId = bySlug.get("free-kick") ?? "";
   freeSideSkillId = bySlug.get("breathing-timing-free") ?? "";
   freeGolfSkillId = bySlug.get("free-golf-score") ?? "";
+  freeHeadSkillId = bySlug.get("free-head-position") ?? "";
 
-  if (!freeKickSkillId || !freeSideSkillId || !freeGolfSkillId) {
-    throw new Error("Required catalog skills missing (free-kick, breathing-timing-free, free-golf-score)");
+  if (!freeKickSkillId || !freeSideSkillId || !freeGolfSkillId || !freeHeadSkillId) {
+    throw new Error("Required catalog skills missing (free-kick, breathing-timing-free, free-golf-score, free-head-position)");
   }
 
   const swimmerRows = await adminDb()
@@ -658,8 +660,9 @@ describe("DELETE /coach/sessions/:id after corrections", () => {
 // rating that must also 422 for the same reason, so a regression that lets
 // one path accept what the other rejects fails loudly at the HTTP layer.
 describe("per-rating validation is shared between CREATE and PATCH", () => {
-  // notLegal on a skill whose catalog entry has notLegalAllowed=false. The
-  // free-kick skill is rubric with notLegalAllowed=false in the catalog.
+  // notLegal on a skill whose catalog entry has notLegalAllowed=false.
+  // free-head-position is rubric with notLegalAllowed left at the default
+  // (false) in skillsCatalog.ts, so it rejects notLegal in both routes.
   it("rejects notLegal on a non-notLegal skill in both routes", async () => {
     await cleanSwimmerData();
 
@@ -674,7 +677,7 @@ describe("per-rating validation is shared between CREATE and PATCH", () => {
         coachingPriority: "Focus",
         ratings: [
           {
-            skillId: freeKickSkillId,
+            skillId: freeHeadSkillId,
             grade: 3,
             notLegal: true,
             noConcept: false,
@@ -693,7 +696,7 @@ describe("per-rating validation is shared between CREATE and PATCH", () => {
     expect(createRes.body.issues?.[0]?.message).toMatch(/not allowed/i);
 
     const session = await createFreestyleSession({
-      ratings: [{ skillId: freeKickSkillId, grade: 3 }],
+      ratings: [{ skillId: freeHeadSkillId, grade: 3 }],
     });
     const patchRes = await request(app)
       .patch(`/coach/sessions/${session.sessionId}`)
