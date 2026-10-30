@@ -582,12 +582,15 @@ function isCategoryEnabled(
     case "parent_change":
       return prefs.parentChangeEnabled;
     case "auto_approved_summary":
-      // 'off' silences; 'summary' and 'immediate' both allow push (the
-      // 'summary' mode uses the daily_summary pass to deliver, but we
-      // still allow a direct push here if the coach has opted into
-      // immediate delivery). The lesson-write path can decide which it
-      // enqueues; the sender respects whatever got written.
-      return prefs.autoApprovedMode !== "off";
+      // Default is 'summary' — fold into the daily digest and never ring
+      // the coach for an auto-approved booking the household was already
+      // trusted at. Only push individually when the coach has explicitly
+      // flipped the toggle to 'immediate'. 'off' silences entirely. The
+      // enqueue path still writes the row either way so it shows up in
+      // the in-app list and feeds the daily summary — the sender flips
+      // this one to 'skipped' with reason 'category_disabled' when the
+      // mode is 'summary' or 'off'. See docs/plans/coach-alerts.md § 1'.
+      return prefs.autoApprovedMode === "immediate";
     case "calendar_disconnected":
       return true;
     case "daily_summary":
