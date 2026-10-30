@@ -59,7 +59,8 @@ import {
   SCREEN_SLUGS,
   SCREEN_NAMES,
   type ScreenSlug,
-  displayUnitToMeasurementEnum,
+  validateRatingAgainstSkill,
+  type RatingSkillDef,
 } from "@swim-app/shared";
 
 const RatingIdParamsSchema = z.object({ id: z.string().uuid() });
@@ -150,7 +151,12 @@ evaluationsRouter.post(
 
     const skillMap = new Map(allSkillRows.map((skill) => [skill.id, skill]));
 
-    // Per-rating cross-field validation
+    // Per-rating cross-field validation. The seven cross-field rules that
+    // the PATCH flow also runs are factored into validateRatingAgainstSkill
+    // in packages/shared so both routes reject the same inputs by
+    // construction. The create-only checks (skill lookup, screen-skill
+    // membership) stay here because they depend on request-local state the
+    // shared validator doesn't see.
     for (const [index, ratingInput] of body.ratings.entries()) {
       const skill = skillMap.get(ratingInput.skillId);
 
@@ -162,105 +168,29 @@ evaluationsRouter.post(
         return;
       }
 
-      // Rollup skills are calculated — they cannot be rated directly
-      if (skill.type === "rollup") {
+      const skillDef: RatingSkillDef = {
+        type: skill.type,
+        ratedPerSide: skill.ratedPerSide,
+        notLegalAllowed: skill.notLegalAllowed,
+        unit: skill.unit,
+        allowedFaultTags: skill.faultTags ?? [],
+      };
+      const issue = validateRatingAgainstSkill(skillDef, ratingInput, "skillId");
+      if (issue) {
         res.status(422).json({
           error: "Validation error",
-          issues: [{ path: [`ratings[${index}].skillId`], message: "Rollup skills are calculated and cannot be rated directly" }],
+          issues: [{ path: ["ratings", index, issue.field], message: issue.message }],
         });
         return;
       }
 
-      // golfScoreCategory: required for score-type skills, null for others
-      if (skill.type === "score" && ratingInput.golfScoreCategory === null && !ratingInput.noConcept) {
-        res.status(422).json({
-          error: "Validation error",
-          issues: [{ path: [`ratings[${index}].golfScoreCategory`], message: "Golf score category is required for score skills" }],
-        });
-        return;
-      }
-      if (skill.type !== "score" && ratingInput.golfScoreCategory !== null) {
-        res.status(422).json({
-          error: "Validation error",
-          issues: [{ path: [`ratings[${index}].golfScoreCategory`], message: "Golf score category only applies to score skills" }],
-        });
-        return;
-      }
-
-      // Skill must be in the screen's skill list (by slug)
+      // Create-only: skill must be in the screen's skill list (by slug).
       if (!screenSkillSlugs.has(skill.slug)) {
         res.status(422).json({
           error: "Validation error",
           issues: [{ path: [`ratings[${index}].skillId`], message: "Skill does not belong to the session screen" }],
         });
         return;
-      }
-
-      // side required when ratedPerSide, must be absent otherwise
-      if (skill.ratedPerSide && ratingInput.side === null) {
-        res.status(422).json({
-          error: "Validation error",
-          issues: [{ path: [`ratings[${index}].side`], message: "side is required for this skill" }],
-        });
-        return;
-      }
-      if (!skill.ratedPerSide && ratingInput.side !== null) {
-        res.status(422).json({
-          error: "Validation error",
-          issues: [{ path: [`ratings[${index}].side`], message: "side must be absent for this skill" }],
-        });
-        return;
-      }
-
-      // fault tags must be in skill.faultTags
-      const allowedFaultTags = skill.faultTags ?? [];
-      for (const tag of ratingInput.faultTags) {
-        if (!allowedFaultTags.includes(tag)) {
-          res.status(422).json({
-            error: "Validation error",
-            issues: [{ path: [`ratings[${index}].faultTags`], message: `Invalid fault tag: ${tag}` }],
-          });
-          return;
-        }
-      }
-
-      // not_legal is only allowed on skills with notLegalAllowed = true
-      if (ratingInput.notLegal && !skill.notLegalAllowed) {
-        res.status(422).json({
-          error: "Validation error",
-          issues: [{ path: [`ratings[${index}].notLegal`], message: "Not legal is not allowed for this skill" }],
-        });
-        return;
-      }
-
-      // measurement only allowed on measured skills
-      if (
-        (ratingInput.measurementValue !== null || ratingInput.measurementUnit !== null) &&
-        skill.type !== "measured"
-      ) {
-        res.status(422).json({
-          error: "Validation error",
-          issues: [{ path: [`ratings[${index}].measurementValue`], message: "Measurements only allowed on measured skills" }],
-        });
-        return;
-      }
-
-      // measurement unit must match skill.unit when present. `skill.unit` is
-      // the catalog's free-text display label (e.g. "cycles/min"); the submitted
-      // `measurementUnit` is the DB enum ("stroke_cycles_per_minute"). Map via
-      // the shared helper so the comparison is on equal footing.
-      if (
-        ratingInput.measurementUnit !== null &&
-        skill.unit !== null
-      ) {
-        const expectedEnum = displayUnitToMeasurementEnum(skill.unit);
-        if (expectedEnum !== null && ratingInput.measurementUnit !== expectedEnum) {
-          res.status(422).json({
-            error: "Validation error",
-            issues: [{ path: ["ratings", index, "measurementUnit"], message: `Measurement unit must be ${skill.unit}` }],
-          });
-          return;
-        }
       }
     }
 
@@ -1411,78 +1341,23 @@ sessionsRouter.patch(
         return;
       }
 
-      // Per-rating validation (reuse the create-flow rules).
-      if (live.type === "rollup") {
+      // Per-rating validation — shared with the create flow via
+      // validateRatingAgainstSkill. The predicate set and error messages
+      // match the CREATE route by construction.
+      const skillDef: RatingSkillDef = {
+        type: live.type,
+        ratedPerSide: live.ratedPerSide,
+        notLegalAllowed: live.notLegalAllowed,
+        unit: live.unit,
+        allowedFaultTags: live.allowedFaultTags ?? [],
+      };
+      const issue = validateRatingAgainstSkill(skillDef, ratingBody, "ratingId");
+      if (issue) {
         res.status(422).json({
           error: "Validation error",
-          issues: [{ path: ["ratings", index, "ratingId"], message: "Rollup skills are calculated and cannot be rated directly" }],
+          issues: [{ path: ["ratings", index, issue.field], message: issue.message }],
         });
         return;
-      }
-      if (live.type === "score" && ratingBody.golfScoreCategory === null && !ratingBody.noConcept) {
-        res.status(422).json({
-          error: "Validation error",
-          issues: [{ path: ["ratings", index, "golfScoreCategory"], message: "Golf score category is required for score skills" }],
-        });
-        return;
-      }
-      if (live.type !== "score" && ratingBody.golfScoreCategory !== null) {
-        res.status(422).json({
-          error: "Validation error",
-          issues: [{ path: ["ratings", index, "golfScoreCategory"], message: "Golf score category only applies to score skills" }],
-        });
-        return;
-      }
-      if (live.ratedPerSide && ratingBody.side === null) {
-        res.status(422).json({
-          error: "Validation error",
-          issues: [{ path: ["ratings", index, "side"], message: "side is required for this skill" }],
-        });
-        return;
-      }
-      if (!live.ratedPerSide && ratingBody.side !== null) {
-        res.status(422).json({
-          error: "Validation error",
-          issues: [{ path: ["ratings", index, "side"], message: "side must be absent for this skill" }],
-        });
-        return;
-      }
-      if (ratingBody.notLegal && !live.notLegalAllowed) {
-        res.status(422).json({
-          error: "Validation error",
-          issues: [{ path: ["ratings", index, "notLegal"], message: "Not legal is not allowed for this skill" }],
-        });
-        return;
-      }
-      const allowed = live.allowedFaultTags ?? [];
-      for (const tag of ratingBody.faultTags) {
-        if (!allowed.includes(tag)) {
-          res.status(422).json({
-            error: "Validation error",
-            issues: [{ path: ["ratings", index, "faultTags"], message: `Invalid fault tag: ${tag}` }],
-          });
-          return;
-        }
-      }
-      if (
-        (ratingBody.measurementValue !== null || ratingBody.measurementUnit !== null) &&
-        live.type !== "measured"
-      ) {
-        res.status(422).json({
-          error: "Validation error",
-          issues: [{ path: ["ratings", index, "measurementValue"], message: "Measurements only allowed on measured skills" }],
-        });
-        return;
-      }
-      if (ratingBody.measurementUnit !== null && live.unit !== null) {
-        const expectedEnum = displayUnitToMeasurementEnum(live.unit);
-        if (expectedEnum !== null && ratingBody.measurementUnit !== expectedEnum) {
-          res.status(422).json({
-            error: "Validation error",
-            issues: [{ path: ["ratings", index, "measurementUnit"], message: `Measurement unit must be ${live.unit}` }],
-          });
-          return;
-        }
       }
 
       // Diff per field. `faultTags` compares as an unordered multiset.

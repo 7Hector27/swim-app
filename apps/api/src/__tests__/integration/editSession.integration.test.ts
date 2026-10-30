@@ -650,3 +650,157 @@ describe("DELETE /coach/sessions/:id after corrections", () => {
     expect(del.status).toBe(409);
   });
 });
+
+// Both the create flow (POST /coach/swimmers/:id/sessions) and the edit flow
+// (PATCH /coach/sessions/:id) share one per-rating cross-field validator in
+// packages/shared/src/lib/ratingValidation.ts. These tests pair each shared
+// predicate with a POST that must 422 and a PATCH against an existing valid
+// rating that must also 422 for the same reason, so a regression that lets
+// one path accept what the other rejects fails loudly at the HTTP layer.
+describe("per-rating validation is shared between CREATE and PATCH", () => {
+  // notLegal on a skill whose catalog entry has notLegalAllowed=false. The
+  // free-kick skill is rubric with notLegalAllowed=false in the catalog.
+  it("rejects notLegal on a non-notLegal skill in both routes", async () => {
+    await cleanSwimmerData();
+
+    const createRes = await request(app)
+      .post(`/coach/swimmers/${swimmerId}/sessions`)
+      .set("Authorization", `Bearer ${coach.accessToken}`)
+      .send({
+        screenSlug: "freestyle",
+        breathingPattern: "every_3",
+        sessionDate: "2026-10-01",
+        context: "practice",
+        coachingPriority: "Focus",
+        ratings: [
+          {
+            skillId: freeKickSkillId,
+            grade: 3,
+            notLegal: true,
+            noConcept: false,
+            side: null,
+            capacityValue: null,
+            capacityUnit: null,
+            measurementValue: null,
+            measurementUnit: null,
+            note: null,
+            faultTags: [],
+            ratedAt: "2026-10-01T10:00:00.000Z",
+          },
+        ],
+      });
+    expect(createRes.status).toBe(422);
+    expect(createRes.body.issues?.[0]?.message).toMatch(/not allowed/i);
+
+    const session = await createFreestyleSession({
+      ratings: [{ skillId: freeKickSkillId, grade: 3 }],
+    });
+    const patchRes = await request(app)
+      .patch(`/coach/sessions/${session.sessionId}`)
+      .set("Authorization", `Bearer ${coach.accessToken}`)
+      .send(
+        basePatchBody({
+          ratings: [{ ratingId: session.ratingIds[0]!, grade: 3, notLegal: true, noConcept: false, side: null, capacityValue: null, capacityUnit: null, measurementValue: null, measurementUnit: null, golfScoreCategory: null, note: null, faultTags: [] }],
+        }),
+      );
+    expect(patchRes.status).toBe(422);
+    expect(patchRes.body.issues?.[0]?.message).toMatch(/not allowed/i);
+  });
+
+  // Missing golfScoreCategory on a score skill (free-golf-score).
+  it("rejects a score-skill rating without golfScoreCategory in both routes", async () => {
+    await cleanSwimmerData();
+
+    const createRes = await request(app)
+      .post(`/coach/swimmers/${swimmerId}/sessions`)
+      .set("Authorization", `Bearer ${coach.accessToken}`)
+      .send({
+        screenSlug: "freestyle",
+        breathingPattern: "every_3",
+        sessionDate: "2026-10-01",
+        context: "practice",
+        coachingPriority: "Focus",
+        ratings: [
+          {
+            skillId: freeGolfSkillId,
+            grade: 3,
+            notLegal: false,
+            noConcept: false,
+            side: null,
+            capacityValue: null,
+            capacityUnit: null,
+            measurementValue: null,
+            measurementUnit: null,
+            note: null,
+            faultTags: [],
+            ratedAt: "2026-10-01T10:00:00.000Z",
+            golfScoreCategory: null,
+          },
+        ],
+      });
+    expect(createRes.status).toBe(422);
+    expect(createRes.body.issues?.[0]?.message).toMatch(/golf score category is required/i);
+
+    const session = await createFreestyleSession({
+      ratings: [{ skillId: freeGolfSkillId, grade: 3, golfScoreCategory: "push_off_in_water" }],
+    });
+    const patchRes = await request(app)
+      .patch(`/coach/sessions/${session.sessionId}`)
+      .set("Authorization", `Bearer ${coach.accessToken}`)
+      .send(
+        basePatchBody({
+          ratings: [{ ratingId: session.ratingIds[0]!, grade: 3, notLegal: false, noConcept: false, side: null, capacityValue: null, capacityUnit: null, measurementValue: null, measurementUnit: null, golfScoreCategory: null, note: null, faultTags: [] }],
+        }),
+      );
+    expect(patchRes.status).toBe(422);
+    expect(patchRes.body.issues?.[0]?.message).toMatch(/golf score category is required/i);
+  });
+
+  // side is required on a rated_per_side skill (breathing-timing-free).
+  it("rejects a ratedPerSide rating with side=null in both routes", async () => {
+    await cleanSwimmerData();
+
+    const createRes = await request(app)
+      .post(`/coach/swimmers/${swimmerId}/sessions`)
+      .set("Authorization", `Bearer ${coach.accessToken}`)
+      .send({
+        screenSlug: "freestyle",
+        breathingPattern: "every_3",
+        sessionDate: "2026-10-01",
+        context: "practice",
+        coachingPriority: "Focus",
+        ratings: [
+          {
+            skillId: freeSideSkillId,
+            grade: 3,
+            notLegal: false,
+            noConcept: false,
+            side: null,
+            capacityValue: null,
+            capacityUnit: null,
+            measurementValue: null,
+            measurementUnit: null,
+            note: null,
+            faultTags: [],
+            ratedAt: "2026-10-01T10:00:00.000Z",
+          },
+        ],
+      });
+    expect(createRes.status).toBe(422);
+    expect(createRes.body.issues?.[0]?.message).toMatch(/side is required/i);
+
+    const session = await createFreestyleSession({
+      ratings: [{ skillId: freeSideSkillId, grade: 3, side: "left" }],
+    });
+    const patchRes = await request(app)
+      .patch(`/coach/sessions/${session.sessionId}`)
+      .set("Authorization", `Bearer ${coach.accessToken}`)
+      .send(
+        basePatchBody({
+          ratings: [{ ratingId: session.ratingIds[0]!, grade: 3, notLegal: false, noConcept: false, side: null, capacityValue: null, capacityUnit: null, measurementValue: null, measurementUnit: null, golfScoreCategory: null, note: null, faultTags: [] }],
+        }),
+      );
+    expect(patchRes.status).toBe(422);
+    expect(patchRes.body.issues?.[0]?.message).toMatch(/side is required/i);
+  });
+});

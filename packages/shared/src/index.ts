@@ -135,6 +135,12 @@ export {
 } from "./lib/swimTime";
 export { bookingWindowEnd, isAfterBookingWindow, laCalendarDate } from "./lib/bookingWindow";
 export { displayUnitToMeasurementEnum, INTENTIONALLY_UNMAPPED_CATALOG_UNITS } from "./lib/measurementUnit";
+export { validateRatingAgainstSkill } from "./lib/ratingValidation";
+export type {
+  RatingSkillDef,
+  RatingPayload,
+  RatingValidationIssue,
+} from "./lib/ratingValidation";
 
 export type {
   LessonLocation,
