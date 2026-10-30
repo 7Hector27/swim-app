@@ -30,6 +30,7 @@ import { logger as rootLogger } from "../../logger";
 import { getOrCreateCoachNotificationPreferences } from "./preferences";
 import {
   createPushTransport,
+  tagToTopic,
   type PushTransport,
 } from "./pushTransport";
 import { renderPushBody } from "./renderPushBody";
@@ -192,6 +193,7 @@ async function sendInner(notificationId: string): Promise<void> {
     tag: claimed.tag,
     click_url: claimed.clickUrl,
     urgency: claimed.urgency,
+    topic: tagToTopic(claimed.tag),
   };
 
   let deliveredCount = 0;
