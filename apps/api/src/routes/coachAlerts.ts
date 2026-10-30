@@ -195,6 +195,9 @@ coachAlertsRouter.post(
     // in-app notification list or persist as a row. Fan out sequentially,
     // same shape as the sender. 404/410 deactivates the subscription;
     // other failures leave it alone.
+    //
+    // No `topic` — tapping Test twice should deliver two notifications, so
+    // we skip the push-service dedup header entirely.
     const pushBody = {
       title: "Test notification",
       body: "If you see this, push alerts are working.",

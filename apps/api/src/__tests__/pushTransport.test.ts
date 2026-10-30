@@ -14,6 +14,7 @@ import webpush from "web-push";
 import {
   __resetPushTransportForTests,
   createPushTransport,
+  tagToTopic,
   validateVapidAtStartup,
   VapidStartupError,
 } from "../services/notifications/pushTransport";
@@ -89,6 +90,32 @@ describe("validateVapidAtStartup", () => {
       VAPID_SUBJECT: "mailto:ops@send.axiomaquatics.io",
     });
     expect(() => validateVapidAtStartup()).toThrow(VapidStartupError);
+  });
+});
+
+describe("tagToTopic", () => {
+  // Guards against the regression that produced "Unsupported characters
+  // set use the URL or filename-safe Base64 characters set" from web-push:
+  // our tags contain colons ("lesson:<uuid>", "daily-summary:2026-10-30")
+  // and can exceed 32 chars, both of which web-push's Topic validator
+  // rejects. Any topic returned here must slot straight into the header.
+  const TOPIC_ALPHABET = /^[A-Za-z0-9_-]+$/;
+
+  it("produces a topic within web-push's constraints for a long tag with colons", () => {
+    const tag = `lesson:${"a".repeat(64)}:daily-summary:2026-10-30`;
+    const topic = tagToTopic(tag);
+    expect(topic.length).toBeGreaterThan(0);
+    expect(topic.length).toBeLessThanOrEqual(32);
+    expect(topic).toMatch(TOPIC_ALPHABET);
+  });
+
+  it("is deterministic — the same tag always resolves to the same topic", () => {
+    const tag = "lesson:00000000-0000-0000-0000-000000000001";
+    expect(tagToTopic(tag)).toBe(tagToTopic(tag));
+  });
+
+  it("yields different topics for different tags (dedup is per-notification, not global)", () => {
+    expect(tagToTopic("lesson:a")).not.toBe(tagToTopic("lesson:b"));
   });
 });
 

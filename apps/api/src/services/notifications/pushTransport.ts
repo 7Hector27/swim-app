@@ -5,6 +5,8 @@
 // anything else → fail the send with backoff and keep the subscription
 // active. See ADR 031.
 
+import { createHash } from "node:crypto";
+
 import webpush, { type PushSubscription as WebPushSubscription, type RequestOptions } from "web-push";
 
 import { getEnv } from "../../lib/env";
@@ -56,6 +58,22 @@ export interface PushBody {
   tag: string;
   click_url: string;
   urgency: "standard" | "urgent";
+  // Optional push-service Topic header. web-push validates this against
+  // `/^[A-Za-z0-9_-]+$/` and rejects anything over 32 chars, so callers
+  // must pass a sanitized value (see tagToTopic). Omit to skip the header
+  // entirely — safe for one-off sends like the test notification where
+  // push-service dedup is not wanted.
+  topic?: string;
+}
+
+// Build a web-push-safe Topic from a payload tag. The payload tag can
+// contain colons and arbitrary length (e.g. "lesson:<uuid>",
+// "daily-summary:2026-10-30"); the Topic header cannot. Hash + base64url
+// gives a deterministic 32-char token that stays inside the allowed
+// alphabet, so the same tag always resolves to the same topic (push-service
+// dedup still works) without ever triggering web-push's character check.
+export function tagToTopic(tag: string): string {
+  return createHash("sha256").update(tag).digest("base64url").slice(0, 32);
 }
 
 export interface PushTransport {
@@ -121,7 +139,7 @@ export function createPushTransport(): PushTransport | null {
       const options: RequestOptions = {
         TTL: pushBody.urgency === "urgent" ? 60 : 86400,
         urgency: pushBody.urgency === "urgent" ? "high" : "normal",
-        topic: pushBody.tag,
+        ...(pushBody.topic !== undefined && { topic: pushBody.topic }),
       };
       try {
         await webpush.sendNotification(sub, payload, options);
