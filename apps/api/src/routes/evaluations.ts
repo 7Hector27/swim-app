@@ -40,6 +40,7 @@ import {
   GolfScoreCategorySchema,
   PatchSessionBodySchema,
   GetEvaluationsQuerySchema,
+  ScoreHistoryResponseSchema,
   findDeepestLowFoundation,
   headPositionOverall,
   latestEffectiveRatings,
@@ -727,9 +728,14 @@ evaluationsRouter.get(
       return;
     }
 
-    const result = await computeScoreHistory(swimmerId, { includeFaultTrends: true });
-    req.log.info({ swimmerId, pointCount: result.points.length }, "swimmer score history fetched");
-    res.json(result);
+    const raw = await computeScoreHistory(swimmerId, { includeFaultTrends: true });
+    // Parse the computation output through the shared schema before emitting
+    // so the server contract is enforced symmetrically with the parent route
+    // (which uses ParentScoreHistoryResponseSchema). A field drift between
+    // the lib and the schema trips here instead of reaching the client.
+    const body = ScoreHistoryResponseSchema.parse(raw);
+    req.log.info({ swimmerId, pointCount: body.points.length }, "swimmer score history fetched");
+    res.json(body);
   }),
 );
 
