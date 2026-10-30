@@ -57,6 +57,12 @@ export default function CollapsibleCategory({
     if (!categorySlugs.includes(anchoredSlug)) return;
     const frame = window.requestAnimationFrame(() => {
       const target = document.getElementById(`skill-${anchoredSlug}`);
+      // `behavior: "auto"` is deliberate — this is a jump-to-anchor on first
+      // paint, not a user-initiated transition. Instant scroll matches
+      // native anchor-link semantics, respects `prefers-reduced-motion`
+      // without a media query (nothing animates), and keeps the opening
+      // feel of the collapsed category snappy. Don't flip this to
+      // "smooth" without a reason beyond "it looks nicer."
       if (target) target.scrollIntoView({ block: "start", behavior: "auto" });
     });
     return () => window.cancelAnimationFrame(frame);

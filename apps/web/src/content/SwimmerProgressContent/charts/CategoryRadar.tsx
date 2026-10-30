@@ -6,11 +6,14 @@ interface CategoryRadarProps {
 
 // viewBox is wider than tall because side labels (end/start anchored) need
 // generous horizontal padding, while top and bottom labels only need enough
-// vertical room for two lines of text. Sized so even the longest two-line
-// label — "Starts, Turns &" / "Underwaters" — fits inside at the desktop
-// breakpoint's enlarged font (15 viewBox units) without clipping.
-const VB_WIDTH = 580;
-const VB_HEIGHT = 400;
+// vertical room for two lines of text. Previously 580x400 with the longest
+// 15-char line squeezing against the viewBox edge at font 16 (margin
+// ~1.5 user units). Widened to 620x420 so a future longer category name
+// (up to ~17 chars at desktop font) still clears the edge by double-digit
+// units. Shape radius unchanged; the only visual effect is a touch more
+// air around the pentagon.
+const VB_WIDTH = 620;
+const VB_HEIGHT = 420;
 const CX = VB_WIDTH / 2;
 const CY = VB_HEIGHT / 2;
 // Distance from center to the label anchor point. The shape radius sits
@@ -22,10 +25,11 @@ const SHAPE_RADIUS = 115;
 // the original 13/14/15: the radar now also renders inside narrow
 // sidebar-sized containers (the parent Progress card) where the smaller
 // end of that scale read microscopic. The LINE_HEIGHT ratio keeps two-line
-// wraps from colliding at any font size, and the invariant "label bbox
-// stays inside the viewBox" still holds — the longest two-line label at
-// desktop (font 16) measures ~138.5 user units vs ~140 units of label
-// anchor room, verified in categoryRadar.test.tsx.
+// wraps from colliding at any font size. The invariant "label bbox stays
+// inside the viewBox" holds comfortably — at desktop font 16 the longest
+// two-line label is ~138.5 user units wide vs. ~160 units of label anchor
+// room on the horizontal axes (CX - LABEL_DISTANCE = 310 - 150). Verified
+// in categoryRadar.test.tsx.
 const FONT_SIZE_PHONE = 14;
 const FONT_SIZE_TABLET = 15;
 const FONT_SIZE_DESKTOP = 16;
