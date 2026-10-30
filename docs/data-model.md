@@ -717,14 +717,20 @@ One row per observation sitting. A session groups all ratings a coach makes for 
 | `category_id` | `uuid` | no | FK → `skill_categories.id` (restrict on delete) |
 | `session_date` | `date` | no | Date of observation |
 | `context` | `evaluation_context` | no | Enum: `drill`, `practice`, `race` |
-| `coaching_priority` | `text` | no | Freeform text — what the coach typed. The dependency-map suggestion is shown as hint text in the UI but the stored value is always what the coach typed. |
+| `coaching_priority` | `text` | yes | Freeform text — what the coach typed. The dependency-map suggestion is shown as hint text in the UI but the stored value is always what the coach typed. Null when the coach had nothing new to say. |
+| `screen_slug` | `text` | no | One of the nine evaluation screen slugs |
+| `breathing_pattern` | `text` | yes | Required for freestyle/butterfly at finalize time |
+| `edited_at` | `timestamptz` | yes | Set to `now()` by the PATCH endpoint whenever any editable session field actually changes, or whenever a rating correction is written against this session. Drives the "Edited" badge in the coach UI. Null for sessions that have never been edited. See ADR 032. |
 | `created_at` | `timestamptz` | no | `now()` |
 | `updated_at` | `timestamptz` | no | Auto-updated |
 
 Constraints:
-- `CHECK (coaching_priority_not_blank)` — `coaching_priority <> ''`
+- `CHECK (coaching_priority_not_blank)` — `coaching_priority IS NULL OR coaching_priority <> ''`
+- `CHECK (screen_slug_valid)` — one of the nine screen slugs
+- `CHECK (breathing_pattern_valid)` — null or a valid enum value
+- `evaluation_sessions_immutable_columns` BEFORE UPDATE trigger — raises if `swimmer_id`, `coach_id`, `screen_slug`, `category_id`, `id`, or `created_at` changes
 
-Session metadata is immutable after creation. See ADR 022.
+Session metadata is editable in place for `session_date`, `context`, `coaching_priority`, and `breathing_pattern`. The identity columns above are locked by the immutable-columns trigger. Every metadata edit writes a `household_audit_log` row inside the same transaction recording the previous and new value for each changed field. See ADR 032, which amends ADR 022's "immutable after creation" rule.
 
 RLS enabled. Policies TBD.
 
@@ -759,7 +765,7 @@ RLS is enabled with no policies (deny-all by design; the API is the sole access 
 
 ### `skill_ratings`
 
-One row per skill observation. Append-only: after insert, only the three void fields (`voided_at`, `void_reason`, `void_by`) may change. See ADR 022.
+One row per skill observation. Append-only: after insert, only the three void fields (`voided_at`, `void_reason`, `void_by`) and the three supersede fields (`superseded_at`, `superseded_by`, `superseded_by_rating_id`) may change. Corrections live as new rows that point back to the predecessor via `supersedes_rating_id`; the predecessor's three supersede fields point forward to the correction. See ADR 022 (append-only) and ADR 032 (supersede chain).
 
 | Column | Type | Nullable | Default | Notes |
 |---|---|---|---|---|
@@ -780,21 +786,28 @@ One row per skill observation. Append-only: after insert, only the three void fi
 | `voided_at` | `timestamptz` | yes | — | Set when voided. All three void fields must be set together. |
 | `void_reason` | `text` | yes | — | Required when voiding. |
 | `void_by` | `uuid` | yes | — | FK → `profiles.id` (restrict on delete). Coach who applied the void. |
-| `rated_at` | `timestamptz` | no | — | When the coach observed the skill (may precede row insert time). |
+| `superseded_at` | `timestamptz` | yes | — | Set on the predecessor row when a correction is written. Mirror of `voided_at`. All three supersede fields must be set together. |
+| `superseded_by` | `uuid` | yes | — | FK → `profiles.id` (restrict on delete). Coach who wrote the correction. |
+| `superseded_by_rating_id` | `uuid` | yes | — | FK → `skill_ratings.id` (restrict on delete). Forward link to the correction row. |
+| `supersedes_rating_id` | `uuid` | yes | — | FK → `skill_ratings.id` (restrict on delete). Set on the correction row only; the backward link to the predecessor. Null on originals. |
+| `rated_at` | `timestamptz` | no | — | When the coach observed the skill (may precede row insert time). A correction row inherits its predecessor's `rated_at` so observation time is preserved; correction time lives on `created_at` and in the audit log. |
 | `created_at` | `timestamptz` | no | `now()` | |
-| `updated_at` | `timestamptz` | no | `now()` | Reflects the timestamp of a void if applied; no other update path exists at the API layer. |
+| `updated_at` | `timestamptz` | no | `now()` | Reflects the timestamp of a void or supersede if applied; no other update path exists at the API layer. |
 
 Constraints:
 - `CHECK (grade_xor_no_concept)` — `(no_concept=false AND grade IS NOT NULL AND grade BETWEEN 1 AND 5) OR (no_concept=true AND grade IS NULL)`
 - `CHECK (capacity_value_and_unit_consistent)` — both set or both null
 - `CHECK (measurement_value_and_unit_consistent)` — both set or both null
 - `CHECK (void_fields_consistent)` — all three void fields set together or all null
+- `CHECK (supersede_fields_consistent)` — all three supersede fields set together or all null
+- `skill_ratings_append_only` trigger — permits writes to `voided_at`, `void_reason`, `void_by`, `superseded_at`, `superseded_by`, `superseded_by_rating_id`, and `updated_at`. Every other column is locked after insert.
 
 **Exclusion rules (applied in all calculations):**
 
 | State | Averages & rollups | Dependency map |
 |---|---|---|
 | Voided | Ignored entirely | Treated as null (not assessed) |
+| Superseded | Ignored entirely (the correction row replaces it in `latestEffectiveRatings`) | Treated as null (not assessed) |
 | Not legal | Counts as 0 | Always low |
 | No concept | Excluded from denominator | Always low |
 | Not assessed (no row) | Excluded | Chain stops there |
