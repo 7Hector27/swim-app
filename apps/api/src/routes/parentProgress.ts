@@ -169,12 +169,30 @@ parentProgressRouter.get(
     const { id: swimmerId } = req.params as unknown as IdParams;
     // Pass includeFaultTrends:false EXPLICITLY so the contract isn't tied
     // to a library default; the result still carries a `faultTrends: []`
-    // field, which the parent-facing schema strips below so the key is
-    // absent from the response — a serialization-boundary invariant that
-    // `.strict()` catches at parse time if a refactor ever changes the
-    // computation to include fault data.
+    // field and sessionIds on every point / recentChange / milestone /
+    // measurement point. The parent-facing shape omits both — fault data
+    // because parents never see negative coaching language, sessionIds
+    // because they exist to deep-link to the coach edit page which parents
+    // can't reach (ADR 032). Both omissions are serialization-boundary
+    // invariants: `.strict()` on the parent schema rejects any slip-through
+    // at parse time instead of silently reaching a parent client.
     const raw = await computeScoreHistory(swimmerId, { includeFaultTrends: false });
-    const { faultTrends: _faultTrends, ...parentFacing } = raw;
+    const parentFacing = {
+      points: raw.points.map(({ sessionId: _sessionId, ...rest }) => rest),
+      recentChanges: raw.recentChanges.map(({ sessionId: _sessionId, ...rest }) => rest),
+      milestones: raw.milestones.map((milestone) =>
+        milestone.type === "personal_best"
+          ? milestone
+          : (() => {
+              const { sessionId: _sessionId, ...rest } = milestone;
+              return rest;
+            })(),
+      ),
+      measurements: raw.measurements.map((series) => ({
+        ...series,
+        points: series.points.map(({ sessionId: _sessionId, ...rest }) => rest),
+      })),
+    };
     const body = ParentScoreHistoryResponseSchema.parse(parentFacing);
     req.log.info({ swimmerId, pointCount: body.points.length }, "parent score history fetched");
     res.json(body);

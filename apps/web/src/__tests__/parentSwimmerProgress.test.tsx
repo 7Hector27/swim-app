@@ -302,7 +302,6 @@ describe("ParentSwimmerProgressContent — charts", () => {
     return {
       points: headPositions.map((value, index) => ({
         sessionDate: `2026-10-${String(index + 1).padStart(2, "0")}`,
-        sessionId: `ssss0000-0000-0000-0000-${String(index + 1).padStart(12, "0")}`,
         headPositionOverall: value,
         categoryRollups: [
           {

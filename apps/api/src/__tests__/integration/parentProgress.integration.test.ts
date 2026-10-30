@@ -383,6 +383,45 @@ describe("GET /swimmers/:id/score-history (parent)", () => {
     expect(Object.prototype.hasOwnProperty.call(res.body, "faultTrends")).toBe(false);
   });
 
+  it("response never carries sessionId — the key is coach-only (deep-links to the edit page)", async () => {
+    await clearSwimmerSessions();
+    // Two sessions on different dates so points, recentChanges, and
+    // milestones all have something to carry.
+    await seedRating({ grade: 2, sessionDate: "2026-10-10", ratedAt: "2026-10-10T10:00:00.000Z" });
+    await seedRating({ grade: 4, sessionDate: "2026-10-13", ratedAt: "2026-10-13T10:00:00.000Z" });
+
+    const res = await request(app)
+      .get(`/swimmers/${swimmerId}/score-history`)
+      .set("Authorization", `Bearer ${owner.accessToken}`);
+    expect(res.status).toBe(200);
+
+    // Nothing in the serialized response may contain "sessionId" — not in
+    // points, not in recentChanges, not in milestones, not in measurements.
+    // sessionId exists on the coach shape to deep-link charts to the coach
+    // edit page (ADR 032); parents can't reach that page, so the key is
+    // stripped at the parent serialization boundary.
+    const serialized = JSON.stringify(res.body);
+    expect(serialized.includes("sessionId")).toBe(false);
+
+    // Belt-and-suspenders structural checks on each array.
+    const points = res.body.points as Array<Record<string, unknown>>;
+    expect(points.length).toBeGreaterThan(0);
+    for (const point of points) {
+      expect(Object.prototype.hasOwnProperty.call(point, "sessionId")).toBe(false);
+    }
+    for (const change of res.body.recentChanges as Array<Record<string, unknown>>) {
+      expect(Object.prototype.hasOwnProperty.call(change, "sessionId")).toBe(false);
+    }
+    for (const milestone of res.body.milestones as Array<Record<string, unknown>>) {
+      expect(Object.prototype.hasOwnProperty.call(milestone, "sessionId")).toBe(false);
+    }
+    for (const series of res.body.measurements as Array<{ points: Array<Record<string, unknown>> }>) {
+      for (const measurementPoint of series.points) {
+        expect(Object.prototype.hasOwnProperty.call(measurementPoint, "sessionId")).toBe(false);
+      }
+    }
+  });
+
   it("voided ratings don't produce a point", async () => {
     await clearSwimmerSessions();
     await seedRating({ grade: 3, sessionDate: "2026-10-14", ratedAt: "2026-10-14T10:00:00.000Z" });

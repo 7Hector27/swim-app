@@ -632,16 +632,88 @@ export const ScoreHistoryResponseSchema = z.object({
 });
 export type ScoreHistoryResponse = z.infer<typeof ScoreHistoryResponseSchema>;
 
-// Parent-facing variant. `faultTrends` is coach-only; this schema makes that
-// a serialization-boundary invariant rather than an implicit option default.
-// The key must be ABSENT in the response (not empty) — Zod's `.strict()`
-// refuses any extra keys at parse time, so a future refactor that stops
-// stripping fault data trips here instead of silently reaching a parent
-// client. Imported by apps/api/src/routes/parentProgress.ts and
+// Parent-facing variant. Two serialization-boundary invariants:
+//   1. `faultTrends` is coach-only (never surface negative coaching language).
+//   2. `sessionId` on every point / recent change / milestone / measurement
+//      point is coach-only (it exists to link charts to the coach edit page,
+//      which parents can't reach — see ADR 032 and the comment on
+//      ScoreHistoryPointSchema). Parents receive the derived series without
+//      internal session identifiers.
+// Each nested schema below is omitted and `.strict()`-wrapped so a future
+// refactor that reintroduces either key trips here at parse time instead of
+// silently reaching a parent client. Imported by
+// apps/api/src/routes/parentProgress.ts and
 // apps/web/src/lib/api/parentProgress.ts.
-export const ParentScoreHistoryResponseSchema = ScoreHistoryResponseSchema
-  .omit({ faultTrends: true })
+export const ParentScoreHistoryPointSchema = ScoreHistoryPointSchema
+  .omit({ sessionId: true })
   .strict();
+export type ParentScoreHistoryPoint = z.infer<typeof ParentScoreHistoryPointSchema>;
+
+export const ParentScoreHistoryRecentChangeSchema = ScoreHistoryRecentChangeSchema
+  .omit({ sessionId: true })
+  .strict();
+export type ParentScoreHistoryRecentChange = z.infer<typeof ParentScoreHistoryRecentChangeSchema>;
+
+// Milestones share the `type` discriminator but only the first four variants
+// (skill_legal, skill_learned, skill_mastered, skill_unlocked) carry sessionId.
+// `personal_best` has no sessionId to strip, so it passes through unchanged.
+export const ParentScoreHistoryMilestoneSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("skill_legal"),
+    sessionDate: z.string().date(),
+    skillSlug: z.string(),
+    skillName: z.string(),
+  }).strict(),
+  z.object({
+    type: z.literal("skill_learned"),
+    sessionDate: z.string().date(),
+    skillSlug: z.string(),
+    skillName: z.string(),
+  }).strict(),
+  z.object({
+    type: z.literal("skill_mastered"),
+    sessionDate: z.string().date(),
+    skillSlug: z.string(),
+    skillName: z.string(),
+  }).strict(),
+  z.object({
+    type: z.literal("skill_unlocked"),
+    sessionDate: z.string().date(),
+    skillSlug: z.string(),
+    skillName: z.string(),
+  }).strict(),
+  z.object({
+    type: z.literal("personal_best"),
+    sessionDate: z.string().date(),
+    eventDistance: z.number().int(),
+    eventStroke: z.enum(["free", "back", "breast", "fly", "im"]),
+    course: z.enum(["scy", "scm", "lcm"]),
+    timeHundredths: z.number().int().positive(),
+    meetName: z.string().nullable(),
+  }).strict(),
+]);
+export type ParentScoreHistoryMilestone = z.infer<typeof ParentScoreHistoryMilestoneSchema>;
+
+export const ParentScoreHistoryMeasurementPointSchema = ScoreHistoryMeasurementPointSchema
+  .omit({ sessionId: true })
+  .strict();
+export type ParentScoreHistoryMeasurementPoint = z.infer<typeof ParentScoreHistoryMeasurementPointSchema>;
+
+export const ParentScoreHistoryMeasurementSeriesSchema = z.object({
+  skillSlug: z.string(),
+  skillName: z.string(),
+  unit: MeasurementUnitSchema,
+  direction: z.enum(["higher_better", "lower_better"]),
+  points: z.array(ParentScoreHistoryMeasurementPointSchema),
+}).strict();
+export type ParentScoreHistoryMeasurementSeries = z.infer<typeof ParentScoreHistoryMeasurementSeriesSchema>;
+
+export const ParentScoreHistoryResponseSchema = z.object({
+  points: z.array(ParentScoreHistoryPointSchema),
+  recentChanges: z.array(ParentScoreHistoryRecentChangeSchema),
+  milestones: z.array(ParentScoreHistoryMilestoneSchema),
+  measurements: z.array(ParentScoreHistoryMeasurementSeriesSchema),
+}).strict();
 export type ParentScoreHistoryResponse = z.infer<typeof ParentScoreHistoryResponseSchema>;
 
 // ── Session edit (ADR 032) ─────────────────────────────────────────────────

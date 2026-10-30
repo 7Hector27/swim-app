@@ -1,9 +1,16 @@
 import type { ScoreHistoryResponse, StartGradeResult } from "@swim-app/shared";
 
-// The helpers below only ever read `points`; narrow the parameter so both
-// the full (coach) ScoreHistoryResponse and the parent-facing variant that
-// omits coach-only fields accept here.
-type ScoreHistoryPointsOnly = Pick<ScoreHistoryResponse, "points">;
+// The helpers below only ever read `points`. The parameter accepts both the
+// full coach ScoreHistoryResponse (points carry a sessionId for deep-linking
+// to the edit page) and the parent-facing variant (sessionId stripped at the
+// serialization boundary since parents can't reach the edit page). The
+// sessionId field is therefore widened to optional here so a parent-shaped
+// value is structurally assignable; helpers forward it as a possibly-missing
+// field, which downstream chart components already accept.
+type ScoreHistoryPointLoose = Omit<ScoreHistoryResponse["points"][number], "sessionId"> & {
+  sessionId?: string;
+};
+type ScoreHistoryPointsOnly = { points: ScoreHistoryPointLoose[] };
 
 // Session dates are stored as YYYY-MM-DD strings (no timezone). The server
 // may be in UTC and the client in any zone; constructing a Date with the
@@ -35,14 +42,16 @@ export function formatMonthDay(dateStr: string): string {
 }
 
 // Pulls head-position-overall as an oldest-first series from score history.
-// sessionId is threaded through so HeroTrendChart can deep-link to edit mode.
+// sessionId is threaded through so HeroTrendChart can deep-link to edit mode
+// on coach-shaped history; it is absent on parent-shaped history (parents
+// can't reach the edit page, so the id is stripped at the API boundary).
 export function headPositionSeries(
   history: ScoreHistoryPointsOnly,
-): Array<{ sessionDate: string; value: number | null; sessionId: string }> {
+): Array<{ sessionDate: string; value: number | null; sessionId?: string }> {
   return history.points.map((point) => ({
     sessionDate: point.sessionDate,
     value: point.headPositionOverall,
-    sessionId: point.sessionId,
+    ...(point.sessionId !== undefined && { sessionId: point.sessionId }),
   }));
 }
 
@@ -85,11 +94,12 @@ export function latestCategorySnapshot(history: ScoreHistoryPointsOnly): Array<{
 
 // Per-start progression series from score history. Order and names are taken
 // from the first point so a newly-rated start doesn't rearrange earlier points.
-// sessionId is threaded through so StartProgression can deep-link to edit mode.
+// sessionId is threaded through so StartProgression can deep-link to edit mode
+// on coach-shaped history; absent on parent-shaped history.
 export function startSeries(history: ScoreHistoryPointsOnly): Array<{
   slug: string;
   name: string;
-  points: Array<{ sessionDate: string; grade: StartGradeResult; sessionId: string }>;
+  points: Array<{ sessionDate: string; grade: StartGradeResult; sessionId?: string }>;
 }> {
   const first = history.points[0];
   if (!first) return [];
@@ -101,7 +111,7 @@ export function startSeries(history: ScoreHistoryPointsOnly): Array<{
       return {
         sessionDate: point.sessionDate,
         grade: match?.grade ?? { status: "in_progress", missing: [] },
-        sessionId: point.sessionId,
+        ...(point.sessionId !== undefined && { sessionId: point.sessionId }),
       };
     }),
   }));

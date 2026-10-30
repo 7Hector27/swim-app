@@ -7,7 +7,7 @@ import type {
   ParentPersonalBestsResponse,
   ParentSwimmer,
   ParentSwimmerProgressResponse,
-  ScoreHistoryResponse,
+  ParentScoreHistoryResponse,
   UpcomingLesson,
 } from "@swim-app/shared";
 
@@ -74,11 +74,10 @@ const emptyProgress: ParentSwimmerProgressResponse = {
 
 const emptyPersonalBests: ParentPersonalBestsResponse = { personalBests: [] };
 
-const emptyScoreHistory: ScoreHistoryResponse = {
+const emptyScoreHistory: ParentScoreHistoryResponse = {
   points: [],
   recentChanges: [],
   milestones: [],
-  faultTrends: [],
   measurements: [],
 };
 
@@ -91,7 +90,7 @@ function render_(
       | { ok: true; data: ParentSwimmerProgressResponse }
       | { ok: false };
     scoreHistory?:
-      | { ok: true; data: ScoreHistoryResponse }
+      | { ok: true; data: ParentScoreHistoryResponse }
       | { ok: false };
     personalBests?:
       | { ok: true; data: ParentPersonalBestsResponse }
@@ -177,11 +176,10 @@ describe("SwimmerProfileContent — empty states", () => {
 });
 
 describe("SwimmerProfileContent — Progress card", () => {
-  const scoreHistoryWithRollups: ScoreHistoryResponse = {
+  const scoreHistoryWithRollups: ParentScoreHistoryResponse = {
     points: [
       {
         sessionDate: "2026-10-14",
-        sessionId: "ssss0000-0000-0000-0000-000000000001",
         headPositionOverall: 3,
         categoryRollups: [
           {
@@ -210,7 +208,6 @@ describe("SwimmerProfileContent — Progress card", () => {
     ],
     recentChanges: [],
     milestones: [],
-    faultTrends: [],
     measurements: [],
   };
 
