@@ -15,19 +15,24 @@ interface LessonsSectionProps {
   past: SectionResult<UpcomingLesson[]>;
   upcomingForSwimmer: UpcomingLesson[];
   pastForSwimmer: UpcomingLesson[];
-  canBook: boolean;
 }
+
+const RECENT_LIMIT = 3;
 
 export default function LessonsSection({
   upcoming,
   past,
   upcomingForSwimmer,
   pastForSwimmer,
-  canBook,
 }: LessonsSectionProps) {
   const upcomingSkipFirst = upcomingForSwimmer.slice(1);
   const hasUpcomingLater = upcomingSkipFirst.length > 0;
   const hasPast = pastForSwimmer.length > 0;
+  // Trim to the N newest so the profile stays a snapshot; "See all lessons"
+  // sends the parent to the full history. The parent lessons page doesn't
+  // currently filter by swimmer id, so the link points at the unfiltered
+  // list.
+  const recentForSwimmer = pastForSwimmer.slice(0, RECENT_LIMIT);
 
   const bothFailed = !upcoming.ok && !past.ok;
   if (bothFailed) {
@@ -35,7 +40,7 @@ export default function LessonsSection({
       <section className="flex flex-col gap-3">
         <h2 className="text-sm font-bold text-text">Lessons</h2>
         <p className="text-xs text-text-secondary">
-          Couldn't load lessons. Please refresh.
+          Couldn&apos;t load lessons. Please refresh.
         </p>
       </section>
     );
@@ -44,48 +49,63 @@ export default function LessonsSection({
   const nothingToShow =
     upcoming.ok && past.ok && !hasUpcomingLater && !hasPast && upcomingForSwimmer.length === 0;
   if (nothingToShow) {
+    // The next-lesson dark card above already surfaces the "no upcoming
+    // lessons" state (and the Book CTA when the viewer can book), so the
+    // old duplicate placeholder is gone. The lessons section only renders
+    // the header + a muted hint about past lessons.
     return (
       <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-bold text-text">Lessons</h2>
-        {canBook ? (
-          <div className="rounded-card border border-border px-4 py-4 flex flex-col items-start gap-3">
-            <p className="text-xs text-text-secondary">
-              No lessons scheduled yet.
-            </p>
-            <Link
-              href="/dashboard/book"
-              className="rounded-button bg-button-primary-background text-button-primary-text font-bold text-sm h-11 flex items-center justify-center px-5 transition-transform duration-150 active:scale-[0.97]"
-            >
-              Book a lesson
-            </Link>
-          </div>
-        ) : (
-          <p className="text-xs text-text-secondary">No lessons scheduled yet.</p>
-        )}
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-bold text-text">Lessons</h2>
+        </div>
+        <p className="text-xs text-text-secondary">No lesson history yet.</p>
       </section>
     );
   }
 
+  // When there are no upcoming-later lessons but there's past history, the
+  // Upcoming column is dropped — the dark Book card has already said "no
+  // upcoming". The column still shows if the upcoming fetch itself failed,
+  // so the scoped "Couldn't load upcoming lessons" message surfaces.
+  const showUpcomingColumn = hasUpcomingLater || !upcoming.ok;
+
   return (
     <section className="flex flex-col gap-3">
-      <h2 className="text-sm font-bold text-text">Lessons</h2>
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm font-bold text-text">Lessons</h2>
+        {(hasPast || hasUpcomingLater) && (
+          <Link
+            href="/dashboard/lessons"
+            data-testid="see-all-lessons-link"
+            className="text-xs font-semibold text-link hover:text-link-hover"
+          >
+            See all lessons →
+          </Link>
+        )}
+      </div>
       {/*
-        Mobile: both columns stack into one gap-2 flex column, forming a single
-        continuous list (past rows dimmed). Tablet+: side-by-side grid with
-        eyebrow headers that only appear at tablet+.
+        Mobile: columns stack. Tablet+: side-by-side grid with eyebrow
+        headers that only appear at tablet+. When Upcoming is empty the
+        column is dropped entirely and Recent takes the full row.
       */}
-      <div className="flex flex-col gap-2 tablet:grid tablet:grid-cols-2 tablet:gap-6">
-        <LessonsColumn
-          title="Upcoming"
-          failed={!upcoming.ok}
-          lessons={upcomingSkipFirst}
-          dim={false}
-          emptyText="Nothing else scheduled."
-        />
+      <div
+        className={`flex flex-col gap-2 tablet:grid tablet:gap-6 ${
+          showUpcomingColumn ? "tablet:grid-cols-2" : "tablet:grid-cols-1"
+        }`}
+      >
+        {showUpcomingColumn && (
+          <LessonsColumn
+            title="Upcoming"
+            failed={!upcoming.ok}
+            lessons={upcomingSkipFirst}
+            dim={false}
+            emptyText="Nothing else scheduled."
+          />
+        )}
         <LessonsColumn
           title="Recent"
           failed={!past.ok}
-          lessons={pastForSwimmer}
+          lessons={recentForSwimmer}
           dim
           emptyText="No recent lessons."
         />

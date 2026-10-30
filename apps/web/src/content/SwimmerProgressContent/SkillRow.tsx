@@ -30,7 +30,8 @@ export default function SkillRow({ skill, swimmerId, nowIso, editContext }: Skil
 
   return (
     <li
-      className="flex flex-col border-b"
+      id={`skill-${skill.slug}`}
+      className="flex flex-col border-b scroll-mt-24"
       style={{ borderColor: "var(--color-border)" }}
     >
       <div className="flex items-center gap-3 py-3 min-h-[44px]">

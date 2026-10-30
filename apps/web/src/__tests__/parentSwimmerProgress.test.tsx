@@ -341,7 +341,7 @@ describe("ParentSwimmerProgressContent — charts", () => {
     expect(screen.queryByTestId("parent-progress-category-trends")).toBeNull();
   });
 
-  it("one-evaluation state: shows the head-position number but no trend chart", () => {
+  it("one-evaluation state: no head-position section renders (hero chart removed)", () => {
     const progress: ParentSwimmerProgressResponse = {
       ...emptyProgress,
       headPositionOverall: 3,
@@ -355,11 +355,14 @@ describe("ParentSwimmerProgressContent — charts", () => {
       />,
     );
     expect(screen.queryByTestId("parent-progress-head-position-trend")).toBeNull();
-    expect(screen.getByText(/trend unlocks after the second rating/i)).toBeInTheDocument();
+    // The old "trend unlocks after the second rating" hint was tied to the
+    // deleted hero section; it must not render anywhere now.
+    expect(screen.queryByText(/trend unlocks after the second rating/i)).toBeNull();
+    expect(screen.queryByText(/head position overall/i)).toBeNull();
     expect(screen.queryByTestId("parent-progress-category-trends")).toBeNull();
   });
 
-  it("renders the hero head position trend chart when there are two or more sessions", () => {
+  it("multi-session state: still no head-position chart (hero removed) but category trends appear", () => {
     const progress: ParentSwimmerProgressResponse = {
       ...emptyProgress,
       headPositionOverall: 4,
@@ -372,11 +375,9 @@ describe("ParentSwimmerProgressContent — charts", () => {
         scoreHistory={makeHistory([2, 3, 4])}
       />,
     );
-    const chart = screen.getByTestId("parent-progress-head-position-trend");
-    expect(chart).toBeInTheDocument();
-    // Hero chart renders its title as a template literal in an SVG <title> and
-    // a visible eyebrow <p>. One or the other reads with the right text.
-    expect(chart.textContent).toMatch(/Head position overall/i);
+    expect(screen.queryByTestId("parent-progress-head-position-trend")).toBeNull();
+    expect(screen.queryByText(/head position overall/i)).toBeNull();
+    expect(screen.getByTestId("parent-progress-category-trends")).toBeInTheDocument();
   });
 
   it("renders the category trends grid when there are two or more sessions", () => {

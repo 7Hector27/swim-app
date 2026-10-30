@@ -8,6 +8,7 @@ import { fetchHousehold } from "@/lib/api/households";
 import { fetchUpcomingLessons, fetchPastLessonsResult } from "@/lib/api/lessons";
 import {
   fetchParentPersonalBests,
+  fetchParentScoreHistory,
   fetchParentSwimmerProgress,
 } from "@/lib/api/parentProgress";
 import { fetchSwimmer } from "@/lib/api/swimmers";
@@ -36,6 +37,7 @@ export default async function SwimmerProfilePage({ params }: Props) {
     clubs,
     progressResult,
     personalBestsResult,
+    scoreHistoryResult,
     upcoming,
     past,
   ] = await Promise.all([
@@ -44,6 +46,7 @@ export default async function SwimmerProfilePage({ params }: Props) {
     fetchClubs(token),
     fetchParentSwimmerProgress(id, token),
     fetchParentPersonalBests(id, token),
+    fetchParentScoreHistory(id, token),
     fetchUpcomingLessons(token),
     fetchPastLessonsResult(token),
   ]);
@@ -62,6 +65,9 @@ export default async function SwimmerProfilePage({ params }: Props) {
       householdRole={household.myRole}
       clubs={clubs}
       progress={progressResult.ok ? { ok: true, data: progressResult.data } : { ok: false }}
+      scoreHistory={
+        scoreHistoryResult.ok ? { ok: true, data: scoreHistoryResult.data } : { ok: false }
+      }
       personalBests={
         personalBestsResult.ok ? { ok: true, data: personalBestsResult.data } : { ok: false }
       }

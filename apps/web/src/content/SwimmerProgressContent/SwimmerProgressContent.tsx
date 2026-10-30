@@ -5,12 +5,11 @@ import type {
   ScoreHistoryResponse,
   SwimmerProgressResponse,
 } from "@swim-app/shared";
-import HeroTrendChart from "@/components/HeroTrendChart";
 import CategoryTrendsGrid from "@/components/CategoryTrendsGrid";
+import CollapsibleCategory from "@/components/CollapsibleCategory";
 import StartProgression from "@/components/StartProgression";
 import {
   categoryTrendSeries,
-  headPositionSeries,
   latestCategorySnapshot,
   startSeries,
 } from "@/lib/progressCharts";
@@ -22,7 +21,6 @@ import SkillRow from "./SkillRow";
 import WhatToWorkOn from "./WhatToWorkOn";
 import {
   faultTagFrequency,
-  headPositionTrailingDelta,
   sessionCadence,
 } from "./helpers";
 
@@ -55,11 +53,9 @@ export default function SwimmerProgressContent({
   nowIso,
 }: SwimmerProgressContentProps) {
   const now = nowIso !== undefined ? new Date(nowIso) : new Date();
-  const headPosPoints = headPositionSeries(scoreHistory);
   const categorySnapshot = latestCategorySnapshot(scoreHistory);
   const categoryTrends = categoryTrendSeries(scoreHistory);
   const starts = startSeries(scoreHistory);
-  const trailing = headPositionTrailingDelta(progress, scoreHistory);
   const faultTags = faultTagFrequency(progress);
   const cadence = sessionCadence(progress, now);
 
@@ -99,24 +95,6 @@ export default function SwimmerProgressContent({
           <div className="grid gap-6 tablet:gap-10 tablet:grid-cols-[7fr_5fr] items-start">
             <div className="flex flex-col gap-6 min-w-0">
               <WhatToWorkOn priorities={progress.coachingPriorities} swimmerId={swimmer.id} />
-
-              <section
-                className="p-4 tablet:p-6 rounded-[var(--radius-card)] border"
-                style={{ borderColor: "var(--color-border)" }}
-              >
-                <HeroTrendChart
-                  title="Head position overall"
-                  current={progress.headPositionOverall}
-                  points={headPosPoints}
-                  editContext={editContext}
-                  {...(trailing !== undefined && { trailingDeltaLabel: trailing })}
-                />
-                {isOneEvaluation && (
-                  <p className="mt-3 text-xs text-text-secondary italic">
-                    Trends unlock after the second rating. Rate again next session.
-                  </p>
-                )}
-              </section>
 
               <section className="flex flex-col gap-3">
                 <h2 className="text-lg font-heading text-text" style={{ fontVariationSettings: "\"SOFT\" 100, \"WONK\" 0" }}>
@@ -194,33 +172,41 @@ export default function SwimmerProgressContent({
               <h2 className="text-lg font-heading text-text" style={{ fontVariationSettings: "\"SOFT\" 100, \"WONK\" 0" }}>
                 Skills
               </h2>
-              {skillsByCategory.map((bucket) => (
-                <details key={bucket.id} className="group" open>
-                  <summary
-                    className="text-sm font-semibold cursor-pointer list-none flex items-center gap-2 py-2 min-h-[44px] border-b"
-                    style={{ color: "var(--color-text)", borderColor: "var(--color-border)" }}
+              {skillsByCategory.map((bucket) => {
+                const bucketSlugs = bucket.skills.map((skill) => skill.slug);
+                return (
+                  <CollapsibleCategory
+                    key={bucket.id}
+                    className="group"
+                    categorySlugs={bucketSlugs}
+                    summaryClassName="text-sm font-semibold cursor-pointer list-none flex items-center gap-2 py-2 min-h-[44px] border-b"
+                    summaryStyle={{ color: "var(--color-text)", borderColor: "var(--color-border)" }}
+                    summary={(
+                      <>
+                        <span aria-hidden="true" className="transition-transform duration-200 group-open:rotate-90">
+                          ›
+                        </span>
+                        <span>{bucket.name}</span>
+                        <span className="text-xs text-text-secondary ml-auto">
+                          {bucket.skills.length} rated
+                        </span>
+                      </>
+                    )}
                   >
-                    <span aria-hidden="true" className="transition-transform duration-200 group-open:rotate-90">
-                      ›
-                    </span>
-                    <span>{bucket.name}</span>
-                    <span className="text-xs text-text-secondary ml-auto">
-                      {bucket.skills.length} rated
-                    </span>
-                  </summary>
-                  <ul className="flex flex-col">
-                    {bucket.skills.map((skill) => (
-                      <SkillRow
-                        key={skill.skillId}
-                        skill={skill}
-                        swimmerId={swimmer.id}
-                        nowIso={now.toISOString()}
-                        editContext={editContext}
-                      />
-                    ))}
-                  </ul>
-                </details>
-              ))}
+                    <ul className="flex flex-col">
+                      {bucket.skills.map((skill) => (
+                        <SkillRow
+                          key={skill.skillId}
+                          skill={skill}
+                          swimmerId={swimmer.id}
+                          nowIso={now.toISOString()}
+                          editContext={editContext}
+                        />
+                      ))}
+                    </ul>
+                  </CollapsibleCategory>
+                );
+              })}
             </div>
           </div>
         </div>

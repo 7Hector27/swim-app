@@ -196,7 +196,7 @@ describe("SwimmerProgressContent — empty state", () => {
 });
 
 describe("SwimmerProgressContent — one-evaluation state", () => {
-  it("renders the page with the trend-unlock hint and a single-point hero", () => {
+  it("renders the page without the removed head-position hero chart", () => {
     const progress: SwimmerProgressResponse = {
       ...emptyProgress,
       skills: [
@@ -227,9 +227,11 @@ describe("SwimmerProgressContent — one-evaluation state", () => {
       measurements: [],
     };
     renderPage({ progress, scoreHistory });
-    expect(screen.getAllByText(/head position overall/i).length).toBeGreaterThan(0);
-    expect(screen.getByText(/trends unlock after the second rating/i)).toBeInTheDocument();
-    // The expandable per-skill row is present.
+    // The hero head-position chart was removed; the page now opens on the
+    // "Category snapshot" heading instead.
+    expect(screen.queryByText(/head position overall/i)).toBeNull();
+    expect(screen.getByRole("heading", { name: /category snapshot/i })).toBeInTheDocument();
+    // The expandable per-skill row is present (collapsed by default).
     expect(screen.getByText("Freestyle Kick")).toBeInTheDocument();
   });
 });
@@ -350,7 +352,8 @@ describe("SwimmerProgressContent — sections", () => {
     renderPage({ progress, scoreHistory, golfScore });
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(/Maya.*Progress/);
     expect(screen.getByRole("heading", { name: /what to work on next/i })).toBeInTheDocument();
-    expect(screen.getAllByText(/head position overall/i).length).toBeGreaterThan(0);
+    // The Head position overall hero chart was removed.
+    expect(screen.queryByText(/head position overall/i)).toBeNull();
     expect(screen.getByRole("heading", { name: /category snapshot/i })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /^starts$/i })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /^golf score$/i })).toBeInTheDocument();
@@ -516,20 +519,6 @@ describe("SwimmerProgressContent — Edit affordances (ADR 032)", () => {
     faultTrends: [],
     measurements: [],
   };
-
-  it("hero chart renders an Edit link for the selected point with a sanitized returnTo", () => {
-    renderPage({ progress, scoreHistory });
-    // Simulate selecting the latest head-position point by clicking its
-    // enlarged hitbox. The tooltip-driven detail line is unselected by default.
-    const hitboxes = document.querySelectorAll("circle[pointer-events='all']");
-    expect(hitboxes.length).toBeGreaterThan(0);
-    fireEvent.pointerDown(hitboxes[hitboxes.length - 1]!);
-    const link = screen.getByTestId("hero-trend-edit-link");
-    const href = link.getAttribute("href") ?? "";
-    expect(href).toContain(`/coach/swimmers/${SWIMMER_ID}/evaluate`);
-    expect(href).toContain(`editSession=${SESSION_B}`);
-    expect(href).toContain(`returnTo=${encodeURIComponent(`/coach/swimmers/${SWIMMER_ID}/progress`)}`);
-  });
 
   it("SkillChart renders hollow-ring points for edited history rows", () => {
     renderPage({ progress, scoreHistory });

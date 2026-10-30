@@ -193,6 +193,7 @@ describe("Past lessons render on the swimmer profile page", () => {
         householdRole="owner"
         clubs={[]}
         progress={{ ok: true, data: emptyProgress }}
+        scoreHistory={{ ok: true, data: { points: [], recentChanges: [], milestones: [], faultTrends: [], measurements: [] } }}
         personalBests={{ ok: true, data: { personalBests: [] } }}
         upcomingLessons={{ ok: true, data: [] }}
         pastLessons={{ ok: true, data: [pastLesson] }}

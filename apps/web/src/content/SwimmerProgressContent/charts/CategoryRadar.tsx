@@ -18,12 +18,18 @@ const CY = VB_HEIGHT / 2;
 const LABEL_DISTANCE = 150;
 const SHAPE_RADIUS = 115;
 // Base font-size (viewBox units). Media queries scale this up one step at
-// tablet and desktop; see the <style> block below. The LINE_HEIGHT ratio
-// below the base keeps two-line wraps from colliding at any font size.
-const FONT_SIZE_PHONE = 13;
-const FONT_SIZE_TABLET = 14;
-const FONT_SIZE_DESKTOP = 15;
-const LINE_HEIGHT = 16;
+// tablet and desktop; see the <style> block below. One-notch-up tier from
+// the original 13/14/15: the radar now also renders inside narrow
+// sidebar-sized containers (the parent Progress card) where the smaller
+// end of that scale read microscopic. The LINE_HEIGHT ratio keeps two-line
+// wraps from colliding at any font size, and the invariant "label bbox
+// stays inside the viewBox" still holds — the longest two-line label at
+// desktop (font 16) measures ~138.5 user units vs ~140 units of label
+// anchor room, verified in categoryRadar.test.tsx.
+const FONT_SIZE_PHONE = 14;
+const FONT_SIZE_TABLET = 15;
+const FONT_SIZE_DESKTOP = 16;
+const LINE_HEIGHT = 17;
 
 // Split a category name onto two lines on an ampersand ("Breathing &" /
 // "Coordination") or on the space nearest the middle when the name is long

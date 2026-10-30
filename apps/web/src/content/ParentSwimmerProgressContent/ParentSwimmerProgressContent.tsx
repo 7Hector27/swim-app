@@ -5,12 +5,11 @@ import type {
   ScoreHistoryResponse,
   StartGradeResult,
 } from "@swim-app/shared";
-import HeroTrendChart from "@/components/HeroTrendChart";
 import CategoryTrendsGrid from "@/components/CategoryTrendsGrid";
+import CollapsibleCategory from "@/components/CollapsibleCategory";
 import StartProgression from "@/components/StartProgression";
 import {
   categoryTrendSeries,
-  headPositionSeries,
   startSeries,
 } from "@/lib/progressCharts";
 import ParentSkillProgressRow from "./ParentSkillProgressRow";
@@ -50,7 +49,6 @@ export default function ParentSwimmerProgressContent({
   categories,
   scoreHistory = EMPTY_SCORE_HISTORY,
 }: ParentSwimmerProgressContentProps) {
-  const headPosPoints = headPositionSeries(scoreHistory);
   const categoryTrends = categoryTrendSeries(scoreHistory);
   const startTrends = startSeries(scoreHistory);
   const totalPoints = scoreHistory.points.length;
@@ -188,35 +186,6 @@ export default function ParentSwimmerProgressContent({
             </section>
           )}
 
-          {/* Head position overall. Trend chart when there's enough data,
-              single number otherwise. The chart carries the current value as
-              its hero figure, so the plain fallback only shows when the
-              trend hasn't unlocked. */}
-          {progress.headPositionOverall !== null && hasEnoughForTrend && (
-            <section
-              className="p-4 tablet:p-6 rounded-[var(--radius-card)] border"
-              style={{ borderColor: "var(--color-border)" }}
-              data-testid="parent-progress-head-position-trend"
-            >
-              <HeroTrendChart
-                title="Head position overall"
-                current={progress.headPositionOverall}
-                points={headPosPoints}
-              />
-            </section>
-          )}
-          {progress.headPositionOverall !== null && !hasEnoughForTrend && (
-            <section className="flex flex-col gap-1">
-              <h2 className="font-bold text-sm text-text">Head Position Overall</h2>
-              <p className="text-2xl font-bold text-accent">{progress.headPositionOverall}</p>
-              {totalPoints === 1 && (
-                <p className="text-xs text-text-secondary italic">
-                  The trend unlocks after the second rating.
-                </p>
-              )}
-            </section>
-          )}
-
           {/* Category trends over time. Only renders when there are two or
               more non-voided evaluations (otherwise every mini-line would be
               a dot and the section would read as empty). */}
@@ -291,7 +260,9 @@ export default function ParentSwimmerProgressContent({
             </section>
           )}
 
-          {/* Category skill cards */}
+          {/* Category skill cards. Collapsed by default; a #skill-<slug>
+              hash on page load opens the matching category and scrolls to
+              the row. */}
           {orderedCategories.map(({ id, categoryName, skills: catSkills }) => {
             const assessedIds = new Set(catSkills.map((skill) => skill.skillId));
             const catFromCategories = categories.find((category) => category.id === id);
@@ -305,11 +276,29 @@ export default function ParentSwimmerProgressContent({
                 )
               : [];
 
+            const categorySlugs = [
+              ...catSkills.map((skill) => skill.slug),
+              ...notAssessedSkills.map((skill) => skill.slug),
+            ];
+
             return (
-              <section key={id} className="flex flex-col gap-2">
-                <h2 className="font-bold text-sm text-text">
-                  {categoryName}
-                </h2>
+              <CollapsibleCategory
+                key={id}
+                className="group flex flex-col gap-2"
+                categorySlugs={categorySlugs}
+                summaryClassName="font-bold text-sm text-text cursor-pointer list-none flex items-center gap-2 min-h-[44px]"
+                summary={(
+                  <>
+                    <span aria-hidden="true" className="transition-transform duration-200 group-open:rotate-90">
+                      ›
+                    </span>
+                    <span>{categoryName}</span>
+                    <span className="text-xs font-normal text-text-secondary ml-auto">
+                      {catSkills.length} assessed
+                    </span>
+                  </>
+                )}
+              >
                 <ul className="flex flex-col gap-0">
                   {catSkills.map((skill) => (
                     <ParentSkillProgressRow key={skill.skillId} skill={skill} />
@@ -317,14 +306,15 @@ export default function ParentSwimmerProgressContent({
                   {notAssessedSkills.map((skill) => (
                     <li
                       key={skill.id}
-                      className="flex items-center justify-between border-b border-border py-2 text-sm min-h-[44px]"
+                      id={`skill-${skill.slug}`}
+                      className="flex items-center justify-between border-b border-border py-2 text-sm min-h-[44px] scroll-mt-24"
                     >
                       <span className="text-text">{skill.name}</span>
                       <span className="text-xs text-text-secondary">Not assessed</span>
                     </li>
                   ))}
                 </ul>
-              </section>
+              </CollapsibleCategory>
             );
           })}
         </div>
