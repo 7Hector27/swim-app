@@ -1,6 +1,7 @@
 "use client";
 
 import { formatSessionDate } from "@/lib/progressCharts";
+import { realDateXFor, stepLinePath } from "@/lib/stepChart";
 
 interface CategoryTrendPoint {
   sessionDate: string;
@@ -53,9 +54,12 @@ function MiniLine({ points }: { points: CategoryTrendPoint[] }) {
     );
   }
 
-  const xFor = (index: number): number => padLeft + (index / (points.length - 1)) * plotWidth;
+  const xForDate = realDateXFor(points.map((pointItem) => pointItem.sessionDate), padLeft, plotWidth);
   const yFor = (value: number): number => padTop + plotHeight - ((value - 1) / 4) * plotHeight;
 
+  // Build step-line segments keyed off real dates. Null-valued points break
+  // the current segment the same way they did on the index-based version so
+  // a measurement gap renders as a break, not a stale carried value.
   const segments: Array<Array<{ x: number; y: number; index: number }>> = [];
   let currentSegment: Array<{ x: number; y: number; index: number }> = [];
   points.forEach((pointItem, index) => {
@@ -65,7 +69,7 @@ function MiniLine({ points }: { points: CategoryTrendPoint[] }) {
         currentSegment = [];
       }
     } else {
-      currentSegment.push({ x: xFor(index), y: yFor(pointItem.value), index });
+      currentSegment.push({ x: xForDate(pointItem.sessionDate), y: yFor(pointItem.value), index });
     }
   });
   if (currentSegment.length > 0) segments.push(currentSegment);
@@ -84,9 +88,9 @@ function MiniLine({ points }: { points: CategoryTrendPoint[] }) {
         className="shrink-0"
       >
         {segments.map((segment, segmentIndex) => (
-          <polyline
+          <path
             key={segmentIndex}
-            points={segment.map((pointCoord) => `${pointCoord.x},${pointCoord.y}`).join(" ")}
+            d={stepLinePath(segment)}
             fill="none"
             stroke="var(--color-accent)"
             strokeWidth={1.75}
@@ -100,7 +104,7 @@ function MiniLine({ points }: { points: CategoryTrendPoint[] }) {
             <g key={`${pointItem.sessionDate}-${index}`}>
               <title>{`${formatSessionDate(pointItem.sessionDate)} · ${pointItem.value.toFixed(1)}`}</title>
               <circle
-                cx={xFor(index)}
+                cx={xForDate(pointItem.sessionDate)}
                 cy={yFor(pointItem.value)}
                 r={2.5}
                 fill="var(--color-surface-soft)"

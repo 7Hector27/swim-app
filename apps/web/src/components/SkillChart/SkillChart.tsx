@@ -2,6 +2,7 @@
 
 import type { SkillGrade } from "@swim-app/shared";
 import { evaluationEditHref, type EvaluationEditContext } from "@/lib/evaluationEditHref";
+import { realDateXFor, stepLinePath } from "@/lib/stepChart";
 
 const CONTEXT_COLORS: Record<string, string> = {
   drill: "var(--color-text-secondary)",
@@ -75,22 +76,25 @@ export default function SkillChart({ history, skillName, editContext }: SkillCha
   const plotWidth = width - padLeft - padRight;
   const plotHeight = height - padTop - padBottom;
 
-  function xFor(index: number): number {
-    return padLeft + (index / Math.max(points.length - 1, 1)) * plotWidth;
-  }
+  // X-axis is spaced by real elapsed calendar days so cadence gaps are
+  // visible on the chart. Step-line rendering means the grade is drawn as
+  // "held" between sessions, not interpolated — the grade didn't drift
+  // between measurements, it stayed what it was until a new measurement.
+  const xForDate = realDateXFor(points.map((point) => point.sessionDate), padLeft, plotWidth);
 
   function yFor(value: number): number {
     return padTop + plotHeight - ((value / 5) * plotHeight);
   }
 
-  const linePoints = points
-    .map((point, index) => {
+  const linePathPoints: Array<{ x: number; y: number }> = points
+    .map((point) => {
       const numericGrade = point.notLegal ? 0 : point.noConcept ? null : point.grade;
       if (numericGrade === null) return null;
-      return `${xFor(index).toFixed(1)},${yFor(numericGrade).toFixed(1)}`;
+      return { x: xForDate(point.sessionDate), y: yFor(numericGrade) };
     })
-    .filter((coord): coord is string => coord !== null)
-    .join(" ");
+    .filter((pointCoord): pointCoord is { x: number; y: number } => pointCoord !== null);
+
+  const linePath = stepLinePath(linePathPoints);
 
   return (
     <div className="flex flex-col gap-3">
@@ -136,9 +140,9 @@ export default function SkillChart({ history, skillName, editContext }: SkillCha
         ))}
 
         {/* Trend line */}
-        {linePoints && (
-          <polyline
-            points={linePoints}
+        {linePath && (
+          <path
+            d={linePath}
             fill="none"
             stroke="var(--color-accent)"
             strokeWidth={1.5}
@@ -148,9 +152,9 @@ export default function SkillChart({ history, skillName, editContext }: SkillCha
         )}
 
         {/* Data points */}
-        {points.map((point, index) => {
+        {points.map((point) => {
           const numericGrade = point.notLegal ? 0 : point.noConcept ? null : point.grade;
-          const cx = xFor(index);
+          const cx = xForDate(point.sessionDate);
           if (point.notLegal) {
             return (
               <text

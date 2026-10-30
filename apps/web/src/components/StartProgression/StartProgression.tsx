@@ -4,6 +4,7 @@ import { useId, useRef, useState } from "react";
 import type { StartGradeResult } from "@swim-app/shared";
 import { formatMonthDay, formatSessionDate } from "@/lib/progressCharts";
 import { evaluationEditHref, type EvaluationEditContext } from "@/lib/evaluationEditHref";
+import { realDateXFor, stepLinePath } from "@/lib/stepChart";
 
 interface StartProgressionProps {
   name: string;
@@ -30,8 +31,15 @@ export default function StartProgression({ name, points, editContext }: StartPro
   const plotWidth = width - padLeft - padRight;
   const plotHeight = height - padTop - padBottom;
 
-  const xFor = (index: number): number =>
-    padLeft + (points.length <= 1 ? plotWidth / 2 : (index / (points.length - 1)) * plotWidth);
+  // Real-date spacing so a cadence gap shows as a visible gap. The step-line
+  // treatment (built below from the graded segments) renders the grade as
+  // "held" between sessions rather than smoothly interpolated.
+  const xForDate = realDateXFor(points.map((pointItem) => pointItem.sessionDate), padLeft, plotWidth);
+  const xFor = (index: number): number => {
+    const point = points[index];
+    if (!point) return padLeft + plotWidth / 2;
+    return xForDate(point.sessionDate);
+  };
   const yFor = (value: number): number => padTop + plotHeight - ((value - 1) / 4) * plotHeight;
 
   const latest = points[points.length - 1]?.grade;
@@ -170,8 +178,8 @@ export default function StartProgression({ name, points, editContext }: StartPro
           ))}
           {gradedSegments.map((segment, segmentIndex) => (
             <g key={segmentIndex}>
-              <polyline
-                points={segment.map((pointCoord) => `${pointCoord.x},${pointCoord.y}`).join(" ")}
+              <path
+                d={stepLinePath(segment)}
                 fill="none"
                 stroke="var(--color-accent)"
                 strokeWidth={2.25}

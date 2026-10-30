@@ -4,6 +4,7 @@ import { useId, useState } from "react";
 import type { GolfScoreTrend } from "@swim-app/shared";
 import { formatMonthDay, formatSessionDate } from "@/lib/progressCharts";
 import { evaluationEditHref, type EvaluationEditContext } from "@/lib/evaluationEditHref";
+import { realDateXFor, stepLinePath } from "@/lib/stepChart";
 
 interface GolfScoreCardProps {
   trend: GolfScoreTrend;
@@ -73,17 +74,28 @@ function GolfCategory({
 
   const yFor = (value: number): number =>
     padTop + plotHeight - ((value - yMin) / (yMax - yMin)) * plotHeight;
-  const xFor = (index: number): number =>
-    padLeft + (categoryTrend.points.length <= 1 ? plotWidth / 2 : (index / (categoryTrend.points.length - 1)) * plotWidth);
+  // Real-date spacing + step-line path so a swimmer's time "holds" between
+  // meets rather than being drawn as if it slid continuously. Keeps the
+  // existing per-point dots clickable.
+  const xForDate = realDateXFor(
+    categoryTrend.points.map((pointItem) => pointItem.sessionDate),
+    padLeft,
+    plotWidth,
+  );
+  const xFor = (index: number): number => {
+    const point = categoryTrend.points[index];
+    if (!point) return padLeft + plotWidth / 2;
+    return xForDate(point.sessionDate);
+  };
 
-  const linePoints = categoryTrend.points
-    .map((pointItem, index) => {
+  const stepPathPoints = categoryTrend.points
+    .map((pointItem) => {
       const numericValue = Number(pointItem.measurementValue);
       if (!Number.isFinite(numericValue)) return null;
-      return `${xFor(index).toFixed(1)},${yFor(numericValue).toFixed(1)}`;
+      return { x: xForDate(pointItem.sessionDate), y: yFor(numericValue) };
     })
-    .filter((coord): coord is string => coord !== null)
-    .join(" ");
+    .filter((pointCoord): pointCoord is { x: number; y: number } => pointCoord !== null);
+  const stepPath = stepLinePath(stepPathPoints);
 
   const latest = categoryTrend.points[categoryTrend.points.length - 1];
   const latestValue = latest ? Number(latest.measurementValue) : null;
@@ -182,9 +194,9 @@ function GolfCategory({
               opacity={0.75}
             />
           )}
-          {linePoints && (
-            <polyline
-              points={linePoints}
+          {stepPath && (
+            <path
+              d={stepPath}
               fill="none"
               stroke="var(--color-accent)"
               strokeWidth={2.25}
