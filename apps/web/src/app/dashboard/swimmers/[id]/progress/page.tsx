@@ -48,24 +48,19 @@ export default async function ParentSwimmerProgressPage({ params }: Props) {
   }
 
   const categories = categoriesResult.ok ? categoriesResult.categories : [];
-  // Charts gracefully degrade when score-history fails: the page still renders
-  // without them (same pattern as the coach progress page).
-  const scoreHistory = scoreHistoryResult.ok
-    ? scoreHistoryResult.data
-    : {
-        points: [],
-        recentChanges: [],
-        milestones: [],
-        faultTrends: [],
-        measurements: [],
-      };
 
+  // Charts gracefully degrade when score-history fails: when the fetch
+  // errors we omit the prop and let ParentSwimmerProgressContent fall back
+  // to its own EMPTY_SCORE_HISTORY default. Keeping the empty-shape in one
+  // place avoids a drift risk where the fallback here didn't match the
+  // parent-facing schema (ADR 032 strips sessionId and faultTrends from
+  // the parent response).
   return (
     <ParentSwimmerProgressContent
       swimmer={swimmerResult.swimmer}
       progress={progressResult.data}
       categories={categories}
-      scoreHistory={scoreHistory}
+      {...(scoreHistoryResult.ok && { scoreHistory: scoreHistoryResult.data })}
     />
   );
 }
