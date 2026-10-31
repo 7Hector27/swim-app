@@ -19,6 +19,7 @@
 import { Router } from "express";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import {
+  CoachNotificationListQuerySchema,
   CoachNotificationListResponseSchema,
   CoachNotificationPreferencesPatchSchema,
   CoachNotificationUnreadCountResponseSchema,
@@ -26,6 +27,7 @@ import {
   CoachPushSubscriptionRegisterSchema,
   CoachPushTestResponseSchema,
   type CoachNotificationListItem,
+  type CoachNotificationListQuery,
   type CoachNotificationListResponse,
   type CoachNotificationPreferences,
   type CoachPushSubscriptionListItem,
@@ -282,20 +284,32 @@ function humanizePushError(
 
 // ── In-app notification list ─────────────────────────────────────────────────
 
-// 20 items is a dropdown page. The full /coach/notifications page re-queries
-// with the same endpoint — in v1 it also caps at 20; pagination is a
-// follow-up. The sort order (`read_at NULLS FIRST, created_at DESC`) matches
-// the partial index coach_notifications_list_idx.
-const LIST_LIMIT = 20;
+// Default page size for both the bell dropdown and the full
+// /coach/notifications page. The dropdown always asks for the first page
+// unread-first; the page asks chronologically and paginates with ?offset.
+const DEFAULT_LIMIT = 20;
 
 coachAlertsRouter.get(
   "/notifications",
-  validate({}),
+  validate({ query: CoachNotificationListQuerySchema }),
   asyncHandler(async (req, res) => {
     // Read-only — a notifications list fetch should never create a
     // preferences row. Only PATCH /notifications/preferences and the
     // sender write. See services/notifications/preferences.ts.
     const prefs = await readCoachNotificationPreferences(req.profile.id);
+
+    const query = req.query as unknown as CoachNotificationListQuery;
+    const order = query.order ?? "unread_first";
+    const offset = query.offset ?? 0;
+    const limit = query.limit ?? DEFAULT_LIMIT;
+    // Ask for one extra row so we can tell the caller whether there is
+    // another page without a second count query.
+    const sliceSize = limit + 1;
+
+    const orderBy =
+      order === "chronological"
+        ? [desc(coachNotifications.createdAt)]
+        : [sql`${coachNotifications.readAt} IS NULL DESC`, desc(coachNotifications.createdAt)];
 
     const rows = await db
       .select({
@@ -311,8 +325,12 @@ coachAlertsRouter.get(
       })
       .from(coachNotifications)
       .where(eq(coachNotifications.profileId, req.profile.id))
-      .orderBy(sql`${coachNotifications.readAt} IS NULL DESC`, desc(coachNotifications.createdAt))
-      .limit(LIST_LIMIT);
+      .orderBy(...orderBy)
+      .offset(offset)
+      .limit(sliceSize);
+
+    const hasMore = rows.length > limit;
+    const pageRows = hasMore ? rows.slice(0, limit) : rows;
 
     const unreadCountRows = await db
       .select({ count: sql<number>`count(*)::int` })
@@ -325,11 +343,11 @@ coachAlertsRouter.get(
       );
     const unreadCount = Number(unreadCountRows[0]?.count ?? 0);
 
-    const items: CoachNotificationListItem[] = rows.map((row) =>
+    const items: CoachNotificationListItem[] = pageRows.map((row) =>
       buildListItem(row, prefs.lockScreenDetail),
     );
 
-    const body: CoachNotificationListResponse = { items, unreadCount };
+    const body: CoachNotificationListResponse = { items, unreadCount, hasMore };
     res.json(CoachNotificationListResponseSchema.parse(body));
   }),
 );

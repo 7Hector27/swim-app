@@ -930,9 +930,10 @@ describe("DELETE /coach/seasons/:id", () => {
 
     expect(res.status).toBe(200);
     expect(res.body.warnings).toHaveLength(1);
-    // After seasons are deleted, the default hours (Tue–Fri 16:00–20:00) apply.
-    // 2099-06-10 is a Wednesday, so the day is open per defaults — but the lesson
-    // starts at 15:00 PDT, outside the 16:00 default window → outside_hours.
+    // After seasons are deleted, the default hours (Tue to Fri, 16:00 to 20:00)
+    // apply. 2099-06-10 is a Wednesday, so the day is open per defaults, but
+    // the lesson starts at 15:00 PDT, outside the 16:00 default window, so the
+    // reason is outside_hours.
     expect(res.body.warnings[0]).toMatchObject({
       lessonId: LESSON_A_ID,
       reason: "outside_hours",
@@ -954,6 +955,130 @@ describe("DELETE /coach/seasons/:id", () => {
       .set("Authorization", "Bearer token");
 
     expect(res.status).toBe(404);
+  });
+
+  it("returns 403 for a parent (coach-only)", async () => {
+    authAs(parentProfile);
+    mockDbSelect.mockReturnValueOnce(requireUserSelect(parentProfile));
+
+    const res = await request(app)
+      .delete(`/coach/seasons/${SEASON_A_ID}`)
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(403);
+    // Must not reach the delete handler at all when auth rejects.
+    expect(mockDbDelete).not.toHaveBeenCalled();
+  });
+
+  it("after delete the slot engine falls back to defaults for those dates", async () => {
+    // Verifies the user-facing promise: deleting a season does not just
+    // return 200; GET /coach/availability-preview re-queries live DB
+    // state and the previously-season-covered dates immediately read
+    // the default hours (Tue to Fri, 16:00 to 20:00 per fixtures).
+    authAs(coachProfile);
+
+    const deletedSeason = seasonRow();
+
+    // DELETE path: requireUser, then delete handler reads seasons /
+    // overrides / config / upcoming for the warning computation.
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(coachProfile))
+      .mockReturnValueOnce(fromResolveSelect([]))
+      .mockReturnValueOnce(fromResolveSelect([]))
+      .mockReturnValueOnce(simpleSelect([availabilityConfigRow]))
+      .mockReturnValueOnce(innerJoinWhereSelect([]))
+      // Preview GET path: requireUser, then the handler reads seasons,
+      // overrides, config.
+      .mockReturnValueOnce(requireUserSelect(coachProfile))
+      .mockReturnValueOnce(fromResolveSelect([]))
+      .mockReturnValueOnce(fromResolveSelect([]))
+      .mockReturnValueOnce(simpleSelect([availabilityConfigRow]));
+
+    const deleteReturning = vi.fn().mockResolvedValue([deletedSeason]);
+    const deleteWhere = vi.fn().mockReturnValue({ returning: deleteReturning });
+    mockDbDelete.mockReturnValue({ where: deleteWhere });
+
+    const deleteRes = await request(app)
+      .delete(`/coach/seasons/${SEASON_A_ID}`)
+      .set("Authorization", "Bearer token");
+    expect(deleteRes.status).toBe(200);
+
+    // 2099-06-10 is a Wednesday (a default teaching day). With no
+    // seasons left the preview reads straight from defaults.
+    const previewRes = await request(app)
+      .get("/coach/availability-preview?from=2099-06-10&days=1")
+      .set("Authorization", "Bearer token");
+    expect(previewRes.status).toBe(200);
+    expect(previewRes.body.days).toHaveLength(1);
+    expect(previewRes.body.days[0]).toMatchObject({
+      date: "2099-06-10",
+      state: "open",
+      windows: [{ start: "16:00", end: "20:00" }],
+    });
+  });
+});
+
+describe("GET /coach/seasons/:id/delete-impact", () => {
+  it("returns warnings for lessons that would fall outside defaults, without deleting", async () => {
+    authAs(coachProfile);
+
+    const existing = seasonRow();
+    const lessonRow = {
+      id: LESSON_A_ID,
+      startsAt: new Date("2099-06-10T22:00:00.000Z"),
+      durationMinutes: 30,
+      poolName: "Egret Park",
+    };
+    const swimmerJoinRows = [{ lessonId: LESSON_A_ID, firstName: "Ava" }];
+
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(coachProfile))
+      .mockReturnValueOnce(whereResolveSelect([existing]))
+      .mockReturnValueOnce(fromResolveSelect([existing]))
+      .mockReturnValueOnce(fromResolveSelect([]))
+      .mockReturnValueOnce(simpleSelect([availabilityConfigRow]))
+      .mockReturnValueOnce(innerJoinWhereSelect([lessonRow]))
+      .mockReturnValueOnce(innerJoinWhereSelect(swimmerJoinRows));
+
+    const res = await request(app)
+      .get(`/coach/seasons/${SEASON_A_ID}/delete-impact`)
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(200);
+    expect(res.body.warnings).toHaveLength(1);
+    expect(res.body.warnings[0]).toMatchObject({
+      lessonId: LESSON_A_ID,
+      reason: "outside_hours",
+      swimmerFirstNames: ["Ava"],
+      poolName: "Egret Park",
+    });
+    // Dry-run: no delete must have been issued.
+    expect(mockDbDelete).not.toHaveBeenCalled();
+  });
+
+  it("returns 404 when the season does not exist", async () => {
+    authAs(coachProfile);
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(coachProfile))
+      .mockReturnValueOnce(whereResolveSelect([]));
+
+    const res = await request(app)
+      .get(`/coach/seasons/${SEASON_A_ID}/delete-impact`)
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(404);
+    expect(mockDbDelete).not.toHaveBeenCalled();
+  });
+
+  it("returns 403 for a parent (coach-only)", async () => {
+    authAs(parentProfile);
+    mockDbSelect.mockReturnValueOnce(requireUserSelect(parentProfile));
+
+    const res = await request(app)
+      .get(`/coach/seasons/${SEASON_A_ID}/delete-impact`)
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(403);
   });
 });
 

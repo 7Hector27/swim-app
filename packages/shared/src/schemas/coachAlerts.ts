@@ -35,8 +35,22 @@ export type CoachNotificationListItem = z.infer<typeof CoachNotificationListItem
 export const CoachNotificationListResponseSchema = z.object({
   items: z.array(CoachNotificationListItemSchema),
   unreadCount: z.number().int().nonnegative(),
+  // Only set when the list is strictly chronological. `hasMore=true`
+  // means the next page can be fetched with ?offset=currentOffset+items.length.
+  hasMore: z.boolean().optional(),
 });
 export type CoachNotificationListResponse = z.infer<typeof CoachNotificationListResponseSchema>;
+
+// Query shape for GET /coach/notifications. `order` defaults to
+// `unread_first` (the bell dropdown's view); the full-page notifications
+// view asks for `chronological` with explicit offset/limit so date
+// grouping and the Load more button stay stable across refetches.
+export const CoachNotificationListQuerySchema = z.object({
+  order: z.enum(["unread_first", "chronological"]).optional(),
+  offset: z.coerce.number().int().nonnegative().optional(),
+  limit: z.coerce.number().int().positive().max(100).optional(),
+});
+export type CoachNotificationListQuery = z.infer<typeof CoachNotificationListQuerySchema>;
 
 export const CoachNotificationUnreadCountResponseSchema = z.object({
   count: z.number().int().nonnegative(),

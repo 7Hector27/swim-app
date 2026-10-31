@@ -20,6 +20,10 @@ interface Props {
     mode: "create" | "patch",
   ) => Promise<string | null>;
   isPending: boolean;
+  // Only set in edit mode. Clicking the quiet Delete button closes this
+  // modal and hands control to the parent, which opens a dedicated
+  // confirm step (DeleteSeasonConfirmModal) with the impact preview.
+  onDelete?: (season: SeasonWithIsCurrent) => void;
 }
 
 const DAY_OPTIONS = [
@@ -48,6 +52,7 @@ export default function SeasonFormModal({
   onCancel,
   onSubmit,
   isPending,
+  onDelete,
 }: Props) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [name, setName] = useState("");
@@ -380,6 +385,23 @@ export default function SeasonFormModal({
             {isPending ? "Saving…" : season === null ? "Add season" : "Save"}
           </button>
         </div>
+
+        {/* Quiet destructive action pinned to the bottom in edit mode so
+            it reads as a secondary path, not a sibling of Save. The
+            actual confirmation (with impact preview + solid red
+            confirm) lives in DeleteSeasonConfirmModal. */}
+        {season !== null && onDelete && (
+          <div className="pt-4 border-t border-border flex justify-center">
+            <button
+              type="button"
+              onClick={() => onDelete(season)}
+              disabled={isPending}
+              className="inline-flex items-center justify-center h-11 px-5 rounded-button border border-danger text-danger font-semibold text-sm transition-colors duration-150 hover:bg-surface-soft disabled:opacity-60"
+            >
+              Delete season
+            </button>
+          </div>
+        )}
       </form>
     </dialog>
   );

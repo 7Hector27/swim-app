@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { upcomingSummary } from "../content/CoachAvailabilityContent/seasonSummary";
+import {
+  formatSeasonTitle,
+  formatWeekdayLine,
+  formatWeekendLine,
+} from "../content/CoachAvailabilityContent/seasonSummary";
 import type { SeasonWithIsCurrent } from "@swim-app/shared";
 
 function makeSeason(overrides: Partial<SeasonWithIsCurrent> = {}): SeasonWithIsCurrent {
@@ -21,47 +25,90 @@ function makeSeason(overrides: Partial<SeasonWithIsCurrent> = {}): SeasonWithIsC
   };
 }
 
-describe("upcomingSummary", () => {
-  it("includes 'weekdays' and 'ends' when weekdayStartTime and weekdayEndTime are set", () => {
+describe("formatSeasonTitle", () => {
+  it("joins the season name with its start and end dates using 'to'", () => {
     const season = makeSeason({
-      weekdayStartTime: "15:00",
-      weekdayEndTime: "20:00",
+      name: "November",
+      startDate: "2026-11-01",
+      endDate: "2026-11-30",
     });
-    const result = upcomingSummary(season);
-    expect(result).toContain("weekdays");
-    expect(result).toContain("ends");
+    expect(formatSeasonTitle(season)).toBe("November · Nov 1 to Nov 30");
   });
 
-  it("does not include 'ends' when both end times are null", () => {
+  it("falls back to 'from <start>' when the end date is missing", () => {
+    // Empty string is not valid per the schema, but the formatter should
+    // still produce a readable title instead of 'Nov 1 to ' or a crash.
     const season = makeSeason({
-      weekdayStartTime: "15:00",
+      name: "Open-ended",
+      startDate: "2026-11-01",
+      endDate: "",
+    });
+    expect(formatSeasonTitle(season)).toBe("Open-ended · from Nov 1");
+  });
+});
+
+describe("formatWeekdayLine", () => {
+  it("renders the weekday range with 'to' when 3+ contiguous days are set", () => {
+    const season = makeSeason({
+      teachesDays: [2, 3, 4, 5], // Tue to Fri
+      weekdayStartTime: "14:00",
+      weekdayEndTime: "20:00",
+    });
+    expect(formatWeekdayLine(season)).toBe(
+      "Weekdays (Tue to Fri): 2:00 pm to 8:00 pm",
+    );
+  });
+
+  it("falls back to commas when the weekday selection is not contiguous", () => {
+    const season = makeSeason({
+      teachesDays: [1, 3, 5], // Mon, Wed, Fri
+      weekdayStartTime: "14:00",
+      weekdayEndTime: "20:00",
+    });
+    expect(formatWeekdayLine(season)).toBe(
+      "Weekdays (Mon, Wed, Fri): 2:00 pm to 8:00 pm",
+    );
+  });
+
+  it("renders 'Weekdays: off' when no weekday hours or days are set", () => {
+    const season = makeSeason({
+      teachesDays: [6, 7],
+      weekdayStartTime: null,
       weekdayEndTime: null,
+    });
+    expect(formatWeekdayLine(season)).toBe("Weekdays: off");
+  });
+});
+
+describe("formatWeekendLine", () => {
+  it("renders 'Weekends (Sat, Sun)' with the time range when both are set", () => {
+    const season = makeSeason({
+      teachesDays: [6, 7],
+      weekendStartTime: "11:00",
+      weekendEndTime: "16:00",
+    });
+    expect(formatWeekendLine(season)).toBe(
+      "Weekends (Sat, Sun): 11:00 am to 4:00 pm",
+    );
+  });
+
+  it("renders a single weekend day when only one is taught", () => {
+    const season = makeSeason({
+      teachesDays: [6],
+      weekendStartTime: "11:00",
+      weekendEndTime: "16:00",
+    });
+    expect(formatWeekendLine(season)).toBe(
+      "Weekends (Sat): 11:00 am to 4:00 pm",
+    );
+  });
+
+  it("renders 'Weekends: off' when no weekend hours are set", () => {
+    const season = makeSeason({
+      teachesDays: [1, 2, 3, 4, 5],
       weekendStartTime: null,
       weekendEndTime: null,
     });
-    const result = upcomingSummary(season);
-    expect(result).not.toContain("ends");
-  });
-
-  it("includes 'weekends' when weekendStartTime differs from weekdayStartTime", () => {
-    const season = makeSeason({
-      weekdayStartTime: "15:00",
-      weekdayEndTime: "20:00",
-      weekendStartTime: "09:00",
-      weekendEndTime: "20:00",
-    });
-    const result = upcomingSummary(season);
-    expect(result).toContain("weekends");
-  });
-
-  it("does not duplicate weekend when weekendStartTime equals weekdayStartTime", () => {
-    const season = makeSeason({
-      weekdayStartTime: "15:00",
-      weekdayEndTime: "20:00",
-      weekendStartTime: "15:00",
-      weekendEndTime: "20:00",
-    });
-    const result = upcomingSummary(season);
-    expect(result).not.toContain("weekends");
+    expect(formatWeekendLine(season)).toBe("Weekends: off");
   });
 });

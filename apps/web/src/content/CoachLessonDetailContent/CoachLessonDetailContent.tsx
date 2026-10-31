@@ -165,12 +165,18 @@ export default function CoachLessonDetailContent({ lesson, notes }: Props) {
 
             {/* Reschedule */}
             {isActive && (
-              <Link
-                href={`/coach/lessons/${lesson.id}/reschedule`}
-                className="inline-flex items-center justify-center rounded-button bg-button-primary-background text-button-primary-text font-bold text-sm px-5 h-11 transition-opacity hover:opacity-90 active:scale-[0.97] motion-reduce:transform-none self-start"
-              >
-                Reschedule
-              </Link>
+              <div className="rounded-card border border-border p-5 tablet:p-6">
+                <h2 className="text-xl text-heading mb-1">Reschedule lesson</h2>
+                <p className="text-sm text-text-secondary mb-5">
+                  Pick a new time. The family will be notified of the change.
+                </p>
+                <Link
+                  href={`/coach/lessons/${lesson.id}/reschedule`}
+                  className="inline-flex items-center justify-center rounded-button bg-button-primary-background text-button-primary-text font-bold text-sm px-5 h-11 transition-opacity hover:opacity-90 active:scale-[0.97] motion-reduce:transform-none"
+                >
+                  Reschedule
+                </Link>
+              </div>
             )}
 
             {/* Cancel */}

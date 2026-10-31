@@ -1,5 +1,5 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
+import { act, render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 
 const { mockUnread, mockList, mockReadAll, mockMarkRead, mockPush } = vi.hoisted(() => ({
   mockUnread: vi.fn(),
@@ -14,6 +14,7 @@ vi.mock("@/lib/api/coachAlerts", () => ({
   fetchNotifications: mockList,
   markAllNotificationsRead: mockReadAll,
   markNotificationRead: mockMarkRead,
+  COACH_NOTIFICATIONS_CHANGED_EVENT: "coach-notifications:changed",
 }));
 
 vi.mock("next/navigation", () => ({
@@ -168,6 +169,24 @@ describe("CoachNotificationBell", () => {
       // Badge gone.
       expect(screen.queryByText("2")).not.toBeInTheDocument();
     });
+  });
+
+  it("refreshes the badge immediately when another screen fires the changed event", async () => {
+    // Start with 3 unread; a different screen marks all read and dispatches
+    // COACH_NOTIFICATIONS_CHANGED_EVENT. The bell must requery and show 0
+    // without waiting for the 60-second poll.
+    mockUnread.mockResolvedValueOnce({ ok: true, data: { count: 3 } });
+    render(<CoachNotificationBell />);
+    await waitFor(() => expect(screen.getByText("3")).toBeInTheDocument());
+
+    mockUnread.mockResolvedValueOnce({ ok: true, data: { count: 0 } });
+    await act(async () => {
+      window.dispatchEvent(new Event("coach-notifications:changed"));
+    });
+    await waitFor(() => expect(screen.queryByText("3")).not.toBeInTheDocument());
+    expect(
+      screen.getByRole("button", { name: "Notifications" }),
+    ).toBeInTheDocument();
   });
 
   it("renders scrubbed rows as disabled with the clickUrl neutralized", async () => {

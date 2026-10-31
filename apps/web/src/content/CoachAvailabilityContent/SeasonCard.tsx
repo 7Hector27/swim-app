@@ -73,7 +73,7 @@ export default function SeasonCard({ season, onEdit }: Props) {
 
 function TimeStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-button bg-surface-soft px-3 py-2">
+    <div className="rounded-card bg-surface-soft px-3 py-2">
       <p className="text-[10px] font-semibold uppercase tracking-widest text-text-secondary">
         {label}
       </p>

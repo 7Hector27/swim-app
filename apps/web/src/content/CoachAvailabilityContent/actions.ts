@@ -24,6 +24,7 @@ import {
   deleteOverride,
   deleteSeason,
   fetchAvailabilityPreview,
+  fetchSeasonDeleteImpact,
   fetchSeasons,
   patchAvailabilityConfig,
   patchOverride,
@@ -65,6 +66,14 @@ export async function deleteSeasonAction(
   const token = await getToken();
   if (!token) return { ok: false, status: 401, code: "session_expired" };
   return deleteSeason(token, id);
+}
+
+export async function fetchSeasonDeleteImpactAction(
+  id: string,
+): Promise<ApiResult<SeasonDeleteResponse>> {
+  const token = await getToken();
+  if (!token) return { ok: false, status: 401, code: "session_expired" };
+  return fetchSeasonDeleteImpact(token, id);
 }
 
 export async function copyNextYearAction(): Promise<ApiResult<CopyNextYearResponse>> {

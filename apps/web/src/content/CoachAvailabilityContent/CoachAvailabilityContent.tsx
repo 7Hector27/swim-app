@@ -25,16 +25,22 @@ import {
   deleteOverrideAction,
   deleteSeasonAction,
   fetchAvailabilityPreviewAction,
+  fetchSeasonDeleteImpactAction,
   fetchSeasonsAction,
   patchAvailabilityConfigAction,
   patchOverrideAction,
   patchSeasonAction,
 } from "./actions";
 import { addDaysIso, withIsCurrent } from "./availabilityFormat";
-import { upcomingSummary } from "./seasonSummary";
+import {
+  formatSeasonTitle,
+  formatWeekdayLine,
+  formatWeekendLine,
+} from "./seasonSummary";
 import CopyToNextYearButton from "./CopyToNextYearButton";
 import DefaultHoursCard from "./DefaultHoursCard";
 import DefaultHoursModal from "./DefaultHoursModal";
+import DeleteSeasonConfirmModal from "./DeleteSeasonConfirmModal";
 import ImpactWarningModal from "./ImpactWarningModal";
 import OverrideFormModal from "./OverrideFormModal";
 import OverridesList from "./OverridesList";
@@ -104,6 +110,21 @@ export default function CoachAvailabilityContent({
   const [deletePending, setDeletePending] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const confirmDialogRef = useRef<HTMLDialogElement>(null);
+
+  // Delete-from-modal flow (entered from the quiet Delete button inside
+  // SeasonFormModal). Separate from `pendingDelete` because the parent
+  // modal is already a `<dialog>` and nesting a ConfirmDialog inside it
+  // misbehaves; a dedicated component previews the impact warnings
+  // before confirming and runs the mutation itself.
+  const [deleteModalSeason, setDeleteModalSeason] =
+    useState<SeasonWithIsCurrent | null>(null);
+  const [deleteModalWarnings, setDeleteModalWarnings] = useState<
+    ImpactWarning[]
+  >([]);
+  const [deleteModalWarningsLoading, setDeleteModalWarningsLoading] =
+    useState(false);
+  const [deleteModalPending, setDeleteModalPending] = useState(false);
+  const [deleteModalError, setDeleteModalError] = useState<string | null>(null);
 
   const currentSeason = useMemo(
     () => seasons.find((season) => season.isCurrent) ?? null,
@@ -282,6 +303,58 @@ export default function CoachAvailabilityContent({
     }
   }
 
+  async function handleDeleteFromModal(season: SeasonWithIsCurrent) {
+    // Close the edit modal first so the confirm step can own the
+    // foreground. Warnings load inline; the modal shows a loading
+    // state until they arrive so the coach never confirms before
+    // seeing the impact.
+    setSeasonModalOpen(false);
+    setDeleteModalError(null);
+    setDeleteModalWarnings([]);
+    setDeleteModalWarningsLoading(true);
+    setDeleteModalSeason(season);
+    const result = await fetchSeasonDeleteImpactAction(season.id);
+    if (result.ok) {
+      setDeleteModalWarnings(result.data.warnings);
+    } else {
+      setDeleteModalError(apiErrorMessage(result.code));
+    }
+    setDeleteModalWarningsLoading(false);
+  }
+
+  function cancelDeleteFromModal() {
+    if (deleteModalPending) return;
+    setDeleteModalSeason(null);
+    setDeleteModalWarnings([]);
+    setDeleteModalError(null);
+  }
+
+  async function confirmDeleteFromModal() {
+    if (!deleteModalSeason) return;
+    setDeleteModalError(null);
+    setDeleteModalPending(true);
+    try {
+      const result = await deleteSeasonAction(deleteModalSeason.id);
+      if (!result.ok) {
+        setDeleteModalError(apiErrorMessage(result.code));
+        return;
+      }
+      setSeasons((prev) =>
+        withIsCurrent(
+          prev.filter((row) => row.id !== deleteModalSeason.id),
+          today,
+        ),
+      );
+      // The coach already saw the dry-run warnings in this modal; don't
+      // pop the post-mutation ImpactWarningModal on top of itself.
+      setDeleteModalSeason(null);
+      setDeleteModalWarnings([]);
+      await refreshPreview(weekStart);
+    } finally {
+      setDeleteModalPending(false);
+    }
+  }
+
   async function handleCopyNextYear(): Promise<
     { insertedCount: number } | { error: string }
   > {
@@ -445,11 +518,14 @@ export default function CoachAvailabilityContent({
                         className="w-full text-left rounded-card border border-border bg-surface-soft p-4 min-h-[52px] flex items-center justify-between gap-3 hover:bg-border transition-colors duration-150 active:scale-[0.995]"
                       >
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold text-text">
-                            {season.name} · {monthDay(season.startDate)}
+                          <p className="text-sm font-semibold text-text truncate">
+                            {formatSeasonTitle(season)}
                           </p>
                           <p className="text-xs text-text-secondary truncate">
-                            {upcomingSummary(season)}
+                            {formatWeekdayLine(season)}
+                          </p>
+                          <p className="text-xs text-text-secondary truncate">
+                            {formatWeekendLine(season)}
                           </p>
                         </div>
                         <span
@@ -581,6 +657,17 @@ export default function CoachAvailabilityContent({
         onCancel={() => setSeasonModalOpen(false)}
         onSubmit={handleSeasonSubmit}
         isPending={seasonPending}
+        onDelete={handleDeleteFromModal}
+      />
+      <DeleteSeasonConfirmModal
+        open={deleteModalSeason !== null}
+        season={deleteModalSeason}
+        warnings={deleteModalWarnings}
+        warningsLoading={deleteModalWarningsLoading}
+        isPending={deleteModalPending}
+        errorMessage={deleteModalError}
+        onCancel={cancelDeleteFromModal}
+        onConfirm={confirmDeleteFromModal}
       />
       <OverrideFormModal
         open={overrideModalOpen}
@@ -621,16 +708,3 @@ export default function CoachAvailabilityContent({
   );
 }
 
-function monthDay(dateIso: string): string {
-  const [year, month, day] = dateIso.split("-").map(Number) as [
-    number,
-    number,
-    number,
-  ];
-  const date = new Date(Date.UTC(year, month - 1, day));
-  return new Intl.DateTimeFormat("en-US", {
-    timeZone: "UTC",
-    month: "short",
-    day: "numeric",
-  }).format(date);
-}

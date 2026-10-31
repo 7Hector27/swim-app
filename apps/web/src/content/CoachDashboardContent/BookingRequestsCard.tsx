@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useActionState, useMemo, useId, useRef } from "react";
+import { useSearchParams } from "next/navigation";
 
 import type { LessonResponse } from "@swim-app/shared";
 
@@ -25,6 +26,12 @@ interface Props {
 
 export default function BookingRequestsCard({ initialLessons }: Props) {
   const [lessons, setLessons] = useState(initialLessons);
+  // `?batch=<id>` deep-links from a coach notification. The matching
+  // BatchGroup auto-expands and scrolls itself into view on mount. The
+  // param stays on the URL so a browser back/forward returns to the
+  // expanded state.
+  const searchParams = useSearchParams();
+  const focusBatchId = searchParams?.get("batch") ?? null;
 
   const groups = useMemo(() => buildGroups(lessons), [lessons]);
 
@@ -56,6 +63,8 @@ export default function BookingRequestsCard({ initialLessons }: Props) {
               batchId={group.batchId}
               batchMode={group.batchMode}
               lessons={group.lessons}
+              initiallyExpanded={group.batchId === focusBatchId}
+              scrollIntoViewOnMount={group.batchId === focusBatchId}
               onLessonDone={(id) =>
                 setLessons((prev) => prev.filter((lesson) => lesson.id !== id))
               }
@@ -74,19 +83,32 @@ function BatchGroup({
   batchId,
   batchMode,
   lessons,
+  initiallyExpanded = false,
+  scrollIntoViewOnMount = false,
   onLessonDone,
   onBatchApproved,
 }: {
   batchId: string;
   batchMode: "manual" | "weekly";
   lessons: LessonResponse[];
+  initiallyExpanded?: boolean;
+  scrollIntoViewOnMount?: boolean;
   onLessonDone: (id: string) => void;
   onBatchApproved: (ids: Set<string>) => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(initiallyExpanded);
   const [exiting, setExiting] = useState(false);
   const exitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const panelId = useId();
+
+  // Scroll the matching batch (notification deep-link) into view on
+  // mount. One-shot: reruns of this effect are not meaningful because
+  // the prop is only true for the batch currently targeted by `?batch=`.
+  useEffect(() => {
+    if (!scrollIntoViewOnMount) return;
+    containerRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [scrollIntoViewOnMount]);
 
   const sorted = useMemo(
     () => [...lessons].sort((a, b) => a.startsAt.localeCompare(b.startsAt)),
@@ -130,6 +152,7 @@ function BatchGroup({
 
   return (
     <div
+      ref={containerRef}
       className={`${styles.batchGroup} flex flex-col gap-3 py-4 first:pt-0 last:pb-0`}
       data-exiting={exiting ? "true" : undefined}
     >

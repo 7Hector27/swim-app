@@ -773,6 +773,50 @@ coachAvailabilityRouter.patch(
   }),
 );
 
+// GET /coach/seasons/:id/delete-impact
+//
+// Dry-run that answers "if I delete this season, which upcoming lessons
+// would fall outside the hours that would then be in effect?". Used by
+// the Edit modal's Delete confirm step so the coach can see the impact
+// before committing. Mirrors the computation in DELETE /coach/seasons/:id
+// (same `computeImpactWarnings` call) so the preview matches what the
+// final mutation would return.
+coachAvailabilityRouter.get(
+  "/seasons/:id/delete-impact",
+  validate({ params: SeasonIdParamsSchema }),
+  asyncHandler(async (req, res) => {
+    const { id } = req.params as { id: string };
+
+    const existingRows = await db
+      .select()
+      .from(availabilitySeasons)
+      .where(eq(availabilitySeasons.id, id));
+    const existing = existingRows[0];
+    if (!existing) {
+      res.status(404).json({ error: "Season not found" });
+      return;
+    }
+
+    const allSeasonRows = await db.select().from(availabilitySeasons);
+    const overrideRows = await db.select().from(availabilityOverrides);
+    const all = allSeasonRows.map(mapSeasonRow);
+    const overrides = overrideRows.map(mapOverrideRow);
+    const after = all.filter((season) => season.id !== id);
+    const defaults = await fetchAvailabilityDefaults();
+    const upcoming = await fetchUpcomingLessons();
+    const warnings = computeImpactWarnings(
+      upcoming,
+      all,
+      overrides,
+      after,
+      overrides,
+      defaults,
+    );
+    const responseBody: SeasonDeleteResponse = { warnings };
+    res.json(responseBody);
+  }),
+);
+
 coachAvailabilityRouter.delete(
   "/seasons/:id",
   validate({ params: SeasonIdParamsSchema }),

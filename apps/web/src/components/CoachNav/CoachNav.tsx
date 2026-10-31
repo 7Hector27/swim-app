@@ -120,6 +120,41 @@ function MeetsIcon() {
   );
 }
 
+function AccountIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <circle cx="10" cy="7.5" r="3" stroke="currentColor" strokeWidth="1.5" />
+      <path
+        d="M3.5 17c0-3.038 2.91-5.5 6.5-5.5s6.5 2.462 6.5 5.5"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function LogOutIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <path
+        d="M12 3h3a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1h-3"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M9 7l-3 3 3 3M6 10h8"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 type TabLabel = (typeof BOTTOM_NAV_TABS)[number]["label"];
 
 const TAB_ICONS: Record<TabLabel, () => React.ReactElement> = {
@@ -130,9 +165,14 @@ const TAB_ICONS: Record<TabLabel, () => React.ReactElement> = {
 
 // ── More sheet ────────────────────────────────────────────────────────────────
 
+// Every More-sheet row shows an icon from the same 20x20 line set as the
+// bottom-tab icons above so the sheet reads as a continuation of the
+// nav, not a separate styling language. Account and Log out used to
+// render without one.
 const SHEET_ICONS: Record<string, () => React.ReactElement> = {
   Meets: MeetsIcon,
   Availability: AvailabilityIcon,
+  "Account settings": AccountIcon,
 };
 
 interface MoreSheetProps {
@@ -205,7 +245,10 @@ function MoreSheet({ open, onClose }: MoreSheetProps) {
                       className="flex items-center gap-4 px-5 h-14 text-sm font-semibold text-text-on-section hover:bg-section-item-hover transition-colors duration-150"
                     >
                       {Icon && (
-                        <span className="text-text-secondary-on-section">
+                        <span
+                          aria-hidden="true"
+                          className="inline-flex items-center justify-center w-5 h-5 shrink-0 text-text-secondary-on-section"
+                        >
                           <Icon />
                         </span>
                       )}
@@ -225,6 +268,12 @@ function MoreSheet({ open, onClose }: MoreSheetProps) {
               form="coach-nav-logout-form"
               className="flex items-center gap-4 w-full px-5 h-14 text-sm font-semibold text-text-on-section hover:bg-section-item-hover transition-colors duration-150"
             >
+              <span
+                aria-hidden="true"
+                className="inline-flex items-center justify-center w-5 h-5 shrink-0 text-text-secondary-on-section"
+              >
+                <LogOutIcon />
+              </span>
               Log out
             </button>
           </div>

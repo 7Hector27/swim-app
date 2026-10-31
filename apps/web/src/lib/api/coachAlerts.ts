@@ -88,8 +88,24 @@ export async function sendTestPush(): Promise<SendTestPushResult> {
   return { ok: true, data: parsed.data };
 }
 
-export async function fetchNotifications(): Promise<ApiResult<CoachNotificationListResponse>> {
-  const response = await fetch("/api/coach/notifications", { cache: "no-store" });
+export interface FetchNotificationsOptions {
+  order?: "unread_first" | "chronological";
+  offset?: number;
+  limit?: number;
+}
+
+export async function fetchNotifications(
+  options: FetchNotificationsOptions = {},
+): Promise<ApiResult<CoachNotificationListResponse>> {
+  const params = new URLSearchParams();
+  if (options.order) params.set("order", options.order);
+  if (options.offset !== undefined) params.set("offset", String(options.offset));
+  if (options.limit !== undefined) params.set("limit", String(options.limit));
+  const qs = params.toString();
+  const response = await fetch(
+    `/api/coach/notifications${qs ? `?${qs}` : ""}`,
+    { cache: "no-store" },
+  );
   return parseOr502(response, (body) => CoachNotificationListResponseSchema.safeParse(body));
 }
 
@@ -100,16 +116,30 @@ export async function fetchUnreadCount(): Promise<ApiResult<CoachNotificationUnr
   );
 }
 
+// Browser-level event dispatched after a mark-read mutation so any
+// listener on the current page (in practice the bell) refreshes its
+// badge immediately instead of waiting for the next 60-second poll.
+// Fires on both success and failure; listeners re-query the server and
+// let that reconcile.
+export const COACH_NOTIFICATIONS_CHANGED_EVENT = "coach-notifications:changed";
+
+function notifyNotificationsChanged(): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new Event(COACH_NOTIFICATIONS_CHANGED_EVENT));
+}
+
 export async function markNotificationRead(id: string): Promise<{ ok: boolean; status: number }> {
   const response = await fetch(
     `/api/coach/notifications/${encodeURIComponent(id)}/read`,
     { method: "POST" },
   );
+  notifyNotificationsChanged();
   return { ok: response.ok, status: response.status };
 }
 
 export async function markAllNotificationsRead(): Promise<{ ok: boolean; status: number }> {
   const response = await fetch("/api/coach/notifications/read-all", { method: "POST" });
+  notifyNotificationsChanged();
   return { ok: response.ok, status: response.status };
 }
 

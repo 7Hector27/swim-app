@@ -168,6 +168,29 @@ export async function deleteSeason(
   }
 }
 
+// Dry-run companion to deleteSeason: fetches the impact warnings the
+// server would compute if the season were deleted, without actually
+// deleting. Powers the Delete-season confirm step so the coach sees
+// which lessons would fall outside the resulting hours.
+export async function fetchSeasonDeleteImpact(
+  accessToken: string,
+  id: string,
+): Promise<ApiResult<SeasonDeleteResponse>> {
+  try {
+    const response = await fetch(
+      `${process.env.NEXT_PUBLIC_API_URL}/coach/seasons/${id}/delete-impact`,
+      { headers: authHeaders(accessToken), cache: "no-store" },
+    );
+    if (!response.ok) return { ok: false, ...(await parseError(response)) };
+    const data: unknown = await response.json();
+    const parsed = SeasonDeleteResponseSchema.safeParse(data);
+    if (!parsed.success) return { ok: false, status: 500 };
+    return { ok: true, data: parsed.data };
+  } catch {
+    return { ok: false, status: 0 };
+  }
+}
+
 export async function copyNextYear(
   accessToken: string,
 ): Promise<ApiResult<CopyNextYearResponse>> {
