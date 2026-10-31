@@ -125,6 +125,11 @@ export default function CoachAvailabilityContent({
     useState(false);
   const [deleteModalPending, setDeleteModalPending] = useState(false);
   const [deleteModalError, setDeleteModalError] = useState<string | null>(null);
+  // Bumped every time a delete-from-modal flow opens. The in-flight
+  // dry-run captures the current value and only applies its result if
+  // the counter still matches on resolve, so a cancel/reopen before the
+  // network settles never flashes stale warnings into the new modal.
+  const deleteModalGeneration = useRef(0);
 
   const currentSeason = useMemo(
     () => seasons.find((season) => season.isCurrent) ?? null,
@@ -313,7 +318,13 @@ export default function CoachAvailabilityContent({
     setDeleteModalWarnings([]);
     setDeleteModalWarningsLoading(true);
     setDeleteModalSeason(season);
+    deleteModalGeneration.current += 1;
+    const generation = deleteModalGeneration.current;
     const result = await fetchSeasonDeleteImpactAction(season.id);
+    // A cancel-and-reopen between request-fire and resolve bumps the
+    // generation; discard this response rather than letting its
+    // warnings bleed into the new flow.
+    if (deleteModalGeneration.current !== generation) return;
     if (result.ok) {
       setDeleteModalWarnings(result.data.warnings);
     } else {
@@ -324,8 +335,11 @@ export default function CoachAvailabilityContent({
 
   function cancelDeleteFromModal() {
     if (deleteModalPending) return;
+    // Invalidate any in-flight dry-run so its late resolve is dropped.
+    deleteModalGeneration.current += 1;
     setDeleteModalSeason(null);
     setDeleteModalWarnings([]);
+    setDeleteModalWarningsLoading(false);
     setDeleteModalError(null);
   }
 

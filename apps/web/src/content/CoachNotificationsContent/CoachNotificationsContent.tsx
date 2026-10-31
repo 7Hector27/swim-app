@@ -7,6 +7,7 @@ import type { CoachNotificationListItem } from "@swim-app/shared";
 
 import { formatTimeAgo } from "@/lib/formatTimeAgo";
 import {
+  COACH_NOTIFICATIONS_CHANGED_EVENT,
   fetchNotifications,
   markAllNotificationsRead,
   markNotificationRead,
@@ -22,6 +23,7 @@ export default function CoachNotificationsContent() {
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [loadMoreError, setLoadMoreError] = useState(false);
   const [error, setError] = useState(false);
   const router = useRouter();
 
@@ -44,18 +46,53 @@ export default function CoachNotificationsContent() {
     setLoading(false);
   }, []);
 
+  // Quiet refetch: no loading spinner flash, no error-state clearing.
+  // Fired when the bell (or another surface) tells us the server state
+  // changed, and when the tab regains focus. Reconciles optimistic
+  // state against whatever the server now reports; if it fails we keep
+  // the current rows and surface nothing, since the user never asked.
+  const backgroundRefresh = useCallback(async () => {
+    const result = await fetchNotifications({
+      order: "chronological",
+      offset: 0,
+      limit: PAGE_SIZE,
+    });
+    if (!result.ok) return;
+    setItems(result.data.items);
+    setUnreadCount(result.data.unreadCount);
+    setHasMore(result.data.hasMore ?? false);
+  }, []);
+
   useEffect(() => {
     void refresh();
   }, [refresh]);
 
+  // Stay in sync with the bell (and any other surface that mutates
+  // read-state) without the user having to reload. The window-focus
+  // listener handles cross-tab or cross-session changes that happened
+  // while this tab was in the background.
+  useEffect(() => {
+    function handleChanged() {
+      void backgroundRefresh();
+    }
+    window.addEventListener(COACH_NOTIFICATIONS_CHANGED_EVENT, handleChanged);
+    window.addEventListener("focus", handleChanged);
+    return () => {
+      window.removeEventListener(COACH_NOTIFICATIONS_CHANGED_EVENT, handleChanged);
+      window.removeEventListener("focus", handleChanged);
+    };
+  }, [backgroundRefresh]);
+
   async function handleLoadMore() {
     setLoadingMore(true);
+    setLoadMoreError(false);
     const result = await fetchNotifications({
       order: "chronological",
       offset: items.length,
       limit: PAGE_SIZE,
     });
     if (!result.ok) {
+      setLoadMoreError(true);
       setLoadingMore(false);
       return;
     }
@@ -180,14 +217,25 @@ export default function CoachNotificationsContent() {
             ))}
 
             {hasMore && (
-              <button
-                type="button"
-                onClick={handleLoadMore}
-                disabled={loadingMore}
-                className="self-center rounded-button border border-border px-5 h-10 text-sm font-semibold text-text hover:bg-surface-soft disabled:opacity-50 transition-colors duration-150 active:scale-[0.97]"
-              >
-                {loadingMore ? "Loading…" : "Load more"}
-              </button>
+              <div className="flex flex-col items-center gap-2">
+                {loadMoreError && (
+                  <p role="alert" className="text-xs text-danger">
+                    Could not load more notifications.
+                  </p>
+                )}
+                <button
+                  type="button"
+                  onClick={handleLoadMore}
+                  disabled={loadingMore}
+                  className="rounded-button border border-border px-5 h-10 text-sm font-semibold text-text hover:bg-surface-soft disabled:opacity-50 transition-colors duration-150 active:scale-[0.97]"
+                >
+                  {loadingMore
+                    ? "Loading…"
+                    : loadMoreError
+                      ? "Try again"
+                      : "Load more"}
+                </button>
+              </div>
             )}
           </div>
         )}

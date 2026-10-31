@@ -116,11 +116,12 @@ export async function fetchUnreadCount(): Promise<ApiResult<CoachNotificationUnr
   );
 }
 
-// Browser-level event dispatched after a mark-read mutation so any
-// listener on the current page (in practice the bell) refreshes its
-// badge immediately instead of waiting for the next 60-second poll.
-// Fires on both success and failure; listeners re-query the server and
-// let that reconcile.
+// Browser-level event dispatched after a SUCCESSFUL mark-read mutation
+// so any listener on the current page (in practice the bell and the
+// /coach/notifications list) refreshes immediately instead of waiting
+// for the next poll. Fires only when the server confirmed the write;
+// a failed mutation keeps the UI's optimistic rollback as the single
+// source of truth and nothing else re-queries.
 export const COACH_NOTIFICATIONS_CHANGED_EVENT = "coach-notifications:changed";
 
 function notifyNotificationsChanged(): void {
@@ -133,13 +134,13 @@ export async function markNotificationRead(id: string): Promise<{ ok: boolean; s
     `/api/coach/notifications/${encodeURIComponent(id)}/read`,
     { method: "POST" },
   );
-  notifyNotificationsChanged();
+  if (response.ok) notifyNotificationsChanged();
   return { ok: response.ok, status: response.status };
 }
 
 export async function markAllNotificationsRead(): Promise<{ ok: boolean; status: number }> {
   const response = await fetch("/api/coach/notifications/read-all", { method: "POST" });
-  notifyNotificationsChanged();
+  if (response.ok) notifyNotificationsChanged();
   return { ok: response.ok, status: response.status };
 }
 

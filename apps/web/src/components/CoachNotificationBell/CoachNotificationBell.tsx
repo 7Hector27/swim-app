@@ -129,13 +129,23 @@ export default function CoachNotificationBell({ variant = "header" }: Props) {
   }, [open]);
 
   // Lock the page scroll behind the mobile sheet so a drag inside the
-  // sheet never scrolls the dashboard underneath. Desktop dropdown does
-  // not lock (it coexists with the page).
+  // sheet never scrolls the dashboard underneath. The desktop dropdown
+  // coexists with the page and must NOT lock scroll - gate on the same
+  // 768px breakpoint the CSS uses so the two stay in sync. Re-evaluate
+  // on viewport resize (rotation, dev-tools) so a device that crosses
+  // the breakpoint while open releases or re-applies the lock.
   useEffect(() => {
     if (!open) return;
+    if (typeof window === "undefined") return;
+    const query = window.matchMedia("(max-width: 768px)");
     const previous = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    function apply() {
+      document.body.style.overflow = query.matches ? "hidden" : previous;
+    }
+    apply();
+    query.addEventListener("change", apply);
     return () => {
+      query.removeEventListener("change", apply);
       document.body.style.overflow = previous;
     };
   }, [open]);
@@ -199,58 +209,6 @@ export default function CoachNotificationBell({ variant = "header" }: Props) {
       : // Icon-only sized button for the desktop header right rail.
         `relative inline-flex items-center justify-center h-11 w-11 rounded-button transition-colors duration-150 text-text-secondary-on-section hover:text-text-on-section active:scale-[0.97]`;
 
-  function PanelContents({ showCloseButton }: { showCloseButton: boolean }) {
-    return (
-      <>
-        <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-divider-section">
-          <span className="text-sm font-semibold text-text-on-section">Notifications</span>
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={handleMarkAll}
-              disabled={unreadCount === 0 || loading}
-              className="text-xs font-semibold text-accent-on-section hover:underline disabled:opacity-40 disabled:no-underline transition-opacity duration-150"
-            >
-              Mark all as read
-            </button>
-            {showCloseButton && (
-              <button
-                type="button"
-                onClick={() => setOpen(false)}
-                aria-label="Close notifications"
-                className="inline-flex items-center justify-center h-8 w-8 rounded-button text-text-secondary-on-section hover:text-text-on-section active:scale-[0.97] transition-colors duration-150"
-              >
-                <CloseIcon />
-              </button>
-            )}
-          </div>
-        </div>
-        {markAllError && (
-          <p role="alert" className="px-5 py-2 text-xs text-danger border-b border-divider-section">
-            Could not mark all as read. Try again.
-          </p>
-        )}
-        <div className="flex-1 min-h-0 overflow-y-auto">
-          <NotificationList
-            items={items}
-            loading={loading}
-            error={listError}
-            onItemClick={handleItemClick}
-          />
-        </div>
-        <div className="px-5 py-3 border-t border-divider-section">
-          <Link
-            href="/coach/notifications"
-            onClick={() => setOpen(false)}
-            className="text-sm font-semibold text-accent-on-section hover:underline"
-          >
-            View all notifications
-          </Link>
-        </div>
-      </>
-    );
-  }
-
   return (
     <div className={styles.root}>
       <button
@@ -297,7 +255,17 @@ export default function CoachNotificationBell({ variant = "header" }: Props) {
             aria-label="Notifications"
             className={`${styles.panel} rounded-card bg-section text-text-on-section border border-divider-section shadow-lg overflow-hidden`}
           >
-            <PanelContents showCloseButton={false} />
+            <PanelContents
+              showCloseButton={false}
+              items={items}
+              loading={loading}
+              listError={listError}
+              unreadCount={unreadCount}
+              markAllError={markAllError}
+              onMarkAll={handleMarkAll}
+              onItemClick={handleItemClick}
+              onClose={() => setOpen(false)}
+            />
           </div>
 
           {/* Mobile bottom sheet - hidden by styles.sheet from tablet+. */}
@@ -313,11 +281,101 @@ export default function CoachNotificationBell({ variant = "header" }: Props) {
             aria-label="Notifications"
             className={styles.sheet}
           >
-            <PanelContents showCloseButton={true} />
+            <PanelContents
+              showCloseButton={true}
+              items={items}
+              loading={loading}
+              listError={listError}
+              unreadCount={unreadCount}
+              markAllError={markAllError}
+              onMarkAll={handleMarkAll}
+              onItemClick={handleItemClick}
+              onClose={() => setOpen(false)}
+            />
           </div>
         </>
       )}
     </div>
+  );
+}
+
+// Hoisted so React sees a stable component type across renders of the
+// parent. Declaring this inside CoachNotificationBell's body makes it a
+// new function on every render, which React treats as a new component
+// identity and remounts the subtree (losing scroll position, focus,
+// and triggering flicker). Props carry what the panel used to pull
+// from closure.
+interface PanelContentsProps {
+  showCloseButton: boolean;
+  items: CoachNotificationListItem[];
+  loading: boolean;
+  listError: boolean;
+  unreadCount: number;
+  markAllError: boolean;
+  onMarkAll: () => void;
+  onItemClick: (item: CoachNotificationListItem) => void;
+  onClose: () => void;
+}
+
+function PanelContents({
+  showCloseButton,
+  items,
+  loading,
+  listError,
+  unreadCount,
+  markAllError,
+  onMarkAll,
+  onItemClick,
+  onClose,
+}: PanelContentsProps) {
+  return (
+    <>
+      <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-divider-section">
+        <span className="text-sm font-semibold text-text-on-section">Notifications</span>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={onMarkAll}
+            disabled={unreadCount === 0 || loading}
+            className="text-xs font-semibold text-accent-on-section hover:underline disabled:opacity-40 disabled:no-underline transition-opacity duration-150"
+          >
+            Mark all as read
+          </button>
+          {showCloseButton && (
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close notifications"
+              className="inline-flex items-center justify-center h-8 w-8 rounded-button text-text-secondary-on-section hover:text-text-on-section active:scale-[0.97] transition-colors duration-150"
+            >
+              <CloseIcon />
+            </button>
+          )}
+        </div>
+      </div>
+      {markAllError && (
+        <p role="alert" className="px-5 py-2 text-xs text-danger border-b border-divider-section">
+          Could not mark all as read. Try again.
+        </p>
+      )}
+      <div className="flex-1 min-h-0 overflow-y-auto">
+        <NotificationList
+          items={items}
+          loading={loading}
+          error={listError}
+          onItemClick={onItemClick}
+        />
+      </div>
+      <div className="px-5 py-3 border-t border-divider-section">
+        <Link
+          href="/coach/notifications"
+          onClick={onClose}
+          className="text-sm font-semibold text-accent-on-section hover:underline"
+        >
+          View all notifications
+        </Link>
+      </div>
+    </>
   );
 }
 

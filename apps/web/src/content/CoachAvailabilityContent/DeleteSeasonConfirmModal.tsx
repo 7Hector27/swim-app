@@ -53,6 +53,17 @@ export default function DeleteSeasonConfirmModal({
     }
   }
 
+  // Native <dialog> fires `cancel` on ESC and would then close itself,
+  // taking the modal down mid-delete. Swallow the cancel while the
+  // mutation is in flight so ESC does nothing until it completes.
+  function handleCancel(event: React.SyntheticEvent<HTMLDialogElement>) {
+    if (isPending) {
+      event.preventDefault();
+      return;
+    }
+    onCancel();
+  }
+
   if (!season) {
     // Still render the dialog so the open/close effect has a target; just
     // skip the content body so stale season copy never flashes.
@@ -60,20 +71,26 @@ export default function DeleteSeasonConfirmModal({
       <dialog
         ref={dialogRef}
         className={styles.dialog}
-        onCancel={onCancel}
+        onCancel={handleCancel}
         aria-label="Delete season"
       />
     );
   }
 
-  const dateRange = `${formatMonthDay(season.startDate)} to ${formatMonthDay(season.endDate)}`;
+  const startLabel = formatMonthDay(season.startDate);
+  const endLabel = formatMonthDay(season.endDate);
+  // Mirror formatSeasonTitle's defensive fallback: when the end date
+  // isn't a valid ISO day, formatMonthDay returns "" and "Sep 1 to "
+  // reads as a bug. "from <start>" is the same wording the Coming-up
+  // row uses in the same case.
+  const dateRange = endLabel === "" ? `from ${startLabel}` : `${startLabel} to ${endLabel}`;
   const warningCount = warnings.length;
 
   return (
     <dialog
       ref={dialogRef}
       className={styles.dialog}
-      onCancel={onCancel}
+      onCancel={handleCancel}
       onClick={handleBackdropClick}
       aria-labelledby="delete-season-title"
     >
