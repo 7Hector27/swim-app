@@ -146,7 +146,56 @@ export const ParentPersonalBestSchema = z.object({
 });
 export type ParentPersonalBest = z.infer<typeof ParentPersonalBestSchema>;
 
-export const ParentPersonalBestsResponseSchema = z.object({
-  personalBests: z.array(ParentPersonalBestSchema),
-});
+export const ParentPersonalBestsResponseSchema = z
+  .object({
+    personalBests: z.array(ParentPersonalBestSchema),
+  })
+  .strict();
 export type ParentPersonalBestsResponse = z.infer<typeof ParentPersonalBestsResponseSchema>;
+
+// ── Parent swimmer summary (dashboard) ────────────────────────────────────────
+
+// One row per swimmer in the parent's household. Powers the swimmer cards on
+// the parent dashboard. See GET /swimmers/me/summary. The response is
+// `.strict()` so any coach-only field slipping into the server response fails
+// the parse boundary instead of silently reaching a parent client.
+export const ParentSwimmerSummaryNextLessonSchema = z
+  .object({
+    startsAt: z.string().datetime({ offset: true }),
+    durationMinutes: z.number().int().positive(),
+    locationName: z.string(),
+  })
+  .strict();
+export type ParentSwimmerSummaryNextLesson = z.infer<
+  typeof ParentSwimmerSummaryNextLessonSchema
+>;
+
+export const ParentSwimmerSummaryBestEventSchema = z
+  .object({
+    label: z.string().min(1),
+    timeString: z.string().min(1),
+  })
+  .strict();
+export type ParentSwimmerSummaryBestEvent = z.infer<
+  typeof ParentSwimmerSummaryBestEventSchema
+>;
+
+export const ParentSwimmerSummarySchema = z
+  .object({
+    swimmerId: z.string().uuid(),
+    nextLesson: ParentSwimmerSummaryNextLessonSchema.nullable(),
+    lastEvaluatedOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+    bestEvent: ParentSwimmerSummaryBestEventSchema.nullable(),
+    onLeaderboards: z.boolean(),
+  })
+  .strict();
+export type ParentSwimmerSummary = z.infer<typeof ParentSwimmerSummarySchema>;
+
+export const ParentSwimmerSummariesResponseSchema = z
+  .object({
+    summaries: z.array(ParentSwimmerSummarySchema),
+  })
+  .strict();
+export type ParentSwimmerSummariesResponse = z.infer<
+  typeof ParentSwimmerSummariesResponseSchema
+>;

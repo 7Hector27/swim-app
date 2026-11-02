@@ -1,12 +1,16 @@
 import { Router } from "express";
-import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { db } from "../db/client";
 import {
   evaluationSessions,
+  lessonLocations,
+  lessonSwimmers,
+  lessons,
   meetSwims,
   meets,
   skillLevelDescriptors,
   skillRatings,
+  swimmers,
 } from "../db/schema";
 import { validate } from "../middleware/validate";
 import { asyncHandler } from "../middleware/asyncHandler";
@@ -22,13 +26,19 @@ import {
   ParentPersonalBestsResponseSchema,
   ParentScoreHistoryResponseSchema,
   ParentSwimmerProgressResponseSchema,
+  ParentSwimmerSummariesResponseSchema,
   SCREEN_NAMES,
   type IdParams,
   type LatestCoachingPriority,
   type ParentCoachingNote,
   type ParentPersonalBest,
   type ParentPersonalBestsResponse,
+  type ParentSwimmerSummariesResponse,
+  type ParentSwimmerSummary,
+  type ParentSwimmerSummaryBestEvent,
+  type ParentSwimmerSummaryNextLesson,
   type ParentSwimmerProgressResponse,
+  type SwimStroke,
 } from "@swim-app/shared";
 
 export const parentProgressRouter = Router();
@@ -272,3 +282,222 @@ parentProgressRouter.get(
     res.json(body);
   }),
 );
+
+// GET /swimmers/me/summary: one row per active swimmer in the parent's
+// household. Powers the dashboard swimmer cards in a single round-trip so the
+// client does not have to fan out one request per swimmer. Four scoped queries:
+// (1) active swimmers in the household, (2) next upcoming lesson per swimmer
+// via DISTINCT ON, (3) latest evaluation date per swimmer with at least one
+// live rating, (4) meet personal bests per swimmer. The best-event choice
+// mirrors the previous dashboard logic: prefer the fastest 50 Free across
+// courses, otherwise fall back to the lowest stroke order then shortest
+// distance. Access control: same middleware chain as /swimmers/me so the
+// response can never reach a non-parent or a user without a household.
+parentProgressRouter.get(
+  "/me/summary",
+  requireUser,
+  requireParent,
+  requireHouseholdMember,
+  validate({}),
+  asyncHandler(async (req, res) => {
+    const { householdId } = req;
+
+    const activeSwimmers = await db
+      .select({ id: swimmers.id, isPublic: swimmers.isPublic })
+      .from(swimmers)
+      .where(and(isNull(swimmers.archivedAt), eq(swimmers.householdId, householdId)));
+
+    if (activeSwimmers.length === 0) {
+      const empty: ParentSwimmerSummariesResponse = ParentSwimmerSummariesResponseSchema.parse({
+        summaries: [],
+      });
+      res.json(empty);
+      return;
+    }
+
+    const swimmerIds = activeSwimmers.map((row) => row.id);
+    const now = new Date();
+
+    const [nextLessonRows, lastEvalRows, pbRows] = await Promise.all([
+      // (2) DISTINCT ON (ls.swimmer_id): one row per swimmer, the earliest
+      // upcoming lesson they're on. Upcoming = status in (pending, approved)
+      // AND end time > now, matching the /lessons?filter=upcoming definition.
+      db.execute<{
+        swimmer_id: string;
+        starts_at: Date;
+        duration_minutes: number;
+        location_name: string;
+      }>(sql`
+        SELECT DISTINCT ON (${lessonSwimmers.swimmerId})
+          ${lessonSwimmers.swimmerId} AS swimmer_id,
+          ${lessons.startsAt} AS starts_at,
+          ${lessons.durationMinutes} AS duration_minutes,
+          ${lessonLocations.name} AS location_name
+        FROM ${lessonSwimmers}
+        INNER JOIN ${lessons} ON ${lessons.id} = ${lessonSwimmers.lessonId}
+        INNER JOIN ${lessonLocations} ON ${lessonLocations.id} = ${lessons.locationId}
+        WHERE ${lessons.householdId} = ${householdId}
+          AND ${lessons.status} IN ('pending', 'approved')
+          AND ${lessons.startsAt} + ${lessons.durationMinutes} * interval '1 minute' > ${now.toISOString()}::timestamptz
+          AND ${lessonSwimmers.swimmerId} IN (${sql.join(
+            swimmerIds.map((id) => sql`${id}::uuid`),
+            sql`, `,
+          )})
+        ORDER BY ${lessonSwimmers.swimmerId}, ${lessons.startsAt} ASC
+      `),
+      // (3) Latest evaluation date per swimmer. A session only counts when it
+      // has at least one non-voided, non-superseded rating — matches the
+      // "non-voided evaluation" rule used elsewhere in this file so the
+      // relative-date label stays consistent with the rest of the parent UI.
+      db
+        .select({
+          swimmerId: evaluationSessions.swimmerId,
+          lastSessionDate: sql<string>`MAX(${evaluationSessions.sessionDate})`.as(
+            "last_session_date",
+          ),
+        })
+        .from(evaluationSessions)
+        .where(
+          and(
+            inArray(evaluationSessions.swimmerId, swimmerIds),
+            sql`EXISTS (
+              SELECT 1 FROM ${skillRatings}
+              WHERE ${skillRatings.sessionId} = ${evaluationSessions.id}
+                AND ${skillRatings.voidedAt} IS NULL
+                AND ${skillRatings.supersededAt} IS NULL
+            )`,
+          ),
+        )
+        .groupBy(evaluationSessions.swimmerId),
+      // (4) Meet personal bests per swimmer, grouped by event+course. Practice
+      // swims are excluded, matching the single-swimmer /personal-bests route.
+      db
+        .select({
+          swimmerId: meetSwims.swimmerId,
+          eventDistance: meetSwims.eventDistance,
+          eventStroke: meetSwims.eventStroke,
+          course: meetSwims.course,
+          timeHundredths: sql<number>`MIN(${meetSwims.timeHundredths})`.as(
+            "time_hundredths",
+          ),
+        })
+        .from(meetSwims)
+        .where(
+          and(
+            inArray(meetSwims.swimmerId, swimmerIds),
+            eq(meetSwims.swimType, "meet"),
+          ),
+        )
+        .groupBy(
+          meetSwims.swimmerId,
+          meetSwims.eventDistance,
+          meetSwims.eventStroke,
+          meetSwims.course,
+        ),
+    ]);
+
+    // db.execute returns a RowList that still exposes array semantics; iterate
+    // directly to collect typed next-lesson rows per swimmer.
+    const nextLessonBySwimmer = new Map<string, ParentSwimmerSummaryNextLesson>();
+    for (const row of nextLessonRows as unknown as Array<{
+      swimmer_id: string;
+      starts_at: Date | string;
+      duration_minutes: number;
+      location_name: string;
+    }>) {
+      const startsAt = row.starts_at instanceof Date
+        ? row.starts_at.toISOString()
+        : new Date(row.starts_at).toISOString();
+      nextLessonBySwimmer.set(row.swimmer_id, {
+        startsAt,
+        durationMinutes: row.duration_minutes,
+        locationName: row.location_name,
+      });
+    }
+
+    const lastEvalBySwimmer = new Map<string, string>();
+    for (const row of lastEvalRows) {
+      if (row.lastSessionDate) lastEvalBySwimmer.set(row.swimmerId, row.lastSessionDate);
+    }
+
+    const pbsBySwimmer = new Map<
+      string,
+      Array<{ eventDistance: number; eventStroke: SwimStroke; timeHundredths: number }>
+    >();
+    for (const row of pbRows) {
+      const existing = pbsBySwimmer.get(row.swimmerId) ?? [];
+      existing.push({
+        eventDistance: row.eventDistance,
+        eventStroke: row.eventStroke,
+        timeHundredths: row.timeHundredths,
+      });
+      pbsBySwimmer.set(row.swimmerId, existing);
+    }
+
+    const summaries: ParentSwimmerSummary[] = activeSwimmers.map((swimmer) => {
+      const pbs = pbsBySwimmer.get(swimmer.id) ?? [];
+      const bestEvent = pickBestEvent(pbs);
+      return {
+        swimmerId: swimmer.id,
+        nextLesson: nextLessonBySwimmer.get(swimmer.id) ?? null,
+        lastEvaluatedOn: lastEvalBySwimmer.get(swimmer.id) ?? null,
+        bestEvent,
+        onLeaderboards: swimmer.isPublic && pbs.length > 0,
+      };
+    });
+
+    const body: ParentSwimmerSummariesResponse = ParentSwimmerSummariesResponseSchema.parse({
+      summaries,
+    });
+
+    req.log.info(
+      { householdId, swimmerCount: summaries.length },
+      "parent swimmer summary fetched",
+    );
+    res.json(body);
+  }),
+);
+
+// Prefer the fastest 50 Free (across courses); otherwise fall back by stroke
+// order (free, back, breast, fly, im), then shortest distance. Returns the
+// pre-formatted label + timeString shape the parent card displays verbatim.
+const STROKE_LABEL: Record<SwimStroke, string> = {
+  free: "Free",
+  back: "Back",
+  breast: "Breast",
+  fly: "Fly",
+  im: "IM",
+};
+const STROKE_ORDER: Record<SwimStroke, number> = {
+  free: 0,
+  back: 1,
+  breast: 2,
+  fly: 3,
+  im: 4,
+};
+
+function pickBestEvent(
+  pbs: Array<{ eventDistance: number; eventStroke: SwimStroke; timeHundredths: number }>,
+): ParentSwimmerSummaryBestEvent | null {
+  if (pbs.length === 0) return null;
+
+  const fiftyFrees = pbs.filter((pb) => pb.eventDistance === 50 && pb.eventStroke === "free");
+  if (fiftyFrees.length > 0) {
+    const fastest = fiftyFrees.reduce((best, current) =>
+      current.timeHundredths < best.timeHundredths ? current : best,
+    );
+    return { label: "50 Free", timeString: formatSwimTime(fastest.timeHundredths) };
+  }
+
+  const sorted = [...pbs].sort((a, b) => {
+    const strokeDiff = STROKE_ORDER[a.eventStroke] - STROKE_ORDER[b.eventStroke];
+    if (strokeDiff !== 0) return strokeDiff;
+    return a.eventDistance - b.eventDistance;
+  });
+  const pick = sorted[0];
+  if (!pick) return null;
+  return {
+    label: `${pick.eventDistance} ${STROKE_LABEL[pick.eventStroke]}`,
+    timeString: formatSwimTime(pick.timeHundredths),
+  };
+}
