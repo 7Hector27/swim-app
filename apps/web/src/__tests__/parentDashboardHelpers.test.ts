@@ -1,17 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import type {
-  Club,
-  ParentSwimmer,
-  ParentSwimmerProgressResponse,
-  UpcomingLesson,
-} from "@swim-app/shared";
+import type { Club, ParentSwimmer } from "@swim-app/shared";
 
 import {
-  formatNextLessonLine,
+  formatLessonDayTime,
   formatRelativeDay,
-  latestEvaluationDate,
-  nextLessonForSwimmer,
   swimmerClubName,
 } from "../content/ParentDashboardContent/helpers";
 
@@ -28,28 +21,6 @@ function makeSwimmer(overrides: Partial<ParentSwimmer> = {}): ParentSwimmer {
     clubs: [],
     currentLeagues: [],
     ...overrides,
-  };
-}
-
-function makeLesson(startsAt: string, swimmerIds: string[]): UpcomingLesson {
-  return {
-    id: "lesson-" + startsAt,
-    locationId: "00000000-0000-0000-0000-000000000011",
-    startsAt,
-    durationMinutes: 30,
-    type: "private",
-    status: "approved",
-    swimmers: swimmerIds.map((id) => ({ swimmerId: id, firstName: "x", lastName: "y" })),
-    expiresAt: null,
-    approvedAt: null,
-    declinedAt: null,
-    declineReason: null,
-    movedAt: null,
-    previousStartsAt: null,
-    createdAt: "2024-01-01T00:00:00Z",
-    locationName: "Jason's Pool",
-    batchId: null,
-    batchMode: null,
   };
 }
 
@@ -100,80 +71,70 @@ describe("swimmerClubName", () => {
   });
 });
 
-describe("nextLessonForSwimmer", () => {
-  it("returns the earliest lesson that includes this swimmer", () => {
-    const lessons = [
-      makeLesson("2026-11-20T20:00:00Z", ["other"]),
-      makeLesson("2026-11-10T20:00:00Z", ["swimmer-abc"]),
-      makeLesson("2026-11-05T20:00:00Z", ["swimmer-abc", "other"]),
-    ];
-    const next = nextLessonForSwimmer(lessons, "swimmer-abc");
-    expect(next?.startsAt).toBe("2026-11-05T20:00:00Z");
+describe("formatLessonDayTime", () => {
+  // 2026-11-05T20:00:00Z is 12:00 PM Pacific Standard Time (Nov 5 is PST)
+  const iso = "2026-11-05T20:00:00Z";
+
+  it("returns a short weekday + LA time by default", () => {
+    expect(formatLessonDayTime(iso, { weekday: "short" })).toBe("Thu at 12:00 PM");
   });
 
-  it("returns null when the swimmer has no upcoming lessons", () => {
-    const lessons = [makeLesson("2026-11-20T20:00:00Z", ["other"])];
-    expect(nextLessonForSwimmer(lessons, "swimmer-abc")).toBeNull();
-  });
-});
-
-describe("formatNextLessonLine", () => {
-  it("formats weekday + LA time", () => {
-    // 2026-11-05T20:00:00Z is 12:00 PM Pacific Standard Time (Nov 5 is PST)
-    const line = formatNextLessonLine(makeLesson("2026-11-05T20:00:00Z", ["swimmer-abc"]));
-    expect(line).toMatch(/^\w{3} at \d{1,2}:\d{2} (AM|PM)$/);
-    expect(line).toContain("12:00 PM");
-  });
-});
-
-describe("latestEvaluationDate", () => {
-  it("returns null when there is no progress", () => {
-    expect(latestEvaluationDate(null)).toBeNull();
+  it("returns a long weekday + LA time when weekday: 'long'", () => {
+    expect(formatLessonDayTime(iso, { weekday: "long" })).toBe("Thursday at 12:00 PM");
   });
 
-  it("picks the max sessionDate across notes, priority, and history", () => {
-    const progress = {
-      skills: [
-        {
-          history: [{ sessionDate: "2026-09-01" }, { sessionDate: "2026-10-10" }],
-        },
-      ],
-      latestCoachingNotes: [
-        { screenSlug: "start", screenName: "Start", text: "x", sessionDate: "2026-10-05" },
-      ],
-      latestCoachingPriority: { text: "x", sessionDate: "2026-10-20" },
-    } as unknown as ParentSwimmerProgressResponse;
-    expect(latestEvaluationDate(progress)).toBe("2026-10-20");
+  it("stays on LA calendar even when the UTC time is on the next day", () => {
+    // 2026-11-06T07:00:00Z is 11 PM Pacific on Nov 5 (PST).
+    const nightOfNov5 = "2026-11-06T07:00:00Z";
+    expect(formatLessonDayTime(nightOfNov5, { weekday: "short" })).toBe("Thu at 11:00 PM");
   });
 });
 
 describe("formatRelativeDay", () => {
-  const now = new Date(Date.UTC(2026, 10, 15)); // 2026-11-15
+  // 2026-11-15 10:00 UTC == 2026-11-15 02:00 PST, well inside Nov 15 LA.
+  const laNov15Morning = new Date(Date.UTC(2026, 10, 15, 10, 0));
 
   it("returns 'today' for same-day sessions", () => {
-    expect(formatRelativeDay("2026-11-15", now)).toBe("today");
+    expect(formatRelativeDay("2026-11-15", laNov15Morning)).toBe("today");
   });
 
   it("returns 'yesterday' for one day prior", () => {
-    expect(formatRelativeDay("2026-11-14", now)).toBe("yesterday");
+    expect(formatRelativeDay("2026-11-14", laNov15Morning)).toBe("yesterday");
   });
 
   it("returns 'N days ago' within the first week", () => {
-    expect(formatRelativeDay("2026-11-12", now)).toBe("3 days ago");
+    expect(formatRelativeDay("2026-11-12", laNov15Morning)).toBe("3 days ago");
   });
 
   it("returns 'last week' between 7 and 13 days", () => {
-    expect(formatRelativeDay("2026-11-05", now)).toBe("last week");
+    expect(formatRelativeDay("2026-11-05", laNov15Morning)).toBe("last week");
   });
 
   it("returns 'N weeks ago' between 14 and 59 days", () => {
-    expect(formatRelativeDay("2026-10-15", now)).toBe("4 weeks ago");
+    expect(formatRelativeDay("2026-10-15", laNov15Morning)).toBe("4 weeks ago");
   });
 
   it("falls back to a month-day label past 60 days", () => {
-    const result = formatRelativeDay("2026-08-01", now);
+    const result = formatRelativeDay("2026-08-01", laNov15Morning);
     expect(result).toMatch(/Aug/);
     expect(result).toContain("1");
   });
-});
 
+  // LA-timezone boundary: an evaluation logged on Nov 15 (LA calendar day)
+  // must still read "today" at 11:30 PM Pacific, not flip to "yesterday"
+  // just because UTC has rolled past midnight.
+  it("still reads 'today' at 11:30 PM Pacific (UTC past midnight)", () => {
+    // 2026-11-16T07:30:00Z is 11:30 PM PST on 2026-11-15.
+    const lateNov15 = new Date(Date.UTC(2026, 10, 16, 7, 30));
+    expect(formatRelativeDay("2026-11-15", lateNov15)).toBe("today");
+  });
+
+  // The counterpart: once LA midnight has passed, the previous day's session
+  // reads as "yesterday" — even though the UTC clock has only advanced a few
+  // hours past the moment LA just rolled over.
+  it("reads 'yesterday' just after midnight Pacific the next day", () => {
+    // 2026-11-16T08:30:00Z is 12:30 AM PST on 2026-11-16.
+    const earlyNov16 = new Date(Date.UTC(2026, 10, 16, 8, 30));
+    expect(formatRelativeDay("2026-11-15", earlyNov16)).toBe("yesterday");
+  });
+});

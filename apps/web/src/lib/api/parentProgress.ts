@@ -7,6 +7,8 @@ import {
   type ParentSwimmerProgressResponse,
   ParentSwimmerSchema,
   type ParentSwimmer,
+  ParentSwimmerSummariesResponseSchema,
+  type ParentSwimmerSummariesResponse,
 } from "@swim-app/shared";
 
 export type FetchParentSwimmerProgressResult =
@@ -97,6 +99,28 @@ export async function fetchParentPersonalBests(
     if (!response.ok) return { ok: false, status: response.status };
     const body: unknown = await response.json();
     const parsed = ParentPersonalBestsResponseSchema.safeParse(body);
+    if (!parsed.success) return { ok: false, status: 500 };
+    return { ok: true, data: parsed.data };
+  } catch {
+    return { ok: false, status: 500 };
+  }
+}
+
+export type FetchParentSwimmerSummariesResult =
+  | { ok: true; data: ParentSwimmerSummariesResponse }
+  | { ok: false; status: number };
+
+export async function fetchParentSwimmerSummaries(
+  accessToken: string,
+): Promise<FetchParentSwimmerSummariesResult> {
+  try {
+    const response = await fetch(
+      `${process.env.NEXT_PUBLIC_API_URL}/swimmers/me/summary`,
+      { headers: { Authorization: `Bearer ${accessToken}` } },
+    );
+    if (!response.ok) return { ok: false, status: response.status };
+    const body: unknown = await response.json();
+    const parsed = ParentSwimmerSummariesResponseSchema.safeParse(body);
     if (!parsed.success) return { ok: false, status: 500 };
     return { ok: true, data: parsed.data };
   } catch {

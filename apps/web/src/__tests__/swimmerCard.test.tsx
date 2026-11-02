@@ -29,6 +29,7 @@ const baseProps = {
   clubName: null,
   nextLessonLine: null,
   lastEvaluatedLabel: null,
+  bestEvent: null,
   onLeaderboards: false,
   removeAction: mockRemoveAction,
 };
@@ -74,6 +75,22 @@ describe("SwimmerCard", () => {
   it("hides the On leaderboards pill when onLeaderboards is false", () => {
     render(<SwimmerCard {...baseProps} onLeaderboards={false} />);
     expect(screen.queryByText("On leaderboards")).not.toBeInTheDocument();
+  });
+
+  it("renders the best-event line when bestEvent is provided", () => {
+    render(
+      <SwimmerCard
+        {...baseProps}
+        bestEvent={{ label: "50 Free", timeString: "32.15" }}
+      />,
+    );
+    expect(screen.getByText("Best 50 Free")).toBeInTheDocument();
+    expect(screen.getByText("32.15")).toBeInTheDocument();
+  });
+
+  it("hides the best-event line when bestEvent is null", () => {
+    render(<SwimmerCard {...baseProps} />);
+    expect(screen.queryByText(/^Best /)).not.toBeInTheDocument();
   });
 
   it("does not render the removed Profile row or Share stats button", () => {

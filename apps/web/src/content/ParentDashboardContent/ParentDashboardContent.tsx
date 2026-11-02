@@ -4,25 +4,19 @@ import {
   calculateAge,
   todayLA,
   type MeResponse,
-  type ParentPersonalBest,
-  type ParentSwimmerProgressResponse,
+  type ParentSwimmerSummary,
 } from "@swim-app/shared";
 
 import { fetchClubs } from "@/lib/api/clubs";
 import { fetchHousehold } from "@/lib/api/households";
 import { fetchLesson, fetchUpcomingLessons } from "@/lib/api/lessons";
-import {
-  fetchParentPersonalBests,
-  fetchParentSwimmerProgress,
-} from "@/lib/api/parentProgress";
+import { fetchParentSwimmerSummaries } from "@/lib/api/parentProgress";
 import { fetchSwimmers } from "@/lib/api/swimmers";
 import { removeSwimmer } from "./actions";
 import BookingConfirmDialog from "./BookingConfirmDialog";
 import {
-  formatNextLessonLine,
+  formatLessonDayTime,
   formatRelativeDay,
-  latestEvaluationDate,
-  nextLessonForSwimmer,
   swimmerClubName,
 } from "./helpers";
 import SwimmerCard from "./SwimmerCard";
@@ -39,43 +33,31 @@ interface Props {
 export default async function ParentDashboardContent({ profile, accessToken, bookedLessonId, rescheduledLessonId, rescheduledFrom }: Props) {
   const firstName = profile.fullName?.trim().split(/\s+/)[0] ?? "there";
   const hasPhone = !!(profile.phone && profile.phone.length > 0);
-  const [swimmers, upcomingLessonsRaw, household, bookedLesson, rescheduledLesson, clubs] =
+  const [swimmers, upcomingLessonsRaw, household, bookedLesson, rescheduledLesson, clubs, summariesResult] =
     await Promise.all([
       fetchSwimmers(accessToken),
-      fetchUpcomingLessons(accessToken, { limit: 50 }),
+      fetchUpcomingLessons(accessToken, { limit: 3 }),
       fetchHousehold(accessToken),
       bookedLessonId ? fetchLesson(accessToken, bookedLessonId) : Promise.resolve(null),
       rescheduledLessonId ? fetchLesson(accessToken, rescheduledLessonId) : Promise.resolve(null),
       fetchClubs(accessToken),
+      fetchParentSwimmerSummaries(accessToken),
     ]);
   const upcomingLessons = upcomingLessonsRaw?.items ?? [];
   const upcomingCount = upcomingLessonsRaw?.total ?? null;
   const today = todayLA();
   const now = new Date();
   const showFinishSetup = !hasPhone;
-  const nextLesson = upcomingLessons[0];
+  const headerNextLesson = upcomingLessons[0];
   const householdRole = household?.myRole ?? null;
   const isViewer = householdRole === "viewer";
 
-  const [progressResults, pbResults] = await Promise.all([
-    Promise.all(swimmers.map((swimmer) => fetchParentSwimmerProgress(swimmer.id, accessToken))),
-    Promise.all(swimmers.map((swimmer) => fetchParentPersonalBests(swimmer.id, accessToken))),
-  ]);
-
-  const progressBySwimmer = new Map<string, ParentSwimmerProgressResponse | null>();
-  const personalBestsBySwimmer = new Map<string, ParentPersonalBest[]>();
-  swimmers.forEach((swimmer, index) => {
-    const progressResult = progressResults[index];
-    progressBySwimmer.set(
-      swimmer.id,
-      progressResult && progressResult.ok ? progressResult.data : null,
-    );
-    const pbResult = pbResults[index];
-    personalBestsBySwimmer.set(
-      swimmer.id,
-      pbResult && pbResult.ok ? pbResult.data.personalBests : [],
-    );
-  });
+  const summariesBySwimmer = new Map<string, ParentSwimmerSummary>();
+  if (summariesResult.ok) {
+    for (const summary of summariesResult.data.summaries) {
+      summariesBySwimmer.set(summary.swimmerId, summary);
+    }
+  }
 
   return (
     <div className="flex flex-col flex-1 bg-background">
@@ -90,8 +72,8 @@ export default async function ParentDashboardContent({ profile, accessToken, boo
             <div>
               <h1 className="text-3xl tablet:text-4xl text-heading">Hi, {firstName}.</h1>
               <p className="mt-2 text-sm text-text-secondary">
-                {nextLesson
-                  ? `Your next lesson is ${formatNextLessonLabel(nextLesson.startsAt)}.`
+                {headerNextLesson
+                  ? `Your next lesson is ${formatLessonDayTime(headerNextLesson.startsAt, { weekday: "long" })}.`
                   : "No lessons booked yet."}
               </p>
             </div>
@@ -133,9 +115,7 @@ export default async function ParentDashboardContent({ profile, accessToken, boo
                 today={today}
                 now={now}
                 clubs={clubs}
-                upcomingLessons={upcomingLessons}
-                progressBySwimmer={progressBySwimmer}
-                personalBestsBySwimmer={personalBestsBySwimmer}
+                summariesBySwimmer={summariesBySwimmer}
               />
             </div>
 
@@ -152,23 +132,6 @@ export default async function ParentDashboardContent({ profile, accessToken, boo
   );
 }
 
-// ── Helper ────────────────────────────────────────────────────────────────────
-
-function formatNextLessonLabel(startsAt: string): string {
-  const date = new Date(startsAt);
-  const day = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/Los_Angeles",
-    weekday: "long",
-  }).format(date);
-  const time = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/Los_Angeles",
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  }).format(date);
-  return `${day} at ${time}`;
-}
-
 // ── Sub-components ────────────────────────────────────────────────────────────
 
 interface SwimmersSectionProps {
@@ -176,13 +139,7 @@ interface SwimmersSectionProps {
   today: string;
   now: Date;
   clubs: Awaited<ReturnType<typeof fetchClubs>>;
-  upcomingLessons: Awaited<ReturnType<typeof fetchUpcomingLessons>> extends infer T
-    ? T extends { items: infer Items }
-      ? Items
-      : never
-    : never;
-  progressBySwimmer: Map<string, ParentSwimmerProgressResponse | null>;
-  personalBestsBySwimmer: Map<string, ParentPersonalBest[]>;
+  summariesBySwimmer: Map<string, ParentSwimmerSummary>;
 }
 
 function SwimmersSection({
@@ -190,9 +147,7 @@ function SwimmersSection({
   today,
   now,
   clubs,
-  upcomingLessons,
-  progressBySwimmer,
-  personalBestsBySwimmer,
+  summariesBySwimmer,
 }: SwimmersSectionProps) {
   return (
     <div>
@@ -201,11 +156,7 @@ function SwimmersSection({
         {swimmers.map((swimmer) => {
           const age = calculateAge(swimmer.birthDate, today);
           const boundRemove = removeSwimmer.bind(null, swimmer.id);
-          const nextLesson = nextLessonForSwimmer(upcomingLessons, swimmer.id);
-          const progress = progressBySwimmer.get(swimmer.id) ?? null;
-          const evalDate = latestEvaluationDate(progress);
-          const personalBests = personalBestsBySwimmer.get(swimmer.id) ?? [];
-          const onLeaderboards = swimmer.isPublic && personalBests.length > 0;
+          const summary = summariesBySwimmer.get(swimmer.id);
 
           return (
             <SwimmerCard
@@ -215,9 +166,16 @@ function SwimmersSection({
               lastName={swimmer.lastName}
               age={age}
               clubName={swimmerClubName(swimmer, clubs)}
-              nextLessonLine={nextLesson ? formatNextLessonLine(nextLesson) : null}
-              lastEvaluatedLabel={evalDate ? formatRelativeDay(evalDate, now) : null}
-              onLeaderboards={onLeaderboards}
+              nextLessonLine={
+                summary?.nextLesson
+                  ? formatLessonDayTime(summary.nextLesson.startsAt, { weekday: "short" })
+                  : null
+              }
+              lastEvaluatedLabel={
+                summary?.lastEvaluatedOn ? formatRelativeDay(summary.lastEvaluatedOn, now) : null
+              }
+              bestEvent={summary?.bestEvent ?? null}
+              onLeaderboards={summary?.onLeaderboards ?? false}
               removeAction={boundRemove}
             />
           );

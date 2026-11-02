@@ -14,6 +14,7 @@ interface SwimmerCardProps {
   clubName: string | null;
   nextLessonLine: string | null;
   lastEvaluatedLabel: string | null;
+  bestEvent: { label: string; timeString: string } | null;
   onLeaderboards: boolean;
   removeAction: (_prevState: RemoveSwimmerState, _formData: FormData) => Promise<RemoveSwimmerState>;
 }
@@ -26,6 +27,7 @@ export default function SwimmerCard({
   clubName,
   nextLessonLine,
   lastEvaluatedLabel,
+  bestEvent,
   onLeaderboards,
   removeAction,
 }: SwimmerCardProps) {
@@ -177,6 +179,17 @@ export default function SwimmerCard({
               <ClipboardIcon />
             </span>
             <span className="truncate">Last evaluated {lastEvaluatedLabel}</span>
+          </div>
+        )}
+        {bestEvent && (
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-text-secondary flex-shrink-0" aria-hidden="true">
+              <TrophyIcon />
+            </span>
+            <span className="truncate">
+              <span className="text-text font-semibold">Best {bestEvent.label}</span>{" "}
+              <span className="tabular-nums">{bestEvent.timeString}</span>
+            </span>
           </div>
         )}
       </div>
