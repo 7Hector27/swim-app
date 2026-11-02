@@ -1,13 +1,30 @@
 import Link from "next/link";
 
-import { calculateAge, todayLA, type MeResponse } from "@swim-app/shared";
+import {
+  calculateAge,
+  todayLA,
+  type MeResponse,
+  type ParentPersonalBest,
+  type ParentSwimmerProgressResponse,
+} from "@swim-app/shared";
 
-import Placeholder from "@/components/Placeholder";
+import { fetchClubs } from "@/lib/api/clubs";
 import { fetchHousehold } from "@/lib/api/households";
 import { fetchLesson, fetchUpcomingLessons } from "@/lib/api/lessons";
+import {
+  fetchParentPersonalBests,
+  fetchParentSwimmerProgress,
+} from "@/lib/api/parentProgress";
 import { fetchSwimmers } from "@/lib/api/swimmers";
 import { removeSwimmer } from "./actions";
 import BookingConfirmDialog from "./BookingConfirmDialog";
+import {
+  formatNextLessonLine,
+  formatRelativeDay,
+  latestEvaluationDate,
+  nextLessonForSwimmer,
+  swimmerClubName,
+} from "./helpers";
 import SwimmerCard from "./SwimmerCard";
 import UpcomingLessonsCard from "./UpcomingLessonsCard";
 
@@ -22,20 +39,43 @@ interface Props {
 export default async function ParentDashboardContent({ profile, accessToken, bookedLessonId, rescheduledLessonId, rescheduledFrom }: Props) {
   const firstName = profile.fullName?.trim().split(/\s+/)[0] ?? "there";
   const hasPhone = !!(profile.phone && profile.phone.length > 0);
-  const [swimmers, upcomingLessonsRaw, household, bookedLesson, rescheduledLesson] = await Promise.all([
-    fetchSwimmers(accessToken),
-    fetchUpcomingLessons(accessToken, { limit: 3 }),
-    fetchHousehold(accessToken),
-    bookedLessonId ? fetchLesson(accessToken, bookedLessonId) : Promise.resolve(null),
-    rescheduledLessonId ? fetchLesson(accessToken, rescheduledLessonId) : Promise.resolve(null),
-  ]);
+  const [swimmers, upcomingLessonsRaw, household, bookedLesson, rescheduledLesson, clubs] =
+    await Promise.all([
+      fetchSwimmers(accessToken),
+      fetchUpcomingLessons(accessToken, { limit: 50 }),
+      fetchHousehold(accessToken),
+      bookedLessonId ? fetchLesson(accessToken, bookedLessonId) : Promise.resolve(null),
+      rescheduledLessonId ? fetchLesson(accessToken, rescheduledLessonId) : Promise.resolve(null),
+      fetchClubs(accessToken),
+    ]);
   const upcomingLessons = upcomingLessonsRaw?.items ?? [];
   const upcomingCount = upcomingLessonsRaw?.total ?? null;
   const today = todayLA();
+  const now = new Date();
   const showFinishSetup = !hasPhone;
   const nextLesson = upcomingLessons[0];
   const householdRole = household?.myRole ?? null;
   const isViewer = householdRole === "viewer";
+
+  const [progressResults, pbResults] = await Promise.all([
+    Promise.all(swimmers.map((swimmer) => fetchParentSwimmerProgress(swimmer.id, accessToken))),
+    Promise.all(swimmers.map((swimmer) => fetchParentPersonalBests(swimmer.id, accessToken))),
+  ]);
+
+  const progressBySwimmer = new Map<string, ParentSwimmerProgressResponse | null>();
+  const personalBestsBySwimmer = new Map<string, ParentPersonalBest[]>();
+  swimmers.forEach((swimmer, index) => {
+    const progressResult = progressResults[index];
+    progressBySwimmer.set(
+      swimmer.id,
+      progressResult && progressResult.ok ? progressResult.data : null,
+    );
+    const pbResult = pbResults[index];
+    personalBestsBySwimmer.set(
+      swimmer.id,
+      pbResult && pbResult.ok ? pbResult.data.personalBests : [],
+    );
+  });
 
   return (
     <div className="flex flex-col flex-1 bg-background">
@@ -84,22 +124,23 @@ export default async function ParentDashboardContent({ profile, accessToken, boo
 
           {/* Two-column layout */}
           <div className="flex flex-col tablet:flex-row tablet:items-start gap-6 desktop:gap-8">
-            {/* Main column — full width on phone, flex-1 on tablet+ */}
+            {/* Main column: full width on phone, flex-1 on tablet+ */}
             <div className="w-full min-w-0 flex flex-col gap-6 tablet:flex-1">
               <UpcomingLessonsCard lessons={upcomingLessons} total={upcomingCount ?? upcomingLessons.length} />
 
               <SwimmersSection
                 swimmers={swimmers}
                 today={today}
+                now={now}
+                clubs={clubs}
+                upcomingLessons={upcomingLessons}
+                progressBySwimmer={progressBySwimmer}
+                personalBestsBySwimmer={personalBestsBySwimmer}
               />
             </div>
 
             {/* Sidebar */}
             <div className="w-full tablet:w-[272px] desktop:w-[300px] flex-shrink-0 flex flex-col gap-4">
-              <Placeholder block>
-                <SharedStatsCard />
-              </Placeholder>
-
               {showFinishSetup && <FinishSetupCard hasPhone={hasPhone} />}
 
               <AccountCard />
@@ -111,7 +152,7 @@ export default async function ParentDashboardContent({ profile, accessToken, boo
   );
 }
 
-// ── Helper ─────────────────────────────────────────────────────────────────────
+// ── Helper ────────────────────────────────────────────────────────────────────
 
 function formatNextLessonLabel(startsAt: string): string {
   const date = new Date(startsAt);
@@ -128,14 +169,31 @@ function formatNextLessonLabel(startsAt: string): string {
   return `${day} at ${time}`;
 }
 
-// ── Sub-components ─────────────────────────────────────────────────────────────
+// ── Sub-components ────────────────────────────────────────────────────────────
 
 interface SwimmersSectionProps {
   swimmers: Awaited<ReturnType<typeof fetchSwimmers>>;
   today: string;
+  now: Date;
+  clubs: Awaited<ReturnType<typeof fetchClubs>>;
+  upcomingLessons: Awaited<ReturnType<typeof fetchUpcomingLessons>> extends infer T
+    ? T extends { items: infer Items }
+      ? Items
+      : never
+    : never;
+  progressBySwimmer: Map<string, ParentSwimmerProgressResponse | null>;
+  personalBestsBySwimmer: Map<string, ParentPersonalBest[]>;
 }
 
-function SwimmersSection({ swimmers, today }: SwimmersSectionProps) {
+function SwimmersSection({
+  swimmers,
+  today,
+  now,
+  clubs,
+  upcomingLessons,
+  progressBySwimmer,
+  personalBestsBySwimmer,
+}: SwimmersSectionProps) {
   return (
     <div>
       <h2 className="text-xl text-heading mb-4">Your swimmers</h2>
@@ -143,6 +201,11 @@ function SwimmersSection({ swimmers, today }: SwimmersSectionProps) {
         {swimmers.map((swimmer) => {
           const age = calculateAge(swimmer.birthDate, today);
           const boundRemove = removeSwimmer.bind(null, swimmer.id);
+          const nextLesson = nextLessonForSwimmer(upcomingLessons, swimmer.id);
+          const progress = progressBySwimmer.get(swimmer.id) ?? null;
+          const evalDate = latestEvaluationDate(progress);
+          const personalBests = personalBestsBySwimmer.get(swimmer.id) ?? [];
+          const onLeaderboards = swimmer.isPublic && personalBests.length > 0;
 
           return (
             <SwimmerCard
@@ -151,7 +214,10 @@ function SwimmersSection({ swimmers, today }: SwimmersSectionProps) {
               firstName={swimmer.firstName}
               lastName={swimmer.lastName}
               age={age}
-              isPublic={swimmer.isPublic}
+              clubName={swimmerClubName(swimmer, clubs)}
+              nextLessonLine={nextLesson ? formatNextLessonLine(nextLesson) : null}
+              lastEvaluatedLabel={evalDate ? formatRelativeDay(evalDate, now) : null}
+              onLeaderboards={onLeaderboards}
               removeAction={boundRemove}
             />
           );
@@ -178,29 +244,6 @@ function AddSwimmerCard() {
       </svg>
       <span className="text-sm font-semibold">Add a swimmer</span>
     </Link>
-  );
-}
-
-function SharedStatsCard() {
-  return (
-    <div className="rounded-card border border-border p-5">
-      <h3 className="text-base text-heading mb-4">Shared stats access</h3>
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-sm font-semibold text-text">[Device Name]</p>
-          <p className="text-xs text-text-secondary mt-0.5">Last opened [Date]</p>
-        </div>
-        <button
-          type="button"
-          className="flex-shrink-0 rounded-button border border-danger text-danger text-xs font-semibold px-3 h-8"
-        >
-          Revoke
-        </button>
-      </div>
-      <p className="text-xs text-text-secondary mt-4">
-        Devices you share stats with. View only.
-      </p>
-    </div>
   );
 }
 

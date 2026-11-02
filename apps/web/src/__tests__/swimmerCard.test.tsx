@@ -26,28 +26,71 @@ const baseProps = {
   firstName: "Morgan",
   lastName: "Lee",
   age: 10,
-  isPublic: false,
+  clubName: null,
+  nextLessonLine: null,
+  lastEvaluatedLabel: null,
+  onLeaderboards: false,
   removeAction: mockRemoveAction,
 };
 
 describe("SwimmerCard", () => {
-  it("renders swimmer name and age", () => {
+  it("renders swimmer name and the Age subheader", () => {
     render(<SwimmerCard {...baseProps} />);
     expect(screen.getByText("Morgan Lee")).toBeInTheDocument();
     expect(screen.getByText("Age 10")).toBeInTheDocument();
   });
 
-  it("shows Public when isPublic is true", () => {
-    render(<SwimmerCard {...baseProps} isPublic={true} />);
-    expect(screen.getByText("Public")).toBeInTheDocument();
+  it("appends the club name to the subheader when provided", () => {
+    render(<SwimmerCard {...baseProps} clubName="Dragon Swim Club" />);
+    expect(screen.getByText("Age 10 \u00B7 Dragon Swim Club")).toBeInTheDocument();
   });
 
-  it("shows Private when isPublic is false", () => {
-    render(<SwimmerCard {...baseProps} isPublic={false} />);
-    expect(screen.getByText("Private")).toBeInTheDocument();
+  it("renders the next lesson line when provided", () => {
+    render(<SwimmerCard {...baseProps} nextLessonLine="Thu at 4:30 PM" />);
+    expect(screen.getByText(/Next lesson/i)).toBeInTheDocument();
+    expect(screen.getByText(/Thu at 4:30 PM/i)).toBeInTheDocument();
   });
 
-  it("view profile link points to the correct page", () => {
+  it("shows 'No upcoming lessons' when there is no next lesson", () => {
+    render(<SwimmerCard {...baseProps} />);
+    expect(screen.getByText(/No upcoming lessons/i)).toBeInTheDocument();
+  });
+
+  it("renders the last-evaluated line when provided", () => {
+    render(<SwimmerCard {...baseProps} lastEvaluatedLabel="2 weeks ago" />);
+    expect(screen.getByText(/Last evaluated 2 weeks ago/i)).toBeInTheDocument();
+  });
+
+  it("hides the last-evaluated line when there is none", () => {
+    render(<SwimmerCard {...baseProps} />);
+    expect(screen.queryByText(/Last evaluated/i)).not.toBeInTheDocument();
+  });
+
+  it("shows the On leaderboards pill when onLeaderboards is true", () => {
+    render(<SwimmerCard {...baseProps} onLeaderboards={true} />);
+    expect(screen.getByText("On leaderboards")).toBeInTheDocument();
+  });
+
+  it("hides the On leaderboards pill when onLeaderboards is false", () => {
+    render(<SwimmerCard {...baseProps} onLeaderboards={false} />);
+    expect(screen.queryByText("On leaderboards")).not.toBeInTheDocument();
+  });
+
+  it("does not render the removed Profile row or Share stats button", () => {
+    render(<SwimmerCard {...baseProps} />);
+    expect(screen.queryByText(/^Public$/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^Private$/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /share stats/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/coming soon/i)).not.toBeInTheDocument();
+  });
+
+  it("View progress link points to the progress page", () => {
+    render(<SwimmerCard {...baseProps} />);
+    const link = screen.getByRole("link", { name: /view progress/i });
+    expect(link).toHaveAttribute("href", "/dashboard/swimmers/swimmer-abc/progress");
+  });
+
+  it("View profile link points to the profile page", () => {
     render(<SwimmerCard {...baseProps} />);
     const link = screen.getByRole("link", { name: /view profile/i });
     expect(link).toHaveAttribute("href", "/dashboard/swimmers/swimmer-abc");
@@ -92,7 +135,6 @@ describe("SwimmerCard", () => {
 
   it("does not render any parent or guardian name on the card", () => {
     render(<SwimmerCard {...baseProps} />);
-    // Swimmer cards show only swimmer data; parent/guardian names must not appear
     expect(screen.getByText("Morgan Lee")).toBeInTheDocument();
     expect(screen.queryByText(/parent/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/guardian/i)).not.toBeInTheDocument();
