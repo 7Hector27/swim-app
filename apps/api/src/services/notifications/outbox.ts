@@ -19,8 +19,22 @@ import {
   swimmers,
 } from "../../db/schema";
 import { getEnv } from "../../lib/env";
+import { getDateInLA } from "../../lib/slots";
 import { formatLessonTimeDisplay } from "../emails/format";
 import { computeUrgency } from "./urgency";
+
+// Monday of the LA date `yyyy-mm-dd`. Pure string math on UTC-noon so DST
+// shifts never move the pivot day.
+function mondayOfLADate(dateStr: string): string {
+  const [yearStr, monthStr, dayStr] = dateStr.split("-");
+  const year = Number(yearStr);
+  const month = Number(monthStr);
+  const day = Number(dayStr);
+  const dow = new Date(Date.UTC(year, month - 1, day, 12)).getUTCDay();
+  const offset = dow === 0 ? -6 : 1 - dow;
+  const monday = new Date(Date.UTC(year, month - 1, day + offset, 12));
+  return `${monday.getUTCFullYear()}-${String(monday.getUTCMonth() + 1).padStart(2, "0")}-${String(monday.getUTCDate()).padStart(2, "0")}`;
+}
 import type {
   AutoApprovedPayload,
   BookingRequestBatchPayload,
@@ -115,7 +129,9 @@ export async function enqueueCoachNotification(
     } else if (input.batchId) {
       const built = await buildBatchBookingPayload(tx, input.batchId);
       payload = built.payload;
-      clickUrl = `${siteUrl}/coach/lessons?batch=${input.batchId}`;
+      // Batch requests land on the dashboard with that batch's grouped
+      // card auto-expanded (BookingRequestsCard reads ?batch=…).
+      clickUrl = `${siteUrl}/dashboard?batch=${input.batchId}`;
       tag = `batch:${input.batchId}`;
       urgency = built.earliestStartsAt ? computeUrgency(built.earliestStartsAt) : "standard";
       batchIdForRow = input.batchId;
@@ -128,7 +144,9 @@ export async function enqueueCoachNotification(
     }
     const built = await buildLessonPayloadForAutoApproved(tx, input.lessonId);
     payload = built.payload;
-    clickUrl = `${siteUrl}/coach/schedule?view=today`;
+    // Per-lesson confirmation: route to that lesson's coach page, same
+    // as new-request / cancellation / reschedule.
+    clickUrl = `${siteUrl}/coach/lessons/${input.lessonId}`;
     tag = `lesson:${input.lessonId}`;
     urgency = computeUrgency(built.startsAt);
     lessonIdForRow = input.lessonId;
@@ -161,7 +179,15 @@ export async function enqueueCoachNotification(
       }
       const built = await buildBatchParentChangePayload(tx, input.batchId);
       payload = built.payload;
-      clickUrl = `${siteUrl}/coach/lessons?batch=${input.batchId}`;
+      // Batch cancel-remaining opens the schedule's week view at the
+      // Monday of the first canceled lesson's LA date so the coach lands
+      // on the week with the gap.
+      const weekDate = built.earliestStartsAt
+        ? mondayOfLADate(getDateInLA(built.earliestStartsAt))
+        : null;
+      clickUrl = weekDate
+        ? `${siteUrl}/coach/schedule?view=week&date=${weekDate}`
+        : `${siteUrl}/coach/schedule?view=week`;
       tag = `batch:${input.batchId}`;
       urgency = built.earliestStartsAt ? computeUrgency(built.earliestStartsAt) : "standard";
       batchIdForRow = input.batchId;

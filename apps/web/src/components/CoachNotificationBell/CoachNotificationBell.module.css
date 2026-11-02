@@ -2,11 +2,32 @@
    stay doing layout and tokens, and the custom easing isn't repeated in a
    dozen style props. */
 
+/* The root wraps BOTH the trigger button and the desktop panel so the
+   panel's absolute positioning anchors to the trigger (right-aligned,
+   directly under it). Mobile sheet is position:fixed and doesn't care
+   where its ancestor is. */
+.root {
+  position: relative;
+  display: inline-flex;
+}
+
 /* Desktop dropdown. CSS-visible only at tablet+; the mobile-sheet rules
    below handle the narrow viewport. No JavaScript breakpoint detection,
    so there is no first-render flash of the wrong surface. */
 .panel {
   display: none;
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 0.5rem;
+  width: 20rem;
+  /* Cap at the viewport minus a small margin so a narrow desktop window
+     still shows the whole panel; right:0 keeps it anchored to the bell's
+     right edge no matter the width. */
+  max-width: calc(100vw - 1rem);
+  max-height: calc(100vh - 6rem);
+  z-index: 50;
+  flex-direction: column;
   transform-origin: top right;
   transition:
     transform 180ms var(--ease-out-strong, cubic-bezier(0.23, 1, 0.32, 1)),
@@ -15,7 +36,7 @@
 
 @media (min-width: 769px) {
   .panel {
-    display: block;
+    display: flex;
   }
 }
 
@@ -24,10 +45,6 @@
     transform: scale(0.96);
     opacity: 0;
   }
-}
-
-.panel[data-origin="top-left"] {
-  transform-origin: top left;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -118,7 +135,7 @@
   }
 }
 
-/* Pulse on the badge count change — soft, no bouncing. */
+/* Pulse on the badge count change: soft, no bouncing. */
 .badgePulse {
   animation: badgePulse 420ms var(--ease-out-strong, cubic-bezier(0.23, 1, 0.32, 1));
 }

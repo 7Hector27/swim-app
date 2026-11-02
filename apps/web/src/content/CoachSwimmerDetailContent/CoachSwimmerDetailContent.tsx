@@ -503,9 +503,9 @@ export default function CoachSwimmerDetailContent({
                 {/*
                   Header actions. On phone they wrap under the name instead
                   of squeezing; min-height stays at least 44px. Evaluate is
-                  the primary CTA; Book lesson and Add time are secondary.
-                  View progress keeps the existing destination accessible
-                  as a tertiary text link beneath.
+                  the primary CTA; Book lesson, Add time, and View progress
+                  are secondary and share the same shape so the group reads
+                  as one row on tablet+ and a tappable column on phones.
                 */}
                 <div className="flex gap-2 flex-wrap">
                   <a
@@ -527,14 +527,13 @@ export default function CoachSwimmerDetailContent({
                   >
                     Add time
                   </button>
+                  <a
+                    href={`/coach/swimmers/${swimmer.id}/progress`}
+                    className="inline-flex items-center justify-center h-11 px-4 rounded-full font-semibold text-sm border border-border text-text bg-background transition-transform duration-150 active:scale-[0.97] focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-focus-ring"
+                  >
+                    View progress
+                  </a>
                 </div>
-
-                <a
-                  href={`/coach/swimmers/${swimmer.id}/progress`}
-                  className="text-sm text-link underline underline-offset-2 self-start"
-                >
-                  View progress
-                </a>
               </section>
 
               {drafts.length > 0 && (

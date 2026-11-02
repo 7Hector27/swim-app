@@ -33,6 +33,23 @@ if (typeof Element !== "undefined" && typeof Element.prototype.scrollIntoView !=
   Element.prototype.scrollIntoView = function scrollIntoView() {};
 }
 
+// jsdom doesn't implement matchMedia. CoachNotificationBell uses it to
+// decide whether the bottom-sheet scroll-lock applies (mobile only).
+// Default to no-match (desktop); tests that need to simulate the mobile
+// branch override this on their own.
+if (typeof window !== "undefined" && typeof window.matchMedia !== "function") {
+  window.matchMedia = (query: string) => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addListener: () => {},
+    removeListener: () => {},
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    dispatchEvent: () => false,
+  }) as MediaQueryList;
+}
+
 // Pin the clock for every test by default so no test silently depends on the
 // real wall clock. Only Date is faked so setTimeout, setInterval, and
 // queueMicrotask remain real — testing-library's waitFor and React's
