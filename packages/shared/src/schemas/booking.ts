@@ -626,6 +626,38 @@ export const CoachLessonDetailSchema = z.object({
 });
 export type CoachLessonDetail = z.infer<typeof CoachLessonDetailSchema>;
 
+// ── Coach batch detail ─────────────────────────────────────────────────────────
+
+// One lesson row in the batch detail view. Lean on purpose — the row renders
+// an at-a-glance list and taps through to /coach/lessons/[id] for full detail.
+export const CoachBatchLessonSchema = z.object({
+  id: z.string().uuid(),
+  startsAt: z.string().datetime({ offset: true }),
+  durationMinutes: LessonDurationMinutesSchema,
+  type: LessonTypeSchema,
+  status: LessonStatusSchema,
+  locationId: z.string().uuid(),
+  locationName: z.string(),
+  swimmers: z.array(LessonSwimmerSchema),
+});
+export type CoachBatchLesson = z.infer<typeof CoachBatchLessonSchema>;
+
+export const CoachBatchDetailSchema = z.object({
+  id: z.string().uuid(),
+  mode: z.enum(["manual", "weekly"]),
+  householdId: z.string().uuid(),
+  householdName: z.string().nullable(),
+  // Full name of the household member who submitted the batch, snapshotted
+  // from profiles.full_name at read time (not frozen — a later rename
+  // propagates).
+  createdByName: z.string().nullable(),
+  createdAt: z.string().datetime({ offset: true }),
+  // Ordered by startsAt ascending. Cancelled/no-show lessons are included
+  // (the UI shows them with their status).
+  lessons: z.array(CoachBatchLessonSchema),
+});
+export type CoachBatchDetail = z.infer<typeof CoachBatchDetailSchema>;
+
 export const AvailabilityPreviewQuerySchema = z.object({
   from: DateStringSchema,
   days: z
