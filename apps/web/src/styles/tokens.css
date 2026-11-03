@@ -56,6 +56,11 @@
   --page-padding: 24px;
   /* Mobile tab bar full rendered height (item content + vertical padding); used by ParentNav and sticky Confirm bars */
   --tab-bar-height: 56px;
+  /* Desktop + mobile top header rendered height. Single source of truth: used
+     by CoachNav/ParentNav/SiteNav for their h-16 bar and by any sticky element
+     that needs to clear the header (e.g. /account's AccountSectionNav sticky
+     offset and the section anchors' scroll-margin-top). */
+  --header-height: 64px;
 }
 
 :root[data-theme="dark"] {

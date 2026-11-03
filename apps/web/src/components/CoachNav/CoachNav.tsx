@@ -320,7 +320,7 @@ export default function CoachNav() {
           scrolled ? "border-divider-section" : "border-transparent"
         }`}
       >
-        <div className="mx-auto max-w-content px-page flex items-center justify-between h-16">
+        <div className="mx-auto max-w-content px-page flex items-center justify-between h-[var(--header-height)]">
           <Link href="/" aria-label="Axiom Aquatics home">
             <ThemeLogo variant="auto" onDark />
           </Link>

@@ -61,7 +61,7 @@ export default function AccountContent({
               <section
                 id="profile"
                 aria-labelledby="account-profile-heading"
-                className="flex flex-col gap-5 rounded-card border border-border p-5 scroll-mt-6"
+                className="flex flex-col gap-5 rounded-card border border-border p-5 scroll-mt-[calc(var(--header-height)+1rem)]"
               >
                 <h2
                   id="account-profile-heading"
@@ -88,7 +88,7 @@ export default function AccountContent({
               </section>
 
               {showCalendarCard && (
-                <div id="calendar" className="scroll-mt-6">
+                <div id="calendar" className="scroll-mt-[calc(var(--header-height)+1rem)]">
                   <GoogleCalendarCard
                     status={googleCalendarStatus}
                     connectError={googleConnectError}
@@ -98,7 +98,7 @@ export default function AccountContent({
               )}
 
               {showNotifications && (
-                <div id="notifications" className="scroll-mt-6">
+                <div id="notifications" className="scroll-mt-[calc(var(--header-height)+1rem)]">
                   <NotificationsSection vapidPublicKey={vapidPublicKey} />
                 </div>
               )}
@@ -106,7 +106,7 @@ export default function AccountContent({
               <section
                 id="security"
                 aria-labelledby="account-security-heading"
-                className="flex flex-col gap-4 rounded-card border border-border p-5 scroll-mt-6"
+                className="flex flex-col gap-4 rounded-card border border-border p-5 scroll-mt-[calc(var(--header-height)+1rem)]"
               >
                 <h2
                   id="account-security-heading"
