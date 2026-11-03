@@ -166,6 +166,16 @@ export const CoachSwimmerClubSchema = SwimmerClubBaseSchema.extend({
 }).refine(isXorClub, xorClubOptions);
 export type CoachSwimmerClub = z.infer<typeof CoachSwimmerClubSchema>;
 
+// Most recent lesson for a swimmer on the coach roster. "Most recent" =
+// the lesson's starts_at is in the past and the lesson wasn't cancelled or
+// marked a no-show. Null when the swimmer has no such lesson yet. Powers
+// the "Last lesson" column on /dashboard's swimmer search.
+export const CoachSwimmerLastLessonSchema = z.object({
+  id: z.string().uuid(),
+  startsAt: z.string().datetime({ offset: true }),
+});
+export type CoachSwimmerLastLesson = z.infer<typeof CoachSwimmerLastLessonSchema>;
+
 export const CoachSwimmerSchema = z.object({
   id: z.string().uuid(),
   firstName: z.string().trim().min(1),
@@ -178,6 +188,7 @@ export const CoachSwimmerSchema = z.object({
   clubs: z.array(CoachSwimmerClubSchema),
   currentLeagues: z.array(LeagueSchema),
   memberNames: z.array(z.string()),
+  lastLesson: CoachSwimmerLastLessonSchema.nullable(),
 });
 
 export type CoachSwimmer = z.infer<typeof CoachSwimmerSchema>;

@@ -32,6 +32,7 @@ const swimmer: CoachSwimmerDetail = {
   currentLeagues: [],
   clubs: [],
   memberNames: [],
+  lastLesson: null,
   members: [],
   homePool: null,
 };
