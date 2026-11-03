@@ -37,6 +37,7 @@ import {
   formatWeekdayLine,
   formatWeekendLine,
 } from "./seasonSummary";
+import BookingNoticeCard from "./BookingNoticeCard";
 import CopyToNextYearButton from "./CopyToNextYearButton";
 import DefaultHoursCard from "./DefaultHoursCard";
 import DefaultHoursModal from "./DefaultHoursModal";
@@ -100,6 +101,8 @@ export default function CoachAvailabilityContent({
 
   const [defaultHoursModalOpen, setDefaultHoursModalOpen] = useState(false);
   const [defaultHoursPending, setDefaultHoursPending] = useState(false);
+
+  const [bookingNoticePending, setBookingNoticePending] = useState(false);
 
   const [warnings, setWarnings] = useState<ImpactWarning[]>([]);
   const [warningsOpen, setWarningsOpen] = useState(false);
@@ -444,6 +447,20 @@ export default function CoachAvailabilityContent({
     }
   }
 
+  async function handleBookingNoticeSave(hours: number): Promise<string | null> {
+    setBookingNoticePending(true);
+    try {
+      const result = await patchAvailabilityConfigAction({
+        bookingMinAdvanceHours: hours,
+      });
+      if (!result.ok) return apiErrorMessage(result.code);
+      setConfig(result.data);
+      return null;
+    } finally {
+      setBookingNoticePending(false);
+    }
+  }
+
   async function shiftWeek(offset: number) {
     const next = addDaysIso(weekStart, offset);
     setWeekStart(next);
@@ -493,6 +510,13 @@ export default function CoachAvailabilityContent({
           config={config}
           firstSeasonDate={firstSeasonDate}
           onEdit={() => setDefaultHoursModalOpen(true)}
+        />
+
+        {/* ── Booking notice ────────────────────────────────────────────── */}
+        <BookingNoticeCard
+          bookingMinAdvanceHours={config.bookingMinAdvanceHours}
+          onSave={handleBookingNoticeSave}
+          isPending={bookingNoticePending}
         />
 
         {/* ── Seasons ───────────────────────────────────────────────────── */}
