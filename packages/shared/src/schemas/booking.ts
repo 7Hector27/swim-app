@@ -645,7 +645,6 @@ export type CoachBatchLesson = z.infer<typeof CoachBatchLessonSchema>;
 export const CoachBatchDetailSchema = z.object({
   id: z.string().uuid(),
   mode: z.enum(["manual", "weekly"]),
-  householdId: z.string().uuid(),
   householdName: z.string().nullable(),
   // Full name of the household member who submitted the batch, snapshotted
   // from profiles.full_name at read time (not frozen — a later rename

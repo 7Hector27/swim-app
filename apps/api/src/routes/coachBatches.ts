@@ -133,7 +133,6 @@ coachBatchesRouter.get(
     const body: CoachBatchDetail = {
       id: batchRow.id,
       mode: batchRow.mode as "manual" | "weekly",
-      householdId: batchRow.householdId,
       householdName,
       createdByName: batchRow.createdByName ?? null,
       createdAt: batchRow.createdAt.toISOString(),
