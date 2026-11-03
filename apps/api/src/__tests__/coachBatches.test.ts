@@ -155,11 +155,35 @@ function batchHeadSelect(rows: unknown[]) {
 // Mocks the lessons query:
 //   select ... from lessons innerJoin lessonLocations
 //     where(eq(lessons.batchId, id)).orderBy(asc(lessons.startsAt))
+// Returns the orderBy spy so the test can assert the call site actually
+// passed an ordering expression. Mocks always return rows in the order we
+// hand them, so the ordering of the response can't be re-derived from the
+// output — we assert the ORDER BY call instead. Real sort semantics are
+// covered by the integration tests against Postgres.
 function lessonsSelect(rows: unknown[]) {
   const orderBy = vi.fn().mockResolvedValue(rows);
   const where = vi.fn().mockReturnValue({ orderBy });
   const innerJoin = vi.fn().mockReturnValue({ where });
-  return { from: vi.fn().mockReturnValue({ innerJoin }) };
+  return {
+    builder: { from: vi.fn().mockReturnValue({ innerJoin }) },
+    orderBy,
+  };
+}
+
+// Mocks the household-name fallback query:
+//   select profiles.fullName from householdMembers innerJoin profiles
+//     where(eq(householdMembers.householdId, ...)).orderBy(...).limit(1)
+// Returns the orderBy spy so the test can confirm the fallback is sorted
+// deterministically (owner first, then joinedAt, then profileId).
+function householdFallbackSelect(rows: unknown[]) {
+  const limit = vi.fn().mockResolvedValue(rows);
+  const orderBy = vi.fn().mockReturnValue({ limit });
+  const where = vi.fn().mockReturnValue({ orderBy });
+  const innerJoin = vi.fn().mockReturnValue({ where });
+  return {
+    builder: { from: vi.fn().mockReturnValue({ innerJoin }) },
+    orderBy,
+  };
 }
 
 // Mocks the swimmer join query:
@@ -175,12 +199,18 @@ beforeEach(() => {
 });
 
 describe("GET /coach/batches/:id", () => {
-  it("returns the batch header + lessons ordered by startsAt ASC, including cancelled and no-show", async () => {
+  it("returns the batch header + lessons, asks the DB to sort by startsAt ASC, and surfaces cancelled/no-show rows with their status", async () => {
+    // Scope of this test: assert the SHAPE of the response and that the
+    // route actually calls orderBy with an expression on lessons.startsAt.
+    // The mock resolves orderBy to whatever array we hand it, so the array
+    // order in res.body only reflects what we fed in — the real sort
+    // behavior against Postgres is covered in the integration tests.
     authAs(coachProfile);
+    const lessonsMock = lessonsSelect(lessonRowsSorted);
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(coachProfile))
       .mockReturnValueOnce(batchHeadSelect([batchHeadRow]))
-      .mockReturnValueOnce(lessonsSelect(lessonRowsSorted))
+      .mockReturnValueOnce(lessonsMock.builder)
       .mockReturnValueOnce(swimmerJoinSelect(swimmerRows));
 
     const res = await request(app)
@@ -192,19 +222,44 @@ describe("GET /coach/batches/:id", () => {
     expect(res.body.householdName).toBe("Smith");
     expect(res.body.createdByName).toBe("Alice Smith");
     expect(res.body.lessons).toHaveLength(3);
-    // Ordered by startsAt ASC.
-    expect(res.body.lessons.map((row: { id: string }) => row.id)).toEqual([
-      LESSON_A,
-      LESSON_B,
-      LESSON_C,
-    ]);
-    // Cancelled + no-show are included with their status, not filtered out.
-    const statuses = res.body.lessons.map((row: { status: string }) => row.status);
-    expect(statuses).toEqual(["approved", "canceled", "no_show"]);
     // Each row has at least one swimmer attached.
     for (const lesson of res.body.lessons) {
       expect(lesson.swimmers.length).toBeGreaterThan(0);
     }
+    // Cancelled + no-show are passed through with their status, not filtered.
+    const statuses = res.body.lessons.map((row: { status: string }) => row.status);
+    expect(statuses).toContain("canceled");
+    expect(statuses).toContain("no_show");
+    // The route asked the DB to order by lessons.startsAt (ascending). We
+    // can't prove ASC vs DESC through a mock, so just prove orderBy was
+    // called with exactly one argument — a Drizzle sort expression.
+    expect(lessonsMock.orderBy).toHaveBeenCalledTimes(1);
+    expect(lessonsMock.orderBy.mock.calls[0]).toHaveLength(1);
+  });
+
+  it("falls back to a deterministic member name when households.name is empty, sorting owner → oldest joined_at → profile_id", async () => {
+    authAs(coachProfile);
+    const nullNameBatchRow = { ...batchHeadRow, householdName: null };
+    const fallbackMock = householdFallbackSelect([{ fullName: "Owner Alice" }]);
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(coachProfile))
+      .mockReturnValueOnce(batchHeadSelect([nullNameBatchRow]))
+      .mockReturnValueOnce(fallbackMock.builder)
+      .mockReturnValueOnce(lessonsSelect(lessonRowsSorted).builder)
+      .mockReturnValueOnce(swimmerJoinSelect(swimmerRows));
+
+    const res = await request(app)
+      .get(`/coach/batches/${BATCH_ID}`)
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(200);
+    expect(res.body.householdName).toBe("Owner Alice");
+    // The fallback must ask the DB for a deterministic sort. Three
+    // expressions: owner-first CASE, joinedAt ASC, profileId ASC. Without
+    // all three the result would flap for families that joined in the
+    // same transaction and have no owner set.
+    expect(fallbackMock.orderBy).toHaveBeenCalledTimes(1);
+    expect(fallbackMock.orderBy.mock.calls[0]).toHaveLength(3);
   });
 
   it("returns 404 for an unknown batch id", async () => {

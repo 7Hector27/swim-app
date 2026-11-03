@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { asc, eq, inArray } from "drizzle-orm";
+import { asc, eq, inArray, sql } from "drizzle-orm";
 import type {
   CoachBatchDetail,
   CoachBatchLesson,
@@ -55,9 +55,10 @@ coachBatchesRouter.get(
       return;
     }
 
-    // Household name fallback: prefer the owner, then oldest member — matches
-    // the single-lesson detail endpoint so the two pages label the family the
-    // same way. Only used when households.name itself is empty.
+    // Household name fallback: owner first, then oldest member by joined_at,
+    // with profile_id as a final tiebreaker so two members who joined in the
+    // same transaction still resolve deterministically. Only used when
+    // households.name itself is empty.
     let householdName: string | null = batchRow.householdName;
     if (!householdName) {
       const memberRows = await db
@@ -65,6 +66,11 @@ coachBatchesRouter.get(
         .from(householdMembers)
         .innerJoin(profiles, eq(householdMembers.profileId, profiles.id))
         .where(eq(householdMembers.householdId, batchRow.householdId))
+        .orderBy(
+          sql`CASE WHEN ${householdMembers.role} = 'owner' THEN 0 ELSE 1 END`,
+          asc(householdMembers.joinedAt),
+          asc(householdMembers.profileId),
+        )
         .limit(1);
       householdName = memberRows[0]?.fullName ?? null;
     }
