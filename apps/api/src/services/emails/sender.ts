@@ -25,9 +25,16 @@ import { getActiveCoachProfile } from "../../lib/coachProfile";
 import { logger as rootLogger } from "../../logger";
 import { buildBatchIcs, type BatchIcsFilteredLesson, type BatchIcsMethod } from "./batchIcs";
 import type { BatchEmailEvent, BatchEmailPayload } from "./batchTypes";
+import {
+  buildBulkCancelIcs,
+  cancelledLessonToIcsFiltered,
+  type BulkCancelIcsFilteredLesson,
+} from "./bulkCancelIcs";
+import type { BulkCancelEmailPayload } from "./bulkCancelTypes";
 import { buildIcs } from "./ics";
 import { renderEmail } from "./render";
 import Batch from "./templates/Batch";
+import CoachBulkCancel from "./templates/CoachBulkCancel";
 import { createTransport, type EmailTransport, type IcsAttachment, type TransportError } from "./transport";
 import type { IcsMethod, LessonEmailEvent, LessonEmailPayload } from "./types";
 
@@ -115,6 +122,8 @@ export async function sendLessonEmailOutboxRow(outboxId: string): Promise<void> 
     if (!row) return;
     if (row.event === "coach_booking_request") {
       await sendCoachBookingBackupInner(outboxId);
+    } else if (row.event === "coach_bulk_cancel") {
+      await sendBulkCancelInner(outboxId);
     } else if (row.lessonId !== null) {
       await sendInner(outboxId);
     } else if (row.batchId !== null) {
@@ -971,6 +980,214 @@ function buildBatchSubject(
   // batch_canceled
   const count = canceledCount || keptCount;
   return `${count} ${count === 1 ? "lesson" : "lessons"} at ${poolName} canceled`;
+}
+
+// ─── Bulk-cancel sender (ADR 033) ───────────────────────────────────────
+
+interface ClaimedBulkCancelRow {
+  id: string;
+  bulkCancellationId: string;
+  householdId: string;
+  recipientProfileIds: string[];
+  icsMethod: IcsMethod | null;
+  payload: BulkCancelEmailPayload;
+  attempts: number;
+  createdAt: Date;
+}
+
+async function claimBulkCancelRow(outboxId: string): Promise<ClaimedBulkCancelRow | null> {
+  const nowAtClaim = new Date();
+  return await db.transaction(async (tx) => {
+    const rows = await tx
+      .select({
+        id: lessonEmailOutbox.id,
+        bulkCancellationId: lessonEmailOutbox.bulkCancellationId,
+        householdId: lessonEmailOutbox.householdId,
+        recipientProfileIds: lessonEmailOutbox.recipientProfileIds,
+        icsMethod: lessonEmailOutbox.icsMethod,
+        payload: lessonEmailOutbox.payload,
+        status: lessonEmailOutbox.status,
+        attempts: lessonEmailOutbox.attempts,
+        claimedUntil: lessonEmailOutbox.claimedUntil,
+        createdAt: lessonEmailOutbox.createdAt,
+      })
+      .from(lessonEmailOutbox)
+      .where(
+        and(
+          eq(lessonEmailOutbox.id, outboxId),
+          isNotNull(lessonEmailOutbox.bulkCancellationId),
+          eq(lessonEmailOutbox.event, "coach_bulk_cancel"),
+          or(
+            inArray(lessonEmailOutbox.status, ["pending", "failed"]),
+            and(
+              eq(lessonEmailOutbox.status, "sending"),
+              lt(lessonEmailOutbox.claimedUntil, nowAtClaim),
+            ),
+          ),
+        ),
+      )
+      .for("update", { skipLocked: true })
+      .limit(1);
+    const row = rows[0];
+    if (!row) return null;
+    const bulkCancellationId = row.bulkCancellationId;
+    const householdId = row.householdId;
+    if (bulkCancellationId === null || householdId === null) return null;
+
+    const leaseUntil = new Date(Date.now() + CLAIM_LEASE_MS);
+    await tx
+      .update(lessonEmailOutbox)
+      .set({
+        status: "sending",
+        claimedUntil: leaseUntil,
+        lastAttemptAt: new Date(),
+      })
+      .where(eq(lessonEmailOutbox.id, outboxId));
+
+    return {
+      id: row.id,
+      bulkCancellationId,
+      householdId,
+      recipientProfileIds: row.recipientProfileIds,
+      icsMethod: (row.icsMethod ?? null) as IcsMethod | null,
+      payload: row.payload as BulkCancelEmailPayload,
+      attempts: row.attempts,
+      createdAt: row.createdAt,
+    };
+  });
+}
+
+async function sendBulkCancelInner(outboxId: string): Promise<void> {
+  const transport = getTransport();
+  if (!transport) {
+    await finalizeSkipped(outboxId, "transport_not_configured");
+    return;
+  }
+  const claimed = await claimBulkCancelRow(outboxId);
+  if (!claimed) return;
+
+  const deliverable = await resolveRecipients(claimed.recipientProfileIds);
+  if (deliverable.length === 0) {
+    await finalizeSkipped(outboxId, "no_deliverable_recipients");
+    log.info(
+      { outboxId, bulkCancellationId: claimed.bulkCancellationId },
+      "bulk-cancel email skipped (no deliverable recipients)",
+    );
+    return;
+  }
+
+  // Filter the ICS to lessons whose live calendar_sequence still matches the
+  // payload's pre-bump snapshot + 1 and whose status is actually 'canceled'.
+  // Mirrors sendBatchInner's wasInvited / sequence check so a lesson that was
+  // rebooked between outbox write and send doesn't fire a stale CANCEL.
+  const invitedLessons = claimed.payload.cancelledLessons.filter((lesson) => lesson.wasInvited);
+  const lessonIds = invitedLessons.map((lesson) => lesson.lessonId);
+  const liveRows = lessonIds.length === 0
+    ? []
+    : await db
+        .select({
+          id: lessons.id,
+          status: lessons.status,
+          calendarSequence: lessons.calendarSequence,
+        })
+        .from(lessons)
+        .where(inArray(lessons.id, lessonIds));
+  const liveLessons = new Map(
+    liveRows.map((row) => [
+      row.id,
+      {
+        status: row.status as string,
+        calendarSequence: row.calendarSequence,
+      },
+    ]),
+  );
+  const filteredIcsLessons: BulkCancelIcsFilteredLesson[] = [];
+  for (const lesson of invitedLessons) {
+    const live = liveLessons.get(lesson.lessonId);
+    if (!live) continue;
+    if (live.status !== "canceled") continue;
+    if (live.calendarSequence !== lesson.calendarSequence + 1) continue;
+    filteredIcsLessons.push(cancelledLessonToIcsFiltered(lesson));
+  }
+
+  const siteUrl = getEnv().siteUrl;
+  const replyToEmail = getEnv().email?.replyTo ?? null;
+  const element = CoachBulkCancel({
+    payload: claimed.payload,
+    siteUrl,
+    replyToEmail,
+  });
+  const [html, text] = await Promise.all([
+    renderReactEmail(element),
+    renderReactEmail(element, { plainText: true }),
+  ]);
+  const subject = buildBulkCancelSubject(claimed.payload);
+  const ics =
+    claimed.icsMethod === "CANCEL" && filteredIcsLessons.length > 0
+      ? buildBulkCancelIcs({ lessons: filteredIcsLessons })
+      : null;
+
+  const emailEnv = getEnv().email!;
+  const result = await transport.send({
+    from: emailEnv.from,
+    replyTo: emailEnv.replyTo,
+    to: deliverable,
+    subject,
+    text,
+    ...(html && { html }),
+    ...(ics && {
+      ics: {
+        filename: ics.filename,
+        content: ics.body,
+        method: "CANCEL" as const,
+      } satisfies IcsAttachment,
+    }),
+    idempotencyKey: outboxId,
+  });
+
+  if (result.ok) {
+    await finalizeSent(outboxId, result.providerMessageId);
+    log.info(
+      {
+        outboxId,
+        bulkCancellationId: claimed.bulkCancellationId,
+        householdId: claimed.householdId,
+        deliverableCount: deliverable.length,
+        attempts: claimed.attempts + 1,
+        providerMessageId: result.providerMessageId,
+        transport: emailEnv.transport,
+        veventCount: ics?.eventCount ?? 0,
+      },
+      "bulk-cancel email sent",
+    );
+    return;
+  }
+  await finalizeFailed(outboxId, result.error?.kind ?? "unexpected", result.errorMessage);
+  log.warn(
+    {
+      outboxId,
+      bulkCancellationId: claimed.bulkCancellationId,
+      householdId: claimed.householdId,
+      transport: emailEnv.transport,
+      attempts: claimed.attempts + 1,
+      errorKind: result.error?.kind,
+    },
+    "bulk-cancel email send failed",
+  );
+}
+
+function buildBulkCancelSubject(payload: BulkCancelEmailPayload): string {
+  const cancelled = payload.cancelledLessons.length;
+  const declined = payload.declinedRequests.length;
+  const poolClause = payload.locationName !== null ? ` at ${payload.locationName}` : "";
+  if (cancelled > 0 && declined === 0) {
+    return `${cancelled} ${cancelled === 1 ? "lesson" : "lessons"}${poolClause} canceled`;
+  }
+  if (cancelled === 0 && declined > 0) {
+    return `${declined} ${declined === 1 ? "request" : "requests"}${poolClause} not booked`;
+  }
+  const total = cancelled + declined;
+  return `${total} ${total === 1 ? "lesson" : "lessons"}${poolClause} canceled`;
 }
 
 // Rough RFC-5321-ish email match. Strict on the local-part so random

@@ -17,7 +17,10 @@ export interface SlotParams {
     durationMinutes: number;
     locationId: string;
   }[];
-  blockedTimes: { startsAt: Date; endsAt: Date }[];
+  // locationId is null for pool-agnostic blocks (applies everywhere) and set
+  // for pool-scoped blocks (only applies when the slot query's locationId
+  // matches). See ADR 033.
+  blockedTimes: { startsAt: Date; endsAt: Date; locationId: string | null }[];
   travelBufferOverrides: { fromLocationId: string; toLocationId: string; bufferMinutes: number }[];
   config: AvailabilityConfig;
   seasons: AvailabilitySeason[];
@@ -231,6 +234,7 @@ export function computeAvailableSlots(params: SlotParams): Slot[] {
   }
 
   for (const bt of blockedTimes) {
+    if (bt.locationId !== null && bt.locationId !== locationId) continue;
     forbidden.push([bt.startsAt.getTime(), bt.endsAt.getTime()]);
   }
 
@@ -342,6 +346,7 @@ export function diagnoseSlotRejection(
   }
 
   for (const bt of blockedTimes) {
+    if (bt.locationId !== null && bt.locationId !== locationId) continue;
     if (slotStartMs < bt.endsAt.getTime() && slotEndMs > bt.startsAt.getTime()) {
       return "blocked_time";
     }
@@ -405,7 +410,10 @@ export function classifyDaySlots(params: SlotParams): SlotWithState[] {
     }
   }
 
-  for (const bt of blockedTimes) forbidden.push([bt.startsAt.getTime(), bt.endsAt.getTime()]);
+  for (const bt of blockedTimes) {
+    if (bt.locationId !== null && bt.locationId !== locationId) continue;
+    forbidden.push([bt.startsAt.getTime(), bt.endsAt.getTime()]);
+  }
   for (const gbt of gcalBusyTimes) forbidden.push([gbt.startsAt.getTime(), gbt.endsAt.getTime()]);
 
   const mergedForbidden = mergeIntervals(forbidden);

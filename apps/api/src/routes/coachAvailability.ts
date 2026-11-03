@@ -268,6 +268,7 @@ coachAvailabilityRouter.get(
       id: row.id,
       startsAt: row.startsAt.toISOString(),
       endsAt: row.endsAt.toISOString(),
+      locationId: row.locationId ?? null,
       note: row.note ?? null,
       createdAt: row.createdAt.toISOString(),
     }));
@@ -292,6 +293,7 @@ coachAvailabilityRouter.post(
       .values({
         startsAt: new Date(body.startsAt),
         endsAt: new Date(body.endsAt),
+        ...(body.locationId !== undefined && { locationId: body.locationId }),
         ...(body.note !== undefined && { note: body.note }),
       })
       .returning();
@@ -302,6 +304,7 @@ coachAvailabilityRouter.post(
       id: created.id,
       startsAt: created.startsAt.toISOString(),
       endsAt: created.endsAt.toISOString(),
+      locationId: created.locationId ?? null,
       note: created.note ?? null,
       createdAt: created.createdAt.toISOString(),
     };

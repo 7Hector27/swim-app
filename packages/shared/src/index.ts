@@ -164,6 +164,8 @@ export type {
   LessonResponse,
   ApproveLessonBody,
   DeclineLessonBody,
+  MarkNoShowBody,
+  UndoNoShowBody,
   CoachListLessonsQuery,
   CalendarSyncStatus,
   AvailableSlot,
@@ -201,6 +203,11 @@ export type {
   BatchCancelRemainingResponse,
   StoredWeeklyPattern,
   StoredWeeklyPatternRead,
+  BulkCancelPreviewBody,
+  BulkCancelPreviewLesson,
+  BulkCancelPreviewResponse,
+  BulkCancelConfirmBody,
+  BulkCancelConfirmResponse,
 } from "./schemas/booking";
 export {
   LessonLocationSchema,
@@ -224,6 +231,8 @@ export {
   LessonResponseSchema,
   ApproveLessonBodySchema,
   DeclineLessonBodySchema,
+  MarkNoShowBodySchema,
+  UndoNoShowBodySchema,
   CoachListLessonsQuerySchema,
   CalendarSyncStatusSchema,
   AvailableSlotSchema,
@@ -267,6 +276,12 @@ export {
   BatchPatternPairSchema,
   StoredWeeklyPatternSchema,
   StoredWeeklyPatternReadSchema,
+  BULK_CANCEL_MESSAGE_MAX_LENGTH,
+  BulkCancelPreviewBodySchema,
+  BulkCancelPreviewLessonSchema,
+  BulkCancelPreviewResponseSchema,
+  BulkCancelConfirmBodySchema,
+  BulkCancelConfirmResponseSchema,
 } from "./schemas/booking";
 export type {
   SlotState,

@@ -83,6 +83,18 @@ export default function CoachScheduleControls({
   const todayDayHref = `?view=day&date=${today}`;
   const todayWeekHref = `?view=week&date=${todayMonday}`;
 
+  // Bulk cancel pre-fills the date range from the current view. Day view
+  // seeds start=end=current date; week view seeds start=end=the first
+  // upcoming day of the viewed week (clamped to `today` if the week has
+  // already started, falling back to `today` for a fully-past week). The
+  // form itself clamps against today, so a stale URL still lands on an
+  // editable, non-past default.
+  const bulkCancelAnchor =
+    optimisticView === "day"
+      ? optimisticDate
+      : firstUpcomingOfWeek(optimisticWeekMonday, today);
+  const bulkCancelHref = `/coach/schedule/bulk-cancel?startDate=${bulkCancelAnchor}&endDate=${bulkCancelAnchor}`;
+
   // Compute labels from optimistic state so the day/week heading matches the
   // just-clicked state instantly, instead of lagging until the server renders
   // the new URL. Both helpers are pure.
@@ -99,6 +111,12 @@ export default function CoachScheduleControls({
             className="inline-flex items-center justify-center min-h-[44px] px-5 rounded-button bg-button-primary-background text-button-primary-text text-sm font-bold transition-opacity duration-150 motion-reduce:transition-none hover:opacity-90 active:scale-[0.97]"
           >
             Book lesson
+          </Link>
+          <Link
+            href={bulkCancelHref}
+            className="inline-flex items-center justify-center min-h-[44px] px-5 rounded-button border border-border text-text-secondary text-sm font-semibold transition-colors duration-150 motion-reduce:transition-none hover:bg-surface-soft active:scale-[0.97]"
+          >
+            Cancel lessons
           </Link>
           <div
             className="flex rounded-button border border-border overflow-hidden flex-shrink-0"
@@ -219,6 +237,16 @@ export default function CoachScheduleControls({
       </div>
     </>
   );
+}
+
+// Returns the first LA calendar date in the viewed week that is `today` or
+// later. If the entire week is in the past, falls back to `today` so the
+// bulk-cancel form opens on an editable, non-past default.
+function firstUpcomingOfWeek(weekMonday: string, today: string): string {
+  // Future week → the week's Monday. Current or past week → today. (For a
+  // past week this falls back to today so the form opens on an editable,
+  // non-past date; the form input also enforces min={today}.)
+  return today <= weekMonday ? weekMonday : today;
 }
 
 function ChevronLeftIcon() {

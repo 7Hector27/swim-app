@@ -248,6 +248,7 @@ describe("computeAvailableSlots", () => {
       {
         startsAt: new Date(Date.UTC(2025, 8, 16, 10 + 7, 30)), // 10:30 PDT
         endsAt: new Date(Date.UTC(2025, 8, 16, 11 + 7, 0)), // 11:00 PDT
+        locationId: null,
       },
     ];
     const slots = computeAvailableSlots(makeBaseParams({ overrides: [override], blockedTimes }));
@@ -414,6 +415,7 @@ describe("computeAvailableSlots", () => {
       {
         startsAt: new Date(pdt("17:00")),
         endsAt: new Date(pdt("18:00")),
+        locationId: null,
       },
     ];
     const slots = computeAvailableSlots(makeBaseParams({ blockedTimes }));
@@ -432,6 +434,32 @@ describe("computeAvailableSlots", () => {
       {
         startsAt: new Date(pdt("16:30")),
         endsAt: new Date(pdt("19:30")),
+        locationId: null,
+      },
+    ];
+    expect(computeAvailableSlots(makeBaseParams({ blockedTimes }))).toHaveLength(0);
+  });
+
+  it("blocked time scoped to a different pool does not reduce slots at this pool (ADR 033)", () => {
+    const blockedTimes = [
+      {
+        startsAt: new Date(pdt("16:30")),
+        endsAt: new Date(pdt("19:30")),
+        locationId: "pool-OTHER",
+      },
+    ];
+    // locationId "pool-A" (makeBaseParams default) is unaffected by a block
+    // scoped to "pool-OTHER" — the slot engine filters by locationId.
+    const slots = computeAvailableSlots(makeBaseParams({ blockedTimes }));
+    expect(slots.length).toBeGreaterThan(0);
+  });
+
+  it("blocked time scoped to this pool reduces slots like a null-scoped block", () => {
+    const blockedTimes = [
+      {
+        startsAt: new Date(pdt("16:30")),
+        endsAt: new Date(pdt("19:30")),
+        locationId: "pool-A",
       },
     ];
     expect(computeAvailableSlots(makeBaseParams({ blockedTimes }))).toHaveLength(0);
@@ -441,8 +469,8 @@ describe("computeAvailableSlots", () => {
 
   it("30-min lesson fits a 30-min gap; 45-min does not", () => {
     const blockedTimes = [
-      { startsAt: new Date(pdt("16:30")), endsAt: new Date(pdt("17:00")) },
-      { startsAt: new Date(pdt("17:30")), endsAt: new Date(pdt("19:30")) },
+      { startsAt: new Date(pdt("16:30")), endsAt: new Date(pdt("17:00")), locationId: null },
+      { startsAt: new Date(pdt("17:30")), endsAt: new Date(pdt("19:30")), locationId: null },
     ];
     const slots30 = computeAvailableSlots(
       makeBaseParams({ durationMinutes: 30, blockedTimes }),
@@ -584,7 +612,7 @@ describe("classifyDaySlots", () => {
 
   it("returns all teaching-window slots, not only available ones", () => {
     const blockedTimes = [
-      { startsAt: new Date(pdt("16:30")), endsAt: new Date(pdt("17:00")) },
+      { startsAt: new Date(pdt("16:30")), endsAt: new Date(pdt("17:00")), locationId: null },
     ];
     const result = classifyDaySlots(makeBaseParams({ blockedTimes }));
 
@@ -598,7 +626,7 @@ describe("classifyDaySlots", () => {
   // ── Slot states ─────────────────────────────────────────────────────────────
 
   it("a blocked slot is 'unavailable'", () => {
-    const blocked = [{ startsAt: new Date(pdt("16:30")), endsAt: new Date(pdt("17:00")) }];
+    const blocked = [{ startsAt: new Date(pdt("16:30")), endsAt: new Date(pdt("17:00")), locationId: null }];
     const result = classifyDaySlots(makeBaseParams({ blockedTimes: blocked }));
     const slot = result.find((s) => s.startsAt === new Date(pdt("16:30")).toISOString());
     expect(slot?.state).toBe("unavailable");

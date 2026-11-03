@@ -112,13 +112,18 @@ async function syncLessonToGoogleInner(lessonId: string): Promise<void> {
     const eventId = toGoogleEventId(lesson.id);
     // An event should exist in Google whenever the lesson is in a state
     // the coach wants to see on their calendar — approved or completed.
-    // Completed lessons stay on the coach's calendar as history; the cron
-    // auto-complete transition and a retry run after the lesson's end
-    // time both preserve the event. Deletion is reserved for lessons that
-    // genuinely shouldn't appear: declined, canceled, expired, no_show,
-    // or a lesson row that no longer exists (handled above via null context).
+    // Completed and no_show lessons stay on the coach's calendar as
+    // history; the cron auto-complete transition and a retry run after the
+    // lesson's end time both preserve the event. no_show is treated like
+    // completed because the coach's calendar should still show that the
+    // slot was blocked out even when the family didn't attend. Deletion is
+    // reserved for lessons that genuinely shouldn't appear: declined,
+    // canceled, expired, or a lesson row that no longer exists (handled
+    // above via null context).
     const shouldExist =
-      lesson.status === "approved" || lesson.status === "completed";
+      lesson.status === "approved" ||
+      lesson.status === "completed" ||
+      lesson.status === "no_show";
 
     // Nothing to do when the lesson has never been pushed in this call,
     // has no DB record of an event, and shouldn't exist in Google. This
@@ -297,7 +302,7 @@ export async function runLightSyncPass(coachProfileId: string): Promise<LightPas
       .where(
         and(
           gte(lessons.startsAt, windowStart),
-          inArray(lessons.status, ["approved", "completed"]),
+          inArray(lessons.status, ["approved", "completed", "no_show"]),
           inArray(lessons.calendarSyncStatus, ["not_synced", "sync_failed"]),
         ),
       )
@@ -348,7 +353,7 @@ export async function runFullSyncPass(
         and(
           gte(lessons.startsAt, windowStart),
           or(
-            inArray(lessons.status, ["approved", "completed"]),
+            inArray(lessons.status, ["approved", "completed", "no_show"]),
             isNotNull(lessons.googleCalendarEventId),
           ),
         ),
