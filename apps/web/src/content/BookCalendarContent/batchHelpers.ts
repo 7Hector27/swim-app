@@ -15,14 +15,16 @@ export interface MultiplePick {
   swimmerIds: string[];
 }
 
-export function pickReasonCopy(state: BatchPickState): string {
+export function pickReasonCopy(state: BatchPickState, bookingMinAdvanceHours = 16): string {
   switch (state) {
     case "available":
       return "";
     case "unavailable":
       return "Time no longer open";
-    case "too_soon":
-      return "Less than 16 hours away";
+    case "too_soon": {
+      const unit = bookingMinAdvanceHours === 1 ? "hour" : "hours";
+      return `Less than ${bookingMinAdvanceHours} ${unit} away`;
+    }
     case "past":
       return "In the past";
     case "not_open_yet":

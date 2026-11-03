@@ -213,6 +213,15 @@ export async function enqueueLessonEmail(
       input.event === "booking_requested" && describeExpiresAt
         ? formatLessonTimeDisplay(describeExpiresAt)
         : null,
+    expiryHoursBeforeStart:
+      (input.event === "booking_requested" || input.event === "request_expired") && describeExpiresAt
+        ? Math.max(
+            0,
+            Math.round(
+              (describeStartsAt.getTime() - describeExpiresAt.getTime()) / (60 * 60 * 1000),
+            ),
+          )
+        : null,
     coachFirstName,
     initiatedBy: input.initiatedBy ?? null,
   };

@@ -225,10 +225,14 @@ export function isHourMark(hhmm: string): boolean {
 
 const ERROR_CODE_MESSAGES: Record<string, string> = {
   not_a_lesson_day: "That day isn't available for lessons.",
-  too_soon: "That slot is less than 16 hours away — to book, please text Jason.",
   too_far: "You can only book lessons up to 10 weeks in advance.",
   slot_unavailable: "That time isn't available anymore. Pick another one.",
 };
+
+export function tooSoonMessage(hours: number): string {
+  const unit = hours === 1 ? "hour" : "hours";
+  return `That slot is less than ${hours} ${unit} away — to book, please text Jason.`;
+}
 
 // Last LA calendar date inside the rolling booking window. Delegates to the
 // shared helper so client and server see the exact same window boundary.
@@ -261,6 +265,12 @@ export function mapBookingApiResponse(
   }
 
   if (status === 422 && isApiBody(body) && typeof body.error === "string") {
+    if (body.error === "too_soon") {
+      const bodyRecord = body as Record<string, unknown>;
+      const raw = bodyRecord.bookingMinAdvanceHours;
+      const hours = typeof raw === "number" ? raw : 16;
+      return { status: "error", message: tooSoonMessage(hours) };
+    }
     const friendly = ERROR_CODE_MESSAGES[body.error];
     if (friendly) {
       return { status: "error", message: friendly };

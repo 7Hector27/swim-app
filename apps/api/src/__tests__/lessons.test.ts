@@ -978,7 +978,7 @@ describe("POST /lessons", () => {
     expect(res.body.error).toBe("not_a_lesson_day");
   });
 
-  it("returns 422 too_soon when slot is under 16 h away", async () => {
+  it("returns 422 too_soon when slot is under the configured notice window", async () => {
     authAs(parentProfile);
     const tooSoonStart = new Date(Date.now() + 10 * 60 * 60 * 1000).toISOString(); // 10 h from now
 
@@ -998,6 +998,8 @@ describe("POST /lessons", () => {
 
     expect(res.status).toBe(422);
     expect(res.body.error).toBe("too_soon");
+    // Server echoes the configured notice window so the client copy stays in sync.
+    expect(res.body.bookingMinAdvanceHours).toBe(configRow.bookingMinAdvanceHours);
   });
 
   it("returns 422 too_far when slot is over 10 weeks away", async () => {

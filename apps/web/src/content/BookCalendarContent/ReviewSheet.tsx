@@ -40,6 +40,7 @@ interface Props {
   isSubmitting: boolean;
   needsApproval: boolean;
   success: SuccessView | null;
+  bookingMinAdvanceHours?: number;
   // Short copy under the Book button explaining why it is disabled.
   bookDisabledReason?: string;
   onClose: () => void;
@@ -136,6 +137,9 @@ export default function ReviewSheet(props: Props) {
               isLoading={props.isLoading}
               previewError={props.previewError}
               needsApproval={props.needsApproval}
+              {...(props.bookingMinAdvanceHours !== undefined && {
+                bookingMinAdvanceHours: props.bookingMinAdvanceHours,
+              })}
               onApplySuggestion={props.onApplySuggestion}
               onSkip={props.onSkip}
               onRemove={props.onRemove}
@@ -188,6 +192,7 @@ interface ReviewContentProps {
   isLoading: boolean;
   previewError: string | null;
   needsApproval: boolean;
+  bookingMinAdvanceHours?: number;
   onApplySuggestion: (index: number, startsAt: string) => void;
   onSkip: (index: number) => void;
   onRemove: (index: number) => void;
@@ -203,6 +208,7 @@ function ReviewContent({
   isLoading,
   previewError,
   needsApproval,
+  bookingMinAdvanceHours,
   onApplySuggestion,
   onSkip,
   onRemove,
@@ -275,6 +281,7 @@ function ReviewContent({
               mode={mode}
               isSkipped={skippedIndexes.has(pick.index)}
               isRemoved={removedIndexes.has(pick.index)}
+              {...(bookingMinAdvanceHours !== undefined && { bookingMinAdvanceHours })}
               onApplySuggestion={(startsAt) => onApplySuggestion(pick.index, startsAt)}
               onSkip={() => onSkip(pick.index)}
               onRemove={() => onRemove(pick.index)}
@@ -293,6 +300,7 @@ interface PickRowProps {
   mode: Mode;
   isSkipped: boolean;
   isRemoved: boolean;
+  bookingMinAdvanceHours?: number;
   onApplySuggestion: (startsAt: string) => void;
   onSkip: () => void;
   onRemove: () => void;
@@ -311,6 +319,7 @@ function PickRow({
   mode,
   isSkipped,
   isRemoved,
+  bookingMinAdvanceHours,
   onApplySuggestion,
   onSkip,
   onRemove,
@@ -378,7 +387,7 @@ function PickRow({
           )}
           {!isAvailable && (
             <p className="text-xs text-text-secondary mt-0.5">
-              {pickReasonCopy(pick.state) || "Not available"}
+              {pickReasonCopy(pick.state, bookingMinAdvanceHours) || "Not available"}
             </p>
           )}
         </div>

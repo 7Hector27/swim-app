@@ -199,6 +199,8 @@ export default function BookCalendarContent({
 
   const bookingMaxAdvanceWeeks =
     weekData?.bookingMaxAdvanceWeeks ?? monthData?.bookingMaxAdvanceWeeks ?? 10;
+  const bookingMinAdvanceHours =
+    weekData?.bookingMinAdvanceHours ?? monthData?.bookingMinAdvanceHours ?? 16;
   const maxAdvanceDateLA = useMemo(
     () => maxBookableDateLA(bookingMaxAdvanceWeeks, Date.now()),
     [bookingMaxAdvanceWeeks],
@@ -464,11 +466,11 @@ export default function BookCalendarContent({
       if (pick.state === "available") continue;
       if (skippedIndexes.has(pick.index)) continue;
       if (removedIndexes.has(pick.index)) continue;
-      const copy = pickReasonCopy(pick.state);
+      const copy = pickReasonCopy(pick.state, bookingMinAdvanceHours);
       if (copy !== "") result.set(pick.startsAt, copy);
     }
     return result;
-  }, [bookingMode, previewPicks, skippedIndexes, removedIndexes]);
+  }, [bookingMode, previewPicks, skippedIndexes, removedIndexes, bookingMinAdvanceHours]);
 
   // Count flagged picks for the bottom bar.
   const flaggedPickCount = flagReasonByStart.size;
@@ -1435,6 +1437,7 @@ export default function BookCalendarContent({
               durationMinutes={durationMinutes}
               swimmerIds={swimmerIds}
               needsApproval={weekData?.needsApproval ?? false}
+              bookingMinAdvanceHours={bookingMinAdvanceHours}
               onConfirm={handleConfirmSingle}
               isConfirming={isBooking}
             />
@@ -1522,6 +1525,7 @@ export default function BookCalendarContent({
         canSubmit={canSubmitReview}
         isSubmitting={isSubmitting}
         needsApproval={previewNeedsApproval}
+        bookingMinAdvanceHours={bookingMinAdvanceHours}
         success={success}
         {...(bookDisabledReason !== null && { bookDisabledReason })}
         onClose={closeReview}

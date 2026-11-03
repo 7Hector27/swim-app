@@ -16,6 +16,8 @@ export default function RequestExpired({ payload, siteUrl, replyToEmail }: Props
   const coach = coachDisplay(payload.coachFirstName);
   const swimmers = formatSwimmerList(payload.swimmerFirstNames);
   const previewText = `Your booking request has expired.`;
+  const hours = payload.expiryHoursBeforeStart ?? 16;
+  const unit = hours === 1 ? "hour" : "hours";
   return (
     <EmailLayout
       siteUrl={siteUrl}
@@ -25,7 +27,7 @@ export default function RequestExpired({ payload, siteUrl, replyToEmail }: Props
     >
       <Heading style={headingStyle}>This request expired.</Heading>
       <Text style={bodyStyle}>
-        Requests expire 16 hours before the lesson&apos;s start time if {coach} has not gotten
+        Requests expire {hours} {unit} before the lesson&apos;s start time if {coach} has not gotten
         to them. The slot is open again. Grab it or pick another in the app.
       </Text>
       <LessonCard

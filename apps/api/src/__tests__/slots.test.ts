@@ -401,6 +401,45 @@ describe("computeAvailableSlots", () => {
     expect(slots[0]?.startsAt.getTime()).toBe(firstSlotMs + FIFTEEN_MS);
   });
 
+  it("bookingMinAdvanceHours = 0 includes slots up to nowUtc", () => {
+    const firstSlotMs = pdt("16:30");
+    const nowUtc = new Date(firstSlotMs);
+    const slots = computeAvailableSlots(
+      makeBaseParams({
+        nowUtc,
+        config: makeConfig({ bookingMinAdvanceHours: 0 }),
+      }),
+    );
+    expect(slots[0]?.startsAt.getTime()).toBe(firstSlotMs);
+  });
+
+  it("bookingMinAdvanceHours = 48 excludes any slot inside the 48 h window", () => {
+    const firstSlotMs = pdt("16:30");
+    // nowUtc is exactly 24 h before the first slot — well inside the 48 h rule.
+    const nowUtc = new Date(firstSlotMs - 24 * 60 * 60 * 1000);
+    const slots = computeAvailableSlots(
+      makeBaseParams({
+        nowUtc,
+        config: makeConfig({ bookingMinAdvanceHours: 48 }),
+      }),
+    );
+    expect(slots).toHaveLength(0);
+  });
+
+  it("coach bypass (skipMinAdvance) ignores bookingMinAdvanceHours entirely", () => {
+    const firstSlotMs = pdt("16:30");
+    const nowUtc = new Date(firstSlotMs - 60 * 1000); // 1 minute before the slot
+    const slots = computeAvailableSlots(
+      makeBaseParams({
+        nowUtc,
+        config: makeConfig({ bookingMinAdvanceHours: 48 }),
+        skipMinAdvance: true,
+      }),
+    );
+    expect(slots.length).toBeGreaterThan(0);
+    expect(slots[0]?.startsAt.getTime()).toBe(firstSlotMs);
+  });
+
   it("slots more than 10 weeks out are excluded", () => {
     const firstSlotMs = pdt("16:30");
     const nowUtc = new Date(firstSlotMs - 11 * 7 * 24 * 60 * 60 * 1000);
