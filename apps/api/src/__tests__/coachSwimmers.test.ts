@@ -15,10 +15,12 @@ const {
   mockGetUser,
   mockDbSelect,
   mockDbUpdate,
+  mockDbExecute,
 } = vi.hoisted(() => ({
   mockGetUser: vi.fn(),
   mockDbSelect: vi.fn(),
   mockDbUpdate: vi.fn(),
+  mockDbExecute: vi.fn(),
 }));
 
 vi.mock("../lib/supabase", () => ({
@@ -29,6 +31,7 @@ vi.mock("../db/client", () => ({
   db: {
     select: mockDbSelect,
     update: mockDbUpdate,
+    execute: mockDbExecute,
   },
 }));
 
@@ -228,6 +231,7 @@ describe("GET /coach/swimmers", () => {
       .mockReturnValueOnce(clubsSelect())
       .mockReturnValueOnce(regsSelect())
       .mockReturnValueOnce(memberNamesSelect());
+    mockDbExecute.mockResolvedValueOnce([]);
 
     const res = await request(app)
       .get("/coach/swimmers")
@@ -241,6 +245,7 @@ describe("GET /coach/swimmers", () => {
       currentLeagues: [],
       clubs: [],
       memberNames: [],
+      lastLesson: null,
     });
   });
 
@@ -272,6 +277,7 @@ describe("GET /coach/swimmers/:id", () => {
       .mockReturnValueOnce(regsSelect())
       .mockReturnValueOnce(membersSelect())
       .mockReturnValueOnce(homePoolSelect(pool));
+    mockDbExecute.mockResolvedValueOnce([]);
 
     const res = await request(app)
       .get(`/coach/swimmers/${SWIMMER_A_ID}`)
@@ -282,6 +288,7 @@ describe("GET /coach/swimmers/:id", () => {
       id: SWIMMER_A_ID,
       members: [],
       homePool: { address: "123 Main St" },
+      lastLesson: null,
     });
   });
 
@@ -294,6 +301,7 @@ describe("GET /coach/swimmers/:id", () => {
       .mockReturnValueOnce(regsSelect())
       .mockReturnValueOnce(membersSelect())
       .mockReturnValueOnce(homePoolSelect(null));
+    mockDbExecute.mockResolvedValueOnce([]);
 
     const res = await request(app)
       .get(`/coach/swimmers/${SWIMMER_A_ID}`)
