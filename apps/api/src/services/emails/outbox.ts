@@ -20,7 +20,10 @@ import {
 } from "../../db/schema";
 import { getActiveCoachProfile } from "../../lib/coachProfile";
 import { getEnv } from "../../lib/env";
+import { logger as rootLogger } from "../../logger";
 import { buildDeepLink, formatLessonTimeDisplay } from "./format";
+
+const log = rootLogger.child({ component: "lesson-email-outbox" });
 import type {
   EmailActorRole,
   IcsMethod,
@@ -243,6 +246,24 @@ export async function enqueueLessonEmail(
   if (!insertedId) {
     throw new Error("enqueueLessonEmail: insert returned no id");
   }
+
+  // Invariant: both booking_requested and request_expired carry an
+  // expiresAt derived from the coach's bookingMinAdvanceHours at the time
+  // the lesson row was created. If that value is somehow null by the time
+  // we enqueue, the template used to silently fall back to a hardcoded 16
+  // — producing wrong copy without any trace. Now we emit a number only
+  // when we actually have one; log the gap so it surfaces instead of
+  // leaking a wrong number into a parent's inbox.
+  if (
+    (input.event === "booking_requested" || input.event === "request_expired") &&
+    describeExpiresAt === null
+  ) {
+    log.error(
+      { lessonId: input.lessonId, outboxId: insertedId, event: input.event },
+      "enqueued email missing expiresAt — hour count will be omitted from template",
+    );
+  }
+
   return insertedId;
 }
 

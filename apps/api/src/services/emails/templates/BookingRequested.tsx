@@ -19,8 +19,11 @@ export default function BookingRequested({ payload, siteUrl, replyToEmail }: Pro
   const expiresNote = payload.expiresAtLocalDisplay
     ? `If we do not confirm by ${payload.expiresAtLocalDisplay}, this request will expire and you will need to book again.`
     : `${coach} will respond soon.`;
-  const hours = payload.expiryHoursBeforeStart ?? 16;
-  const unit = hours === 1 ? "hour" : "hours";
+  const hours = payload.expiryHoursBeforeStart;
+  const firstTimeSentence =
+    hours !== null && hours !== undefined
+      ? ` If this is your household's first time at ${payload.location.name}, approval can take up to ${hours} ${hours === 1 ? "hour" : "hours"}.`
+      : "";
   return (
     <EmailLayout
       siteUrl={siteUrl}
@@ -31,8 +34,7 @@ export default function BookingRequested({ payload, siteUrl, replyToEmail }: Pro
       <Heading style={headingStyle}>We got your request.</Heading>
       <Text style={bodyStyle}>
         Thanks for booking with Axiom Aquatics. {coach} will review and get back to you soon.
-        {" "}If this is your household&apos;s first time at {payload.location.name}, approval can
-        take up to {hours} {unit}. {expiresNote}
+        {firstTimeSentence} {expiresNote}
       </Text>
       <LessonCard
         swimmerListDisplay={swimmers}
