@@ -40,7 +40,7 @@ interface Props {
   isSubmitting: boolean;
   needsApproval: boolean;
   success: SuccessView | null;
-  bookingMinAdvanceHours?: number;
+  bookingMinAdvanceHours: number | null;
   // Short copy under the Book button explaining why it is disabled.
   bookDisabledReason?: string;
   onClose: () => void;
@@ -137,9 +137,7 @@ export default function ReviewSheet(props: Props) {
               isLoading={props.isLoading}
               previewError={props.previewError}
               needsApproval={props.needsApproval}
-              {...(props.bookingMinAdvanceHours !== undefined && {
-                bookingMinAdvanceHours: props.bookingMinAdvanceHours,
-              })}
+              bookingMinAdvanceHours={props.bookingMinAdvanceHours}
               onApplySuggestion={props.onApplySuggestion}
               onSkip={props.onSkip}
               onRemove={props.onRemove}
@@ -192,7 +190,7 @@ interface ReviewContentProps {
   isLoading: boolean;
   previewError: string | null;
   needsApproval: boolean;
-  bookingMinAdvanceHours?: number;
+  bookingMinAdvanceHours: number | null;
   onApplySuggestion: (index: number, startsAt: string) => void;
   onSkip: (index: number) => void;
   onRemove: (index: number) => void;
@@ -281,7 +279,7 @@ function ReviewContent({
               mode={mode}
               isSkipped={skippedIndexes.has(pick.index)}
               isRemoved={removedIndexes.has(pick.index)}
-              {...(bookingMinAdvanceHours !== undefined && { bookingMinAdvanceHours })}
+              bookingMinAdvanceHours={bookingMinAdvanceHours}
               onApplySuggestion={(startsAt) => onApplySuggestion(pick.index, startsAt)}
               onSkip={() => onSkip(pick.index)}
               onRemove={() => onRemove(pick.index)}
@@ -300,7 +298,7 @@ interface PickRowProps {
   mode: Mode;
   isSkipped: boolean;
   isRemoved: boolean;
-  bookingMinAdvanceHours?: number;
+  bookingMinAdvanceHours: number | null;
   onApplySuggestion: (startsAt: string) => void;
   onSkip: () => void;
   onRemove: () => void;

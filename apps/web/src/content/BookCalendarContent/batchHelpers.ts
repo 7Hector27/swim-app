@@ -15,13 +15,22 @@ export interface MultiplePick {
   swimmerIds: string[];
 }
 
-export function pickReasonCopy(state: BatchPickState, bookingMinAdvanceHours = 16): string {
+export function pickReasonCopy(
+  state: BatchPickState,
+  bookingMinAdvanceHours: number | null,
+): string {
   switch (state) {
     case "available":
       return "";
     case "unavailable":
       return "Time no longer open";
     case "too_soon": {
+      if (bookingMinAdvanceHours === null) {
+        // No window echoed on this response. Don't print an hour count
+        // that we can't back with a real value — the server is still the
+        // source of truth for the window.
+        return "Too close to the lesson";
+      }
       const unit = bookingMinAdvanceHours === 1 ? "hour" : "hours";
       return `Less than ${bookingMinAdvanceHours} ${unit} away`;
     }

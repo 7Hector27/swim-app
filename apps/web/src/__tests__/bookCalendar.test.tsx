@@ -172,6 +172,7 @@ describe("BottomBar", () => {
         durationMinutes={30}
         swimmerIds={[]}
         needsApproval={false}
+        bookingMinAdvanceHours={16}
         onConfirm={noop}
         isConfirming={false}
       />,
@@ -188,12 +189,33 @@ describe("BottomBar", () => {
         durationMinutes={30}
         swimmerIds={[]}
         needsApproval={false}
+        bookingMinAdvanceHours={16}
         onConfirm={noop}
         isConfirming={false}
       />,
     );
     expect(screen.getByText(/Less than 16 hours away/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /confirm booking/i })).toBeDisabled();
+  });
+
+  it("shows a number-free too-soon label when bookingMinAdvanceHours is null", () => {
+    // Guard against the old silent-16 fallback: when the response hasn't
+    // echoed a window yet, we must not invent "Less than 16 hours away."
+    render(
+      <BottomBar
+        selectedStartsAt={null}
+        tooSoon={true}
+        durationMinutes={30}
+        swimmerIds={[]}
+        needsApproval={false}
+        bookingMinAdvanceHours={null}
+        onConfirm={noop}
+        isConfirming={false}
+      />,
+    );
+    expect(screen.queryByText(/16 hours/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Less than/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Too close to the lesson/i)).toBeInTheDocument();
   });
 
   it("shows formatted time and enabled button when selection + no swimmers", () => {
@@ -204,6 +226,7 @@ describe("BottomBar", () => {
         durationMinutes={30}
         swimmerIds={[]}
         needsApproval={false}
+        bookingMinAdvanceHours={16}
         onConfirm={noop}
         isConfirming={false}
       />,
@@ -220,6 +243,7 @@ describe("BottomBar", () => {
         durationMinutes={30}
         swimmerIds={[]}
         needsApproval={false}
+        bookingMinAdvanceHours={16}
         onConfirm={onConfirm}
         isConfirming={false}
       />,
@@ -236,6 +260,7 @@ describe("BottomBar", () => {
         durationMinutes={30}
         swimmerIds={["s-1"]}
         needsApproval={false}
+        bookingMinAdvanceHours={16}
         onConfirm={noop}
         isConfirming={false}
       />,
@@ -253,6 +278,7 @@ describe("BottomBar", () => {
         durationMinutes={60}
         swimmerIds={["s-1"]}
         needsApproval={false}
+        bookingMinAdvanceHours={16}
         onConfirm={noop}
         isConfirming={false}
       />,
@@ -269,6 +295,7 @@ describe("BottomBar", () => {
         durationMinutes={30}
         swimmerIds={["s-1"]}
         needsApproval={true}
+        bookingMinAdvanceHours={16}
         onConfirm={noop}
         isConfirming={false}
       />,
@@ -284,6 +311,7 @@ describe("BottomBar", () => {
         durationMinutes={30}
         swimmerIds={["s-1"]}
         needsApproval={false}
+        bookingMinAdvanceHours={16}
         onConfirm={noop}
         isConfirming={true}
       />,
@@ -301,6 +329,7 @@ describe("BottomBar", () => {
         durationMinutes={30}
         swimmerIds={["s-1"]}
         needsApproval={false}
+        bookingMinAdvanceHours={16}
         onConfirm={noop}
         isConfirming={false}
       />,

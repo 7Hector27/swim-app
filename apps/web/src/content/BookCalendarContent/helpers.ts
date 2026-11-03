@@ -229,7 +229,12 @@ const ERROR_CODE_MESSAGES: Record<string, string> = {
   slot_unavailable: "That time isn't available anymore. Pick another one.",
 };
 
-export function tooSoonMessage(hours: number): string {
+export function tooSoonMessage(hours: number | null): string {
+  if (hours === null) {
+    // Server didn't echo a window on this response. Don't invent one —
+    // give the parent the actionable half of the message with no number.
+    return "That slot is too close to the lesson — to book, please text Jason.";
+  }
   const unit = hours === 1 ? "hour" : "hours";
   return `That slot is less than ${hours} ${unit} away — to book, please text Jason.`;
 }
@@ -268,7 +273,7 @@ export function mapBookingApiResponse(
     if (body.error === "too_soon") {
       const bodyRecord = body as Record<string, unknown>;
       const raw = bodyRecord.bookingMinAdvanceHours;
-      const hours = typeof raw === "number" ? raw : 16;
+      const hours = typeof raw === "number" ? raw : null;
       return { status: "error", message: tooSoonMessage(hours) };
     }
     const friendly = ERROR_CODE_MESSAGES[body.error];

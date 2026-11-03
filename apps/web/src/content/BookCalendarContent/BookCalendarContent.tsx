@@ -199,8 +199,12 @@ export default function BookCalendarContent({
 
   const bookingMaxAdvanceWeeks =
     weekData?.bookingMaxAdvanceWeeks ?? monthData?.bookingMaxAdvanceWeeks ?? 10;
+  // The Zod schema on both responses marks bookingMinAdvanceHours as
+  // required, so when either response is loaded this is a number. Before
+  // the first load lands, it is null — never a hardcoded 16, because the
+  // coach-editable setting may differ from the old default.
   const bookingMinAdvanceHours =
-    weekData?.bookingMinAdvanceHours ?? monthData?.bookingMinAdvanceHours ?? 16;
+    weekData?.bookingMinAdvanceHours ?? monthData?.bookingMinAdvanceHours ?? null;
   const maxAdvanceDateLA = useMemo(
     () => maxBookableDateLA(bookingMaxAdvanceWeeks, Date.now()),
     [bookingMaxAdvanceWeeks],

@@ -10,7 +10,7 @@ interface Props {
   durationMinutes: 30 | 45 | 60;
   swimmerIds: string[];
   needsApproval: boolean;
-  bookingMinAdvanceHours?: number;
+  bookingMinAdvanceHours: number | null;
   onConfirm: () => void;
   isConfirming: boolean;
 }
@@ -21,14 +21,19 @@ export default function BottomBar({
   durationMinutes,
   swimmerIds,
   needsApproval,
-  bookingMinAdvanceHours = 16,
+  bookingMinAdvanceHours,
   onConfirm,
   isConfirming,
 }: Props) {
   const hasSelection = selectedStartsAt !== null;
   const hasSwimmers = swimmerIds.length > 0;
   const confirmEnabled = hasSelection && !tooSoon && !isConfirming;
-  const tooSoonLabel = `Less than ${bookingMinAdvanceHours} ${bookingMinAdvanceHours === 1 ? "hour" : "hours"} away`;
+  // No number echoed on the current response → drop the hour count from
+  // the label rather than falling back to a stale default.
+  const tooSoonLabel =
+    bookingMinAdvanceHours === null
+      ? "Too close to the lesson"
+      : `Less than ${bookingMinAdvanceHours} ${bookingMinAdvanceHours === 1 ? "hour" : "hours"} away`;
 
   let timeLabel: string;
   let subLabel: string | null = null;

@@ -36,9 +36,13 @@ export function apiErrorMessage(
     return `This season overlaps with "${name}". Adjust the dates.`;
   }
   if (code === "too_soon") {
-    const hours = bookingMinAdvanceHours ?? 16;
-    const unit = hours === 1 ? "hour" : "hours";
-    return `That time is less than ${hours} ${unit} away. Text Jason to book it.`;
+    if (bookingMinAdvanceHours === undefined) {
+      // No numeric window from the server — fall back to copy without an
+      // hour count rather than silently printing the old 16h default.
+      return "That time is too close to the lesson. Text Jason to book it.";
+    }
+    const unit = bookingMinAdvanceHours === 1 ? "hour" : "hours";
+    return `That time is less than ${bookingMinAdvanceHours} ${unit} away. Text Jason to book it.`;
   }
   if (MESSAGES[code]) return MESSAGES[code]!;
   return "Something went wrong on our end. Try again in a moment.";
