@@ -13,7 +13,12 @@ export type LessonEmailEvent =
   // CoachNotificationPayload (BookingRequestLessonPayload), NOT a
   // LessonEmailPayload — the render dispatch picks the right template.
   // See ADR 031.
-  | "coach_booking_request";
+  | "coach_booking_request"
+  // One row per family per coach bulk-cancel operation (ADR 033). Payload
+  // is a BulkCancelEmailPayload (see ./bulkCancelTypes.ts), NOT a
+  // LessonEmailPayload. Row scope is (bulk_cancellation_id, household_id),
+  // never a lesson or batch id.
+  | "coach_bulk_cancel";
 
 export type LessonEmailStatus =
   | "pending"

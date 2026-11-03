@@ -468,12 +468,61 @@ export const blockedTimes = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
     endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
+    // Null means the block covers every pool (Jason is unavailable, period).
+    // Non-null scopes the block to a single pool so other pools stay bookable
+    // in the same time range. Added in ADR 033 for the pool-scoped bulk cancel
+    // flow; existing rows default to NULL which preserves the pre-033 behavior.
+    locationId: uuid("location_id").references(() => lessonLocations.id, { onDelete: "cascade" }),
     note: text("note"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdateFn(() => new Date()),
   },
   (table) => [
     check("blocked_times_ends_after_starts", sql`${table.endsAt} > ${table.startsAt}`),
+  ],
+).enableRLS();
+
+// ── Coach bulk cancellations (ADR 033) ────────────────────────────────────────
+
+// One row per coach invocation of the bulk-cancel flow. Owns the per-household
+// outbox rows and per-household audit rows written by the same transaction;
+// nothing on `lessons` references this row because a cancelled lesson's end
+// state already lives in its own columns. The row answers "why this cluster
+// of cancellations" without borrowing a lesson id or a booking batch id.
+export const bulkCancellations = pgTable(
+  "bulk_cancellations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    coachProfileId: uuid("coach_profile_id").notNull().references(() => profiles.id, { onDelete: "restrict" }),
+    // LA calendar dates. end_date >= start_date (checked below).
+    startDate: date("start_date").notNull(),
+    endDate: date("end_date").notNull(),
+    // Null means the operation targeted every pool.
+    locationId: uuid("location_id").references(() => lessonLocations.id, { onDelete: "set null" }),
+    // Optional LA wall-clock time window applied to each LA calendar date in
+    // the range. Both set together or both null (CHECK below). Null means the
+    // operation covered the whole day. Added for the ADR 033 time-window
+    // extension; pre-extension rows carry NULL.
+    startTime: time("start_time"),
+    endTime: time("end_time"),
+    // Optional coach message included in each family's email and used as the
+    // decline_reason for pending lessons declined by the operation. Capped at
+    // 500 chars to match DECLINE_REASON_MAX_LENGTH; the API also validates.
+    message: text("message"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    check("bulk_cancellations_end_on_or_after_start", sql`${table.endDate} >= ${table.startDate}`),
+    check("bulk_cancellations_message_length", sql`${table.message} IS NULL OR char_length(${table.message}) <= 500`),
+    check(
+      "bulk_cancellations_time_window_pair",
+      sql`(${table.startTime} IS NULL) = (${table.endTime} IS NULL)`,
+    ),
+    check(
+      "bulk_cancellations_end_after_start_time",
+      sql`${table.startTime} IS NULL OR ${table.endTime} > ${table.startTime}`,
+    ),
+    index("bulk_cancellations_coach_created_idx").on(table.coachProfileId, table.createdAt.desc()),
   ],
 ).enableRLS();
 
@@ -1002,14 +1051,23 @@ export const lessonEmailOutbox = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     // Nullable because batch-scoped rows reference booking_batches via
     // batch_id instead. The exactly-one CHECK below enforces that each row
-    // populates exactly one of lesson_id / batch_id. See ADR 030.
+    // populates exactly one of lesson_id / batch_id / bulk_cancellation_id.
+    // See ADR 030 and ADR 033.
     lessonId: uuid("lesson_id").references(() => lessons.id, { onDelete: "restrict" }),
     // Non-null for batch-scoped rows (events: batch_booked, batch_approved,
     // batch_canceled). NULL for per-lesson rows. See ADR 030.
     batchId: uuid("batch_id").references(() => bookingBatches.id, { onDelete: "restrict" }),
+    // Non-null for coach-bulk-cancel rows (event: coach_bulk_cancel). One row
+    // per family per bulk cancellation; see ADR 033.
+    bulkCancellationId: uuid("bulk_cancellation_id").references(() => bulkCancellations.id, { onDelete: "restrict" }),
+    // Non-null only for coach-bulk-cancel rows, which key by (bulk_cancellation_id,
+    // household_id). Lesson- and batch-scoped rows derive their household
+    // from the parent row and leave this null. See ADR 033.
+    householdId: uuid("household_id").references(() => households.id, { onDelete: "restrict" }),
     // One of: 'booking_requested', 'lesson_confirmed', 'request_declined',
     // 'request_expired', 'lesson_canceled', 'lesson_rescheduled', or (for
-    // batch rows) 'batch_booked', 'batch_approved', 'batch_canceled'.
+    // batch rows) 'batch_booked', 'batch_approved', 'batch_canceled', or (for
+    // bulk-cancel rows) 'coach_bulk_cancel'.
     event: text("event").notNull(),
     // Per-(lesson_id, event) occurrence counter. First lesson_rescheduled
     // for a given lesson is 1, next is 2, etc. The (lesson_id, event,
@@ -1059,19 +1117,22 @@ export const lessonEmailOutbox = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdateFn(() => new Date()),
   },
   (table) => [
-    // Two partial unique indexes replace the old (lesson_id, event, sequence)
-    // UNIQUE constraint. Per-lesson dedup and per-batch dedup are independent
-    // namespaces — a batch's batch_booked row with sequence=0 does not
-    // collide with any per-lesson lesson_confirmed row's sequence=0.
+    // Three partial unique indexes, one per scope. Per-lesson, per-batch, and
+    // per-(bulk-cancellation, household) dedup are independent namespaces —
+    // a bulk_cancellation's coach_bulk_cancel row with sequence=0 does not
+    // collide with any per-lesson lesson_confirmed row with sequence=0.
     uniqueIndex("lesson_email_outbox_lesson_event_seq_uq")
       .on(table.lessonId, table.event, table.sequence)
       .where(sql`lesson_id IS NOT NULL`),
     uniqueIndex("lesson_email_outbox_batch_event_seq_uq")
       .on(table.batchId, table.event, table.sequence)
       .where(sql`batch_id IS NOT NULL`),
+    uniqueIndex("lesson_email_outbox_bulk_household_event_seq_uq")
+      .on(table.bulkCancellationId, table.householdId, table.event, table.sequence)
+      .where(sql`bulk_cancellation_id IS NOT NULL`),
     check(
       "lesson_email_outbox_event_valid",
-      sql`${table.event} IN ('booking_requested', 'lesson_confirmed', 'request_declined', 'request_expired', 'lesson_canceled', 'lesson_rescheduled', 'batch_booked', 'batch_approved', 'batch_canceled', 'coach_booking_request')`,
+      sql`${table.event} IN ('booking_requested', 'lesson_confirmed', 'request_declined', 'request_expired', 'lesson_canceled', 'lesson_rescheduled', 'batch_booked', 'batch_approved', 'batch_canceled', 'coach_booking_request', 'coach_bulk_cancel')`,
     ),
     check(
       "lesson_email_outbox_status_valid",
@@ -1085,12 +1146,19 @@ export const lessonEmailOutbox = pgTable(
       "lesson_email_outbox_claim_pair",
       sql`(${table.status} = 'sending') = (${table.claimedUntil} IS NOT NULL)`,
     ),
-    // Every row is scoped to exactly one of a lesson or a batch — never both,
-    // never neither. See ADR 030.
+    // Every row is scoped to exactly one of a lesson, a batch, or a bulk
+    // cancellation — never two, never none. See ADR 030 and ADR 033.
     check(
       "lesson_email_outbox_scope_exactly_one",
       sql`(CASE WHEN ${table.lessonId} IS NOT NULL THEN 1 ELSE 0 END)
-        + (CASE WHEN ${table.batchId} IS NOT NULL THEN 1 ELSE 0 END) = 1`,
+        + (CASE WHEN ${table.batchId} IS NOT NULL THEN 1 ELSE 0 END)
+        + (CASE WHEN ${table.bulkCancellationId} IS NOT NULL THEN 1 ELSE 0 END) = 1`,
+    ),
+    // household_id is set iff the row is bulk-cancel-scoped. For lesson- and
+    // batch-scoped rows the household is derived from the parent row.
+    check(
+      "lesson_email_outbox_bulk_household_pair",
+      sql`(${table.bulkCancellationId} IS NULL) = (${table.householdId} IS NULL)`,
     ),
     // Partial index on (next_attempt_at) for the drain's hot path. Includes
     // 'sending' because an expired-claim row is a drain candidate.
@@ -1101,6 +1169,8 @@ export const lessonEmailOutbox = pgTable(
     index("lesson_email_outbox_lesson_created_idx").on(table.lessonId, table.createdAt.desc()),
     // Same debug use for batch rows.
     index("lesson_email_outbox_batch_created_idx").on(table.batchId, table.createdAt.desc()),
+    // Same debug use for bulk-cancel rows.
+    index("lesson_email_outbox_bulk_created_idx").on(table.bulkCancellationId, table.createdAt.desc()),
   ],
 ).enableRLS();
 

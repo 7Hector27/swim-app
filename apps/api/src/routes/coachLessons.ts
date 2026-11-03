@@ -30,6 +30,8 @@ import {
   CoachScheduleQuerySchema,
   CoachWeekScheduleQuerySchema,
   DeclineLessonBodySchema,
+  MarkNoShowBodySchema,
+  UndoNoShowBodySchema,
 } from "@swim-app/shared";
 import { db } from "../db/client";
 import {
@@ -81,7 +83,11 @@ coachLessonsRouter.get(
     const query = req.query as unknown as CoachScheduleQuery;
     const date = query.date;
 
-    // 1. Load lessons for this LA day with their location names.
+    // 1. Load lessons for this LA day with their location names. All lesson
+    // statuses are returned so past days show their real end state
+    // (completed, canceled, no_show, declined, expired) with each row
+    // tappable through to /coach/lessons/[id]. The planning subset used for
+    // travel buffers and open slots stays limited to pending/approved below.
     const lessonRows = await db
       .select({
         id: lessons.id,
@@ -103,12 +109,16 @@ coachLessonsRouter.get(
       .from(lessons)
       .innerJoin(lessonLocations, eq(lessons.locationId, lessonLocations.id))
       .where(
-        and(
-          inArray(lessons.status, ["pending", "approved"]),
-          sql`date_trunc('day', ${lessons.startsAt} AT TIME ZONE 'America/Los_Angeles') = ${date}::date`,
-        ),
+        sql`date_trunc('day', ${lessons.startsAt} AT TIME ZONE 'America/Los_Angeles') = ${date}::date`,
       )
       .orderBy(asc(lessons.startsAt));
+
+    // Planning subset: pending + approved only. Travel buffers between
+    // these rows render on the schedule; terminal-status lessons never
+    // generate buffers (they're history, not planning).
+    const planningLessonRows = lessonRows.filter(
+      (row) => row.status === "pending" || row.status === "approved",
+    );
 
     const lessonIds = lessonRows.map((row) => row.id);
 
@@ -197,10 +207,13 @@ coachLessonsRouter.get(
       items.push({ type: "lesson", lesson: coachLessonResponse, locationName: row.locationName, householdId: row.householdId });
     }
 
-    // Insert travel buffer items between consecutive lessons at different locations.
-    for (let index = 0; index < lessonRows.length - 1; index++) {
-      const current = lessonRows[index]!;
-      const next = lessonRows[index + 1]!;
+    // Insert travel buffer items between consecutive pending/approved
+    // lessons at different locations. Terminal-status lessons (canceled,
+    // declined, expired, no_show, completed) are excluded here so the
+    // schedule never renders buffers around history rows.
+    for (let index = 0; index < planningLessonRows.length - 1; index++) {
+      const current = planningLessonRows[index]!;
+      const next = planningLessonRows[index + 1]!;
 
       if (current.locationId === next.locationId) continue;
 
@@ -276,7 +289,7 @@ coachLessonsRouter.get(
             durationMinutes: row.durationMinutes,
             locationId: row.locationId,
           })),
-          blockedTimes: blockedRows.map((row) => ({ startsAt: row.startsAt, endsAt: row.endsAt })),
+          blockedTimes: blockedRows.map((row) => ({ startsAt: row.startsAt, endsAt: row.endsAt, locationId: row.locationId })),
           travelBufferOverrides: bufferRows.map((row) => ({
             fromLocationId: row.fromLocationId,
             toLocationId: row.toLocationId,
@@ -334,7 +347,10 @@ coachLessonsRouter.get(
 
     const endDate = dateStrings[6]!;
 
-    // 1. Load all lessons for the 7-day window in one query.
+    // 1. Load all lessons for the 7-day window in one query. All statuses
+    // are returned so past weeks show lessons in their real end state
+    // (completed, canceled, no_show, declined, expired) with each card
+    // tappable through to /coach/lessons/[id].
     const lessonRows = await db
       .select({
         id: lessons.id,
@@ -357,7 +373,6 @@ coachLessonsRouter.get(
       .innerJoin(lessonLocations, eq(lessons.locationId, lessonLocations.id))
       .where(
         and(
-          inArray(lessons.status, ["pending", "approved"]),
           sql`date_trunc('day', ${lessons.startsAt} AT TIME ZONE 'America/Los_Angeles') >= ${startDate}::date`,
           sql`date_trunc('day', ${lessons.startsAt} AT TIME ZONE 'America/Los_Angeles') < ${endDate}::date + interval '1 day'`,
         ),
@@ -998,6 +1013,220 @@ coachLessonsRouter.patch(
     if (declineOutboxId) {
       queueMicrotask(() => { void sendLessonEmailOutboxRow(declineOutboxId); });
     }
+  }),
+);
+
+// ── PATCH /coach/lessons/:id/no-show ─────────────────────────────────────────
+//
+// Coach-only mark. Allowed on approved or completed lessons whose start time
+// has already passed. The cron auto-complete at /internal/cron/tick only
+// targets rows where status='approved', so once a lesson is no_show it is
+// never auto-promoted back to completed. Keeps the lesson's Google Calendar
+// event (ADR 027: no_show now mirrors completed on the shouldExist side).
+// No parent email: parents see the status change in-app ("Missed").
+
+coachLessonsRouter.patch(
+  "/lessons/:id/no-show",
+  validate({ params: LessonIdParamsSchema, body: MarkNoShowBodySchema }),
+  asyncHandler(async (req, res) => {
+    const { id } = req.params as { id: string };
+    const now = new Date();
+    const coachProfileId = req.profile.id;
+
+    const outcome = await db.transaction(async (tx) => {
+      const [lessonRow] = await tx
+        .select()
+        .from(lessons)
+        .where(eq(lessons.id, id))
+        .for("update")
+        .limit(1);
+      if (!lessonRow) return { kind: "not_found" as const };
+
+      if (lessonRow.status === "no_show") {
+        return { kind: "already" as const };
+      }
+      if (lessonRow.status !== "approved" && lessonRow.status !== "completed") {
+        return { kind: "wrong_status" as const };
+      }
+      if (lessonRow.startsAt.getTime() >= now.getTime()) {
+        return { kind: "not_started" as const };
+      }
+
+      const [updated] = await tx
+        .update(lessons)
+        .set({
+          status: "no_show",
+          noShowAt: now,
+          noShowBy: coachProfileId,
+        })
+        .where(eq(lessons.id, id))
+        .returning();
+      if (!updated) throw new Error("no-show update returned no row");
+
+      await tx.insert(householdAuditLog).values({
+        householdId: updated.householdId,
+        actorId: coachProfileId,
+        action: "lesson_marked_no_show",
+        payload: {
+          lessonId: updated.id,
+          previousStatus: lessonRow.status,
+        },
+      });
+
+      return { kind: "ok" as const, lesson: updated };
+    });
+
+    if (outcome.kind === "not_found") {
+      res.status(404).json({ error: "Lesson not found" });
+      return;
+    }
+    if (outcome.kind === "already") {
+      res.status(409).json({ error: "already_no_show" });
+      return;
+    }
+    if (outcome.kind === "wrong_status") {
+      res.status(422).json({ error: "lesson_not_markable" });
+      return;
+    }
+    if (outcome.kind === "not_started") {
+      res.status(422).json({ error: "lesson_not_started" });
+      return;
+    }
+
+    const swimmerRows = await db
+      .select({ swimmerId: lessonSwimmers.swimmerId, firstName: swimmers.firstName, lastName: swimmers.lastName })
+      .from(lessonSwimmers)
+      .innerJoin(swimmers, eq(lessonSwimmers.swimmerId, swimmers.id))
+      .where(eq(lessonSwimmers.lessonId, outcome.lesson.id));
+
+    const updated = outcome.lesson;
+    const responseBody: LessonResponse = {
+      id: updated.id,
+      householdId: updated.householdId,
+      locationId: updated.locationId,
+      startsAt: updated.startsAt.toISOString(),
+      durationMinutes: updated.durationMinutes as 30 | 45 | 60,
+      type: updated.type,
+      status: updated.status,
+      swimmers: swimmerRows.map((row) => ({
+        swimmerId: row.swimmerId,
+        firstName: row.firstName,
+        lastName: row.lastName,
+      })),
+      expiresAt: updated.expiresAt?.toISOString() ?? null,
+      approvedAt: updated.approvedAt?.toISOString() ?? null,
+      declinedAt: updated.declinedAt?.toISOString() ?? null,
+      declineReason: updated.declineReason ?? null,
+      movedAt: updated.movedAt?.toISOString() ?? null,
+      previousStartsAt: updated.previousStartsAt?.toISOString() ?? null,
+      createdAt: updated.createdAt.toISOString(),
+    };
+
+    res.json(responseBody);
+    queueMicrotask(() => { void syncLessonToGoogle(updated.id); });
+  }),
+);
+
+// ── PATCH /coach/lessons/:id/no-show/undo ────────────────────────────────────
+//
+// Reverts a no_show mark. Target status is `completed` when the lesson's end
+// time has passed (the cron would have promoted it to completed if the
+// lesson had stayed approved past end time), otherwise `approved` (lets the
+// cron re-promote on its next tick, matching the normal approved→completed
+// pathway). Clears no_show_at and no_show_by; preserves completedAt if the
+// cron had already set it before the mark.
+
+coachLessonsRouter.patch(
+  "/lessons/:id/no-show/undo",
+  validate({ params: LessonIdParamsSchema, body: UndoNoShowBodySchema }),
+  asyncHandler(async (req, res) => {
+    const { id } = req.params as { id: string };
+    const now = new Date();
+    const coachProfileId = req.profile.id;
+
+    const outcome = await db.transaction(async (tx) => {
+      const [lessonRow] = await tx
+        .select()
+        .from(lessons)
+        .where(eq(lessons.id, id))
+        .for("update")
+        .limit(1);
+      if (!lessonRow) return { kind: "not_found" as const };
+      if (lessonRow.status !== "no_show") {
+        return { kind: "not_no_show" as const };
+      }
+
+      const endMs = lessonRow.startsAt.getTime() + lessonRow.durationMinutes * 60_000;
+      const nextStatus: "completed" | "approved" =
+        endMs < now.getTime() ? "completed" : "approved";
+      const nextCompletedAt =
+        nextStatus === "completed" ? (lessonRow.completedAt ?? now) : null;
+
+      const [updated] = await tx
+        .update(lessons)
+        .set({
+          status: nextStatus,
+          noShowAt: null,
+          noShowBy: null,
+          completedAt: nextCompletedAt,
+        })
+        .where(eq(lessons.id, id))
+        .returning();
+      if (!updated) throw new Error("no-show undo returned no row");
+
+      await tx.insert(householdAuditLog).values({
+        householdId: updated.householdId,
+        actorId: coachProfileId,
+        action: "lesson_no_show_undone",
+        payload: {
+          lessonId: updated.id,
+          newStatus: nextStatus,
+        },
+      });
+
+      return { kind: "ok" as const, lesson: updated };
+    });
+
+    if (outcome.kind === "not_found") {
+      res.status(404).json({ error: "Lesson not found" });
+      return;
+    }
+    if (outcome.kind === "not_no_show") {
+      res.status(422).json({ error: "lesson_not_no_show" });
+      return;
+    }
+
+    const swimmerRows = await db
+      .select({ swimmerId: lessonSwimmers.swimmerId, firstName: swimmers.firstName, lastName: swimmers.lastName })
+      .from(lessonSwimmers)
+      .innerJoin(swimmers, eq(lessonSwimmers.swimmerId, swimmers.id))
+      .where(eq(lessonSwimmers.lessonId, outcome.lesson.id));
+
+    const updated = outcome.lesson;
+    const responseBody: LessonResponse = {
+      id: updated.id,
+      householdId: updated.householdId,
+      locationId: updated.locationId,
+      startsAt: updated.startsAt.toISOString(),
+      durationMinutes: updated.durationMinutes as 30 | 45 | 60,
+      type: updated.type,
+      status: updated.status,
+      swimmers: swimmerRows.map((row) => ({
+        swimmerId: row.swimmerId,
+        firstName: row.firstName,
+        lastName: row.lastName,
+      })),
+      expiresAt: updated.expiresAt?.toISOString() ?? null,
+      approvedAt: updated.approvedAt?.toISOString() ?? null,
+      declinedAt: updated.declinedAt?.toISOString() ?? null,
+      declineReason: updated.declineReason ?? null,
+      movedAt: updated.movedAt?.toISOString() ?? null,
+      previousStartsAt: updated.previousStartsAt?.toISOString() ?? null,
+      createdAt: updated.createdAt.toISOString(),
+    };
+
+    res.json(responseBody);
+    queueMicrotask(() => { void syncLessonToGoogle(updated.id); });
   }),
 );
 

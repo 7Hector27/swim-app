@@ -19,6 +19,7 @@ import {
 import { fromZonedTime } from "date-fns-tz";
 import {
   availabilityConfig,
+  availabilityOverrides,
   availabilitySeasons,
   householdAuditLog,
   lessonEmailOutbox,
@@ -31,6 +32,8 @@ import {
 import * as outboxModule from "../../services/emails/outbox";
 import * as googleSyncModule from "../../services/googleCalendarSync";
 import { __setClockForTests } from "../../lib/clock";
+import { effectiveHours } from "../../lib/effectiveHours";
+import { mapConfigRow, mapOverrideRow, mapSeasonRow } from "../../lib/availabilityMappers";
 
 // Microtask mocks: nothing in these tests needs the real Google API or SMTP
 // transport. The outbox INSERT inside the lesson transaction is the real
@@ -541,23 +544,51 @@ describe("POST /coach/lessons (integration)", () => {
   });
 
   it("5. unacknowledged warnings return 409 and the audit payload records the server's flags", async () => {
-    // Derive the "outside hours" fixture from the live config instead of
-    // hard-coding a UTC hour: read defaultStartTime, back off by one LA
-    // hour, and convert to UTC via date-fns-tz. If someone widens the
-    // teaching window later, this fixture adapts automatically.
-    const [configRow] = await adminDb()
-      .select({ defaultStartTime: availabilityConfig.defaultStartTime })
-      .from(availabilityConfig)
-      .limit(1);
-    const defaultStartTime = configRow?.defaultStartTime ?? "16:00:00";
-    const [startH, startM] = defaultStartTime.split(":").map((n) => parseInt(n, 10));
-    const outsideHour = Math.max(0, (startH ?? 16) - 1);
-    const outsideMinute = startM ?? 0;
+    // Derive the "outside hours" fixture from the LIVE effective hours for
+    // the chosen date, computed with the same helper the slot engine uses
+    // (defaults -> seasons -> overrides precedence). This keeps the fixture
+    // robust against any local season / override the developer has set up:
+    //  - open day: pick 2 LA hours before the earliest window's start (floor
+    //    at 00:30 so we never wrap into the prior day).
+    //  - closed day: 03:00 LA, which is outside every plausible window.
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const [configRow] = await adminDb().select().from(availabilityConfig).limit(1);
+    const seasonRows = await adminDb().select().from(availabilitySeasons);
+    const overrideRows = await adminDb().select().from(availabilityOverrides);
+    const config = mapConfigRow(configRow!);
+    const seasons = seasonRows.map(mapSeasonRow);
+    const overrides = overrideRows.map(mapOverrideRow);
 
     // Pick a date 2 days from now to stay away from today-is-DST noise.
     const futureDate = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
-    const pad = (n: number) => String(n).padStart(2, "0");
-    const laWallClock = `${futureDate.getUTCFullYear()}-${pad(futureDate.getUTCMonth() + 1)}-${pad(futureDate.getUTCDate())}T${pad(outsideHour)}:${pad(outsideMinute)}:00`;
+    const laDateStr = `${futureDate.getUTCFullYear()}-${pad(futureDate.getUTCMonth() + 1)}-${pad(futureDate.getUTCDate())}`;
+    const windows = effectiveHours(laDateStr, seasons, overrides, {
+      defaultTeachesDays: config.defaultTeachesDays,
+      defaultStartTime: config.defaultStartTime,
+      defaultEndTime: config.defaultEndTime,
+    });
+
+    let outsideHour: number;
+    let outsideMinute: number;
+    if (windows.length === 0) {
+      outsideHour = 3;
+      outsideMinute = 0;
+    } else {
+      const earliestStart = windows.reduce(
+        (min, win) => (win.start < min ? win.start : min),
+        windows[0]!.start,
+      );
+      const [winH, winM] = earliestStart.split(":").map((n) => parseInt(n, 10));
+      const earliestMinutes = (winH ?? 0) * 60 + (winM ?? 0);
+      // Two LA hours before earliest start, floored at 00:30 so we don't wrap
+      // into the previous calendar day. 00:30 is still well outside any
+      // plausible teaching window.
+      const beforeMinutes = Math.max(30, earliestMinutes - 120);
+      outsideHour = Math.floor(beforeMinutes / 60);
+      outsideMinute = beforeMinutes % 60;
+    }
+
+    const laWallClock = `${laDateStr}T${pad(outsideHour)}:${pad(outsideMinute)}:00`;
     const outsideStart = fromZonedTime(laWallClock, "America/Los_Angeles");
 
     const body = {

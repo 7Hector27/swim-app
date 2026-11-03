@@ -11,6 +11,8 @@ import {
   cancelCoachLessonAction,
   approveCoachLessonAction,
   declineCoachLessonAction,
+  markNoShowAction,
+  undoNoShowAction,
   type CoachLessonDetailState,
 } from "./actions";
 
@@ -22,6 +24,7 @@ interface Props {
 export default function CoachLessonDetailContent({ lesson, notes }: Props) {
   const cancelDialogRef = useRef<HTMLDialogElement>(null);
   const declineDialogRef = useRef<HTMLDialogElement>(null);
+  const noShowDialogRef = useRef<HTMLDialogElement>(null);
 
   const [cancelState, cancelFormAction, isCanceling] = useActionState<
     CoachLessonDetailState,
@@ -38,6 +41,16 @@ export default function CoachLessonDetailContent({ lesson, notes }: Props) {
     FormData
   >(declineCoachLessonAction, { status: "idle" });
 
+  const [noShowState, noShowFormAction, isMarkingNoShow] = useActionState<
+    CoachLessonDetailState,
+    FormData
+  >(markNoShowAction, { status: "idle" });
+
+  const [undoNoShowState, undoNoShowFormAction, isUndoingNoShow] = useActionState<
+    CoachLessonDetailState,
+    FormData
+  >(undoNoShowAction, { status: "idle" });
+
   const startsAt = new Date(lesson.startsAt);
   const endsAt = new Date(startsAt.getTime() + lesson.durationMinutes * 60 * 1000);
   const lessonType = lesson.type === "private" ? "Private lesson" : "Family lesson";
@@ -49,6 +62,13 @@ export default function CoachLessonDetailContent({ lesson, notes }: Props) {
 
   const isPending = lesson.status === "pending";
   const isActive = lesson.status === "pending" || lesson.status === "approved";
+  // Mark no-show is only valid once the lesson has started AND the lesson is
+  // still in a markable status. The server enforces both; the UI gates the
+  // control so the past-but-not-yet-started edge case can't render a stub.
+  const hasStarted = startsAt.getTime() < Date.now();
+  const canMarkNoShow =
+    hasStarted && (lesson.status === "approved" || lesson.status === "completed");
+  const isNoShow = lesson.status === "no_show";
 
   const poolAddress = lesson.isHomePool
     ? `${lesson.locationAddress}, ${lesson.locationCity}, ${lesson.locationState} ${lesson.locationZip}`
@@ -200,6 +220,65 @@ export default function CoachLessonDetailContent({ lesson, notes }: Props) {
                 </button>
               </div>
             )}
+
+            {/* Mark no-show: past approved or completed, not yet marked */}
+            {canMarkNoShow && (
+              <div className="rounded-card border border-border p-5 tablet:p-6">
+                <h2 className="text-xl text-heading mb-1">Mark no-show</h2>
+                <p className="text-sm text-text-secondary mb-5">
+                  Flag this lesson as a no-show if the family didn't attend. No email
+                  goes out; the lesson stays on your calendar as history and the
+                  family sees it as missed.
+                </p>
+
+                <form id="mark-no-show-form" action={noShowFormAction}>
+                  <input type="hidden" name="lessonId" value={lesson.id} />
+                </form>
+
+                <button
+                  type="button"
+                  disabled={isMarkingNoShow}
+                  onClick={() => noShowDialogRef.current?.showModal()}
+                  className="inline-flex items-center justify-center rounded-button border border-border text-text font-semibold text-sm px-5 h-11 transition-colors hover:bg-surface-soft disabled:opacity-60"
+                >
+                  {isMarkingNoShow ? "Marking…" : "Mark no-show"}
+                </button>
+                {noShowState.status === "error" && (
+                  <p role="alert" className="text-sm text-danger mt-3">
+                    {noShowState.message}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* Undo no-show: lesson currently marked no_show */}
+            {isNoShow && (
+              <div className="rounded-card border border-border p-5 tablet:p-6">
+                <h2 className="text-xl text-heading mb-1">Marked no-show</h2>
+                <p className="text-sm text-text-secondary mb-5">
+                  Undo returns this lesson to its previous state (completed if the
+                  end time has passed, otherwise approved).
+                </p>
+
+                <form id="undo-no-show-form" action={undoNoShowFormAction}>
+                  <input type="hidden" name="lessonId" value={lesson.id} />
+                </form>
+
+                <button
+                  type="submit"
+                  form="undo-no-show-form"
+                  disabled={isUndoingNoShow}
+                  className="inline-flex items-center justify-center rounded-button border border-border text-text font-semibold text-sm px-5 h-11 transition-colors hover:bg-surface-soft disabled:opacity-60"
+                >
+                  {isUndoingNoShow ? "Undoing…" : "Undo no-show"}
+                </button>
+                {undoNoShowState.status === "error" && (
+                  <p role="alert" className="text-sm text-danger mt-3">
+                    {undoNoShowState.message}
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </main>
@@ -246,6 +325,18 @@ export default function CoachLessonDetailContent({ lesson, notes }: Props) {
         isPending={isCanceling}
         {...(cancelState.status === "error" ? { errorMessage: cancelState.message } : {})}
         onCancel={() => cancelDialogRef.current?.close()}
+      />
+
+      {/* Mark no-show dialog */}
+      <ConfirmDialog
+        dialogRef={noShowDialogRef}
+        title="Mark this lesson as a no-show?"
+        description={`${formatDateLabel(lesson.startsAt)} at ${formatTime(startsAt)} at ${lesson.locationName}. The family will see it as missed. You can undo this.`}
+        formId="mark-no-show-form"
+        confirmLabel="Mark no-show"
+        cancelLabel="Keep it"
+        isPending={isMarkingNoShow}
+        onCancel={() => noShowDialogRef.current?.close()}
       />
     </div>
   );

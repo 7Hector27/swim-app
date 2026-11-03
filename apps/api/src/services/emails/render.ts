@@ -37,6 +37,9 @@ const SUBJECT_PREFIX: Record<LessonEmailEvent, string> = {
   lesson_canceled: "Lesson canceled",
   lesson_rescheduled: "Lesson rescheduled",
   coach_booking_request: "New booking request",
+  // Bulk-cancel rows render through a dedicated sender path, not through
+  // this file. Entry present so the Record stays exhaustive.
+  coach_bulk_cancel: "Lessons canceled",
 };
 
 type CoachBackupPayload = BookingRequestLessonPayload | BookingRequestBatchPayload;
@@ -105,5 +108,8 @@ function selectTemplate(
       return LessonCanceled({ payload: lessonPayload, siteUrl, replyToEmail });
     case "lesson_rescheduled":
       return LessonRescheduled({ payload: lessonPayload, siteUrl, replyToEmail });
+    case "coach_bulk_cancel":
+      // Rendered by sendBulkCancelInner, not through this dispatcher.
+      throw new Error("coach_bulk_cancel rendered through sendBulkCancelInner, not renderEmail");
   }
 }

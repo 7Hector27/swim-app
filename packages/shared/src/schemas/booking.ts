@@ -99,6 +99,8 @@ export const BlockedTimeSchema = z.object({
   id: z.string().uuid(),
   startsAt: z.string().datetime({ offset: true }),
   endsAt: z.string().datetime({ offset: true }),
+  // Null means the block covers every pool. See ADR 033.
+  locationId: z.string().uuid().nullable(),
   note: z.string().nullable(),
   createdAt: z.string().datetime({ offset: true }),
 });
@@ -107,6 +109,7 @@ export type BlockedTime = z.infer<typeof BlockedTimeSchema>;
 export const CreateBlockedTimeBodySchema = z.object({
   startsAt: z.string().datetime({ offset: true }),
   endsAt: z.string().datetime({ offset: true }),
+  locationId: z.string().uuid().optional(),
   note: z.string().optional(),
 });
 export type CreateBlockedTimeBody = z.infer<typeof CreateBlockedTimeBodySchema>;
@@ -211,6 +214,13 @@ export type LessonResponse = z.infer<typeof LessonResponseSchema>;
 
 export const ApproveLessonBodySchema = z.object({});
 export type ApproveLessonBody = z.infer<typeof ApproveLessonBodySchema>;
+
+// Coach-only no-show mark + undo. Both bodies are empty; the route alone
+// carries the intent. See apps/api/src/routes/coachLessons.ts.
+export const MarkNoShowBodySchema = z.object({});
+export type MarkNoShowBody = z.infer<typeof MarkNoShowBodySchema>;
+export const UndoNoShowBodySchema = z.object({});
+export type UndoNoShowBody = z.infer<typeof UndoNoShowBodySchema>;
 
 // Max length for a coach-entered decline reason. Enforced at the API
 // boundary (request validation) AND at the outbox-write layer, so a
@@ -994,3 +1004,119 @@ export const BatchCancelRemainingResponseSchema = z.object({
 export type BatchCancelRemainingResponse = z.infer<typeof BatchCancelRemainingResponseSchema>;
 
 export type CoachHouseholdSearchResponse = z.infer<typeof CoachHouseholdSearchResponseSchema>;
+
+// ── Coach bulk cancel (ADR 033) ───────────────────────────────────────────────
+
+// Hard cap on the message length. Reused as the decline_reason for pending
+// lessons declined by the operation, so it matches DECLINE_REASON_MAX_LENGTH.
+export const BULK_CANCEL_MESSAGE_MAX_LENGTH = DECLINE_REASON_MAX_LENGTH;
+
+// LA calendar date, YYYY-MM-DD.
+const LaDateStringSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .refine((value) => !Number.isNaN(new Date(value).getTime()), {
+    message: "Invalid date",
+  });
+
+// LA wall-clock time, HH:MM on a 15-minute step. Matches
+// QuarterHourTimeStringSchema's shape; declared locally so this file stays
+// self-contained for the bulk-cancel exports.
+const LaTimeStringSchema = z
+  .string()
+  .regex(/^\d{2}:\d{2}$/)
+  .refine(
+    (value) => {
+      const parts = value.split(":");
+      const hour = Number.parseInt(parts[0] ?? "", 10);
+      const minute = Number.parseInt(parts[1] ?? "", 10);
+      if (Number.isNaN(hour) || Number.isNaN(minute)) return false;
+      if (hour < 0 || hour > 23) return false;
+      if (minute !== 0 && minute !== 15 && minute !== 30 && minute !== 45) return false;
+      return true;
+    },
+    { message: "Time must be HH:MM on a 15-minute step." },
+  );
+
+// Both-or-neither time window, with end strictly after start. The DB CHECKs
+// mirror this (bulk_cancellations_time_window_pair, bulk_cancellations_
+// end_after_start_time) so bypassing the schema still fails at the DB.
+const BulkCancelRangeSchema = z
+  .object({
+    startDate: LaDateStringSchema,
+    endDate: LaDateStringSchema,
+    locationId: z.string().uuid().optional(),
+    startTime: LaTimeStringSchema.optional(),
+    endTime: LaTimeStringSchema.optional(),
+  })
+  .refine((data) => data.endDate >= data.startDate, {
+    message: "endDate must be on or after startDate",
+    path: ["endDate"],
+  })
+  .refine(
+    (data) =>
+      (data.startTime === undefined && data.endTime === undefined) ||
+      (data.startTime !== undefined && data.endTime !== undefined),
+    { message: "startTime and endTime must both be set or both omitted", path: ["endTime"] },
+  )
+  .refine(
+    (data) =>
+      data.startTime === undefined ||
+      data.endTime === undefined ||
+      data.endTime > data.startTime,
+    { message: "endTime must be after startTime", path: ["endTime"] },
+  );
+
+export const BulkCancelPreviewBodySchema = BulkCancelRangeSchema;
+export type BulkCancelPreviewBody = z.infer<typeof BulkCancelPreviewBodySchema>;
+
+export const BulkCancelPreviewLessonSchema = z.object({
+  lessonId: z.string().uuid(),
+  householdId: z.string().uuid(),
+  householdName: z.string(),
+  status: z.enum(["approved", "pending"]),
+  startsAt: z.string().datetime({ offset: true }),
+  startsAtLocalDisplay: z.string(),
+  durationMinutes: LessonDurationMinutesSchema,
+  locationId: z.string().uuid(),
+  locationName: z.string(),
+  swimmerFirstNames: z.array(z.string()),
+});
+export type BulkCancelPreviewLesson = z.infer<typeof BulkCancelPreviewLessonSchema>;
+
+export const BulkCancelPreviewResponseSchema = z.object({
+  startDate: LaDateStringSchema,
+  endDate: LaDateStringSchema,
+  // Echoed back so the preview UI can render a confirmed window label
+  // alongside the user's inputs (and so a stale UI state doesn't disagree
+  // with the server's view of what was previewed).
+  startTime: LaTimeStringSchema.nullable(),
+  endTime: LaTimeStringSchema.nullable(),
+  locationId: z.string().uuid().nullable(),
+  locationName: z.string().nullable(),
+  approvedCount: z.number().int().nonnegative(),
+  pendingCount: z.number().int().nonnegative(),
+  householdCount: z.number().int().nonnegative(),
+  lessons: z.array(BulkCancelPreviewLessonSchema),
+});
+export type BulkCancelPreviewResponse = z.infer<typeof BulkCancelPreviewResponseSchema>;
+
+export const BulkCancelConfirmBodySchema = BulkCancelRangeSchema.and(
+  z.object({
+    message: z.string().max(BULK_CANCEL_MESSAGE_MAX_LENGTH).optional(),
+    // Default UI selection is true: write a day-off override (null pool) or a
+    // per-day blocked_times row per LA date (pool filtered) so the cleared
+    // slots can't be rebooked in the same range.
+    blockRange: z.boolean(),
+  }),
+);
+export type BulkCancelConfirmBody = z.infer<typeof BulkCancelConfirmBodySchema>;
+
+export const BulkCancelConfirmResponseSchema = z.object({
+  bulkCancellationId: z.string().uuid(),
+  canceledLessonCount: z.number().int().nonnegative(),
+  declinedLessonCount: z.number().int().nonnegative(),
+  affectedHouseholdCount: z.number().int().nonnegative(),
+  blockApplied: z.boolean(),
+});
+export type BulkCancelConfirmResponse = z.infer<typeof BulkCancelConfirmResponseSchema>;

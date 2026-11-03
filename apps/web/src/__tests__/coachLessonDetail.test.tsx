@@ -14,6 +14,8 @@ vi.mock("../content/CoachLessonDetailContent/actions", () => ({
   cancelCoachLessonAction: vi.fn(),
   approveCoachLessonAction: vi.fn(),
   declineCoachLessonAction: vi.fn(),
+  markNoShowAction: vi.fn(),
+  undoNoShowAction: vi.fn(),
 }));
 
 import CoachLessonDetailContent from "../content/CoachLessonDetailContent/CoachLessonDetailContent";

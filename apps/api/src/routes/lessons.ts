@@ -301,6 +301,7 @@ lessonsRouter.get(
       blockedTimes: blockedRows.map((row) => ({
         startsAt: row.startsAt,
         endsAt: row.endsAt,
+        locationId: row.locationId,
       })),
       travelBufferOverrides: bufferRows.map((row) => ({
         fromLocationId: row.fromLocationId,
@@ -426,7 +427,7 @@ lessonsRouter.get(
         durationMinutes: row.durationMinutes,
         locationId: row.locationId,
       })),
-      blockedTimes: blockedRows.map((row) => ({ startsAt: row.startsAt, endsAt: row.endsAt })),
+      blockedTimes: blockedRows.map((row) => ({ startsAt: row.startsAt, endsAt: row.endsAt, locationId: row.locationId })),
       travelBufferOverrides: bufferRows.map((row) => ({
         fromLocationId: row.fromLocationId,
         toLocationId: row.toLocationId,
@@ -617,7 +618,7 @@ lessonsRouter.post(
           durationMinutes: row.durationMinutes,
           locationId: row.locationId,
         })),
-        blockedTimes: blockedRows.map((row) => ({ startsAt: row.startsAt, endsAt: row.endsAt })),
+        blockedTimes: blockedRows.map((row) => ({ startsAt: row.startsAt, endsAt: row.endsAt, locationId: row.locationId })),
         travelBufferOverrides: bufferRows.map((row) => ({
           fromLocationId: row.fromLocationId,
           toLocationId: row.toLocationId,
@@ -775,7 +776,7 @@ interface BatchContext {
   config: typeof availabilityConfig.$inferSelect;
   seasons: ReturnType<typeof mapSeasonRow>[];
   overrides: ReturnType<typeof mapOverrideRow>[];
-  blocked: { startsAt: Date; endsAt: Date }[];
+  blocked: { startsAt: Date; endsAt: Date; locationId: string | null }[];
   buffers: { fromLocationId: string; toLocationId: string; bufferMinutes: number }[];
   dbLessons: { startsAt: Date; durationMinutes: number; locationId: string }[];
   nowUtc: Date;
@@ -965,7 +966,7 @@ lessonsRouter.post(
       config,
       seasons: seasonRows.map(mapSeasonRow),
       overrides: overrideRows.map(mapOverrideRow),
-      blocked: blockedRows.map((row) => ({ startsAt: row.startsAt, endsAt: row.endsAt })),
+      blocked: blockedRows.map((row) => ({ startsAt: row.startsAt, endsAt: row.endsAt, locationId: row.locationId })),
       buffers: bufferRows.map((row) => ({
         fromLocationId: row.fromLocationId,
         toLocationId: row.toLocationId,
@@ -1178,7 +1179,7 @@ lessonsRouter.post(
         config,
         seasons,
         overrides,
-        blocked: blockedRows.map((row) => ({ startsAt: row.startsAt, endsAt: row.endsAt })),
+        blocked: blockedRows.map((row) => ({ startsAt: row.startsAt, endsAt: row.endsAt, locationId: row.locationId })),
         buffers: bufferRows.map((row) => ({
           fromLocationId: row.fromLocationId,
           toLocationId: row.toLocationId,
@@ -2126,7 +2127,7 @@ lessonsRouter.patch(
           durationMinutes: row.durationMinutes,
           locationId: row.locationId,
         })),
-        blockedTimes: blockedRows.map((row) => ({ startsAt: row.startsAt, endsAt: row.endsAt })),
+        blockedTimes: blockedRows.map((row) => ({ startsAt: row.startsAt, endsAt: row.endsAt, locationId: row.locationId })),
         travelBufferOverrides: bufferRows.map((row) => ({
           fromLocationId: row.fromLocationId,
           toLocationId: row.toLocationId,
