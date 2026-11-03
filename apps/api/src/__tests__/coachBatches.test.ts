@@ -1,6 +1,8 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
 import request from "supertest";
 import pino from "pino";
+import { asc } from "drizzle-orm";
+import { householdMembers, lessons } from "../db/schema";
 
 const COACH_PROFILE_ID = "aaaaaaaa-0000-0000-0000-000000000001";
 const PARENT_PROFILE_ID = "bbbbbbbb-0000-0000-0000-000000000002";
@@ -230,11 +232,11 @@ describe("GET /coach/batches/:id", () => {
     const statuses = res.body.lessons.map((row: { status: string }) => row.status);
     expect(statuses).toContain("canceled");
     expect(statuses).toContain("no_show");
-    // The route asked the DB to order by lessons.startsAt (ascending). We
-    // can't prove ASC vs DESC through a mock, so just prove orderBy was
-    // called with exactly one argument — a Drizzle sort expression.
+    // Argument-level assertion: the route must ask the DB for
+    // asc(lessons.startsAt). Dropping orderBy, flipping to desc(), or
+    // sorting by a different column (e.g. createdAt) all make this fail.
     expect(lessonsMock.orderBy).toHaveBeenCalledTimes(1);
-    expect(lessonsMock.orderBy.mock.calls[0]).toHaveLength(1);
+    expect(lessonsMock.orderBy).toHaveBeenCalledWith(asc(lessons.startsAt));
   });
 
   it("falls back to a deterministic member name when households.name is empty, sorting owner → oldest joined_at → profile_id", async () => {
@@ -254,12 +256,16 @@ describe("GET /coach/batches/:id", () => {
 
     expect(res.status).toBe(200);
     expect(res.body.householdName).toBe("Owner Alice");
-    // The fallback must ask the DB for a deterministic sort. Three
-    // expressions: owner-first CASE, joinedAt ASC, profileId ASC. Without
-    // all three the result would flap for families that joined in the
-    // same transaction and have no owner set.
+    // The fallback must ask the DB for a deterministic sort. Argument 2
+    // is asc(householdMembers.joinedAt) and argument 3 is
+    // asc(householdMembers.profileId); argument 1 is a raw CASE WHEN
+    // expression (checked only by call count) because sql`` literals
+    // aren't referentially stable.
     expect(fallbackMock.orderBy).toHaveBeenCalledTimes(1);
-    expect(fallbackMock.orderBy.mock.calls[0]).toHaveLength(3);
+    const callArgs = fallbackMock.orderBy.mock.calls[0]!;
+    expect(callArgs).toHaveLength(3);
+    expect(callArgs[1]).toEqual(asc(householdMembers.joinedAt));
+    expect(callArgs[2]).toEqual(asc(householdMembers.profileId));
   });
 
   it("returns 404 for an unknown batch id", async () => {
