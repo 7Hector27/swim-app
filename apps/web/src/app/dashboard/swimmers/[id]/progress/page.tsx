@@ -61,6 +61,10 @@ export default async function ParentSwimmerProgressPage({ params }: Props) {
       progress={progressResult.data}
       categories={categories}
       {...(scoreHistoryResult.ok && { scoreHistory: scoreHistoryResult.data })}
+      sectionFailures={{
+        categories: !categoriesResult.ok,
+        scoreHistory: !scoreHistoryResult.ok,
+      }}
     />
   );
 }

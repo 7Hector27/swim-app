@@ -32,18 +32,19 @@ export default async function CoachSwimmerEvaluationsPage({ params }: Props) {
     throw new Error(`Failed to load swimmer (status ${swimmerResult.status})`);
   }
 
-  // Degrade to an empty list on a transient failure. The Load more button
-  // only renders when there's a cursor to follow, so a bad initial fetch
-  // leaves the page functional but empty.
-  const initialEvaluations = evaluationsResult.ok ? evaluationsResult.data.evaluations : [];
-  const initialNextCursor = evaluationsResult.ok ? evaluationsResult.data.nextCursor : null;
+  // Evaluations IS this page's primary data. Throw so the route error
+  // boundary renders instead of showing an empty list identical to the
+  // "no evaluations yet" state.
+  if (!evaluationsResult.ok) {
+    throw new Error(`Failed to load evaluations (status ${evaluationsResult.status})`);
+  }
 
   return (
     <CoachEvaluationsContent
       swimmer={swimmerResult.swimmer}
       accessToken={auth.accessToken}
-      initialEvaluations={initialEvaluations}
-      initialNextCursor={initialNextCursor}
+      initialEvaluations={evaluationsResult.data.evaluations}
+      initialNextCursor={evaluationsResult.data.nextCursor}
     />
   );
 }

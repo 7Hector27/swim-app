@@ -11,15 +11,19 @@ import {
   type LessonResponse,
 } from "@swim-app/shared";
 
+import { loadError, loadOk, type LoadResult } from "@/lib/loadResult";
+
 // Coach-specific locations fetch. The parent endpoint (/locations) is behind
 // requireParent and 403s for coaches; /coach/locations returns every named
 // pool (home pools live per-household and come from the household lookup).
-export async function fetchCoachLocations(accessToken: string): Promise<LessonLocation[]> {
+export async function fetchCoachLocations(
+  accessToken: string,
+): Promise<LoadResult<LessonLocation[]>> {
   try {
     const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/coach/locations`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
-    if (!response.ok) return [];
+    if (!response.ok) return loadError("server");
     const body: unknown = await response.json();
     const parsed = LessonLocationSchema.array().safeParse(body);
     if (!parsed.success) {
@@ -27,18 +31,18 @@ export async function fetchCoachLocations(accessToken: string): Promise<LessonLo
         .map((issue) => `${issue.path.join(".")} (${issue.message})`)
         .join("; ");
       console.warn(`fetchCoachLocations: response shape mismatch — ${detail}`);
-      return [];
+      return loadError("schema");
     }
-    return parsed.data;
+    return loadOk(parsed.data);
   } catch {
-    return [];
+    return loadError("network");
   }
 }
 
 export async function fetchCoachHouseholds(
   accessToken: string,
   params: { q?: string; householdId?: string; limit?: number },
-): Promise<CoachHouseholdSearchResponse | null> {
+): Promise<LoadResult<CoachHouseholdSearchResponse>> {
   try {
     const search = new URLSearchParams();
     if (params.q) search.set("q", params.q);
@@ -51,7 +55,7 @@ export async function fetchCoachHouseholds(
         cache: "no-store",
       },
     );
-    if (!response.ok) return null;
+    if (!response.ok) return loadError("server");
     const body: unknown = await response.json();
     const parsed = CoachHouseholdSearchResponseSchema.safeParse(body);
     if (!parsed.success) {
@@ -59,11 +63,11 @@ export async function fetchCoachHouseholds(
         .map((issue) => `${issue.path.join(".")} (${issue.message})`)
         .join("; ");
       console.warn(`fetchCoachHouseholds: response shape mismatch — ${detail}`);
-      return null;
+      return loadError("schema");
     }
-    return parsed.data;
+    return loadOk(parsed.data);
   } catch {
-    return null;
+    return loadError("network");
   }
 }
 

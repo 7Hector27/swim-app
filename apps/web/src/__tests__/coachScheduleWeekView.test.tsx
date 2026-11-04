@@ -70,12 +70,12 @@ function makeWeekResponse(
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockFetchSchedule.mockResolvedValue([]);
+  mockFetchSchedule.mockResolvedValue({ ok: true, data: [] });
 });
 
 describe("CoachScheduleContent — week view", () => {
   it("renders a Day/Week toggle with correct aria-current", async () => {
-    mockFetchWeekSchedule.mockResolvedValue(makeWeekResponse());
+    mockFetchWeekSchedule.mockResolvedValue({ ok: true, data: makeWeekResponse() });
     const html = await renderToStaticMarkup(
       await CoachScheduleContent({ accessToken: "tok", date: MONDAY, view: "week", today: TODAY }),
     );
@@ -85,7 +85,7 @@ describe("CoachScheduleContent — week view", () => {
   });
 
   it("renders the week range label", async () => {
-    mockFetchWeekSchedule.mockResolvedValue(makeWeekResponse());
+    mockFetchWeekSchedule.mockResolvedValue({ ok: true, data: makeWeekResponse() });
     const html = await renderToStaticMarkup(
       await CoachScheduleContent({ accessToken: "tok", date: MONDAY, view: "week", today: TODAY }),
     );
@@ -93,7 +93,7 @@ describe("CoachScheduleContent — week view", () => {
   });
 
   it("renders 7 day headings (shortDayLabel for Mon–Sun)", async () => {
-    mockFetchWeekSchedule.mockResolvedValue(makeWeekResponse());
+    mockFetchWeekSchedule.mockResolvedValue({ ok: true, data: makeWeekResponse() });
     const html = await renderToStaticMarkup(
       await CoachScheduleContent({ accessToken: "tok", date: MONDAY, view: "week", today: TODAY }),
     );
@@ -103,7 +103,7 @@ describe("CoachScheduleContent — week view", () => {
   });
 
   it("shows 'No lessons.' for days with no items", async () => {
-    mockFetchWeekSchedule.mockResolvedValue(makeWeekResponse());
+    mockFetchWeekSchedule.mockResolvedValue({ ok: true, data: makeWeekResponse() });
     const html = await renderToStaticMarkup(
       await CoachScheduleContent({ accessToken: "tok", date: MONDAY, view: "week", today: TODAY }),
     );
@@ -113,7 +113,7 @@ describe("CoachScheduleContent — week view", () => {
   });
 
   it("passes lesson items to CoachLessonRow for days that have lessons", async () => {
-    mockFetchWeekSchedule.mockResolvedValue(makeWeekResponse({ "2026-10-20": ["lesson-xyz"] }));
+    mockFetchWeekSchedule.mockResolvedValue({ ok: true, data: makeWeekResponse({ "2026-10-20": ["lesson-xyz"] }) });
     const html = await renderToStaticMarkup(
       await CoachScheduleContent({ accessToken: "tok", date: MONDAY, view: "week", today: TODAY }),
     );
@@ -121,7 +121,7 @@ describe("CoachScheduleContent — week view", () => {
   });
 
   it("day column headers link to the day view for that date", async () => {
-    mockFetchWeekSchedule.mockResolvedValue(makeWeekResponse());
+    mockFetchWeekSchedule.mockResolvedValue({ ok: true, data: makeWeekResponse() });
     const html = await renderToStaticMarkup(
       await CoachScheduleContent({ accessToken: "tok", date: MONDAY, view: "week", today: TODAY }),
     );
@@ -130,7 +130,7 @@ describe("CoachScheduleContent — week view", () => {
   });
 
   it("shows a Today button when not on today's week", async () => {
-    mockFetchWeekSchedule.mockResolvedValue(makeWeekResponse());
+    mockFetchWeekSchedule.mockResolvedValue({ ok: true, data: makeWeekResponse() });
     const html = await renderToStaticMarkup(
       await CoachScheduleContent({
         accessToken: "tok",
@@ -143,7 +143,7 @@ describe("CoachScheduleContent — week view", () => {
   });
 
   it("hides the Today button when already on today's week", async () => {
-    mockFetchWeekSchedule.mockResolvedValue(makeWeekResponse());
+    mockFetchWeekSchedule.mockResolvedValue({ ok: true, data: makeWeekResponse() });
     const html = await renderToStaticMarkup(
       // MONDAY (2026-10-19) is the same week as TODAY (2026-10-20)
       await CoachScheduleContent({ accessToken: "tok", date: MONDAY, view: "week", today: TODAY }),
@@ -152,7 +152,7 @@ describe("CoachScheduleContent — week view", () => {
   });
 
   it("prev/next week links point to correct Mondays", async () => {
-    mockFetchWeekSchedule.mockResolvedValue(makeWeekResponse());
+    mockFetchWeekSchedule.mockResolvedValue({ ok: true, data: makeWeekResponse() });
     const html = await renderToStaticMarkup(
       await CoachScheduleContent({ accessToken: "tok", date: MONDAY, view: "week", today: TODAY }),
     );
@@ -163,7 +163,7 @@ describe("CoachScheduleContent — week view", () => {
 
 describe("CoachScheduleContent — day view", () => {
   it("renders prev/next day links and the day label", async () => {
-    mockFetchSchedule.mockResolvedValue([]);
+    mockFetchSchedule.mockResolvedValue({ ok: true, data: [] });
     const html = await renderToStaticMarkup(
       await CoachScheduleContent({ accessToken: "tok", date: TODAY, view: "day", today: TODAY }),
     );
@@ -175,7 +175,7 @@ describe("CoachScheduleContent — day view", () => {
   });
 
   it("shows 'Tomorrow' label when date is one day ahead of today", async () => {
-    mockFetchSchedule.mockResolvedValue([]);
+    mockFetchSchedule.mockResolvedValue({ ok: true, data: [] });
     const html = await renderToStaticMarkup(
       await CoachScheduleContent({
         accessToken: "tok",
@@ -188,7 +188,7 @@ describe("CoachScheduleContent — day view", () => {
   });
 
   it("shows formatted date label for non-today non-tomorrow dates", async () => {
-    mockFetchSchedule.mockResolvedValue([]);
+    mockFetchSchedule.mockResolvedValue({ ok: true, data: [] });
     const html = await renderToStaticMarkup(
       await CoachScheduleContent({
         accessToken: "tok",
@@ -202,7 +202,7 @@ describe("CoachScheduleContent — day view", () => {
   });
 
   it("hides the Today button when already on today", async () => {
-    mockFetchSchedule.mockResolvedValue([]);
+    mockFetchSchedule.mockResolvedValue({ ok: true, data: [] });
     const html = await renderToStaticMarkup(
       await CoachScheduleContent({ accessToken: "tok", date: TODAY, view: "day", today: TODAY }),
     );
@@ -213,7 +213,7 @@ describe("CoachScheduleContent — day view", () => {
   });
 
   it("shows the empty state when there are no items", async () => {
-    mockFetchSchedule.mockResolvedValue([]);
+    mockFetchSchedule.mockResolvedValue({ ok: true, data: [] });
     const html = await renderToStaticMarkup(
       await CoachScheduleContent({ accessToken: "tok", date: TODAY, view: "day", today: TODAY }),
     );
@@ -221,7 +221,7 @@ describe("CoachScheduleContent — day view", () => {
   });
 
   it("calls fetchCoachSchedule with the access token and date", async () => {
-    mockFetchSchedule.mockResolvedValue([]);
+    mockFetchSchedule.mockResolvedValue({ ok: true, data: [] });
     await renderToStaticMarkup(
       await CoachScheduleContent({ accessToken: "my-token", date: TODAY, view: "day", today: TODAY }),
     );
@@ -229,7 +229,7 @@ describe("CoachScheduleContent — day view", () => {
   });
 
   it("calls fetchCoachWeekSchedule with the access token and date in week view", async () => {
-    mockFetchWeekSchedule.mockResolvedValue(makeWeekResponse());
+    mockFetchWeekSchedule.mockResolvedValue({ ok: true, data: makeWeekResponse() });
     await renderToStaticMarkup(
       await CoachScheduleContent({ accessToken: "my-token", date: MONDAY, view: "week", today: TODAY }),
     );

@@ -3,7 +3,9 @@ import Link from "next/link";
 import {
   calculateAge,
   todayLA,
+  type Club,
   type MeResponse,
+  type ParentSwimmer,
   type ParentSwimmerSummary,
 } from "@swim-app/shared";
 
@@ -12,6 +14,7 @@ import { fetchHousehold } from "@/lib/api/households";
 import { fetchLesson, fetchUpcomingLessons } from "@/lib/api/lessons";
 import { fetchParentSwimmerSummaries } from "@/lib/api/parentProgress";
 import { fetchSwimmers } from "@/lib/api/swimmers";
+import InlineError from "@/components/InlineError";
 import { removeSwimmer } from "./actions";
 import BookingConfirmDialog from "./BookingConfirmDialog";
 import {
@@ -34,7 +37,7 @@ interface Props {
 export default async function ParentDashboardContent({ profile, accessToken, bookedLessonId, rescheduledLessonId, rescheduledFrom }: Props) {
   const firstName = profile.fullName?.trim().split(/\s+/)[0] ?? "there";
   const hasPhone = !!(profile.phone && profile.phone.length > 0);
-  const [swimmers, upcomingLessonsRaw, household, bookedLessonResult, rescheduledLessonResult, clubs, summariesResult] =
+  const [swimmersResult, upcomingLessonsResult, householdResult, bookedLessonResult, rescheduledLessonResult, clubsResult, summariesResult] =
     await Promise.all([
       fetchSwimmers(accessToken),
       fetchUpcomingLessons(accessToken, { limit: 3 }),
@@ -44,6 +47,18 @@ export default async function ParentDashboardContent({ profile, accessToken, boo
       fetchClubs(accessToken),
       fetchParentSwimmerSummaries(accessToken),
     ]);
+  // Dashboard is a hub — every card is secondary. If one fetch fails, the
+  // page keeps rendering and the broken card shows an InlineError so a
+  // roster outage doesn't wipe out the upcoming-lessons card too.
+  const swimmers = swimmersResult.ok ? swimmersResult.data : [];
+  const swimmersFailed = !swimmersResult.ok;
+  const upcomingLessons = upcomingLessonsResult.ok ? upcomingLessonsResult.data.items : [];
+  const upcomingCount = upcomingLessonsResult.ok ? upcomingLessonsResult.data.total : null;
+  const upcomingFailed = !upcomingLessonsResult.ok;
+  // Clubs power the club-name display on swimmer cards. Fall back to empty
+  // on error; the swimmer card falls back to "Couldn't load club" through
+  // the SwimmerProfileContent helper chain.
+  const clubs = clubsResult.ok ? clubsResult.data : [];
   // 5xx / network → generic dialog (confirm the booking without details so
   // the parent doesn't re-submit); 4xx (stale link, not theirs) → no dialog
   // at all; ok → full detail dialog.
@@ -52,14 +67,23 @@ export default async function ParentDashboardContent({ profile, accessToken, boo
     rescheduledLessonId !== undefined,
     rescheduledLessonResult,
   );
-  const upcomingLessons = upcomingLessonsRaw?.items ?? [];
-  const upcomingCount = upcomingLessonsRaw?.total ?? null;
   const today = todayLA();
   const now = new Date();
   const showFinishSetup = !hasPhone;
   const headerNextLesson = upcomingLessons[0];
-  const householdRole = household?.myRole ?? null;
-  const isViewer = householdRole === "viewer";
+  // Household drives the viewer flag that gates the Book button. We can't
+  // claim the parent is an owner/manager unless we actually read that back
+  // from the server — on load failure (and on the no-household branch)
+  // default to viewer mode so we hide actions we can't verify permission
+  // for. The API enforces the same rule server-side via
+  // requireHouseholdRole("manager"), so this is defense in depth: fail-safe
+  // in the client, hard-reject on the server.
+  const isViewer = !(
+    householdResult.ok &&
+    householdResult.household !== null &&
+    (householdResult.household.myRole === "owner" ||
+      householdResult.household.myRole === "manager")
+  );
 
   const summariesBySwimmer = new Map<string, ParentSwimmerSummary>();
   if (summariesResult.ok) {
@@ -128,15 +152,26 @@ export default async function ParentDashboardContent({ profile, accessToken, boo
           <div className="flex flex-col tablet:flex-row tablet:items-start gap-6 desktop:gap-8">
             {/* Main column: full width on phone, flex-1 on tablet+ */}
             <div className="w-full min-w-0 flex flex-col gap-6 tablet:flex-1">
-              <UpcomingLessonsCard lessons={upcomingLessons} total={upcomingCount ?? upcomingLessons.length} />
+              {upcomingFailed ? (
+                <InlineError message="Couldn't load upcoming lessons." reloadOnRetry />
+              ) : (
+                <UpcomingLessonsCard lessons={upcomingLessons} total={upcomingCount ?? upcomingLessons.length} />
+              )}
 
-              <SwimmersSection
-                swimmers={swimmers}
-                today={today}
-                now={now}
-                clubs={clubs}
-                summariesBySwimmer={summariesBySwimmer}
-              />
+              {swimmersFailed ? (
+                <section>
+                  <h2 className="text-xl text-heading mb-4">Your swimmers</h2>
+                  <InlineError message="Couldn't load your swimmers." reloadOnRetry />
+                </section>
+              ) : (
+                <SwimmersSection
+                  swimmers={swimmers}
+                  today={today}
+                  now={now}
+                  clubs={clubs}
+                  summariesBySwimmer={summariesBySwimmer}
+                />
+              )}
             </div>
 
             {/* Sidebar */}
@@ -155,10 +190,10 @@ export default async function ParentDashboardContent({ profile, accessToken, boo
 // ── Sub-components ────────────────────────────────────────────────────────────
 
 interface SwimmersSectionProps {
-  swimmers: Awaited<ReturnType<typeof fetchSwimmers>>;
+  swimmers: ParentSwimmer[];
   today: string;
   now: Date;
-  clubs: Awaited<ReturnType<typeof fetchClubs>>;
+  clubs: Club[];
   summariesBySwimmer: Map<string, ParentSwimmerSummary>;
 }
 

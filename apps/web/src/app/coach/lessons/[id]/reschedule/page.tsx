@@ -19,7 +19,7 @@ export default async function CoachLessonReschedulePage({ params }: PageProps) {
   if (!auth) return <AccountInactiveScreen />;
   if (auth.profile.role !== "coach") redirect("/dashboard");
 
-  const [lessonResult, locations] = await Promise.all([
+  const [lessonResult, locationsResult] = await Promise.all([
     fetchCoachLesson(auth.accessToken, id),
     fetchLocations(auth.accessToken),
   ]);
@@ -29,9 +29,15 @@ export default async function CoachLessonReschedulePage({ params }: PageProps) {
     throw new Error(`Failed to load lesson (status ${lessonResult.status})`);
   }
 
+  // Write page — the reschedule form needs the pools list. Throw so the route
+  // error boundary renders instead of a form that can't submit.
+  if (!locationsResult.ok) {
+    throw new Error(`Failed to load locations (${locationsResult.reason})`);
+  }
+
   if (lessonResult.lesson.status !== "pending" && lessonResult.lesson.status !== "approved") {
     redirect(`/coach/lessons/${id}`);
   }
 
-  return <CoachRescheduleContent lesson={lessonResult.lesson} locations={locations} />;
+  return <CoachRescheduleContent lesson={lessonResult.lesson} locations={locationsResult.data} />;
 }

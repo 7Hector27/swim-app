@@ -35,6 +35,21 @@ import type { EditSwimState, DeleteSwimState } from "./actions";
 // needs to know whether the fetch failed, not why.
 export type SectionResult<T> = { ok: true; data: T } | { ok: false };
 
+// Per-section failure flags for the secondary fetches on this page. When a
+// flag is true the corresponding section renders an inline error (with a
+// retry) instead of its normal empty / data render — so a 500 never looks
+// like "nothing here yet." Optional so existing unit tests that pre-date
+// this wiring keep rendering happily (all false by default).
+export interface CoachSwimmerSectionFailures {
+  skills?: boolean;
+  categories?: boolean;
+  timeline?: boolean;
+  swims?: boolean;
+  meets?: boolean;
+  drafts?: boolean;
+  golfScoreTrends?: boolean;
+}
+
 interface CoachSwimmerDetailContentProps {
   swimmer: CoachSwimmerDetail;
   grades: SwimmerSkillsResponse["grades"];
@@ -53,6 +68,7 @@ interface CoachSwimmerDetailContentProps {
   // Optional so existing unit tests that pre-date this section keep rendering
   // with an empty state.
   evaluationsResult?: SectionResult<GetEvaluationsItem[]>;
+  sectionFailures?: CoachSwimmerSectionFailures;
 }
 
 const LEAGUE_LABELS: Record<League, string> = {
@@ -266,6 +282,8 @@ interface TimesPaneProps {
   meets: MeetResponse[];
   formMode: "closed" | "meet" | "practice";
   onFormModeChange: (mode: "closed" | "meet" | "practice") => void;
+  swimsFailed: boolean;
+  meetsFailed: boolean;
 }
 
 function TimesPane({
@@ -276,21 +294,28 @@ function TimesPane({
   meets,
   formMode,
   onFormModeChange,
+  swimsFailed,
+  meetsFailed,
 }: TimesPaneProps) {
   const pbSet = new Set(personalBests.map((pb) => pb.swimId));
+  // Hide "+ Add meet time" when the meets list didn't load — the form's
+  // dropdown would be empty and submitting would lose the swim.
+  const canAddMeet = !meetsFailed;
   return (
     <section className="flex flex-col gap-5">
       <div className="flex items-center justify-between gap-3">
         <h2 className="font-bold text-text">Times</h2>
         {formMode === "closed" && (
           <div className="flex gap-1">
-            <button
-              type="button"
-              onClick={() => onFormModeChange("meet")}
-              className="text-xs font-semibold text-accent hover:opacity-80 min-h-[44px] px-2"
-            >
-              + Add meet time
-            </button>
+            {canAddMeet && (
+              <button
+                type="button"
+                onClick={() => onFormModeChange("meet")}
+                className="text-xs font-semibold text-accent hover:opacity-80 min-h-[44px] px-2"
+              >
+                + Add meet time
+              </button>
+            )}
             <button
               type="button"
               onClick={() => onFormModeChange("practice")}
@@ -301,6 +326,18 @@ function TimesPane({
           </div>
         )}
       </div>
+      {swimsFailed && (
+        <InlineError
+          message="Couldn't load times for this swimmer."
+          reloadOnRetry
+        />
+      )}
+      {meetsFailed && !swimsFailed && (
+        <InlineError
+          message="Couldn't load the meets list — Add meet time is unavailable until reload."
+          reloadOnRetry
+        />
+      )}
 
       {formMode === "meet" && (
         <AddSwimForm
@@ -399,6 +436,7 @@ export default function CoachSwimmerDetailContent({
   drafts,
   golfScoreTrends,
   evaluationsResult = { ok: true, data: [] },
+  sectionFailures = {},
 }: CoachSwimmerDetailContentProps) {
   const [activeTab, setActiveTab] = useState<TabId>("feed");
   const [timesFormMode, setTimesFormMode] = useState<"closed" | "meet" | "practice">("closed");
@@ -544,24 +582,33 @@ export default function CoachSwimmerDetailContent({
                 </div>
               </section>
 
-              {drafts.length > 0 && (
-                <section
-                  aria-label="Drafts"
-                  className="rounded-lg border border-accent bg-background p-4 flex flex-col gap-2"
-                >
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-accent">
-                    Drafts waiting
-                  </p>
-                  {drafts.map((draft) => (
-                    <a
-                      key={draft.id}
-                      href={`/coach/swimmers/${swimmer.id}/evaluate?resumeDraft=${draft.id}`}
-                      className="inline-flex items-center justify-center min-h-[44px] px-3 rounded-full border border-accent text-accent text-xs font-bold transition-transform duration-150 active:scale-[0.97]"
-                    >
-                      Resume {SCREEN_NAMES[draft.screenSlug] ?? draft.screenSlug}
-                    </a>
-                  ))}
+              {sectionFailures.drafts ? (
+                // Critical: never collapse a failed drafts fetch to "no
+                // drafts" or Jason may start a second evaluation on top of
+                // an in-progress one.
+                <section aria-label="Drafts">
+                  <InlineError message="Couldn't load drafts." reloadOnRetry />
                 </section>
+              ) : (
+                drafts.length > 0 && (
+                  <section
+                    aria-label="Drafts"
+                    className="rounded-lg border border-accent bg-background p-4 flex flex-col gap-2"
+                  >
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-accent">
+                      Drafts waiting
+                    </p>
+                    {drafts.map((draft) => (
+                      <a
+                        key={draft.id}
+                        href={`/coach/swimmers/${swimmer.id}/evaluate?resumeDraft=${draft.id}`}
+                        className="inline-flex items-center justify-center min-h-[44px] px-3 rounded-full border border-accent text-accent text-xs font-bold transition-transform duration-150 active:scale-[0.97]"
+                      >
+                        Resume {SCREEN_NAMES[draft.screenSlug] ?? draft.screenSlug}
+                      </a>
+                    ))}
+                  </section>
+                )
               )}
 
               {swimmer.members.length > 0 && (
@@ -677,6 +724,8 @@ export default function CoachSwimmerDetailContent({
                       categories={categories}
                       timelineItems={timelineItems}
                       evaluationsResult={evaluationsResult}
+                      timelineFailed={sectionFailures.timeline ?? false}
+                      categoriesFailed={sectionFailures.categories ?? false}
                     />
                   )}
                   {activeTab === "times" && (
@@ -688,6 +737,8 @@ export default function CoachSwimmerDetailContent({
                       meets={meets}
                       formMode={timesFormMode}
                       onFormModeChange={setTimesFormMode}
+                      swimsFailed={sectionFailures.swims ?? false}
+                      meetsFailed={sectionFailures.meets ?? false}
                     />
                   )}
                   {activeTab === "levels" && (
@@ -698,6 +749,9 @@ export default function CoachSwimmerDetailContent({
                       startGrades={startGrades}
                       coachingPriorities={coachingPriorities}
                       golfScoreTrends={golfScoreTrends}
+                      skillsFailed={sectionFailures.skills ?? false}
+                      categoriesFailed={sectionFailures.categories ?? false}
+                      golfScoreTrendsFailed={sectionFailures.golfScoreTrends ?? false}
                     />
                   )}
                 </div>
@@ -789,9 +843,18 @@ interface FeedPaneProps {
   categories: CategoriesResponse;
   timelineItems: TimelineResponse;
   evaluationsResult: SectionResult<GetEvaluationsItem[]>;
+  timelineFailed: boolean;
+  categoriesFailed: boolean;
 }
 
-function FeedPane({ swimmerId, categories, timelineItems, evaluationsResult }: FeedPaneProps) {
+function FeedPane({
+  swimmerId,
+  categories,
+  timelineItems,
+  evaluationsResult,
+  timelineFailed,
+  categoriesFailed,
+}: FeedPaneProps) {
   const returnTo = `/coach/swimmers/${swimmerId}`;
   const evaluations = evaluationsResult.ok ? evaluationsResult.data : [];
   return (
@@ -824,12 +887,25 @@ function FeedPane({ swimmerId, categories, timelineItems, evaluationsResult }: F
         )}
       </section>
 
-      <SwimmerTimeline swimmerId={swimmerId} items={timelineItems} categories={categories} />
+      {timelineFailed ? (
+        <section aria-label="Timeline" data-testid="coach-detail-timeline-section">
+          <InlineError message="Couldn't load the timeline." reloadOnRetry />
+        </section>
+      ) : (
+        <SwimmerTimeline swimmerId={swimmerId} items={timelineItems} categories={categories} />
+      )}
 
-      <section className="flex flex-col gap-3 pt-2 border-t border-border">
-        <h2 className="font-bold text-text">Add note</h2>
-        <AddNoteForm swimmerId={swimmerId} categories={categories} />
-      </section>
+      {categoriesFailed ? (
+        <section className="flex flex-col gap-3 pt-2 border-t border-border" data-testid="coach-detail-addnote-section">
+          <h2 className="font-bold text-text">Add note</h2>
+          <InlineError message="Couldn't load skill categories; note targeting is disabled." reloadOnRetry />
+        </section>
+      ) : (
+        <section className="flex flex-col gap-3 pt-2 border-t border-border">
+          <h2 className="font-bold text-text">Add note</h2>
+          <AddNoteForm swimmerId={swimmerId} categories={categories} />
+        </section>
+      )}
     </div>
   );
 }
@@ -841,6 +917,9 @@ interface LevelsPaneProps {
   startGrades: SwimmerSkillsResponse["startGrades"];
   coachingPriorities: SwimmerSkillsResponse["coachingPriorities"];
   golfScoreTrends: GolfScoreTrend[];
+  skillsFailed: boolean;
+  categoriesFailed: boolean;
+  golfScoreTrendsFailed: boolean;
 }
 
 function LevelsPane({
@@ -850,6 +929,9 @@ function LevelsPane({
   startGrades,
   coachingPriorities,
   golfScoreTrends,
+  skillsFailed,
+  categoriesFailed,
+  golfScoreTrendsFailed,
 }: LevelsPaneProps) {
   // Mirrors the pre-rewrite "Current Levels" rendering so no coach-visible
   // signal moves between pages.
@@ -883,6 +965,9 @@ function LevelsPane({
     .filter((name): name is string => name !== null);
   const uniquePrioritySuggestions = [...new Set(prioritySuggestions)].slice(0, 3);
 
+  // When skills or categories didn't load, Current Levels and the chart
+  // can't be rendered truthfully — fall back to InlineError in each slot.
+  const showLevelsError = skillsFailed || categoriesFailed;
   return (
     <div className="flex flex-col gap-6">
       <section className="flex flex-col gap-2">
@@ -899,7 +984,27 @@ function LevelsPane({
         </dl>
       </section>
 
-      {categoriesWithData.length > 0 && (
+      {showLevelsError ? (
+        <section
+          className="flex flex-col gap-3"
+          data-testid="coach-detail-current-levels-section"
+        >
+          <h2 className="font-bold text-text">Current Levels</h2>
+          <InlineError message="Couldn't load current levels." reloadOnRetry />
+        </section>
+      ) : (
+        golfScoreTrendsFailed && (
+          <section
+            className="flex flex-col gap-3"
+            data-testid="coach-detail-golf-score-section"
+          >
+            <h2 className="font-bold text-text">Scores over time</h2>
+            <InlineError message="Couldn't load the score chart." reloadOnRetry />
+          </section>
+        )
+      )}
+
+      {!showLevelsError && categoriesWithData.length > 0 && (
         <section className="flex flex-col gap-3">
           <h2 className="font-bold text-text">Current Levels</h2>
           {categoriesWithData.map((category) => {
@@ -988,7 +1093,8 @@ function LevelsPane({
         </section>
       )}
 
-      <GolfScoreTrends trends={golfScoreTrends} />
+      {/* InlineError already rendered above when golfScoreTrendsFailed. */}
+      {!golfScoreTrendsFailed && <GolfScoreTrends trends={golfScoreTrends} />}
 
       <SwimmerSkillsHistory
         swimmerId={swimmer.id}

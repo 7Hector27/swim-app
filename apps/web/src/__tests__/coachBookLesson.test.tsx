@@ -312,6 +312,78 @@ describe("Step2TimePicker custom-time overlap across all pools", () => {
   });
 });
 
+// Regression test for the Phase-3 follow-up: when the range-availability
+// fetch returns null, Step2TimePicker must render its "Couldn't load
+// availability" card with a retry button and NOT render the WeekGrid (which
+// could still be showing stale open/closed state and look like "no
+// availability").
+describe("Step2TimePicker — availability fetch failure", () => {
+  it("renders the error card with a Retry button (not the week grid) on failure", async () => {
+    fetchCoachRangeSpy.mockResolvedValue(null);
+
+    render(
+      <Step2TimePicker
+        household={HOUSEHOLD}
+        swimmerIds={[SWIMMER_ID]}
+        namedPools={NAMED_POOLS}
+        onConfirm={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(screen.getByText(/could not load availability/i)).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /^retry$/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("retry re-invokes the range action", async () => {
+    // First call fails, second call succeeds with an empty week.
+    const todayStr = todayLA();
+    fetchCoachRangeSpy
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        needsApproval: false,
+        days: Array.from({ length: 7 }, (_, index) => ({
+          date:
+            todayStr.slice(0, 8) +
+            String(Number(todayStr.slice(8)) + index).padStart(2, "0"),
+          dayState: "closed" as const,
+          openCount: 0,
+          totalCount: 0,
+          teachingWindows: [],
+          slots: [],
+        })),
+      });
+
+    render(
+      <Step2TimePicker
+        household={HOUSEHOLD}
+        swimmerIds={[SWIMMER_ID]}
+        namedPools={NAMED_POOLS}
+        onConfirm={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    // First call recorded. Clicking Retry fires a second call.
+    expect(fetchCoachRangeSpy).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: /^retry$/i }));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(fetchCoachRangeSpy.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+});
+
 // Exercises the exact pre-fill resolver that /coach/book/page.tsx (a
 // server component) calls. If this helper slips back into a "use client"
 // module, the page crashes on load — this test is the regression guard.

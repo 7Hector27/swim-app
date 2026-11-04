@@ -21,24 +21,42 @@ export default async function CoachAvailabilityPage() {
   const today = todayLA();
   const weekStart = startOfWeekLA(today);
 
-  const [seasons, overrides, blockedTimes, preview, config] = await Promise.all([
-    fetchSeasons(auth.accessToken),
-    fetchOverrides(auth.accessToken),
-    fetchBlockedTimes(auth.accessToken),
-    fetchAvailabilityPreview(auth.accessToken, weekStart, 7),
-    fetchAvailabilityConfig(auth.accessToken),
-  ]);
+  const [seasonsResult, overridesResult, blockedTimesResult, previewResult, configResult] =
+    await Promise.all([
+      fetchSeasons(auth.accessToken),
+      fetchOverrides(auth.accessToken),
+      fetchBlockedTimes(auth.accessToken),
+      fetchAvailabilityPreview(auth.accessToken, weekStart, 7),
+      fetchAvailabilityConfig(auth.accessToken),
+    ]);
 
-  if (!config) return null;
+  // Availability is a write page: the coach is here to edit. Every read
+  // is primary — if any fails, bounce to the error boundary (coach/error.tsx)
+  // rather than render a partial editor.
+  if (!seasonsResult.ok) {
+    throw new Error(`Failed to load availability (${seasonsResult.reason})`);
+  }
+  if (!overridesResult.ok) {
+    throw new Error(`Failed to load availability (${overridesResult.reason})`);
+  }
+  if (!blockedTimesResult.ok) {
+    throw new Error(`Failed to load availability (${blockedTimesResult.reason})`);
+  }
+  if (!previewResult.ok) {
+    throw new Error(`Failed to load availability (${previewResult.reason})`);
+  }
+  if (!configResult.ok) {
+    throw new Error(`Failed to load availability (${configResult.reason})`);
+  }
 
   return (
     <CoachAvailabilityContent
-      initialSeasons={seasons}
-      initialOverrides={overrides}
-      initialBlockedTimes={blockedTimes}
-      initialPreview={preview}
+      initialSeasons={seasonsResult.data}
+      initialOverrides={overridesResult.data}
+      initialBlockedTimes={blockedTimesResult.data}
+      initialPreview={previewResult.data}
       initialWeekStart={weekStart}
-      initialConfig={config}
+      initialConfig={configResult.data}
       today={today}
     />
   );

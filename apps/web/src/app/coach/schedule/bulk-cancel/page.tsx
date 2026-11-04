@@ -32,8 +32,13 @@ export default async function CoachBulkCancelPage({ searchParams }: Props) {
     requestedEnd < initialStartDate ? initialStartDate : requestedEnd;
   const initialLocationId = isValidUuid(params.locationId) ? params.locationId! : null;
 
-  const coachLocations = await fetchCoachLocations(auth.accessToken);
-  const namedPools = coachLocations.filter((pool) => pool.isActive);
+  // Write page — the coach picks a pool to bulk-cancel. Throw on load failure
+  // so the route error boundary renders instead of a form with no choices.
+  const coachLocationsResult = await fetchCoachLocations(auth.accessToken);
+  if (!coachLocationsResult.ok) {
+    throw new Error(`Failed to load pools (${coachLocationsResult.reason})`);
+  }
+  const namedPools = coachLocationsResult.data.filter((pool) => pool.isActive);
 
   return (
     <div className="flex flex-col flex-1 bg-background">

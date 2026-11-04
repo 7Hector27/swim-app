@@ -171,8 +171,12 @@ export default function CoachAvailabilityContent({
   async function refreshPreview(nextWeekStart: string) {
     setPreviewLoading(true);
     try {
-      const response = await fetchAvailabilityPreviewAction(nextWeekStart, 7);
-      setPreview(response);
+      const result = await fetchAvailabilityPreviewAction(nextWeekStart, 7);
+      // Preview refresh is best-effort inside the editor: on failure we
+      // keep the previous preview rather than clobber it with an empty
+      // calendar. A full page reload (the error-boundary CTA) is the
+      // right recovery if the whole page is wedged.
+      if (result.ok) setPreview(result.data);
     } finally {
       setPreviewLoading(false);
     }
@@ -190,8 +194,13 @@ export default function CoachAvailabilityContent({
   }, [pendingDelete]);
 
   async function refreshSeasons() {
-    const fresh = await fetchSeasonsAction();
-    if (fresh.length > 0) setSeasons(withIsCurrent(fresh, todayLA()));
+    const result = await fetchSeasonsAction();
+    // Season-list refresh is best-effort: a transient failure shouldn't
+    // clobber the list on-screen. Keep the previous state and let the
+    // next refresh (or the error boundary on hard reload) recover.
+    if (result.ok && result.data.length > 0) {
+      setSeasons(withIsCurrent(result.data, todayLA()));
+    }
   }
 
   function openAddSeason() {

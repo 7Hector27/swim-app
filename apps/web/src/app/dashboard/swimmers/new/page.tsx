@@ -14,7 +14,11 @@ export default async function AddSwimmerPage() {
   if (!auth) redirect("/login");
   if (auth.profile.role !== "parent") redirect("/dashboard");
 
-  const clubs = await fetchClubs(auth.accessToken);
+  // Write page — the clubs dropdown is required for submission. If we can't
+  // load the catalog, surface a route error rather than let the parent pick
+  // "none" and lose the chance to tag their swimmer.
+  const clubsResult = await fetchClubs(auth.accessToken);
+  if (!clubsResult.ok) throw new Error("Failed to load clubs");
 
-  return <AddSwimmerContent clubs={clubs} />;
+  return <AddSwimmerContent clubs={clubsResult.data} />;
 }

@@ -13,20 +13,23 @@ export default async function ParentLessonsPage() {
   if (!auth) redirect("/login");
   if (auth.profile.role !== "parent") redirect("/dashboard");
 
-  const [upcomingRaw, past] = await Promise.all([
+  const [upcomingResult, pastResult] = await Promise.all([
     fetchUpcomingLessons(auth.accessToken, { limit: PAGE_SIZE + 1 }),
     fetchPastLessons(auth.accessToken),
   ]);
 
-  if (upcomingRaw === null) {
-    return (
-      <p className="text-danger p-8">Couldn&apos;t load your lessons. Refresh to try again.</p>
-    );
+  // Primary — the lessons page is the lessons list. If either load fails,
+  // throw so the route error boundary renders rather than a half-empty page.
+  if (!upcomingResult.ok) {
+    throw new Error(`Failed to load upcoming lessons (${upcomingResult.reason})`);
+  }
+  if (!pastResult.ok) {
+    throw new Error(`Failed to load past lessons (${pastResult.reason})`);
   }
 
-  const upcomingItems = upcomingRaw.items;
+  const upcomingItems = upcomingResult.data.items;
   const initialHasMore = upcomingItems.length > PAGE_SIZE;
   const initialLessons = initialHasMore ? upcomingItems.slice(0, PAGE_SIZE) : upcomingItems;
 
-  return <ParentLessonsContent initialLessons={initialLessons} initialHasMore={initialHasMore} past={past} />;
+  return <ParentLessonsContent initialLessons={initialLessons} initialHasMore={initialHasMore} past={pastResult.data} />;
 }

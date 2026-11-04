@@ -12,13 +12,13 @@ vi.mock("@swim-app/shared", async (importOriginal) => {
 });
 
 vi.mock("@/lib/api/lessons", () => ({
-  fetchCoachSchedule: vi.fn().mockResolvedValue([]),
-  coachGetPendingLessons: vi.fn().mockResolvedValue([]),
-  fetchCoachStats: vi.fn().mockResolvedValue(null),
+  fetchCoachSchedule: vi.fn().mockResolvedValue({ ok: true, data: [] }),
+  coachGetPendingLessons: vi.fn().mockResolvedValue({ ok: true, data: [] }),
+  fetchCoachStats: vi.fn().mockResolvedValue({ ok: false, reason: "server" }),
 }));
 
 vi.mock("@/lib/api/coachSwimmers", () => ({
-  fetchCoachSwimmers: vi.fn().mockResolvedValue([]),
+  fetchCoachSwimmers: vi.fn().mockResolvedValue({ ok: true, data: [] }),
 }));
 
 vi.mock("@/content/CoachDashboardContent/TodayScheduleCard", () => ({

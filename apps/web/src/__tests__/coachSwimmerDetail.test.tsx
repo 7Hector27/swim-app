@@ -230,3 +230,55 @@ describe("CoachSwimmerDetailContent", () => {
     expect(screen.getByText("Backyard Pool Crew")).toBeInTheDocument();
   });
 });
+
+// The audit's drafts rule: a failed drafts fetch must never collapse to
+// "no drafts," or Jason starts a second evaluation on top of one that's
+// in-progress server-side. The draftsResult is not a dedicated prop — we
+// surface the failure through the `sectionFailures.drafts` flag so the
+// right-rail slot renders an inline error instead of hiding the section.
+describe("CoachSwimmerDetailContent — drafts failure", () => {
+  it("renders an inline error (not an empty slot) when drafts failed to load", () => {
+    render(
+      <CoachSwimmerDetailContent
+        swimmer={TEST_SWIMMER}
+        grades={{}}
+        startGrades={{}}
+        coachingPriorities={[]}
+        categories={[]}
+        timelineItems={[]}
+        swims={[]}
+        personalBests={[]}
+        meets={[]}
+        drafts={[]}
+        golfScoreTrends={[]}
+        sectionFailures={{ drafts: true }}
+      />,
+    );
+    const draftsRegion = screen.getByRole("region", { name: /drafts/i });
+    expect(draftsRegion).toBeInTheDocument();
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent(/couldn't load drafts/i);
+    // Must not render any Resume-draft button.
+    expect(screen.queryByRole("link", { name: /resume/i })).toBeNull();
+  });
+
+  it("renders nothing in the drafts slot when drafts is empty and the fetch did succeed", () => {
+    render(
+      <CoachSwimmerDetailContent
+        swimmer={TEST_SWIMMER}
+        grades={{}}
+        startGrades={{}}
+        coachingPriorities={[]}
+        categories={[]}
+        timelineItems={[]}
+        swims={[]}
+        personalBests={[]}
+        meets={[]}
+        drafts={[]}
+        golfScoreTrends={[]}
+      />,
+    );
+    expect(screen.queryByRole("region", { name: /drafts/i })).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+});

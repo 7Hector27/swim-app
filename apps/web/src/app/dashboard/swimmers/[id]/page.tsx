@@ -12,6 +12,8 @@ import {
   fetchParentSwimmerProgress,
 } from "@/lib/api/parentProgress";
 import { fetchSwimmer } from "@/lib/api/swimmers";
+import type { SectionResult } from "@/content/SwimmerProfileContent/SwimmerProfileContent";
+import type { Club } from "@swim-app/shared";
 import { requireAuth } from "@/lib/requireAuth";
 
 export const metadata: Metadata = {
@@ -33,13 +35,13 @@ export default async function SwimmerProfilePage({ params }: Props) {
 
   const [
     swimmerResult,
-    household,
-    clubs,
+    householdResult,
+    clubsResult,
     progressResult,
     personalBestsResult,
     scoreHistoryResult,
-    upcoming,
-    past,
+    upcomingResult,
+    pastResult,
   ] = await Promise.all([
     fetchSwimmer(id, token),
     fetchHousehold(token),
@@ -57,13 +59,26 @@ export default async function SwimmerProfilePage({ params }: Props) {
     throw new Error(`Failed to load swimmer (status ${swimmerResult.status})`);
   }
 
-  if (!household) redirect("/dashboard");
+  // Household role gates the Edit/Book buttons. Throw on load failure so
+  // the error boundary renders — never redirect to /dashboard (which would
+  // mask a server error as a "not enrolled" state).
+  if (!householdResult.ok) {
+    throw new Error(`Failed to load household (status ${householdResult.status})`);
+  }
+  if (householdResult.household === null) redirect("/dashboard");
+
+  // Clubs power the display-only club name on the profile. Thread the
+  // SectionResult down so the content can show "Couldn't load club" in
+  // place of a blank name instead of silently falling back to [].
+  const clubsSection: SectionResult<Club[]> = clubsResult.ok
+    ? { ok: true, data: clubsResult.data }
+    : { ok: false };
 
   return (
     <SwimmerProfileContent
       swimmer={swimmerResult.swimmer}
-      householdRole={household.myRole}
-      clubs={clubs}
+      householdRole={householdResult.household.myRole}
+      clubsResult={clubsSection}
       progress={progressResult.ok ? { ok: true, data: progressResult.data } : { ok: false }}
       scoreHistory={
         scoreHistoryResult.ok ? { ok: true, data: scoreHistoryResult.data } : { ok: false }
@@ -71,8 +86,8 @@ export default async function SwimmerProfilePage({ params }: Props) {
       personalBests={
         personalBestsResult.ok ? { ok: true, data: personalBestsResult.data } : { ok: false }
       }
-      upcomingLessons={upcoming === null ? { ok: false } : { ok: true, data: upcoming.items }}
-      pastLessons={past === null ? { ok: false } : { ok: true, data: past }}
+      upcomingLessons={upcomingResult.ok ? { ok: true, data: upcomingResult.data.items } : { ok: false }}
+      pastLessons={pastResult.ok ? { ok: true, data: pastResult.data } : { ok: false }}
     />
   );
 }

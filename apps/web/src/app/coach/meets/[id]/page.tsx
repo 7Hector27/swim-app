@@ -19,7 +19,7 @@ export default async function CoachMeetPage({ params }: CoachMeetPageProps) {
   const [auth, { id }] = await Promise.all([requireAuth(), params]);
   if (!auth) return <AccountInactiveScreen />;
 
-  const [meetResult, swimmers] = await Promise.all([
+  const [meetResult, swimmersResult] = await Promise.all([
     fetchMeetDetail(id, auth.accessToken),
     fetchCoachSwimmers(auth.accessToken),
   ]);
@@ -29,5 +29,12 @@ export default async function CoachMeetPage({ params }: CoachMeetPageProps) {
     throw new Error(`Failed to load meet (status ${meetResult.status})`);
   }
 
-  return <CoachMeetDetailContent meet={meetResult.meet} swimmers={swimmers} />;
+  // Write surface — the meet page includes an Add swim form whose swimmer
+  // dropdown comes from this fetch. Treat the whole page as primary so we
+  // never render the form without the dropdown's options.
+  if (!swimmersResult.ok) {
+    throw new Error(`Failed to load swimmers (${swimmersResult.reason})`);
+  }
+
+  return <CoachMeetDetailContent meet={meetResult.meet} swimmers={swimmersResult.data} />;
 }

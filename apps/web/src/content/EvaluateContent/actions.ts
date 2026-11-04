@@ -95,16 +95,29 @@ export async function saveDraft(
   return { status: "error", message: "Could not save draft." };
 }
 
-export async function deleteDraft(draftId: string): Promise<void> {
+// Awaitable so callers (Discard draft, undo-discard) can toast on failure
+// instead of leaving the draft in the list while telling the user it was
+// deleted. 401 → signed-out → caller treats as a success from the user's POV
+// (the draft is unreachable). Any other non-2xx → { ok: false } with the
+// status so the caller can decide whether to retry.
+export async function deleteDraft(
+  draftId: string,
+): Promise<{ ok: true } | { ok: false; status: number }> {
   const supabase = await createClient();
   const {
     data: { session },
   } = await supabase.auth.getSession();
-  if (!session) return;
-  await fetch(`${process.env.NEXT_PUBLIC_API_URL}/coach/drafts/${draftId}`, {
-    method: "DELETE",
-    headers: { Authorization: `Bearer ${session.access_token}` },
-  }).catch(() => null);
+  if (!session) return { ok: false, status: 401 };
+  const response = await fetch(
+    `${process.env.NEXT_PUBLIC_API_URL}/coach/drafts/${draftId}`,
+    {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    },
+  ).catch(() => null);
+  if (response === null) return { ok: false, status: 0 };
+  if (response.ok) return { ok: true };
+  return { ok: false, status: response.status };
 }
 
 export async function fetchDependencyMapAction(

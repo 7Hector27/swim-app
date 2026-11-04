@@ -37,7 +37,7 @@ vi.mock("@/content/CoachAvailabilityContent/actions", () => ({
   deleteOverrideAction: (...args: unknown[]) => mockDeleteOverride(...args),
   fetchAvailabilityPreviewAction: (...args: unknown[]) => mockFetchPreview(...args),
   patchAvailabilityConfigAction: (...args: unknown[]) => mockPatchConfig(...args),
-  fetchSeasonsAction: () => Promise.resolve([]),
+  fetchSeasonsAction: () => Promise.resolve({ ok: true, data: [] }),
 }));
 
 import CoachAvailabilityContent from "../content/CoachAvailabilityContent/CoachAvailabilityContent";
@@ -181,7 +181,7 @@ describe("CoachAvailabilityContent — seasons table", () => {
         warnings: [],
       },
     });
-    mockFetchPreview.mockResolvedValue(basePreview);
+    mockFetchPreview.mockResolvedValue({ ok: true, data: basePreview });
     renderPage();
 
     fireEvent.click(screen.getAllByRole("button", { name: /\+ Add season/ })[0]!);
@@ -224,7 +224,7 @@ describe("CoachAvailabilityContent — seasons table", () => {
         warnings: [],
       },
     });
-    mockFetchPreview.mockResolvedValue(basePreview);
+    mockFetchPreview.mockResolvedValue({ ok: true, data: basePreview });
     renderPage();
 
     fireEvent.click(screen.getAllByRole("button", { name: /\+ Add season/ })[0]!);
@@ -272,7 +272,7 @@ describe("CoachAvailabilityContent — seasons table", () => {
         ],
       },
     });
-    mockFetchPreview.mockResolvedValue(basePreview);
+    mockFetchPreview.mockResolvedValue({ ok: true, data: basePreview });
     renderPage();
 
     fireEvent.click(screen.getAllByRole("button", { name: /\+ Add season/ })[0]!);
@@ -299,7 +299,7 @@ describe("CoachAvailabilityContent — seasons table", () => {
 
   it("closes the confirm dialog and removes the row when delete succeeds with no warnings", async () => {
     mockDeleteSeason.mockResolvedValue({ ok: true, data: { warnings: [] } });
-    mockFetchPreview.mockResolvedValue(basePreview);
+    mockFetchPreview.mockResolvedValue({ ok: true, data: basePreview });
     renderPage();
 
     const table = screen.getByRole("table");
@@ -334,7 +334,7 @@ describe("CoachAvailabilityContent — seasons table", () => {
         ],
       },
     });
-    mockFetchPreview.mockResolvedValue(basePreview);
+    mockFetchPreview.mockResolvedValue({ ok: true, data: basePreview });
     renderPage();
 
     fireEvent.click(screen.getByRole("button", { name: "Delete Mid-Oct" }));
@@ -378,7 +378,7 @@ describe("CoachAvailabilityContent — edit season", () => {
         warnings: [],
       },
     });
-    mockFetchPreview.mockResolvedValue(basePreview);
+    mockFetchPreview.mockResolvedValue({ ok: true, data: basePreview });
     renderPage();
 
     const table = screen.getByRole("table");
@@ -438,7 +438,7 @@ describe("CoachAvailabilityContent — edit season", () => {
         ],
       },
     });
-    mockFetchPreview.mockResolvedValue(basePreview);
+    mockFetchPreview.mockResolvedValue({ ok: true, data: basePreview });
     renderPage();
 
     const table = screen.getByRole("table");
@@ -477,7 +477,7 @@ describe("CoachAvailabilityContent — copy to next year", () => {
       ok: true,
       data: { inserted: [season({ id: "n1", startDate: "2027-10-15" }), season({ id: "n2", startDate: "2027-11-01" })] },
     });
-    mockFetchPreview.mockResolvedValue(basePreview);
+    mockFetchPreview.mockResolvedValue({ ok: true, data: basePreview });
     renderPage();
 
     fireEvent.click(screen.getByRole("button", { name: /Copy to 2027/ }));
@@ -503,7 +503,7 @@ describe("CoachAvailabilityContent — week preview", () => {
 describe("CoachAvailabilityContent — overrides", () => {
   it("shows a friendly message when the API returns override_conflict", async () => {
     mockCreateOverride.mockResolvedValue({ ok: false, status: 422, code: "override_conflict" });
-    mockFetchPreview.mockResolvedValue(basePreview);
+    mockFetchPreview.mockResolvedValue({ ok: true, data: basePreview });
     renderPage({ overrides: [override({})] });
 
     // Two "Add" buttons exist (phone card + desktop section); click the first.
@@ -522,7 +522,7 @@ describe("CoachAvailabilityContent — overrides", () => {
 
   it("deletes an override through the confirm dialog", async () => {
     mockDeleteOverride.mockResolvedValue({ ok: true, data: { warnings: [] } });
-    mockFetchPreview.mockResolvedValue(basePreview);
+    mockFetchPreview.mockResolvedValue({ ok: true, data: basePreview });
     renderPage({ overrides: [override({ note: "Vacation" })] });
 
     // Two delete buttons exist (phone card + desktop section); click the first.
@@ -560,7 +560,7 @@ describe("CoachAvailabilityContent — overrides", () => {
         ],
       },
     });
-    mockFetchPreview.mockResolvedValue(basePreview);
+    mockFetchPreview.mockResolvedValue({ ok: true, data: basePreview });
     renderPage({ overrides: [existing] });
 
     // Two edit buttons exist (phone card + desktop section); click the first.

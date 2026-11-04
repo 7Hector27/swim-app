@@ -41,10 +41,15 @@ export default async function EvaluatePage({ params, searchParams }: EvaluatePag
   if (!screensResult.ok) {
     throw new Error(`Failed to load screens (status ${screensResult.status})`);
   }
-
-  // Prev grades are a nice-to-have context chip on each skill card. If the
-  // endpoint fails we show "New" badges rather than failing the whole page.
-  const prevGrades = skillsResult.ok ? skillsResult.data.grades : {};
+  // Write page — Jason is about to grade this swimmer. If prev grades don't
+  // load, the "previous grade" chips on every skill card would be wrong
+  // (every skill would read "New"), which would quietly mislead the entry.
+  // Throw so the error boundary renders rather than rendering the form on
+  // top of missing context.
+  if (!skillsResult.ok) {
+    throw new Error(`Failed to load prior skills (status ${skillsResult.status})`);
+  }
+  const prevGrades = skillsResult.data.grades;
 
   const resolvedParams = resolvedSearchParams as Record<string, string | undefined>;
   const resumeDraftId = resolvedParams["resumeDraft"];

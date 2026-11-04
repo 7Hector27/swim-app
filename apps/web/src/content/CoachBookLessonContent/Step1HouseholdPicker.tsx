@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { CoachHouseholdSearchResult } from "@swim-app/shared";
 import { COACH_HOUSEHOLD_SEARCH_MIN_LENGTH } from "@swim-app/shared";
+import InlineError from "@/components/InlineError";
 import { searchHouseholdsAction } from "./actions";
 import { activeSwimmers, familyDisplayName } from "./helpers";
 
@@ -31,6 +32,11 @@ export default function Step1HouseholdPicker({
   const [query, setQuery] = useState(initialQuery);
   const [households, setHouseholds] = useState<CoachHouseholdSearchResult[]>(initialHouseholds);
   const [isSearching, setIsSearching] = useState(false);
+  // Distinct from "no results" — a 5xx or network failure must not collapse
+  // to "No households found" or the coach can't tell apart a broken server
+  // from a missing family.
+  const [searchError, setSearchError] = useState(false);
+  const [retryTick, setRetryTick] = useState(0);
   const searchTokenRef = useRef(0);
 
   useEffect(() => {
@@ -38,26 +44,33 @@ export default function Step1HouseholdPicker({
     if (trimmed.length < COACH_HOUSEHOLD_SEARCH_MIN_LENGTH) {
       setHouseholds([]);
       setIsSearching(false);
+      setSearchError(false);
       return;
     }
     setIsSearching(true);
+    setSearchError(false);
     const token = ++searchTokenRef.current;
     const timer = setTimeout(async () => {
       const result = await searchHouseholdsAction(trimmed);
       // Ignore stale responses from a prior keystroke.
       if (token !== searchTokenRef.current) return;
-      setHouseholds(result ?? []);
+      if (result.ok) {
+        setHouseholds(result.data);
+      } else {
+        setHouseholds([]);
+        setSearchError(true);
+      }
       setIsSearching(false);
     }, DEBOUNCE_MS);
     return () => clearTimeout(timer);
-  }, [query]);
+  }, [query, retryTick]);
 
   const canContinue =
     selectedHousehold !== null && selectedSwimmerIds.length > 0;
 
   const trimmed = query.trim();
   const emptySearch =
-    trimmed.length >= COACH_HOUSEHOLD_SEARCH_MIN_LENGTH && !isSearching && households.length === 0;
+    trimmed.length >= COACH_HOUSEHOLD_SEARCH_MIN_LENGTH && !isSearching && !searchError && households.length === 0;
 
   return (
     <div className="flex flex-col gap-5">
@@ -89,6 +102,13 @@ export default function Step1HouseholdPicker({
         <p className="text-sm text-text-secondary">
           No households found. Try a swimmer&apos;s first name.
         </p>
+      )}
+
+      {searchError && !isSearching && (
+        <InlineError
+          message="Couldn't run that search."
+          onRetry={() => setRetryTick((tick) => tick + 1)}
+        />
       )}
 
       <ul className="flex flex-col gap-3">

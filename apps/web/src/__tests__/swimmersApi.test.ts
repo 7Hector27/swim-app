@@ -41,15 +41,18 @@ describe("fetchSwimmers", () => {
   it("returns parsed swimmers on 200 with valid body", async () => {
     mockFetch.mockResolvedValue(mockResponse(true, 200, [validSwimmer]));
     const result = await fetchSwimmers("test-token");
-    expect(result).toHaveLength(1);
-    expect(result[0]?.id).toBe(validSwimmer.id);
-    expect(result[0]?.firstName).toBe("Alice");
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data).toHaveLength(1);
+      expect(result.data[0]?.id).toBe(validSwimmer.id);
+      expect(result.data[0]?.firstName).toBe("Alice");
+    }
   });
 
-  it("returns empty array on 200 with invalid response shape", async () => {
+  it("returns a schema error on 200 with invalid response shape", async () => {
     mockFetch.mockResolvedValue(mockResponse(true, 200, [{ not: "a swimmer" }]));
     const result = await fetchSwimmers("test-token");
-    expect(result).toEqual([]);
+    expect(result).toEqual({ ok: false, reason: "schema" });
   });
 
   it("logs a warning (no swimmer data) on 200 with invalid response shape", async () => {
@@ -62,22 +65,22 @@ describe("fetchSwimmers", () => {
     expect(message as string).not.toMatch(/Alice|Smith|\d{4}-\d{2}-\d{2}|aaaa/);
   });
 
-  it("returns empty array on non-ok status", async () => {
+  it("returns a server error on non-ok status", async () => {
     mockFetch.mockResolvedValue(mockResponse(false, 401, { error: "Unauthorized" }));
     const result = await fetchSwimmers("test-token");
-    expect(result).toEqual([]);
+    expect(result).toEqual({ ok: false, reason: "server" });
   });
 
-  it("returns empty array on 500", async () => {
+  it("returns a server error on 500", async () => {
     mockFetch.mockResolvedValue(mockResponse(false, 500, { error: "Internal server error" }));
     const result = await fetchSwimmers("test-token");
-    expect(result).toEqual([]);
+    expect(result).toEqual({ ok: false, reason: "server" });
   });
 
-  it("returns empty array when fetch throws (network error)", async () => {
+  it("returns a network error when fetch throws", async () => {
     mockFetch.mockRejectedValue(new Error("Network failure"));
     const result = await fetchSwimmers("test-token");
-    expect(result).toEqual([]);
+    expect(result).toEqual({ ok: false, reason: "network" });
   });
 
   it("forwards the access token as a Bearer header", async () => {

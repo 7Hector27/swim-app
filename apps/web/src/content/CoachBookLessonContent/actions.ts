@@ -13,6 +13,7 @@ import {
   fetchCoachHouseholds,
   type CoachCreateLessonResult,
 } from "@/lib/api/coachBooking";
+import { loadError, type LoadResult } from "@/lib/loadResult";
 
 // Flat shape used by the custom-time overlap check. Captures the minimum
 // needed (UTC start + duration + display location name) so the client
@@ -29,19 +30,23 @@ async function getAccessToken(): Promise<string | null> {
   return data.session?.access_token ?? null;
 }
 
+// Return LoadResult through the action boundary so the picker can show an
+// InlineError on load failure instead of "no results." Unwrapping to null
+// collapsed 5xx and "truly no results" into one indistinguishable state;
+// per the audit, a failed search must be visibly different from an empty one.
 export async function searchHouseholdsAction(
   q: string,
-): Promise<CoachHouseholdSearchResponse | null> {
+): Promise<LoadResult<CoachHouseholdSearchResponse>> {
   const token = await getAccessToken();
-  if (!token) return null;
+  if (!token) return loadError("server");
   return fetchCoachHouseholds(token, { q });
 }
 
 export async function fetchHouseholdByIdAction(
   householdId: string,
-): Promise<CoachHouseholdSearchResponse | null> {
+): Promise<LoadResult<CoachHouseholdSearchResponse>> {
   const token = await getAccessToken();
-  if (!token) return null;
+  if (!token) return loadError("server");
   return fetchCoachHouseholds(token, { householdId });
 }
 
@@ -73,10 +78,10 @@ export async function fetchCoachWeekLessonsAction(
 ): Promise<CoachWeekLesson[]> {
   const token = await getAccessToken();
   if (!token) return [];
-  const response = await fetchCoachWeekSchedule(token, mondayStr);
-  if (response === null) return [];
+  const result = await fetchCoachWeekSchedule(token, mondayStr);
+  if (!result.ok) return [];
   const flat: CoachWeekLesson[] = [];
-  for (const day of response.days) {
+  for (const day of result.data.days) {
     for (const item of day.items) {
       flat.push({
         startsAtUtc: item.lesson.startsAt,

@@ -24,7 +24,11 @@ export default async function CoachLessonPage({ params }: PageProps) {
     if (lessonResult.status === 404) notFound();
     throw new Error(`Failed to load lesson (status ${lessonResult.status})`);
   }
-  const notes = await fetchLessonNotes(auth.accessToken, id);
+  // Notes are secondary — the lesson detail is the primary data. Pass as a
+  // SectionResult so the content component renders InlineError when the load
+  // fails, instead of collapsing to an empty notes list.
+  const notesResult = await fetchLessonNotes(auth.accessToken, id);
+  const notes = notesResult.ok ? { ok: true as const, data: notesResult.data } : { ok: false as const };
 
   return <CoachLessonDetailContent lesson={lessonResult.lesson} notes={notes} />;
 }

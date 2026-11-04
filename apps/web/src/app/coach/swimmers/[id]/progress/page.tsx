@@ -74,6 +74,11 @@ export default async function SwimmerProgressPage({ params }: ProgressPageProps)
       scoreHistory={scoreHistory}
       golfScore={golfScore}
       nowIso={nowIso}
+      sectionFailures={{
+        categories: !categoriesResult.ok,
+        scoreHistory: !scoreHistoryResult.ok,
+        golfScore: !golfScoreResult.ok,
+      }}
     />
   );
 }

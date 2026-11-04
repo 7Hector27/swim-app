@@ -16,8 +16,15 @@ export default async function HomePage() {
       // fetches it for parents, so this is a no-op second call that reuses the
       // same result. The homepage was already dynamic (reads session cookies),
       // so this does not change caching posture.
-      const household = await fetchHousehold(me.accessToken);
-      ctaVariant = household?.myRole === "viewer" ? "parent-viewer" : "parent-active";
+      const householdResult = await fetchHousehold(me.accessToken);
+      // Homepage CTA — on a load failure, show the parent-active CTA
+      // (it's the non-destructive default and the user hits the route
+      // error boundary when they click through to a page that needs it).
+      const myRole =
+        householdResult.ok && householdResult.household
+          ? householdResult.household.myRole
+          : null;
+      ctaVariant = myRole === "viewer" ? "parent-viewer" : "parent-active";
     }
   }
 

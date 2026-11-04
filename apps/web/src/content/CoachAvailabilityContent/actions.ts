@@ -17,6 +17,7 @@ import type {
   SeasonWithIsCurrent,
 } from "@swim-app/shared";
 import type { ApiResult } from "@/lib/api/coachAvailability";
+import { loadError, type LoadResult } from "@/lib/loadResult";
 import {
   copyNextYear,
   createOverride,
@@ -37,9 +38,11 @@ async function getToken(): Promise<string | null> {
   return data.session?.access_token ?? null;
 }
 
-export async function fetchSeasonsAction(): Promise<SeasonWithIsCurrent[]> {
+export async function fetchSeasonsAction(): Promise<
+  LoadResult<SeasonWithIsCurrent[]>
+> {
   const token = await getToken();
-  if (!token) return [];
+  if (!token) return loadError("server");
   return fetchSeasons(token);
 }
 
@@ -110,9 +113,9 @@ export async function deleteOverrideAction(
 export async function fetchAvailabilityPreviewAction(
   from: string,
   days: number,
-): Promise<AvailabilityPreviewResponse> {
+): Promise<LoadResult<AvailabilityPreviewResponse>> {
   const token = await getToken();
-  if (!token) return { days: [] };
+  if (!token) return loadError("server");
   return fetchAvailabilityPreview(token, from, days);
 }
 

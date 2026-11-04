@@ -26,6 +26,8 @@ import {
   type SeasonWithIsCurrent,
 } from "@swim-app/shared";
 
+import { loadError, loadOk, type LoadResult } from "@/lib/loadResult";
+
 export type ApiResult<T> =
   | { ok: true; data: T }
   | { ok: false; status: number; code?: string; conflictingSeasonName?: string };
@@ -53,18 +55,19 @@ function authHeaders(accessToken: string, json = false): HeadersInit {
 
 export async function fetchAvailabilityConfig(
   accessToken: string,
-): Promise<AvailabilityConfig | null> {
+): Promise<LoadResult<AvailabilityConfig>> {
   try {
     const response = await fetch(
       `${process.env.NEXT_PUBLIC_API_URL}/coach/availability-config`,
       { headers: authHeaders(accessToken), cache: "no-store" },
     );
-    if (!response.ok) return null;
+    if (!response.ok) return loadError("server");
     const body: unknown = await response.json();
     const parsed = AvailabilityConfigSchema.safeParse(body);
-    return parsed.success ? parsed.data : null;
+    if (!parsed.success) return loadError("schema");
+    return loadOk(parsed.data);
   } catch {
-    return null;
+    return loadError("network");
   }
 }
 
@@ -93,18 +96,21 @@ export async function patchAvailabilityConfig(
 
 // ── Seasons ──────────────────────────────────────────────────────────────────
 
-export async function fetchSeasons(accessToken: string): Promise<SeasonWithIsCurrent[]> {
+export async function fetchSeasons(
+  accessToken: string,
+): Promise<LoadResult<SeasonWithIsCurrent[]>> {
   try {
     const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/coach/seasons`, {
       headers: authHeaders(accessToken),
       cache: "no-store",
     });
-    if (!response.ok) return [];
+    if (!response.ok) return loadError("server");
     const body: unknown = await response.json();
     const parsed = SeasonWithIsCurrentSchema.array().safeParse(body);
-    return parsed.success ? parsed.data : [];
+    if (!parsed.success) return loadError("schema");
+    return loadOk(parsed.data);
   } catch {
-    return [];
+    return loadError("network");
   }
 }
 
@@ -211,18 +217,21 @@ export async function copyNextYear(
 
 // ── Overrides ────────────────────────────────────────────────────────────────
 
-export async function fetchOverrides(accessToken: string): Promise<AvailabilityOverride[]> {
+export async function fetchOverrides(
+  accessToken: string,
+): Promise<LoadResult<AvailabilityOverride[]>> {
   try {
     const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/coach/overrides`, {
       headers: authHeaders(accessToken),
       cache: "no-store",
     });
-    if (!response.ok) return [];
+    if (!response.ok) return loadError("server");
     const body: unknown = await response.json();
     const parsed = AvailabilityOverrideSchema.array().safeParse(body);
-    return parsed.success ? parsed.data : [];
+    if (!parsed.success) return loadError("schema");
+    return loadOk(parsed.data);
   } catch {
-    return [];
+    return loadError("network");
   }
 }
 
@@ -288,18 +297,21 @@ export async function deleteOverride(
 
 // ── Blocked times (read-only in this editor) ─────────────────────────────────
 
-export async function fetchBlockedTimes(accessToken: string): Promise<BlockedTime[]> {
+export async function fetchBlockedTimes(
+  accessToken: string,
+): Promise<LoadResult<BlockedTime[]>> {
   try {
     const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/coach/blocked-times`, {
       headers: authHeaders(accessToken),
       cache: "no-store",
     });
-    if (!response.ok) return [];
+    if (!response.ok) return loadError("server");
     const body: unknown = await response.json();
     const parsed = BlockedTimeSchema.array().safeParse(body);
-    return parsed.success ? parsed.data : [];
+    if (!parsed.success) return loadError("schema");
+    return loadOk(parsed.data);
   } catch {
-    return [];
+    return loadError("network");
   }
 }
 
@@ -309,15 +321,16 @@ export async function fetchAvailabilityPreview(
   accessToken: string,
   from: string,
   days: number,
-): Promise<AvailabilityPreviewResponse> {
+): Promise<LoadResult<AvailabilityPreviewResponse>> {
   try {
     const url = `${process.env.NEXT_PUBLIC_API_URL}/coach/availability-preview?from=${from}&days=${days}`;
     const response = await fetch(url, { headers: authHeaders(accessToken), cache: "no-store" });
-    if (!response.ok) return { days: [] };
+    if (!response.ok) return loadError("server");
     const body: unknown = await response.json();
     const parsed = AvailabilityPreviewResponseSchema.safeParse(body);
-    return parsed.success ? parsed.data : { days: [] };
+    if (!parsed.success) return loadError("schema");
+    return loadOk(parsed.data);
   } catch {
-    return { days: [] };
+    return loadError("network");
   }
 }

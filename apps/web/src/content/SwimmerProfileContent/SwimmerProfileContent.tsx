@@ -32,7 +32,10 @@ export type SectionResult<T> = { ok: true; data: T } | { ok: false };
 interface SwimmerProfileContentProps {
   swimmer: ParentSwimmer;
   householdRole: HouseholdRole;
-  clubs: Club[];
+  // Clubs is a SectionResult so the profile can distinguish a failed load
+  // ("Couldn't load club") from an actually-empty catalog. The page can
+  // still render — this is a secondary display field.
+  clubsResult: SectionResult<Club[]>;
   progress: SectionResult<ParentSwimmerProgressResponse>;
   // Latest category rollups power the small radar on the Progress card.
   // Comes from GET /swimmers/:id/score-history on the server, with the parent
@@ -46,7 +49,7 @@ interface SwimmerProfileContentProps {
 export default function SwimmerProfileContent({
   swimmer,
   householdRole,
-  clubs,
+  clubsResult,
   progress,
   scoreHistory,
   personalBests,
@@ -54,7 +57,14 @@ export default function SwimmerProfileContent({
   pastLessons,
 }: SwimmerProfileContentProps) {
   const age = parentSwimmerAge(swimmer.birthDate);
-  const clubName = swimmerClubName(swimmer, clubs);
+  // Distinguish three states for the club field:
+  //  - ok + resolves to a name: show the name.
+  //  - ok + no name: show nothing (the ProfileHeader handles this).
+  //  - fetch failed: show a short "Couldn't load club" placeholder so the
+  //    coach/parent doesn't read a blank space as "no club set."
+  const clubName = clubsResult.ok
+    ? swimmerClubName(swimmer, clubsResult.data)
+    : "Couldn't load club";
   const canEdit = householdRole === "owner" || householdRole === "manager";
   const canBook = canEdit;
 
