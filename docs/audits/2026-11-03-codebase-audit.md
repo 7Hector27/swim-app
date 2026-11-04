@@ -81,7 +81,23 @@ Items considered and ruled out: the `.catch(() => null)` pattern on `response.js
 
 ## Phase 3 — CLAUDE.md compliance sweep
 
-_(Pending.)_
+Clean against most rules — the enforcement is strong. Scorecard:
+
+- **Audit log in same `db.transaction()`** — ✅ 20+ `tx.insert(householdAuditLog)` / `tx.insert(coachAuditLog)` sites all inside transactions. The one exception, `apps/api/src/routes/coachCalendar.ts:184`, is `db.insert(coachAuditLog)` outside a tx — but that is a documented ADR 027 deviation with an explicit comment (lines 177–183). Not a violation.
+- **Append-only ratings and balance ledger** — ✅ Everywhere `skillRatings` is written, reads use `isNull(voidedAt) && isNull(supersededAt)`; supersedes-chain fields are respected. No `UPDATE skill_ratings` statements found outside the explicit void/supersede paths.
+- **"use server" files export only async functions** — ✅ All 22 `content/*/actions.ts` begin with `"use server";` and every top-level `export` is `async function`. Zero non-function exports (grepped `^export\s+(?!async\s+function)` and got no hits).
+- **Client components never import `@/lib/env`** — ✅ The nine `@/lib/env` imports are all in server files (layout, account/page, auth/confirm/route, evaluate/page, and five server-action files). Zero hits in `"use client"` files.
+- **Design tokens only, no hex / no Tailwind default palette** — ✅ The only hex values are in `apps/web/src/styles/tokens.css`. Zero hits on `gray-500`, `red-500`, etc. in components.
+- **No Python** — ✅ `find . -name "*.py"` returns nothing.
+- **Server→client props plain data** — ✅ Spot-checked `dashboard/page.tsx`, `coach/swimmers/[id]/page.tsx`, `coach/lessons/[id]/page.tsx`; no `Date`, `function`, or class-instance props pass across the RSC boundary. Dates are serialized via `.toISOString()`.
+
+### Findings
+
+- **medium** — single-letter callback parameters, pervasive — CLAUDE.md states "Never abbreviate or use single-letter names, including callback parameters." 115 matches across 30 files covering `.map((s) => …)`, `.filter((p) => …)`, `.find((c) => …)`, `.sort((a, b) => …)`, `onChange={(e) => …}`. Highest-signal production files: `apps/api/src/lib/slots.ts:128,163,279`, `apps/api/src/lib/leaderboard.ts:91,127`, `apps/api/src/lib/coachBookingWarnings.ts` (5), `apps/api/src/services/emails/sender.ts` (4), `apps/web/src/content/CoachAvailabilityContent/CoachAvailabilityContent.tsx` (8 hits), `apps/web/src/content/BookCalendarContent/BookCalendarContent.tsx:396,995`, `apps/web/src/content/CoachBulkCancelContent/CoachBulkCancelContent.tsx:595`, `apps/web/src/content/CoachDashboardContent/BookingRequestsCard.tsx:114`, `apps/web/src/content/CoachMeetsContent/CoachMeetsContent.tsx:87,102,116` (`(e) =>` on inputs), `apps/web/src/content/LoginContent/LoginContent.tsx:52`. Tests (`__tests__/`) account for another ~70 hits; CLAUDE.md doesn't exempt tests. Fix: add an ESLint rule forbidding single-letter callback args, or codemod + review. Effort M (lots of mechanical renames, the lint rule is the one-time cost). Low priority individually but real as a convention gap.
+
+- **low** — `apps/api/src/routes/coachCalendar.ts:184` audit-log outside transaction is documented as an ADR 027 exception, but the rule's intent ("audit row absence is recoverable only because `retry-failed` flows the sync-outcome state into the lesson rows themselves") lives in a single comment. Suggest moving the exemption into `CLAUDE.md` so it survives a refactor that doesn't read `coachCalendar.ts:177-183`. Effort S.
+
+Items considered and ruled out: no cross-boundary `Date` props detected; no non-async exports from `actions.ts`; no `console.*` in `apps/api/src` (CLAUDE.md's "never use console in apps/api" rule). No manually declared types in `packages/shared` outside `z.infer<>` (spot-checked a sample).
 
 ## Phase 4 — Launch essentials
 
