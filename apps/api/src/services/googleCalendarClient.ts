@@ -1,5 +1,6 @@
 import { calendar as calendarApi, auth as googleAuth } from "@googleapis/calendar";
 import type { GoogleOAuthEnv } from "../lib/env";
+import { withTimeout } from "../lib/outboundTimeout";
 
 // Thin wrapper over google-auth-library + @googleapis/calendar. Routes and
 // services call these functions; tests mock this module.
@@ -71,7 +72,7 @@ export async function exchangeCodeForTokens(
   code: string,
 ): Promise<ExchangedTokens> {
   const client = buildOAuth2Client(env);
-  const { tokens } = await client.getToken(code);
+  const { tokens } = await withTimeout(client.getToken(code), "google.getToken");
   if (!tokens.refresh_token) {
     throw new Error("google: token response missing refresh_token");
   }
@@ -105,7 +106,7 @@ export async function calendarExists(
   client.setCredentials({ access_token: accessToken });
   const api = calendarApi({ version: "v3", auth: client });
   try {
-    await api.calendars.get({ calendarId });
+    await withTimeout(api.calendars.get({ calendarId }), "google.calendars.get");
     return { exists: true };
   } catch (err: unknown) {
     const status = (err as { code?: number; status?: number }).code ?? (err as { status?: number }).status;
@@ -124,13 +125,16 @@ export async function createDedicatedCalendar(
   const client = buildOAuth2Client(env);
   client.setCredentials({ access_token: accessToken });
   const api = calendarApi({ version: "v3", auth: client });
-  const resp = await api.calendars.insert({
-    requestBody: {
-      summary: CALENDAR_SUMMARY,
-      description: CALENDAR_DESCRIPTION,
-      timeZone: CALENDAR_TIME_ZONE,
-    },
-  });
+  const resp = await withTimeout(
+    api.calendars.insert({
+      requestBody: {
+        summary: CALENDAR_SUMMARY,
+        description: CALENDAR_DESCRIPTION,
+        timeZone: CALENDAR_TIME_ZONE,
+      },
+    }),
+    "google.calendars.insert",
+  );
   if (!resp.data.id) {
     throw new Error("google: calendars.insert returned no id");
   }
@@ -144,7 +148,7 @@ export async function createDedicatedCalendar(
  */
 export async function revokeToken(env: GoogleOAuthEnv, token: string): Promise<void> {
   const client = buildOAuth2Client(env);
-  await client.revokeToken(token);
+  await withTimeout(client.revokeToken(token), "google.revokeToken");
 }
 
 /**
@@ -171,7 +175,10 @@ export async function refreshAccessToken(
   const client = buildOAuth2Client(env);
   client.setCredentials({ refresh_token: refreshToken });
   try {
-    const { credentials } = await client.refreshAccessToken();
+    const { credentials } = await withTimeout(
+      client.refreshAccessToken(),
+      "google.refreshAccessToken",
+    );
     if (!credentials.access_token) {
       throw new Error("google: refreshAccessToken returned no access_token");
     }
@@ -223,7 +230,10 @@ export async function upsertEvent(
     end: { dateTime: body.endIso, timeZone: body.timeZone },
   };
   try {
-    await api.events.insert({ calendarId, requestBody });
+    await withTimeout(
+      api.events.insert({ calendarId, requestBody }),
+      "google.events.insert",
+    );
     return;
   } catch (err: unknown) {
     const status = (err as { code?: number; status?: number }).code ?? (err as { status?: number }).status;
@@ -231,18 +241,21 @@ export async function upsertEvent(
   }
   // 409 → event already exists for this id (possibly in `cancelled` state
   // after a hand-delete). Patch with status=confirmed un-cancels it.
-  await api.events.patch({
-    calendarId,
-    eventId,
-    requestBody: {
-      status: "confirmed",
-      summary: body.summary,
-      description: body.description,
-      location: body.location,
-      start: { dateTime: body.startIso, timeZone: body.timeZone },
-      end: { dateTime: body.endIso, timeZone: body.timeZone },
-    },
-  });
+  await withTimeout(
+    api.events.patch({
+      calendarId,
+      eventId,
+      requestBody: {
+        status: "confirmed",
+        summary: body.summary,
+        description: body.description,
+        location: body.location,
+        start: { dateTime: body.startIso, timeZone: body.timeZone },
+        end: { dateTime: body.endIso, timeZone: body.timeZone },
+      },
+    }),
+    "google.events.patch",
+  );
 }
 
 /**
@@ -257,7 +270,10 @@ export async function deleteEventIdempotent(
 ): Promise<void> {
   const api = buildCalendarApi(env, accessToken);
   try {
-    await api.events.delete({ calendarId, eventId });
+    await withTimeout(
+      api.events.delete({ calendarId, eventId }),
+      "google.events.delete",
+    );
   } catch (err: unknown) {
     const status = (err as { code?: number; status?: number }).code ?? (err as { status?: number }).status;
     if (status === 404 || status === 410) return;
