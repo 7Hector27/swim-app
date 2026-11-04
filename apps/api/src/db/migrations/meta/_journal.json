@@ -470,6 +470,13 @@
       "when": 1793762800111,
       "tag": "0066_fancy_nuke",
       "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1793834089285,
+      "tag": "0067_account_deletion_prep",
+      "breakpoints": true
     }
   ]
 }

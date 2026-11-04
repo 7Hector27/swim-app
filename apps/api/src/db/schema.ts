@@ -1,5 +1,4 @@
 import { sql } from "drizzle-orm";
-import { authUsers } from "drizzle-orm/supabase";
 import {
   AnyPgColumn,
   boolean,
@@ -123,10 +122,12 @@ export const householdRoleEnum = pgEnum("household_role", ["owner", "manager", "
 export const profiles = pgTable(
   "profiles",
   {
-    // No default — this id mirrors auth.users.id and is set by the on_auth_user_created trigger.
-    id: uuid("id")
-      .primaryKey()
-      .references(() => authUsers.id, { onDelete: "cascade" }),
+    // No default — this id mirrors auth.users.id and is set by the
+    // on_auth_user_created trigger. The FK to auth.users was intentionally
+    // dropped per ADR 034: account deletion hard-deletes the auth user via
+    // the Admin API but keeps the scrubbed profile row for FK integrity
+    // across household_audit_log, swimmers.public_consent_by, etc.
+    id: uuid("id").primaryKey(),
     role: userRoleEnum("role").notNull().default("parent"),
     fullName: text("full_name"),
     phone: text("phone"),
@@ -580,6 +581,16 @@ export const lessons = pgTable("lessons", {
   // other lesson (single-lesson parent bookings, coach bookings).
   // Immutable after insert in v1. See ADR 030.
   batchId: uuid("batch_id").references((): AnyPgColumn => bookingBatches.id, { onDelete: "restrict" }),
+  // ADR 034 reserves these three columns for anonymized past-lesson rows
+  // that survive their household's deletion. Phase 1 adds the columns only;
+  // the migration that drops NOT NULL on household_id / location_id / the
+  // actor columns and starts writing anonymized rows lands in Phase 2
+  // alongside the deletion engine, so the ~30 call sites that currently
+  // treat the identity columns as non-null are audited in the same PR
+  // that needs the capability.
+  anonymizedAt: timestamp("anonymized_at", { withTimezone: true }),
+  locationSnapshot: text("location_snapshot"),
+  swimmerCount: integer("swimmer_count"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdateFn(() => new Date()),
 }, (table) => [
@@ -1443,6 +1454,46 @@ export const coachNotificationPreferences = pgTable(
       "coach_notification_preferences_lock_screen_detail_valid",
       sql`${table.lockScreenDetail} IN ('first_initial', 'full_name')`,
     ),
+  ],
+).enableRLS();
+
+// ── Account deletion jobs (ADR 034) ───────────────────────────────────────────
+// Retry state for post-commit external cleanup after a parent account is
+// deleted. The DB-side deletion runs inside the request transaction; this
+// table only tracks the Supabase Auth hard-delete and the per-lesson Google
+// Calendar sync, which run as post-commit tasks and may fail transiently.
+//
+// profile_id is nullable with no FK — the scrubbed profile row survives, but
+// the id is kept here purely for log correlation and may be cleared by a
+// future retention policy. auth_user_id names the Supabase auth user to
+// delete and does not reference auth.users (that row goes away on success).
+
+export const accountDeletionJobs = pgTable(
+  "account_deletion_jobs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    profileId: uuid("profile_id"),
+    authUserId: uuid("auth_user_id").notNull(),
+    scope: text("scope").notNull(),
+    status: text("status").notNull().default("pending"),
+    attempts: integer("attempts").notNull().default(0),
+    lastError: text("last_error"),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdateFn(() => new Date()),
+  },
+  (table) => [
+    check(
+      "account_deletion_jobs_scope_valid",
+      sql`${table.scope} IN ('solo', 'leave')`,
+    ),
+    check(
+      "account_deletion_jobs_status_valid",
+      sql`${table.status} IN ('pending', 'running', 'completed', 'failed')`,
+    ),
+    index("account_deletion_jobs_pending_idx")
+      .on(table.updatedAt.asc())
+      .where(sql`status = 'pending'`),
   ],
 ).enableRLS();
 
