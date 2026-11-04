@@ -392,6 +392,24 @@ describe("PATCH /coach/lessons/:id/decline", () => {
 // ── POST /internal/cron/tick ──────────────────────────────────────────────────
 
 describe("POST /internal/cron/tick", () => {
+  // Stub the lease acquire + release chain. The handler now opens with
+  // `db.insert(cronLeases)...onConflictDoUpdate(...).returning(...)` and
+  // closes by `db.update(cronLeases).set(...).where(...)` in a finally.
+  // The default implementation returns a row that matches the request's
+  // holder so acquire succeeds; tests that want the "skip" branch
+  // override this per-test.
+  function mockLeaseAcquireSuccess(): void {
+    const returning = vi.fn().mockResolvedValue([{ heldBy: "any", heldUntil: new Date() }]);
+    const onConflictDoUpdate = vi.fn().mockReturnValue({ returning });
+    const values = vi.fn().mockReturnValue({ onConflictDoUpdate });
+    mockDbInsert.mockImplementationOnce(() => ({ values }));
+  }
+  function mockLeaseRelease(): void {
+    const where = vi.fn().mockResolvedValue(undefined);
+    const set = vi.fn().mockReturnValue({ where });
+    mockDbUpdate.mockImplementationOnce(() => ({ set }));
+  }
+
   beforeEach(async () => {
     process.env["CRON_SECRET"] = "test-cron-secret";
     const { __resetEnvCacheForTests } = await import("../lib/env");
@@ -402,6 +420,9 @@ describe("POST /internal/cron/tick", () => {
     const drainModule = await import("../services/emails/drain");
     vi.mocked(drainModule.drainLessonEmailOutbox).mockResolvedValue({ drained: 0, abandoned: 0 });
     vi.mocked(drainModule.scrubLessonEmailPayloads).mockResolvedValue({ scrubbed: 0 });
+    // Each successful tick does acquire (insert) + release (update) once.
+    mockLeaseAcquireSuccess();
+    mockLeaseRelease();
   });
 
   it("returns 401 without CRON_SECRET header", async () => {

@@ -2,7 +2,7 @@ import { Router } from "express";
 import { createHash, timingSafeEqual } from "crypto";
 import { and, eq, lt, sql } from "drizzle-orm";
 import { db } from "../db/client";
-import { coachCalendarIntegrations, lessons } from "../db/schema";
+import { coachCalendarIntegrations, cronLeases, lessons } from "../db/schema";
 import { validate } from "../middleware/validate";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { getEnv } from "../lib/env";
@@ -29,6 +29,17 @@ import type { RequestHandler } from "express";
 // Google, missed state changes) without a dedicated nightly worker.
 const FULL_PASS_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
+// Cron tick lease name. Lives in the cron_leases table.
+const CRON_TICK_LEASE_NAME = "cron/tick";
+
+// Lease duration. Long enough for a normal tick (drains + sync passes)
+// to finish; short enough that if the holder crashes before clearing
+// held_until, the next tick takes over within a couple of minutes. The
+// fire-and-forget microtasks (runFullSyncPass, syncLessonToGoogle, etc.)
+// outlive the handler itself — the lease covers the synchronous handler
+// work, not the background microtasks.
+const CRON_TICK_LEASE_MS = 5 * 60 * 1000;
+
 export const internalRouter = Router();
 
 // SHA-256 both values before comparing so timingSafeEqual always operates on
@@ -52,6 +63,44 @@ const requireCronSecret: RequestHandler = (req, res, next) => {
   next();
 };
 
+// Attempts to atomically take the cron tick lease. Returns true when the
+// caller now owns the lease, false when another holder is still active.
+//
+// Pattern mirrors the outbox claim lease (lesson_email_outbox.claimed_until):
+// a single UPDATE with a WHERE that only matches when the lease is free
+// or expired. Since the row is created up-front by seedLease(), this is
+// always an UPDATE — no race between INSERT and UPDATE.
+//
+// We deliberately avoid pg_advisory_lock. postgres-js pools connections,
+// so session-scoped advisory locks can be acquired on one connection and
+// released from another — leaking a lock forever.
+async function tryAcquireCronTickLease(holder: string): Promise<boolean> {
+  const now = new Date();
+  const heldUntil = new Date(now.getTime() + CRON_TICK_LEASE_MS);
+  const result = await db
+    .insert(cronLeases)
+    .values({ name: CRON_TICK_LEASE_NAME, heldUntil, heldBy: holder })
+    .onConflictDoUpdate({
+      target: cronLeases.name,
+      set: { heldUntil, heldBy: holder, updatedAt: now },
+      // UPDATE only matches when the current lease is free or expired.
+      // Postgres `ON CONFLICT DO UPDATE ... WHERE` with a non-matching
+      // WHERE leaves the row untouched and omits it from RETURNING, so
+      // `result.length === 0` is the exact "held by someone else" signal.
+      setWhere: sql`${cronLeases.heldUntil} IS NULL OR ${cronLeases.heldUntil} < ${now.toISOString()}::timestamptz`,
+    })
+    .returning({ heldBy: cronLeases.heldBy });
+
+  return result.length > 0;
+}
+
+async function releaseCronTickLease(holder: string): Promise<void> {
+  await db
+    .update(cronLeases)
+    .set({ heldUntil: null, heldBy: null })
+    .where(and(eq(cronLeases.name, CRON_TICK_LEASE_NAME), eq(cronLeases.heldBy, holder)));
+}
+
 // POST /internal/cron/tick
 // 1. Expire pending lessons whose expires_at < now().
 // 2. Auto-complete approved lessons that have finished.
@@ -60,6 +109,38 @@ internalRouter.post(
   requireCronSecret,
   validate({}),
   asyncHandler(async (req, res) => {
+    // Single-writer gate. Two overlapping ticks (Railway rolling deploy,
+    // overlapping manual runs, cron drift): one acquires the lease and
+    // runs; the other returns 200 { skipped: true } without touching the
+    // DB. An expired lease is taken over automatically (holder crashed).
+    const holder = req.requestId;
+    const acquired = await tryAcquireCronTickLease(holder);
+    if (!acquired) {
+      req.log.info({}, "cron/tick skipped: lease already held");
+      res.status(200).json({ skipped: true });
+      return;
+    }
+
+    let body: Record<string, number>;
+    try {
+      body = await runCronTick(req);
+    } finally {
+      try {
+        await releaseCronTickLease(holder);
+      } catch (err) {
+        req.log.error(
+          { err: err instanceof Error ? err.message : String(err) },
+          "cron/tick lease release failed",
+        );
+      }
+    }
+    res.json(body);
+  }),
+);
+
+async function runCronTick(
+  req: import("express").Request,
+): Promise<Record<string, number>> {
     const now = new Date();
 
     const { expired, completed, expiredEmailOutboxIds } = await db.transaction(async (tx) => {
@@ -254,7 +335,7 @@ internalRouter.post(
       "cron/tick",
     );
 
-    res.json({
+    return {
       expired: expired.length,
       completed: completed.length,
       fullPasses,
@@ -270,6 +351,5 @@ internalRouter.post(
       coachAbandoned: coachDrainResult.abandoned,
       coachScrubbed: coachScrubResult.scrubbed,
       coachDeadSubsPurged: coachScrubResult.deadSubscriptionsPurged,
-    });
-  }),
-);
+    };
+}
