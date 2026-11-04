@@ -13,19 +13,42 @@ Already tracked elsewhere and skipped unless new info is found: separate test da
 
 ## Summary
 
-_(Filled in after all phases.)_
-
 ### Counts by severity
 
-_(Pending.)_
+| Severity | Count |
+|---|---|
+| bug | 2 |
+| high | 6 |
+| medium | 15 |
+| low | 11 |
+| **total** | **34** |
 
 ### Top 10 (impact / effort)
 
-_(Pending.)_
+1. **bug** — Fail-soft page degradation hides API errors — parent / coach sees "No evaluations" / "No clubs" when the fetch actually 500'd. Pattern across every server page. (Phase 2.) Effort M, high impact.
+2. **bug** — Client fetch helpers return `[]` / `null` silently on both network and non-ok responses. Same symptom at a different layer. (Phase 2.) Effort M, high impact.
+3. **high** — No graceful shutdown + default DB pool config — Railway redeploys cut in-flight requests, `idle_timeout=0` strains Supabase. (Phase 4.) Effort S, high impact once there's real traffic.
+4. **high** — No rate limit on `/auth/signup` or `/lessons*` booking — a single IP can spam signups or booking requests until Supabase throttles. The `express-rate-limit` package is already installed. (Phase 4.) Effort S, medium-high impact.
+5. **high** — No `global-error.tsx` — a crash in the root layout renders Next.js's default white error page. (Phase 2.) Effort S, medium impact (perception).
+6. **high** — No `not-found.tsx` anywhere — six `notFound()` call sites fall through to Next's gray 404 with no brand chrome. (Phase 2.) Effort S, medium impact.
+7. **high** — No error monitoring hook (Sentry or similar) — silent bugs land in Railway logs only. (Phase 4.) Effort M, medium-high impact as traffic grows.
+8. **medium** — `middleware/errorHandler.ts:9` logs full `err` object; Postgres and Supabase error messages can echo column values, violating `docs/accounts.md` on PII. Drain code already does the right thing with `redactEmails`; the global handler doesn't. (Phase 1.) Effort S, medium privacy impact.
+9. **medium** — No PWA `manifest.json`; iOS push requires it for home-screen apps. Push copy already instructs parents to "Add to Home Screen" but iOS has no icon / name to use. (Phase 2.) Effort S, medium impact for iOS parents.
+10. **medium** — `PushSubscriptionManager.refreshSubscriptions` silently leaves `subscriptions=[]` on fetch failure, so the UI shows "Notifications are off" indistinguishable from the true unsubscribed state. (Phase 2.) Effort S, low-medium impact (coach only).
 
 ### Verdict
 
-_(Pending.)_
+The infrastructure core — parent email outbox, coach push outbox, cron tick, Google Calendar reconciliation — is **well-engineered**. ADRs 027, 028, 030, 031, 033 are followed in the code: every async hand-off has a top-level catch that logs and finalizes to a terminal state; backoff is bounded; claim leases use `FOR UPDATE SKIP LOCKED`; supersede guards are explicit; PII redaction in sender error paths matches `docs/accounts.md`. CLAUDE.md compliance is strong on every rule except pervasive single-letter callback params. The 30 integration tests give high confidence on the critical business paths.
+
+The gaps are in two places:
+
+1. **Data-load layer silently masks errors.** Both server pages and client fetch helpers collapse API failures to empty state. A transient 500 looks identical to "no data yet" — parents and coach can't distinguish the two. This is the only bug-class finding in the audit.
+2. **Deployment hygiene for multi-user.** Graceful shutdown, DB pool settings, rate limiting on auth / booking, and error monitoring are missing. None matter when Jason is the only coach and a handful of families are using it; all four become sharp the moment a second cohort of parents signs up or a Railway redeploy happens mid-booking.
+
+**Safe for Jason to keep using today.** Nothing in this audit is an active data-corruption risk, and the privacy-sensitive paths (audit log, outbox payload scrubbing, log redaction in senders) hold up. **Before more families join**, land the Top 10 in rough order: fail-soft fixes (#1, #2) and graceful-shutdown / pool (#3) matter most for correctness under load; rate limiting (#4), `global-error.tsx` / `not-found.tsx` (#5, #6), and the PII leak in the catch-all `errorHandler` (#8) matter for the first bad week.
+
+---
+
 
 ---
 
