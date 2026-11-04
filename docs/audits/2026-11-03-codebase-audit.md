@@ -150,4 +150,31 @@ Items considered and ruled out: TLS, Supabase RLS setup, and Supabase backups al
 
 ## Phase 5 — Code quality
 
-_(Pending.)_
+Overall shape is healthy. Test suite is substantial: 161 test files, 30 integration tests, strong coverage on booking (`lessons.integration`, `parentBatchBooking`, `coachBooking`), availability (`coachAvailability` + `rangeAvailability`), evaluations (`evaluations.integration` + `editSession`), outbox (`parentBookingEmails.integration`), coach alerts (`coachAlerts.integration`), and Google Calendar sync (`coachGoogleCalendarSync.integration`). Only 4 TODOs in the entire monorepo — unusually clean.
+
+### Findings
+
+- **medium** — file size outliers. Several files are well over 300 lines of orchestration code that mixes concerns:
+  - `apps/web/src/content/BookCalendarContent/BookCalendarContent.tsx:2170` — parent booking calendar; single `"use client"` orchestrator holding slot picking, batch picks, recurring mode, bottom bar wiring, review sheet state, prefetch, and more. Split by concern (one file per mode, lift state into a reducer).
+  - `apps/api/src/routes/lessons.ts:2382` — one router file with the full parent lesson surface. Break into `routes/lessons/book.ts`, `reschedule.ts`, `cancel.ts`, etc., keeping the mounted path.
+  - `apps/api/src/routes/coachLessons.ts:1814`, `apps/api/src/routes/evaluations.ts:1860`, `apps/api/src/routes/coachAvailability.ts:1236` — same pattern.
+  - `apps/api/src/services/emails/sender.ts:1210` — holds four sender paths (lesson, batch, coach booking backup, bulk cancel). Each is self-contained; splitting into `sender/lesson.ts`, `sender/batch.ts`, etc. cuts the cognitive cost of a one-line fix. Effort M per file; individually none are a bug.
+
+- **medium** — `formatLessonTime` is implemented four times.
+  - `apps/web/src/content/SwimmerProfileContent/helpers.ts:46 formatLessonTime`
+  - `apps/web/src/content/CoachBookLessonContent/helpers.ts:84 formatLessonTimeDisplay`
+  - `apps/web/src/content/CoachRescheduleContent/CoachRescheduleContent.tsx:69 formatLessonTimeRange`
+  - `apps/api/src/services/emails/format.ts formatLessonTimeDisplay`
+  These compute similar strings against `America/Los_Angeles`. Drift is likely — a locale or format tweak won't land everywhere. Fix: consolidate into `packages/shared/src/formatLessonTime.ts` and re-export; API `services/emails/format.ts` can wrap it to preserve its comment about `formatToParts` quirks. Effort S.
+
+- **medium** — `"America/Los_Angeles"` appears in 112 lines across 66 files. Every date-format call hardcodes the zone, so the TODO in `googleCalendarSync.ts:28` ("per-coach timezone if we ever expand beyond LA") is a 66-file refactor the next time it comes up. Fix: a single exported constant in `packages/shared/src/time.ts` (e.g. `LESSON_TIMEZONE`) imported everywhere. Effort S (codemod).
+
+- **low** — no explicit test for the cron tick orchestrator (`routes/internal.ts` POST `/cron/tick`). The constituent passes (`drainLessonEmailOutbox`, `releaseHeldCoachNotifications`, `scrubLessonEmailPayloads`, etc.) are each covered through integration tests, but there's no test that asserts the handler composes them in the right order or that one failing pass doesn't abort the others (the per-pass try/catch pattern is load-bearing). Fix: one integration test hitting `/internal/cron/tick` with mock failures injected into two passes. Effort S.
+
+- **low** — no concurrent-cron test. `routes/internal.ts:170-234` has five back-to-back `try { await …() }` blocks; the comment on `drain.ts` claims FOR UPDATE SKIP LOCKED makes two overlapping ticks safe, but there's no test asserting that. Fix: a single integration test that fires `/cron/tick` twice via `Promise.all` and asserts no duplicate `sent` rows. Effort S.
+
+- **low** — `apps/web/src/content/HomepageContent/LeaderboardSection.tsx:20` TODO "replace with real API data (filter by public_profile = true)" — the homepage leaderboard is still hardcoded/stubbed. Noted here because it's parent-facing. Effort S once the data exists.
+
+- **low** — four TODOs total, all contextualised. Not a problem; recording for completeness: `services/googleCalendarSync.ts:28`, `services/googleCalendarClient.ts:24`, `services/emails/drain.ts:118`, `web/content/HomepageContent/LeaderboardSection.tsx:20`.
+
+Items considered and ruled out: No unused dependencies spotted in `apps/api/package.json` or `apps/web/package.json` (every import has a matched usage: `nodemailer` for Mailpit in local, `express-rate-limit` on `/integrations/google` and `/leaderboard`, `web-push` on push transport, `@googleapis/calendar` + `google-auth-library` on calendar client). No stale `.old`, `.backup`, or `_deprecated` files. No commented-out blocks of code of concern. Old-vs-new pattern drift: Phase 0/1 code and Phase 2 code appear consistent — same `requireUser` + `validate(…)` middleware chain, same outbox shape pattern reused for coach alerts.
