@@ -889,7 +889,17 @@ evaluationsRouter.get(
 
       for (const [category, points] of skillEntry.categories) {
         const parsedCategory = GolfScoreCategorySchema.safeParse(category);
-        if (!parsedCategory.success) continue;
+        if (!parsedCategory.success) {
+          // Silently dropping would shrink the response so the client
+          // sees the skill with fewer categories than it has — a symptom
+          // of catalog drift (DB has a category key the Zod enum doesn't
+          // know about yet). Surface it so sync drift is visible.
+          req.log.warn(
+            { swimmerId, skillSlug: skillEntry.slug, unknownCategory: category },
+            "golf-score-trends: skipping unknown GolfScoreCategory",
+          );
+          continue;
+        }
 
         let ageBands: GolfScoreAgeBands | null = null;
 
