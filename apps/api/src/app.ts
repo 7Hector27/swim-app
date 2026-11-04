@@ -13,6 +13,7 @@ import { validate } from "./middleware/validate";
 import { asyncHandler } from "./middleware/asyncHandler";
 import { errorHandler } from "./middleware/errorHandler";
 import { requireUser } from "./middleware/requireUser";
+import { authEmailLimiter } from "./middleware/authEmailRateLimit";
 import { supabase } from "./lib/supabase";
 import { clubsRouter } from "./routes/clubs";
 import { swimmersRouter } from "./routes/swimmers";
@@ -109,7 +110,7 @@ export function createApp(logger: Logger) {
     }),
   );
 
-  app.post("/auth/signup", validate({ body: SignUpBodySchema }), asyncHandler(async (req, res) => {
+  app.post("/auth/signup", validate({ body: SignUpBodySchema }), authEmailLimiter, asyncHandler(async (req, res) => {
     const body = req.body as SignUpBody;
 
     if (calculateAge(body.birthDate, todayLA()) < 18) {
