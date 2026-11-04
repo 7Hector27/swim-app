@@ -15,8 +15,7 @@ export function errorHandler(
   // body-parser's 413 (payload too large) and 400 (malformed JSON) are
   // client errors, not server errors — surface the correct status and the
   // standard { error } shape instead of hiding them behind a generic 500.
-  const shaped = err as { type?: string; status?: number; statusCode?: number };
-  const status = shaped.statusCode ?? shaped.status;
+  const shaped = err as { type?: string };
   if (shaped.type === "entity.too.large") {
     req.log.warn(
       { type: shaped.type, requestId: req.requestId },
@@ -25,7 +24,7 @@ export function errorHandler(
     res.status(413).json({ error: "Request body too large" });
     return;
   }
-  if (shaped.type === "entity.parse.failed" || status === 400) {
+  if (shaped.type === "entity.parse.failed") {
     req.log.warn(
       { type: shaped.type, requestId: req.requestId },
       "malformed request body",

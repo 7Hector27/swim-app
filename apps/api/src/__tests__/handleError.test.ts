@@ -126,6 +126,33 @@ describe("errorHandler", () => {
     expect(res.json).toHaveBeenCalledWith({ error: "Malformed request body" });
   });
 
+  it("does not shortcut a non-body-parser error that happens to carry status 400", () => {
+    // Regression: a Supabase or Postgres error object may carry .status
+    // or .statusCode === 400 without being a malformed-body error. Those
+    // must go through the normal 500 error-log path, not get silently
+    // relabelled as "malformed request body".
+    const req = makeReq();
+    const res = makeRes();
+
+    const err = Object.assign(new Error("supabase auth rejected credentials"), {
+      status: 400,
+      statusCode: 400,
+    });
+    errorHandler(err, req, res, vi.fn() as unknown as NextFunction);
+
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(res.json).toHaveBeenCalledWith({ error: "Internal server error" });
+    expect(req.log.warn).not.toHaveBeenCalled();
+    expect(req.log.error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "Error",
+        message: expect.stringContaining("supabase auth rejected credentials"),
+        requestId: "test-id-123",
+      }),
+      "Unhandled error",
+    );
+  });
+
   it("handles non-Error thrown values without crashing", () => {
     const req = makeReq();
     const res = makeRes();
