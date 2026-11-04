@@ -53,7 +53,31 @@ Items that were considered and ruled out: the `.catch(() => {})` in `lib/lessonA
 
 ## Phase 2 — Silent failures in apps/web
 
-_(Pending.)_
+Scope note. Server actions (`content/*/actions.ts`) are consistently disciplined: every one checks `response.status === 401 → redirect("/api/signout")` and non-ok → `return { status: "error", message: ... }` with a toast-ready message. The PushSubscriptionManager handles permission, subscription, and test-send failures and surfaces each with a visible `role="alert"` message. The findings below are not about those code paths — they are about the data-loading layer.
+
+### Findings
+
+- **bug** — pattern across `apps/web/src/app/**/page.tsx` — server pages fail-soft on data-load errors. On `coach/swimmers/[id]/page.tsx:62-74`, `coach/swimmers/[id]/progress/page.tsx:48-61`, `dashboard/swimmers/[id]/page.tsx:34-75`, and others, every secondary fetch (`skillsResult`, `timelineResult`, `golfScoreTrendsResult`, `progressResult`, `scoreHistoryResult`, `swimsResult`, `evaluationsResult`, etc.) collapses to `[]` / `{}` / `{ ok: false }` when the API fails. The page then renders a UI that looks identical to the empty state. Coach opening a swimmer whose /sessions endpoint 500s today sees "No evaluations" and could enter conflicting new ones or conclude the record is lost. Fix: distinguish `{ ok: false }` all the way into the content component and render a reload CTA (or throw and let `error.tsx` catch). Effort M.
+
+- **bug** — `apps/web/src/lib/api/clubs.ts:8,12-14`, `apps/web/src/lib/api/coachBooking.ts:22,33,54,65`, `apps/web/src/lib/api/coachAvailability.ts:66,89,106` — client fetch helpers collapse both `!response.ok` and `catch` into `return []` / `return null`, with no error logged and no distinguishing return shape. Add Swimmer page shows an empty club list, Coach Book Lesson shows no locations/households, Availability editor shows no seasons — in each case a transient API failure looks like "nothing exists yet." Fix: return a discriminated `{ ok: true; data } | { ok: false; reason }` and surface in the UI. Effort M.
+
+- **high** — no `apps/web/src/app/global-error.tsx` — the existing `app/error.tsx` is the per-tree error boundary, not the root-layout fallback. An error thrown inside `app/layout.tsx` (ThemeProvider, nav, requireAuth cookie read) will render Next.js's default white error page with no branding and no recovery copy. Fix: add `global-error.tsx` wrapping `<html>/<body>` with the design-system shell. Effort S.
+
+- **high** — no `not-found.tsx` anywhere in the tree. `notFound()` is called from six pages (`coach/lessons/[id]`, `coach/swimmers/[id]`, `dashboard/swimmers/[id]`, `coach/batches/[id]`, `coach/meets/[id]`, `dashboard/lessons/[id]`) and every one falls through to Next.js's default gray 404 — no logo, no nav, no "back to dashboard" link. A parent who taps a stale booking link lands on an unbranded page. Fix: `app/not-found.tsx` with the brand shell plus a return CTA. Effort S.
+
+- **medium** — `apps/web/src/content/AccountContent/NotificationsSection/PushSubscriptionManager.tsx:62-68` — `refreshSubscriptions` only sets state on `result.ok` but always flips `loadingList` to `false`. If the initial fetch fails (API down, token expired silently), the UI renders "Notifications are off on this account. Tap … to enable this device." — identical to a legitimately unsubscribed account. Fix: add an error branch above the empty-state branch. Effort S.
+
+- **medium** — no `apps/web/public/manifest.json`. The push copy at `PushSubscriptionManager.tsx:199-212` tells iPhone parents to "Add to Home Screen" — but without a manifest, iOS has no app icon or name to use, and iOS 16.4+ requires a manifest for web push to work at all from the home-screen app. Fix: ship a manifest with name, icons, start_url, display=standalone. Effort S.
+
+- **medium** — `apps/web/src/app/error.tsx` is named with export `GlobalError` while actually being the per-route error.tsx — confusing for the next contributor and risks someone assuming root-layout errors are covered when they aren't. Rename the export to `RouteError` (or split into two files once `global-error.tsx` lands). Effort S.
+
+- **medium** — no per-route `error.tsx` for `coach/*` or `dashboard/*`. A throw inside any nested page bubbles to `app/error.tsx`, which replaces the whole shell (sidebar, bottom nav) with the error screen and loses the parent's navigation context. Fix: add `dashboard/error.tsx` and `coach/error.tsx` that preserve the layout chrome. Effort S.
+
+- **low** — `apps/web/src/content/EvaluateContent/actions.ts:107` — `deleteDraft` is fire-and-forget with `.catch(() => null)`; if the delete fails, the user's "Undo discard" flow silently fails. The retention cron eventually cleans up, but a parent viewing drafts could see a draft they thought they deleted. Fix: await, return `{ ok }`, show toast on failure. Effort S.
+
+- **low** — `apps/web/src/lib/logout.ts:12` — `catch { /* ... */ }` on signOut is intentional (comment says so), but the client is left thinking logout succeeded when the server-side cookie may still be set. Not a bug if you always bounce through `/api/signout` on next protected load, but worth a request-ID-tagged log. Effort S.
+
+Items considered and ruled out: the `.catch(() => null)` pattern on `response.json()` is correct (empty / 204 bodies). Server actions returning `status: "error"` surface to `useActionState` correctly across every form I sampled. The PushSubscriptionManager's permission / enable / test-send flows handle every failure with a visible `role="alert"` message.
 
 ## Phase 3 — CLAUDE.md compliance sweep
 
