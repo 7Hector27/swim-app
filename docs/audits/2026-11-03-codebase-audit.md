@@ -101,7 +101,52 @@ Items considered and ruled out: no cross-boundary `Date` props detected; no non-
 
 ## Phase 4 — Launch essentials
 
-_(Pending.)_
+Matrix of what's present / partial / missing. Findings for the gaps follow.
+
+| Area | State | Note |
+|---|---|---|
+| Health endpoint | **present** | `GET /health` with DB probe, 503 on failure (`app.ts:84-99`). |
+| Structured logging + request IDs | **present** | `requestId` middleware + `pino-http`; `x-request-id` header is read or minted and echoed back (`middleware/requestId.ts`). |
+| Env validation at startup | **present** | `getEnv()` + `validateVapidAtStartup()` called in `index.ts:5-16`; fail-boot on invalid config. |
+| Security headers | **present** | `helmet()` default (`app.ts:49`). |
+| CORS | **present** | env-driven allowlist; dev fallback with warn log (`app.ts:55-67`). |
+| Outbox idempotency | **present** | Resend Idempotency-Key = outbox row id; `FOR UPDATE SKIP LOCKED` claim; supersede guard (ADR 028). |
+| Outbox retry/backoff with dead-letter | **present** | Exponential backoff capped at 30 min; `abandoned` terminal state after 7 days (`drain.ts`). |
+| Rate limiting | **partial** | Only `/integrations/google/*` (60/min, `integrationsGoogle.ts:33`) and `/leaderboard` (60/min). `POST /auth/signup`, auth endpoints, `/lessons` booking, `/invites/[token]` have none. |
+| Error monitoring (Sentry/equivalent) | **missing** | No Sentry/Rollbar/Datadog. Pino logs are structured but there's no error aggregator; a `uncaughtException` would land in Railway logs only. |
+| Graceful shutdown | **missing** | No `SIGTERM`/`SIGINT` handler; `index.ts:23` just calls `app.listen`. Rolling deploys cut in-flight requests. |
+| DB pool settings | **missing** | `db/client.ts:6` constructs `postgres(url)` with no `{ max, idle_timeout, connect_timeout }`. Uses postgres-js defaults (max=10, idle_timeout=0). |
+| Outbound call timeouts | **missing** | No `AbortController` / `AbortSignal` around Resend or Google Calendar calls. If Resend or Google hangs, claim lease (2 min) expires and the row re-enters drain, but a request-path call (e.g. the OAuth callback) can hang for the underlying SDK's default. |
+| Cron overlap protection | **partial** | Drain uses `FOR UPDATE SKIP LOCKED`, so parallel drains are safe. But `enqueueExpiringRequestReminders` and `composeDailyCoachSummary` depend on unique indexes for idempotency (no advisory lock). Documented in comments; works, but implicit. |
+| PII in logs | **partial** | Drains + senders use `errorName`/`redactEmails` (good); global `errorHandler` logs full `err` object (Phase 1 finding). |
+| Authz on all routes | **present** | Every router mounts `requireUser` + role middleware (spot-check `coach.ts`, `households.ts`, `lessons.ts`); the only public route, `/leaderboard`, is intentional and rate-limited; `/integrations/google/callback` is state-token-bound. |
+| Pagination | **partial** | Evaluations list uses cursor pagination. Lessons / swims / meets / batches list endpoints apply `.limit(50)` or similar internal caps but don't expose `cursor`/`nextCursor` to clients — fine for Jason's current volume, won't scale. |
+| Timezone | **present** | `America/Los_Angeles` hardcoded, noted in ADR 027 with "TODO: per-coach timezone if we ever expand beyond LA" — correct for Irvine. |
+| Accessibility on booking + evaluate | **present** | BookCalendarContent has 49 `role=`/`aria-*` hits across 8 files; evaluate page has `role="alert"` on errors, descriptive labels, keyboard-reachable grading UI. Spot-check only; not a full audit. |
+| Backups | **external** | Supabase handles DB backups on their side (depends on plan tier). Not visible in repo. |
+| Migration safety | **present** | drizzle-kit snapshot files guard against drift (CLAUDE.md "never write migrations by hand"); prod migrations are manual per CLAUDE.md. |
+| PWA manifest | **missing** | See Phase 2. Blocks iOS add-to-home-screen push. |
+| `global-error.tsx` / `not-found.tsx` | **missing** | See Phase 2. |
+
+### Findings
+
+- **high** — `apps/api/src/index.ts:23` — no graceful shutdown. On `SIGTERM` (Railway deploy) the process exits immediately; in-flight requests get cut and the Postgres pool doesn't close cleanly (pending transactions leak until connection timeout). Fix: wrap `const server = app.listen(...)`, add `process.on("SIGTERM", async () => { server.close(); await pool.end(); process.exit(0); })`, and expose `pool` from `db/client.ts`. Effort S.
+
+- **high** — `apps/api/src/db/client.ts:6` — `postgres(databaseUrl)` with no pool config. Default `max=10` is fine for a single coach + ~50 parent accounts but the real issue is `idle_timeout=0` (connections never close), which strains Supabase's connection cap under restart churn; and no `connect_timeout`, so a transient DB outage hangs every request until Node's default. Fix: pass `{ max: 10, idle_timeout: 30, connect_timeout: 10 }`. Effort S.
+
+- **high** — no rate limit on `POST /auth/signup` or on `POST /lessons*` booking routes. A single IP can create signups or spam booking requests until Supabase throttles. Fix: add an `express-rate-limit` policy (e.g. 10 signups/hour per IP, 60 booking submits/hour per household); the package is already installed. Effort S.
+
+- **high** — no error monitoring hook. A silent bug in a deployed route (e.g. a 500 hitting the global `errorHandler`) lands in Railway logs with no page, aggregation, or release correlation. Fix: add Sentry (`@sentry/node` on API, `@sentry/nextjs` on web), attach as a pino transport, call `Sentry.captureException(err)` from `errorHandler` and from each sender's top-level catch. Effort M.
+
+- **medium** — `apps/api/src/services/emails/transport.ts` and `services/googleCalendarClient.ts` — no explicit timeout on outbound calls. Resend's SDK has a default (~30s), but the Google OAuth SDK does not expose one and will hang on a stuck TCP. Fix: wrap each call in `Promise.race` against a 10s `AbortSignal.timeout(10_000)`; map the timeout to the appropriate `TransportError` kind. Effort S.
+
+- **medium** — advisory locks for cron ticks are implicit. Two overlapping ticks (Railway deploy mid-cron) could both run `enqueueExpiringRequestReminders` and rely on the unique index to drop duplicates. Works, but a misbuilt migration could remove the invariant silently. Fix: add `pg_try_advisory_lock(hashtext('cron/tick'))` at the top of the handler and bail with 409 if taken. Effort S.
+
+- **medium** — pagination surface. `GET /lessons/upcoming`, `GET /coach/swimmers/:id/sessions`, `GET /meets/:id/swims` all return the full list. Fine for Jason (< a few hundred per request today), degrades on year-one data. Fix: add Zod `limit`/`cursor` params to the schemas, mirroring the pattern in `routes/evaluations.ts:683-711`. Effort M.
+
+- **low** — no readiness/liveness split. `/health` always probes DB. Railway/k8s typically want a cheap liveness probe. See Phase 1 note. Effort S.
+
+Items considered and ruled out: TLS, Supabase RLS setup, and Supabase backups all live outside this repo (Railway/Supabase dashboard config); they're worth a one-page runbook but aren't code findings. Trusted-proxy config is wired through `TRUST_PROXY` env (`app.ts:47`). CSP is not set beyond helmet's default, which is acceptable for a Next.js app on a verified sending domain.
 
 ## Phase 5 — Code quality
 
