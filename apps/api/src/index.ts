@@ -17,7 +17,15 @@ try {
 
 import { logger } from "./logger";
 import { createApp } from "./app";
+import { pool } from "./db/client";
+import { registerShutdown } from "./shutdown";
 
 const env = getEnv();
 const app = createApp(logger);
-app.listen(env.port, () => logger.info({ port: env.port }, "API listening"));
+const server = app.listen(env.port, () => logger.info({ port: env.port }, "API listening"));
+
+server.on("error", (err) => {
+  logger.error({ err: err.message, name: err.name }, "server error");
+});
+
+registerShutdown({ server, pool, logger });
