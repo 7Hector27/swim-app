@@ -186,7 +186,22 @@ export function parseEnv(raw: Record<string, string | undefined>): ApiEnv {
     googleOAuth,
     email,
     vapid,
+    failRoutes,
   };
+}
+
+function parseFailRoutes(parsed: RawParsedEnv): readonly string[] {
+  const raw = parsed.FAIL_ROUTES?.trim() ?? "";
+  if (!raw) return [];
+  if (parsed.APP_ENV !== "local") {
+    throw new EnvValidationError([
+      "FAIL_ROUTES: must only be set when APP_ENV=local (local-only fault injection switch)",
+    ]);
+  }
+  return raw
+    .split(",")
+    .map((pattern) => pattern.trim())
+    .filter(Boolean);
 }
 
 type RawParsedEnv = z.infer<typeof RawEnvSchema>;
