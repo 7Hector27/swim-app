@@ -40,7 +40,7 @@ vi.mock("@/content/EditSwimmerContent/actions", () => ({
   toggleSwimmerPublic: vi.fn(),
 }));
 
-import { fetchPastLessons, fetchPastLessonsResult } from "../lib/api/lessons";
+import { fetchPastLessons } from "../lib/api/lessons";
 import ParentLessonsContent from "../content/ParentLessonsContent/ParentLessonsContent";
 import SwimmerProfileContent from "../content/SwimmerProfileContent/SwimmerProfileContent";
 
@@ -109,40 +109,11 @@ describe("fetchPastLessons — parses the merged { items, total } response", () 
   });
 });
 
-describe("fetchPastLessonsResult — same shape via the Result variant", () => {
-  it("returns items on a successful { items, total } body", async () => {
-    mockFetch.mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => ({ items: [pastLesson], total: 42 }),
-    });
-
-    const result = await fetchPastLessonsResult("tok");
-
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.data).toHaveLength(1);
-      expect(result.data[0]?.id).toBe(PAST_LESSON_ID);
-    }
-  });
-
-  it("returns a schema error when the server emits the legacy array shape", async () => {
-    mockFetch.mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => [pastLesson],
-    });
-
-    const result = await fetchPastLessonsResult("tok");
-
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.reason).toBe("schema");
-  });
-
+describe("fetchPastLessons — error branches", () => {
   it("returns a server error on a non-2xx response", async () => {
     mockFetch.mockResolvedValue({ ok: false, status: 500, json: async () => ({}) });
 
-    const result = await fetchPastLessonsResult("tok");
+    const result = await fetchPastLessons("tok");
 
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason).toBe("server");

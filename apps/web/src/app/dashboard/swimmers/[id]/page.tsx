@@ -5,7 +5,7 @@ import AccountInactiveScreen from "@/components/AccountInactiveScreen";
 import SwimmerProfileContent from "@/content/SwimmerProfileContent";
 import { fetchClubs } from "@/lib/api/clubs";
 import { fetchHousehold } from "@/lib/api/households";
-import { fetchUpcomingLessons, fetchPastLessonsResult } from "@/lib/api/lessons";
+import { fetchUpcomingLessons, fetchPastLessons } from "@/lib/api/lessons";
 import {
   fetchParentPersonalBests,
   fetchParentScoreHistory,
@@ -50,7 +50,7 @@ export default async function SwimmerProfilePage({ params }: Props) {
     fetchParentPersonalBests(id, token),
     fetchParentScoreHistory(id, token),
     fetchUpcomingLessons(token),
-    fetchPastLessonsResult(token),
+    fetchPastLessons(token),
   ]);
 
   if (!swimmerResult.ok) {

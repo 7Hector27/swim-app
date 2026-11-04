@@ -17,14 +17,18 @@ export default async function HomePage() {
       // same result. The homepage was already dynamic (reads session cookies),
       // so this does not change caching posture.
       const householdResult = await fetchHousehold(me.accessToken);
-      // Homepage CTA — on a load failure, show the parent-active CTA
-      // (it's the non-destructive default and the user hits the route
-      // error boundary when they click through to a page that needs it).
-      const myRole =
-        householdResult.ok && householdResult.household
-          ? householdResult.household.myRole
-          : null;
-      ctaVariant = myRole === "viewer" ? "parent-viewer" : "parent-active";
+      // Fail-safe — same pattern as /dashboard, /dashboard/lessons/[id], and
+      // the parent layout. We only render the `parent-active` CTA (which
+      // links to Book) when we've confirmed an owner/manager role from the
+      // server. Load failure, null household, or a viewer role all fall
+      // through to the `parent-viewer` CTA, so a transient outage never
+      // surfaces a Book link we can't honor.
+      const canBook =
+        householdResult.ok &&
+        householdResult.household !== null &&
+        (householdResult.household.myRole === "owner" ||
+          householdResult.household.myRole === "manager");
+      ctaVariant = canBook ? "parent-active" : "parent-viewer";
     }
   }
 

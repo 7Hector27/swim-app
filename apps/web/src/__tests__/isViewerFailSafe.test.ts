@@ -294,6 +294,91 @@ describe("/dashboard/lessons/[id] — isViewer fail-safe default", () => {
   });
 });
 
+// /dashboard/lessons/[id]/reschedule — write page. On the household-null
+// branch (unenrolled parent) the previous `=== "viewer"` check evaluated
+// to false and let the form render. The fail-safe check must redirect the
+// unenrolled parent to the lesson detail instead.
+describe("/dashboard/lessons/[id]/reschedule — isViewer fail-safe", () => {
+  const LESSON = {
+    id: LESSON_ID,
+    type: "private" as const,
+    status: "approved" as const,
+    startsAt: "2099-01-15T18:00:00-08:00", // future so lessonHasStarted is false
+    durationMinutes: 45 as const,
+    locationId: "loc-1",
+    locationName: "Sunset Pool",
+    swimmers: [],
+    expiresAt: null,
+    approvedAt: null,
+    declinedAt: null,
+    declineReason: null,
+    movedAt: null,
+    previousStartsAt: null,
+    createdAt: "2099-01-01T00:00:00Z",
+    batchId: null,
+    batchMode: null,
+  };
+
+  it("redirects an unenrolled parent (household=null) to the lesson detail instead of rendering the form", async () => {
+    mockFetchLesson.mockResolvedValue({ ok: true, lesson: LESSON });
+    mockFetchLocations.mockResolvedValue({ ok: true, data: [] });
+    mockFetchHousehold.mockResolvedValue({ ok: true, household: null });
+
+    const { default: ReschedulePage } = await import(
+      "../app/dashboard/lessons/[id]/reschedule/page"
+    );
+    await expect(
+      ReschedulePage({ params: Promise.resolve({ id: LESSON_ID }) }),
+    ).rejects.toThrow(`NEXT_REDIRECT:/dashboard/lessons/${LESSON_ID}`);
+    expect(mockRedirect).toHaveBeenCalledWith(`/dashboard/lessons/${LESSON_ID}`);
+  });
+
+  it("redirects an explicit viewer role to the lesson detail", async () => {
+    mockFetchLesson.mockResolvedValue({ ok: true, lesson: LESSON });
+    mockFetchLocations.mockResolvedValue({ ok: true, data: [] });
+    mockFetchHousehold.mockResolvedValue({
+      ok: true,
+      household: {
+        id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        name: "Smith",
+        myRole: "viewer",
+        members: [],
+        swimmerIds: [],
+      },
+    });
+
+    const { default: ReschedulePage } = await import(
+      "../app/dashboard/lessons/[id]/reschedule/page"
+    );
+    await expect(
+      ReschedulePage({ params: Promise.resolve({ id: LESSON_ID }) }),
+    ).rejects.toThrow(`NEXT_REDIRECT:/dashboard/lessons/${LESSON_ID}`);
+  });
+
+  it("renders the form for owner/manager", async () => {
+    mockFetchLesson.mockResolvedValue({ ok: true, lesson: LESSON });
+    mockFetchLocations.mockResolvedValue({ ok: true, data: [] });
+    mockFetchHousehold.mockResolvedValue({
+      ok: true,
+      household: {
+        id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        name: "Smith",
+        myRole: "manager",
+        members: [],
+        swimmerIds: [],
+      },
+    });
+
+    const { default: ReschedulePage } = await import(
+      "../app/dashboard/lessons/[id]/reschedule/page"
+    );
+    await expect(
+      ReschedulePage({ params: Promise.resolve({ id: LESSON_ID }) }),
+    ).resolves.toBeDefined();
+    expect(mockRedirect).not.toHaveBeenCalled();
+  });
+});
+
 // Minimal recursive walker that serializes a server-rendered React tree into
 // a string we can search for attributes/text. React's renderToString would be
 // cleaner but pulls in a lot of machinery; this is enough for the attributes

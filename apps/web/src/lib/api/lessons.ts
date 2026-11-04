@@ -358,30 +358,6 @@ export async function fetchPastLessons(
   }
 }
 
-export async function fetchPastLessonsResult(
-  accessToken: string,
-): Promise<LoadResult<UpcomingLesson[]>> {
-  try {
-    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/lessons?filter=past`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-      cache: "no-store",
-    });
-    if (!response.ok) return loadError("server");
-    const body: unknown = await response.json();
-    const parsed = UpcomingLessonsResponseSchema.safeParse(body);
-    if (!parsed.success) {
-      const detail = parsed.error.issues
-        .map((issue) => `${issue.path.join(".")} (${issue.message})`)
-        .join("; ");
-      console.warn(`fetchPastLessonsResult: response shape mismatch — ${detail}`);
-      return loadError("schema");
-    }
-    return loadOk(parsed.data.items);
-  } catch {
-    return loadError("network");
-  }
-}
-
 export async function cancelLesson(accessToken: string, lessonId: string): Promise<{ ok: boolean; error?: string }> {
   try {
     const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/lessons/${lessonId}`, {

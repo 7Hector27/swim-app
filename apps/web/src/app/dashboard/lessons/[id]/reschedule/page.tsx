@@ -39,7 +39,14 @@ export default async function ReschedulePage({ params }: { params: Promise<{ id:
     throw new Error(`Failed to load household (status ${householdResult.status})`);
   }
 
-  const isViewer = householdResult.household?.myRole === "viewer";
+  // Fail-safe viewer check — same pattern as /dashboard, /dashboard/lessons/[id],
+  // and the parent layout. Null household (unenrolled parent) must not render
+  // the reschedule form; only a confirmed owner/manager role proceeds. The
+  // API also enforces this via requireHouseholdRole("manager") on PATCH.
+  const isViewer = !(
+    householdResult.household?.myRole === "owner" ||
+    householdResult.household?.myRole === "manager"
+  );
   const lessonHasStarted = new Date() >= new Date(lesson.startsAt);
 
   if (isViewer || lessonHasStarted) redirect(`/dashboard/lessons/${id}`);
