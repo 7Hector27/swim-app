@@ -19,6 +19,8 @@ Clicking "Delete my account" requires both re-authentication (password re-entere
 
 No grace period. No scheduled cron run. No self-serve cancel-after-click.
 
+**Stale tokens:** Supabase access tokens stay cryptographically valid until their `exp` claim passes, and the auth user's hard delete runs after commit and can retry. `requireUser` returns **`401 Unauthorized`** (changed from the existing 403) the instant it loads a profile with `disabled_at` set, which the deletion transaction writes in-tx. 401 is the right code for "your identity no longer exists" — distinct from the age-attestation 403 which means "authenticated but not yet authorized." The web app signs the user out immediately after the `204` response from `POST /me/deletion/confirm`; any still-valid token lingering in another tab hits the 401 on next request. Covered by a test in Phase 1 so the behavior exists before the deletion flow ships.
+
 Alternatives considered:
 
 - **30-day grace period with a daily deletion cron.** Rejected. The drafted version shipped reversibility at the cost of a scheduling layer, a reactivation path, and an admin console for Jason to unwind a mistaken click. The reversibility value is small for v1 (volume is low, re-signup is cheap) and the extra surface area (`pending_deletion_at`, deletion cron, cancel endpoint, UI banner, admin tool) is real. Removing it keeps the flow honest: the user asked to be deleted.
@@ -36,7 +38,7 @@ Why delete and not scrub-and-ban:
 - The scrub approach forces us to enumerate every PII-bearing column on `auth.users`, `auth.identities`, and any future table Supabase adds under `auth.*`. That list is not static — Supabase can add fields at any time — and tracking it forever is a weaker guarantee than deletion.
 - `auth.admin.deleteUser` cascades inside the `auth.*` schema (`identities`, `sessions`, `refresh_tokens`, `mfa_*`) in one call.
 
-The FK drop is low-risk. The Supabase triggers `on_auth_user_created` and `on_auth_user_updated` write to `profiles` by SQL value, not via the FK. RLS policies that use `auth.uid() = profiles.id` compare values, not follow the FK. Signup continues to work. Token verification continues to work.
+The FK drop is low-risk for prod paths. The Supabase triggers `on_auth_user_created` and `on_auth_user_updated` write to `profiles` by SQL value, not via the FK. RLS policies that use `auth.uid() = profiles.id` compare values, not follow the FK. Signup continues to work. Token verification continues to work. **Tests and scripts that delete auth users to clean up profiles must be audited** — the integration-test helper (`createTestUser` / `createTestUserInHousehold` cleanups) relies on this cascade today. Phase 1 updates those cleanups to delete the profile row explicitly so no orphans linger after a test run.
 
 Alternatives considered:
 
@@ -81,7 +83,7 @@ External side effects (Google Calendar event deletion, Supabase Auth hard-delete
 (id, profile_id, auth_user_id, scope, status, attempts, last_error, completed_at, created_at)
 ```
 
-`scope` is `'solo'` or `'leave'`. The deletion transaction inserts one row with `status = 'pending'` and commits. The post-commit callback runs the external calls and flips status to `'completed'` on success. If any external call fails, the row stays `'pending'` with `attempts` / `last_error` updated, and a small retry-only cron (`accountDeletionRetryDrain`, every ~5 min, bounded batch) re-drives until success or N retries (propose 10, matching the email sender). Terminal `'failed'` surfaces a `coachNotifications` row with `category = 'account_deletion_cleanup_failed'` so Jason can intervene.
+`scope` is `'solo'` or `'leave'`. The deletion transaction inserts one row with `status = 'pending'` and commits. The post-commit callback runs the external calls and flips status to `'completed'` on success. If any external call fails, the row stays `'pending'` with `attempts` / `last_error` updated, and a small retry-only cron (`accountDeletionRetryDrain`, every ~5 min, bounded batch) re-drives until success or N retries (propose 10, matching the email sender). **Terminal `'failed'` logs at `error` level with `event = "account_deletion_cleanup_failed"` and the job id — no coach notification.** Jason can't fix a Supabase or Google outage from the alerts page, and surfacing it there adds noise without a usable action; log-based alerting routes it to whoever can intervene (ops or Jason via email).
 
 **The cron is retry-only.** It does not schedule or discover deletions; the deletion itself ran the moment the user clicked confirm. The cron exists so a Google 500 or a Supabase rate limit doesn't leave the external world inconsistent with the app.
 

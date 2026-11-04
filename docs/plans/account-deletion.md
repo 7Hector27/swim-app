@@ -156,6 +156,16 @@ Both guards are intentional: re-auth proves this is the account owner, the phras
 
 **No grace period, no scheduled run, no self-serve cancel-after-click.** The user chose to delete; the system delivers. If a user comes back and wants their data, that's a new signup.
 
+### 1a. Stale sessions must fail closed the moment the transaction commits
+
+Supabase access tokens stay cryptographically valid until their `exp` claim passes. The auth user's hard delete runs after commit as a post-commit task, and can retry on transient failure — so there is a window where `supabase.auth.getUser(token)` can still succeed for a token belonging to a just-deleted account. The scrubbed profile is the only authoritative "this account is gone" signal in that window.
+
+Rule: `requireUser` returns **`401 Unauthorized`** (not 403) the instant it loads a profile with `disabled_at` set. Scrubbing sets `disabled_at` inside the transaction, so the next request from a still-valid token hits the 401 path immediately on commit. 401 (rather than the existing 403 for `disabled_at`) is the right code for "your identity no longer exists" — clients that distinguish the two will clear their session and redirect to signup. Age-attestation misses stay 403 because a user with no `age_attested_at` is authenticated but not yet authorized to use the app, which is the 403 semantic.
+
+The web app signs the user out immediately after the `204 No Content` response from `POST /me/deletion/confirm` (clears the Supabase SSR cookie, redirects to a "your account has been deleted" page). A still-valid token lingering in another tab or device hits the 401 on next request.
+
+Test: a request with a still-valid access token for a profile whose `disabled_at` has just been set returns 401. Covered in the auth middleware test suite in Phase 1 so the behavior exists before the deletion flow ships.
+
 ### 2. Last adult in the household → delete everything
 
 If the deleting member is the **only** profile in `household_members`, the household row goes, and with it the audit log, invites, home pools, swimmers, swimmer-owned data (ratings, sessions, notes, meet swims, drafts), batches, the deleting member's own profile is scrubbed, and their auth user is hard-deleted. Teen accounts (future feature) are treated as household members and go with the household the same way.
@@ -214,7 +224,7 @@ Flow:
 1. The deletion transaction inserts one `account_deletion_jobs` row with `status = 'pending'` and commits.
 2. The route's post-commit callback invokes the Supabase Auth delete + per-lesson calendar syncs. On success, updates the job to `completed`.
 3. If any post-commit call fails, the job stays `pending` and a small cron (every ~5 minutes, bounded batch size) retries up to N times (propose 10, same as the email sender).
-4. After N retries, the job terminates at `failed` — the DB side has succeeded (that happened at step 1); what's lingering is a Google Calendar event that didn't delete or an auth user that didn't delete. Both are visible for operator cleanup: the calendar event on Jason's own calendar, the auth user on the Supabase dashboard filtered by `id`. A coach notification (`account_deletion_cleanup_failed`) surfaces it on the alerts page.
+4. After N retries, the job terminates at `failed` — the DB side has succeeded (that happened at step 1); what's lingering is a Google Calendar event that didn't delete or an auth user that didn't delete. Both are visible for operator cleanup: the calendar event on Jason's own calendar, the auth user on the Supabase dashboard filtered by `id`. **Terminal failure logs at `error` level with `event = "account_deletion_cleanup_failed"`, the `account_deletion_jobs.id`, the scope, and the attempts counter — no PII.** No coach notification is written; Jason can't fix a Supabase or Google outage from the alerts page, and surfacing it there adds noise without an action. See "Production setup" below for the alerting hookup.
 
 **This cron is retry-only.** It does not schedule deletions. There is no "pick up pending deletions" path — the deletion itself ran at the moment the user clicked confirm. The cron exists so a Google 500 or a Supabase rate limit doesn't leave the external world inconsistent.
 
@@ -260,6 +270,14 @@ To proceed: re-auth → type `delete my account` → click confirm. If the paren
 
 The HTTP response returns `204 No Content` once the transaction commits — the external calls may still be in flight, but the parent's data is gone from the app the instant the response goes out.
 
+## Production setup
+
+Non-code items that must be in place before this flow runs in prod. Tracked here so the launch checklist picks them up.
+
+- **Alerting for deletion job failures.** The `error`-level log line `event = "account_deletion_cleanup_failed"` needs an alert route so Jason sees a terminal retry failure. Wire it into whatever log-based alerting the project is using (Supabase log drains → provider, or the per-service log alert). Pager expectation: low-urgency — the DB side already succeeded; the lingering effect is one undeleted Google event or one un-deleted auth user that Jason (or an operator) can clean up manually.
+- **Supabase service-role key available to the API** (already in place for other admin calls; confirm it's present in the prod env and that the `account_deletion_retry` cron process reads the same env).
+- **Launch checklist entry** linking to this plan so the privacy-reviewer and the kids'-data legal review both run before merging to `dev`.
+
 ## Legal review
 
 Items that cannot be resolved inside this plan and need the kids'-data legal review:
@@ -273,19 +291,23 @@ Items that cannot be resolved inside this plan and need the kids'-data legal rev
 
 Each phase is its own PR off `feature/account-deletion`, with its own tests.
 
-### Phase 1 — Schema + migrations
+### Phase 1 — Schema + migrations + stale-session guard
 
 **What ships:**
 - `lessons`: make `household_id`, `location_id`, `requested_by`, `approved_by`, `declined_by`, `canceled_by`, `no_show_by`, `batch_id` nullable (drop `NOT NULL`, keep FKs with `ON DELETE SET NULL` where it makes sense). Add `anonymized_at timestamptz nullable`, `location_snapshot text nullable`, `swimmer_count integer nullable`.
 - New `account_deletion_jobs` table per decision 9.
 - **Drop the `profiles.id → auth.users.id` FK constraint.** Profile primary key stays as `uuid`; signup triggers continue to write with the auth.users.id value.
-- Update `docs/data-model.md` and `docs/accounts.md` (strike the "out of scope for now" paragraph on line 103).
+- **Audit tests and scripts that rely on the FK cascade** and update them to explicitly delete the profile row. The integration-test helper `apps/api/src/__tests__/integration/helpers.ts` calls `deleteSupabaseUser` in cleanup for `createTestUser` and `createTestUserInHousehold`; today that cascades to the profile row. After the FK drop, those cleanups must delete the profile row explicitly before (or after) deleting the auth user, so tests never leave orphan profiles behind.
+- **`requireUser` returns `401` when `profile.disabled_at` is set** (changed from the existing 403). Add a test that a request with a still-valid access token for a disabled profile returns 401.
+- Update `docs/data-model.md` and `docs/accounts.md` (strike the "out of scope for now" paragraph on line 103; update the "blocks accounts with ... disabled_at set" sentence to specify the 401 response).
 
 **Tests:**
 - Migration applies cleanly on a fresh db (`pnpm db:up && pnpm db:migrate`)
 - Drizzle snapshot diff clean
 - Existing routes that write the newly-nullable lesson columns still type-check; audit call sites and add explicit null guards where they relied on the NOT NULL invariant
 - Supabase trigger smoke test: create an auth user → profile row is created with the same id; update auth user email → profile email syncs; delete auth user → profile row **is not touched** (new behavior)
+- Auth middleware: stale-token-on-disabled-profile returns 401; age-not-attested still returns 403
+- Integration test cleanup: after a test run, no orphan profile rows remain (asserted by an integration suite teardown check)
 
 ### Phase 2 — Deletion engine (backend)
 
