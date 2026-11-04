@@ -13,6 +13,7 @@ import { validate } from "./middleware/validate";
 import { asyncHandler } from "./middleware/asyncHandler";
 import { errorHandler } from "./middleware/errorHandler";
 import { requireUser } from "./middleware/requireUser";
+import { authEmailLimiter } from "./middleware/authEmailRateLimit";
 import { supabase } from "./lib/supabase";
 import { clubsRouter } from "./routes/clubs";
 import { swimmersRouter } from "./routes/swimmers";
@@ -75,7 +76,18 @@ export function createApp(logger: Logger) {
     }),
   );
 
-  app.use(express.json());
+  // Ceiling is a full-catalog coach evaluation save
+  // (POST /coach/swimmers/:id/sessions). ~132 skills in the catalog;
+  // CreateSessionBody carries one RatingInput per skill, plus a per-skill
+  // note with no schema cap. A realistic "long notes on every skill"
+  // session lands around 100 KB (measured: 132 skills × 500-char notes
+  // = 102 KB). The 20-lesson weekly batch is 5.7 KB — far smaller.
+  // 128 KB gives ~25% headroom over the eval save worst case while
+  // still blocking the multi-megabyte bodies that could only come from
+  // a malformed or malicious client. Default (100 KB) surfaced 413 as
+  // a generic 500 via errorHandler; errorHandler now returns a clean
+  // 413 { error } with the standard shape.
+  app.use(express.json({ limit: "128kb" }));
 
   app.get("/ping", (_req, res) => {
     res.json({ pong: true });
@@ -98,7 +110,7 @@ export function createApp(logger: Logger) {
     }),
   );
 
-  app.post("/auth/signup", validate({ body: SignUpBodySchema }), asyncHandler(async (req, res) => {
+  app.post("/auth/signup", validate({ body: SignUpBodySchema }), authEmailLimiter, asyncHandler(async (req, res) => {
     const body = req.body as SignUpBody;
 
     if (calculateAge(body.birthDate, todayLA()) < 18) {

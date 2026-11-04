@@ -10,6 +10,11 @@
 import { Resend } from "resend";
 import nodemailer, { type Transporter } from "nodemailer";
 import type { EmailEnv } from "../../lib/env";
+import {
+  OUTBOUND_TIMEOUT_MS,
+  isAbortSignalTimeout,
+  withTimeout,
+} from "../../lib/outboundTimeout";
 
 export interface IcsAttachment {
   // "invite.ics" (REQUEST) or "cancel.ics" (CANCEL).
@@ -62,9 +67,21 @@ export class ResendTransport implements EmailTransport {
   }
 
   async send(opts: TransportSendOptions): Promise<TransportResult> {
+    // AbortController + setTimeout fires at OUTBOUND_TIMEOUT_MS and the
+    // Resend SDK forwards the signal to fetch, so the HTTP request is
+    // actually cancelled (not just ignored like Promise.race would do).
+    // Using setTimeout (not AbortSignal.timeout) so vitest fake-timers can
+    // advance the clock in tests. A timeout maps to the `server` kind so
+    // the outbox retries on the next tick.
+    const controller = new AbortController();
+    const signal = controller.signal;
+    const timeoutHandle = setTimeout(
+      () => controller.abort(new DOMException("timeout", "TimeoutError")),
+      OUTBOUND_TIMEOUT_MS,
+    );
     try {
-      // The Resend SDK v6 accepts { idempotencyKey } as a second parameter
-      // to emails.send(). The resulting header is Idempotency-Key.
+      // The Resend SDK v6 accepts { idempotencyKey, signal } as a second
+      // parameter to emails.send(). The resulting header is Idempotency-Key.
       const response = await this.client.emails.send(
         {
           from: opts.from,
@@ -86,7 +103,7 @@ export class ResendTransport implements EmailTransport {
             ],
           }),
         },
-        { idempotencyKey: opts.idempotencyKey },
+        { idempotencyKey: opts.idempotencyKey, signal },
       );
       if (response.error) {
         return classifyResendError(response.error);
@@ -98,12 +115,22 @@ export class ResendTransport implements EmailTransport {
         errorMessage: null,
       };
     } catch (err) {
+      if (isAbortSignalTimeout(signal, err)) {
+        return {
+          ok: false,
+          providerMessageId: null,
+          error: { kind: "server" },
+          errorMessage: `timeout:${OUTBOUND_TIMEOUT_MS}ms`,
+        };
+      }
       return {
         ok: false,
         providerMessageId: null,
         error: { kind: "unexpected" },
         errorMessage: errorToShortMessage(err),
       };
+    } finally {
+      clearTimeout(timeoutHandle);
     }
   }
 }
@@ -156,29 +183,32 @@ export class SmtpTransport implements EmailTransport {
 
   async send(opts: TransportSendOptions): Promise<TransportResult> {
     try {
-      const info = await this.transporter.sendMail({
-        from: opts.from || this.fromDefault,
-        to: opts.to.join(", "),
-        subject: opts.subject,
-        text: opts.text,
-        ...(opts.html && { html: opts.html }),
-        ...(opts.replyTo && { replyTo: opts.replyTo }),
-        ...(opts.ics && {
-          attachments: [
-            {
-              filename: opts.ics.filename,
-              content: opts.ics.content,
-              // charset=UTF-8 so Gmail renders the invite card. method=…
-              // tells calendar clients how to treat the SEQUENCE.
-              contentType: `text/calendar; method=${opts.ics.method}; charset=UTF-8`,
-            },
-          ],
+      const info = await withTimeout(
+        this.transporter.sendMail({
+          from: opts.from || this.fromDefault,
+          to: opts.to.join(", "),
+          subject: opts.subject,
+          text: opts.text,
+          ...(opts.html && { html: opts.html }),
+          ...(opts.replyTo && { replyTo: opts.replyTo }),
+          ...(opts.ics && {
+            attachments: [
+              {
+                filename: opts.ics.filename,
+                content: opts.ics.content,
+                // charset=UTF-8 so Gmail renders the invite card. method=…
+                // tells calendar clients how to treat the SEQUENCE.
+                contentType: `text/calendar; method=${opts.ics.method}; charset=UTF-8`,
+              },
+            ],
+          }),
+          headers: {
+            // Carries the outbox id to the Mailpit UI for traceability.
+            "X-Idempotency-Key": opts.idempotencyKey,
+          },
         }),
-        headers: {
-          // Carries the outbox id to the Mailpit UI for traceability.
-          "X-Idempotency-Key": opts.idempotencyKey,
-        },
-      });
+        "smtp.sendMail",
+      );
       return {
         ok: true,
         providerMessageId: typeof info.messageId === "string" ? info.messageId : null,

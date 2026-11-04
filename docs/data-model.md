@@ -150,6 +150,23 @@ RLS is enabled. Policies TBD.
 
 ---
 
+### `cron_leases`
+
+Single-writer gate for the cron tick. One row per lease name (currently only `cron/tick`). Protects against two overlapping `POST /internal/cron/tick` invocations (rolling deploy, overlapping manual runs) stepping on each other. Added in migration 0066.
+
+| Column | Type | Nullable | Default | Notes |
+|---|---|---|---|---|
+| `name` | `text` | no | — | Primary key. One row per pass name (e.g. `cron/tick`). |
+| `held_until` | `timestamptz` | yes | — | Non-null only while the lease is held. The row stays after release so acquire is always an UPDATE, never an INSERT race. |
+| `held_by` | `text` | yes | — | Short identifier of the current holder (currently the request id) for log correlation. No PII. |
+| `updated_at` | `timestamptz` | no | `now()` | Bumped on every acquire / release. |
+
+**Acquisition** is a single `INSERT ... ON CONFLICT (name) DO UPDATE SET held_until=..., held_by=... WHERE held_until IS NULL OR held_until < now()` with `RETURNING`. A non-matching `WHERE` returns zero rows — the caller treats that as "held by someone else" and the handler returns `200 { skipped: true }`. An expired lease matches the `WHERE` and is taken over, so a crashed holder self-heals on the next tick.
+
+We deliberately do **not** use `pg_advisory_lock`. `postgres-js` pools connections, so a session-scoped advisory lock can be acquired on one connection and never released from another — leaking the lock forever.
+
+---
+
 ### `booking_batches`
 
 One row per batch-booked submission (parent-created via `POST /lessons/batch`). The row is immutable after insert; member lessons' lifecycle (reschedule, cancel, individual approval) is independent of the batch. `lessons.batch_id` links each generated lesson back to the batch. See ADR 030 and `docs/plans/batch-booking.md`.

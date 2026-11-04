@@ -191,6 +191,75 @@ describe("GET /coach/swimmers/:id/golf-score-trends", () => {
     expect(res.body.trends[0].byCategory[0].points[0].measurementValue).toBe("42");
   });
 
+  it("logs a warn and drops the category when the DB has a GolfScoreCategory key the Zod enum doesn't know", async () => {
+    authAs(profileCoach);
+
+    const ratingRows = [
+      {
+        grade: 3,
+        measurementValue: "42",
+        golfScoreCategory: "mystery_catalog_drift_category",
+        ratedAt: new Date("2025-05-01T10:00:00.000Z"),
+        sessionDate: "2025-05-01",
+        skillId: SKILL_ID,
+        slug: "free-golf-score",
+        name: "Freestyle Golf Score",
+      },
+      {
+        grade: 3,
+        measurementValue: "42",
+        golfScoreCategory: "push_off_in_water",
+        ratedAt: new Date("2025-05-01T10:00:00.000Z"),
+        sessionDate: "2025-05-01",
+        skillId: SKILL_ID,
+        slug: "free-golf-score",
+        name: "Freestyle Golf Score",
+      },
+    ];
+
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(profileCoach))
+      .mockReturnValueOnce(swimmerSelect(activeSwimmerRow))
+      .mockReturnValueOnce(ratingRowsSelect(ratingRows))
+      .mockReturnValueOnce(swimmerBirthDateSelect("2015-03-10"))
+      .mockReturnValueOnce(cohortSwimmersSelect([]));
+
+    // Capture pino child-logger output via a writable stream attached
+    // to a one-off logger passed into createApp. We can't easily swap
+    // the global `app`'s logger mid-test, so build a dedicated one.
+    const captured: Array<Record<string, unknown>> = [];
+    const stream = {
+      write: (chunk: string) => {
+        try {
+          captured.push(JSON.parse(chunk) as Record<string, unknown>);
+        } catch {
+          // non-JSON lines (dev transport). Ignore.
+        }
+      },
+    };
+    const warnLogger = pino({ level: "warn" }, stream);
+    const warnApp = createApp(warnLogger);
+
+    const res = await request(warnApp)
+      .get(`/coach/swimmers/${SWIMMER_ID}/golf-score-trends`)
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(200);
+    // Known category still surfaces in the trends.
+    expect(res.body.trends[0].byCategory).toHaveLength(1);
+    expect(res.body.trends[0].byCategory[0].category).toBe("push_off_in_water");
+
+    // The unknown category produced a warn carrying swimmerId + the
+    // offending category string.
+    const warns = captured.filter((entry) => entry["level"] === 40); // 40 = pino warn
+    const unknownCategoryWarn = warns.find(
+      (entry) => entry["unknownCategory"] === "mystery_catalog_drift_category",
+    );
+    expect(unknownCategoryWarn).toBeDefined();
+    expect(unknownCategoryWarn?.["swimmerId"]).toBe(SWIMMER_ID);
+    expect(unknownCategoryWarn?.["skillSlug"]).toBe("free-golf-score");
+  });
+
   it("returns null age bands when cohort has fewer than 10 swimmers", async () => {
     authAs(profileCoach);
 

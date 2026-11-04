@@ -1174,6 +1174,33 @@ export const lessonEmailOutbox = pgTable(
   ],
 ).enableRLS();
 
+// ── Cron leases ─────────────────────────────────────────────────────────────
+
+// Advisory-style single-writer gate for cron passes. One row per lease
+// name (e.g. "cron/tick") carrying the expiry of the current holder.
+//
+// We deliberately do NOT use pg_advisory_lock. postgres-js reuses
+// connections from a pool: the session that acquires a session-scoped
+// advisory lock is not guaranteed to be the one that releases it, so a
+// held lock can leak forever. A lease row with an expiry is self-healing
+// (next tick after the expiry takes over) and is the same pattern the
+// outbox uses for sender claims (`claimed_until`). See ADR 028.
+export const cronLeases = pgTable(
+  "cron_leases",
+  {
+    // Lease name — one row per pass name (e.g. "cron/tick").
+    name: text("name").primaryKey(),
+    // Non-null only while the lease is held. The row stays after the lease
+    // releases so the next hold is an UPDATE, not an INSERT, which keeps
+    // the "only one row per name" invariant trivially.
+    heldUntil: timestamp("held_until", { withTimezone: true }),
+    // Short identifier of the current/last holder (e.g. a request id) —
+    // useful for log-side correlation. No PII.
+    heldBy: text("held_by"),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdateFn(() => new Date()),
+  },
+).enableRLS();
+
 // ── Coach alerts (ADR 031) ──────────────────────────────────────────────────
 
 // Transactional outbox for coach push notifications. One row per state change

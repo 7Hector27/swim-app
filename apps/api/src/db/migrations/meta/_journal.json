@@ -463,6 +463,13 @@
       "when": 1793668265797,
       "tag": "0065_handy_warlock",
       "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1793762800111,
+      "tag": "0066_fancy_nuke",
+      "breakpoints": true
     }
   ]
 }
