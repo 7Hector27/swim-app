@@ -139,3 +139,40 @@ describe("upsertEvent: both call paths that end up at upsertEvent carry status:'
     expect(patchCall.requestBody.end.dateTime).toBe(rescheduled.endIso);
   });
 });
+
+// Scenario: a client-side timeout fires while Google completed the insert
+// server-side (Promise.race doesn't cancel the HTTP request). The retry
+// must NOT create a duplicate event — the caller-supplied `id` guarantees
+// Google returns 409 on the second insert, and upsertEvent falls through
+// to patch instead of a second insert.
+//
+// Together with toGoogleEventId (lesson UUID with dashes stripped), this
+// gives exactly-once semantics across timeout + retry for lesson events.
+describe("upsertEvent: timeout-then-retry does not create a duplicate event", () => {
+  it("second attempt after first timed out lands on patch, not a second insert", async () => {
+    // First attempt: imagine the HTTP request succeeded at Google but our
+    // withTimeout fired at 10s — upsertEvent's caller sees a thrown
+    // OutboundTimeoutError, marks the lesson sync_failed, and the cron
+    // retry (or coach "Retry Failed") calls upsertEvent again with the
+    // same eventId. From this test's point of view we only need to
+    // simulate what the retry sees: Google now has the event, so
+    // events.insert returns 409.
+    insertMock.mockRejectedValueOnce(
+      Object.assign(new Error("Conflict"), { code: 409 }),
+    );
+    patchMock.mockResolvedValueOnce({});
+
+    await upsertEvent(env, "access-token", "cal-id", "event-id", body);
+
+    // Exactly one insert attempt by this retry + exactly one patch.
+    // Over the full timeline (first attempt timed out + this retry):
+    // Google sees the single event created on attempt 1, then patched
+    // on attempt 2. No duplicate.
+    expect(insertMock).toHaveBeenCalledTimes(1);
+    expect(patchMock).toHaveBeenCalledTimes(1);
+    expect(patchMock.mock.calls[0]![0].requestBody.status).toBe("confirmed");
+    // The deterministic eventId is what makes this safe — proves the
+    // caller passed the same id both attempts would use.
+    expect(patchMock.mock.calls[0]![0].eventId).toBe("event-id");
+  });
+});

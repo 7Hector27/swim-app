@@ -211,6 +211,16 @@ export interface CalendarEventBody {
  * `events.insert` returns 409 and the fallback patch would otherwise leave
  * the event invisible. Setting status on every write restores a cancelled
  * event and is a no-op on an already-confirmed one.
+ *
+ * Timeout / duplicate safety:
+ *   The withTimeout wrapper races against a 10s rejecter; it does not
+ *   cancel the underlying fetch. If Google completed the insert
+ *   server-side after our timeout fired, the next retry calls
+ *   events.insert with the same caller-supplied id, Google returns 409,
+ *   and we patch instead of double-inserting. Together with
+ *   toGoogleEventId (lesson UUID with dashes stripped), this gives
+ *   exactly-once semantics across timeout + retry for lesson events.
+ *   Covered by src/__tests__/upsertEvent.test.ts.
  */
 export async function upsertEvent(
   env: GoogleOAuthEnv,
