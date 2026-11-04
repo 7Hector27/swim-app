@@ -66,10 +66,13 @@ const requireCronSecret: RequestHandler = (req, res, next) => {
 // Attempts to atomically take the cron tick lease. Returns true when the
 // caller now owns the lease, false when another holder is still active.
 //
-// Pattern mirrors the outbox claim lease (lesson_email_outbox.claimed_until):
-// a single UPDATE with a WHERE that only matches when the lease is free
-// or expired. Since the row is created up-front by seedLease(), this is
-// always an UPDATE — no race between INSERT and UPDATE.
+// Single statement: INSERT ... ON CONFLICT (name) DO UPDATE ... WHERE
+// (held_until IS NULL OR held_until < now). The first-ever call inserts
+// the row; every subsequent call hits ON CONFLICT and the setWhere
+// clause only lets the UPDATE fire when the current holder's lease has
+// been cleared or has expired. If the WHERE doesn't match, the row is
+// untouched and RETURNING is empty — that's the exact "held by someone
+// else" signal. No separate seed step; no race between INSERT and UPDATE.
 //
 // We deliberately avoid pg_advisory_lock. postgres-js pools connections,
 // so session-scoped advisory locks can be acquired on one connection and
