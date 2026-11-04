@@ -5,7 +5,7 @@ import { errorHandler } from "../middleware/errorHandler";
 function makeReq(overrides: Partial<Request> = {}): Request {
   return {
     requestId: "test-id-123",
-    log: { error: vi.fn() },
+    log: { error: vi.fn(), warn: vi.fn() },
     ...overrides,
   } as unknown as Request;
 }
@@ -93,6 +93,37 @@ describe("errorHandler", () => {
       message: string;
     };
     expect(payload.message.length).toBeLessThanOrEqual(200);
+  });
+
+  it("returns 413 with standard error shape for body-parser entity.too.large", () => {
+    const req = makeReq();
+    const res = makeRes();
+
+    const err = Object.assign(new Error("request entity too large"), {
+      type: "entity.too.large",
+      status: 413,
+      statusCode: 413,
+    });
+    errorHandler(err, req, res, vi.fn() as unknown as NextFunction);
+
+    expect(res.status).toHaveBeenCalledWith(413);
+    expect(res.json).toHaveBeenCalledWith({ error: "Request body too large" });
+    expect(req.log.error).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 with standard error shape for malformed JSON", () => {
+    const req = makeReq();
+    const res = makeRes();
+
+    const err = Object.assign(new Error("Unexpected token"), {
+      type: "entity.parse.failed",
+      status: 400,
+      statusCode: 400,
+    });
+    errorHandler(err, req, res, vi.fn() as unknown as NextFunction);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({ error: "Malformed request body" });
   });
 
   it("handles non-Error thrown values without crashing", () => {

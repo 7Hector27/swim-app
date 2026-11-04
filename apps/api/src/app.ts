@@ -75,7 +75,12 @@ export function createApp(logger: Logger) {
     }),
   );
 
-  app.use(express.json());
+  // Ceiling is parent batch booking (POST /lessons/batch): 20 picks worst
+  // case, each ~300 bytes, plus overrides/skips — observed ~8 KB. 64 KB
+  // gives ~8x headroom without accepting multi-megabyte bodies that could
+  // only come from a malformed/malicious client. Default was 100 KB with
+  // no clean 413 handler (surfaced as 500 via errorHandler).
+  app.use(express.json({ limit: "64kb" }));
 
   app.get("/ping", (_req, res) => {
     res.json({ pong: true });

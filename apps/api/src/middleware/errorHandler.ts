@@ -12,6 +12,28 @@ export function errorHandler(
   res: Response,
   _next: NextFunction,
 ) {
+  // body-parser's 413 (payload too large) and 400 (malformed JSON) are
+  // client errors, not server errors — surface the correct status and the
+  // standard { error } shape instead of hiding them behind a generic 500.
+  const shaped = err as { type?: string; status?: number; statusCode?: number };
+  const status = shaped.statusCode ?? shaped.status;
+  if (shaped.type === "entity.too.large") {
+    req.log.warn(
+      { type: shaped.type, requestId: req.requestId },
+      "request body too large",
+    );
+    res.status(413).json({ error: "Request body too large" });
+    return;
+  }
+  if (shaped.type === "entity.parse.failed" || status === 400) {
+    req.log.warn(
+      { type: shaped.type, requestId: req.requestId },
+      "malformed request body",
+    );
+    res.status(400).json({ error: "Malformed request body" });
+    return;
+  }
+
   // Never log `err` directly: pino serializes it fully, so a Postgres error
   // echoing column values or a Supabase error echoing a recipient email
   // would land in the log. Pull the three fields we actually need and run
