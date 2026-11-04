@@ -219,11 +219,16 @@ describe("GET /me", () => {
     expect(res.status).toBe(403);
   });
 
-  it("returns 403 when profile is disabled", async () => {
+  it("returns 401 when profile is disabled (ADR 034 stale-token guard)", async () => {
+    // Supabase considered the access token valid (getUser returned a user),
+    // but the profile has been scrubbed by the deletion flow. 401 forces
+    // clients to treat the session as gone rather than retry with the same
+    // token, which would succeed against Supabase until the auth user is
+    // hard-deleted in the post-commit task.
     mockGetUser.mockResolvedValue(validUser);
     mockDbWhere.mockResolvedValue([{ ...baseProfile, disabledAt: new Date() }]);
     const res = await request(app).get("/me").set("Authorization", "Bearer token");
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(401);
   });
 
   it("returns 403 when age_attested_at is null", async () => {

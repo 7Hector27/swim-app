@@ -49,8 +49,14 @@ export async function requireUser(
   }
 
   if (profile.disabledAt) {
+    // ADR 034: a disabled profile is a deleted account. The Supabase Auth
+    // user is hard-deleted in a post-commit task that can retry on transient
+    // failure, so a stale (still-cryptographically-valid) access token can
+    // reach us during that window. 401 is the right code — the identity no
+    // longer exists — and clients that distinguish 401 vs 403 will clear
+    // their session and redirect to signup.
     req.log.warn({ userId: profile.id, reason: "disabled" }, "access denied");
-    res.status(403).json({ error: "Forbidden" });
+    res.status(401).json({ error: "Unauthorized" });
     return;
   }
 
