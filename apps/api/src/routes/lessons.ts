@@ -65,6 +65,7 @@ import { requireHouseholdMember } from "../middleware/requireHouseholdMember";
 import { requireHouseholdRole } from "../middleware/requireHouseholdRole";
 import { validate } from "../middleware/validate";
 import { asyncHandler } from "../middleware/asyncHandler";
+import { bookingLimiter } from "../middleware/bookingRateLimit";
 import { classifyDaySlots, computeAvailableSlots, diagnoseSlotRejection, getDateInLA, getISODayOfWeek } from "../lib/slots";
 import {
   applyWeeklyOverridesAndSkips,
@@ -501,6 +502,7 @@ lessonsRouter.post(
   requireParent,
   requireHouseholdMember,
   requireHouseholdRole("manager"),
+  bookingLimiter,
   validate({ body: CreateLessonBodySchema }),
   asyncHandler(async (req, res) => {
     const body = req.body as CreateLessonBody;
@@ -930,6 +932,7 @@ lessonsRouter.post(
   requireParent,
   requireHouseholdMember,
   requireHouseholdRole("manager"),
+  bookingLimiter,
   validate({ body: BatchPreviewBodySchema }),
   asyncHandler(async (req, res) => {
     const body = req.body as BatchPreviewBody;
@@ -1050,6 +1053,7 @@ lessonsRouter.post(
   requireParent,
   requireHouseholdMember,
   requireHouseholdRole("manager"),
+  bookingLimiter,
   validate({ body: BatchSubmitBodySchema }),
   asyncHandler(async (req, res) => {
     const body = req.body as BatchSubmitBody;
