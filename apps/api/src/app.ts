@@ -75,12 +75,18 @@ export function createApp(logger: Logger) {
     }),
   );
 
-  // Ceiling is parent batch booking (POST /lessons/batch): 20 picks worst
-  // case, each ~300 bytes, plus overrides/skips — observed ~8 KB. 64 KB
-  // gives ~8x headroom without accepting multi-megabyte bodies that could
-  // only come from a malformed/malicious client. Default was 100 KB with
-  // no clean 413 handler (surfaced as 500 via errorHandler).
-  app.use(express.json({ limit: "64kb" }));
+  // Ceiling is a full-catalog coach evaluation save
+  // (POST /coach/swimmers/:id/sessions). ~132 skills in the catalog;
+  // CreateSessionBody carries one RatingInput per skill, plus a per-skill
+  // note with no schema cap. A realistic "long notes on every skill"
+  // session lands around 100 KB (measured: 132 skills × 500-char notes
+  // = 102 KB). The 20-lesson weekly batch is 5.7 KB — far smaller.
+  // 128 KB gives ~25% headroom over the eval save worst case while
+  // still blocking the multi-megabyte bodies that could only come from
+  // a malformed or malicious client. Default (100 KB) surfaced 413 as
+  // a generic 500 via errorHandler; errorHandler now returns a clean
+  // 413 { error } with the standard shape.
+  app.use(express.json({ limit: "128kb" }));
 
   app.get("/ping", (_req, res) => {
     res.json({ pong: true });
