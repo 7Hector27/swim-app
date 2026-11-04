@@ -19,8 +19,11 @@ export default async function CoachBatchPage({ params }: PageProps) {
   if (!auth) return <AccountInactiveScreen />;
   if (auth.profile.role !== "coach") redirect("/dashboard");
 
-  const batch = await fetchCoachBatch(auth.accessToken, id);
-  if (!batch) notFound();
+  const batchResult = await fetchCoachBatch(auth.accessToken, id);
+  if (!batchResult.ok) {
+    if (batchResult.status === 404) notFound();
+    throw new Error(`Failed to load batch (status ${batchResult.status})`);
+  }
 
-  return <CoachBatchDetailContent batch={batch} />;
+  return <CoachBatchDetailContent batch={batchResult.batch} />;
 }

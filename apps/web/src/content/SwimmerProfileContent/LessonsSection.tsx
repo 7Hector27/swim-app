@@ -2,6 +2,8 @@ import Link from "next/link";
 
 import type { UpcomingLesson } from "@swim-app/shared";
 
+import InlineError from "@/components/InlineError";
+
 import type { SectionResult } from "./SwimmerProfileContent";
 import {
   formatLessonDate,
@@ -39,9 +41,7 @@ export default function LessonsSection({
     return (
       <section className="flex flex-col gap-3">
         <h2 className="text-sm font-bold text-text">Lessons</h2>
-        <p className="text-xs text-text-secondary">
-          Couldn&apos;t load lessons. Please refresh.
-        </p>
+        <InlineError message="Couldn't load lessons." reloadOnRetry />
       </section>
     );
   }
@@ -129,11 +129,7 @@ function LessonsColumn({ title, failed, lessons, dim, emptyText }: LessonsColumn
         {title}
       </h3>
       {failed ? (
-        <div className="rounded-card border border-border px-4 py-3">
-          <p className="text-xs text-text-secondary">
-            Couldn't load {title.toLowerCase()} lessons.
-          </p>
-        </div>
+        <InlineError message={`Couldn't load ${title.toLowerCase()} lessons.`} reloadOnRetry />
       ) : lessons.length === 0 ? (
         /*
           Mobile: hide empty-column placeholders. The other column's rows plus

@@ -3,6 +3,10 @@
 interface InlineErrorProps {
   message?: string;
   onRetry?: () => void;
+  // Convenience for server-rendered pages: show a retry button that reloads
+  // the window. Avoids lifting a client handler just to call location.reload.
+  // Ignored when onRetry is provided.
+  reloadOnRetry?: boolean;
   retryLabel?: string;
   className?: string;
 }
@@ -10,9 +14,11 @@ interface InlineErrorProps {
 export default function InlineError({
   message = "We couldn't load this. Try again in a moment.",
   onRetry,
+  reloadOnRetry = false,
   retryLabel = "Try again",
   className = "",
 }: InlineErrorProps) {
+  const handleRetry = onRetry ?? (reloadOnRetry ? () => window.location.reload() : undefined);
   return (
     <div
       role="alert"
@@ -35,10 +41,10 @@ export default function InlineError({
         </svg>
         <p className="text-sm text-text">{message}</p>
       </div>
-      {onRetry ? (
+      {handleRetry ? (
         <button
           type="button"
-          onClick={onRetry}
+          onClick={handleRetry}
           className="self-start tablet:self-auto inline-flex items-center justify-center rounded-button border-2 border-button-outline text-button-outline font-bold text-xs min-h-[36px] px-4 active:scale-[0.97] transition-colors duration-200"
         >
           {retryLabel}

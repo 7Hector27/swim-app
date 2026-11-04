@@ -14,7 +14,9 @@ export default async function CoachMeetsPage() {
   if (!auth) return <AccountInactiveScreen />;
 
   const result = await fetchMeets(auth.accessToken);
-  const meets = result.ok ? result.meets : [];
+  if (!result.ok) {
+    throw new Error(`Failed to load meets (status ${result.status})`);
+  }
 
-  return <CoachMeetsContent meets={meets} />;
+  return <CoachMeetsContent meets={result.meets} />;
 }

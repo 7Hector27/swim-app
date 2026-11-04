@@ -24,6 +24,9 @@ import {
   swimmerClubName,
 } from "./helpers";
 
+// Local alias with no `reason` field — the sections only need to know
+// ok/not-ok. Server-page code builds this from a LoadResult-shaped value by
+// dropping the reason at the prop boundary.
 export type SectionResult<T> = { ok: true; data: T } | { ok: false };
 
 interface SwimmerProfileContentProps {

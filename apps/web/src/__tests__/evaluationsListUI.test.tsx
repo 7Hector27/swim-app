@@ -136,7 +136,7 @@ describe("CoachSwimmerDetailContent — Evaluations section", () => {
       makeItem({ sessionId: "11111111-1111-1111-1111-111111111111" }),
       makeItem({ sessionId: "22222222-2222-2222-2222-222222222222", sessionDate: "2026-10-11", edited: true }),
     ];
-    render(<CoachSwimmerDetailContent {...baseProps()} evaluations={items} />);
+    render(<CoachSwimmerDetailContent {...baseProps()} evaluationsResult={{ ok: true, data: items }} />);
     const section = screen.getByTestId("coach-detail-evaluations-section");
     expect(within(section).getByRole("heading", { name: /evaluations/i })).toBeInTheDocument();
     expect(within(section).getAllByTestId("evaluations-list-row")).toHaveLength(2);
@@ -151,9 +151,31 @@ describe("CoachSwimmerDetailContent — Evaluations section", () => {
     expect(within(section).queryByTestId("coach-detail-see-all-evaluations")).toBeNull();
   });
 
+  it("shows an inline error (not the empty state) when the evaluations fetch failed", () => {
+    render(<CoachSwimmerDetailContent {...baseProps()} evaluationsResult={{ ok: false }} />);
+    const section = screen.getByTestId("coach-detail-evaluations-section");
+    // The failure branch replaces the empty-state copy with a role="alert"
+    // — this is the audit's bug class: a 500 must never look like "nothing
+    // here yet."
+    expect(within(section).queryByText(/no evaluations yet/i)).toBeNull();
+    const alert = within(section).getByRole("alert");
+    expect(alert).toHaveTextContent(/couldn't load evaluations/i);
+    expect(within(alert).getByRole("button", { name: /try again/i })).toBeInTheDocument();
+    expect(within(section).queryByTestId("coach-detail-see-all-evaluations")).toBeNull();
+  });
+
+  it("shows the empty-state copy (not the error) when evaluations fetched successfully but is empty", () => {
+    render(
+      <CoachSwimmerDetailContent {...baseProps()} evaluationsResult={{ ok: true, data: [] }} />,
+    );
+    const section = screen.getByTestId("coach-detail-evaluations-section");
+    expect(within(section).getByText(/no evaluations yet/i)).toBeInTheDocument();
+    expect(within(section).queryByRole("alert")).toBeNull();
+  });
+
   it("Edit links in the detail list carry a returnTo back to the swimmer page", () => {
     const items = [makeItem({ sessionId: "11111111-1111-1111-1111-111111111111" })];
-    render(<CoachSwimmerDetailContent {...baseProps()} evaluations={items} />);
+    render(<CoachSwimmerDetailContent {...baseProps()} evaluationsResult={{ ok: true, data: items }} />);
     const link = screen.getByTestId("evaluations-list-edit-link");
     const href = link.getAttribute("href") ?? "";
     expect(href).toContain(`returnTo=${encodeURIComponent(`/coach/swimmers/${SWIMMER_ID}`)}`);

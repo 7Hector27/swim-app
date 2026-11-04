@@ -1,4 +1,31 @@
-import type { Club, ParentSwimmer } from "@swim-app/shared";
+import type { Club, ParentSwimmer, UpcomingLesson } from "@swim-app/shared";
+
+import type { FetchLessonResult } from "@/lib/api/lessons";
+
+// Discriminator for the booking-confirm dialog's three visible states:
+// - "none": show nothing (either no id in the URL, or a 4xx means the id is
+//   stale / not theirs — surfacing a confirmation then would be misleading).
+// - "generic": show a generic "Your booking request was sent" dialog with no
+//   details — used when the follow-up details fetch failed with a 5xx or a
+//   network error. The booking itself succeeded upstream.
+// - "detail": full confirmation with date, pool, swimmers.
+export type BookingDialogState =
+  | { kind: "none" }
+  | { kind: "generic" }
+  | { kind: "detail"; lesson: UpcomingLesson };
+
+export function bookingDialogStateFor(
+  lessonIdPresent: boolean,
+  result: FetchLessonResult | null,
+): BookingDialogState {
+  if (!lessonIdPresent || result === null) return { kind: "none" };
+  if (result.ok) return { kind: "detail", lesson: result.lesson };
+  // 5xx (including the client helper's catch-path pseudo-500 for network
+  // errors) → show generic. Any 4xx (404 stale link, 403 not theirs, …)
+  // means we should not claim a booking was confirmed for this id.
+  if (result.status >= 500) return { kind: "generic" };
+  return { kind: "none" };
+}
 
 const LA = "America/Los_Angeles";
 

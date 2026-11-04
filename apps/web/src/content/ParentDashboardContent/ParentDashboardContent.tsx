@@ -15,6 +15,7 @@ import { fetchSwimmers } from "@/lib/api/swimmers";
 import { removeSwimmer } from "./actions";
 import BookingConfirmDialog from "./BookingConfirmDialog";
 import {
+  bookingDialogStateFor,
   formatLessonDayTime,
   formatRelativeDay,
   swimmerClubName,
@@ -33,7 +34,7 @@ interface Props {
 export default async function ParentDashboardContent({ profile, accessToken, bookedLessonId, rescheduledLessonId, rescheduledFrom }: Props) {
   const firstName = profile.fullName?.trim().split(/\s+/)[0] ?? "there";
   const hasPhone = !!(profile.phone && profile.phone.length > 0);
-  const [swimmers, upcomingLessonsRaw, household, bookedLesson, rescheduledLesson, clubs, summariesResult] =
+  const [swimmers, upcomingLessonsRaw, household, bookedLessonResult, rescheduledLessonResult, clubs, summariesResult] =
     await Promise.all([
       fetchSwimmers(accessToken),
       fetchUpcomingLessons(accessToken, { limit: 3 }),
@@ -43,6 +44,14 @@ export default async function ParentDashboardContent({ profile, accessToken, boo
       fetchClubs(accessToken),
       fetchParentSwimmerSummaries(accessToken),
     ]);
+  // 5xx / network → generic dialog (confirm the booking without details so
+  // the parent doesn't re-submit); 4xx (stale link, not theirs) → no dialog
+  // at all; ok → full detail dialog.
+  const bookedDialogState = bookingDialogStateFor(bookedLessonId !== undefined, bookedLessonResult);
+  const rescheduledDialogState = bookingDialogStateFor(
+    rescheduledLessonId !== undefined,
+    rescheduledLessonResult,
+  );
   const upcomingLessons = upcomingLessonsRaw?.items ?? [];
   const upcomingCount = upcomingLessonsRaw?.total ?? null;
   const today = todayLA();
@@ -62,8 +71,19 @@ export default async function ParentDashboardContent({ profile, accessToken, boo
   return (
     <div className="flex flex-col flex-1 bg-background">
 
-      {bookedLesson && <BookingConfirmDialog lesson={bookedLesson} />}
-      {rescheduledLesson && <BookingConfirmDialog lesson={rescheduledLesson} {...(rescheduledFrom !== undefined && { movedFrom: rescheduledFrom })} />}
+      {bookedDialogState.kind !== "none" && (
+        <BookingConfirmDialog
+          {...(bookedDialogState.kind === "detail" && { lesson: bookedDialogState.lesson })}
+        />
+      )}
+      {rescheduledDialogState.kind !== "none" && (
+        <BookingConfirmDialog
+          {...(rescheduledDialogState.kind === "detail" && {
+            lesson: rescheduledDialogState.lesson,
+          })}
+          {...(rescheduledFrom !== undefined && { movedFrom: rescheduledFrom })}
+        />
+      )}
 
       <main id="main-content" className="flex-1">
         <div className="mx-auto max-w-content px-page pt-10 pb-tab-safe tablet:pt-14 tablet:pb-32">

@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
-import type { SwimmerSkillsResponse } from "@swim-app/shared";
+import type { GetEvaluationsItem, SwimmerSkillsResponse } from "@swim-app/shared";
 import { DraftsListResponseSchema } from "@swim-app/shared";
 
 import AccountInactiveScreen from "@/components/AccountInactiveScreen";
 import CoachSwimmerDetailContent from "@/content/CoachSwimmerDetailContent";
+import type { SectionResult } from "@/content/CoachSwimmerDetailContent/CoachSwimmerDetailContent";
 import { requireAuth } from "@/lib/requireAuth";
 import { fetchCoachSwimmerDetail, fetchSwimmerTimeline } from "@/lib/api/coachSwimmers";
 import {
@@ -70,8 +71,11 @@ export default async function CoachSwimmerPage({ params }: CoachSwimmerPageProps
   const parsed = DraftsListResponseSchema.safeParse(draftsRes.ok ? await draftsRes.json().catch(() => null) : null);
   const swimmerDrafts = parsed.success ? parsed.data.drafts : [];
   const golfScoreTrends = golfScoreTrendsResult.ok ? golfScoreTrendsResult.data.trends : [];
-  // Fail-soft: a failed evaluations fetch degrades to the empty-state copy.
-  const evaluationsList = evaluationsResult.ok ? evaluationsResult.data.evaluations : [];
+  // Thread the result all the way to the content so a server error renders
+  // an inline retry instead of the "No evaluations yet" empty-state copy.
+  const evaluationsSection: SectionResult<GetEvaluationsItem[]> = evaluationsResult.ok
+    ? { ok: true, data: evaluationsResult.data.evaluations }
+    : { ok: false };
 
   return (
     <CoachSwimmerDetailContent
@@ -86,7 +90,7 @@ export default async function CoachSwimmerPage({ params }: CoachSwimmerPageProps
       meets={meets}
       drafts={swimmerDrafts}
       golfScoreTrends={golfScoreTrends}
-      evaluations={evaluationsList}
+      evaluationsResult={evaluationsSection}
     />
   );
 }

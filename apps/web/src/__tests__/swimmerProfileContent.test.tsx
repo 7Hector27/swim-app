@@ -175,6 +175,43 @@ describe("SwimmerProfileContent — empty states", () => {
   });
 });
 
+describe("SwimmerProfileContent — error vs empty (audit bug #1)", () => {
+  it("personal bests: a 500 renders an error state with a retry button, not the empty copy", () => {
+    render_({ personalBests: { ok: false } });
+    // Empty-state copy must not appear.
+    expect(screen.queryByText(/No meet times recorded yet/i)).toBeNull();
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent(/Couldn't load personal bests/i);
+    expect(screen.getByRole("button", { name: /try again/i })).toBeInTheDocument();
+  });
+
+  it("personal bests: an empty (but ok) response renders the empty state, not the error", () => {
+    render_({ personalBests: { ok: true, data: emptyPersonalBests } });
+    expect(screen.getByText(/No meet times recorded yet/i)).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("progress: a 500 renders an error state with a retry button, not 'No evaluations yet'", () => {
+    render_({ progress: { ok: false } });
+    const progressHeading = screen.getByRole("heading", { name: /^progress$/i });
+    const progressCard = progressHeading.closest("section")!;
+    expect(progressCard.textContent).not.toMatch(/No evaluations yet/i);
+    const alert = progressCard.querySelector('[role="alert"]');
+    expect(alert).not.toBeNull();
+    expect(alert!.textContent).toMatch(/Couldn't load progress/i);
+  });
+
+  it("lessons: both-failed path renders the error state (not 'No lesson history yet')", () => {
+    render_({
+      upcomingLessons: { ok: false },
+      pastLessons: { ok: false },
+    });
+    expect(screen.queryByText(/No lesson history yet/i)).toBeNull();
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent(/Couldn't load lessons/i);
+  });
+});
+
 describe("SwimmerProfileContent — Progress card", () => {
   const scoreHistoryWithRollups: ParentScoreHistoryResponse = {
     points: [

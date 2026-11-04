@@ -1,4 +1,4 @@
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import type { Metadata } from "next";
 
 import { requireAuth } from "@/lib/requireAuth";
@@ -16,13 +16,17 @@ export default async function ReschedulePage({ params }: { params: Promise<{ id:
   if (!auth) redirect("/login");
   const { accessToken } = auth;
 
-  const [lesson, locations, household] = await Promise.all([
+  const [lessonResult, locations, household] = await Promise.all([
     fetchLesson(accessToken, id),
     fetchLocations(accessToken),
     fetchHousehold(accessToken),
   ]);
 
-  if (!lesson) redirect("/dashboard");
+  if (!lessonResult.ok) {
+    if (lessonResult.status === 404) notFound();
+    throw new Error(`Failed to load lesson (status ${lessonResult.status})`);
+  }
+  const lesson = lessonResult.lesson;
 
   const isViewer = household?.myRole === "viewer";
   const lessonHasStarted = new Date() >= new Date(lesson.startsAt);

@@ -1,4 +1,4 @@
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import type { Metadata } from "next";
 
 import type { UpcomingLesson } from "@swim-app/shared";
@@ -18,13 +18,17 @@ export default async function LessonDetailPage({ params }: { params: Promise<{ i
   if (!auth) redirect("/login");
   const { accessToken } = auth;
 
-  const [lesson, locations, household] = await Promise.all([
+  const [lessonResult, locations, household] = await Promise.all([
     fetchLesson(accessToken, id),
     fetchLocations(accessToken),
     fetchHousehold(accessToken),
   ]);
 
-  if (!lesson) redirect("/dashboard");
+  if (!lessonResult.ok) {
+    if (lessonResult.status === 404) notFound();
+    throw new Error(`Failed to load lesson (status ${lessonResult.status})`);
+  }
+  const lesson = lessonResult.lesson;
 
   const isViewer = household?.myRole === "viewer";
   const isCoach = auth.profile.role === "coach";

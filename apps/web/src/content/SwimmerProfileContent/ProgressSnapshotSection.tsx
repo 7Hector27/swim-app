@@ -5,6 +5,7 @@ import type {
   ParentScoreHistoryResponse,
 } from "@swim-app/shared";
 
+import InlineError from "@/components/InlineError";
 import CategoryRadar from "@/content/SwimmerProgressContent/charts/CategoryRadar";
 
 import type { SectionResult } from "./SwimmerProfileContent";
@@ -28,9 +29,7 @@ export default function ProgressSnapshotSection({
     return (
       <section className="rounded-card border border-border p-5 flex flex-col gap-3">
         <h2 className="text-sm font-bold text-text">Progress</h2>
-        <p className="text-xs text-text-secondary">
-          Couldn&apos;t load progress. Please refresh.
-        </p>
+        <InlineError message="Couldn't load progress." reloadOnRetry />
       </section>
     );
   }

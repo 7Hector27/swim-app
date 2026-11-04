@@ -19,16 +19,19 @@ export default async function CoachLessonReschedulePage({ params }: PageProps) {
   if (!auth) return <AccountInactiveScreen />;
   if (auth.profile.role !== "coach") redirect("/dashboard");
 
-  const [lesson, locations] = await Promise.all([
+  const [lessonResult, locations] = await Promise.all([
     fetchCoachLesson(auth.accessToken, id),
     fetchLocations(auth.accessToken),
   ]);
 
-  if (!lesson) notFound();
+  if (!lessonResult.ok) {
+    if (lessonResult.status === 404) notFound();
+    throw new Error(`Failed to load lesson (status ${lessonResult.status})`);
+  }
 
-  if (lesson.status !== "pending" && lesson.status !== "approved") {
+  if (lessonResult.lesson.status !== "pending" && lessonResult.lesson.status !== "approved") {
     redirect(`/coach/lessons/${id}`);
   }
 
-  return <CoachRescheduleContent lesson={lesson} locations={locations} />;
+  return <CoachRescheduleContent lesson={lessonResult.lesson} locations={locations} />;
 }

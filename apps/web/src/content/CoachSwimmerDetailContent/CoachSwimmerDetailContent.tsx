@@ -20,6 +20,7 @@ import {
 import AddNoteForm from "@/components/AddNoteForm";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import EvaluationsList from "@/components/EvaluationsList";
+import InlineError from "@/components/InlineError";
 import AddSwimForm from "./AddSwimForm";
 import GolfScoreTrends from "./GolfScoreTrends";
 import HidePublicButton from "./HidePublicButton";
@@ -28,6 +29,11 @@ import SwimTimeInput from "./SwimTimeInput";
 import SwimmerTimeline from "./SwimmerTimeline";
 import { editSwimForSwimmer, deleteSwimForSwimmer } from "./actions";
 import type { EditSwimState, DeleteSwimState } from "./actions";
+
+// Narrow ok/not-ok discriminator for a secondary fetch. The `reason` field
+// from the shared LoadResult is dropped at this prop boundary — the UI only
+// needs to know whether the fetch failed, not why.
+export type SectionResult<T> = { ok: true; data: T } | { ok: false };
 
 interface CoachSwimmerDetailContentProps {
   swimmer: CoachSwimmerDetail;
@@ -42,9 +48,11 @@ interface CoachSwimmerDetailContentProps {
   drafts: EvaluationDraft[];
   golfScoreTrends: GolfScoreTrend[];
   // Top 5 past evaluations for the Evaluations section (ADR 032). Driven by
-  // GET /coach/swimmers/:id/evaluations. Optional so existing unit tests
-  // that pre-date this section keep rendering with an empty state.
-  evaluations?: GetEvaluationsItem[];
+  // GET /coach/swimmers/:id/evaluations. Distinguishes a failed fetch (shows
+  // an inline error with retry) from an empty list ("No evaluations yet.").
+  // Optional so existing unit tests that pre-date this section keep rendering
+  // with an empty state.
+  evaluationsResult?: SectionResult<GetEvaluationsItem[]>;
 }
 
 const LEAGUE_LABELS: Record<League, string> = {
@@ -390,7 +398,7 @@ export default function CoachSwimmerDetailContent({
   meets,
   drafts,
   golfScoreTrends,
-  evaluations = [],
+  evaluationsResult = { ok: true, data: [] },
 }: CoachSwimmerDetailContentProps) {
   const [activeTab, setActiveTab] = useState<TabId>("feed");
   const [timesFormMode, setTimesFormMode] = useState<"closed" | "meet" | "practice">("closed");
@@ -668,7 +676,7 @@ export default function CoachSwimmerDetailContent({
                       swimmerId={swimmer.id}
                       categories={categories}
                       timelineItems={timelineItems}
-                      evaluations={evaluations}
+                      evaluationsResult={evaluationsResult}
                     />
                   )}
                   {activeTab === "times" && (
@@ -780,11 +788,12 @@ interface FeedPaneProps {
   swimmerId: string;
   categories: CategoriesResponse;
   timelineItems: TimelineResponse;
-  evaluations: GetEvaluationsItem[];
+  evaluationsResult: SectionResult<GetEvaluationsItem[]>;
 }
 
-function FeedPane({ swimmerId, categories, timelineItems, evaluations }: FeedPaneProps) {
+function FeedPane({ swimmerId, categories, timelineItems, evaluationsResult }: FeedPaneProps) {
   const returnTo = `/coach/swimmers/${swimmerId}`;
+  const evaluations = evaluationsResult.ok ? evaluationsResult.data : [];
   return (
     <div className="flex flex-col gap-6">
       <section className="flex flex-col gap-3" data-testid="coach-detail-evaluations-section">
@@ -792,7 +801,7 @@ function FeedPane({ swimmerId, categories, timelineItems, evaluations }: FeedPan
           <h2 className="font-bold text-sm text-text uppercase tracking-wider">
             Evaluations
           </h2>
-          {evaluations.length > 0 && (
+          {evaluationsResult.ok && evaluations.length > 0 && (
             <a
               href={`/coach/swimmers/${swimmerId}/evaluations`}
               className="text-xs font-semibold text-link hover:text-link-hover"
@@ -802,7 +811,9 @@ function FeedPane({ swimmerId, categories, timelineItems, evaluations }: FeedPan
             </a>
           )}
         </div>
-        {evaluations.length === 0 ? (
+        {!evaluationsResult.ok ? (
+          <InlineError message="Couldn't load evaluations." reloadOnRetry />
+        ) : evaluations.length === 0 ? (
           <p className="text-sm text-text-secondary">No evaluations yet.</p>
         ) : (
           <EvaluationsList

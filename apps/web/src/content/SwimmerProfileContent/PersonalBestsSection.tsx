@@ -1,5 +1,7 @@
 import type { ParentPersonalBestsResponse } from "@swim-app/shared";
 
+import InlineError from "@/components/InlineError";
+
 import type { SectionResult } from "./SwimmerProfileContent";
 import { formatCourseLabel, formatEventName } from "./helpers";
 
@@ -12,9 +14,7 @@ export default function PersonalBestsSection({ result }: PersonalBestsSectionPro
     return (
       <section className="flex flex-col gap-3">
         <h2 className="text-sm font-bold text-text">Personal bests</h2>
-        <p className="text-xs text-text-secondary">
-          Couldn't load personal bests. Please refresh.
-        </p>
+        <InlineError message="Couldn't load personal bests." reloadOnRetry />
       </section>
     );
   }
