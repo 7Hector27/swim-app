@@ -14,7 +14,7 @@ No role: public visitors, and kids under 13 (no accounts ever).
 
 - The role never comes from signup data. The database sets every new profile to parent.
 - Users can change only their own name and phone.
-- The API blocks accounts with no `age_attested_at` or with `disabled_at` set.
+- The API blocks accounts with no `age_attested_at` (`403 Forbidden`) or with `disabled_at` set (`401 Unauthorized`). Disabled profiles return 401 because they represent a deleted account — the identity no longer exists, so the client must clear its session rather than retry with the same token. The auth user is hard-deleted in a post-commit task after deletion (ADR 034), so stale access tokens may still verify at Supabase during that window; the `disabled_at` check is the authoritative "this account is gone" signal until Supabase catches up.
 - Birth dates from signup are checked, then discarded.
 - The API enforces every permission. Every table has RLS on with no policies, which denies all access on purpose: the browser's public key can't read anything, and the API connects as the database owner.
 - The app role is read from the database on every request, never from the JWT.
@@ -100,7 +100,7 @@ Coaches access swimmer data through dedicated `/coach/swimmers` routes protected
 - **Turning `is_public` off keeps the last consent fields as an audit trail.** `public_consent_at` and `public_consent_by` are not cleared when `is_public` is set back to `false`. Turning it back on records new consent by overwriting both fields with the current timestamp and caller. Re-sending `is_public: true` when the swimmer is already public does **not** refresh the consent fields — the existing `public_consent_at` and `public_consent_by` are preserved.
 - **Swimmers are soft-deleted via `archived_at`.** Setting `archived_at` to a non-null timestamp hides the swimmer from active views. The row and all associated data are retained.
 - **Every swimmer query must exclude archived rows.** All queries against the `swimmers` table must include `WHERE archived_at IS NULL` (Drizzle: `.where(isNull(swimmers.archivedAt))`). There is no DB-level filter enforcing this automatically — it is a required convention for every route.
-- **Profiles are never hard-deleted.** Profiles referenced by swimmers or consent records must remain as rows. Closing an account disables the profile (`disabled_at`) and scrubs its personal fields; the full account deletion flow is out of scope for now.
+- **Profiles are never hard-deleted.** Profiles referenced by swimmers or consent records must remain as rows. Account deletion scrubs the profile (`disabled_at`, `full_name = NULL`, `phone = NULL`, placeholder `email`) and hard-deletes the matching Supabase Auth user. See ADR 034 and `docs/plans/account-deletion.md`.
 - **Clubs are never deleted, only deactivated.** Setting `is_active = false` on a `clubs` row hides it from new registrations but preserves all existing `swimmer_clubs` references. Hard-deleting a club is blocked by the `ON DELETE RESTRICT` FK on `swimmer_clubs.club_id`.
 - Public pages show opted-in swimmers only, as first name and last initial. Never birth date, contact info, or school.
 - Never log names, birth dates, emails, or notes.

@@ -291,20 +291,24 @@ Items that cannot be resolved inside this plan and need the kids'-data legal rev
 
 Each phase is its own PR off `feature/account-deletion`, with its own tests.
 
-### Phase 1 — Schema + migrations + stale-session guard
+### Phase 1 — Additive schema + stale-session guard
 
-**What ships:**
-- `lessons`: make `household_id`, `location_id`, `requested_by`, `approved_by`, `declined_by`, `canceled_by`, `no_show_by`, `batch_id` nullable (drop `NOT NULL`, keep FKs with `ON DELETE SET NULL` where it makes sense). Add `anonymized_at timestamptz nullable`, `location_snapshot text nullable`, `swimmer_count integer nullable`.
+**What ships (additive only — no existing column changes shape):**
+- Add three new nullable columns to `lessons`: `anonymized_at timestamptz`, `location_snapshot text`, `swimmer_count integer`. All start null and stay null for every live lesson. Phase 2 is the only writer.
 - New `account_deletion_jobs` table per decision 9.
 - **Drop the `profiles.id → auth.users.id` FK constraint.** Profile primary key stays as `uuid`; signup triggers continue to write with the auth.users.id value.
-- **Audit tests and scripts that rely on the FK cascade** and update them to explicitly delete the profile row. The integration-test helper `apps/api/src/__tests__/integration/helpers.ts` calls `deleteSupabaseUser` in cleanup for `createTestUser` and `createTestUserInHousehold`; today that cascades to the profile row. After the FK drop, those cleanups must delete the profile row explicitly before (or after) deleting the auth user, so tests never leave orphan profiles behind.
+- **Audit tests and scripts that rely on the FK cascade** and update them to explicitly delete the profile row. The integration-test helper `apps/api/src/__tests__/integration/helpers.ts` calls `deleteSupabaseUser` in cleanup for `createTestUser` and `createTestUserInHousehold`; today that cascades to the profile row. After the FK drop, those cleanups delete the profile row explicitly before (or after) deleting the auth user, so tests never leave orphan profiles behind.
 - **`requireUser` returns `401` when `profile.disabled_at` is set** (changed from the existing 403). Add a test that a request with a still-valid access token for a disabled profile returns 401.
 - Update `docs/data-model.md` and `docs/accounts.md` (strike the "out of scope for now" paragraph on line 103; update the "blocks accounts with ... disabled_at set" sentence to specify the 401 response).
+
+**Deferred to Phase 2 (nullable-ization lands with the code that writes nulls):**
+- Dropping `NOT NULL` on `lessons.household_id`, `location_id`, `requested_by`, `approved_by`, `declined_by`, `canceled_by`, `no_show_by`, `batch_id`. These only legitimately become null when the deletion engine anonymizes a row, which is Phase 2 code.
+- Changing `ON DELETE RESTRICT` to `ON DELETE SET NULL` on the `household_id` / `location_id` FKs.
+- Auditing the ~30 call sites that currently treat these columns as non-null and adding explicit null guards at query boundaries. Coupling the audit to the PR that introduces nullable rows at runtime keeps the review focused.
 
 **Tests:**
 - Migration applies cleanly on a fresh db (`pnpm db:up && pnpm db:migrate`)
 - Drizzle snapshot diff clean
-- Existing routes that write the newly-nullable lesson columns still type-check; audit call sites and add explicit null guards where they relied on the NOT NULL invariant
 - Supabase trigger smoke test: create an auth user → profile row is created with the same id; update auth user email → profile email syncs; delete auth user → profile row **is not touched** (new behavior)
 - Auth middleware: stale-token-on-disabled-profile returns 401; age-not-attested still returns 403
 - Integration test cleanup: after a test run, no orphan profile rows remain (asserted by an integration suite teardown check)
@@ -312,6 +316,7 @@ Each phase is its own PR off `feature/account-deletion`, with its own tests.
 ### Phase 2 — Deletion engine (backend)
 
 **What ships:**
+- Migration: drop `NOT NULL` on `lessons.household_id`, `location_id`, `requested_by`, `approved_by`, `declined_by`, `canceled_by`, `no_show_by`, `batch_id`. Change the `household_id` and `location_id` FKs from `ON DELETE RESTRICT` to `ON DELETE SET NULL`. Audit the ~30 call sites that currently treat these as non-null — introduce a `requireLiveLessonFields` helper and apply it at query boundaries so anonymized rows loudly fail if they ever leak into a live-lesson code path.
 - `apps/api/src/services/accountDeletion/` module with pure functions per step: `scrubProfile`, `anonymizeLessons`, `cancelFutureLessons`, `hardDeleteSwimmerData`, `scrubEmailOutbox`, `scrubAuditPayloads`, `deleteHousehold`, `enqueueDeletionJob`
 - Routes under `requireUser`:
   - `POST /me/deletion/preview` → returns the confirmation screen summary
