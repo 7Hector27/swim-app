@@ -140,7 +140,7 @@ export async function notifyCoachOfChange(
 export async function notifyBatchBookingCreated(
   tx: Tx,
   batchId: string,
-  _summary: { confirmedCount: number; pendingCount: number },
+  summary: { confirmedCount: number; pendingCount: number },
 ): Promise<string | null> {
   const coachProfileId = await resolveCoachForNotification(tx);
   if (!coachProfileId) return null;
@@ -148,6 +148,7 @@ export async function notifyBatchBookingCreated(
     coachProfileId,
     category: "booking_request",
     batchId,
+    allAutoApproved: summary.pendingCount === 0,
   });
   return result.notificationId;
 }

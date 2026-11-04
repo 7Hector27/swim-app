@@ -877,4 +877,76 @@ describe("Phase 3 — POST /lessons/batch coach notification", () => {
       }
     });
   });
+
+  it("P8: an auto-approved batch stores a coach notification whose clickUrl points at /coach/batches/[id]; a pending batch keeps the dashboard link", async () => {
+    await withAllDaysEnabled(async () => {
+      // ── Auto-approved batch (trust seeded) ───────────────────────────────
+      const trustId = await seedTrust();
+      const approvedStart = futureLaDate(240);
+      const approvedWeekday = isoWeekdayFor(approvedStart);
+      const { batchId: approvedBatchId, outboxId: approvedOutboxId } = await submitBatch({
+        startDate: approvedStart,
+        weeks: 2,
+        weekday: approvedWeekday,
+      });
+      await waitForOutboxTerminal(approvedOutboxId);
+
+      const approvedNotifications = await adminDb()
+        .select({
+          clickUrl: coachNotifications.clickUrl,
+          batchId: coachNotifications.batchId,
+          category: coachNotifications.category,
+        })
+        .from(coachNotifications)
+        .where(eq(coachNotifications.batchId, approvedBatchId));
+      expect(approvedNotifications).toHaveLength(1);
+      expect(approvedNotifications[0]!.category).toBe("booking_request");
+      expect(approvedNotifications[0]!.clickUrl).toContain(
+        `/coach/batches/${approvedBatchId}`,
+      );
+      expect(approvedNotifications[0]!.clickUrl).not.toContain("/dashboard?batch=");
+
+      // Drop everything the auto-approved batch wrote so the next submit
+      // lands with pending lessons (trust is scoped to approved/completed
+      // lessons at this location — the approved lessons we just wrote
+      // would otherwise keep the household trusted).
+      const approvedLessonRows = await adminDb()
+        .select({ id: lessons.id })
+        .from(lessons)
+        .where(eq(lessons.batchId, approvedBatchId));
+      const approvedLessonIds = approvedLessonRows.map((row) => row.id);
+      if (approvedLessonIds.length > 0) {
+        await adminDb()
+          .delete(lessonSwimmers)
+          .where(inArray(lessonSwimmers.lessonId, approvedLessonIds));
+        await adminDb().delete(lessons).where(inArray(lessons.id, approvedLessonIds));
+      }
+      await adminDb().delete(lessons).where(eq(lessons.id, trustId));
+
+      // ── Pending batch (no trust) — keeps the dashboard link ──────────────
+      const pendingStart = futureLaDate(260);
+      const pendingWeekday = isoWeekdayFor(pendingStart);
+      const { batchId: pendingBatchId, outboxId: pendingOutboxId } = await submitBatch({
+        startDate: pendingStart,
+        weeks: 2,
+        weekday: pendingWeekday,
+      });
+      await waitForOutboxTerminal(pendingOutboxId);
+
+      const pendingNotifications = await adminDb()
+        .select({
+          clickUrl: coachNotifications.clickUrl,
+          batchId: coachNotifications.batchId,
+          category: coachNotifications.category,
+        })
+        .from(coachNotifications)
+        .where(eq(coachNotifications.batchId, pendingBatchId));
+      expect(pendingNotifications).toHaveLength(1);
+      expect(pendingNotifications[0]!.category).toBe("booking_request");
+      expect(pendingNotifications[0]!.clickUrl).toContain(
+        `/dashboard?batch=${pendingBatchId}`,
+      );
+      expect(pendingNotifications[0]!.clickUrl).not.toContain("/coach/batches/");
+    });
+  });
 });

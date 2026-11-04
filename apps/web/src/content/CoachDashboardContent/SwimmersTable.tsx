@@ -4,10 +4,17 @@ import { useState } from "react";
 
 import type { CoachSwimmer } from "@swim-app/shared";
 
-import Placeholder from "@/components/Placeholder";
-
 interface SwimmersTableProps {
   swimmers: CoachSwimmer[];
+}
+
+// "Oct 28" in Los Angeles time — matches how the column header reads.
+function formatLastLessonDate(iso: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Los_Angeles",
+    month: "short",
+    day: "numeric",
+  }).format(new Date(iso));
 }
 
 function VisibilityBadge({ isPublic }: { isPublic: boolean }) {
@@ -154,10 +161,17 @@ export default function SwimmersTable({ swimmers }: SwimmersTableProps) {
                       ? swimmer.memberNames.join(", ")
                       : "—"}
                   </td>
-                  <td className="px-5 py-3 text-text-secondary whitespace-nowrap">
-                    <Placeholder>
-                      <span>[Oct 18]</span>
-                    </Placeholder>
+                  <td className="px-5 py-3 whitespace-nowrap">
+                    {swimmer.lastLesson ? (
+                      <a
+                        href={`/coach/lessons/${swimmer.lastLesson.id}`}
+                        className="text-sm font-semibold text-link hover:text-link-hover transition-colors duration-150 tabular-nums"
+                      >
+                        {formatLastLessonDate(swimmer.lastLesson.startsAt)}
+                      </a>
+                    ) : (
+                      <span className="text-text-secondary">None yet</span>
+                    )}
                   </td>
                   <td className="px-5 py-3 whitespace-nowrap">
                     <VisibilityBadge isPublic={swimmer.isPublic} />

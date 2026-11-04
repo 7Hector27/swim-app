@@ -45,6 +45,7 @@ import {
   availabilityOverrides,
   availabilitySeasons,
   blockedTimes,
+  coachAuditLog,
   lessons,
   lessonLocations,
   lessonSwimmers,
@@ -224,20 +225,42 @@ coachAvailabilityRouter.patch(
       return;
     }
 
-    const rows = await db
-      .update(availabilityConfig)
-      .set({
-        ...(body.maxDailyLessonMinutes !== undefined && { maxDailyLessonMinutes: body.maxDailyLessonMinutes }),
-        ...(body.bookingMinAdvanceHours !== undefined && { bookingMinAdvanceHours: body.bookingMinAdvanceHours }),
-        ...(body.bookingMaxAdvanceWeeks !== undefined && { bookingMaxAdvanceWeeks: body.bookingMaxAdvanceWeeks }),
-        ...(body.defaultTeachesDays !== undefined && { defaultTeachesDays: body.defaultTeachesDays }),
-        ...(body.defaultStartTime !== undefined && { defaultStartTime: body.defaultStartTime }),
-        ...(body.defaultEndTime !== undefined && { defaultEndTime: body.defaultEndTime }),
-      })
-      .where(eq(availabilityConfig.id, existing[0].id))
-      .returning();
+    const previous = existing[0];
+    const coachId = req.profile.id;
 
-    const updated = rows[0]!;
+    const updated = await db.transaction(async (tx) => {
+      const rows = await tx
+        .update(availabilityConfig)
+        .set({
+          ...(body.maxDailyLessonMinutes !== undefined && { maxDailyLessonMinutes: body.maxDailyLessonMinutes }),
+          ...(body.bookingMinAdvanceHours !== undefined && { bookingMinAdvanceHours: body.bookingMinAdvanceHours }),
+          ...(body.bookingMaxAdvanceWeeks !== undefined && { bookingMaxAdvanceWeeks: body.bookingMaxAdvanceWeeks }),
+          ...(body.defaultTeachesDays !== undefined && { defaultTeachesDays: body.defaultTeachesDays }),
+          ...(body.defaultStartTime !== undefined && { defaultStartTime: body.defaultStartTime }),
+          ...(body.defaultEndTime !== undefined && { defaultEndTime: body.defaultEndTime }),
+        })
+        .where(eq(availabilityConfig.id, previous.id))
+        .returning();
+
+      const next = rows[0]!;
+
+      if (
+        body.bookingMinAdvanceHours !== undefined &&
+        body.bookingMinAdvanceHours !== previous.bookingMinAdvanceHours
+      ) {
+        await tx.insert(coachAuditLog).values({
+          coachId,
+          actorId: coachId,
+          action: "availability_config_booking_min_advance_hours_updated",
+          payload: {
+            previousValue: previous.bookingMinAdvanceHours,
+            newValue: next.bookingMinAdvanceHours,
+          },
+        });
+      }
+
+      return next;
+    });
 
     const responseBody: AvailabilityConfig = {
       id: updated.id,

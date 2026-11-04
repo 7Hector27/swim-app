@@ -455,7 +455,7 @@ Single-row table. Jason's lesson schedule parameters.
 | `summer_evening_start_time` | `time` | no | — | Summer evening window start. Must be ≥ 19:00. |
 | `summer_evening_end_time` | `time` | no | — | Summer evening window end. |
 | `max_daily_lesson_minutes` | `integer` | no | `240` | Total lesson minutes Jason will teach per day. |
-| `booking_min_advance_hours` | `integer` | no | `16` | Minimum hours in advance a lesson can be booked. |
+| `booking_min_advance_hours` | `integer` | no | `16` | Minimum hours in advance a parent can book a lesson. Range 0–168 (one week). Coach bookings bypass this rule. Editable at `/coach/availability`; changes affect new bookings only (existing pending/approved lessons keep their stored `expires_at`). Updates write a `coach_audit_log` row with the previous and new value in the same transaction. |
 | `booking_max_advance_weeks` | `integer` | no | `10` | Maximum weeks in advance a lesson can be booked. |
 | `created_at` | `timestamptz` | no | `now()` | |
 | `updated_at` | `timestamptz` | no | `now()` | Auto-updated. |

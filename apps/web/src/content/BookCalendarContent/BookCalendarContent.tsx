@@ -199,6 +199,12 @@ export default function BookCalendarContent({
 
   const bookingMaxAdvanceWeeks =
     weekData?.bookingMaxAdvanceWeeks ?? monthData?.bookingMaxAdvanceWeeks ?? 10;
+  // The Zod schema on both responses marks bookingMinAdvanceHours as
+  // required, so when either response is loaded this is a number. Before
+  // the first load lands, it is null — never a hardcoded 16, because the
+  // coach-editable setting may differ from the old default.
+  const bookingMinAdvanceHours =
+    weekData?.bookingMinAdvanceHours ?? monthData?.bookingMinAdvanceHours ?? null;
   const maxAdvanceDateLA = useMemo(
     () => maxBookableDateLA(bookingMaxAdvanceWeeks, Date.now()),
     [bookingMaxAdvanceWeeks],
@@ -464,11 +470,11 @@ export default function BookCalendarContent({
       if (pick.state === "available") continue;
       if (skippedIndexes.has(pick.index)) continue;
       if (removedIndexes.has(pick.index)) continue;
-      const copy = pickReasonCopy(pick.state);
+      const copy = pickReasonCopy(pick.state, bookingMinAdvanceHours);
       if (copy !== "") result.set(pick.startsAt, copy);
     }
     return result;
-  }, [bookingMode, previewPicks, skippedIndexes, removedIndexes]);
+  }, [bookingMode, previewPicks, skippedIndexes, removedIndexes, bookingMinAdvanceHours]);
 
   // Count flagged picks for the bottom bar.
   const flaggedPickCount = flagReasonByStart.size;
@@ -1435,6 +1441,7 @@ export default function BookCalendarContent({
               durationMinutes={durationMinutes}
               swimmerIds={swimmerIds}
               needsApproval={weekData?.needsApproval ?? false}
+              bookingMinAdvanceHours={bookingMinAdvanceHours}
               onConfirm={handleConfirmSingle}
               isConfirming={isBooking}
             />
@@ -1522,6 +1529,7 @@ export default function BookCalendarContent({
         canSubmit={canSubmitReview}
         isSubmitting={isSubmitting}
         needsApproval={previewNeedsApproval}
+        bookingMinAdvanceHours={bookingMinAdvanceHours}
         success={success}
         {...(bookDisabledReason !== null && { bookDisabledReason })}
         onClose={closeReview}

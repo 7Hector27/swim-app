@@ -3,6 +3,7 @@ import { requireUser } from "../middleware/requireUser";
 import { requireCoach } from "../middleware/requireCoach";
 import { coachAlertsRouter } from "./coachAlerts";
 import { coachAvailabilityRouter } from "./coachAvailability";
+import { coachBatchesRouter } from "./coachBatches";
 import { coachBulkCancelRouter } from "./coachBulkCancel";
 import { coachCalendarRouter } from "./coachCalendar";
 import { coachLessonsRouter } from "./coachLessons";
@@ -24,6 +25,7 @@ coachRouter.get("/ping", validate({}), (_req, res) => {
 
 coachRouter.use(coachAlertsRouter);
 coachRouter.use(coachAvailabilityRouter);
+coachRouter.use(coachBatchesRouter);
 coachRouter.use(coachCalendarRouter);
 // Bulk-cancel endpoints live under /coach/lessons/bulk-cancel. Mount before
 // coachLessonsRouter so the specific path matches first.

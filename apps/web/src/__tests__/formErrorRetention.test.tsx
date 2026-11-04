@@ -77,6 +77,7 @@ const testSwimmer = {
   clubs: [],
   members: [],
   memberNames: [],
+  lastLesson: null,
   homePool: null,
   createdAt: now,
   updatedAt: now,

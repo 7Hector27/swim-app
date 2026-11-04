@@ -1,5 +1,4 @@
 const MESSAGES: Record<string, string> = {
-  too_soon: "That time is less than 16 hours away. Text Jason to book it.",
   slot_unavailable: "That time isn't available anymore. Pick another one.",
   not_a_lesson_day: "Jason doesn't teach on that day.",
   too_far: "That time is more than 10 weeks away.",
@@ -26,11 +25,24 @@ const MESSAGES: Record<string, string> = {
   end_date_before_start: "End date must be on or after the start date.",
 };
 
-export function apiErrorMessage(code: string | undefined, conflictingSeasonName?: string): string {
+export function apiErrorMessage(
+  code: string | undefined,
+  conflictingSeasonName?: string,
+  bookingMinAdvanceHours?: number,
+): string {
   if (!code) return "Something went wrong on our end. Try again in a moment.";
   if (code === "season_overlap") {
     const name = conflictingSeasonName ?? "another season";
     return `This season overlaps with "${name}". Adjust the dates.`;
+  }
+  if (code === "too_soon") {
+    if (bookingMinAdvanceHours === undefined) {
+      // No numeric window from the server — fall back to copy without an
+      // hour count rather than silently printing the old 16h default.
+      return "That time is too close to the lesson. Text Jason to book it.";
+    }
+    const unit = bookingMinAdvanceHours === 1 ? "hour" : "hours";
+    return `That time is less than ${bookingMinAdvanceHours} ${unit} away. Text Jason to book it.`;
   }
   if (MESSAGES[code]) return MESSAGES[code]!;
   return "Something went wrong on our end. Try again in a moment.";

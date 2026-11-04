@@ -1,5 +1,6 @@
 import {
   AvailableSlotSchema,
+  CoachBatchDetailSchema,
   CoachLessonDetailSchema,
   CoachNoteResponseSchema,
   CoachScheduleItemSchema,
@@ -12,6 +13,7 @@ import {
   UpcomingLessonsResponseSchema,
   WeekAvailabilityResponseSchema,
   type AvailableSlot,
+  type CoachBatchDetail,
   type CoachLessonDetail,
   type CoachNoteResponse,
   type CoachScheduleItem,
@@ -162,6 +164,29 @@ export async function fetchCoachLesson(
     if (!parsed.success) {
       const detail = parsed.error.issues.map((issue) => `${issue.path.join(".")} (${issue.message})`).join("; ");
       console.warn(`fetchCoachLesson: response shape mismatch — ${detail}`);
+      return null;
+    }
+    return parsed.data;
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchCoachBatch(
+  accessToken: string,
+  batchId: string,
+): Promise<CoachBatchDetail | null> {
+  try {
+    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/coach/batches/${batchId}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      cache: "no-store",
+    });
+    if (!response.ok) return null;
+    const body: unknown = await response.json();
+    const parsed = CoachBatchDetailSchema.safeParse(body);
+    if (!parsed.success) {
+      const detail = parsed.error.issues.map((issue) => `${issue.path.join(".")} (${issue.message})`).join("; ");
+      console.warn(`fetchCoachBatch: response shape mismatch — ${detail}`);
       return null;
     }
     return parsed.data;

@@ -20,12 +20,14 @@ const {
   mockDbInsert,
   mockDbUpdate,
   mockDbDelete,
+  mockDbTransaction,
 } = vi.hoisted(() => ({
   mockGetUser: vi.fn(),
   mockDbSelect: vi.fn(),
   mockDbInsert: vi.fn(),
   mockDbUpdate: vi.fn(),
   mockDbDelete: vi.fn(),
+  mockDbTransaction: vi.fn(),
 }));
 
 vi.mock("../lib/supabase", () => ({
@@ -38,6 +40,7 @@ vi.mock("../db/client", () => ({
     insert: mockDbInsert,
     update: mockDbUpdate,
     delete: mockDbDelete,
+    transaction: mockDbTransaction,
   },
 }));
 
@@ -155,6 +158,17 @@ function innerJoinWhereSelect<T>(rows: T[]) {
 
 beforeEach(() => {
   vi.resetAllMocks();
+  // Default transaction mock: pass-through so each test gets the same db
+  // mocks inside the tx callback. Tests that need to assert transactional
+  // behavior can re-mock locally.
+  mockDbTransaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) =>
+    callback({
+      select: mockDbSelect,
+      insert: mockDbInsert,
+      update: mockDbUpdate,
+      delete: mockDbDelete,
+    }),
+  );
 });
 
 // ── Auth fires exactly once per /coach/* request ──────────────────────────────
@@ -414,6 +428,103 @@ describe("PATCH /coach/availability-config", () => {
       .send({ defaultStartTime: "16:00" });
 
     expect(res.status).toBe(403);
+  });
+
+  it("writes a coach_audit_log row with old and new values when bookingMinAdvanceHours changes", async () => {
+    authAs(coachProfile);
+
+    const previous = { ...availabilityConfigRow, bookingMinAdvanceHours: 16 };
+    const updatedRow = { ...availabilityConfigRow, bookingMinAdvanceHours: 24 };
+
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(coachProfile))
+      .mockReturnValueOnce(simpleSelect([previous]));
+
+    const updateReturning = vi.fn().mockResolvedValue([updatedRow]);
+    const updateWhere = vi.fn().mockReturnValue({ returning: updateReturning });
+    const updateSet = vi.fn().mockReturnValue({ where: updateWhere });
+    mockDbUpdate.mockReturnValue({ set: updateSet });
+
+    const insertValues = vi.fn().mockResolvedValue(undefined);
+    mockDbInsert.mockReturnValue({ values: insertValues });
+
+    const res = await request(app)
+      .patch("/coach/availability-config")
+      .set("Authorization", "Bearer token")
+      .send({ bookingMinAdvanceHours: 24 });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ bookingMinAdvanceHours: 24 });
+    expect(insertValues).toHaveBeenCalledWith({
+      coachId: COACH_PROFILE_ID,
+      actorId: COACH_PROFILE_ID,
+      action: "availability_config_booking_min_advance_hours_updated",
+      payload: { previousValue: 16, newValue: 24 },
+    });
+  });
+
+  it("does not write an audit row when bookingMinAdvanceHours is unchanged", async () => {
+    authAs(coachProfile);
+
+    const updatedRow = { ...availabilityConfigRow, bookingMinAdvanceHours: 16 };
+
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(coachProfile))
+      .mockReturnValueOnce(simpleSelect([availabilityConfigRow]));
+
+    const updateReturning = vi.fn().mockResolvedValue([updatedRow]);
+    const updateWhere = vi.fn().mockReturnValue({ returning: updateReturning });
+    const updateSet = vi.fn().mockReturnValue({ where: updateWhere });
+    mockDbUpdate.mockReturnValue({ set: updateSet });
+
+    const insertValues = vi.fn().mockResolvedValue(undefined);
+    mockDbInsert.mockReturnValue({ values: insertValues });
+
+    const res = await request(app)
+      .patch("/coach/availability-config")
+      .set("Authorization", "Bearer token")
+      .send({ bookingMinAdvanceHours: 16 });
+
+    expect(res.status).toBe(200);
+    expect(insertValues).not.toHaveBeenCalled();
+  });
+
+  it("rejects bookingMinAdvanceHours outside [0, 168]", async () => {
+    authAs(coachProfile);
+    mockDbSelect.mockReturnValueOnce(requireUserSelect(coachProfile));
+
+    const res = await request(app)
+      .patch("/coach/availability-config")
+      .set("Authorization", "Bearer token")
+      .send({ bookingMinAdvanceHours: 169 });
+
+    expect(res.status).toBe(422);
+  });
+
+  it("accepts bookingMinAdvanceHours = 0", async () => {
+    authAs(coachProfile);
+
+    const previous = { ...availabilityConfigRow, bookingMinAdvanceHours: 16 };
+    const updatedRow = { ...availabilityConfigRow, bookingMinAdvanceHours: 0 };
+
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(coachProfile))
+      .mockReturnValueOnce(simpleSelect([previous]));
+
+    const updateReturning = vi.fn().mockResolvedValue([updatedRow]);
+    const updateWhere = vi.fn().mockReturnValue({ returning: updateReturning });
+    const updateSet = vi.fn().mockReturnValue({ where: updateWhere });
+    mockDbUpdate.mockReturnValue({ set: updateSet });
+
+    mockDbInsert.mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) });
+
+    const res = await request(app)
+      .patch("/coach/availability-config")
+      .set("Authorization", "Bearer token")
+      .send({ bookingMinAdvanceHours: 0 });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ bookingMinAdvanceHours: 0 });
   });
 });
 

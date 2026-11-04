@@ -284,7 +284,7 @@ lessonsRouter.get(
       return;
     }
 
-    // The 16-hour notice window is parent-only. Coaches may skip it by
+    // The min-advance notice window is parent-only. Coaches may skip it by
     // passing coachBypassNotice=true; parents passing the flag are ignored.
     const skipMinAdvance =
       req.profile.role === "coach" && query.coachBypassNotice === "true";
@@ -415,7 +415,7 @@ lessonsRouter.get(
     const todayDateLA = getDateInLA(nowUtc);
     const maxAdvanceDateLA = bookingWindowEnd(nowUtc, config.bookingMaxAdvanceWeeks);
 
-    // Coach-only: skip the 16-hour notice-window filter. A parent passing
+    // Coach-only: skip the min-advance notice-window filter. A parent passing
     // the flag is ignored and still sees the normal rule applied.
     const skipMinAdvance = isCoach && query.coachBypassNotice === "true";
 
@@ -463,6 +463,7 @@ lessonsRouter.get(
         days: responseDays,
         maxDailyLessonMinutes: config.maxDailyLessonMinutes,
         bookingMaxAdvanceWeeks: config.bookingMaxAdvanceWeeks,
+        bookingMinAdvanceHours: config.bookingMinAdvanceHours,
       };
       res.json(body);
     } else {
@@ -486,6 +487,7 @@ lessonsRouter.get(
         days: responseDays,
         maxDailyLessonMinutes: config.maxDailyLessonMinutes,
         bookingMaxAdvanceWeeks: config.bookingMaxAdvanceWeeks,
+        bookingMinAdvanceHours: config.bookingMinAdvanceHours,
       };
       res.json(body);
     }
@@ -579,7 +581,7 @@ lessonsRouter.post(
     const minMs = nowUtc.getTime() + config.bookingMinAdvanceHours * 60 * 60 * 1000;
 
     if (startsAt.getTime() < minMs) {
-      res.status(422).json({ error: "too_soon" });
+      res.status(422).json({ error: "too_soon", bookingMinAdvanceHours: config.bookingMinAdvanceHours });
       return;
     }
     if (isAfterBookingWindow(startsAt, nowUtc, config.bookingMaxAdvanceWeeks)) {
@@ -656,7 +658,7 @@ lessonsRouter.post(
           status: approval ? "pending" : "approved",
           requestedBy: profileId,
           ...(approval
-            ? { expiresAt: new Date(startsAt.getTime() - 16 * 60 * 60 * 1000) }
+            ? { expiresAt: new Date(startsAt.getTime() - config.bookingMinAdvanceHours * 60 * 60 * 1000) }
             : { approvedAt: now, approvedBy: null }),
         })
         .returning();
@@ -1220,7 +1222,7 @@ lessonsRouter.post(
 
       const approvalRequired = await needsApproval(householdId, body.locationId, tx);
       const now = new Date();
-      const sixteenHoursMs = 16 * 60 * 60 * 1000;
+      const noticeMs = config.bookingMinAdvanceHours * 60 * 60 * 1000;
 
       // Generate each lesson's id up front so every downstream insert and
       // payload mapping (lesson_swimmers rows, per-lesson email names,
@@ -1250,7 +1252,7 @@ lessonsRouter.post(
             requestedBy: profileId,
             batchId: batch.id,
             ...(approvalRequired
-              ? { expiresAt: new Date(pick.startsAt.getTime() - sixteenHoursMs) }
+              ? { expiresAt: new Date(pick.startsAt.getTime() - noticeMs) }
               : { approvedAt: now, approvedBy: null }),
           })),
         )
@@ -2087,12 +2089,13 @@ lessonsRouter.patch(
       }
     }
 
-    // Coach reschedules have no 16-hour notice rule (ADR 029). Parent
+    // Coach reschedules bypass the min-advance notice rule (ADR 029). Parent
     // duration/location-only edits (no new startsAt) also skip the min-advance
     // check so a lesson already inside the window isn't rejected by the
     // recheck. Parent edits with a new startsAt get the full rule — the
     // explicit check at line 931 has already enforced it.
     const skipMinAdvance = isCoach || body.startsAt === undefined;
+    const noticeMs = config.bookingMinAdvanceHours * 60 * 60 * 1000;
 
     // Track coach-initiated reschedule so the parent sees "Moved by Jason".
     const newMovedAt = isCoach && body.startsAt !== undefined ? nowUtc : (existingLesson.movedAt ?? null);
@@ -2160,13 +2163,13 @@ lessonsRouter.patch(
         // Coach reschedule: lesson keeps its current status (approved stays approved).
         // Only update expiresAt for pending lessons whose time is being moved.
         if (body.startsAt !== undefined && existingLesson!.status === "pending") {
-          newExpiresAt = new Date(newStartsAt.getTime() - 16 * 60 * 60 * 1000);
+          newExpiresAt = new Date(newStartsAt.getTime() - noticeMs);
         }
       } else if (body.locationId !== undefined && body.locationId !== existingLesson!.locationId) {
         const approval = await needsApproval(existingLesson!.householdId, newLocationId, tx);
         if (approval) {
           newStatus = "pending";
-          newExpiresAt = new Date(newStartsAt.getTime() - 16 * 60 * 60 * 1000);
+          newExpiresAt = new Date(newStartsAt.getTime() - noticeMs);
           newApprovedAt = null;
           newApprovedBy = null;
         } else {
@@ -2176,7 +2179,7 @@ lessonsRouter.patch(
           newExpiresAt = null;
         }
       } else if (body.startsAt !== undefined && existingLesson!.status === "pending") {
-        newExpiresAt = new Date(newStartsAt.getTime() - 16 * 60 * 60 * 1000);
+        newExpiresAt = new Date(newStartsAt.getTime() - noticeMs);
       }
 
       const updatedRows = await tx

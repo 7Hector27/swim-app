@@ -150,6 +150,7 @@ const WEEK_NOV_02: WeekAvailabilityResponse = {
   needsApproval: false,
   maxDailyLessonMinutes: 240,
   bookingMaxAdvanceWeeks: 3,
+  bookingMinAdvanceHours: 16,
   days: [
     {
       date: "2026-11-02",
@@ -169,6 +170,7 @@ const WEEK_NOV_09_PARTIAL: WeekAvailabilityResponse = {
   needsApproval: false,
   maxDailyLessonMinutes: 240,
   bookingMaxAdvanceWeeks: 3,
+  bookingMinAdvanceHours: 16,
   days: [
     {
       date: "2026-11-09",
@@ -239,6 +241,7 @@ describe("Booking window — week arrow", () => {
       needsApproval: false,
       maxDailyLessonMinutes: 240,
       bookingMaxAdvanceWeeks: 10,
+      bookingMinAdvanceHours: 16,
       days: [
         {
           date: "2026-12-28",
@@ -368,6 +371,7 @@ describe("Month view — Previous-month arrow", () => {
       needsApproval: false,
       maxDailyLessonMinutes: 240,
       bookingMaxAdvanceWeeks: 52,
+      bookingMinAdvanceHours: 16,
       days: [
         {
           date: "2026-11-02",
@@ -410,6 +414,7 @@ describe("Month view — Previous-month arrow", () => {
       needsApproval: false,
       maxDailyLessonMinutes: 240,
       bookingMaxAdvanceWeeks: 52,
+      bookingMinAdvanceHours: 16,
       days: [
         {
           date: "2026-11-02",
@@ -453,6 +458,7 @@ describe("Month view — Next-month arrow", () => {
       needsApproval: false,
       maxDailyLessonMinutes: 240,
       bookingMaxAdvanceWeeks: 2,
+      bookingMinAdvanceHours: 16,
       days: [
         {
           date: "2026-11-02",

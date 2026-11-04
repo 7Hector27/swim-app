@@ -74,7 +74,7 @@ export type AvailabilityConfig = z.infer<typeof AvailabilityConfigSchema>;
 export const PatchAvailabilityConfigBodySchema = z
   .object({
     maxDailyLessonMinutes: z.number().int().min(1).optional(),
-    bookingMinAdvanceHours: z.number().int().min(1).optional(),
+    bookingMinAdvanceHours: z.number().int().min(0).max(168).optional(),
     bookingMaxAdvanceWeeks: z.number().int().min(1).optional(),
     defaultTeachesDays: z.array(z.number().int().min(1).max(7)).min(1).optional(),
     defaultStartTime: QuarterHourTimeStringSchema.optional(),
@@ -163,9 +163,10 @@ export const CreateLessonBodySchema = z.object({
 });
 export type CreateLessonBody = z.infer<typeof CreateLessonBodySchema>;
 
-// Coach-only query flag that disables the min-advance ("16-hour notice")
-// filter on availability lookups. Server honors it only when the caller is
-// a coach — parents passing it still see the normal 16-hour rule applied.
+// Coach-only query flag that disables the min-advance notice filter on
+// availability lookups. Server honors it only when the caller is a coach —
+// parents passing it still see the normal rule applied. The notice window
+// is configurable via availability_config.bookingMinAdvanceHours.
 // Shape is a plain string so URLSearchParams round-trips cleanly.
 export const CoachBypassNoticeFlagSchema = z.literal("true").optional();
 
@@ -467,6 +468,10 @@ export const MonthAvailabilityResponseSchema = z.object({
   // use it to measure the window the same way the server does, so the
   // calendar's "not open yet" boundary matches the server's filter.
   bookingMaxAdvanceWeeks: z.number().int().positive(),
+  // Parent min-advance notice window (whole hours) echoed from
+  // availability_config so client copy ("Less than N hours away") stays in
+  // sync with the server rule.
+  bookingMinAdvanceHours: z.number().int().min(0),
 });
 export type MonthAvailabilityResponse = z.infer<typeof MonthAvailabilityResponseSchema>;
 
@@ -475,6 +480,7 @@ export const WeekAvailabilityResponseSchema = z.object({
   days:          z.array(WeekDayAvailabilitySchema),
   maxDailyLessonMinutes: z.number().int().positive(),
   bookingMaxAdvanceWeeks: z.number().int().positive(),
+  bookingMinAdvanceHours: z.number().int().min(0),
 });
 export type WeekAvailabilityResponse = z.infer<typeof WeekAvailabilityResponseSchema>;
 
@@ -619,6 +625,37 @@ export const CoachLessonDetailSchema = z.object({
   createdAt: z.string().datetime({ offset: true }),
 });
 export type CoachLessonDetail = z.infer<typeof CoachLessonDetailSchema>;
+
+// ── Coach batch detail ─────────────────────────────────────────────────────────
+
+// One lesson row in the batch detail view. Lean on purpose — the row renders
+// an at-a-glance list and taps through to /coach/lessons/[id] for full detail.
+export const CoachBatchLessonSchema = z.object({
+  id: z.string().uuid(),
+  startsAt: z.string().datetime({ offset: true }),
+  durationMinutes: LessonDurationMinutesSchema,
+  type: LessonTypeSchema,
+  status: LessonStatusSchema,
+  locationId: z.string().uuid(),
+  locationName: z.string(),
+  swimmers: z.array(LessonSwimmerSchema),
+});
+export type CoachBatchLesson = z.infer<typeof CoachBatchLessonSchema>;
+
+export const CoachBatchDetailSchema = z.object({
+  id: z.string().uuid(),
+  mode: z.enum(["manual", "weekly"]),
+  householdName: z.string().nullable(),
+  // Full name of the household member who submitted the batch, snapshotted
+  // from profiles.full_name at read time (not frozen — a later rename
+  // propagates).
+  createdByName: z.string().nullable(),
+  createdAt: z.string().datetime({ offset: true }),
+  // Ordered by startsAt ascending. Cancelled/no-show lessons are included
+  // (the UI shows them with their status).
+  lessons: z.array(CoachBatchLessonSchema),
+});
+export type CoachBatchDetail = z.infer<typeof CoachBatchDetailSchema>;
 
 export const AvailabilityPreviewQuerySchema = z.object({
   from: DateStringSchema,

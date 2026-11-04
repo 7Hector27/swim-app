@@ -85,6 +85,11 @@ export interface LessonEmailPayload {
   declineReason: string | null;
   // booking_requested only. Null for everything else.
   expiresAtLocalDisplay: string | null;
+  // Whole-hour difference between the lesson start and the pending request's
+  // expiresAt, snapshotted from availability_config.bookingMinAdvanceHours at
+  // booking time. Non-null for booking_requested + request_expired, which
+  // mention this value in body copy. Null for events that don't reference it.
+  expiryHoursBeforeStart: number | null;
   // Who initiated the lesson itself (not who caused the current state
   // transition — that's `actorRole`). Set for `lesson_confirmed`: 'parent'
   // when a parent booked, 'coach' when a coach booked (ADR 029). The

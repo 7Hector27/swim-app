@@ -78,6 +78,12 @@ export interface EnqueueCoachNotificationInput {
   // reminder cron pass to shift the first attempt earlier when the normal
   // time would fall inside quiet hours.
   pushNextAttemptAt?: Date;
+  // For category='booking_request' with batchId: true when every lesson in
+  // the batch was auto-approved (pendingCount === 0). Routes the click
+  // target to the batch detail page instead of the dashboard's requests
+  // card. Pending batches (at least one lesson awaiting approval) keep the
+  // dashboard link so the coach can review from the existing card.
+  allAutoApproved?: boolean;
 }
 
 export interface EnqueueCoachNotificationResult {
@@ -129,9 +135,14 @@ export async function enqueueCoachNotification(
     } else if (input.batchId) {
       const built = await buildBatchBookingPayload(tx, input.batchId);
       payload = built.payload;
-      // Batch requests land on the dashboard with that batch's grouped
-      // card auto-expanded (BookingRequestsCard reads ?batch=…).
-      clickUrl = `${siteUrl}/dashboard?batch=${input.batchId}`;
+      // Pending batches land on the dashboard with that batch's grouped
+      // card auto-expanded (BookingRequestsCard reads ?batch=…) so the
+      // coach can approve/decline each lesson. Fully auto-approved
+      // batches have nothing to review there, so they go straight to the
+      // batch detail page instead.
+      clickUrl = input.allAutoApproved
+        ? `${siteUrl}/coach/batches/${input.batchId}`
+        : `${siteUrl}/dashboard?batch=${input.batchId}`;
       tag = `batch:${input.batchId}`;
       urgency = built.earliestStartsAt ? computeUrgency(built.earliestStartsAt) : "standard";
       batchIdForRow = input.batchId;

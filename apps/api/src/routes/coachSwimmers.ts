@@ -10,6 +10,7 @@ import {
   leagueRegistrations,
   lessonLocations,
   lessonSwimmers,
+  lessons,
   meetSwims,
   meets,
   profiles,
@@ -17,6 +18,7 @@ import {
   swimmers,
   swimmerClubs,
 } from "../db/schema";
+import { nowUtc } from "../lib/clock";
 import { validate } from "../middleware/validate";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { isActiveSwimmer } from "../db/queries";
@@ -94,6 +96,44 @@ function mapClub(club: SwimmerClubRow): CoachSwimmer["clubs"][number] {
   };
 }
 
+// Per-swimmer most recent lesson that has already started and wasn't
+// cancelled or marked a no-show. One SQL round-trip via DISTINCT ON —
+// never a loop of per-row queries. Returns a map so callers can zip it
+// into the per-swimmer response without a second scan.
+async function fetchLastLessonsForSwimmers(
+  swimmerIds: string[],
+  now: Date,
+): Promise<Map<string, { id: string; startsAt: Date }>> {
+  const out = new Map<string, { id: string; startsAt: Date }>();
+  if (swimmerIds.length === 0) return out;
+  const rows = await db.execute<{
+    swimmer_id: string;
+    lesson_id: string;
+    starts_at: Date;
+  }>(sql`
+    SELECT DISTINCT ON (${lessonSwimmers.swimmerId})
+      ${lessonSwimmers.swimmerId} AS swimmer_id,
+      ${lessons.id} AS lesson_id,
+      ${lessons.startsAt} AS starts_at
+    FROM ${lessonSwimmers}
+    INNER JOIN ${lessons} ON ${lessons.id} = ${lessonSwimmers.lessonId}
+    WHERE ${lessonSwimmers.swimmerId} IN (${sql.join(
+      swimmerIds.map((id) => sql`${id}::uuid`),
+      sql`, `,
+    )})
+      AND ${lessons.startsAt} <= ${now.toISOString()}::timestamptz
+      AND ${lessons.status} NOT IN ('canceled', 'no_show')
+    ORDER BY ${lessonSwimmers.swimmerId}, ${lessons.startsAt} DESC
+  `);
+  for (const row of rows) {
+    out.set(row.swimmer_id, {
+      id: row.lesson_id,
+      startsAt: row.starts_at instanceof Date ? row.starts_at : new Date(row.starts_at),
+    });
+  }
+  return out;
+}
+
 function activeRegsWhere(swimmerIds: string[]) {
   const today = todayLA();
   const clubYear = currentSeasonStartYear("club", today);
@@ -134,7 +174,7 @@ coachSwimmersRouter.get(
     const swimmerIds = swimmerRows.map((row) => row.id);
     const householdIds = [...new Set(swimmerRows.map((row) => row.householdId))];
 
-    const [clubRows, regRows, memberRows] = await Promise.all([
+    const [clubRows, regRows, memberRows, lastLessonBySwimmer] = await Promise.all([
       db
         .select({
           id: swimmerClubs.id,
@@ -157,6 +197,7 @@ coachSwimmersRouter.get(
         .from(householdMembers)
         .innerJoin(profiles, eq(profiles.id, householdMembers.profileId))
         .where(inArray(householdMembers.householdId, householdIds)),
+      fetchLastLessonsForSwimmers(swimmerIds, nowUtc()),
     ]);
 
     const clubsBySwimmer = new Map<string, SwimmerClubRow[]>();
@@ -181,19 +222,23 @@ coachSwimmersRouter.get(
     }
 
     const today = todayLA();
-    const result: CoachSwimmer[] = swimmerRows.map((swimmer) => ({
-      id: swimmer.id,
-      firstName: swimmer.firstName,
-      lastName: swimmer.lastName,
-      age: calculateAge(swimmer.birthDate, today),
-      sex: swimmer.sex,
-      isPublic: swimmer.isPublic,
-      createdAt: toISO(swimmer.createdAt),
-      updatedAt: toISO(swimmer.updatedAt),
-      clubs: (clubsBySwimmer.get(swimmer.id) ?? []).map(mapClub),
-      currentLeagues: leaguesBySwimmer.get(swimmer.id) ?? [],
-      memberNames: memberNamesByHousehold.get(swimmer.householdId) ?? [],
-    }));
+    const result: CoachSwimmer[] = swimmerRows.map((swimmer) => {
+      const last = lastLessonBySwimmer.get(swimmer.id);
+      return {
+        id: swimmer.id,
+        firstName: swimmer.firstName,
+        lastName: swimmer.lastName,
+        age: calculateAge(swimmer.birthDate, today),
+        sex: swimmer.sex,
+        isPublic: swimmer.isPublic,
+        createdAt: toISO(swimmer.createdAt),
+        updatedAt: toISO(swimmer.updatedAt),
+        clubs: (clubsBySwimmer.get(swimmer.id) ?? []).map(mapClub),
+        currentLeagues: leaguesBySwimmer.get(swimmer.id) ?? [],
+        memberNames: memberNamesByHousehold.get(swimmer.householdId) ?? [],
+        lastLesson: last ? { id: last.id, startsAt: toISO(last.startsAt) } : null,
+      };
+    });
 
     res.json(result);
   }),
@@ -217,47 +262,50 @@ coachSwimmersRouter.get(
       return;
     }
 
-    const [clubRows, regRows, memberRows, homePoolRows] = await Promise.all([
-      db
-        .select({
-          id: swimmerClubs.id,
-          swimmerId: swimmerClubs.swimmerId,
-          clubId: swimmerClubs.clubId,
-          clubName: clubs.name,
-          otherClubName: swimmerClubs.otherClubName,
-          createdAt: swimmerClubs.createdAt,
-          updatedAt: swimmerClubs.updatedAt,
-        })
-        .from(swimmerClubs)
-        .leftJoin(clubs, eq(swimmerClubs.clubId, clubs.id))
-        .where(eq(swimmerClubs.swimmerId, swimmerId)),
-      db
-        .select({ swimmerId: leagueRegistrations.swimmerId, league: leagueRegistrations.league })
-        .from(leagueRegistrations)
-        .where(activeRegsWhere([swimmerId])),
-      db
-        .select({ fullName: profiles.fullName, phone: profiles.phone })
-        .from(householdMembers)
-        .innerJoin(profiles, eq(profiles.id, householdMembers.profileId))
-        .where(eq(householdMembers.householdId, swimmer.householdId)),
-      db
-        .select({
-          address: lessonLocations.address,
-          city: lessonLocations.city,
-          state: lessonLocations.state,
-          zip: lessonLocations.zip,
-        })
-        .from(lessonLocations)
-        .where(
-          and(
-            eq(lessonLocations.householdId, swimmer.householdId),
-            eq(lessonLocations.isActive, true),
-          ),
-        )
-        .limit(1),
-    ]);
+    const [clubRows, regRows, memberRows, homePoolRows, lastLessonBySwimmer] =
+      await Promise.all([
+        db
+          .select({
+            id: swimmerClubs.id,
+            swimmerId: swimmerClubs.swimmerId,
+            clubId: swimmerClubs.clubId,
+            clubName: clubs.name,
+            otherClubName: swimmerClubs.otherClubName,
+            createdAt: swimmerClubs.createdAt,
+            updatedAt: swimmerClubs.updatedAt,
+          })
+          .from(swimmerClubs)
+          .leftJoin(clubs, eq(swimmerClubs.clubId, clubs.id))
+          .where(eq(swimmerClubs.swimmerId, swimmerId)),
+        db
+          .select({ swimmerId: leagueRegistrations.swimmerId, league: leagueRegistrations.league })
+          .from(leagueRegistrations)
+          .where(activeRegsWhere([swimmerId])),
+        db
+          .select({ fullName: profiles.fullName, phone: profiles.phone })
+          .from(householdMembers)
+          .innerJoin(profiles, eq(profiles.id, householdMembers.profileId))
+          .where(eq(householdMembers.householdId, swimmer.householdId)),
+        db
+          .select({
+            address: lessonLocations.address,
+            city: lessonLocations.city,
+            state: lessonLocations.state,
+            zip: lessonLocations.zip,
+          })
+          .from(lessonLocations)
+          .where(
+            and(
+              eq(lessonLocations.householdId, swimmer.householdId),
+              eq(lessonLocations.isActive, true),
+            ),
+          )
+          .limit(1),
+        fetchLastLessonsForSwimmers([swimmerId], nowUtc()),
+      ]);
 
     const homePool = homePoolRows[0] ?? null;
+    const lastLessonRaw = lastLessonBySwimmer.get(swimmerId);
 
     const result: CoachSwimmerDetail = {
       id: swimmer.id,
@@ -277,6 +325,9 @@ coachSwimmersRouter.get(
         .map((member) => member.fullName)
         .filter((name): name is string => name !== null),
       homePool,
+      lastLesson: lastLessonRaw
+        ? { id: lastLessonRaw.id, startsAt: toISO(lastLessonRaw.startsAt) }
+        : null,
     };
 
     res.json(result);
