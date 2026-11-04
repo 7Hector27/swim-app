@@ -7,7 +7,12 @@ vi.mock("@/components/AddNoteForm", () => ({ default: () => null }));
 vi.mock("@/content/EvaluateContent/actions", () => ({
   submitEvaluation: vi.fn(),
   saveDraft: vi.fn(),
-  deleteDraft: vi.fn(),
+  // deleteDraft returns a { ok: true } | { ok: false; status } result and
+  // callers read `.ok`. A bare vi.fn() resolves to undefined and crashes the
+  // Start-fresh handler with an unhandled rejection — the pre-push hook
+  // treats that as a failure. Give it an ok default; tests that need the
+  // failure branch override with mockResolvedValueOnce.
+  deleteDraft: vi.fn().mockResolvedValue({ ok: true }),
   fetchDependencyMapAction: vi.fn().mockResolvedValue({ ok: false }),
   fetchServerDraftsAction: vi.fn().mockResolvedValue([]),
   deleteSessionAction: vi.fn().mockResolvedValue({ ok: true }),
