@@ -1,5 +1,7 @@
 import { ParentSwimmerSchema, type ParentSwimmer } from "@swim-app/shared";
 
+import { loadError, loadOk, type LoadResult } from "@/lib/loadResult";
+
 type FetchSwimmerResult =
   | { ok: true; swimmer: ParentSwimmer }
   | { ok: false; status: number };
@@ -22,20 +24,22 @@ export async function fetchSwimmer(
   }
 }
 
-export async function fetchSwimmers(accessToken: string): Promise<ParentSwimmer[]> {
+export async function fetchSwimmers(
+  accessToken: string,
+): Promise<LoadResult<ParentSwimmer[]>> {
   try {
     const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/swimmers/me`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
-    if (!response.ok) return [];
+    if (!response.ok) return loadError("server");
     const body: unknown = await response.json();
     const parsed = ParentSwimmerSchema.array().safeParse(body);
     if (!parsed.success) {
       console.warn("fetchSwimmers: 200 response did not match ParentSwimmerSchema");
-      return [];
+      return loadError("schema");
     }
-    return parsed.data;
+    return loadOk(parsed.data);
   } catch {
-    return [];
+    return loadError("network");
   }
 }

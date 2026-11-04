@@ -119,13 +119,13 @@ function makePastDayItems(): CoachScheduleItem[] {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockFetchSchedule.mockResolvedValue([]);
-  mockFetchWeekSchedule.mockResolvedValue(null);
+  mockFetchSchedule.mockResolvedValue({ ok: true, data: [] });
+  mockFetchWeekSchedule.mockResolvedValue({ ok: false, reason: "server" });
 });
 
 describe("coach schedule past dates", () => {
   it("week view: navigates to a past week and renders a completed lesson linking to its detail page", async () => {
-    mockFetchWeekSchedule.mockResolvedValue(makePastWeekResponse());
+    mockFetchWeekSchedule.mockResolvedValue({ ok: true, data: makePastWeekResponse() });
     const html = await renderToStaticMarkup(
       await CoachScheduleContent({
         accessToken: "tok",
@@ -146,7 +146,7 @@ describe("coach schedule past dates", () => {
   });
 
   it("day view: a past day renders the completed lesson and still links to its detail page", async () => {
-    mockFetchSchedule.mockResolvedValue(makePastDayItems());
+    mockFetchSchedule.mockResolvedValue({ ok: true, data: makePastDayItems() });
     const html = await renderToStaticMarkup(
       await CoachScheduleContent({
         accessToken: "tok",

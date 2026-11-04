@@ -12,6 +12,7 @@ import { requestId } from "./middleware/requestId";
 import { validate } from "./middleware/validate";
 import { asyncHandler } from "./middleware/asyncHandler";
 import { errorHandler } from "./middleware/errorHandler";
+import { failRoutes } from "./middleware/failRoutes";
 import { requireUser } from "./middleware/requireUser";
 import { authEmailLimiter } from "./middleware/authEmailRateLimit";
 import { supabase } from "./lib/supabase";
@@ -75,6 +76,11 @@ export function createApp(logger: Logger) {
       genReqId: (req) => (req as express.Request).requestId,
     }),
   );
+
+  // Local-only fault injection (APP_ENV=local + FAIL_ROUTES). No-op otherwise.
+  // Installed after pinoHttp so req.log is available for the warn, and before
+  // body parsing / auth so we can simulate failures on any route cheaply.
+  app.use(failRoutes(env.failRoutes));
 
   // Ceiling is a full-catalog coach evaluation save
   // (POST /coach/swimmers/:id/sessions). ~132 skills in the catalog;

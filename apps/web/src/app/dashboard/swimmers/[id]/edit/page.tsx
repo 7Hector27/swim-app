@@ -23,7 +23,7 @@ export default async function EditSwimmerPage({ params }: Props) {
   if (auth.profile.role === "coach") redirect(`/coach/swimmers/${id}`);
   if (auth.profile.role !== "parent") redirect("/dashboard");
 
-  const [swimmerResult, household, clubs] = await Promise.all([
+  const [swimmerResult, householdResult, clubsResult] = await Promise.all([
     fetchSwimmer(id, auth.accessToken),
     fetchHousehold(auth.accessToken),
     fetchClubs(auth.accessToken),
@@ -35,13 +35,20 @@ export default async function EditSwimmerPage({ params }: Props) {
     throw new Error(`Failed to load swimmer (status ${swimmerResult.status})`);
   }
 
-  if (!household) redirect("/dashboard");
+  // Write page — every data load here is primary. Household drives the
+  // role check that gates the Save button; clubs drives the dropdown.
+  // Both must load or the form can't be rendered truthfully.
+  if (!householdResult.ok) {
+    throw new Error(`Failed to load household (status ${householdResult.status})`);
+  }
+  if (householdResult.household === null) redirect("/dashboard");
+  if (!clubsResult.ok) throw new Error("Failed to load clubs");
 
   return (
     <EditSwimmerContent
       swimmer={swimmerResult.swimmer}
-      householdRole={household.myRole}
-      clubs={clubs}
+      householdRole={householdResult.household.myRole}
+      clubs={clubsResult.data}
     />
   );
 }

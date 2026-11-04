@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 
 import type { LessonResponse } from "@swim-app/shared";
 
+import InlineError from "@/components/InlineError";
 import {
   approveBatchPendingAction,
   approveLessonAction,
@@ -20,11 +21,14 @@ import styles from "./BookingRequestsCard.module.css";
 // server call succeeds first, so this is purely for the on-screen settle.
 const BATCH_EXIT_MS = 220;
 
+type SectionResult = { ok: true; data: LessonResponse[] } | { ok: false };
+
 interface Props {
   initialLessons: LessonResponse[];
+  initialResult?: SectionResult;
 }
 
-export default function BookingRequestsCard({ initialLessons }: Props) {
+export default function BookingRequestsCard({ initialLessons, initialResult }: Props) {
   const [lessons, setLessons] = useState(initialLessons);
   // `?batch=<id>` deep-links from a coach notification. The matching
   // BatchGroup auto-expands and scrolls itself into view on mount. The
@@ -34,6 +38,17 @@ export default function BookingRequestsCard({ initialLessons }: Props) {
   const focusBatchId = searchParams?.get("batch") ?? null;
 
   const groups = useMemo(() => buildGroups(lessons), [lessons]);
+
+  // Secondary fetch failure — render the error after hooks so React's
+  // rules-of-hooks aren't violated by an early return.
+  if (initialResult && !initialResult.ok) {
+    return (
+      <div className="rounded-card border border-border p-5">
+        <h3 className="text-base font-semibold text-heading mb-2">Booking requests</h3>
+        <InlineError message="Couldn't load booking requests." reloadOnRetry />
+      </div>
+    );
+  }
 
   if (lessons.length === 0) {
     return (

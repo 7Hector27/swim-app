@@ -28,7 +28,7 @@ beforeEach(() => {
     ok: true,
     data: { warnings: [] },
   });
-  mockFetchAvailabilityPreview.mockResolvedValue({ days: [] });
+  mockFetchAvailabilityPreview.mockResolvedValue({ ok: true, data: { days: [] } });
 });
 
 vi.mock("next/navigation", () => ({

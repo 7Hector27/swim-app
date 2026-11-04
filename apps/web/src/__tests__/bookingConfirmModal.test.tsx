@@ -81,3 +81,84 @@ describe("BookingConfirmDialog", () => {
     expect(mockPush).toHaveBeenCalledWith("/dashboard/lessons/lesson-123");
   });
 });
+
+// Generic variant: rendered when the booking succeeded but the follow-up
+// details fetch failed. The parent still gets confirmation so they don't
+// re-submit thinking the booking failed.
+describe("BookingConfirmDialog — generic (details fetch failed)", () => {
+  it("renders 'Your booking request was sent' with no lesson details and no View lesson button", () => {
+    render(<BookingConfirmDialog />);
+    expect(screen.getByText("Your booking request was sent.")).toBeInTheDocument();
+    expect(screen.getByText("Request sent")).toBeInTheDocument();
+    expect(screen.getByTestId("booking-confirm-generic-body")).toBeInTheDocument();
+    // Must not claim Pending/Confirmed — we can't substantiate that.
+    expect(screen.queryByText("Pending")).toBeNull();
+    expect(screen.queryByText("Confirmed")).toBeNull();
+    // Details rows (duration / pool / swimmers) are omitted.
+    expect(screen.queryByText("Sunset Pool")).toBeNull();
+    expect(screen.queryByText("Maya Smith, Kai Smith")).toBeNull();
+    // View lesson is suppressed because we don't want to send them into a
+    // detail page that may still be failing.
+    expect(screen.queryByRole("button", { name: "View lesson", hidden: true })).toBeNull();
+    // Done remains.
+    expect(screen.getByRole("button", { name: "Done", hidden: true })).toBeInTheDocument();
+  });
+
+  it("renders 'Your reschedule request was sent' when movedFrom is set and no lesson", () => {
+    render(<BookingConfirmDialog movedFrom="2026-06-15T18:00:00-07:00" />);
+    expect(screen.getByText("Your reschedule request was sent.")).toBeInTheDocument();
+    expect(screen.getByText("Rescheduled")).toBeInTheDocument();
+    // Must not render the "From/To" detail rows since we have no new startsAt.
+    expect(screen.queryByText("From")).toBeNull();
+    expect(screen.queryByText("To")).toBeNull();
+  });
+
+  it("Done still dismisses in the generic variant", () => {
+    render(<BookingConfirmDialog />);
+    fireEvent.click(screen.getByRole("button", { name: "Done", hidden: true }));
+    expect(HTMLDialogElement.prototype.close).toHaveBeenCalledOnce();
+    expect(mockReplace).toHaveBeenCalledWith("/dashboard");
+  });
+});
+
+// Clearing ?booked= / ?rescheduled= on dismiss matters because without it a
+// refresh would re-trigger the server fetch and re-open the dialog — the
+// parent's expected mental model is "I clicked Done, it's gone."
+describe("BookingConfirmDialog — dismiss clears URL params", () => {
+  it("Done replaces the URL with /dashboard (no query) in the detail variant", () => {
+    render(<BookingConfirmDialog lesson={baseLesson} />);
+    fireEvent.click(screen.getByRole("button", { name: "Done", hidden: true }));
+    expect(mockReplace).toHaveBeenCalledWith("/dashboard");
+    const target = mockReplace.mock.calls[0]?.[0] as string;
+    expect(target).not.toMatch(/[?&]booked=/);
+    expect(target).not.toMatch(/[?&]rescheduled=/);
+    expect(target).not.toMatch(/[?&]from=/);
+  });
+
+  it("Done also clears the ?rescheduled= + ?from= params (reschedule variant)", () => {
+    // The reschedule URL carries two params (rescheduled=<id>&from=<iso>).
+    // Done must drop both so a refresh doesn't re-open the dialog.
+    render(
+      <BookingConfirmDialog
+        lesson={baseLesson}
+        movedFrom="2026-06-15T18:00:00-07:00"
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Done", hidden: true }));
+    expect(mockReplace).toHaveBeenCalledWith("/dashboard");
+    const target = mockReplace.mock.calls[0]?.[0] as string;
+    expect(target).not.toMatch(/rescheduled=/);
+    expect(target).not.toMatch(/from=/);
+  });
+
+  it("Escape (dialog cancel) also clears the params", () => {
+    render(<BookingConfirmDialog lesson={baseLesson} />);
+    const dialog = document.querySelector("dialog");
+    expect(dialog).not.toBeNull();
+    // HTMLDialogElement's native close-on-Escape fires a 'cancel' event; the
+    // component wires dismiss() to that.
+    const cancelEvent = new Event("cancel", { cancelable: true });
+    dialog!.dispatchEvent(cancelEvent);
+    expect(mockReplace).toHaveBeenCalledWith("/dashboard");
+  });
+});

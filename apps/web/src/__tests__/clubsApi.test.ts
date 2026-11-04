@@ -29,33 +29,36 @@ describe("fetchClubs", () => {
   it("returns parsed clubs on 200 with valid body", async () => {
     mockFetch.mockResolvedValue(mockResponse(true, 200, [validClub]));
     const result = await fetchClubs("test-token");
-    expect(result).toHaveLength(1);
-    expect(result[0]?.id).toBe(validClub.id);
-    expect(result[0]?.name).toBe("Sharks");
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data).toHaveLength(1);
+      expect(result.data[0]?.id).toBe(validClub.id);
+      expect(result.data[0]?.name).toBe("Sharks");
+    }
   });
 
-  it("returns empty array on 200 with invalid response shape", async () => {
+  it("returns a schema error on 200 with invalid response shape", async () => {
     mockFetch.mockResolvedValue(mockResponse(true, 200, [{ not: "a club" }]));
     const result = await fetchClubs("test-token");
-    expect(result).toEqual([]);
+    expect(result).toEqual({ ok: false, reason: "schema" });
   });
 
-  it("returns empty array on non-ok status", async () => {
+  it("returns a server error on non-ok status", async () => {
     mockFetch.mockResolvedValue(mockResponse(false, 401, { error: "Unauthorized" }));
     const result = await fetchClubs("test-token");
-    expect(result).toEqual([]);
+    expect(result).toEqual({ ok: false, reason: "server" });
   });
 
-  it("returns empty array on 500", async () => {
+  it("returns a server error on 500", async () => {
     mockFetch.mockResolvedValue(mockResponse(false, 500, { error: "Internal server error" }));
     const result = await fetchClubs("test-token");
-    expect(result).toEqual([]);
+    expect(result).toEqual({ ok: false, reason: "server" });
   });
 
-  it("returns empty array when fetch throws (network error)", async () => {
+  it("returns a network error when fetch throws", async () => {
     mockFetch.mockRejectedValue(new Error("Network failure"));
     const result = await fetchClubs("test-token");
-    expect(result).toEqual([]);
+    expect(result).toEqual({ ok: false, reason: "network" });
   });
 
   it("forwards the access token as a Bearer header", async () => {

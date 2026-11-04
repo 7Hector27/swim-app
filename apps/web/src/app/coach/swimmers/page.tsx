@@ -12,14 +12,18 @@ export default async function CoachSwimmersPage() {
   const auth = await requireAuth();
   if (!auth) return null;
 
-  const swimmers = await fetchCoachSwimmers(auth.accessToken);
+  // Primary — this page IS the swimmer roster. Throw on load failure.
+  const swimmersResult = await fetchCoachSwimmers(auth.accessToken);
+  if (!swimmersResult.ok) {
+    throw new Error(`Failed to load swimmers (${swimmersResult.reason})`);
+  }
 
   return (
     <div className="flex flex-col flex-1">
       <main className="flex-1 px-page py-16">
         <div className="mx-auto max-w-content">
           <h1 className="text-heading mb-6">Swimmers</h1>
-          <CoachRosterContent swimmers={swimmers} />
+          <CoachRosterContent swimmers={swimmersResult.data} />
         </div>
       </main>
     </div>

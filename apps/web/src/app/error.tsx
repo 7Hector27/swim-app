@@ -2,7 +2,7 @@
 
 import Button from "@/components/Button";
 
-export default function GlobalError({
+export default function RouteError({
   reset,
 }: {
   error: Error & { digest?: string };

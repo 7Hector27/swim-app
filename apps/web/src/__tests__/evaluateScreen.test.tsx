@@ -7,7 +7,12 @@ vi.mock("@/components/AddNoteForm", () => ({ default: () => null }));
 vi.mock("@/content/EvaluateContent/actions", () => ({
   submitEvaluation: vi.fn(),
   saveDraft: vi.fn(),
-  deleteDraft: vi.fn(),
+  // deleteDraft returns a { ok: true } | { ok: false; status } result and
+  // callers read `.ok`. A bare vi.fn() resolves to undefined and crashes the
+  // Start-fresh handler with an unhandled rejection — the pre-push hook
+  // treats that as a failure. Give it an ok default; tests that need the
+  // failure branch override with mockResolvedValueOnce.
+  deleteDraft: vi.fn().mockResolvedValue({ ok: true }),
   fetchDependencyMapAction: vi.fn().mockResolvedValue({ ok: false }),
   fetchServerDraftsAction: vi.fn().mockResolvedValue([]),
   deleteSessionAction: vi.fn().mockResolvedValue({ ok: true }),
@@ -991,6 +996,34 @@ describe("EvaluateContent — server draft banner", () => {
     });
   });
 
+  it("shows an error alert when the deleteDraft call fails after 'Start fresh' is confirmed", async () => {
+    // deleteDraft now returns a result; a failure must surface an alert so
+    // the user doesn't believe the draft was discarded when it wasn't.
+    const { deleteDraft: mockDeleteDraft } = await import(
+      "../content/EvaluateContent/actions"
+    );
+    vi.mocked(mockDeleteDraft).mockResolvedValueOnce({ ok: false, status: 500 });
+
+    render(<EvaluateContent swimmer={SWIMMER_DETAIL} screens={TEST_SCREENS} prevGrades={{}} />);
+    const select = screen.getByRole("combobox");
+    fireEvent.change(select, { target: { value: DRAFT_SCREEN } });
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /start fresh/i }));
+    await waitFor(() => {
+      expect(screen.getByText(/delete this draft/i)).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /delete draft/i }));
+
+    const alert = await screen.findByTestId("evaluate-draft-delete-error");
+    expect(alert).toHaveTextContent(/couldn't discard that draft/i);
+    expect(mockDeleteDraft).toHaveBeenCalled();
+  });
+
   it("debounced server save is scheduled after draft changes", async () => {
     // The global setup pins Date via useFakeTimers({ toFake: ["Date"] }), so
     // reset to real first — a second useFakeTimers() while fake-Date is
@@ -1001,7 +1034,7 @@ describe("EvaluateContent — server draft banner", () => {
 
     const { saveDraft: mockSaveDraft, deleteDraft: mockDeleteDraft } = await import("../content/EvaluateContent/actions");
     vi.mocked(mockSaveDraft).mockResolvedValue({ status: "saved", id: "new-draft-id" });
-    vi.mocked(mockDeleteDraft).mockResolvedValue(undefined);
+    vi.mocked(mockDeleteDraft).mockResolvedValue({ ok: true });
 
     mockFetch.mockImplementation((url: string) => {
       if (typeof url === "string" && url.includes("/drafts")) {

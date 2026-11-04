@@ -19,10 +19,20 @@ interface Props {
 }
 
 export default async function CoachScheduleContent({ accessToken, date, view, today }: Props) {
-  const [dayItems, weekResponse] = await Promise.all([
-    view === "day" ? fetchCoachSchedule(accessToken, date) : Promise.resolve([]),
+  const [dayResult, weekResult] = await Promise.all([
+    view === "day" ? fetchCoachSchedule(accessToken, date) : Promise.resolve(null),
     view === "week" ? fetchCoachWeekSchedule(accessToken, date) : Promise.resolve(null),
   ]);
+
+  // Primary — the schedule view is the coach's main data. If the fetch for
+  // the current view fails, throw so the route error boundary renders.
+  if (view === "day" && dayResult !== null && !dayResult.ok) {
+    throw new Error(`Failed to load schedule (${dayResult.reason})`);
+  }
+  if (view === "week" && weekResult !== null && !weekResult.ok) {
+    throw new Error(`Failed to load schedule (${weekResult.reason})`);
+  }
+  const dayItems: CoachScheduleItem[] = dayResult !== null && dayResult.ok ? dayResult.data : [];
 
   const weekMonday = view === "week" ? date : mondayOf(date);
   const prevDay = addDays(date, -1);
@@ -31,9 +41,10 @@ export default async function CoachScheduleContent({ accessToken, date, view, to
   const nextWeekMonday = addDays(weekMonday, 7);
   const todayMonday = mondayOf(today);
 
-  const weekDays: CoachWeekScheduleDay[] = weekResponse
-    ? weekResponse.days
-    : weekDates(weekMonday).map((d) => ({ date: d, items: [] }));
+  const weekDays: CoachWeekScheduleDay[] =
+    weekResult !== null && weekResult.ok
+      ? weekResult.data.days
+      : weekDates(weekMonday).map((d) => ({ date: d, items: [] }));
 
   return (
     <div className="flex flex-col flex-1 bg-background">

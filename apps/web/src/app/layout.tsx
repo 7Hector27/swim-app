@@ -64,8 +64,18 @@ export default async function RootLayout({
 
   let isViewer = false;
   if (meResult.ok && meResult.profile.role === "parent") {
-    const household = await fetchHousehold(meResult.accessToken);
-    isViewer = household?.myRole === "viewer";
+    const householdResult = await fetchHousehold(meResult.accessToken);
+    // Nav uses isViewer to hide the Book link. Treat any state we can't
+    // confirm as viewer (hide the link) — load failure, no household yet,
+    // or an actual viewer role. Same fail-safe rule as the dashboard and
+    // lesson-detail pages. The API still enforces the booking route
+    // server-side if someone navigates there directly.
+    isViewer = !(
+      householdResult.ok &&
+      householdResult.household !== null &&
+      (householdResult.household.myRole === "owner" ||
+        householdResult.household.myRole === "manager")
+    );
   }
 
   const showsTabBar = isSignedIn && (role === "parent" || role === "coach");

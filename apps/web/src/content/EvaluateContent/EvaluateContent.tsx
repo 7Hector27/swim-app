@@ -156,6 +156,10 @@ export default function EvaluateContent({
   const [serverDraftsBySlug, setServerDraftsBySlug] = useState<Map<string, import("@swim-app/shared").EvaluationDraft>>(new Map());
   const [bannerDraft, setBannerDraft] = useState<import("@swim-app/shared").EvaluationDraft | null>(null);
   const [showBannerConfirm, setShowBannerConfirm] = useState(false);
+  // Surfaces a deleteDraft() failure to the coach. Without this, a failed
+  // delete leaves the draft in the list on next reload — the coach starts a
+  // second evaluation on the same swimmer thinking the first was discarded.
+  const [draftDeleteError, setDraftDeleteError] = useState<string | null>(null);
   const serverDraftsFetchedRef = useRef(false);
   // Debounced server save
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -358,7 +362,17 @@ export default function EvaluateContent({
         // ignore
       }
       if (serverDraftId) {
-        deleteDraft(serverDraftId).catch(() => null);
+        // Post-save cleanup. If the delete fails the submitted session is
+        // still in the API; the lingering draft would reappear next visit
+        // and look like unsaved work. Surface the failure so Jason can act.
+        void (async () => {
+          const result = await deleteDraft(serverDraftId);
+          if (!result.ok) {
+            setDraftDeleteError(
+              "The session saved, but the draft couldn't be removed. Discard it manually.",
+            );
+          }
+        })();
       }
     }
   // serverDraftId intentionally excluded — we only want to delete once on the saved event
@@ -534,11 +548,17 @@ export default function EvaluateContent({
     setActiveSectionIndex(0);
   }
 
-  function handleStartFreshConfirmed() {
+  async function handleStartFreshConfirmed() {
     if (!bannerDraft) return;
-    void Promise.resolve(deleteDraft(bannerDraft.id)).catch(() => null);
+    const draftId = bannerDraft.id;
     setBannerDraft(null);
     setShowBannerConfirm(false);
+    const result = await deleteDraft(draftId);
+    if (!result.ok) {
+      setDraftDeleteError(
+        "Couldn't discard that draft. Try again from the swimmer page.",
+      );
+    }
   }
 
   function patchSkill(key: string, patch: Partial<SkillDraft>) {
@@ -950,6 +970,25 @@ export default function EvaluateContent({
                   ))}
                 </ul>
               )}
+            </div>
+          )}
+
+          {draftDeleteError !== null && (
+            <div
+              role="alert"
+              data-testid="evaluate-draft-delete-error"
+              className="flex items-start justify-between gap-3 text-sm"
+              style={{ color: "var(--color-danger)" }}
+            >
+              <span>{draftDeleteError}</span>
+              <button
+                type="button"
+                onClick={() => setDraftDeleteError(null)}
+                className="font-semibold underline min-h-[36px] px-1"
+                style={{ color: "var(--color-danger)" }}
+              >
+                Dismiss
+              </button>
             </div>
           )}
 

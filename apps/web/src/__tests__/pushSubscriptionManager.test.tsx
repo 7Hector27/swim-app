@@ -217,4 +217,81 @@ describe("PushSubscriptionManager", () => {
       ).toBeInTheDocument(),
     );
   });
+
+  // The audit's bug: a failed /coach/push/subscriptions fetch used to leave
+  // subscriptions=[] and loadingList=false, so the UI showed "Notifications
+  // are off on this account" — identical to a legitimately unsubscribed
+  // account. Now the failure flips a `listError` flag that renders InlineError
+  // with retry instead, so a coach never thinks their alerts are silently off.
+  it("shows an error with retry (not 'Notifications are off') when refresh fails after permission is granted", async () => {
+    stubNavigator({
+      serviceWorker: {} as unknown as ServiceWorkerContainer,
+      userAgent: "Mozilla/5.0 (Windows NT 10.0)",
+    });
+    stubWindow("granted", true);
+    mockFetchSubs.mockResolvedValueOnce({ ok: false, status: 500 });
+
+    render(<PushSubscriptionManager vapidPublicKey={VAPID} />);
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/couldn't load your devices/i);
+    expect(
+      screen.queryByText(/Notifications are off on this account/i),
+    ).toBeNull();
+    const retry = screen.getByRole("button", { name: /try again/i });
+    expect(retry).toBeInTheDocument();
+  });
+
+  it("retry button re-runs the fetch and renders the devices list on success", async () => {
+    stubNavigator({
+      serviceWorker: {} as unknown as ServiceWorkerContainer,
+      userAgent: "Mozilla/5.0 (Windows NT 10.0)",
+    });
+    stubWindow("granted", true);
+    // First load fails; the retry call succeeds with one device.
+    mockFetchSubs
+      .mockResolvedValueOnce({ ok: false, status: 500 })
+      .mockResolvedValueOnce({
+        ok: true,
+        data: {
+          items: [
+            {
+              id: "sub-1",
+              userAgent: "Mozilla/5.0 (Windows NT 10.0)",
+              createdAt: "2026-06-01T00:00:00.000Z",
+              lastDeliveryAt: null,
+            },
+          ],
+        },
+      });
+
+    render(<PushSubscriptionManager vapidPublicKey={VAPID} />);
+
+    const retry = await screen.findByRole("button", { name: /try again/i });
+    fireEvent.click(retry);
+
+    await waitFor(() => {
+      expect(screen.queryByRole("alert")).toBeNull();
+    });
+    // Device row rendered from the second fetch.
+    expect(screen.getByRole("button", { name: /^remove$/i })).toBeInTheDocument();
+  });
+
+  it("empty (but ok) response renders 'Notifications are off', not an error", async () => {
+    stubNavigator({
+      serviceWorker: {} as unknown as ServiceWorkerContainer,
+      userAgent: "Mozilla/5.0 (Windows NT 10.0)",
+    });
+    stubWindow("granted", true);
+    mockFetchSubs.mockResolvedValue({ ok: true, data: { items: [] } });
+
+    render(<PushSubscriptionManager vapidPublicKey={VAPID} />);
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/Notifications are off on this account/i),
+      ).toBeInTheDocument();
+    });
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
 });

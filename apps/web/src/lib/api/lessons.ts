@@ -27,22 +27,26 @@ import {
   type WeekAvailabilityResponse,
 } from "@swim-app/shared";
 
-export async function fetchLocations(accessToken: string): Promise<LessonLocation[]> {
+import { loadError, loadOk, type LoadResult } from "@/lib/loadResult";
+
+export type { UpcomingLessonsResponse };
+
+export async function fetchLocations(accessToken: string): Promise<LoadResult<LessonLocation[]>> {
   try {
     const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/locations`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
-    if (!response.ok) return [];
+    if (!response.ok) return loadError("server");
     const body: unknown = await response.json();
     const parsed = LessonLocationSchema.array().safeParse(body);
     if (!parsed.success) {
       const detail = parsed.error.issues.map((issue) => `${issue.path.join(".")} (${issue.message})`).join("; ");
       console.warn(`fetchLocations: response shape mismatch — ${detail}`);
-      return [];
+      return loadError("schema");
     }
-    return parsed.data;
+    return loadOk(parsed.data);
   } catch {
-    return [];
+    return loadError("network");
   }
 }
 
@@ -76,7 +80,9 @@ export async function fetchAvailableSlots(
   }
 }
 
-export async function coachGetPendingLessons(accessToken: string): Promise<LessonResponse[]> {
+export async function coachGetPendingLessons(
+  accessToken: string,
+): Promise<LoadResult<LessonResponse[]>> {
   try {
     const response = await fetch(
       `${process.env.NEXT_PUBLIC_API_URL}/coach/lessons?status=pending`,
@@ -84,24 +90,24 @@ export async function coachGetPendingLessons(accessToken: string): Promise<Lesso
         headers: { Authorization: `Bearer ${accessToken}` },
       },
     );
-    if (!response.ok) return [];
+    if (!response.ok) return loadError("server");
     const body: unknown = await response.json();
     const parsed = LessonResponseSchema.array().safeParse(body);
     if (!parsed.success) {
       const detail = parsed.error.issues.map((issue) => `${issue.path.join(".")} (${issue.message})`).join("; ");
       console.warn(`coachGetPendingLessons: response shape mismatch — ${detail}`);
-      return [];
+      return loadError("schema");
     }
-    return parsed.data;
+    return loadOk(parsed.data);
   } catch {
-    return [];
+    return loadError("network");
   }
 }
 
 export async function fetchCoachSchedule(
   accessToken: string,
   date: string,
-): Promise<CoachScheduleItem[]> {
+): Promise<LoadResult<CoachScheduleItem[]>> {
   try {
     const response = await fetch(
       `${process.env.NEXT_PUBLIC_API_URL}/coach/schedule?date=${date}`,
@@ -110,24 +116,24 @@ export async function fetchCoachSchedule(
         cache: "no-store",
       },
     );
-    if (!response.ok) return [];
+    if (!response.ok) return loadError("server");
     const body: unknown = await response.json();
     const parsed = CoachScheduleItemSchema.array().safeParse(body);
     if (!parsed.success) {
       const detail = parsed.error.issues.map((issue) => `${issue.path.join(".")} (${issue.message})`).join("; ");
       console.warn(`fetchCoachSchedule: response shape mismatch — ${detail}`);
-      return [];
+      return loadError("schema");
     }
-    return parsed.data;
+    return loadOk(parsed.data);
   } catch {
-    return [];
+    return loadError("network");
   }
 }
 
 export async function fetchCoachWeekSchedule(
   accessToken: string,
   startDate: string,
-): Promise<CoachWeekScheduleResponse | null> {
+): Promise<LoadResult<CoachWeekScheduleResponse>> {
   try {
     const response = await fetch(
       `${process.env.NEXT_PUBLIC_API_URL}/coach/schedule/week?startDate=${startDate}`,
@@ -136,107 +142,120 @@ export async function fetchCoachWeekSchedule(
         cache: "no-store",
       },
     );
-    if (!response.ok) return null;
+    if (!response.ok) return loadError("server");
     const body: unknown = await response.json();
     const parsed = CoachWeekScheduleResponseSchema.safeParse(body);
     if (!parsed.success) {
       console.warn("fetchCoachWeekSchedule: response shape mismatch");
-      return null;
+      return loadError("schema");
     }
-    return parsed.data;
+    return loadOk(parsed.data);
   } catch {
-    return null;
+    return loadError("network");
   }
 }
+
+export type FetchCoachLessonResult =
+  | { ok: true; lesson: CoachLessonDetail }
+  | { ok: false; status: number };
 
 export async function fetchCoachLesson(
   accessToken: string,
   lessonId: string,
-): Promise<CoachLessonDetail | null> {
+): Promise<FetchCoachLessonResult> {
   try {
     const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/coach/lessons/${lessonId}`, {
       headers: { Authorization: `Bearer ${accessToken}` },
       cache: "no-store",
     });
-    if (!response.ok) return null;
+    if (!response.ok) return { ok: false, status: response.status };
     const body: unknown = await response.json();
     const parsed = CoachLessonDetailSchema.safeParse(body);
     if (!parsed.success) {
       const detail = parsed.error.issues.map((issue) => `${issue.path.join(".")} (${issue.message})`).join("; ");
       console.warn(`fetchCoachLesson: response shape mismatch — ${detail}`);
-      return null;
+      return { ok: false, status: 500 };
     }
-    return parsed.data;
+    return { ok: true, lesson: parsed.data };
   } catch {
-    return null;
+    return { ok: false, status: 500 };
   }
 }
+
+export type FetchCoachBatchResult =
+  | { ok: true; batch: CoachBatchDetail }
+  | { ok: false; status: number };
 
 export async function fetchCoachBatch(
   accessToken: string,
   batchId: string,
-): Promise<CoachBatchDetail | null> {
+): Promise<FetchCoachBatchResult> {
   try {
     const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/coach/batches/${batchId}`, {
       headers: { Authorization: `Bearer ${accessToken}` },
       cache: "no-store",
     });
-    if (!response.ok) return null;
+    if (!response.ok) return { ok: false, status: response.status };
     const body: unknown = await response.json();
     const parsed = CoachBatchDetailSchema.safeParse(body);
     if (!parsed.success) {
       const detail = parsed.error.issues.map((issue) => `${issue.path.join(".")} (${issue.message})`).join("; ");
       console.warn(`fetchCoachBatch: response shape mismatch — ${detail}`);
-      return null;
+      return { ok: false, status: 500 };
     }
-    return parsed.data;
+    return { ok: true, batch: parsed.data };
   } catch {
-    return null;
+    return { ok: false, status: 500 };
   }
 }
 
 export async function fetchLessonNotes(
   accessToken: string,
   lessonId: string,
-): Promise<CoachNoteResponse[]> {
+): Promise<LoadResult<CoachNoteResponse[]>> {
   try {
     const response = await fetch(
       `${process.env.NEXT_PUBLIC_API_URL}/coach/lessons/${lessonId}/notes`,
       { headers: { Authorization: `Bearer ${accessToken}` }, cache: "no-store" },
     );
-    if (!response.ok) return [];
+    if (!response.ok) return loadError("server");
     const body: unknown = await response.json();
     const parsed = CoachNoteResponseSchema.array().safeParse(body);
-    return parsed.success ? parsed.data : [];
+    if (!parsed.success) {
+      const detail = parsed.error.issues.map((issue) => `${issue.path.join(".")} (${issue.message})`).join("; ");
+      console.warn(`fetchLessonNotes: response shape mismatch — ${detail}`);
+      return loadError("schema");
+    }
+    return loadOk(parsed.data);
   } catch {
-    return [];
+    return loadError("network");
   }
 }
 
-export async function fetchCoachStats(accessToken: string): Promise<CoachStats | null> {
+export async function fetchCoachStats(accessToken: string): Promise<LoadResult<CoachStats>> {
   try {
     const response = await fetch(
       `${process.env.NEXT_PUBLIC_API_URL}/coach/stats`,
       { headers: { Authorization: `Bearer ${accessToken}` }, cache: "no-store" },
     );
-    if (!response.ok) return null;
+    if (!response.ok) return loadError("server");
     const body: unknown = await response.json();
     const parsed = CoachStatsSchema.safeParse(body);
     if (!parsed.success) {
       const detail = parsed.error.issues.map((issue) => `${issue.path.join(".")} (${issue.message})`).join("; ");
       console.warn(`fetchCoachStats: response shape mismatch — ${detail}`);
-      return null;
+      return loadError("schema");
     }
-    return parsed.data;
+    return loadOk(parsed.data);
   } catch {
-    return null;
+    return loadError("network");
   }
 }
 
 export async function fetchUpcomingLessons(
   accessToken: string,
   params?: { limit?: number; offset?: number },
-): Promise<UpcomingLessonsResponse | null> {
+): Promise<LoadResult<UpcomingLessonsResponse>> {
   try {
     const searchParams = new URLSearchParams();
     if (params?.limit !== undefined) searchParams.set("limit", String(params.limit));
@@ -250,107 +269,92 @@ export async function fetchUpcomingLessons(
       },
     );
     if (!response.ok) {
-      console.error(`fetchUpcomingLessons: non-2xx response — ${response.status}`);
-      return null;
+      console.warn(`fetchUpcomingLessons: non-2xx response — ${response.status}`);
+      return loadError("server");
     }
     const body: unknown = await response.json();
     const parsed = UpcomingLessonsResponseSchema.safeParse(body);
     if (!parsed.success) {
       const detail = parsed.error.issues.map((issue) => `${issue.path.join(".")} (${issue.message})`).join("; ");
-      console.error(`fetchUpcomingLessons: response shape mismatch — ${detail}`);
-      return null;
+      console.warn(`fetchUpcomingLessons: response shape mismatch — ${detail}`);
+      return loadError("schema");
     }
-    return parsed.data;
+    return loadOk(parsed.data);
   } catch (error) {
-    console.error("fetchUpcomingLessons: network error —", error);
-    return null;
+    console.warn("fetchUpcomingLessons: network error —", error);
+    return loadError("network");
   }
 }
 
 export async function fetchBatchCancelableLessons(
   accessToken: string,
   batchId: string,
-): Promise<UpcomingLesson[] | null> {
+): Promise<LoadResult<UpcomingLesson[]>> {
   try {
     const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/lessons/batch/${batchId}`, {
       headers: { Authorization: `Bearer ${accessToken}` },
       cache: "no-store",
     });
-    if (!response.ok) return null;
+    if (!response.ok) return loadError("server");
     const body: unknown = await response.json();
     const parsed = UpcomingLessonSchema.array().safeParse(body);
     if (!parsed.success) {
       const detail = parsed.error.issues.map((issue) => `${issue.path.join(".")} (${issue.message})`).join("; ");
       console.warn(`fetchBatchCancelableLessons: response shape mismatch — ${detail}`);
-      return null;
+      return loadError("schema");
     }
-    return parsed.data;
+    return loadOk(parsed.data);
   } catch {
-    return null;
+    return loadError("network");
   }
 }
 
-export async function fetchLesson(accessToken: string, lessonId: string): Promise<UpcomingLesson | null> {
+export type FetchLessonResult =
+  | { ok: true; lesson: UpcomingLesson }
+  | { ok: false; status: number };
+
+export async function fetchLesson(
+  accessToken: string,
+  lessonId: string,
+): Promise<FetchLessonResult> {
   try {
     const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/lessons/${lessonId}`, {
       headers: { Authorization: `Bearer ${accessToken}` },
       cache: "no-store",
     });
-    if (!response.ok) return null;
+    if (!response.ok) return { ok: false, status: response.status };
     const body: unknown = await response.json();
     const parsed = UpcomingLessonSchema.safeParse(body);
     if (!parsed.success) {
       const detail = parsed.error.issues.map((issue) => `${issue.path.join(".")} (${issue.message})`).join("; ");
       console.warn(`fetchLesson: response shape mismatch — ${detail}`);
-      return null;
+      return { ok: false, status: 500 };
     }
-    return parsed.data;
+    return { ok: true, lesson: parsed.data };
   } catch {
-    return null;
+    return { ok: false, status: 500 };
   }
 }
 
-export async function fetchPastLessons(accessToken: string): Promise<UpcomingLesson[]> {
+export async function fetchPastLessons(
+  accessToken: string,
+): Promise<LoadResult<UpcomingLesson[]>> {
   try {
     const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/lessons?filter=past`, {
       headers: { Authorization: `Bearer ${accessToken}` },
       cache: "no-store",
     });
-    if (!response.ok) return [];
+    if (!response.ok) return loadError("server");
     const body: unknown = await response.json();
     const parsed = UpcomingLessonsResponseSchema.safeParse(body);
     if (!parsed.success) {
       const detail = parsed.error.issues.map((issue) => `${issue.path.join(".")} (${issue.message})`).join("; ");
       console.warn(`fetchPastLessons: response shape mismatch — ${detail}`);
-      return [];
+      return loadError("schema");
     }
-    return parsed.data.items;
+    return loadOk(parsed.data.items);
   } catch {
-    return [];
-  }
-}
-
-export async function fetchPastLessonsResult(
-  accessToken: string,
-): Promise<UpcomingLesson[] | null> {
-  try {
-    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/lessons?filter=past`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-      cache: "no-store",
-    });
-    if (!response.ok) return null;
-    const body: unknown = await response.json();
-    const parsed = UpcomingLessonsResponseSchema.safeParse(body);
-    if (!parsed.success) {
-      const detail = parsed.error.issues
-        .map((issue) => `${issue.path.join(".")} (${issue.message})`)
-        .join("; ");
-      console.warn(`fetchPastLessonsResult: response shape mismatch — ${detail}`);
-      return null;
-    }
-    return parsed.data.items;
-  } catch {
-    return null;
+    return loadError("network");
   }
 }
 

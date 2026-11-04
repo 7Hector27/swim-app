@@ -7,6 +7,7 @@ import type {
 } from "@swim-app/shared";
 import CategoryTrendsGrid from "@/components/CategoryTrendsGrid";
 import CollapsibleCategory from "@/components/CollapsibleCategory";
+import InlineError from "@/components/InlineError";
 import StartProgression from "@/components/StartProgression";
 import {
   categoryTrendSeries,
@@ -20,6 +21,14 @@ import {
   currentLevelIsDanger,
 } from "./helpers";
 
+// Per-section failure flags. `progress` is primary (the page throws if it
+// fails), so it isn't listed. Defaults to all false, keeping existing tests
+// that don't pass this prop green.
+export interface ParentSwimmerProgressSectionFailures {
+  categories?: boolean;
+  scoreHistory?: boolean;
+}
+
 interface ParentSwimmerProgressContentProps {
   swimmer: ParentSwimmer;
   progress: ParentSwimmerProgressResponse;
@@ -29,6 +38,7 @@ interface ParentSwimmerProgressContentProps {
   // prop is optional only so existing unit tests that pre-date the charts
   // don't have to be rewritten for the empty case.
   scoreHistory?: ParentScoreHistoryResponse;
+  sectionFailures?: ParentSwimmerProgressSectionFailures;
 }
 
 const EMPTY_SCORE_HISTORY: ParentScoreHistoryResponse = {
@@ -47,6 +57,7 @@ export default function ParentSwimmerProgressContent({
   progress,
   categories,
   scoreHistory = EMPTY_SCORE_HISTORY,
+  sectionFailures = {},
 }: ParentSwimmerProgressContentProps) {
   const categoryTrends = categoryTrendSeries(scoreHistory);
   const startTrends = startSeries(scoreHistory);
@@ -112,6 +123,10 @@ export default function ParentSwimmerProgressContent({
       (start) => start.grade.status !== "in_progress" || start.components.some((component) => component.current !== null),
     );
 
+  const failedSections: string[] = [];
+  if (sectionFailures.categories) failedSections.push("skill categories");
+  if (sectionFailures.scoreHistory) failedSections.push("score history");
+
   return (
     <div className="flex flex-col flex-1">
       <main className="flex-1 px-page pt-8 pb-20 tablet:pb-8">
@@ -127,6 +142,13 @@ export default function ParentSwimmerProgressContent({
               {swimmer.firstName}&apos;s Progress
             </h1>
           </div>
+
+          {failedSections.length > 0 && (
+            <InlineError
+              message={`Couldn't load ${failedSections.join(", ")}. The rest of the page is current.`}
+              reloadOnRetry
+            />
+          )}
 
           {!hasAnyData && (
             <p className="text-sm text-text-secondary">

@@ -32,15 +32,33 @@ export default async function CoachBookPage({ searchParams }: Props) {
   }
 
   const params = await searchParams;
-  const [coachLocations, prefilled, availabilityConfig] = await Promise.all([
+  const [coachLocationsResult, prefilledResult, availabilityConfigResult] = await Promise.all([
     fetchCoachLocations(auth.accessToken),
     params.household
       ? fetchCoachHouseholds(auth.accessToken, { householdId: params.household })
       : Promise.resolve(null),
     fetchAvailabilityConfig(auth.accessToken),
   ]);
-  const bookingMaxAdvanceWeeks =
-    availabilityConfig?.bookingMaxAdvanceWeeks ?? DEFAULT_BOOKING_MAX_ADVANCE_WEEKS;
+  // Write page — the coach picks a pool and a household here. Throw on load
+  // failure so the route error boundary renders instead of a form that can't
+  // submit.
+  if (!coachLocationsResult.ok) {
+    throw new Error(`Failed to load pools (${coachLocationsResult.reason})`);
+  }
+  // Prefilled household lookup is optional (only runs when ?household= is
+  // present). If the lookup 5xx'd, throw so the route error boundary renders
+  // — a silent fall-through would send the coach into an empty picker and
+  // look like "household not found" when the server is actually broken.
+  if (prefilledResult !== null && !prefilledResult.ok) {
+    throw new Error(`Failed to load household (${prefilledResult.reason})`);
+  }
+  const prefilled = prefilledResult === null ? null : prefilledResult.data;
+  // Config is a secondary read — the booking page only uses one number from
+  // it for warning copy; the server does the authoritative check at submit.
+  // Fall back to the hardcoded default on any load failure.
+  const bookingMaxAdvanceWeeks = availabilityConfigResult.ok
+    ? availabilityConfigResult.data.bookingMaxAdvanceWeeks
+    : DEFAULT_BOOKING_MAX_ADVANCE_WEEKS;
 
   const initialHousehold = prefilled?.[0] ?? null;
   const initialSwimmerIds = computeInitialSwimmerIds(initialHousehold, params.swimmer);
@@ -48,7 +66,7 @@ export default async function CoachBookPage({ searchParams }: Props) {
   // /coach/locations returns every named pool (including deactivated ones).
   // Drop inactive pools here — the coach's availability editor hides them
   // from the booking flow once set inactive.
-  const namedPools = coachLocations.filter((pool) => pool.isActive);
+  const namedPools = coachLocationsResult.data.filter((pool) => pool.isActive);
 
   return (
     <div className="flex flex-col flex-1 bg-background">

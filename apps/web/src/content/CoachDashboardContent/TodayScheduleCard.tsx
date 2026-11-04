@@ -7,9 +7,12 @@ import type { CoachScheduleItem } from "@swim-app/shared";
 import DashboardLessonRow from "./DashboardLessonRow";
 import { getCoachScheduleAction } from "./actions";
 
+type SectionResult = { ok: true; data: CoachScheduleItem[] } | { ok: false };
+
 interface Props {
   initialItems: CoachScheduleItem[];
   today: string; // YYYY-MM-DD (LA timezone)
+  initialResult?: SectionResult;
 }
 
 function addDays(dateStr: string, days: number): string {
@@ -32,11 +35,15 @@ function dayLabel(viewDate: string, today: string): string {
   }).format(new Date(Date.UTC(year, month - 1, day)));
 }
 
-export default function TodayScheduleCard({ initialItems, today }: Props) {
+export default function TodayScheduleCard({ initialItems, today, initialResult }: Props) {
   const [viewDate, setViewDate] = useState(today);
   const [items, setItems] = useState(initialItems);
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // If the server-side initial load failed, surface the error up-front so the
+  // card doesn't silently render as empty. Interactive navigation clears it.
+  const [error, setError] = useState<string | null>(
+    initialResult && !initialResult.ok ? "Couldn't load schedule." : null,
+  );
   const [now, setNow] = useState<number | null>(null);
   const navIdRef = useRef(0);
 

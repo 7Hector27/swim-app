@@ -12,7 +12,11 @@ vi.mock("@/components/AddNoteForm", () => ({ default: () => null }));
 vi.mock("@/content/EvaluateContent/actions", () => ({
   submitEvaluation: vi.fn(),
   saveDraft: vi.fn(),
-  deleteDraft: vi.fn(),
+  // deleteDraft returns { ok: true } | { ok: false; status }; see the
+  // comment on the same mock in evaluateScreen.test.tsx. The bare vi.fn()
+  // resolves to undefined and causes an unhandled rejection that the
+  // pre-push hook treats as a failure.
+  deleteDraft: vi.fn().mockResolvedValue({ ok: true }),
   fetchDependencyMapAction: vi.fn().mockResolvedValue({ ok: false }),
   fetchServerDraftsAction: vi.fn().mockResolvedValue([]),
   deleteSessionAction: vi.fn().mockResolvedValue({ ok: true }),

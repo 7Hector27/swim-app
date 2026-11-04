@@ -26,7 +26,7 @@ vi.mock("@/lib/api/coachAvailability", () => ({
   deleteOverride: vi.fn(),
   fetchAvailabilityPreview: vi.fn(),
   patchAvailabilityConfig: vi.fn(),
-  fetchSeasons: () => Promise.resolve([]),
+  fetchSeasons: () => Promise.resolve({ ok: true, data: [] }),
 }));
 
 import CoachAvailabilityContent from "../content/CoachAvailabilityContent/CoachAvailabilityContent";

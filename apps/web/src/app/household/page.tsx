@@ -13,16 +13,22 @@ export default async function HouseholdPage() {
   const auth = await requireAuth();
   if (!auth) return null;
 
-  const [household, pendingInvite] = await Promise.all([
+  const [householdResult, pendingInvite] = await Promise.all([
     fetchHousehold(auth.accessToken),
     fetchPendingInvite(auth.accessToken),
   ]);
 
-  if (!household) redirect("/dashboard");
+  // A failed load must never fall through to the onboarding / redirect
+  // path — the user would see "we're setting you up" when the server is
+  // actually broken. Throw so the parent error boundary renders.
+  if (!householdResult.ok) {
+    throw new Error(`Failed to load household (status ${householdResult.status})`);
+  }
+  if (householdResult.household === null) redirect("/dashboard");
 
   return (
     <HouseholdSettingsContent
-      household={household}
+      household={householdResult.household}
       pendingInvite={pendingInvite}
       accessToken={auth.accessToken}
     />

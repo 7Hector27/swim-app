@@ -118,6 +118,10 @@ export default function Step2TimePicker({
   const [weekLessons, setWeekLessons] = useState<CoachWeekLesson[]>([]);
   const [isFetching, startFetching] = useTransition();
   const [fetchError, setFetchError] = useState<string | null>(null);
+  // Retry counter — bumping it re-runs the week-fetch effect even when
+  // mondayStr/duration/location are unchanged. Without this, clicking Retry
+  // with the same inputs would no-op (React bails on identical setState).
+  const [retryTick, setRetryTick] = useState(0);
 
   const [selectedStartsAt, setSelectedStartsAt] = useState<string | null>(null);
 
@@ -185,7 +189,7 @@ export default function Step2TimePicker({
       weekPrefetch.onWeekFetched(mondayStr, result, fetchEpoch);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mondayStr, durationMinutes, locationId]);
+  }, [mondayStr, durationMinutes, locationId, retryTick]);
 
   const weekDots = useMemo<WeekNavDot[]>(() => {
     return weekMondays.map((weekMonday) => {
@@ -441,10 +445,7 @@ export default function Step2TimePicker({
               <p className="text-sm text-text-secondary">{fetchError}</p>
               <button
                 type="button"
-                onClick={() => {
-                  setFetchError(null);
-                  setMondayStr((prev) => prev);
-                }}
+                onClick={() => setRetryTick((tick) => tick + 1)}
                 className="min-h-[44px] px-5 rounded-button border-2 border-button-outline text-button-outline text-sm font-semibold transition-opacity hover:opacity-70 active:scale-[0.97]"
               >
                 Retry
@@ -452,7 +453,7 @@ export default function Step2TimePicker({
             </div>
           )}
 
-          {locationId !== null && !isFetching && weekData !== null && (
+          {locationId !== null && !isFetching && fetchError === null && weekData !== null && (
             <>
               {/* Day labels for the desktop view, mirrors parent calendar */}
               <div className="hidden tablet:grid grid-cols-7 gap-1 w-full">

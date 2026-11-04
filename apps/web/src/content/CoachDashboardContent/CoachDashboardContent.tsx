@@ -1,6 +1,7 @@
 import type { CoachSwimmer } from "@swim-app/shared";
 import { todayLA } from "@swim-app/shared";
 
+import InlineError from "@/components/InlineError";
 import Placeholder from "@/components/Placeholder";
 import { fetchCoachSwimmers } from "@/lib/api/coachSwimmers";
 import { coachGetPendingLessons, fetchCoachSchedule, fetchCoachStats } from "@/lib/api/lessons";
@@ -14,12 +15,27 @@ interface Props {
 
 export default async function CoachDashboardContent({ accessToken }: Props) {
   const today = todayLA();
-  const [swimmers, pendingLessons, scheduleItems, stats] = await Promise.all([
+  const [swimmersResult, pendingLessonsResult, scheduleItemsResult, statsResult] = await Promise.all([
     fetchCoachSwimmers(accessToken),
     coachGetPendingLessons(accessToken),
     fetchCoachSchedule(accessToken, today),
     fetchCoachStats(accessToken),
   ]);
+
+  // Dashboard is a hub — every card is secondary. A roster outage must not
+  // hide today's schedule or the booking-requests card, so we never throw
+  // here; each card shows its own InlineError below when its fetch failed.
+  const swimmers = swimmersResult.ok ? swimmersResult.data : [];
+  const swimmersFailed = !swimmersResult.ok;
+  const pendingLessons = pendingLessonsResult.ok ? pendingLessonsResult.data : [];
+  const scheduleItems = scheduleItemsResult.ok ? scheduleItemsResult.data : [];
+  const stats = statsResult.ok ? statsResult.data : null;
+  const pendingLessonsSection = pendingLessonsResult.ok
+    ? { ok: true as const, data: pendingLessonsResult.data }
+    : { ok: false as const };
+  const scheduleSection = scheduleItemsResult.ok
+    ? { ok: true as const, data: scheduleItemsResult.data }
+    : { ok: false as const };
 
   const dateLabel = new Intl.DateTimeFormat("en-US", {
     timeZone: "America/Los_Angeles",
@@ -55,14 +71,28 @@ export default async function CoachDashboardContent({ accessToken }: Props) {
           <div className="flex flex-col tablet:flex-row gap-6 desktop:gap-8 tablet:items-start">
             {/* Main column */}
             <div className="w-full tablet:flex-1 min-w-0 flex flex-col gap-6">
-              <TodayScheduleCard initialItems={scheduleItems} today={today} />
+              <TodayScheduleCard initialItems={scheduleItems} today={today} initialResult={scheduleSection} />
 
-              <SwimmersSection swimmers={swimmers} />
+              {swimmersFailed ? (
+                <div
+                  className="rounded-card border border-border overflow-hidden"
+                  data-testid="coach-dashboard-swimmers-error"
+                >
+                  <div className="px-5 py-4 border-b border-border">
+                    <h2 className="text-xl text-heading">Swimmers</h2>
+                  </div>
+                  <div className="p-5">
+                    <InlineError message="Couldn't load the roster." reloadOnRetry />
+                  </div>
+                </div>
+              ) : (
+                <SwimmersSection swimmers={swimmers} />
+              )}
             </div>
 
             {/* Sidebar */}
             <div className="w-full tablet:w-[272px] desktop:w-[300px] flex-shrink-0 flex flex-col gap-4">
-              <BookingRequestsCard initialLessons={pendingLessons} />
+              <BookingRequestsCard initialLessons={pendingLessons} initialResult={pendingLessonsSection} />
               <Placeholder block>
                 <NeedsAttentionCard />
               </Placeholder>

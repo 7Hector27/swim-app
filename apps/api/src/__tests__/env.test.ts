@@ -394,6 +394,31 @@ describe("parseEnv — VAPID (coach alerts)", () => {
   });
 });
 
+describe("parseEnv — FAIL_ROUTES (local-only fault injection)", () => {
+  it("defaults to an empty list when unset on local", () => {
+    const env = parseEnv({ ...baseEnv });
+    expect(env.failRoutes).toEqual([]);
+  });
+
+  it("parses a comma-separated list on local, trimming whitespace", () => {
+    const env = parseEnv({ ...baseEnv, FAIL_ROUTES: " /clubs , /lessons* ,  " });
+    expect(env.failRoutes).toEqual(["/clubs", "/lessons*"]);
+  });
+
+  it("refuses to boot when FAIL_ROUTES is set and APP_ENV=prod", () => {
+    expectIssue({ ...prodDeployBase, FAIL_ROUTES: "/clubs" }, /FAIL_ROUTES/);
+  });
+
+  it("refuses to boot when FAIL_ROUTES is set and APP_ENV=dev", () => {
+    expectIssue({ ...devDeployBase, FAIL_ROUTES: "/clubs" }, /FAIL_ROUTES/);
+  });
+
+  it("treats an empty FAIL_ROUTES value as unset even on dev/prod", () => {
+    const env = parseEnv({ ...prodDeployBase, FAIL_ROUTES: "" });
+    expect(env.failRoutes).toEqual([]);
+  });
+});
+
 describe("parseDbEnv", () => {
   it("accepts an env with only DATABASE_URL set", () => {
     const env = parseDbEnv({ DATABASE_URL: "postgres://user:pass@localhost:5432/db" });

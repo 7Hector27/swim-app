@@ -73,20 +73,20 @@ const olderNote: CoachNoteResponse = {
 
 describe("CoachLessonDetailContent — existing notes", () => {
   it("shows existing note body above the add form", () => {
-    render(<CoachLessonDetailContent lesson={lesson} notes={[note]} />);
+    render(<CoachLessonDetailContent lesson={lesson} notes={{ ok: true, data: [note] }} />);
     expect(screen.getByText("Great kick today")).toBeInTheDocument();
     expect(screen.getByTestId("add-note-form")).toBeInTheDocument();
   });
 
   it("lists multiple notes newest first", () => {
-    render(<CoachLessonDetailContent lesson={lesson} notes={[note, olderNote]} />);
+    render(<CoachLessonDetailContent lesson={lesson} notes={{ ok: true, data: [note, olderNote] }} />);
     const items = screen.getAllByRole("listitem");
     expect(items[0]).toHaveTextContent("Great kick today");
     expect(items[1]).toHaveTextContent("Needs work on breathing");
   });
 
   it("shows no note list when notes array is empty", () => {
-    render(<CoachLessonDetailContent lesson={lesson} notes={[]} />);
+    render(<CoachLessonDetailContent lesson={lesson} notes={{ ok: true, data: [] }} />);
     expect(screen.queryByRole("list")).toBeNull();
     expect(screen.getByTestId("add-note-form")).toBeInTheDocument();
   });
@@ -99,7 +99,7 @@ describe("CoachLessonDetailContent — existing notes", () => {
       swimmerId: otherSwimmerId,
       body: "Should not appear",
     };
-    render(<CoachLessonDetailContent lesson={lesson} notes={[note, noteForOtherSwimmer]} />);
+    render(<CoachLessonDetailContent lesson={lesson} notes={{ ok: true, data: [note, noteForOtherSwimmer] }} />);
     expect(screen.getByText("Great kick today")).toBeInTheDocument();
     expect(screen.queryByText("Should not appear")).toBeNull();
   });

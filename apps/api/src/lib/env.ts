@@ -68,6 +68,11 @@ const RawEnvSchema = z.object({
   VAPID_PUBLIC_KEY: z.string().optional(),
   VAPID_PRIVATE_KEY: z.string().optional(),
   VAPID_SUBJECT: z.string().optional(),
+  // Local-only fault injection. Comma-separated path patterns: exact match
+  // (`/clubs`) or trailing-`*` prefix match (`/lessons*`). Any matching
+  // request returns a 500 before the route handler runs. parseEnv refuses to
+  // boot if this is set in any environment other than APP_ENV=local.
+  FAIL_ROUTES: z.string().optional(),
 });
 
 export interface GoogleOAuthEnv {
@@ -112,6 +117,9 @@ export interface ApiEnv {
   // Undefined when APP_ENV=local AND no VAPID_* vars are set — the coach
   // alert sender becomes a no-op in that case. Required on dev/prod.
   vapid: VapidEnv | undefined;
+  // Empty unless APP_ENV=local and FAIL_ROUTES was set. See the schema
+  // comment on FAIL_ROUTES.
+  failRoutes: readonly string[];
 }
 
 export function parseEnv(raw: Record<string, string | undefined>): ApiEnv {
@@ -138,6 +146,7 @@ export function parseEnv(raw: Record<string, string | undefined>): ApiEnv {
   const googleOAuth = parseGoogleOAuthEnv(parsed);
   const email = parseEmailEnv(parsed);
   const vapid = parseVapidEnv(parsed);
+  const failRoutes = parseFailRoutes(parsed);
 
   const isDeployed = parsed.APP_ENV === "dev" || parsed.APP_ENV === "prod";
   if (isDeployed) {
@@ -177,7 +186,22 @@ export function parseEnv(raw: Record<string, string | undefined>): ApiEnv {
     googleOAuth,
     email,
     vapid,
+    failRoutes,
   };
+}
+
+function parseFailRoutes(parsed: RawParsedEnv): readonly string[] {
+  const raw = parsed.FAIL_ROUTES?.trim() ?? "";
+  if (!raw) return [];
+  if (parsed.APP_ENV !== "local") {
+    throw new EnvValidationError([
+      "FAIL_ROUTES: must only be set when APP_ENV=local (local-only fault injection switch)",
+    ]);
+  }
+  return raw
+    .split(",")
+    .map((pattern) => pattern.trim())
+    .filter(Boolean);
 }
 
 type RawParsedEnv = z.infer<typeof RawEnvSchema>;

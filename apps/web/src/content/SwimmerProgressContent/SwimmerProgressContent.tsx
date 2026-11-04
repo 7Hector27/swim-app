@@ -7,6 +7,7 @@ import type {
 } from "@swim-app/shared";
 import CategoryTrendsGrid from "@/components/CategoryTrendsGrid";
 import CollapsibleCategory from "@/components/CollapsibleCategory";
+import InlineError from "@/components/InlineError";
 import StartProgression from "@/components/StartProgression";
 import {
   categoryTrendSeries,
@@ -24,6 +25,15 @@ import {
   sessionCadence,
 } from "./helpers";
 
+// Per-section failure flags for the secondary fetches on the progress page.
+// `progress` is primary (the page throws if it fails), so it's not listed.
+// All optional — defaults to false, keeping existing tests green.
+export interface SwimmerProgressSectionFailures {
+  categories?: boolean;
+  scoreHistory?: boolean;
+  golfScore?: boolean;
+}
+
 interface SwimmerProgressContentProps {
   swimmer: CoachSwimmerDetail;
   progress: SwimmerProgressResponse;
@@ -37,6 +47,7 @@ interface SwimmerProgressContentProps {
   // midnight. Tests can override. Falls back to `new Date().toISOString()`
   // in test environments where callers don't pass it.
   nowIso?: string;
+  sectionFailures?: SwimmerProgressSectionFailures;
 }
 
 // Option C narrative stack as the real coach progress page. Phone: single
@@ -51,6 +62,7 @@ export default function SwimmerProgressContent({
   scoreHistory,
   golfScore,
   nowIso,
+  sectionFailures = {},
 }: SwimmerProgressContentProps) {
   const now = nowIso !== undefined ? new Date(nowIso) : new Date();
   const categorySnapshot = latestCategorySnapshot(scoreHistory);
@@ -86,11 +98,23 @@ export default function SwimmerProgressContent({
 
   const skillsByCategory = groupSkillsByCategory(progress, categories);
 
+  const failedSections: string[] = [];
+  if (sectionFailures.categories) failedSections.push("skill categories");
+  if (sectionFailures.scoreHistory) failedSections.push("score history");
+  if (sectionFailures.golfScore) failedSections.push("golf score");
+
   return (
     <div className="flex flex-col flex-1">
       <main className="flex-1 px-page py-6 tablet:py-10">
         <div className="mx-auto max-w-content flex flex-col gap-6 tablet:gap-10">
           <PageHeader swimmer={swimmer} />
+
+          {failedSections.length > 0 && (
+            <InlineError
+              message={`Couldn't load ${failedSections.join(", ")}. The rest of the page is current.`}
+              reloadOnRetry
+            />
+          )}
 
           <div className="grid gap-6 tablet:gap-10 tablet:grid-cols-[7fr_5fr] items-start">
             <div className="flex flex-col gap-6 min-w-0">

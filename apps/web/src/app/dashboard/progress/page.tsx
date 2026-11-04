@@ -12,7 +12,11 @@ export default async function ParentProgressPage() {
   if (!auth) redirect("/login");
   if (auth.profile.role !== "parent") redirect("/dashboard");
 
-  const swimmers = await fetchSwimmers(auth.accessToken);
+  const swimmersResult = await fetchSwimmers(auth.accessToken);
+  // Primary — the progress page is the swimmer list. If the load fails,
+  // throw so the route error boundary renders rather than an empty page.
+  if (!swimmersResult.ok) throw new Error("Failed to load swimmers");
+  const swimmers = swimmersResult.data;
 
   if (swimmers.length === 0) redirect("/dashboard");
 

@@ -1,10 +1,14 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
-import type { SwimmerSkillsResponse } from "@swim-app/shared";
+import type { GetEvaluationsItem, SwimmerSkillsResponse } from "@swim-app/shared";
 import { DraftsListResponseSchema } from "@swim-app/shared";
 
 import AccountInactiveScreen from "@/components/AccountInactiveScreen";
 import CoachSwimmerDetailContent from "@/content/CoachSwimmerDetailContent";
+import type {
+  CoachSwimmerSectionFailures,
+  SectionResult,
+} from "@/content/CoachSwimmerDetailContent/CoachSwimmerDetailContent";
 import { requireAuth } from "@/lib/requireAuth";
 import { fetchCoachSwimmerDetail, fetchSwimmerTimeline } from "@/lib/api/coachSwimmers";
 import {
@@ -67,11 +71,30 @@ export default async function CoachSwimmerPage({ params }: CoachSwimmerPageProps
   const swims = swimsResult.ok ? swimsResult.data.swims : [];
   const personalBests = swimsResult.ok ? swimsResult.data.personalBests : [];
   const meets = meetsResult.ok ? meetsResult.meets : [];
-  const parsed = DraftsListResponseSchema.safeParse(draftsRes.ok ? await draftsRes.json().catch(() => null) : null);
-  const swimmerDrafts = parsed.success ? parsed.data.drafts : [];
+  // Drafts is a raw fetch (not a helper). Consider both transport failure
+  // (!draftsRes.ok) and schema mismatch as a load failure — Jason must NOT
+  // see "no drafts" if the fetch actually broke.
+  const draftsJson = draftsRes.ok ? await draftsRes.json().catch(() => null) : null;
+  const draftsParsed = DraftsListResponseSchema.safeParse(draftsJson);
+  const draftsFailed = !draftsRes.ok || !draftsParsed.success;
+  const swimmerDrafts = draftsParsed.success ? draftsParsed.data.drafts : [];
   const golfScoreTrends = golfScoreTrendsResult.ok ? golfScoreTrendsResult.data.trends : [];
-  // Fail-soft: a failed evaluations fetch degrades to the empty-state copy.
-  const evaluationsList = evaluationsResult.ok ? evaluationsResult.data.evaluations : [];
+  // Thread the result all the way to the content so a server error renders
+  // an inline retry instead of the "No evaluations yet" empty-state copy.
+  const evaluationsSection: SectionResult<GetEvaluationsItem[]> = evaluationsResult.ok
+    ? { ok: true, data: evaluationsResult.data.evaluations }
+    : { ok: false };
+
+  // Per-section failure flags for the secondary fetches on this page.
+  const sectionFailures: CoachSwimmerSectionFailures = {
+    skills: !skillsResult.ok,
+    categories: !categoriesResult.ok,
+    timeline: !timelineResult.ok,
+    swims: !swimsResult.ok,
+    meets: !meetsResult.ok,
+    drafts: draftsFailed,
+    golfScoreTrends: !golfScoreTrendsResult.ok,
+  };
 
   return (
     <CoachSwimmerDetailContent
@@ -86,7 +109,8 @@ export default async function CoachSwimmerPage({ params }: CoachSwimmerPageProps
       meets={meets}
       drafts={swimmerDrafts}
       golfScoreTrends={golfScoreTrends}
-      evaluations={evaluationsList}
+      evaluationsResult={evaluationsSection}
+      sectionFailures={sectionFailures}
     />
   );
 }

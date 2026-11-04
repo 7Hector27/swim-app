@@ -18,15 +18,18 @@
 //   ample room for interactive editing.
 //
 // Both are mounted after requireUser + requireParent + requireHouseholdRole,
-// so req.profile is guaranteed present when the keyGenerator runs.
+// so req.profile is guaranteed present when the keyGenerator runs. If a bug
+// somehow mounts them without that chain, skip() bypasses the limiter — same
+// pattern as authEmailLimiter — instead of funneling the request into a
+// shared fallback bucket keyed on req.ip, which express-rate-limit also warns
+// about under IPv6 (ERR_ERL_KEY_GEN_IPV6).
 
 import rateLimit from "express-rate-limit";
 import type { Request } from "express";
 
-function profileIdKey(req: Request): string {
-  // The require* middleware guarantees req.profile; req.ip is a test-
-  // harness-only fallback, never reached in production.
-  return req.profile?.id ?? req.ip ?? "unknown";
+function readProfileId(req: Request): string | null {
+  const id = req.profile?.id;
+  return typeof id === "string" && id.length > 0 ? id : null;
 }
 
 export const bookingLimiter = rateLimit({
@@ -37,7 +40,14 @@ export const bookingLimiter = rateLimit({
   // Standard { error } shape so clients can reuse the same error-body
   // handling they use for 4xx/5xx responses from other routes.
   message: { error: "Too many booking requests, please try again later" },
-  keyGenerator: profileIdKey,
+  skip: (req: Request) => readProfileId(req) === null,
+  keyGenerator: (req: Request) => {
+    const id = readProfileId(req);
+    if (id === null) {
+      throw new Error("bookingLimiter: keyGenerator reached without profile id");
+    }
+    return id;
+  },
 });
 
 export const previewLimiter = rateLimit({
@@ -46,5 +56,12 @@ export const previewLimiter = rateLimit({
   standardHeaders: "draft-7",
   legacyHeaders: false,
   message: { error: "Too many availability checks, please try again later" },
-  keyGenerator: profileIdKey,
+  skip: (req: Request) => readProfileId(req) === null,
+  keyGenerator: (req: Request) => {
+    const id = readProfileId(req);
+    if (id === null) {
+      throw new Error("previewLimiter: keyGenerator reached without profile id");
+    }
+    return id;
+  },
 });

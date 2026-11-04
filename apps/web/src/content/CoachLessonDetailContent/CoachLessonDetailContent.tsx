@@ -6,6 +6,7 @@ import type { CoachLessonDetail, CoachNoteResponse } from "@swim-app/shared";
 
 import AddNoteForm from "@/components/AddNoteForm";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import InlineError from "@/components/InlineError";
 import LessonStatusBadge from "@/components/LessonStatusBadge";
 import {
   cancelCoachLessonAction,
@@ -16,9 +17,13 @@ import {
   type CoachLessonDetailState,
 } from "./actions";
 
+type NotesSectionResult =
+  | { ok: true; data: CoachNoteResponse[] }
+  | { ok: false };
+
 interface Props {
   lesson: CoachLessonDetail;
-  notes: CoachNoteResponse[];
+  notes: NotesSectionResult;
 }
 
 export default function CoachLessonDetailContent({ lesson, notes }: Props) {
@@ -124,24 +129,39 @@ export default function CoachLessonDetailContent({ lesson, notes }: Props) {
             {lesson.swimmers.length > 0 && (
               <div className="flex flex-col gap-4 desktop:max-w-[640px]">
                 <h2 className="text-xl text-heading">Lesson notes</h2>
-                {lesson.swimmers.map((swimmer) => {
-                  const swimmerNotes = notes.filter((note) => note.swimmerId === swimmer.swimmerId);
-                  return (
-                    <div key={swimmer.swimmerId} className="rounded-card border border-border p-5 tablet:p-6 flex flex-col gap-3">
-                      <p className="text-sm font-semibold text-text">{swimmer.firstName} {swimmer.lastName}</p>
-                      {swimmerNotes.length > 0 && (
-                        <ul className="flex flex-col divide-y divide-border">
-                          {swimmerNotes.map((note) => (
-                            <li key={note.id} className="py-2 first:pt-0 last:pb-0">
-                              <p className="text-sm text-text">{note.body}</p>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                      <AddNoteForm swimmerId={swimmer.swimmerId} lessonId={lesson.id} label="Note" />
-                    </div>
-                  );
-                })}
+                {!notes.ok ? (
+                  <InlineError message="Couldn't load lesson notes." reloadOnRetry />
+                ) : (
+                  lesson.swimmers.map((swimmer) => {
+                    const swimmerNotes = notes.data.filter(
+                      (note) => note.swimmerId === swimmer.swimmerId,
+                    );
+                    return (
+                      <div
+                        key={swimmer.swimmerId}
+                        className="rounded-card border border-border p-5 tablet:p-6 flex flex-col gap-3"
+                      >
+                        <p className="text-sm font-semibold text-text">
+                          {swimmer.firstName} {swimmer.lastName}
+                        </p>
+                        {swimmerNotes.length > 0 && (
+                          <ul className="flex flex-col divide-y divide-border">
+                            {swimmerNotes.map((note) => (
+                              <li key={note.id} className="py-2 first:pt-0 last:pb-0">
+                                <p className="text-sm text-text">{note.body}</p>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                        <AddNoteForm
+                          swimmerId={swimmer.swimmerId}
+                          lessonId={lesson.id}
+                          label="Note"
+                        />
+                      </div>
+                    );
+                  })
+                )}
               </div>
             )}
 

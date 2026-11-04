@@ -105,7 +105,7 @@ function render_(
     <SwimmerProfileContent
       swimmer={overrides.swimmer ?? baseSwimmer}
       householdRole={overrides.householdRole ?? "owner"}
-      clubs={overrides.clubs ?? baseClubs}
+      clubsResult={{ ok: true, data: overrides.clubs ?? baseClubs }}
       progress={overrides.progress ?? { ok: true, data: emptyProgress }}
       scoreHistory={overrides.scoreHistory ?? { ok: true, data: emptyScoreHistory }}
       personalBests={overrides.personalBests ?? { ok: true, data: emptyPersonalBests }}
@@ -172,6 +172,78 @@ describe("SwimmerProfileContent — empty states", () => {
       pastLessons: { ok: false },
     });
     expect(screen.getByText(/Couldn't load lessons/i)).toBeInTheDocument();
+  });
+});
+
+// Audit follow-up: clubs is a secondary load. A failed catalog lookup
+// must not render the club line blank (which looks identical to "no club
+// set"); it shows a short "Couldn't load club" fallback instead.
+describe("SwimmerProfileContent — clubs load failure", () => {
+  it("renders the short fallback when clubs failed to load (via the error branch)", () => {
+    const Swimmer = {
+      ...baseSwimmer,
+      clubs: [
+        {
+          id: "00000000-0000-0000-eeee-000000000001",
+          swimmerId: baseSwimmer.id,
+          clubId: null,
+          clubName: null,
+          otherClubName: null,
+          createdAt: "2024-01-01T00:00:00Z",
+          updatedAt: "2024-01-01T00:00:00Z",
+        },
+      ],
+    };
+    render(
+      <SwimmerProfileContent
+        swimmer={Swimmer}
+        householdRole="owner"
+        clubsResult={{ ok: false }}
+        progress={{ ok: true, data: emptyProgress }}
+        scoreHistory={{ ok: true, data: emptyScoreHistory }}
+        personalBests={{ ok: true, data: emptyPersonalBests }}
+        upcomingLessons={{ ok: true, data: [] }}
+        pastLessons={{ ok: true, data: [] }}
+      />,
+    );
+    expect(screen.getByText(/Couldn't load club/i)).toBeInTheDocument();
+  });
+});
+
+describe("SwimmerProfileContent — error vs empty (audit bug #1)", () => {
+  it("personal bests: a 500 renders an error state with a retry button, not the empty copy", () => {
+    render_({ personalBests: { ok: false } });
+    // Empty-state copy must not appear.
+    expect(screen.queryByText(/No meet times recorded yet/i)).toBeNull();
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent(/Couldn't load personal bests/i);
+    expect(screen.getByRole("button", { name: /try again/i })).toBeInTheDocument();
+  });
+
+  it("personal bests: an empty (but ok) response renders the empty state, not the error", () => {
+    render_({ personalBests: { ok: true, data: emptyPersonalBests } });
+    expect(screen.getByText(/No meet times recorded yet/i)).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("progress: a 500 renders an error state with a retry button, not 'No evaluations yet'", () => {
+    render_({ progress: { ok: false } });
+    const progressHeading = screen.getByRole("heading", { name: /^progress$/i });
+    const progressCard = progressHeading.closest("section")!;
+    expect(progressCard.textContent).not.toMatch(/No evaluations yet/i);
+    const alert = progressCard.querySelector('[role="alert"]');
+    expect(alert).not.toBeNull();
+    expect(alert!.textContent).toMatch(/Couldn't load progress/i);
+  });
+
+  it("lessons: both-failed path renders the error state (not 'No lesson history yet')", () => {
+    render_({
+      upcomingLessons: { ok: false },
+      pastLessons: { ok: false },
+    });
+    expect(screen.queryByText(/No lesson history yet/i)).toBeNull();
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent(/Couldn't load lessons/i);
   });
 });
 
@@ -394,7 +466,7 @@ describe("SwimmerProfileContent — wide-layout structure", () => {
       <SwimmerProfileContent
         swimmer={baseSwimmer}
         householdRole="owner"
-        clubs={baseClubs}
+        clubsResult={{ ok: true, data: baseClubs }}
         progress={{ ok: true, data: emptyProgress }}
         scoreHistory={{ ok: true, data: emptyScoreHistory }}
         personalBests={{ ok: true, data: emptyPersonalBests }}
@@ -428,7 +500,7 @@ describe("SwimmerProfileContent — wide-layout structure", () => {
       <SwimmerProfileContent
         swimmer={baseSwimmer}
         householdRole="owner"
-        clubs={baseClubs}
+        clubsResult={{ ok: true, data: baseClubs }}
         progress={{ ok: true, data: emptyProgress }}
         scoreHistory={{ ok: true, data: emptyScoreHistory }}
         personalBests={{ ok: true, data: emptyPersonalBests }}

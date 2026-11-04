@@ -1374,7 +1374,7 @@ export default function BookCalendarContent({
         </p>
       )}
 
-      {calendarView === "month" && !isFetching && monthData !== null && (
+      {calendarView === "month" && !isFetching && fetchError === null && monthData !== null && (
         <MonthGrid
           monthStr={monthStr}
           days={monthData.days.map((day) => ({
@@ -1388,7 +1388,7 @@ export default function BookCalendarContent({
         />
       )}
 
-      {calendarView === "week" && !isFetching && weekData !== null && !noAvailability && (
+      {calendarView === "week" && !isFetching && fetchError === null && weekData !== null && !noAvailability && (
         <>
           <div className="hidden tablet:block">
             <WeekGrid

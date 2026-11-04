@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { CoachPushSubscriptionListItem } from "@swim-app/shared";
 
+import InlineError from "@/components/InlineError";
 import {
   deletePushSubscription,
   fetchPushSubscriptions,
@@ -41,6 +42,10 @@ export default function PushSubscriptionManager({ vapidPublicKey, initialSupport
   const [permission, setPermission] = useState<NotificationPermission | "unsupported">("default");
   const [subscriptions, setSubscriptions] = useState<CoachPushSubscriptionListItem[]>([]);
   const [loadingList, setLoadingList] = useState(true);
+  // Distinguishes "the fetch failed" from "the server returned zero devices".
+  // Without this, a 500 renders identically to a legitimately unsubscribed
+  // account — the coach sees "Notifications are off" and believes it.
+  const [listError, setListError] = useState(false);
   const [enableStatus, setEnableStatus] = useState<EnableStatus>("idle");
   const [enableError, setEnableError] = useState<string | null>(null);
   const [testStatus, setTestStatus] = useState<TestStatus>("idle");
@@ -60,9 +65,12 @@ export default function PushSubscriptionManager({ vapidPublicKey, initialSupport
   }, []);
 
   const refreshSubscriptions = useCallback(async () => {
+    setListError(false);
     const result = await fetchPushSubscriptions();
     if (result.ok) {
       setSubscriptions(result.data.items);
+    } else {
+      setListError(true);
     }
     setLoadingList(false);
   }, []);
@@ -220,6 +228,11 @@ export default function PushSubscriptionManager({ vapidPublicKey, initialSupport
     );
   }
 
+  function retryList() {
+    setLoadingList(true);
+    void refreshSubscriptions();
+  }
+
   return (
     <div className="flex flex-col gap-4">
       {permission !== "granted" && (
@@ -274,6 +287,14 @@ export default function PushSubscriptionManager({ vapidPublicKey, initialSupport
 
           {loadingList ? (
             <p className="text-sm text-text-secondary">Loading devices…</p>
+          ) : listError ? (
+            // Load failed — must not read "Notifications are off" (that
+            // would look identical to a legitimately unsubscribed account).
+            <InlineError
+              message="Couldn't load your devices."
+              onRetry={retryList}
+              retryLabel="Try again"
+            />
           ) : subscriptions.length === 0 ? (
             <p className="text-sm text-text-secondary">
               Notifications are off on this account. Tap &ldquo;Turn on notifications&rdquo; above

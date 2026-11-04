@@ -7,21 +7,25 @@ import {
   type TimelineResponse,
 } from "@swim-app/shared";
 
-export async function fetchCoachSwimmers(accessToken: string): Promise<CoachSwimmer[]> {
+import { loadError, loadOk, type LoadResult } from "@/lib/loadResult";
+
+export async function fetchCoachSwimmers(
+  accessToken: string,
+): Promise<LoadResult<CoachSwimmer[]>> {
   try {
     const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/coach/swimmers`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
-    if (!response.ok) return [];
+    if (!response.ok) return loadError("server");
     const body: unknown = await response.json();
     const parsed = CoachSwimmerSchema.array().safeParse(body);
     if (!parsed.success) {
       console.warn("fetchCoachSwimmers: 200 response did not match CoachSwimmerSchema");
-      return [];
+      return loadError("schema");
     }
-    return parsed.data;
+    return loadOk(parsed.data);
   } catch {
-    return [];
+    return loadError("network");
   }
 }
 
