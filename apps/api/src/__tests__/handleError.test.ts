@@ -41,26 +41,26 @@ describe("errorHandler", () => {
     expect(body).not.toHaveProperty("stack");
   });
 
-  it("logs name, message, stack, and request id (not the raw err)", () => {
+  it("logs name, message, stack frames, and request id (not the raw err)", () => {
     const req = makeReq();
     const res = makeRes();
 
     const err = new Error("boom");
     errorHandler(err, req, res, vi.fn() as unknown as NextFunction);
 
-    expect(req.log.error).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: "Error",
-        message: "boom",
-        requestId: "test-id-123",
-        stack: expect.stringContaining("boom"),
-      }),
-      "Unhandled error",
-    );
     const payload = (req.log.error as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as Record<
       string,
       unknown
     >;
+    expect(payload).toMatchObject({
+      name: "Error",
+      message: "boom",
+      requestId: "test-id-123",
+    });
+    // The stack starts with the first "    at ..." frame — the header
+    // ("Error: boom") is stripped so the unredacted message can't leak.
+    expect(payload.stack).toEqual(expect.stringMatching(/^\s+at\s/));
+    expect(payload.stack as string).not.toContain("Error: boom");
     // The raw err object must not be in the log payload — pino would
     // serialize it whole and defeat the redaction.
     expect(payload).not.toHaveProperty("err");
@@ -80,6 +80,25 @@ describe("errorHandler", () => {
     };
     expect(payload.message).toContain("[email]");
     expect(payload.message).not.toContain("parent@example.com");
+  });
+
+  it("does not leak email addresses from the error message anywhere in the log entry, stack included", () => {
+    // Node builds Error.stack as "<name>: <message>\n    at frame\n..." —
+    // so an email inside .message would reappear verbatim at the top of
+    // .stack even after redactEmails scrubbed it from the message field.
+    // The stripStackHeader step removes that header before logging.
+    const req = makeReq();
+    const res = makeRes();
+
+    const email = "leaky-parent@example.com";
+    const err = new Error(`duplicate key value violates unique constraint: email=${email}`);
+    errorHandler(err, req, res, vi.fn() as unknown as NextFunction);
+
+    const payload = (req.log.error as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as Record<
+      string,
+      unknown
+    >;
+    expect(JSON.stringify(payload)).not.toContain(email);
   });
 
   it("truncates long messages", () => {
