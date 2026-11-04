@@ -6,7 +6,7 @@
 import { describe, expect, it } from "vitest";
 import express from "express";
 import request from "supertest";
-import { bookingLimiter } from "../middleware/bookingRateLimit";
+import { bookingLimiter, previewLimiter } from "../middleware/bookingRateLimit";
 
 function makeApp(profileId: string) {
   const app = express();
@@ -15,6 +15,7 @@ function makeApp(profileId: string) {
     next();
   });
   app.post("/book", bookingLimiter, (_req, res) => res.status(201).json({ ok: true }));
+  app.post("/preview", previewLimiter, (_req, res) => res.status(200).json({ ok: true }));
   return app;
 }
 
@@ -52,5 +53,29 @@ describe("bookingLimiter", () => {
     // User B's first request must still succeed.
     const okB = await request(appB).post("/book");
     expect(okB.status).toBe(201);
+  });
+
+  it("preview and submit are independent buckets — exhausting submit does not block preview", async () => {
+    // Burn the submit budget for one user.
+    const app = makeApp("user-submit-exhaustion");
+    for (let index = 0; index < 60; index++) {
+      await request(app).post("/book");
+    }
+    const blockedSubmit = await request(app).post("/book");
+    expect(blockedSubmit.status).toBe(429);
+
+    // Preview on the same user is still allowed (independent bucket).
+    const previewOk = await request(app).post("/preview");
+    expect(previewOk.status).toBe(200);
+  });
+
+  it("preview bucket allows at least 60 per hour per user so interactive editing is not blocked", async () => {
+    const app = makeApp("user-preview");
+    // 60 is the submit cap — if preview were sharing the bucket, this
+    // would fail. previewLimiter is 600/hr, so 60 fits comfortably.
+    for (let index = 0; index < 60; index++) {
+      const res = await request(app).post("/preview");
+      expect(res.status).toBe(200);
+    }
   });
 });
