@@ -86,6 +86,34 @@ describe("authEmailLimiter", () => {
     expect(blocked.status).toBe(429);
   });
 
+  it("skips the limiter entirely when no email is present — no shared fallback bucket", async () => {
+    // In production, validate() rejects a no-email body with 422 before
+    // the limiter runs. If anything slips past, these requests must not
+    // land in a shared "unknown" bucket where they can collectively hit
+    // 429 and amplify / mask real per-email counters. Prove that many
+    // no-email requests never trigger 429 and never deplete a real
+    // email's budget.
+    const app = makeApp();
+
+    for (let index = 0; index < 20; index++) {
+      // Mix of shapes the limiter might see if validate() is bypassed:
+      // no body, empty object, non-string email, empty string email.
+      const payloads = [{}, { email: null }, { email: "" }, { email: 123 }, { email: "   " }];
+      const payload = payloads[index % payloads.length];
+      const res = await request(app).post("/auth/signup").send(payload);
+      expect(res.status).not.toBe(429);
+    }
+
+    // The fresh-email bucket is still untouched after the storm.
+    const fresh = "no-email-bystander@example.com";
+    for (let index = 0; index < 5; index++) {
+      const res = await request(app).post("/auth/signup").send({ email: fresh });
+      expect(res.status).not.toBe(429);
+    }
+    const blocked = await request(app).post("/auth/signup").send({ email: fresh });
+    expect(blocked.status).toBe(429);
+  });
+
   it("is enumeration-safe: 429 for a registered email is byte-identical to 429 for a brand-new email", async () => {
     const app = makeApp();
 

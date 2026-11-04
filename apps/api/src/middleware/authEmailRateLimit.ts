@@ -13,7 +13,11 @@
 // regardless of existence. See the test's enumeration-safety case.
 //
 // Must be mounted AFTER validate({ body }) so req.body.email is parsed
-// and shape-checked before the keyGenerator reads it.
+// and shape-checked before the keyGenerator reads it. A request missing
+// a valid email never reaches the limiter in production; if one somehow
+// does, `skip` bypasses the limiter entirely so the request isn't
+// grouped into a shared fallback bucket that could be exhausted to
+// amplify or mask traffic.
 
 import rateLimit from "express-rate-limit";
 import type { Request } from "express";
@@ -31,6 +35,11 @@ function normalizeEmail(raw: unknown): string | null {
   return trimmed.toLowerCase();
 }
 
+function readEmail(req: Request): string | null {
+  const body = req.body as { email?: unknown } | null | undefined;
+  return normalizeEmail(body?.email);
+}
+
 export const authEmailLimiter = rateLimit({
   windowMs: WINDOW_MS,
   limit: LIMIT,
@@ -40,13 +49,20 @@ export const authEmailLimiter = rateLimit({
   // through the same error path. Message is deliberately generic — does
   // NOT confirm or deny the email exists.
   message: { error: "Too many requests, please try again later" },
+  // If there's no usable email (validate() would already have returned
+  // 422 for this), skip the limiter entirely. Returning a fallback key
+  // instead would funnel every malformed request into one shared bucket
+  // — an easy amplification target and a way to mask real per-email
+  // counters. Skipping is safe because validate() rejects the request
+  // right after this middleware.
+  skip: (req: Request) => readEmail(req) === null,
   keyGenerator: (req: Request) => {
-    const body = req.body as { email?: unknown } | null | undefined;
-    const email = normalizeEmail(body?.email);
-    // When the body/email is malformed, validate() would already have
-    // rejected with 422 before we reach here, so this branch is
-    // defensive. Group malformed requests under one "unknown" bucket
-    // so they can't be used to amplify.
-    return email ?? "unknown";
+    const email = readEmail(req);
+    if (email === null) {
+      // Unreachable: skip() above returns true in this case. Throw so a
+      // bug that bypasses skip() is loud, not silently bucketed.
+      throw new Error("authEmailLimiter: keyGenerator reached without email");
+    }
+    return email;
   },
 });
