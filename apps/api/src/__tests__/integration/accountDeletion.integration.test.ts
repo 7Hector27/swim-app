@@ -13,10 +13,10 @@
 // - Typed-phrase mismatch returns 422
 // - Rate limit returns 429 after 5 attempts (addition 3)
 
-import { afterAll, afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import pino from "pino";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 
 import { createApp } from "../../app";
 import {
@@ -28,24 +28,29 @@ import {
 } from "./helpers";
 import {
   accountDeletionJobs,
-  bookingBatches,
+  coachNotes,
   coachNotifications,
   evaluationDrafts,
   evaluationSessions,
   householdAuditLog,
-  householdInvites,
   householdMembers,
   households,
+  LESSON_EMAIL_OUTBOX_TERMINAL_STATUSES,
+  LESSON_EMAIL_OUTBOX_NON_TERMINAL_STATUSES,
+  leagueRegistrations,
   lessonEmailOutbox,
   lessonLocations,
   lessonSwimmers,
   lessons,
   meetSwims,
   profiles,
+  ratingFaultTags,
   skillRatings,
+  skills,
   swimmerClubs,
   swimmers,
 } from "../../db/schema";
+import syncCatalogFn from "../../db/scripts/syncCatalogFn";
 
 const logger = pino({ level: "silent" });
 const app = createApp(logger);
@@ -158,6 +163,144 @@ function confirmDeletion(accessToken: string, password = TEST_PASSWORD) {
     .send({ password, confirmationPhrase: DELETION_PHRASE });
 }
 
+// Catalog skill id used by the swimmer-linked data seeder below. Looked
+// up once in beforeAll — the full teardown test needs a real skills row
+// so the skill_ratings → skills FK is satisfied.
+let catalogSkillId: string | null = null;
+
+// Seeds every swimmer-linked table the deletion engine is expected to
+// clear. Returns the ids so the test can assert zero rows afterwards and
+// so a second-household seeding can compare against the untouched set.
+//
+// Covers evaluationSessions, skillRatings, ratingFaultTags, coachNotes,
+// evaluationDrafts, meetSwims, swimmerClubs, and leagueRegistrations —
+// every table named in the ADR 034 hard-delete sweep that references
+// swimmer_id.
+async function seedSwimmerData(
+  swimmerId: string,
+  coachId: string,
+): Promise<{
+  sessionId: string;
+  ratingId: string;
+  coachNoteId: string;
+  evalDraftId: string;
+  meetSwimId: string;
+  swimmerClubId: string;
+  leagueRegistrationId: string;
+}> {
+  if (!catalogSkillId) throw new Error("catalogSkillId not initialized");
+  const skillIdLocal = catalogSkillId;
+
+  const sessionRows = await adminDb()
+    .insert(evaluationSessions)
+    .values({
+      swimmerId,
+      coachId,
+      screenSlug: "fundamentals",
+      sessionDate: "2026-10-01",
+      context: "practice",
+    })
+    .returning({ id: evaluationSessions.id });
+  const sessionId = sessionRows[0]!.id;
+
+  const ratingRows = await adminDb()
+    .insert(skillRatings)
+    .values({
+      sessionId,
+      swimmerId,
+      skillId: skillIdLocal,
+      coachId,
+      grade: 3,
+      notLegal: false,
+      noConcept: false,
+      ratedAt: new Date("2026-10-01T10:00:00Z"),
+    })
+    .returning({ id: skillRatings.id });
+  const ratingId = ratingRows[0]!.id;
+
+  await adminDb()
+    .insert(ratingFaultTags)
+    .values({ ratingId, faultTag: "high-elbow-missing" });
+
+  const coachNoteRows = await adminDb()
+    .insert(coachNotes)
+    .values({
+      swimmerId,
+      body: "Work on rotation during next session.",
+      createdBy: coachId,
+    })
+    .returning({ id: coachNotes.id });
+  const coachNoteId = coachNoteRows[0]!.id;
+
+  const draftRows = await adminDb()
+    .insert(evaluationDrafts)
+    .values({
+      swimmerId,
+      coachId,
+      screenSlug: "freestyle",
+      sessionDate: "2026-10-02",
+      context: "practice",
+    })
+    .returning({ id: evaluationDrafts.id });
+  const evalDraftId = draftRows[0]!.id;
+
+  const meetSwimRows = await adminDb()
+    .insert(meetSwims)
+    .values({
+      swimmerId,
+      swimType: "practice",
+      eventDistance: 50,
+      eventStroke: "free",
+      course: "scy",
+      swumOn: "2026-09-15",
+      timeHundredths: 3500,
+      createdBy: coachId,
+    })
+    .returning({ id: meetSwims.id });
+  const meetSwimId = meetSwimRows[0]!.id;
+
+  const swimmerClubRows = await adminDb()
+    .insert(swimmerClubs)
+    .values({ swimmerId, otherClubName: "Deleted Club" })
+    .returning({ id: swimmerClubs.id });
+  const swimmerClubId = swimmerClubRows[0]!.id;
+
+  const leagueRows = await adminDb()
+    .insert(leagueRegistrations)
+    .values({
+      swimmerId,
+      league: "club",
+      seasonStartYear: 2026,
+      registeredOn: "2026-09-01",
+    })
+    .returning({ id: leagueRegistrations.id });
+  const leagueRegistrationId = leagueRows[0]!.id;
+
+  return {
+    sessionId,
+    ratingId,
+    coachNoteId,
+    evalDraftId,
+    meetSwimId,
+    swimmerClubId,
+    leagueRegistrationId,
+  };
+}
+
+beforeAll(async () => {
+  // The swimmer-linked-data seed needs a real catalog skill because
+  // skill_ratings.skill_id is NOT NULL and has an ON DELETE RESTRICT FK
+  // to skills. Sync the catalog once and cache a known-good slug's id.
+  await syncCatalogFn(adminDb());
+  const skillRows = await adminDb()
+    .select({ id: skills.id })
+    .from(skills)
+    .where(eq(skills.slug, "free-kick"))
+    .limit(1);
+  if (!skillRows[0]) throw new Error("Catalog skill free-kick not found — run pnpm db:sync-catalog");
+  catalogSkillId = skillRows[0].id;
+});
+
 // ── Preview ──────────────────────────────────────────────────────────────────
 
 describe("POST /me/deletion/preview", () => {
@@ -251,17 +394,38 @@ describe("POST /me/deletion/confirm (guards)", () => {
 // ── Solo path end-to-end ─────────────────────────────────────────────────────
 
 describe("POST /me/deletion/confirm — solo path", () => {
-  it("deletes the household, kids data, future lessons; anonymizes past lessons; scrubs profile; inserts job row", async () => {
-    const owner = await createTestUser("delete-solo");
+  it("deletes the household and every swimmer-linked row; anonymizes past lessons; scrubs profile; a second household is untouched", async () => {
+    // Shared coach used for both households' seed data. Promoted after
+    // signup so the FKs on evaluation_sessions.coach_id / skill_ratings
+    // .coach_id / meet_swims.created_by / coach_notes.created_by resolve.
+    const coach = await createTestUser("delete-solo-coach");
+    testUsers.push(coach);
+    await adminDb().update(profiles).set({ role: "coach" }).where(eq(profiles.id, coach.userId));
+
+    // ── Household A (will be deleted) ─────────────────────────────
+    const owner = await createTestUser("delete-solo-owner-a");
     testUsers.push(owner);
     const householdId = owner.householdId;
     const swimmerId = await createSwimmerForHousehold(owner);
     const locationId = await seedHomePool(householdId);
     const pastLessonId = await seedPastLesson(householdId, locationId, owner.userId, swimmerId);
     const futureLessonId = await seedFutureLesson(householdId, locationId, owner.userId, swimmerId);
+    const seededA = await seedSwimmerData(swimmerId, coach.userId);
 
+    // ── Household B (must survive untouched) ──────────────────────
+    const ownerB = await createTestUser("delete-solo-owner-b");
+    testUsers.push(ownerB);
+    const householdIdB = ownerB.householdId;
+    const swimmerIdB = await createSwimmerForHousehold(ownerB);
+    const locationIdB = await seedHomePool(householdIdB);
+    const pastLessonIdB = await seedPastLesson(householdIdB, locationIdB, ownerB.userId, swimmerIdB);
+    const seededB = await seedSwimmerData(swimmerIdB, coach.userId);
+
+    // Delete household A only.
     const res = await confirmDeletion(owner.accessToken);
     expect(res.status).toBe(204);
+
+    // ── Household A: full teardown ────────────────────────────────
 
     // Household gone.
     const hh = await adminDb().select().from(households).where(eq(households.id, householdId));
@@ -278,6 +442,41 @@ describe("POST /me/deletion/confirm — solo path", () => {
     // Home pool gone.
     const poolRows = await adminDb().select().from(lessonLocations).where(eq(lessonLocations.id, locationId));
     expect(poolRows).toHaveLength(0);
+
+    // Every swimmer-linked table — zero rows for swimmer A. The deletion
+    // engine's hard-delete sweep MUST remove everything listed in the ADR
+    // 034 plan; the swimmer-id scoped checks below are the per-table
+    // regression guards.
+    const [
+      sessionsA,
+      ratingsA,
+      faultTagsA,
+      coachNotesA,
+      evalDraftsA,
+      meetSwimsA,
+      swimmerClubsA,
+      leagueRegsA,
+      lessonSwimmersA,
+    ] = await Promise.all([
+      adminDb().select().from(evaluationSessions).where(eq(evaluationSessions.swimmerId, swimmerId)),
+      adminDb().select().from(skillRatings).where(eq(skillRatings.swimmerId, swimmerId)),
+      adminDb().select().from(ratingFaultTags).where(eq(ratingFaultTags.ratingId, seededA.ratingId)),
+      adminDb().select().from(coachNotes).where(eq(coachNotes.swimmerId, swimmerId)),
+      adminDb().select().from(evaluationDrafts).where(eq(evaluationDrafts.swimmerId, swimmerId)),
+      adminDb().select().from(meetSwims).where(eq(meetSwims.swimmerId, swimmerId)),
+      adminDb().select().from(swimmerClubs).where(eq(swimmerClubs.swimmerId, swimmerId)),
+      adminDb().select().from(leagueRegistrations).where(eq(leagueRegistrations.swimmerId, swimmerId)),
+      adminDb().select().from(lessonSwimmers).where(eq(lessonSwimmers.swimmerId, swimmerId)),
+    ]);
+    expect(sessionsA).toHaveLength(0);
+    expect(ratingsA).toHaveLength(0);
+    expect(faultTagsA).toHaveLength(0);
+    expect(coachNotesA).toHaveLength(0);
+    expect(evalDraftsA).toHaveLength(0);
+    expect(meetSwimsA).toHaveLength(0);
+    expect(swimmerClubsA).toHaveLength(0);
+    expect(leagueRegsA).toHaveLength(0);
+    expect(lessonSwimmersA).toHaveLength(0);
 
     // Past lesson anonymized (row survives, identity nulled).
     const pastRows = await adminDb().select().from(lessons).where(eq(lessons.id, pastLessonId));
@@ -334,12 +533,81 @@ describe("POST /me/deletion/confirm — solo path", () => {
     const meRes = await request(app).get("/me").set("Authorization", `Bearer ${owner.accessToken}`);
     expect(meRes.status).toBe(401);
 
-    // Housekeeping: remove the anonymized lesson rows + job row so
+    // ── Household B: untouched ────────────────────────────────────
+
+    // Second household + its data survives the first household's deletion.
+    // The blast radius of a deletion MUST be scoped to the deleting owner's
+    // household — this is what the hard-delete sweep's swimmer_id filter
+    // buys us, and a regression that broadened the scope would surface here.
+    const hhB = await adminDb().select().from(households).where(eq(households.id, householdIdB));
+    expect(hhB).toHaveLength(1);
+    const swimmersB = await adminDb().select().from(swimmers).where(eq(swimmers.id, swimmerIdB));
+    expect(swimmersB).toHaveLength(1);
+    const [
+      sessionsB,
+      ratingsB,
+      faultTagsB,
+      coachNotesB,
+      evalDraftsB,
+      meetSwimsB,
+      swimmerClubsB,
+      leagueRegsB,
+      lessonSwimmersB,
+    ] = await Promise.all([
+      adminDb().select().from(evaluationSessions).where(eq(evaluationSessions.swimmerId, swimmerIdB)),
+      adminDb().select().from(skillRatings).where(eq(skillRatings.swimmerId, swimmerIdB)),
+      adminDb().select().from(ratingFaultTags).where(eq(ratingFaultTags.ratingId, seededB.ratingId)),
+      adminDb().select().from(coachNotes).where(eq(coachNotes.swimmerId, swimmerIdB)),
+      adminDb().select().from(evaluationDrafts).where(eq(evaluationDrafts.swimmerId, swimmerIdB)),
+      adminDb().select().from(meetSwims).where(eq(meetSwims.swimmerId, swimmerIdB)),
+      adminDb().select().from(swimmerClubs).where(eq(swimmerClubs.swimmerId, swimmerIdB)),
+      adminDb().select().from(leagueRegistrations).where(eq(leagueRegistrations.swimmerId, swimmerIdB)),
+      adminDb().select().from(lessonSwimmers).where(eq(lessonSwimmers.swimmerId, swimmerIdB)),
+    ]);
+    expect(sessionsB).toHaveLength(1);
+    expect(ratingsB).toHaveLength(1);
+    expect(faultTagsB).toHaveLength(1);
+    expect(coachNotesB).toHaveLength(1);
+    expect(evalDraftsB).toHaveLength(1);
+    expect(meetSwimsB).toHaveLength(1);
+    expect(swimmerClubsB).toHaveLength(1);
+    expect(leagueRegsB).toHaveLength(1);
+    expect(lessonSwimmersB).toHaveLength(1);
+    // The household-B past lesson is still live (not anonymized).
+    const pastRowsB = await adminDb().select().from(lessons).where(eq(lessons.id, pastLessonIdB));
+    expect(pastRowsB).toHaveLength(1);
+    expect(pastRowsB[0]?.anonymizedAt).toBeNull();
+    expect(pastRowsB[0]?.householdId).toBe(householdIdB);
+    // Owner B's profile untouched.
+    const profileB = await adminDb().select().from(profiles).where(eq(profiles.id, ownerB.userId)).limit(1);
+    expect(profileB[0]?.disabledAt).toBeNull();
+
+    // Housekeeping: remove the anonymized lesson rows from A + job row so
     // afterEach doesn't hit RESTRICT FKs against profiles/households from
-    // other test fixtures.
+    // other test fixtures. Household B's rows are cleaned up by the
+    // afterEach testUser cleanup since the swimmers/lessons/etc. all FK
+    // back to swimmers/profiles that TestUser.cleanup removes.
     await adminDb().delete(coachNotifications).where(eq(coachNotifications.category, "account_deleted"));
     await adminDb().delete(lessons).where(inArray(lessons.id, [pastLessonId, futureLessonId]));
     await adminDb().delete(accountDeletionJobs).where(eq(accountDeletionJobs.authUserId, owner.userId));
+    // Explicit teardown of household B's seeded rows — the TestUser
+    // cleanup helper only handles the profile + household + direct
+    // members, not swimmer-scoped children. household_audit_log has an
+    // ON DELETE RESTRICT FK on target_swimmer_id (populated by the
+    // POST /swimmers `swimmer_added` audit row), so it must be cleared
+    // before the swimmer delete can land.
+    await adminDb().delete(ratingFaultTags).where(eq(ratingFaultTags.ratingId, seededB.ratingId));
+    await adminDb().delete(skillRatings).where(eq(skillRatings.swimmerId, swimmerIdB));
+    await adminDb().delete(evaluationSessions).where(eq(evaluationSessions.swimmerId, swimmerIdB));
+    await adminDb().delete(coachNotes).where(eq(coachNotes.swimmerId, swimmerIdB));
+    await adminDb().delete(evaluationDrafts).where(eq(evaluationDrafts.swimmerId, swimmerIdB));
+    await adminDb().delete(meetSwims).where(eq(meetSwims.swimmerId, swimmerIdB));
+    await adminDb().delete(leagueRegistrations).where(eq(leagueRegistrations.swimmerId, swimmerIdB));
+    await adminDb().delete(lessonSwimmers).where(eq(lessonSwimmers.swimmerId, swimmerIdB));
+    await adminDb().delete(lessons).where(eq(lessons.id, pastLessonIdB));
+    await adminDb().delete(householdAuditLog).where(eq(householdAuditLog.targetSwimmerId, swimmerIdB));
+    await adminDb().delete(swimmers).where(eq(swimmers.id, swimmerIdB));
+    await adminDb().delete(lessonLocations).where(eq(lessonLocations.id, locationIdB));
   });
 });
 
@@ -828,18 +1096,22 @@ describe("background paths are safe with anonymized rows present", () => {
     expect(delRes.status).toBe(204);
 
     try {
-      const cronSecret = process.env["CRON_SECRET"] ?? "test-cron-secret-aaaaaaaaaaaaaaaaaa";
+      // Pin the cron secret the same way the dedicated cron-lease
+      // integration test does: setup.ts sets CRON_SECRET to a known
+      // 32-char value if the env hasn't been pre-populated, and the
+      // handler reads the lowercase `cron-secret` header name (see
+      // requireCronSecret in routes/internal.ts). Previous versions of
+      // this test tolerated a 401 fallback for the X-Cron-Secret spelling
+      // — that let a header-name regression hide here. Require 200 so a
+      // real auth failure fails loudly.
+      const cronSecret = process.env["CRON_SECRET"];
+      expect(cronSecret).toBeTruthy();
       const res = await request(app)
         .post("/internal/cron/tick")
-        .set("X-Cron-Secret", cronSecret)
+        .set("cron-secret", cronSecret!)
         .send({});
 
-      // The handler either returns 200 with counts, or 401 if the secret
-      // header name differs on this build — we tolerate either as "no
-      // 500" is the invariant here. The point is that the cron's lesson
-      // scans (status='pending' expire + status='approved' auto-complete)
-      // don't crash on anonymized rows in the table.
-      expect([200, 401]).toContain(res.status);
+      expect(res.status).toBe(200);
 
       // Anonymized rows untouched — status columns match what the
       // deletion flow left behind.
@@ -892,14 +1164,165 @@ describe("POST /me/deletion/confirm — rate limit (addition 3)", () => {
   });
 });
 
-// Suppress unused-import warnings for schemas referenced only in future
-// assertions (kept for readability / grep-ability).
-void bookingBatches;
-void evaluationDrafts;
-void evaluationSessions;
-void householdInvites;
-void lessonEmailOutbox;
-void meetSwims;
-void skillRatings;
-void swimmerClubs;
-void isNull;
+// ── scrubEmailOutboxForHousehold ────────────────────────────────────────────
+
+describe("scrubEmailOutboxForHousehold", () => {
+  // Builds a payload shaped like what services/emails/outbox writes for
+  // per-lesson rows. The `swimmerFirstNames` key is the trigger the
+  // deletion scrub replaces with a sentinel (see deletion.ts:scrubEmail
+  // OutboxForHousehold — the UPDATE only targets payloads that still
+  // carry this key, so a second scrub pass is a no-op).
+  function piiPayload(swimmerFirstName: string, parentFullName: string) {
+    return {
+      swimmerFirstNames: [swimmerFirstName],
+      parentFullName,
+      locationName: "Smith Family Pool",
+      startsAtIso: "2026-10-01T18:00:00.000Z",
+    };
+  }
+
+  it("deletes non-terminal outbox rows for the deleted household, scrubs terminal rows of PII, and leaves another household's rows untouched", async () => {
+    // Deleting owner's household (A).
+    const ownerA = await createTestUser("delete-outbox-owner-a");
+    testUsers.push(ownerA);
+    const swimmerA = await createSwimmerForHousehold(ownerA);
+    const locationA = await seedHomePool(ownerA.householdId);
+    const pastLessonA = await seedPastLesson(ownerA.householdId, locationA, ownerA.userId, swimmerA);
+    const futureLessonA = await seedFutureLesson(ownerA.householdId, locationA, ownerA.userId, swimmerA);
+
+    // Control household (B) — its outbox rows must be untouched.
+    const ownerB = await createTestUser("delete-outbox-owner-b");
+    testUsers.push(ownerB);
+    const swimmerB = await createSwimmerForHousehold(ownerB);
+    const locationB = await seedHomePool(ownerB.householdId);
+    const pastLessonB = await seedPastLesson(ownerB.householdId, locationB, ownerB.userId, swimmerB);
+
+    const nonTerminal = [...LESSON_EMAIL_OUTBOX_NON_TERMINAL_STATUSES];
+    const terminal = [...LESSON_EMAIL_OUTBOX_TERMINAL_STATUSES];
+
+    // Seed one row per non-terminal status for household A's past lesson,
+    // and one row per terminal status for the future lesson — both scoped
+    // via lesson_id. The scrub walks all three scopes (lesson_id in the
+    // anonymized set; household_id; batch_id), but lesson_id is the one
+    // that always fires regardless of batch presence, so it's the
+    // canonical regression surface.
+    // CHECK constraint lesson_email_outbox_claim_pair ties status='sending'
+    // 1:1 to a non-null claimed_until. Set a future lease on sending rows.
+    const inFiveMinutes = new Date(Date.now() + 5 * 60 * 1000);
+    const seededIds: string[] = [];
+    let sequence = 0;
+    for (const status of nonTerminal) {
+      const row = await adminDb()
+        .insert(lessonEmailOutbox)
+        .values({
+          lessonId: pastLessonA,
+          event: "lesson_canceled",
+          sequence: sequence++,
+          recipientProfileIds: [ownerA.userId],
+          payload: piiPayload("SwimmerA", "Parent A"),
+          status,
+          ...(status === "sending" && { claimedUntil: inFiveMinutes }),
+        })
+        .returning({ id: lessonEmailOutbox.id });
+      seededIds.push(row[0]!.id);
+    }
+    for (const status of terminal) {
+      const row = await adminDb()
+        .insert(lessonEmailOutbox)
+        .values({
+          lessonId: futureLessonA,
+          event: "lesson_canceled",
+          sequence: sequence++,
+          recipientProfileIds: [ownerA.userId],
+          payload: piiPayload("SwimmerA", "Parent A"),
+          status,
+        })
+        .returning({ id: lessonEmailOutbox.id });
+      seededIds.push(row[0]!.id);
+    }
+    // Control row: household B's past lesson with a 'sent' payload
+    // carrying PII. Must survive the deletion of A unchanged.
+    const controlRowB = await adminDb()
+      .insert(lessonEmailOutbox)
+      .values({
+        lessonId: pastLessonB,
+        event: "lesson_canceled",
+        sequence: 0,
+        recipientProfileIds: [ownerB.userId],
+        payload: piiPayload("SwimmerB", "Parent B"),
+        status: "sent",
+      })
+      .returning({ id: lessonEmailOutbox.id });
+    const controlIdB = controlRowB[0]!.id;
+
+    // Run deletion on household A.
+    const delRes = await confirmDeletion(ownerA.accessToken);
+    expect(delRes.status).toBe(204);
+
+    // Non-terminal rows for household A are gone.
+    const survivingNonTerminal = await adminDb()
+      .select()
+      .from(lessonEmailOutbox)
+      .where(
+        and(
+          inArray(lessonEmailOutbox.id, seededIds),
+          inArray(lessonEmailOutbox.status, nonTerminal),
+        ),
+      );
+    expect(survivingNonTerminal).toHaveLength(0);
+
+    // Terminal rows survive but their payload has been scrubbed — the
+    // swimmer first name and parent full name must not remain. The scrub
+    // writes `{ _scrubbed_at: <timestamp> }` as the payload shape (see
+    // deletion.ts) so a second pass is a no-op.
+    const survivingTerminal = await adminDb()
+      .select()
+      .from(lessonEmailOutbox)
+      .where(
+        and(
+          inArray(lessonEmailOutbox.id, seededIds),
+          inArray(lessonEmailOutbox.status, terminal),
+        ),
+      );
+    expect(survivingTerminal).toHaveLength(terminal.length);
+    for (const row of survivingTerminal) {
+      const serialized = JSON.stringify(row.payload);
+      expect(serialized).not.toContain("SwimmerA");
+      expect(serialized).not.toContain("Parent A");
+      // The `swimmerFirstNames` key is the exact trigger the second-pass
+      // guard looks at — asserting it's gone confirms a re-scrub won't
+      // match this row again.
+      expect(row.payload).not.toHaveProperty("swimmerFirstNames");
+      expect(row.payload).toHaveProperty("_scrubbed_at");
+    }
+
+    // Household B's row is untouched: PII intact, status unchanged.
+    const controlAfter = await adminDb()
+      .select()
+      .from(lessonEmailOutbox)
+      .where(eq(lessonEmailOutbox.id, controlIdB))
+      .limit(1);
+    expect(controlAfter).toHaveLength(1);
+    expect(controlAfter[0]?.status).toBe("sent");
+    const controlPayload = controlAfter[0]!.payload as Record<string, unknown>;
+    expect(controlPayload["swimmerFirstNames"]).toEqual(["SwimmerB"]);
+    expect(controlPayload["parentFullName"]).toBe("Parent B");
+
+    // Housekeeping — teardown of household A's anonymized lessons + the
+    // control household's outbox row + lesson.
+    await adminDb().delete(lessonEmailOutbox).where(eq(lessonEmailOutbox.id, controlIdB));
+    await adminDb().delete(lessonEmailOutbox).where(inArray(lessonEmailOutbox.id, seededIds));
+    await adminDb().delete(coachNotifications).where(eq(coachNotifications.category, "account_deleted"));
+    await adminDb().delete(lessons).where(inArray(lessons.id, [pastLessonA, futureLessonA]));
+    await adminDb().delete(accountDeletionJobs).where(eq(accountDeletionJobs.authUserId, ownerA.userId));
+    await adminDb().delete(lessonSwimmers).where(eq(lessonSwimmers.swimmerId, swimmerB));
+    await adminDb().delete(lessons).where(eq(lessons.id, pastLessonB));
+    // household_audit_log.target_swimmer_id → swimmers.id is ON DELETE
+    // RESTRICT (the swimmer_added row from POST /swimmers). Clear it
+    // before the swimmer delete can land.
+    await adminDb().delete(householdAuditLog).where(eq(householdAuditLog.targetSwimmerId, swimmerB));
+    await adminDb().delete(swimmers).where(eq(swimmers.id, swimmerB));
+    await adminDb().delete(lessonLocations).where(eq(lessonLocations.id, locationB));
+  });
+});
+
