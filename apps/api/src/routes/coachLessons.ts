@@ -34,11 +34,7 @@ import {
   UndoNoShowBodySchema,
 } from "@swim-app/shared";
 import { db } from "../db/client";
-import {
-  requireLiveHouseholdId,
-  requireLiveLessonFields,
-  requireLiveLocationId,
-} from "../db/liveLesson";
+import { requireLiveLessonFields, requireLiveLocationId } from "../db/liveLesson";
 import {
   availabilityConfig,
   availabilityOverrides,

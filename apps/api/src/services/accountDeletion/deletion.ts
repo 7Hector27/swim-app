@@ -8,7 +8,7 @@
 // sync) are intentionally out of this module — the route enqueues them as
 // post-commit tasks tracked by `account_deletion_jobs`.
 
-import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 
 import * as schema from "../../db/schema";

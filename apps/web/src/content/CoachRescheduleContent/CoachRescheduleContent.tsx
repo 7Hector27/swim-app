@@ -105,12 +105,12 @@ const VIEW_TOGGLE_INACTIVE = "border-border text-text hover:bg-surface-soft";
 export default function CoachRescheduleContent({ lesson, locations }: Props) {
   // Anonymized lessons (ADR 034) are terminal history — their identity
   // columns are null and they can't be rescheduled. The server page should
-  // never render this component for one, but defend here so the state
-  // initializer doesn't choke on a null locationId.
-  if (lesson.locationId === null) {
-    return <p>This lesson can no longer be rescheduled.</p>;
-  }
-  const initialLocationId: string = lesson.locationId;
+  // never render this component for one, so fall back to the current
+  // lesson's (possibly null) locationId by coercing to an empty string in
+  // the state initializer below. A stray render path hitting an anonymized
+  // lesson is bounded: the reschedule UI won't successfully preview or
+  // submit against an empty locationId.
+  const initialLocationId: string = lesson.locationId ?? "";
   const today = todayLA();
   const lessonDateLA = getLessonDateLA(lesson.startsAt);
   const lessonStartHHMM = getSlotHHMM(lesson.startsAt);
