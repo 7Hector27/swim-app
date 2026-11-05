@@ -1062,6 +1062,35 @@ export const bookingBatches = pgTable(
 // (lesson_id, event, sequence) unique key prevents duplicate rows; the
 // claim-before-send protocol (claimed_until + status='sending') prevents
 // duplicate sends. See docs/plans/parent-booking-emails.md.
+
+// Single source of truth for lesson_email_outbox.status values. The CHECK
+// constraint below references these literally — any status added here
+// MUST be reflected there and vice versa. Downstream code (e.g. the
+// account-deletion engine's outbox scrub) derives its filter lists from
+// these constants so a new status can't be silently missed.
+export const LESSON_EMAIL_OUTBOX_TERMINAL_STATUSES = [
+  "sent",
+  "skipped",
+  "superseded",
+  "abandoned",
+] as const;
+export type LessonEmailOutboxTerminalStatus =
+  (typeof LESSON_EMAIL_OUTBOX_TERMINAL_STATUSES)[number];
+
+export const LESSON_EMAIL_OUTBOX_NON_TERMINAL_STATUSES = [
+  "pending",
+  "sending",
+  "failed",
+] as const;
+export type LessonEmailOutboxNonTerminalStatus =
+  (typeof LESSON_EMAIL_OUTBOX_NON_TERMINAL_STATUSES)[number];
+
+export const LESSON_EMAIL_OUTBOX_STATUSES = [
+  ...LESSON_EMAIL_OUTBOX_NON_TERMINAL_STATUSES,
+  ...LESSON_EMAIL_OUTBOX_TERMINAL_STATUSES,
+] as const;
+export type LessonEmailOutboxStatus = (typeof LESSON_EMAIL_OUTBOX_STATUSES)[number];
+
 export const lessonEmailOutbox = pgTable(
   "lesson_email_outbox",
   {

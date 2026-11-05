@@ -24,6 +24,7 @@ import {
   householdInvites,
   householdMembers,
   households,
+  LESSON_EMAIL_OUTBOX_NON_TERMINAL_STATUSES,
   lessonEmailOutbox,
   lessonLocations,
   lessonSwimmers,
@@ -274,8 +275,14 @@ export async function runAccountDeletion(
   await scrubEmailOutboxForHousehold(tx, householdId, anonymizedLessonIds);
   await hardDeleteCoachNotificationsForHousehold(tx, householdId, anonymizedLessonIds);
 
+  // Enqueue the job row before the summary notification so the summary's
+  // `tag` can key off the job id — stable + already-unique, unlike a
+  // timestamp-derived key. The job row has no FK into households/
+  // profiles, so it is safe to insert before the household rows go.
+  const jobId = await enqueueDeletionJob(tx, profileId, authUserId, "solo");
+
   if (futureLessonTimes.length > 0) {
-    await insertAccountDeletedSummary(tx, futureLessonTimes, now);
+    await insertAccountDeletedSummary(tx, futureLessonTimes, now, jobId);
   }
 
   // Batches, home pools, invites, members, household — in dependency order.
@@ -289,7 +296,6 @@ export async function runAccountDeletion(
   await tx.delete(households).where(eq(households.id, householdId));
 
   await scrubProfile(tx, profileId, now);
-  const jobId = await enqueueDeletionJob(tx, profileId, authUserId, "solo");
 
   return { scope: "solo", jobId, cancelledFutureLessonIds };
 }
@@ -436,8 +442,10 @@ export async function scrubEmailOutboxForHousehold(
   // Non-terminal rows are deleted outright. Terminal rows have payload
   // replaced with a scrubbed sentinel — same shape the age-based drain
   // writes, so a second pass is a no-op (`payload ? 'swimmerFirstNames'`
-  // matches only un-scrubbed payloads).
-  const nonTerminalStatuses: ReadonlyArray<string> = ["pending", "sending", "failed", "held"];
+  // matches only un-scrubbed payloads). The status list is derived from
+  // the single-source-of-truth constant in schema.ts — adding a new
+  // outbox status there automatically propagates here.
+  const nonTerminalStatuses = [...LESSON_EMAIL_OUTBOX_NON_TERMINAL_STATUSES];
   const whereClauses = [
     anonymizedLessonIds.length > 0 ? inArray(lessonEmailOutbox.lessonId, anonymizedLessonIds) : null,
     eq(lessonEmailOutbox.householdId, householdId),
@@ -451,7 +459,7 @@ export async function scrubEmailOutboxForHousehold(
     await tx
       .delete(lessonEmailOutbox)
       .where(
-        and(whereClause, inArray(lessonEmailOutbox.status, [...nonTerminalStatuses])),
+        and(whereClause, inArray(lessonEmailOutbox.status, nonTerminalStatuses)),
       );
     await tx
       .update(lessonEmailOutbox)
@@ -500,6 +508,7 @@ export async function insertAccountDeletedSummary(
   tx: Tx,
   cancelledLessonTimes: Date[],
   now: Date,
+  jobId: string,
 ): Promise<void> {
   const coach = await getActiveCoachProfile();
   if (!coach) return;
@@ -518,7 +527,11 @@ export async function insertAccountDeletedSummary(
       deletedAtUtc: now.toISOString(),
     },
     clickUrl: `${siteUrl}/coach/alerts`,
-    tag: `account-deleted:${now.getTime()}`,
+    // Tag keyed on the deletion job id — stable, already-unique, and
+    // not a time-derived value (the previous now.getTime() was inert
+    // today but inconsistent with the "no time-derived identifiers in
+    // the payload" posture).
+    tag: `account-deleted:${jobId}`,
   });
 }
 
