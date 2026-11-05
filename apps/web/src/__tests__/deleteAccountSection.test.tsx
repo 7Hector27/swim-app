@@ -97,6 +97,73 @@ describe("DeleteAccountSection — preview copy", () => {
     expect(screen.getByTestId("delete-account-preview-kept")).toHaveTextContent(/4 past lesson/);
   });
 
+  it("solo-alone, 0 swimmers: no Swimmers bullet, no evaluations bullet (nothing to say about swimmers)", async () => {
+    const user = userEvent.setup();
+    render(
+      <DeleteAccountSection
+        preview={{
+          ...soloAlonePreview(),
+          swimmers: [],
+        }}
+      />,
+    );
+    await user.click(screen.getByTestId("delete-account-expand"));
+
+    // The swimmer-conditional bullets are both absent.
+    expect(screen.queryByTestId("delete-account-preview-swimmers")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("delete-account-preview-evaluations")).not.toBeInTheDocument();
+    // "this swimmer" / "these swimmers" must not appear anywhere in
+    // the body — nothing to point at with the zero-swimmer preview.
+    const preview = screen.getByTestId("delete-account-preview");
+    expect(preview.textContent ?? "").not.toMatch(/this swimmer/i);
+    expect(preview.textContent ?? "").not.toMatch(/these swimmers/i);
+    expect(preview.textContent ?? "").not.toMatch(/evaluations and meet times/i);
+  });
+
+  it("solo-alone, 1 swimmer: singular \"this swimmer\" phrasing", async () => {
+    const user = userEvent.setup();
+    render(
+      <DeleteAccountSection
+        preview={{
+          ...soloAlonePreview(),
+          swimmers: [{ firstName: "Alex", lastInitial: "S." }],
+        }}
+      />,
+    );
+    await user.click(screen.getByTestId("delete-account-expand"));
+
+    expect(screen.getByTestId("delete-account-preview-swimmers")).toHaveTextContent(
+      /^Swimmer: Alex S\./,
+    );
+    expect(screen.getByTestId("delete-account-preview-evaluations")).toHaveTextContent(
+      /All evaluations and meet times for this swimmer$/,
+    );
+  });
+
+  it("solo-alone, 2+ swimmers: plural \"these swimmers\" phrasing + Swimmers bullet lists all", async () => {
+    const user = userEvent.setup();
+    render(
+      <DeleteAccountSection
+        preview={{
+          ...soloAlonePreview(),
+          swimmers: [
+            { firstName: "Alex", lastInitial: "S." },
+            { firstName: "Mia", lastInitial: "S." },
+            { firstName: "Noah", lastInitial: "S." },
+          ],
+        }}
+      />,
+    );
+    await user.click(screen.getByTestId("delete-account-expand"));
+
+    expect(screen.getByTestId("delete-account-preview-swimmers")).toHaveTextContent(
+      /^Swimmers: Alex S\., Mia S\., Noah S\.$/,
+    );
+    expect(screen.getByTestId("delete-account-preview-evaluations")).toHaveTextContent(
+      /All evaluations and meet times for these swimmers$/,
+    );
+  });
+
   it("owner-with-viewers case: shows the delete button (regression guard — preview and confirm must agree the user can self-delete)", async () => {
     const user = userEvent.setup();
     render(<DeleteAccountSection preview={ownerWithViewersPreview()} />);

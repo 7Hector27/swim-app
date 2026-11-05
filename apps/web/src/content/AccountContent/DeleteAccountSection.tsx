@@ -160,7 +160,12 @@ function DeletionPreviewCopy({
                 <span className="text-text">{swimmerNames}</span>
               </li>
             )}
-            <li>All evaluations and meet times for {preview.swimmers.length === 1 ? "this swimmer" : "these swimmers"}</li>
+            {preview.swimmers.length > 0 && (
+              <li data-testid="delete-account-preview-evaluations">
+                All evaluations and meet times for{" "}
+                {preview.swimmers.length === 1 ? "this swimmer" : "these swimmers"}
+              </li>
+            )}
             {preview.futureLessonCount > 0 && (
               <li data-testid="delete-account-preview-future">
                 {preview.futureLessonCount} upcoming lesson
