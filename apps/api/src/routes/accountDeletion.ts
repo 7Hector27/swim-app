@@ -105,6 +105,14 @@ accountDeletionRouter.post(
       // deletion confirmation must not sign the authenticated user out
       // of the rest of their account; 403 with a distinct code
       // keeps the UX scoped to the deletion flow.
+      //
+      // NEVER include `req.userEmail` in this log line (or any log line
+      // in this handler). It's attached to req by requireUser and is
+      // in-scope here, but docs/accounts.md requires that email
+      // addresses never reach a log. The profile id is a UUID; that's
+      // the only correlator this warning needs. The rate limiter is
+      // keyed on the same profile id and will fire at 5 attempts so
+      // this log line can't be used to brute-force a known account.
       req.log.warn({ profileId: req.profile.id, reason: "invalid_password" }, "deletion re-auth failed");
       res.status(403).json({ error: "invalid_password" });
       return;
