@@ -9,6 +9,11 @@ import Link from "next/link";
 
 export const metadata: Metadata = {
   title: "Account deleted · Axiom Aquatics",
+  // No search-engine indexing — the page is reachable without auth and
+  // would be a confusing entry point for anyone arriving from a search
+  // result. No account-specific content lives here, so this is purely
+  // about discoverability, not privacy.
+  robots: { index: false, follow: false },
 };
 
 export default function AccountDeletedPage() {
