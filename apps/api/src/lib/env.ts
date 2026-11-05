@@ -172,6 +172,19 @@ export function parseEnv(raw: Record<string, string | undefined>): ApiEnv {
         "CRON_SECRET: must be set and at least 32 characters when APP_ENV is 'dev' or 'prod'",
       );
     }
+    // ADR 034 added auth.admin.deleteUser as part of the account-deletion
+    // post-commit fan-out. The service-role key is required for that call;
+    // without it the deployed API boots fine and only fails when a parent
+    // first clicks delete. Fail boot instead so the mistake surfaces in
+    // the deploy log, not a user-facing error. Required on Railway (API
+    // service) only — Vercel (web) must NEVER carry this key, and it
+    // must NEVER appear in a NEXT_PUBLIC_* variable.
+    if (!parsed.SUPABASE_SERVICE_ROLE_KEY || parsed.SUPABASE_SERVICE_ROLE_KEY.length === 0) {
+      issues.push(
+        "SUPABASE_SERVICE_ROLE_KEY: must be set when APP_ENV is 'dev' or 'prod' " +
+          "(used for the account-deletion auth.admin.deleteUser call per ADR 034)",
+      );
+    }
     issues.push(...validateGoogleOAuthForDeployed(parsed));
     issues.push(...validateEmailForDeployed(parsed));
     issues.push(...validateVapidForDeployed(parsed));
