@@ -16,7 +16,7 @@
 //      serializes POST /internal/cron/tick; the drain's FOR UPDATE
 //      SKIP LOCKED guards against a lease-expired takeover.
 
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { and, eq, inArray } from "drizzle-orm";
 import request from "supertest";
 import pino from "pino";
