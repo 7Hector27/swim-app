@@ -58,7 +58,16 @@ export interface AccountDeletionPreview {
 export interface RunAccountDeletionResult {
   scope: DeletionScope;
   jobId: string;
+  // Future-lesson ids cancelled by this deletion. Used by the route's
+  // post-commit path to feed the coach account-deleted summary (times
+  // only); the retry drain reads the authoritative set from
+  // accountDeletionJobs.anonymizedLessonIds instead.
   cancelledFutureLessonIds: string[];
+  // All anonymized lesson ids for this deletion (past + future). The
+  // post-commit fan-out walks this list to patch past Google events
+  // and delete future ones; the retry drain re-reads it from the
+  // deletion job row.
+  anonymizedLessonIds: string[];
 }
 
 export async function previewAccountDeletion(
@@ -178,8 +187,8 @@ export async function runAccountDeletion(
     // household to delete — scrub the profile and enqueue the auth-user
     // delete so the orphan is cleaned up.
     await scrubProfile(tx, profileId, now);
-    const jobId = await enqueueDeletionJob(tx, profileId, authUserId, "solo");
-    return { scope: "solo", jobId, cancelledFutureLessonIds: [] };
+    const jobId = await enqueueDeletionJob(tx, profileId, authUserId, "solo", []);
+    return { scope: "solo", jobId, cancelledFutureLessonIds: [], anonymizedLessonIds: [] };
   }
 
   const householdId = membership.householdId;
@@ -245,8 +254,8 @@ export async function runAccountDeletion(
         ),
       );
     await scrubProfile(tx, profileId, now);
-    const jobId = await enqueueDeletionJob(tx, profileId, authUserId, "leave");
-    return { scope: "leave", jobId, cancelledFutureLessonIds: [] };
+    const jobId = await enqueueDeletionJob(tx, profileId, authUserId, "leave", []);
+    return { scope: "leave", jobId, cancelledFutureLessonIds: [], anonymizedLessonIds: [] };
   }
 
   // Solo path. Full teardown.
@@ -279,7 +288,9 @@ export async function runAccountDeletion(
   // `tag` can key off the job id — stable + already-unique, unlike a
   // timestamp-derived key. The job row has no FK into households/
   // profiles, so it is safe to insert before the household rows go.
-  const jobId = await enqueueDeletionJob(tx, profileId, authUserId, "solo");
+  // Pass the anonymized lesson ids so the post-commit fan-out and retry
+  // drain can walk them (past → patch, future → delete the Google event).
+  const jobId = await enqueueDeletionJob(tx, profileId, authUserId, "solo", anonymizedLessonIds);
 
   if (futureLessonTimes.length > 0) {
     await insertAccountDeletedSummary(tx, futureLessonTimes, now, jobId);
@@ -297,7 +308,7 @@ export async function runAccountDeletion(
 
   await scrubProfile(tx, profileId, now);
 
-  return { scope: "solo", jobId, cancelledFutureLessonIds };
+  return { scope: "solo", jobId, cancelledFutureLessonIds, anonymizedLessonIds };
 }
 
 // ── Pure step functions ──────────────────────────────────────────────────────
@@ -592,6 +603,7 @@ export async function enqueueDeletionJob(
   profileId: string,
   authUserId: string,
   scope: DeletionScope,
+  anonymizedLessonIds: string[],
 ): Promise<string> {
   const rows = await tx
     .insert(accountDeletionJobs)
@@ -600,6 +612,7 @@ export async function enqueueDeletionJob(
       authUserId,
       scope,
       status: "pending",
+      anonymizedLessonIds,
     })
     .returning({ id: accountDeletionJobs.id });
   return rows[0]!.id;

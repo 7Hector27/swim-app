@@ -1515,6 +1515,13 @@ export const accountDeletionJobs = pgTable(
     scope: text("scope").notNull(),
     status: text("status").notNull().default("pending"),
     attempts: integer("attempts").notNull().default(0),
+    // Lesson ids this deletion anonymized (past lessons still in Google
+    // Calendar need patching, future ones need deleting). Captured at
+    // deletion time because the anonymization itself nulled the ties
+    // back to the household — the retry drain needs an authoritative
+    // list to walk. Empty for 'leave' scope and for solo deletions
+    // whose household owned no lessons.
+    anonymizedLessonIds: uuid("anonymized_lesson_ids").array().notNull().default(sql`'{}'::uuid[]`),
     lastError: text("last_error"),
     completedAt: timestamp("completed_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
