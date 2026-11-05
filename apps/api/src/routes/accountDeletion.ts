@@ -14,8 +14,8 @@ import { createClient } from "@supabase/supabase-js";
 import { eq, sql } from "drizzle-orm";
 
 import {
-  DELETION_CONFIRMATION_PHRASE,
   DeletionConfirmBodySchema,
+  matchesDeletionConfirmationPhrase,
   type DeletionConfirmBody,
   type DeletionPreviewResponse,
 } from "@swim-app/shared";
@@ -65,7 +65,11 @@ accountDeletionRouter.post(
 
     // Typed-phrase check first — cheap, no network call, no password leak
     // risk if the caller typed the wrong phrase but a right-ish password.
-    if (body.confirmationPhrase !== DELETION_CONFIRMATION_PHRASE) {
+    // Comparison is trimmed + case-insensitive so an iPhone-autocapitalized
+    // "Delete my account" passes; the shared helper is the single source
+    // of truth so client / Server Action / API all agree on what counts
+    // as a match.
+    if (!matchesDeletionConfirmationPhrase(body.confirmationPhrase)) {
       res.status(422).json({ error: "confirmation_phrase_mismatch" });
       return;
     }

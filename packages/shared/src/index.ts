@@ -110,6 +110,7 @@ export {
   DeletionPreviewResponseSchema,
   DeletionConfirmBodySchema,
   DELETION_CONFIRMATION_PHRASE,
+  matchesDeletionConfirmationPhrase,
 } from "./schemas/accountDeletion";
 
 export type {

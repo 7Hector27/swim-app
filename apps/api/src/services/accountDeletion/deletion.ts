@@ -53,6 +53,10 @@ export interface AccountDeletionPreview {
   pastLessonCount: number;
   futureLessonCount: number;
   ownerMustTransferFirst: boolean;
+  // The caller's household role. Phase 4 UI branches copy on this so
+  // leave and owner-with-only-viewers show distinct explanations. Null
+  // only in the orphan "profile with no household" fallback.
+  callerRole: "owner" | "manager" | "viewer" | null;
 }
 
 export interface RunAccountDeletionResult {
@@ -92,6 +96,7 @@ export async function previewAccountDeletion(
       pastLessonCount: 0,
       futureLessonCount: 0,
       ownerMustTransferFirst: false,
+      callerRole: null,
     };
   }
 
@@ -140,6 +145,7 @@ export async function previewAccountDeletion(
     pastLessonCount: pastCount[0]?.count ?? 0,
     futureLessonCount: futureCount[0]?.count ?? 0,
     ownerMustTransferFirst,
+    callerRole: membership.role,
   };
 }
 

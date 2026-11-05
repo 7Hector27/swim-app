@@ -4,10 +4,22 @@
 
 import { z } from "zod";
 
-// The exact phrase a parent must type to prove they meant to click the button.
-// Compared case-sensitively on the server. Any divergence here is a semantic
-// change and needs a plan + ADR update, not a silent tweak.
+// The phrase a parent must type to prove they meant to click the button.
+// Mobile keyboards autocapitalize the first word — "Delete my account" is a
+// genuinely-intended input that would otherwise fail a strict ===. The
+// comparison trims surrounding whitespace and lowercases both sides; the
+// phrase itself is kept lowercase so the UI can show the canonical form.
+// Any divergence of this constant is a semantic change and needs a plan +
+// ADR update, not a silent tweak.
 export const DELETION_CONFIRMATION_PHRASE = "delete my account";
+
+// Normalizes an input phrase for comparison. Used by the client's button-
+// enablement check, the web Server Action's defense-in-depth check, and
+// the API route's authoritative check so all three paths agree on what
+// counts as a match.
+export function matchesDeletionConfirmationPhrase(input: string): boolean {
+  return input.trim().toLowerCase() === DELETION_CONFIRMATION_PHRASE;
+}
 
 export const DeletionPreviewResponseSchema = z
   .object({
@@ -27,6 +39,12 @@ export const DeletionPreviewResponseSchema = z
     // The UI disables the confirm button and surfaces the transfer-first
     // flow instead. See ADR 034.
     ownerMustTransferFirst: z.boolean(),
+    // Caller's household role. The Phase 4 confirmation UI branches copy
+    // on this so "leave" (non-owner with others present) and "solo —
+    // owner with only viewers" render distinct explanations. Nullable
+    // only for the shouldn't-happen "profile with no household"
+    // fallback — a caller that passed requireUser always has one.
+    callerRole: z.enum(["owner", "manager", "viewer"]).nullable(),
   })
   .strict();
 
