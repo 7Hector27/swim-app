@@ -262,6 +262,14 @@ export async function runAccountDeletion(
         .orderBy(lessons.startsAt)).map((row) => row.startsAt);
 
   const anonymizedLessonIds = await anonymizeHouseholdLessons(tx, householdId, now);
+
+  // Delete the household audit log BEFORE swimmers because
+  // household_audit_log.target_swimmer_id is RESTRICT — a prior
+  // swimmer_added audit entry blocks the swimmer DELETE otherwise.
+  // The audit log cascades with the household at step bottom but we
+  // delete explicitly here to clear the FK first.
+  await tx.delete(householdAuditLog).where(eq(householdAuditLog.householdId, householdId));
+
   await hardDeleteHouseholdSwimmerData(tx, householdId);
   await scrubEmailOutboxForHousehold(tx, householdId, anonymizedLessonIds);
   await hardDeleteCoachNotificationsForHousehold(tx, householdId, anonymizedLessonIds);
@@ -270,14 +278,13 @@ export async function runAccountDeletion(
     await insertAccountDeletedSummary(tx, futureLessonTimes, now);
   }
 
-  // Batches, home pools, invites, audit log, household — in dependency order.
-  // The household's cascade would wipe household_audit_log, household_invites,
-  // household_members, and lesson_locations, but we delete explicitly so the
-  // order is auditable and any RESTRICT conflict surfaces loudly.
+  // Batches, home pools, invites, members, household — in dependency order.
+  // The household's cascade would wipe household_invites and
+  // household_members too, but we delete explicitly so the order is
+  // auditable and any RESTRICT conflict surfaces loudly.
   await tx.delete(bookingBatches).where(eq(bookingBatches.householdId, householdId));
   await tx.delete(lessonLocations).where(eq(lessonLocations.householdId, householdId));
   await tx.delete(householdInvites).where(eq(householdInvites.householdId, householdId));
-  await tx.delete(householdAuditLog).where(eq(householdAuditLog.householdId, householdId));
   await tx.delete(householdMembers).where(eq(householdMembers.householdId, householdId));
   await tx.delete(households).where(eq(households.id, householdId));
 

@@ -1301,7 +1301,10 @@ export const coachNotifications = pgTable(
   (table) => [
     check(
       "coach_notifications_category_valid",
-      sql`${table.category} IN ('booking_request', 'request_expiring_soon', 'parent_change', 'calendar_disconnected', 'auto_approved_summary', 'daily_summary')`,
+      // 'account_deleted' added for ADR 034 — the summary row Jason sees
+      // when a family deletes their account, listing the freed-up lesson
+      // times with no family or swimmer identity.
+      sql`${table.category} IN ('booking_request', 'request_expiring_soon', 'parent_change', 'calendar_disconnected', 'auto_approved_summary', 'daily_summary', 'account_deleted')`,
     ),
     check(
       "coach_notifications_urgency_valid",
@@ -1329,7 +1332,7 @@ export const coachNotifications = pgTable(
         (${table.category} IN ('booking_request', 'request_expiring_soon', 'parent_change', 'auto_approved_summary')
          AND ((CASE WHEN ${table.lessonId} IS NOT NULL THEN 1 ELSE 0 END)
             + (CASE WHEN ${table.batchId} IS NOT NULL THEN 1 ELSE 0 END) = 1))
-        OR (${table.category} IN ('calendar_disconnected', 'daily_summary')
+        OR (${table.category} IN ('calendar_disconnected', 'daily_summary', 'account_deleted')
             AND ${table.lessonId} IS NULL AND ${table.batchId} IS NULL)
       )`,
     ),

@@ -484,6 +484,13 @@
       "when": 1793842004302,
       "tag": "0068_lessons_nullable_identity_cols",
       "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1793848640012,
+      "tag": "0069_coach_notifications_account_deleted",
+      "breakpoints": true
     }
   ]
 }
