@@ -1,7 +1,7 @@
 # 034 — Parent account deletion
 
 **Date:** 2026-11-04
-**Status:** Draft
+**Status:** Accepted
 
 ## Context
 
