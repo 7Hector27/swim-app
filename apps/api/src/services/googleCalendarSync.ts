@@ -58,19 +58,26 @@ export async function syncLessonToGoogle(lessonId: string): Promise<void> {
     // UI surfaces it, and swallow — a microtask rejection is useless to
     // anyone. We can't call markLessonSyncFailed without a coachProfileId,
     // so write directly to the lesson row.
-    logger.error({ err, lessonId }, "google sync: uncaught error in reconcile");
+    //
+    // Never log the raw `err`. Google/gaxios errors carry a `.config` tree
+    // with request headers (Authorization) and the request body (auth
+    // code), and pino's default serializer would walk it all into the log
+    // line. toSafeGoogleError picks the three fields we need and drops
+    // the rest; mirror the pattern every other call site in this file uses.
+    const safeErr = googleClient.toSafeGoogleError(err);
+    logger.error({ err: safeErr, lessonId }, "google sync: uncaught error in reconcile");
     try {
       await db
         .update(lessons)
         .set({
           calendarSyncStatus: "sync_failed",
-          calendarSyncError: `unexpected_error: ${googleClient.toSafeGoogleError(err).message}`.slice(0, 500),
+          calendarSyncError: `unexpected_error: ${safeErr.message}`.slice(0, 500),
           calendarSyncAttempts: sql`${lessons.calendarSyncAttempts} + 1`,
         })
         .where(eq(lessons.id, lessonId));
     } catch (innerErr) {
       // Even the fallback write failed. Give up and log — Node won't crash.
-      logger.error({ err: innerErr, lessonId }, "google sync: fallback write also failed");
+      logger.error({ err: googleClient.toSafeGoogleError(innerErr), lessonId }, "google sync: fallback write also failed");
     }
   }
 }
