@@ -8,6 +8,7 @@ import type {
 } from "@swim-app/shared";
 import { z } from "zod";
 import { db } from "../db/client";
+import { requireLiveLocationId } from "../db/liveLesson";
 import {
   bookingBatches,
   householdMembers,
@@ -119,7 +120,9 @@ coachBatchesRouter.get(
       }
     }
 
-    const batchLessons: CoachBatchLesson[] = lessonRows.map((row) => ({
+    // INNER JOIN on lessons.locationId = lessonLocations.id guarantees
+    // locationId is non-null at runtime; the schema type widens per ADR 034.
+    const batchLessons: CoachBatchLesson[] = lessonRows.map(requireLiveLocationId).map((row) => ({
       id: row.id,
       startsAt: row.startsAt.toISOString(),
       durationMinutes: row.durationMinutes as LessonDurationMinutes,

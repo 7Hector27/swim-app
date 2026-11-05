@@ -9,6 +9,7 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { DECLINE_REASON_MAX_LENGTH } from "@swim-app/shared";
 
+import { requireLiveLessonFields } from "../../db/liveLesson";
 import * as schema from "../../db/schema";
 import {
   householdMembers,
@@ -95,10 +96,13 @@ export async function enqueueLessonEmail(
     .where(eq(lessons.id, input.lessonId))
     .for("update")
     .limit(1);
-  const lessonRow = lessonRows[0];
-  if (!lessonRow) {
+  const rawLessonRow = lessonRows[0];
+  if (!rawLessonRow) {
     throw new Error(`enqueueLessonEmail: lesson ${input.lessonId} not found`);
   }
+  // ADR 034: enqueueLessonEmail is only invoked for live lessons (booking,
+  // approval, cancellation of a current lesson). Narrow identity columns.
+  const lessonRow = requireLiveLessonFields(rawLessonRow);
 
   // Describe state: usually the live row, unless caller supplied an override.
   const describeStartsAt = input.describe?.startsAt ?? lessonRow.startsAt;

@@ -477,6 +477,13 @@
       "when": 1793834089285,
       "tag": "0067_account_deletion_prep",
       "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1793842004302,
+      "tag": "0068_lessons_nullable_identity_cols",
+      "breakpoints": true
     }
   ]
 }

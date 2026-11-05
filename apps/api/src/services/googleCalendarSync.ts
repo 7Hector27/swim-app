@@ -9,6 +9,7 @@
 import { and, asc, eq, gte, inArray, isNotNull, or, sql } from "drizzle-orm";
 
 import { db } from "../db/client";
+import { requireLiveLessonFields } from "../db/liveLesson";
 import {
   coachCalendarIntegrations,
   lessonLocations,
@@ -480,8 +481,13 @@ interface ReconcileContext {
 
 async function loadReconcileContext(lessonId: string): Promise<ReconcileContext | null> {
   const lessonRows = await db.select().from(lessons).where(eq(lessons.id, lessonId)).limit(1);
-  const lesson = lessonRows[0];
-  if (!lesson) return null;
+  const rawLesson = lessonRows[0];
+  if (!rawLesson) return null;
+  // ADR 034: syncLessonToGoogle is invoked for live lessons (just-booked,
+  // just-cancelled, reschedule). Anonymized rows have no Google event id to
+  // reconcile; narrow identity columns and bail on anonymized rows loudly.
+  if (rawLesson.anonymizedAt !== null) return null;
+  const lesson = requireLiveLessonFields(rawLesson);
 
   // Resolve the coach's profile id and scope the integration lookup to it,
   // plus `status='active'`. In a single-coach app the resolver just finds

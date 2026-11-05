@@ -35,6 +35,11 @@ import {
 } from "@swim-app/shared";
 import { db } from "../db/client";
 import {
+  requireLiveHouseholdId,
+  requireLiveLessonFields,
+  requireLiveLocationId,
+} from "../db/liveLesson";
+import {
   availabilityConfig,
   availabilityOverrides,
   availabilitySeasons,
@@ -88,7 +93,10 @@ coachLessonsRouter.get(
     // (completed, canceled, no_show, declined, expired) with each row
     // tappable through to /coach/lessons/[id]. The planning subset used for
     // travel buffers and open slots stays limited to pending/approved below.
-    const lessonRows = await db
+    // INNER JOIN on lessonLocations means every returned row has a live
+    // locationId at runtime, and we never show anonymized rows on the
+    // coach schedule — narrow per ADR 034.
+    const lessonRows = (await db
       .select({
         id: lessons.id,
         householdId: lessons.householdId,
@@ -111,7 +119,7 @@ coachLessonsRouter.get(
       .where(
         sql`date_trunc('day', ${lessons.startsAt} AT TIME ZONE 'America/Los_Angeles') = ${date}::date`,
       )
-      .orderBy(asc(lessons.startsAt));
+      .orderBy(asc(lessons.startsAt))).map(requireLiveLessonFields);
 
     // Planning subset: pending + approved only. Travel buffers between
     // these rows render on the schedule; terminal-status lessons never
@@ -177,7 +185,10 @@ coachLessonsRouter.get(
               inArray(lessons.status, ["pending", "approved"]),
               sql`date_trunc('day', ${lessons.startsAt} AT TIME ZONE 'America/Los_Angeles') = ${date}::date`,
             ),
-          ),
+          )
+          // Live pending/approved lessons always have locationId populated —
+          // narrow per ADR 034.
+          .then((rows) => rows.map(requireLiveLocationId)),
         db.select().from(availabilitySeasons),
         db.select().from(availabilityOverrides),
       ]);
@@ -351,7 +362,9 @@ coachLessonsRouter.get(
     // are returned so past weeks show lessons in their real end state
     // (completed, canceled, no_show, declined, expired) with each card
     // tappable through to /coach/lessons/[id].
-    const lessonRows = await db
+    // INNER JOIN on lessonLocations guarantees locationId non-null at
+    // runtime; narrow per ADR 034.
+    const lessonRows = (await db
       .select({
         id: lessons.id,
         householdId: lessons.householdId,
@@ -377,7 +390,7 @@ coachLessonsRouter.get(
           sql`date_trunc('day', ${lessons.startsAt} AT TIME ZONE 'America/Los_Angeles') < ${endDate}::date + interval '1 day'`,
         ),
       )
-      .orderBy(asc(lessons.startsAt));
+      .orderBy(asc(lessons.startsAt))).map(requireLiveLessonFields);
 
     const lessonIds = lessonRows.map((row) => row.id);
 
@@ -540,7 +553,9 @@ coachLessonsRouter.get(
       filters.push(eq(lessons.calendarSyncStatus, query.calendarSyncStatus));
     }
 
-    const lessonRows = await db
+    // Coach-facing lesson list excludes anonymized rows at the query level;
+    // narrow per ADR 034.
+    const lessonRows = (await db
       .select({
         id: lessons.id,
         householdId: lessons.householdId,
@@ -562,7 +577,7 @@ coachLessonsRouter.get(
       .from(lessons)
       .leftJoin(bookingBatches, eq(lessons.batchId, bookingBatches.id))
       .where(filters.length > 0 ? and(...filters) : undefined)
-      .orderBy(asc(lessons.startsAt));
+      .orderBy(asc(lessons.startsAt))).map(requireLiveLessonFields);
 
     const lessonIds = lessonRows.map((row) => row.id);
 
@@ -629,8 +644,11 @@ coachLessonsRouter.patch(
         .set({ status: "approved", approvedAt: now, approvedBy: req.profile.id })
         .where(and(eq(lessons.id, id), eq(lessons.status, "pending")))
         .returning();
-      const row = rows[0];
-      if (!row) return null;
+      const rawRow = rows[0];
+      if (!rawRow) return null;
+      // ADR 034: this UPDATE targets a live pending lesson; narrow the
+      // schema-level null widening on identity columns.
+      const row = requireLiveLessonFields(rawRow);
 
       // Parent booking email outbox (ADR 028): CONFIRMED with METHOD:REQUEST
       // .ics. Snapshot-then-increments lessons.calendar_sequence. The parent
@@ -731,11 +749,13 @@ coachLessonsRouter.patch(
     const result = await db.transaction(async (tx) => {
       // Lock every pending lesson in the batch so a concurrent per-lesson
       // approve/decline cannot flip rows underneath us.
-      const pendingBefore = await tx
+      const pendingBefore = (await tx
         .select()
         .from(lessons)
         .where(and(eq(lessons.batchId, batchId), eq(lessons.status, "pending")))
-        .for("update");
+        .for("update"))
+        // SELECT ... FOR UPDATE on live pending lessons; narrow per ADR 034.
+        .map(requireLiveLessonFields);
 
       if (pendingBefore.length === 0) return { kind: "none" as const };
 
@@ -946,8 +966,11 @@ coachLessonsRouter.patch(
         })
         .where(and(eq(lessons.id, id), eq(lessons.status, "pending")))
         .returning();
-      const row = rows[0];
-      if (!row) return null;
+      const rawRow = rows[0];
+      if (!rawRow) return null;
+      // ADR 034: this UPDATE targets a live pending lesson; narrow the
+      // schema-level null widening on identity columns.
+      const row = requireLiveLessonFields(rawRow);
 
       // Parent booking email outbox (ADR 028). Today the state machine only
       // allows decline from pending, so this never emits a CANCEL .ics; the
@@ -1052,7 +1075,7 @@ coachLessonsRouter.patch(
         return { kind: "not_started" as const };
       }
 
-      const [updated] = await tx
+      const [rawUpdated] = await tx
         .update(lessons)
         .set({
           status: "no_show",
@@ -1061,7 +1084,9 @@ coachLessonsRouter.patch(
         })
         .where(eq(lessons.id, id))
         .returning();
-      if (!updated) throw new Error("no-show update returned no row");
+      if (!rawUpdated) throw new Error("no-show update returned no row");
+      // ADR 034: this UPDATE targets a live lesson; narrow identity columns.
+      const updated = requireLiveLessonFields(rawUpdated);
 
       await tx.insert(householdAuditLog).values({
         householdId: updated.householdId,
@@ -1162,7 +1187,7 @@ coachLessonsRouter.patch(
       const nextCompletedAt =
         nextStatus === "completed" ? (lessonRow.completedAt ?? now) : null;
 
-      const [updated] = await tx
+      const [rawUpdated] = await tx
         .update(lessons)
         .set({
           status: nextStatus,
@@ -1172,7 +1197,9 @@ coachLessonsRouter.patch(
         })
         .where(eq(lessons.id, id))
         .returning();
-      if (!updated) throw new Error("no-show undo returned no row");
+      if (!rawUpdated) throw new Error("no-show undo returned no row");
+      // ADR 034: this UPDATE targets a live lesson; narrow identity columns.
+      const updated = requireLiveLessonFields(rawUpdated);
 
       await tx.insert(householdAuditLog).values({
         householdId: updated.householdId,
@@ -1266,11 +1293,13 @@ coachLessonsRouter.get(
       .where(eq(lessons.id, id))
       .limit(1);
 
-    const lessonRow = lessonRows[0];
-    if (!lessonRow) {
+    const rawLessonRow = lessonRows[0];
+    if (!rawLessonRow) {
       res.status(404).json({ error: "Lesson not found" });
       return;
     }
+    // ADR 034: coach lesson detail never renders anonymized rows; narrow.
+    const lessonRow = requireLiveLessonFields(rawLessonRow);
 
     // Load swimmers with club names (deduplicated).
     const rawSwimmerRows = await db
@@ -1491,7 +1520,10 @@ coachLessonsRouter.post(
             locationId: lessons.locationId,
           })
           .from(lessons)
-          .where(inArray(lessons.status, ["pending", "approved"])),
+          .where(inArray(lessons.status, ["pending", "approved"]))
+          // Live pending/approved lessons always have locationId populated —
+          // narrow per ADR 034.
+          .then((rows) => rows.map(requireLiveLocationId)),
       ]);
     const config = configRows[0];
     if (!config) {
@@ -1591,7 +1623,8 @@ coachLessonsRouter.post(
           expiresAt: null,
         })
         .returning();
-      const inserted = insertedRows[0]!;
+      // ADR 034: INSERT of a live lesson; narrow identity columns.
+      const inserted = requireLiveLessonFields(insertedRows[0]!);
 
       await tx.insert(lessonSwimmers).values(
         body.swimmerIds.map((swimmerId) => ({ lessonId: inserted.id, swimmerId })),

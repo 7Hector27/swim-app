@@ -19,6 +19,7 @@ import {
   BulkCancelPreviewBodySchema,
 } from "@swim-app/shared";
 import { db } from "../db/client";
+import { requireLiveLessonFields } from "../db/liveLesson";
 import {
   availabilityOverrides,
   blockedTimes,
@@ -116,9 +117,12 @@ coachBulkCancelRouter.post(
       body.startTime !== undefined && body.endTime !== undefined
         ? { startTime: body.startTime, endTime: body.endTime }
         : null;
+    // INNER JOINs on households and lessonLocations above guarantee both
+    // identity columns are non-null at runtime; narrow the schema-level
+    // widening per ADR 034.
     const inScope = rows.filter((row) =>
       lessonOverlapsWindow(row.startsAt, row.durationMinutes, windowFilter),
-    );
+    ).map(requireLiveLessonFields);
 
     const items: BulkCancelPreviewLesson[] = inScope.map((row) => ({
       lessonId: row.id,
@@ -257,9 +261,14 @@ coachBulkCancelRouter.post(
         .from(lessons)
         .where(and(...whereClauses))
         .for("update");
-      const affected = lockedRange.filter((lesson) =>
-        lessonOverlapsWindow(lesson.startsAt, lesson.durationMinutes, windowFilter),
-      );
+      // SELECT ... FOR UPDATE on status IN ('approved','pending') lessons —
+      // these are live by definition; narrow the schema-level widening so
+      // household/location/actor fields read as non-null. ADR 034.
+      const affected = lockedRange
+        .filter((lesson) =>
+          lessonOverlapsWindow(lesson.startsAt, lesson.durationMinutes, windowFilter),
+        )
+        .map(requireLiveLessonFields);
 
       if (affected.length === 0 && !body.blockRange) {
         // Throw so the whole transaction rolls back — the bulk_cancellations

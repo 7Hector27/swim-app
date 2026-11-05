@@ -543,13 +543,19 @@ export const lessonTypeEnum = pgEnum("lesson_type", ["private", "family"]);
 
 export const lessons = pgTable("lessons", {
   id: uuid("id").primaryKey().defaultRandom(),
-  householdId: uuid("household_id").notNull().references(() => households.id, { onDelete: "restrict" }),
-  locationId: uuid("location_id").notNull().references(() => lessonLocations.id, { onDelete: "restrict" }),
+  // ADR 034: household_id, location_id, and the actor columns are nullable
+  // for anonymized past-lesson rows that survive their household's deletion.
+  // Every live-lesson code path filters `anonymized_at IS NULL` (or the FK
+  // is populated because the row was loaded before any anonymization ran),
+  // so for those paths the nulls can never appear at runtime — enforce that
+  // invariant at query boundaries with `requireLiveLessonFields`.
+  householdId: uuid("household_id").references(() => households.id, { onDelete: "set null" }),
+  locationId: uuid("location_id").references(() => lessonLocations.id, { onDelete: "set null" }),
   startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
   durationMinutes: integer("duration_minutes").notNull(),
   type: lessonTypeEnum("type").notNull(),
   status: lessonStatusEnum("status").notNull().default("pending"),
-  requestedBy: uuid("requested_by").notNull().references(() => profiles.id),
+  requestedBy: uuid("requested_by").references(() => profiles.id),
   approvedAt: timestamp("approved_at", { withTimezone: true }),
   approvedBy: uuid("approved_by").references(() => profiles.id),
   declinedAt: timestamp("declined_at", { withTimezone: true }),
