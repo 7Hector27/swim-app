@@ -2058,10 +2058,14 @@ lessonsRouter.patch(
       rawExistingLesson = rows[0];
       if (!rawExistingLesson) { res.status(404).json({ error: "Lesson not found" }); return; }
     }
-    // ADR 034: PATCH /lessons/:id targets a live lesson; narrow identity
-    // columns. Anonymized rows carry status 'canceled'/'completed'/etc. and
-    // are rejected by the status check below anyway, but keep the invariant
-    // explicit here.
+    // ADR 034: on the coach path a lesson id can resolve to an anonymized
+    // row (parent path already filters by householdId so null-household
+    // rows don't reach here). Return a clear 409 before the narrow runs —
+    // otherwise requireLiveLessonFields would throw and surface as 500.
+    if (rawExistingLesson.anonymizedAt !== null) {
+      res.status(409).json({ error: "lesson_anonymized" });
+      return;
+    }
     const existingLesson = requireLiveLessonFields(rawExistingLesson);
 
     if (!["pending", "approved"].includes(existingLesson.status)) {

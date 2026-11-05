@@ -688,6 +688,128 @@ describe("coach reads after an account deletion (addition 1)", () => {
   });
 });
 
+// ── Coach writes on anonymized lessons return 409 lesson_anonymized ─────────
+
+describe("coach writes on an anonymized lesson return 409 lesson_anonymized", () => {
+  async function seedAnonymizedLessonInStatus(
+    status: "completed" | "no_show" | "approved" | "pending",
+  ): Promise<string> {
+    const parent = await createTestUser(`anonymize-write-${status}-parent`);
+    testUsers.push(parent);
+    const swimmerId = await createSwimmerForHousehold(parent);
+    const locationId = await seedHomePool(parent.householdId);
+    // Seed the lesson first (future for approved/pending, past otherwise).
+    const lessonId =
+      status === "approved" || status === "pending"
+        ? await seedFutureLesson(parent.householdId, locationId, parent.userId, swimmerId)
+        : await seedPastLesson(parent.householdId, locationId, parent.userId, swimmerId);
+    // Force the desired terminal status before anonymization. seedPastLesson
+    // defaults to completed; seedFutureLesson defaults to approved.
+    if (status !== "completed" && status !== "approved") {
+      await adminDb().update(lessons).set({ status }).where(eq(lessons.id, lessonId));
+    }
+    // Delete the parent's account — anonymizes the lesson while preserving
+    // its current status (future approved → cancelled → anonymized; past
+    // lessons keep their status and get anonymized).
+    const delRes = await confirmDeletion(parent.accessToken);
+    expect(delRes.status).toBe(204);
+    // If we need a specific anonymized status that the deletion flow would
+    // have overridden (e.g. approved future → canceled), restore it now.
+    const row = await adminDb()
+      .select({ status: lessons.status, anonymizedAt: lessons.anonymizedAt })
+      .from(lessons)
+      .where(eq(lessons.id, lessonId))
+      .limit(1);
+    expect(row[0]?.anonymizedAt).not.toBeNull();
+    if (row[0]?.status !== status) {
+      await adminDb().update(lessons).set({ status }).where(eq(lessons.id, lessonId));
+    }
+    return lessonId;
+  }
+
+  async function cleanupAnonymizedLesson(lessonId: string): Promise<void> {
+    await adminDb().delete(lessons).where(eq(lessons.id, lessonId));
+    await adminDb().delete(coachNotifications).where(eq(coachNotifications.category, "account_deleted"));
+  }
+
+  it("PATCH /coach/lessons/:id/no-show returns 409 lesson_anonymized on an anonymized completed row (never 500)", async () => {
+    const coach = await createTestUser("anonymized-no-show-coach");
+    testUsers.push(coach);
+    await adminDb().update(profiles).set({ role: "coach" }).where(eq(profiles.id, coach.userId));
+
+    const lessonId = await seedAnonymizedLessonInStatus("completed");
+    try {
+      const res = await request(app)
+        .patch(`/coach/lessons/${lessonId}/no-show`)
+        .set("Authorization", `Bearer ${coach.accessToken}`)
+        .send({});
+
+      expect(res.status).toBe(409);
+      expect(res.body.error).toBe("lesson_anonymized");
+
+      // The lesson row was not mutated — status stays completed, no_show_by
+      // never set.
+      const after = await adminDb()
+        .select()
+        .from(lessons)
+        .where(eq(lessons.id, lessonId))
+        .limit(1);
+      expect(after[0]?.status).toBe("completed");
+      expect(after[0]?.noShowAt).toBeNull();
+      expect(after[0]?.noShowBy).toBeNull();
+    } finally {
+      await cleanupAnonymizedLesson(lessonId);
+    }
+  });
+
+  it("PATCH /coach/lessons/:id/no-show/undo returns 409 lesson_anonymized on an anonymized no-show row", async () => {
+    const coach = await createTestUser("anonymized-undo-no-show-coach");
+    testUsers.push(coach);
+    await adminDb().update(profiles).set({ role: "coach" }).where(eq(profiles.id, coach.userId));
+
+    const lessonId = await seedAnonymizedLessonInStatus("no_show");
+    try {
+      const res = await request(app)
+        .patch(`/coach/lessons/${lessonId}/no-show/undo`)
+        .set("Authorization", `Bearer ${coach.accessToken}`)
+        .send({});
+
+      expect(res.status).toBe(409);
+      expect(res.body.error).toBe("lesson_anonymized");
+
+      const after = await adminDb()
+        .select()
+        .from(lessons)
+        .where(eq(lessons.id, lessonId))
+        .limit(1);
+      expect(after[0]?.status).toBe("no_show");
+    } finally {
+      await cleanupAnonymizedLesson(lessonId);
+    }
+  });
+
+  it("PATCH /lessons/:id (coach path) returns 409 lesson_anonymized on an anonymized row (never 500)", async () => {
+    const coach = await createTestUser("anonymized-patch-coach");
+    testUsers.push(coach);
+    await adminDb().update(profiles).set({ role: "coach" }).where(eq(profiles.id, coach.userId));
+
+    // approved is the status where the narrow-before-status-check bug
+    // would have been most surprising; seed and test that path too.
+    const lessonId = await seedAnonymizedLessonInStatus("approved");
+    try {
+      const res = await request(app)
+        .patch(`/lessons/${lessonId}`)
+        .set("Authorization", `Bearer ${coach.accessToken}`)
+        .send({ durationMinutes: 45 });
+
+      expect(res.status).toBe(409);
+      expect(res.body.error).toBe("lesson_anonymized");
+    } finally {
+      await cleanupAnonymizedLesson(lessonId);
+    }
+  });
+});
+
 // ── Addition 3: rate limit ───────────────────────────────────────────────────
 
 describe("POST /me/deletion/confirm — rate limit (addition 3)", () => {

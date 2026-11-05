@@ -1100,6 +1100,15 @@ coachLessonsRouter.patch(
         .limit(1);
       if (!lessonRow) return { kind: "not_found" as const };
 
+      // ADR 034: anonymized rows (past lessons whose household was deleted)
+      // keep their terminal status and can satisfy the wrong-status checks
+      // below if the row happens to be status=completed. Short-circuit here
+      // with a clear 409 so the audit-row and narrow-identity steps never
+      // run on a row with null identity columns.
+      if (lessonRow.anonymizedAt !== null) {
+        return { kind: "anonymized" as const };
+      }
+
       if (lessonRow.status === "no_show") {
         return { kind: "already" as const };
       }
@@ -1120,7 +1129,7 @@ coachLessonsRouter.patch(
         .where(eq(lessons.id, id))
         .returning();
       if (!rawUpdated) throw new Error("no-show update returned no row");
-      // ADR 034: this UPDATE targets a live lesson; narrow identity columns.
+      // This UPDATE targets a live lesson; narrow identity columns.
       const updated = requireLiveLessonFields(rawUpdated);
 
       await tx.insert(householdAuditLog).values({
@@ -1138,6 +1147,10 @@ coachLessonsRouter.patch(
 
     if (outcome.kind === "not_found") {
       res.status(404).json({ error: "Lesson not found" });
+      return;
+    }
+    if (outcome.kind === "anonymized") {
+      res.status(409).json({ error: "lesson_anonymized" });
       return;
     }
     if (outcome.kind === "already") {
@@ -1212,6 +1225,13 @@ coachLessonsRouter.patch(
         .for("update")
         .limit(1);
       if (!lessonRow) return { kind: "not_found" as const };
+      // ADR 034: an anonymized row can satisfy status=no_show (past
+      // no-show lessons keep their status at anonymization). Short-circuit
+      // with a clear 409 before the UPDATE + audit-row + narrow-identity
+      // steps attempt to run against null identity columns.
+      if (lessonRow.anonymizedAt !== null) {
+        return { kind: "anonymized" as const };
+      }
       if (lessonRow.status !== "no_show") {
         return { kind: "not_no_show" as const };
       }
@@ -1251,6 +1271,10 @@ coachLessonsRouter.patch(
 
     if (outcome.kind === "not_found") {
       res.status(404).json({ error: "Lesson not found" });
+      return;
+    }
+    if (outcome.kind === "anonymized") {
+      res.status(409).json({ error: "lesson_anonymized" });
       return;
     }
     if (outcome.kind === "not_no_show") {
