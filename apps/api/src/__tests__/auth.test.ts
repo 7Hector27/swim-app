@@ -231,6 +231,28 @@ describe("GET /me", () => {
     expect(res.status).toBe(401);
   });
 
+  it("a still-valid token for a deleted profile gets 401 (ADR 034)", async () => {
+    // Dedicated regression for the scenario in docs/plans/account-deletion.md
+    // decision 1a. The access token is still cryptographically valid in
+    // Supabase — the post-commit auth.admin.deleteUser call has not run,
+    // or is retrying after a transient failure — but the deletion
+    // transaction has committed, which means the profile row carries
+    // disabled_at. requireUser must reject the request at the DB-side
+    // check, not wait for Supabase to catch up.
+    const stillValidToken = "token-whose-exp-is-still-in-the-future";
+    mockGetUser.mockResolvedValue(validUser);
+    mockDbWhere.mockResolvedValue([{ ...baseProfile, disabledAt: new Date() }]);
+
+    const res = await request(app).get("/me").set("Authorization", `Bearer ${stillValidToken}`);
+
+    expect(res.status).toBe(401);
+    expect(res.body).toEqual({ error: "Unauthorized" });
+    // Supabase was consulted exactly once; no fallback or retry path
+    // lets the stale token sneak through requireUser.
+    expect(mockGetUser).toHaveBeenCalledTimes(1);
+    expect(mockGetUser).toHaveBeenCalledWith(stillValidToken);
+  });
+
   it("returns 403 when age_attested_at is null", async () => {
     mockGetUser.mockResolvedValue(validUser);
     mockDbWhere.mockResolvedValue([{ ...baseProfile, ageAttestedAt: null }]);
