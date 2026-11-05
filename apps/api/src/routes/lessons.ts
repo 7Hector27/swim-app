@@ -2062,7 +2062,7 @@ lessonsRouter.patch(
     // row (parent path already filters by householdId so null-household
     // rows don't reach here). Return a clear 409 before the narrow runs —
     // otherwise requireLiveLessonFields would throw and surface as 500.
-    if (rawExistingLesson.anonymizedAt !== null) {
+    if (rawExistingLesson.anonymizedAt != null) {
       res.status(409).json({ error: "lesson_anonymized" });
       return;
     }

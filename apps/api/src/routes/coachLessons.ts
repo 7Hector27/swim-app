@@ -1105,7 +1105,7 @@ coachLessonsRouter.patch(
       // below if the row happens to be status=completed. Short-circuit here
       // with a clear 409 so the audit-row and narrow-identity steps never
       // run on a row with null identity columns.
-      if (lessonRow.anonymizedAt !== null) {
+      if (lessonRow.anonymizedAt != null) {
         return { kind: "anonymized" as const };
       }
 
@@ -1229,7 +1229,7 @@ coachLessonsRouter.patch(
       // no-show lessons keep their status at anonymization). Short-circuit
       // with a clear 409 before the UPDATE + audit-row + narrow-identity
       // steps attempt to run against null identity columns.
-      if (lessonRow.anonymizedAt !== null) {
+      if (lessonRow.anonymizedAt != null) {
         return { kind: "anonymized" as const };
       }
       if (lessonRow.status !== "no_show") {
