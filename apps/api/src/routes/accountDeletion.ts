@@ -82,9 +82,36 @@ accountDeletionRouter.post(
       email: req.userEmail,
       password: body.password,
     });
+    // Sign the re-auth client out regardless of outcome. persistSession:
+    // false stops client-side storage, but the signInWithPassword call
+    // still creates a real server-side session with a refresh token;
+    // signOut invalidates it so a failed deleteUser retry window doesn't
+    // leave a second live session attached to a deleted account.
+    try {
+      await authCheckClient.auth.signOut();
+    } catch {
+      /* best-effort — nothing we can do with a sign-out failure here */
+    }
     if (authError || !authData?.user) {
       req.log.warn({ profileId: req.profile.id, reason: "password_mismatch" }, "deletion re-auth failed");
       res.status(401).json({ error: "password_mismatch" });
+      return;
+    }
+
+    // Supabase's trigger mirrors auth.users.id into profiles.id so these
+    // should always match in a correctly-provisioned account. Defense in
+    // depth: if they ever diverge (a profile row with a repointed id, a
+    // test env that bypasses the trigger), passing the wrong UUID to the
+    // Admin API's deleteUser later would silently wipe the wrong auth
+    // user. Abort the request before any mutation runs; log the pair of
+    // ids (UUIDs only, no PII) so the discrepancy is traceable.
+    const authUserId = authData.user.id;
+    if (authUserId !== req.profile.id) {
+      req.log.error(
+        { event: "account_deletion_id_mismatch", profileId: req.profile.id, authUserId },
+        "deletion aborted: auth user id does not match profile id",
+      );
+      res.status(500).json({ error: "account_deletion_id_mismatch" });
       return;
     }
 
@@ -92,7 +119,7 @@ accountDeletionRouter.post(
 
     let result;
     try {
-      result = await db.transaction(async (tx) => runAccountDeletion(tx, req.profile.id, req.profile.id, now));
+      result = await db.transaction(async (tx) => runAccountDeletion(tx, req.profile.id, authUserId, now));
     } catch (err) {
       if (err instanceof OwnerMustTransferFirstError) {
         res.status(409).json({ error: "must_transfer_first" });
@@ -116,7 +143,6 @@ accountDeletionRouter.post(
     // failing one does not take down the process; the job row stays at
     // status='pending' and the retry cron (Phase 3) picks it up.
     const jobId = result.jobId;
-    const authUserId = req.profile.id;
     const lessonIdsToSync = [...result.cancelledFutureLessonIds];
 
     void (async () => {
@@ -125,18 +151,29 @@ accountDeletionRouter.post(
         try {
           await syncLessonToGoogle(lessonId);
         } catch (err) {
-          req.log.error({ event: "account_deletion_calendar_sync_failed", jobId, lessonId, err }, "google sync failed");
+          req.log.error({ event: "account_deletion_calendar_sync_failed", jobId, lessonId, err: safeErrSummary(err) }, "google sync failed");
           allOk = false;
         }
       }
       try {
         const { error: deleteErr } = await supabaseAdmin.auth.admin.deleteUser(authUserId);
         if (deleteErr) {
-          req.log.error({ event: "account_deletion_auth_delete_failed", jobId, err: deleteErr.message }, "auth user delete failed");
+          // Supabase Admin API error messages can echo back the user's
+          // email (e.g. "User foo@example.com not found"). Log only
+          // structural fields — never deleteErr.message.
+          req.log.error(
+            { event: "account_deletion_auth_delete_failed", jobId, err: safeSupabaseErrSummary(deleteErr) },
+            "auth user delete failed",
+          );
           allOk = false;
         }
       } catch (err) {
-        req.log.error({ event: "account_deletion_auth_delete_failed", jobId, err }, "auth user delete threw");
+        // Same rule — the caught err's .message may be a Supabase payload
+        // string with the email in it. Strip to a safe summary.
+        req.log.error(
+          { event: "account_deletion_auth_delete_failed", jobId, err: safeErrSummary(err) },
+          "auth user delete threw",
+        );
         allOk = false;
       }
       if (allOk) {
@@ -146,7 +183,10 @@ accountDeletionRouter.post(
             .set({ status: "completed", completedAt: new Date() })
             .where(eq(accountDeletionJobs.id, jobId));
         } catch (err) {
-          req.log.error({ event: "account_deletion_job_mark_completed_failed", jobId, err }, "mark completed failed");
+          req.log.error(
+            { event: "account_deletion_job_mark_completed_failed", jobId, err: safeErrSummary(err) },
+            "mark completed failed",
+          );
         }
       } else {
         try {
@@ -155,9 +195,35 @@ accountDeletionRouter.post(
             .set({ attempts: 1, lastError: "post-commit fan-out failed; retry cron will re-drive" })
             .where(eq(accountDeletionJobs.id, jobId));
         } catch (err) {
-          req.log.error({ event: "account_deletion_job_mark_pending_failed", jobId, err }, "mark pending failed");
+          req.log.error(
+            { event: "account_deletion_job_mark_pending_failed", jobId, err: safeErrSummary(err) },
+            "mark pending failed",
+          );
         }
       }
     })();
   }),
 );
+
+// Structural summary of an arbitrary thrown value. Never includes the
+// raw message — Supabase Admin API errors can echo the user's email in
+// .message, and Google API errors can embed swimmer first names from
+// event titles (ADR 027). Fields are UUID-safe strings or small codes.
+export function safeErrSummary(err: unknown): { name: string; code: string | null; status: number | null } {
+  if (err && typeof err === "object") {
+    const name = (err as { name?: unknown }).name;
+    const code = (err as { code?: unknown }).code;
+    const status = (err as { status?: unknown }).status;
+    return {
+      name: typeof name === "string" ? name : "Error",
+      code: typeof code === "string" ? code : null,
+      status: typeof status === "number" ? status : null,
+    };
+  }
+  return { name: "Error", code: null, status: null };
+}
+
+// Supabase Admin API errors have the same shape as a generic Error with
+// a `.status` field; the helper above handles them. Kept as a named
+// export so the intent reads clearly at the call site.
+export const safeSupabaseErrSummary = safeErrSummary;
