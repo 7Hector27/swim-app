@@ -105,6 +105,13 @@ export {
 export type { InviteStatus, InviteStatusResponse, GenerateInviteResponse, AcceptInviteResponse } from "./schemas/invites";
 export { InviteStatusSchema, InviteStatusResponseSchema, GenerateInviteResponseSchema, AcceptInviteResponseSchema } from "./schemas/invites";
 
+export type { DeletionPreviewResponse, DeletionConfirmBody } from "./schemas/accountDeletion";
+export {
+  DeletionPreviewResponseSchema,
+  DeletionConfirmBodySchema,
+  DELETION_CONFIRMATION_PHRASE,
+} from "./schemas/accountDeletion";
+
 export type {
   SkillType,
   Stroke,
