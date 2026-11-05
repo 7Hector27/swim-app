@@ -163,6 +163,13 @@ accountDeletionRouter.post(
     const anonymizedLessonIds = [...result.anonymizedLessonIds];
     const log = req.log;
 
+    // Top-level catch on the voided promise so a synchronous throw
+    // from the IIFE body itself (anything before the first await, or
+    // a non-retryable throw from runAccountDeletionCleanup) does NOT
+    // reach Node's unhandledRejection. The inner try/catches around
+    // each DB update already handle their own failures; this is the
+    // defense for failures that happen between those blocks or in
+    // runAccountDeletionCleanup itself.
     void (async () => {
       const cleanup = await runAccountDeletionCleanup(
         { id: jobId, authUserId, scope: result.scope, anonymizedLessonIds },
@@ -232,7 +239,19 @@ accountDeletionRouter.post(
           );
         }
       }
-    })();
+    })().catch((err: unknown) => {
+      // Last-resort guard. runAccountDeletionCleanup swallows its own
+      // errors and returns a result object, so this catch should never
+      // actually fire today — but a future refactor that lets an error
+      // escape the IIFE body would otherwise crash the Node process
+      // via unhandledRejection. Log a safe summary and move on; the
+      // drain will re-drive the row from status='pending' on the next
+      // tick.
+      log.error(
+        { event: "account_deletion_post_commit_unhandled", jobId, err: safeErrSummary(err) },
+        "post-commit fan-out threw",
+      );
+    });
   }),
 );
 
