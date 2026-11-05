@@ -97,7 +97,7 @@ describe("DeleteAccountSection — preview copy", () => {
     expect(screen.getByTestId("delete-account-preview-kept")).toHaveTextContent(/4 past lesson/);
   });
 
-  it("owner-with-viewers case: explains viewers are released, no transfer blocker", async () => {
+  it("owner-with-viewers case: shows the delete button (regression guard — preview and confirm must agree the user can self-delete)", async () => {
     const user = userEvent.setup();
     render(<DeleteAccountSection preview={ownerWithViewersPreview()} />);
     await user.click(screen.getByTestId("delete-account-expand"));
@@ -105,10 +105,23 @@ describe("DeleteAccountSection — preview copy", () => {
     const preview = screen.getByTestId("delete-account-preview");
     expect(preview).toHaveTextContent(/other members on it are viewers only/i);
     expect(preview).toHaveTextContent(/viewers on this household stay signed in/i);
-    // Not the blocked panel.
+    // The blocked panel must NOT render for this preview shape — the
+    // preview's ownerMustTransferFirst is false (confirm would run the
+    // solo path). A prior bug set ownerMustTransferFirst=true on
+    // owner-with-only-viewers, which blocked the form here and hid a
+    // legitimate deletion option. Both the shared decideDeletionScope
+    // helper and this test lock that invariant.
     expect(screen.queryByTestId("delete-account-blocked")).not.toBeInTheDocument();
-    // The confirm form is rendered.
+    expect(screen.queryByTestId("delete-account-transfer-link")).not.toBeInTheDocument();
+    // The confirm form is rendered, delete button exists.
     expect(screen.getByTestId("delete-account-confirm-button")).toBeInTheDocument();
+    expect(screen.getByTestId("delete-account-phrase-input")).toBeInTheDocument();
+    // Verify the fixture is the owner-with-only-viewers shape (reviewer
+    // scenario). callerRole=owner + ownerMustTransferFirst=false.
+    const fixture = ownerWithViewersPreview();
+    expect(fixture.callerRole).toBe("owner");
+    expect(fixture.ownerMustTransferFirst).toBe(false);
+    expect(fixture.memberCount).toBeGreaterThan(1);
   });
 
   it("leave case: explains the household and other members stay", async () => {

@@ -346,6 +346,114 @@ describe("POST /me/deletion/preview", () => {
   });
 });
 
+// ── Preview and confirm agree on the scope decision ─────────────────────────
+
+describe("POST /me/deletion/preview vs. /confirm — scope agreement", () => {
+  // The reviewer flagged a UX/access-control divergence: the preview's
+  // ownerMustTransferFirst used to be "owner && memberCount > 1", while
+  // the confirm path (correctly) ran solo when the only other members
+  // were viewers. The UI read the preview and blocked the form,
+  // hiding a deletion the API would actually accept. These tests lock
+  // the two sides to the shared decideDeletionScope helper by asserting
+  // that preview's ownerMustTransferFirst matches confirm's actual
+  // behavior (204 vs. 409) for every household composition.
+
+  it("solo-alone (only member): preview says not blocked; confirm returns 204", async () => {
+    const owner = await createTestUser("scope-parity-solo-alone");
+    testUsers.push(owner);
+
+    const preview = await request(app)
+      .post("/me/deletion/preview")
+      .set("Authorization", `Bearer ${owner.accessToken}`)
+      .send({});
+    expect(preview.status).toBe(200);
+    expect(preview.body.ownerMustTransferFirst).toBe(false);
+
+    const confirm = await confirmDeletion(owner.accessToken);
+    expect(confirm.status).toBe(204);
+
+    await adminDb().delete(accountDeletionJobs).where(eq(accountDeletionJobs.authUserId, owner.userId));
+  });
+
+  it("owner-with-only-viewers: preview says not blocked; confirm returns 204 (solo path)", async () => {
+    const owner = await createTestUser("scope-parity-viewers-owner");
+    testUsers.push(owner);
+    const viewer = await createTestUserInHousehold(
+      "scope-parity-viewers-viewer",
+      owner.householdId,
+      "viewer",
+    );
+    testUsers.push(viewer);
+
+    const preview = await request(app)
+      .post("/me/deletion/preview")
+      .set("Authorization", `Bearer ${owner.accessToken}`)
+      .send({});
+    expect(preview.status).toBe(200);
+    expect(preview.body.memberCount).toBe(2);
+    // The specific reviewer finding: this used to be `true` (preview
+    // mishandled the owner-with-only-viewers case), blocking a
+    // deletion the confirm path would run. Preview and confirm must
+    // agree — this field is `false` and the confirm returns 204.
+    expect(preview.body.ownerMustTransferFirst).toBe(false);
+    expect(preview.body.callerRole).toBe("owner");
+
+    const confirm = await confirmDeletion(owner.accessToken);
+    expect(confirm.status).toBe(204);
+
+    await adminDb().delete(accountDeletionJobs).where(eq(accountDeletionJobs.authUserId, owner.userId));
+  });
+
+  it("leave (non-owner with other adults): preview says not blocked; confirm returns 204 (leave path)", async () => {
+    const owner = await createTestUser("scope-parity-leave-owner");
+    testUsers.push(owner);
+    const manager = await createTestUserInHousehold(
+      "scope-parity-leave-manager",
+      owner.householdId,
+      "manager",
+    );
+    testUsers.push(manager);
+
+    const preview = await request(app)
+      .post("/me/deletion/preview")
+      .set("Authorization", `Bearer ${manager.accessToken}`)
+      .send({});
+    expect(preview.status).toBe(200);
+    expect(preview.body.ownerMustTransferFirst).toBe(false);
+    expect(preview.body.callerRole).toBe("manager");
+
+    // Manager leaving. Confirm succeeds with the leave scope (household
+    // and owner stay).
+    const confirm = await confirmDeletion(manager.accessToken);
+    expect(confirm.status).toBe(204);
+
+    await adminDb().delete(accountDeletionJobs).where(eq(accountDeletionJobs.authUserId, manager.userId));
+  });
+
+  it("owner-with-another-adult: preview says blocked; confirm returns 409 must_transfer_first", async () => {
+    const owner = await createTestUser("scope-parity-blocked-owner");
+    testUsers.push(owner);
+    const manager = await createTestUserInHousehold(
+      "scope-parity-blocked-manager",
+      owner.householdId,
+      "manager",
+    );
+    testUsers.push(manager);
+
+    const preview = await request(app)
+      .post("/me/deletion/preview")
+      .set("Authorization", `Bearer ${owner.accessToken}`)
+      .send({});
+    expect(preview.status).toBe(200);
+    expect(preview.body.ownerMustTransferFirst).toBe(true);
+    expect(preview.body.callerRole).toBe("owner");
+
+    const confirm = await confirmDeletion(owner.accessToken);
+    expect(confirm.status).toBe(409);
+    expect(confirm.body.error).toBe("must_transfer_first");
+  });
+});
+
 // ── Guards: typed phrase + password ──────────────────────────────────────────
 
 describe("POST /me/deletion/confirm (guards)", () => {

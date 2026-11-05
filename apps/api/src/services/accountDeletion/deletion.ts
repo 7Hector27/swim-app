@@ -46,6 +46,46 @@ type Tx = PostgresJsDatabase<typeof schema>;
 
 export type DeletionScope = "solo" | "leave";
 
+// Single source of truth for which scope a given household composition
+// resolves to. Preview and confirm both call this so the UI can never
+// show a different story than the engine actually enforces. Pure
+// function — no DB access — so it's trivially testable and callable
+// from the preview path (no lock) and the confirm path (holds the
+// FOR UPDATE on the household row) alike.
+//
+// Rules (ADR 034):
+//  - caller is the only member → solo (full teardown)
+//  - caller is owner, every other member is a viewer → solo. Viewers
+//    don't manage swimmers, so leaving them behind in an ownerless
+//    household serves nobody; take the kids' data with the owner and
+//    release the viewers to be re-invited.
+//  - caller is not an owner and another owner/manager remains → leave
+//  - caller is owner and another owner/manager remains → must_transfer
+//    (the confirm route throws OwnerMustTransferFirstError; the
+//    preview sets ownerMustTransferFirst=true so the UI blocks the
+//    form and surfaces the transfer link)
+export type DeletionScopeDecision =
+  | { kind: "solo" }
+  | { kind: "leave" }
+  | { kind: "must_transfer" };
+
+export function decideDeletionScope(
+  callerRole: "owner" | "manager" | "viewer",
+  otherMemberRoles: ReadonlyArray<"owner" | "manager" | "viewer">,
+): DeletionScopeDecision {
+  if (otherMemberRoles.length === 0) return { kind: "solo" };
+  const otherAdultCount = otherMemberRoles.filter(
+    (role) => role === "owner" || role === "manager",
+  ).length;
+  if (otherAdultCount === 0) {
+    // Reachable only when the caller is the owner (one-owner-per-
+    // household invariant, enforced by the partial unique index).
+    return { kind: "solo" };
+  }
+  if (callerRole === "owner") return { kind: "must_transfer" };
+  return { kind: "leave" };
+}
+
 export interface AccountDeletionPreview {
   householdName: string;
   memberCount: number;
@@ -104,7 +144,12 @@ export async function previewAccountDeletion(
 
   const [householdRows, memberRows, swimmerRows, pastCount, futureCount] = await Promise.all([
     tx.select({ name: households.name }).from(households).where(eq(households.id, householdId)).limit(1),
-    tx.select({ profileId: householdMembers.profileId }).from(householdMembers).where(eq(householdMembers.householdId, householdId)),
+    // Role is needed so the preview can run decideDeletionScope. Earlier
+    // revisions only selected profileId and inferred must-transfer from
+    // "owner && memberCount > 1" — that mismatched the engine's rule
+    // when the only other members were viewers, blocking the UI on a
+    // deletion the API would actually accept.
+    tx.select({ profileId: householdMembers.profileId, role: householdMembers.role }).from(householdMembers).where(eq(householdMembers.householdId, householdId)),
     tx
       .select({ firstName: swimmers.firstName, lastName: swimmers.lastName })
       .from(swimmers)
@@ -131,7 +176,11 @@ export async function previewAccountDeletion(
   ]);
 
   const householdName = householdRows[0]?.name ?? "";
-  const ownerMustTransferFirst = membership.role === "owner" && memberRows.length > 1;
+  const otherMemberRoles = memberRows
+    .filter((m) => m.profileId !== profileId)
+    .map((m) => m.role);
+  const scopeDecision = decideDeletionScope(membership.role, otherMemberRoles);
+  const ownerMustTransferFirst = scopeDecision.kind === "must_transfer";
 
   const swimmerPreview = swimmerRows.map((row) => ({
     firstName: row.firstName,
@@ -215,32 +264,17 @@ export async function runAccountDeletion(
     .from(householdMembers)
     .where(eq(householdMembers.householdId, householdId));
 
-  // Scope decision:
-  // - Only member in the household → solo (teardown).
-  // - Deleting owner + the only remaining members are viewers → solo per
-  //   addition 2 of the plan. Viewers don't manage swimmers, so leaving
-  //   them behind as an ownerless household serves nobody; take the kids'
-  //   data with the owner and release the viewers to be re-invited.
-  // - Anyone else deleting while an owner/manager still remains → leave.
-  // - Deleting owner while another owner/manager remains → 409 (must
-  //   transfer first), same semantic as DELETE /households/mine/members/me.
-  const otherMembers = allMemberRows.filter((m) => m.profileId !== profileId);
-  const otherAdults = otherMembers.filter(
-    (m) => m.role === "owner" || m.role === "manager",
-  );
-
-  let scope: DeletionScope;
-  if (otherMembers.length === 0) {
-    scope = "solo";
-  } else if (otherAdults.length === 0) {
-    // Only reachable when deleting member is the owner (invariant: exactly
-    // one owner per household, enforced by the partial unique index).
-    scope = "solo";
-  } else if (membership.role === "owner") {
+  // Scope decision via the shared helper so the UI's preview can never
+  // disagree with the engine. See decideDeletionScope above for the
+  // full rules (solo / owner-with-only-viewers / leave / must_transfer).
+  const otherMemberRoles = allMemberRows
+    .filter((m) => m.profileId !== profileId)
+    .map((m) => m.role);
+  const scopeDecision = decideDeletionScope(membership.role, otherMemberRoles);
+  if (scopeDecision.kind === "must_transfer") {
     throw new OwnerMustTransferFirstError();
-  } else {
-    scope = "leave";
   }
+  const scope: DeletionScope = scopeDecision.kind;
 
   if (scope === "leave") {
     await scrubAuditPayloadsForLeave(tx, householdId, profileId);

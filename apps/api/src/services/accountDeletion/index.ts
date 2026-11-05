@@ -3,6 +3,7 @@ export {
   runAccountDeletion,
   anonymizeHouseholdLessons,
   cancelFutureLessons,
+  decideDeletionScope,
   hardDeleteCoachNotificationsForHousehold,
   hardDeleteHouseholdSwimmerData,
   insertAccountDeletedSummary,
@@ -11,7 +12,12 @@ export {
   scrubProfile,
   enqueueDeletionJob,
 } from "./deletion";
-export type { AccountDeletionPreview, DeletionScope, RunAccountDeletionResult } from "./deletion";
+export type {
+  AccountDeletionPreview,
+  DeletionScope,
+  DeletionScopeDecision,
+  RunAccountDeletionResult,
+} from "./deletion";
 export { AlreadyDeletedError, OwnerMustTransferFirstError } from "./errors";
 export { runAccountDeletionCleanup } from "./cleanup";
 export type {
