@@ -217,7 +217,8 @@ External tasks run in post-commit microtasks. A new table carries their retry st
 | `auth_user_id` | uuid not null | The auth user to delete |
 | `status` | text not null | `'pending' \| 'running' \| 'completed' \| 'failed'` |
 | `attempts` | integer not null default 0 | |
-| `last_error` | text | |
+| `anonymized_lesson_ids` | uuid[] not null default '{}' | **Phase 3 addition.** Captures the set of lessons the deletion anonymized so the retry drain can walk them (past → patch Google event; future → delete). Anonymization nulls every household-side tie, so without this column the drain would have no way to re-derive the set on retry. |
+| `last_error` | text | Short structural summary string (first failure wins, no PII). |
 | `completed_at` | timestamptz | |
 | `created_at` | timestamptz not null default now | |
 
@@ -334,18 +335,26 @@ Each phase is its own PR off `feature/account-deletion`, with its own tests.
 - Unit: each scrubber function in isolation
 - Fault injection: transaction rolls back cleanly on mid-step throw (reuse existing harness per `docs/local-fault-injection.md`)
 
-### Phase 3 — External cleanup retry cron
+### Phase 3 — External cleanup retry drain + past-event anonymization
 
 **What ships:**
-- `accountDeletionRetryDrain` cron handler — small, retry-only. Picks `account_deletion_jobs` with `status = 'pending'` and `attempts < N`, in `updated_at` ascending order, bounded batch
-- Terminal `'failed'` state after N retries, surfaced via a `coachNotifications` row with `category = 'account_deletion_cleanup_failed'`
-- Metrics: queued count, retry count, terminal-failed count per drain
+- `runAccountDeletionRetryDrain` runs **inside the existing `/internal/cron/tick` handler**, under the shared cron lease. No new cron process. Picks `account_deletion_jobs` with `status = 'pending'` AND `attempts < ACCOUNT_DELETION_MAX_ATTEMPTS` (10, matching the email outbox budget) AND `updated_at` older than a 60-second retry wait floor, in `updated_at` ascending order, bounded batch (20 per tick), `FOR UPDATE SKIP LOCKED` so an overlapping tick (lease-expired takeover) can't double-process a job.
+- Migration 0070 adds `account_deletion_jobs.anonymized_lesson_ids uuid[] NOT NULL DEFAULT '{}'` so both the route's post-commit fan-out and the retry drain walk the same authoritative set of lesson ids. Anonymization nulls every household-side tie, so without this column the drain would have no way to re-derive which Google events to reconcile on a retry.
+- Shared `runAccountDeletionCleanup` helper (`services/accountDeletion/cleanup.ts`) is the single external-cleanup entry point. Route and retry drain both call it so the two paths cannot drift. Dependencies (Supabase admin client, `syncAnonymizedLessonToCalendar`) are injected via an optional `deps` argument so tests can mock without `vi.mock` on the import site.
+- **Past Google Calendar events are now anonymized** instead of left in place (ADR 034 revision). The cleanup helper dispatches per anonymized lesson by `starts_at`:
+  - Future → `deleteEventIdempotent` (unchanged behavior)
+  - Past → `patchEventIdempotent` with title `"Lesson (deleted family)"`, location = stored `location_snapshot`, description = short scrubbed string. The event stays on Jason's calendar as "I worked this slot" signal but identifies nothing.
+  - Both ops treat 404/410 as success — a second drain pass against an already-handled event is a no-op.
+- **Idempotent Supabase auth delete.** A `deleteUser` response of `{ error: { code: 'user_not_found' } }` or an HTTP-404-shaped thrown error is treated as success — a prior partial run's auth delete that landed before the retry sees it as "already done."
+- Terminal `'failed'` state after `ACCOUNT_DELETION_MAX_ATTEMPTS` retries. Logs at error level with `event = "account_deletion_cleanup_failed"`, job id, scope, attempts — **no coach notification** per ADR 034 (Jason can't act on a Supabase/Google outage from the alerts page; log-based alerting is the deliberate choice).
+- Metrics: `accountDeletionRetryAttempted` / `accountDeletionRetrySucceeded` / `accountDeletionRetryFailedTerminal` are rolled into the cron/tick info log and the response body alongside the other drains' counts.
 
 **Tests:**
-- Integration: cron re-drives a `pending` job after a mocked Supabase Auth failure
-- Integration: cron skips `completed` and `failed` jobs
-- Integration: idempotency — running the cron twice on the same job is a no-op after the first success
-- Integration: terminal-failed row surfaces the coach notification once
+- Integration: cron re-drives a `pending` job after a mocked Supabase Auth failure, succeeds on the next tick.
+- Integration: terminal failure after `ACCOUNT_DELETION_MAX_ATTEMPTS` logs the error and flips the row to `'failed'`; a subsequent tick does not pick it up.
+- Integration: `user_not_found` from the Supabase admin API collapses to success on the first retry.
+- Integration: past events get patched to the "deleted family" shape and future events get deleted (both verified against a mocked google client that captures the calls).
+- Integration: an overlapping tick (second request firing while the first's lease is still held) returns `{ skipped: true }` without re-processing the same job — the cron lease already serializes this, the test asserts the effect.
 
 ### Phase 4 — UI (apps/web)
 

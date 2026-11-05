@@ -57,7 +57,18 @@ A lesson row is Jason's record of when he worked, and that signal survives the a
 
 Columns on the `lessons` table go nullable to support this. Call sites that previously trusted `lesson.householdId` need explicit null guards or an "anonymized" branch; the audit was done in planning.
 
-Future lessons (`starts_at > now()`, status in `('approved', 'pending')`) first go through the normal cancel transition inside the same transaction. No parent-facing `lesson_canceled` email is enqueued — the recipient is being deleted. One `coachNotifications` row with `category = 'account_deleted'` lists the freed-up lesson times (no family name, no swimmer names), instead of N per-lesson cancellation notifications. Post-commit fan-out invokes `syncLessonToGoogle(lessonId)` per cancelled lesson, which removes the event from Jason's calendar via the existing ADR 027 one-way sync.
+Future lessons (`starts_at > now()`, status in `('approved', 'pending')`) first go through the normal cancel transition inside the same transaction. No parent-facing `lesson_canceled` email is enqueued — the recipient is being deleted. One `coachNotifications` row with `category = 'account_deleted'` lists the freed-up lesson times (no family name, no swimmer names), instead of N per-lesson cancellation notifications.
+
+### Google Calendar: past events anonymized, future events deleted (Phase 3 revision)
+
+The initial plan called for `syncLessonToGoogle` per cancelled future lesson, removing those events. That left **past** events (completed lessons already on Jason's calendar) carrying the swimmer first name in the title and the family's home-pool address or the named-pool address in the location — identifying data about a deleted family still living in Google's system.
+
+Phase 3 revises this: the post-commit fan-out and the retry drain walk the full `anonymized_lesson_ids` set (past + future combined, captured on the `account_deletion_jobs` row for the drain's benefit) and dispatch by `starts_at`:
+
+- **Future events** (`starts_at > now()`): deleted via `deleteEventIdempotent`. The household is gone; the slot on Jason's calendar should clear.
+- **Past events** (`starts_at <= now()`): patched via `patchEventIdempotent`. Title becomes `"Lesson (deleted family)"`, location becomes the stored `location_snapshot` (already coarse — "Home pool" for a home-pool row, the named-pool name otherwise), description becomes a short scrubbed string pointing nowhere. The event stays on the calendar as historical "I worked this slot" signal but no longer identifies the family.
+
+Both operations are 404/410-idempotent so a second drain pass against an already-handled event is a no-op. The retry drain reads `account_deletion_jobs.anonymized_lesson_ids` to know which lessons to reconcile — the anonymization step itself nulled every tie back to the household, so without the explicit list on the job row there would be no way to re-derive the set on a retry.
 
 ### Append-only ledger: deletion is the documented exception
 
