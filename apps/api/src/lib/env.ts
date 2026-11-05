@@ -45,6 +45,11 @@ const RawEnvSchema = z.object({
   DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
   SUPABASE_URL: z.string().url("SUPABASE_URL must be a valid URL"),
   SUPABASE_PUBLISHABLE_KEY: z.string().min(1, "SUPABASE_PUBLISHABLE_KEY is required"),
+  // Service-role key used only by the Supabase admin client (account
+  // deletion hard-deletes the auth user via admin.deleteUser — ADR 034).
+  // Required on deployed environments; optional locally so `pnpm dev`
+  // doesn't require it until the deletion flow is actually exercised.
+  SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
   TRUST_PROXY: z.coerce.number().int().nonnegative().default(0),
   SITE_URL: z.string().url("SITE_URL must be a valid URL").default("http://localhost:3000"),
   CORS_ORIGINS: z.string().default(""),
@@ -105,6 +110,9 @@ export interface ApiEnv {
   databaseUrl: string;
   supabaseUrl: string;
   supabasePublishableKey: string;
+  // Service-role key for the admin client. Undefined locally when not set.
+  // Required for the account-deletion hard-delete of the auth user.
+  supabaseServiceRoleKey: string | undefined;
   trustProxy: number;
   siteUrl: string;
   corsOrigins: string[];
@@ -179,6 +187,7 @@ export function parseEnv(raw: Record<string, string | undefined>): ApiEnv {
     databaseUrl: parsed.DATABASE_URL,
     supabaseUrl: parsed.SUPABASE_URL,
     supabasePublishableKey: parsed.SUPABASE_PUBLISHABLE_KEY,
+    supabaseServiceRoleKey: parsed.SUPABASE_SERVICE_ROLE_KEY,
     trustProxy: parsed.TRUST_PROXY,
     siteUrl: parsed.SITE_URL,
     corsOrigins,
