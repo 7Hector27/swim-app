@@ -312,6 +312,14 @@ export async function runLightSyncPass(coachProfileId: string): Promise<LightPas
           gte(lessons.startsAt, windowStart),
           inArray(lessons.status, ["approved", "completed", "no_show"]),
           inArray(lessons.calendarSyncStatus, ["not_synced", "sync_failed"]),
+          // Anonymized rows (ADR 034) are terminal. The Phase 3
+          // post-commit fan-out patches their past Google events to the
+          // "deleted family" shape once; the reconcile cron must not
+          // revisit them. syncLessonToGoogle's internal guard would
+          // no-op them anyway, but filtering at the query site keeps
+          // the invariant visible (and stops anonymized failed rows
+          // from endlessly inflating the light-pass tally).
+          sql`${lessons.anonymizedAt} IS NULL`,
         ),
       )
       .orderBy(asc(lessons.startsAt))
@@ -364,6 +372,12 @@ export async function runFullSyncPass(
             inArray(lessons.status, ["approved", "completed", "no_show"]),
             isNotNull(lessons.googleCalendarEventId),
           ),
+          // Same invariant as runLightSyncPass: anonymized rows (ADR 034)
+          // are terminal. Their past events were patched to the "deleted
+          // family" shape once at deletion time; the reconcile cron must
+          // leave them alone. Belt-and-suspenders alongside the guard
+          // inside loadReconcileContext.
+          sql`${lessons.anonymizedAt} IS NULL`,
         ),
       )
       .orderBy(asc(lessons.startsAt))
