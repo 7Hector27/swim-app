@@ -505,6 +505,13 @@
       "when": 1793908479750,
       "tag": "0071_account_deletion_jobs_next_attempt_at",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1793915325958,
+      "tag": "0072_account_deletion_jobs_status_drop_running",
+      "breakpoints": true
     }
   ]
 }

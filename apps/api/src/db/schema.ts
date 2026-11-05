@@ -1541,7 +1541,7 @@ export const accountDeletionJobs = pgTable(
     ),
     check(
       "account_deletion_jobs_status_valid",
-      sql`${table.status} IN ('pending', 'running', 'completed', 'failed')`,
+      sql`${table.status} IN ('pending', 'completed', 'failed')`,
     ),
     index("account_deletion_jobs_pending_idx")
       .on(table.updatedAt.asc())
