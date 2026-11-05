@@ -69,6 +69,7 @@ describe("AccountContent → NotificationsSection prop plumbing", () => {
         googleConnectError={false}
         googleDisconnectError={false}
         vapidPublicKey="AAAA"
+        deletionPreview={null}
       />,
     );
     // Heading proves the section mounted; devices list proves the client
@@ -87,6 +88,7 @@ describe("AccountContent → NotificationsSection prop plumbing", () => {
         googleConnectError={false}
         googleDisconnectError={false}
         vapidPublicKey={undefined}
+        deletionPreview={null}
       />,
     );
     expect(screen.queryByRole("heading", { name: /notifications/i })).not.toBeInTheDocument();
