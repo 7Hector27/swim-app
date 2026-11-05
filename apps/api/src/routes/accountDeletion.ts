@@ -11,7 +11,7 @@
 
 import { Router } from "express";
 import { createClient } from "@supabase/supabase-js";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
 import {
   DELETION_CONFIRMATION_PHRASE,
@@ -33,9 +33,8 @@ import {
   OwnerMustTransferFirstError,
   previewAccountDeletion,
   runAccountDeletion,
+  runAccountDeletionCleanup,
 } from "../services/accountDeletion";
-import { supabaseAdmin } from "../lib/supabaseAdmin";
-import { syncLessonToGoogle } from "../services/googleCalendarSync";
 
 export const accountDeletionRouter = Router();
 
@@ -139,63 +138,50 @@ accountDeletionRouter.post(
     // alert anyway, so there is no coach notification path.
     res.status(204).end();
 
-    // Post-commit fan-out. Each microtask swallows its own rejection so a
-    // failing one does not take down the process; the job row stays at
-    // status='pending' and the retry cron (Phase 3) picks it up.
+    // Post-commit fan-out. The shared cleanup helper walks every
+    // anonymized lesson id (past → patch Google event; future → delete)
+    // and hard-deletes the Supabase auth user. Each step is idempotent
+    // and logged through safe summaries — raw err objects never reach
+    // the log. The retry drain (/internal/cron/tick) runs the exact
+    // same helper for pending jobs, so a failed first attempt here
+    // keeps the row at status='pending' and the drain re-drives it on
+    // the next tick until success or MAX_ATTEMPTS.
     const jobId = result.jobId;
-    const lessonIdsToSync = [...result.cancelledFutureLessonIds];
+    const anonymizedLessonIds = [...result.anonymizedLessonIds];
+    const log = req.log;
 
     void (async () => {
-      let allOk = true;
-      for (const lessonId of lessonIdsToSync) {
-        try {
-          await syncLessonToGoogle(lessonId);
-        } catch (err) {
-          req.log.error({ event: "account_deletion_calendar_sync_failed", jobId, lessonId, err: safeErrSummary(err) }, "google sync failed");
-          allOk = false;
-        }
-      }
-      try {
-        const { error: deleteErr } = await supabaseAdmin.auth.admin.deleteUser(authUserId);
-        if (deleteErr) {
-          // Supabase Admin API error messages can echo back the user's
-          // email (e.g. "User foo@example.com not found"). Log only
-          // structural fields — never deleteErr.message.
-          req.log.error(
-            { event: "account_deletion_auth_delete_failed", jobId, err: safeSupabaseErrSummary(deleteErr) },
-            "auth user delete failed",
-          );
-          allOk = false;
-        }
-      } catch (err) {
-        // Same rule — the caught err's .message may be a Supabase payload
-        // string with the email in it. Strip to a safe summary.
-        req.log.error(
-          { event: "account_deletion_auth_delete_failed", jobId, err: safeErrSummary(err) },
-          "auth user delete threw",
-        );
-        allOk = false;
-      }
-      if (allOk) {
+      const cleanup = await runAccountDeletionCleanup(
+        { id: jobId, authUserId, scope: result.scope, anonymizedLessonIds },
+        log,
+      );
+      if (cleanup.allOk) {
         try {
           await db
             .update(accountDeletionJobs)
-            .set({ status: "completed", completedAt: new Date() })
+            .set({ status: "completed", completedAt: new Date(), lastError: null })
             .where(eq(accountDeletionJobs.id, jobId));
         } catch (err) {
-          req.log.error(
+          log.error(
             { event: "account_deletion_job_mark_completed_failed", jobId, err: safeErrSummary(err) },
             "mark completed failed",
           );
         }
       } else {
         try {
+          // sql`attempts + 1` so a later retry-drain pass increments
+          // without overwriting. First failure here lifts attempts from
+          // 0 → 1; the drain takes it from there with the same
+          // increment expression.
           await db
             .update(accountDeletionJobs)
-            .set({ attempts: 1, lastError: "post-commit fan-out failed; retry cron will re-drive" })
+            .set({
+              attempts: sql`${accountDeletionJobs.attempts} + 1`,
+              lastError: cleanup.lastError,
+            })
             .where(eq(accountDeletionJobs.id, jobId));
         } catch (err) {
-          req.log.error(
+          log.error(
             { event: "account_deletion_job_mark_pending_failed", jobId, err: safeErrSummary(err) },
             "mark pending failed",
           );

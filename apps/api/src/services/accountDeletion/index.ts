@@ -13,3 +13,9 @@ export {
 } from "./deletion";
 export type { AccountDeletionPreview, DeletionScope, RunAccountDeletionResult } from "./deletion";
 export { AlreadyDeletedError, OwnerMustTransferFirstError } from "./errors";
+export { runAccountDeletionCleanup } from "./cleanup";
+export type {
+  AccountDeletionCleanupJob,
+  AccountDeletionCleanupDeps,
+  AccountDeletionCleanupResult,
+} from "./cleanup";

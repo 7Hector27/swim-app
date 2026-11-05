@@ -662,10 +662,147 @@ function isRetryableGoogleHttpError(err: unknown): boolean {
   return safe.status === 403 || safe.status === 429;
 }
 
+// ── Anonymized-lesson sync (ADR 034 Phase 3) ─────────────────────────────────
+
+const ANONYMIZED_EVENT_SUMMARY = "Lesson (deleted family)";
+
+/**
+ * Reconcile an anonymized lesson's Google event with its post-deletion
+ * state.
+ *
+ *  - Future events (starts_at > now) are deleted: the household is gone,
+ *    the lesson is cancelled, the slot on Jason's calendar should clear.
+ *  - Past events (starts_at <= now) are patched: title becomes "Lesson
+ *    (deleted family)", location becomes the stored snapshot (coarse —
+ *    "Home pool" or the named-pool name), description is replaced with
+ *    a scrubbed string. Jason keeps the historical slot on his
+ *    calendar but no names, addresses, or deep link back to a
+ *    non-existent lesson detail.
+ *
+ * Idempotent: a 404/410 on either call is success (the event never
+ * reached Google, or has already been deleted). A second pass against
+ * an already-patched past event is a no-op (the patch payload is
+ * stable). Callers invoke this from the deletion post-commit fan-out
+ * and from the retry drain; same semantics on either side.
+ *
+ * MUST NOT reject — the deletion flow and the cron drain both route
+ * this through retry state in account_deletion_jobs. Non-retryable
+ * failures (missing integration, token revoke) return without the
+ * throw; retryable errors (Google 5xx, rate-limit) propagate so the
+ * caller can increment the job's attempts counter.
+ */
+export async function syncAnonymizedLessonToCalendar(lessonId: string): Promise<void> {
+  const env = getEnv();
+  if (!env.googleOAuth) return;
+
+  // Load the anonymized lesson row. requireLiveLessonFields can't be used
+  // here — the whole point is that identity columns are null.
+  const lessonRows = await db.select().from(lessons).where(eq(lessons.id, lessonId)).limit(1);
+  const lesson = lessonRows[0];
+  if (!lesson) return;
+  if (lesson.anonymizedAt === null) {
+    // Not actually anonymized. Nothing to reconcile from this entry point;
+    // the live-lesson sync (syncLessonToGoogle) handles live rows.
+    return;
+  }
+
+  const coachProfileId = await getActiveCoachProfileId();
+  if (!coachProfileId) return;
+
+  const integrationRows = await db
+    .select()
+    .from(coachCalendarIntegrations)
+    .where(
+      and(
+        eq(coachCalendarIntegrations.coachProfileId, coachProfileId),
+        eq(coachCalendarIntegrations.status, "active"),
+      ),
+    )
+    .limit(1);
+  const integration = integrationRows[0];
+  if (!integration) return;
+
+  if (
+    integration.refreshTokenCiphertext === null ||
+    integration.refreshTokenIv === null ||
+    integration.refreshTokenTag === null ||
+    integration.refreshTokenKeyVersion === null
+  ) {
+    // Mirrors the live-sync branch — an active integration with missing
+    // token material is a bug, not something to retry. Treat as a
+    // non-retryable no-op; the retry cron will keep seeing a missing
+    // integration on later ticks.
+    logger.warn(
+      {
+        googleError: googleClient.toSafeGoogleError(
+          new Error("integration row is active but has null token columns"),
+        ),
+        lessonId,
+      },
+      "anonymized sync: active integration with missing token material",
+    );
+    return;
+  }
+
+  let accessToken: string;
+  try {
+    const refreshToken = decryptToken(
+      {
+        ciphertext: integration.refreshTokenCiphertext,
+        iv: integration.refreshTokenIv,
+        tag: integration.refreshTokenTag,
+        keyVersion: integration.refreshTokenKeyVersion,
+      },
+      env.googleOAuth.tokenEncryptionKey,
+    );
+    const refreshed = await googleClient.refreshAccessToken(env.googleOAuth, refreshToken);
+    accessToken = refreshed.accessToken;
+  } catch (err) {
+    if (err instanceof googleClient.GoogleInvalidGrantError) {
+      // Coach revoked out-of-band. Treat as success — the calendar is
+      // disconnected, there is nothing to reconcile.
+      return;
+    }
+    throw err;
+  }
+
+  const eventId = toGoogleEventId(lessonId);
+  const isFuture = lesson.startsAt.getTime() > Date.now();
+
+  if (isFuture) {
+    await googleClient.deleteEventIdempotent(
+      env.googleOAuth,
+      accessToken,
+      integration.googleCalendarId,
+      eventId,
+    );
+    return;
+  }
+
+  // Past event: patch to the anonymized shape. Location snapshot was
+  // captured at anonymization time (deletion.ts:anonymizeHousehold
+  // Lessons) and is already coarse — "Home pool" for a home pool row,
+  // the named-pool name otherwise. Description points nowhere so Jason
+  // can tell the row apart from live lessons.
+  const locationText = lesson.locationSnapshot ?? "";
+  await googleClient.patchEventIdempotent(
+    env.googleOAuth,
+    accessToken,
+    integration.googleCalendarId,
+    eventId,
+    {
+      summary: ANONYMIZED_EVENT_SUMMARY,
+      description: "This family's account was deleted.",
+      location: locationText,
+    },
+  );
+}
+
 /** Exposed for tests. */
 export const __test = {
   toGoogleEventId,
   buildSummary,
   formatLocation,
   startOfTodayLA,
+  ANONYMIZED_EVENT_SUMMARY,
 };
