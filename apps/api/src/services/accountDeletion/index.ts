@@ -19,3 +19,8 @@ export type {
   AccountDeletionCleanupDeps,
   AccountDeletionCleanupResult,
 } from "./cleanup";
+export {
+  runAccountDeletionRetryDrain,
+  ACCOUNT_DELETION_MAX_ATTEMPTS,
+} from "./retry";
+export type { AccountDeletionRetryDrainResult } from "./retry";

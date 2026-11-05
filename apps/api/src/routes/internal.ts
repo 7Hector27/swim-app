@@ -22,6 +22,7 @@ import {
   releaseHeldCoachNotifications,
   scrubCoachNotificationPayloads,
 } from "../services/notifications/drain";
+import { runAccountDeletionRetryDrain } from "../services/accountDeletion";
 import type { RequestHandler } from "express";
 
 // Promote the per-tick light pass to a full pass when last_full_reconcile_at
@@ -317,6 +318,23 @@ async function runCronTick(
       );
     }
 
+    // Account-deletion retry drain (ADR 034 Phase 3). Shares the cron
+    // tick lease — no new scheduler. Picks pending jobs whose attempts
+    // < MAX and whose updated_at is older than the retry wait floor,
+    // replays the external cleanup (calendar reconcile + auth user
+    // delete), increments attempts. Terminal 'failed' when retries are
+    // exhausted; logs event=account_deletion_cleanup_failed at that
+    // point for log-based alerting.
+    let accountDeletionRetryResult = { attempted: 0, succeeded: 0, failedTerminal: 0 };
+    try {
+      accountDeletionRetryResult = await runAccountDeletionRetryDrain(req.log);
+    } catch (err) {
+      req.log.error(
+        { err: err instanceof Error ? err.message : String(err) },
+        "cron/tick account-deletion retry drain failed",
+      );
+    }
+
     req.log.info(
       {
         expiredCount: expired.length,
@@ -334,6 +352,9 @@ async function runCronTick(
         coachAbandoned: coachDrainResult.abandoned,
         coachScrubbed: coachScrubResult.scrubbed,
         coachDeadSubsPurged: coachScrubResult.deadSubscriptionsPurged,
+        accountDeletionRetryAttempted: accountDeletionRetryResult.attempted,
+        accountDeletionRetrySucceeded: accountDeletionRetryResult.succeeded,
+        accountDeletionRetryFailedTerminal: accountDeletionRetryResult.failedTerminal,
       },
       "cron/tick",
     );
@@ -354,5 +375,8 @@ async function runCronTick(
       coachAbandoned: coachDrainResult.abandoned,
       coachScrubbed: coachScrubResult.scrubbed,
       coachDeadSubsPurged: coachScrubResult.deadSubscriptionsPurged,
+      accountDeletionRetryAttempted: accountDeletionRetryResult.attempted,
+      accountDeletionRetrySucceeded: accountDeletionRetryResult.succeeded,
+      accountDeletionRetryFailedTerminal: accountDeletionRetryResult.failedTerminal,
     };
 }
