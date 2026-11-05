@@ -830,6 +830,29 @@ describe("GET /coach/lessons/:id/notes", () => {
 
 // ── GET /coach/lessons/:id ────────────────────────────────────────────────────
 
+// Walks a drizzle SQL object and collects every `.name` string found on
+// nested Column-shaped values. Drizzle Columns contain circular refs
+// (Column.table → Table.columns → Column), so we can't JSON.stringify
+// the arg — a visited set + explicit traversal is the safe path.
+function collectColumnNames(value: unknown): string[] {
+  const out: string[] = [];
+  const seen = new WeakSet<object>();
+  function walk(node: unknown): void {
+    if (node === null || typeof node !== "object") return;
+    if (seen.has(node as object)) return;
+    seen.add(node as object);
+    if (Array.isArray(node)) {
+      for (const child of node) walk(child);
+      return;
+    }
+    const record = node as Record<string, unknown>;
+    if (typeof record["name"] === "string") out.push(record["name"] as string);
+    for (const key of Object.keys(record)) walk(record[key]);
+  }
+  walk(value);
+  return out;
+}
+
 describe("GET /coach/lessons/:id", () => {
   const lessonDetailRow = {
     id: LESSON_ID,
@@ -936,5 +959,54 @@ describe("GET /coach/lessons/:id", () => {
     expect(res.status).toBe(200);
     expect(res.body.isHomePool).toBe(true);
     expect(res.body.locationAddress).toBe("45 Ovation");
+  });
+
+  it("filters household members on profiles.disabled_at IS NULL so a scrubbed member can't produce a null householdName", async () => {
+    authAsCoach();
+
+    // Capture the drizzle SQL object handed to `.where()` on the
+    // household-members query — the third select in the handler's chain.
+    // The filter MUST be an AND with a disabled_at IS NULL clause so a
+    // scrubbed profile (ADR 034) does not surface as the first row by
+    // role order and leak a null name into the response.
+    const capturedWhereArgs: unknown[] = [];
+    const lessonLimit = vi.fn().mockResolvedValue([lessonDetailRow]);
+    const lessonWhere = vi.fn().mockReturnValue({ limit: lessonLimit });
+    const lessonLeftJoin = vi.fn().mockReturnValue({ where: lessonWhere });
+    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ leftJoin: lessonLeftJoin }) });
+
+    const swimWhere = vi.fn().mockResolvedValue([]);
+    const leftJoin2 = vi.fn().mockReturnValue({ where: swimWhere });
+    const leftJoin1 = vi.fn().mockReturnValue({ leftJoin: leftJoin2 });
+    const swimInnerJoin = vi.fn().mockReturnValue({ leftJoin: leftJoin1 });
+    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ innerJoin: swimInnerJoin }) });
+
+    const memberLimit = vi.fn().mockResolvedValue([{ fullName: "Live Manager" }]);
+    const memberOrderBy = vi.fn().mockReturnValue({ limit: memberLimit });
+    const memberWhere = vi.fn().mockImplementation((arg: unknown) => {
+      capturedWhereArgs.push(arg);
+      return { orderBy: memberOrderBy };
+    });
+    const memberInnerJoin = vi.fn().mockReturnValue({ where: memberWhere });
+    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ innerJoin: memberInnerJoin }) });
+
+    const res = await request(app)
+      .get(`/coach/lessons/${LESSON_ID}`)
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(200);
+    // The first row of the (filtered) query is a live manager — the
+    // handler surfaces that name rather than the null a scrubbed owner
+    // would have produced had the filter been missing.
+    expect(res.body.householdName).toBe("Live Manager");
+
+    // The `.where()` arg must reference the `disabled_at` column
+    // somewhere in its SQL tree. Drizzle SQL objects contain circular
+    // references (Column → Table → Columns), so JSON.stringify would
+    // throw — walk the object tree directly and collect every
+    // `.name` string we find.
+    expect(capturedWhereArgs).toHaveLength(1);
+    const columnNames = collectColumnNames(capturedWhereArgs[0]);
+    expect(columnNames).toContain("disabled_at");
   });
 });

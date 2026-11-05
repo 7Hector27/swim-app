@@ -1428,11 +1428,25 @@ coachLessonsRouter.get(
       }
     }
 
+    // Pick a display name from the first non-disabled member in
+    // owner → manager → viewer, join order. A scrubbed profile (ADR 034)
+    // has `disabled_at` set and `full_name = NULL`, so skipping disabled
+    // profiles avoids surfacing `null` to the UI when a member has been
+    // deleted but the household still exists (e.g. a manager left via the
+    // "delete my account" leave path while the owner remains). The
+    // deletion engine prevents the owner from self-deleting while another
+    // owner/manager remains, so for a live household at least one of the
+    // first two priority tiers still has a live member.
     const memberRows = await db
       .select({ fullName: profiles.fullName })
       .from(householdMembers)
       .innerJoin(profiles, eq(householdMembers.profileId, profiles.id))
-      .where(eq(householdMembers.householdId, liveLesson.householdId))
+      .where(
+        and(
+          eq(householdMembers.householdId, liveLesson.householdId),
+          sql`${profiles.disabledAt} IS NULL`,
+        ),
+      )
       .orderBy(
         sql`CASE ${householdMembers.role} WHEN 'owner' THEN 0 WHEN 'manager' THEN 1 ELSE 2 END`,
         asc(householdMembers.joinedAt),
