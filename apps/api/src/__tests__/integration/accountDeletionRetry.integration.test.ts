@@ -523,6 +523,67 @@ describe("account-deletion retry drain — overlapping ticks", () => {
       await adminDb().delete(accountDeletionJobs).where(eq(accountDeletionJobs.id, jobId));
     }
   });
+
+  it("two concurrent failing drain passes against the same eligible row land exactly one attempt (atomic claim)", async () => {
+    // Reviewer scenario in direct form: "an immediate attempt and a
+    // drain tick at the same time count only one attempt." Shape a
+    // row as if the post-commit fan-out had never run (attempts=0,
+    // next_attempt_at eligible now), then race two drains with a
+    // failing admin. Without the atomic claim, each pass's
+    // SELECT→UPDATE could both increment attempts (two rows → 2).
+    // With the atomic claim (UPDATE … WHERE id IN (… FOR UPDATE SKIP
+    // LOCKED) RETURNING), one pass claims the row and the other
+    // returns no rows. Attempts lands at exactly 1.
+    const user = await createTestUser("retry-atomic-claim");
+    testUsers.push(user);
+
+    const jobId = await seedJob({
+      authUserId: user.userId,
+      anonymizedLessonIds: [],
+      attempts: 0,
+    });
+
+    try {
+      const adminA = buildFailingAdmin();
+      const adminB = buildFailingAdmin();
+      const syncA = buildSyncRecorder();
+      const syncB = buildSyncRecorder();
+      const [a, b] = await Promise.all([
+        runAccountDeletionRetryDrain(logger, {
+          syncAnonymizedLessonToCalendar: syncA.sync,
+          supabaseAdmin: adminA.admin,
+        }),
+        runAccountDeletionRetryDrain(logger, {
+          syncAnonymizedLessonToCalendar: syncB.sync,
+          supabaseAdmin: adminB.admin,
+        }),
+      ]);
+      // Exactly one pass touched the row.
+      expect(a.attempted + b.attempted).toBe(1);
+      // Only one admin stub was called — either A or B, not both.
+      const adminCalls = adminA.deleteUser.mock.calls.length + adminB.deleteUser.mock.calls.length;
+      expect(adminCalls).toBe(1);
+
+      // The row's attempts lands at 1 (one real-error attempt), not 2.
+      const after = await adminDb()
+        .select()
+        .from(accountDeletionJobs)
+        .where(eq(accountDeletionJobs.id, jobId))
+        .limit(1);
+      expect(after[0]?.attempts).toBe(1);
+      expect(after[0]?.status).toBe("pending");
+      // next_attempt_at is the attempts=1 backoff (~5 min), not the
+      // 60-second claim lease — the processing pass overwrote the
+      // short lease with the real backoff.
+      const nextAttemptAt = after[0]?.nextAttemptAt;
+      expect(nextAttemptAt).not.toBeNull();
+      const deltaMs = nextAttemptAt!.getTime() - Date.now();
+      expect(deltaMs).toBeGreaterThan(3 * 60 * 1000);
+      expect(deltaMs).toBeLessThanOrEqual(5 * 60 * 1000 + 5000);
+    } finally {
+      await adminDb().delete(accountDeletionJobs).where(eq(accountDeletionJobs.id, jobId));
+    }
+  });
 });
 
 // ── Case 6: exponential backoff pushes next_attempt_at per curve ─────────────

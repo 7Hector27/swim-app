@@ -917,6 +917,47 @@ describe("POST /me/deletion/confirm — job row inside tx (addition 5)", () => {
 
     await adminDb().delete(accountDeletionJobs).where(eq(accountDeletionJobs.authUserId, owner.userId));
   });
+
+  it("job row is created with next_attempt_at seeded a few minutes ahead so the drain can't race the immediate post-commit attempt", async () => {
+    // Reviewer requirement: "The route must create the job with next_
+    // attempt_at a few minutes out, so the drain can't race the
+    // immediate post-commit attempt." A cron tick firing concurrent
+    // with POST /me/deletion/confirm (same second) must not see the
+    // row as eligible. ACCOUNT_DELETION_INITIAL_DELAY_SECONDS in
+    // retry.ts is the lead window.
+    const owner = await createTestUser("delete-job-initial-delay");
+    testUsers.push(owner);
+
+    const beforeMs = Date.now();
+    const res = await confirmDeletion(owner.accessToken);
+    expect(res.status).toBe(204);
+
+    const jobRows = await adminDb()
+      .select()
+      .from(accountDeletionJobs)
+      .where(eq(accountDeletionJobs.authUserId, owner.userId));
+    expect(jobRows).toHaveLength(1);
+    const job = jobRows[0]!;
+
+    // If the post-commit fan-out succeeded (fast in-test mocks), the
+    // row will be completed with next_attempt_at=null. If not, it
+    // should still be pending and next_attempt_at must be at least a
+    // minute ahead of when the request landed.
+    if (job.status === "pending") {
+      expect(job.nextAttemptAt).not.toBeNull();
+      // Lead window is 2 minutes per retry.ts; allow for test clock
+      // drift and give at least 1 minute of headroom.
+      const deltaMs = job.nextAttemptAt!.getTime() - beforeMs;
+      expect(deltaMs).toBeGreaterThanOrEqual(60 * 1000);
+    } else {
+      // Completed path — next_attempt_at cleared, which is the success
+      // shape (no need to delay a terminal row).
+      expect(job.status).toBe("completed");
+      expect(job.nextAttemptAt).toBeNull();
+    }
+
+    await adminDb().delete(accountDeletionJobs).where(eq(accountDeletionJobs.authUserId, owner.userId));
+  });
 });
 
 // ── Addition 4: race (owner + one manager delete simultaneously) ─────────────

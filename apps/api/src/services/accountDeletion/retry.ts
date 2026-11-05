@@ -20,7 +20,7 @@
 //     an outage from the alerts page; route via log-based alerting).
 
 import type { Logger } from "pino";
-import { and, eq, isNull, lte, lt, or, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
 import { db } from "../../db/client";
 import { accountDeletionJobs } from "../../db/schema";
@@ -64,6 +64,26 @@ const CALENDAR_PAUSED_RECHECK_SECONDS = 5 * 60;
 // window. Matches the route's "first attempt" backoff (attempts=1).
 export const ROUTE_POST_COMMIT_FAILURE_BACKOFF_SECONDS = BACKOFF_BASE_SECONDS;
 
+// Initial `next_attempt_at` seeded by the route when the deletion
+// transaction inserts the job row. The post-commit fan-out runs within
+// milliseconds of commit; this lead window prevents a concurrent cron
+// tick firing between INSERT and the post-commit UPDATE from claiming
+// the same row. 2 minutes is well above the realistic post-commit
+// duration (hundreds of milliseconds end-to-end) and below the cron
+// tick cadence (5 min), so a failed or paused post-commit still gets
+// picked up by the next drain promptly.
+export const ACCOUNT_DELETION_INITIAL_DELAY_SECONDS = 2 * 60;
+
+// Claim lease: when the drain picks up a row, it atomically pushes
+// next_attempt_at into the future by this amount BEFORE processing.
+// Defense-in-depth against the cron-lease ever expiring mid-tick (the
+// cron tick lease is the primary serializer, every 5 minutes). If the
+// drain process crashes mid-job, the lease expires in this many
+// seconds and the next tick re-picks the row. Deliberately short so a
+// stuck job isn't idle for long. Overwritten by the real backoff /
+// recheck value when the cleanup finishes.
+const CLAIM_LEASE_SECONDS = 60;
+
 // Max jobs processed per cron tick. The drain is single-writer (shares
 // the cron tick lease) and each pass runs cleanup serially, so this is
 // a latency-vs-budget knob rather than a concurrency control. 20 keeps
@@ -96,40 +116,54 @@ export async function runAccountDeletionRetryDrain(
   log: Logger,
   deps: AccountDeletionCleanupDeps = {},
 ): Promise<AccountDeletionRetryDrainResult> {
-  const now = new Date();
-
-  // Lock the eligible rows up front so two ticks can't double-process
-  // the same job if the cron lease ever falls through (expired lease
-  // takeover + a slow prior tick overlapping). FOR UPDATE SKIP LOCKED
-  // gives each caller a disjoint set; a second concurrent run just
-  // sees an empty batch and returns cleanly.
+  // Atomic claim: single UPDATE statement that pushes next_attempt_at
+  // into the future on every row the drain is about to process. The
+  // inner SELECT uses FOR UPDATE SKIP LOCKED, so two concurrent drain
+  // passes against the same eligible set get disjoint rows — one
+  // claims a row and the other sees nothing. The outer UPDATE lands
+  // atomically; both the row filter and the lease push happen in a
+  // single statement, so the attempts counter cannot be incremented
+  // twice by two passes racing on the same row.
   //
   // next_attempt_at NULL means "immediately eligible" — covers rows
-  // created before migration 0071 landed and rows whose route post-
-  // commit fan-out succeeded on first try but got updated without a
-  // backoff value.
-  const eligible = await db
-    .select({
-      id: accountDeletionJobs.id,
-      authUserId: accountDeletionJobs.authUserId,
-      scope: accountDeletionJobs.scope,
-      anonymizedLessonIds: accountDeletionJobs.anonymizedLessonIds,
-      attempts: accountDeletionJobs.attempts,
-    })
-    .from(accountDeletionJobs)
-    .where(
-      and(
-        eq(accountDeletionJobs.status, "pending"),
-        lt(accountDeletionJobs.attempts, ACCOUNT_DELETION_MAX_ATTEMPTS),
-        or(
-          isNull(accountDeletionJobs.nextAttemptAt),
-          lte(accountDeletionJobs.nextAttemptAt, now),
-        ),
-      ),
+  // created before migration 0071 landed and any row whose state got
+  // reset without a backoff value. The outer UPDATE overwrites it to
+  // now() + CLAIM_LEASE_SECONDS on claim; the loop below then
+  // overwrites again with the true backoff / recheck value when the
+  // cleanup finishes for each row.
+  //
+  // `anonymized_lesson_ids` has to come through the RETURNING clause
+  // (drizzle doesn't model `UPDATE ... RETURNING uuid[]` directly for
+  // this shape), so the handler reads the full set from each returned
+  // row before calling runAccountDeletionCleanup.
+  const claimed = await db.execute<{
+    id: string;
+    auth_user_id: string;
+    scope: string;
+    anonymized_lesson_ids: string[];
+    attempts: number;
+  }>(sql`
+    UPDATE account_deletion_jobs
+    SET next_attempt_at = now() + make_interval(secs => ${CLAIM_LEASE_SECONDS})
+    WHERE id IN (
+      SELECT id FROM account_deletion_jobs
+      WHERE status = 'pending'
+        AND attempts < ${ACCOUNT_DELETION_MAX_ATTEMPTS}
+        AND (next_attempt_at IS NULL OR next_attempt_at <= now())
+      ORDER BY updated_at
+      LIMIT ${DRAIN_BATCH_SIZE}
+      FOR UPDATE SKIP LOCKED
     )
-    .orderBy(accountDeletionJobs.updatedAt)
-    .limit(DRAIN_BATCH_SIZE)
-    .for("update", { skipLocked: true });
+    RETURNING id, auth_user_id, scope, anonymized_lesson_ids, attempts
+  `);
+
+  const eligible = claimed.map((row) => ({
+    id: row.id,
+    authUserId: row.auth_user_id,
+    scope: row.scope,
+    anonymizedLessonIds: row.anonymized_lesson_ids,
+    attempts: row.attempts,
+  }));
 
   if (eligible.length === 0) {
     return { attempted: 0, succeeded: 0, paused: 0, failedTerminal: 0 };

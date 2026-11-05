@@ -41,6 +41,7 @@ import {
 import { getActiveCoachProfile } from "../../lib/coachProfile";
 import { getEnv } from "../../lib/env";
 import { AlreadyDeletedError, OwnerMustTransferFirstError } from "./errors";
+import { ACCOUNT_DELETION_INITIAL_DELAY_SECONDS } from "./retry";
 
 type Tx = PostgresJsDatabase<typeof schema>;
 
@@ -655,6 +656,14 @@ export async function enqueueDeletionJob(
   scope: DeletionScope,
   anonymizedLessonIds: string[],
 ): Promise<string> {
+  // Seed next_attempt_at ahead of now by ACCOUNT_DELETION_INITIAL_DELAY
+  // _SECONDS so the retry drain cannot claim this row between INSERT
+  // and the route's immediate post-commit fan-out. The post-commit
+  // runs within milliseconds of commit; the lead window gives it an
+  // uncontested first attempt, after which it rewrites next_attempt_at
+  // based on the outcome (null on success, now()+backoff(1) on real
+  // failure, now()+short recheck on paused). See retry.ts for the
+  // exact constant and rationale.
   const rows = await tx
     .insert(accountDeletionJobs)
     .values({
@@ -663,6 +672,7 @@ export async function enqueueDeletionJob(
       scope,
       status: "pending",
       anonymizedLessonIds,
+      nextAttemptAt: sql`now() + make_interval(secs => ${ACCOUNT_DELETION_INITIAL_DELAY_SECONDS})`,
     })
     .returning({ id: accountDeletionJobs.id });
   return rows[0]!.id;
