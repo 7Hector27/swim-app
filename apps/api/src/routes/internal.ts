@@ -325,7 +325,7 @@ async function runCronTick(
     // delete), increments attempts. Terminal 'failed' when retries are
     // exhausted; logs event=account_deletion_cleanup_failed at that
     // point for log-based alerting.
-    let accountDeletionRetryResult = { attempted: 0, succeeded: 0, failedTerminal: 0 };
+    let accountDeletionRetryResult = { attempted: 0, succeeded: 0, paused: 0, failedTerminal: 0 };
     try {
       accountDeletionRetryResult = await runAccountDeletionRetryDrain(req.log);
     } catch (err) {
@@ -354,6 +354,7 @@ async function runCronTick(
         coachDeadSubsPurged: coachScrubResult.deadSubscriptionsPurged,
         accountDeletionRetryAttempted: accountDeletionRetryResult.attempted,
         accountDeletionRetrySucceeded: accountDeletionRetryResult.succeeded,
+        accountDeletionRetryPaused: accountDeletionRetryResult.paused,
         accountDeletionRetryFailedTerminal: accountDeletionRetryResult.failedTerminal,
       },
       "cron/tick",
@@ -377,6 +378,7 @@ async function runCronTick(
       coachDeadSubsPurged: coachScrubResult.deadSubscriptionsPurged,
       accountDeletionRetryAttempted: accountDeletionRetryResult.attempted,
       accountDeletionRetrySucceeded: accountDeletionRetryResult.succeeded,
+      accountDeletionRetryPaused: accountDeletionRetryResult.paused,
       accountDeletionRetryFailedTerminal: accountDeletionRetryResult.failedTerminal,
     };
 }

@@ -31,9 +31,11 @@ import { accountDeletionConfirmLimiter } from "../middleware/accountDeletionRate
 import {
   AlreadyDeletedError,
   OwnerMustTransferFirstError,
+  computeAccountDeletionBackoffSeconds,
   previewAccountDeletion,
   runAccountDeletion,
   runAccountDeletionCleanup,
+  ROUTE_POST_COMMIT_FAILURE_BACKOFF_SECONDS,
 } from "../services/accountDeletion";
 
 export const accountDeletionRouter = Router();
@@ -170,7 +172,12 @@ accountDeletionRouter.post(
         try {
           await db
             .update(accountDeletionJobs)
-            .set({ status: "completed", completedAt: new Date(), lastError: null })
+            .set({
+              status: "completed",
+              completedAt: new Date(),
+              lastError: null,
+              nextAttemptAt: null,
+            })
             .where(eq(accountDeletionJobs.id, jobId));
         } catch (err) {
           log.error(
@@ -178,17 +185,44 @@ accountDeletionRouter.post(
             "mark completed failed",
           );
         }
+      } else if (cleanup.paused) {
+        // Jason's Google integration isn't connected right now (common —
+        // the Testing-mode OAuth token expires weekly). No real error,
+        // so don't consume an attempt — just push next_attempt_at out
+        // by the first-backoff window and let the drain re-check. Once
+        // Jason reconnects, the next tick resolves cleanly.
+        try {
+          await db
+            .update(accountDeletionJobs)
+            .set({
+              lastError: "paused:integration_needs_reconnect",
+              nextAttemptAt: new Date(
+                Date.now() + ROUTE_POST_COMMIT_FAILURE_BACKOFF_SECONDS * 1000,
+              ),
+            })
+            .where(eq(accountDeletionJobs.id, jobId));
+        } catch (err) {
+          log.error(
+            { event: "account_deletion_job_mark_paused_failed", jobId, err: safeErrSummary(err) },
+            "mark paused failed",
+          );
+        }
       } else {
         try {
           // sql`attempts + 1` so a later retry-drain pass increments
           // without overwriting. First failure here lifts attempts from
           // 0 → 1; the drain takes it from there with the same
-          // increment expression.
+          // increment expression. next_attempt_at is seeded with the
+          // attempts=1 backoff so the drain doesn't re-pick this row
+          // within the same minute.
           await db
             .update(accountDeletionJobs)
             .set({
               attempts: sql`${accountDeletionJobs.attempts} + 1`,
               lastError: cleanup.lastError,
+              nextAttemptAt: new Date(
+                Date.now() + computeAccountDeletionBackoffSeconds(1) * 1000,
+              ),
             })
             .where(eq(accountDeletionJobs.id, jobId));
         } catch (err) {

@@ -498,6 +498,13 @@
       "when": 1793901120819,
       "tag": "0070_account_deletion_jobs_lesson_ids",
       "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1793908479750,
+      "tag": "0071_account_deletion_jobs_next_attempt_at",
+      "breakpoints": true
     }
   ]
 }

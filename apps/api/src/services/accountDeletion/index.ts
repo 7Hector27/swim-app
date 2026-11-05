@@ -22,5 +22,7 @@ export type {
 export {
   runAccountDeletionRetryDrain,
   ACCOUNT_DELETION_MAX_ATTEMPTS,
+  ROUTE_POST_COMMIT_FAILURE_BACKOFF_SECONDS,
+  computeAccountDeletionBackoffSeconds,
 } from "./retry";
 export type { AccountDeletionRetryDrainResult } from "./retry";

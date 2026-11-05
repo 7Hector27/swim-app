@@ -1522,6 +1522,13 @@ export const accountDeletionJobs = pgTable(
     // list to walk. Empty for 'leave' scope and for solo deletions
     // whose household owned no lessons.
     anonymizedLessonIds: uuid("anonymized_lesson_ids").array().notNull().default(sql`'{}'::uuid[]`),
+    // Earliest time this row is eligible for the retry drain. Null
+    // means immediately eligible (fresh insert, pre-0071 rows). The
+    // drain sets this to now() + exponential backoff on real errors,
+    // or now() + a short pause when the calendar step is blocked on
+    // a disconnected Google integration. See the backoff constants
+    // in services/accountDeletion/retry.ts.
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }),
     lastError: text("last_error"),
     completedAt: timestamp("completed_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

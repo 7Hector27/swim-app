@@ -44,6 +44,7 @@ import {
   runAccountDeletionRetryDrain,
   type AccountDeletionCleanupDeps,
 } from "../../services/accountDeletion";
+import type { AnonymizedCalendarSyncOutcome } from "../../services/googleCalendarSync";
 import {
   adminDb,
   closeAdminDb,
@@ -126,15 +127,18 @@ function buildSyncRecorder(): {
 } {
   const calls: string[] = [];
   const failOnce = new Set<string>();
-  const sync = vi.fn(async (lessonId: string) => {
-    if (failOnce.has(lessonId)) {
-      failOnce.delete(lessonId);
-      const err = new Error("transient google 500");
-      (err as unknown as { status: number }).status = 500;
-      throw err;
-    }
-    calls.push(lessonId);
-  });
+  const sync = vi.fn(
+    async (lessonId: string): Promise<AnonymizedCalendarSyncOutcome> => {
+      if (failOnce.has(lessonId)) {
+        failOnce.delete(lessonId);
+        const err = new Error("transient google 500");
+        (err as unknown as { status: number }).status = 500;
+        throw err;
+      }
+      calls.push(lessonId);
+      return { status: "reconciled" };
+    },
+  );
   return { sync, calls, failOnce };
 }
 
@@ -172,7 +176,16 @@ async function seedJob(opts: {
   anonymizedLessonIds: string[];
   attempts?: number;
   updatedAt?: Date;
+  nextAttemptAt?: Date | null;
 }): Promise<string> {
+  // Tests want immediate eligibility unless they opt out — default
+  // next_attempt_at to 5 minutes ago so the drain picks the row up on
+  // first call. Pass null to leave the column unset (tests the pre-
+  // migration-0071 "immediately eligible" fallback path).
+  const nextAttemptAt =
+    opts.nextAttemptAt === undefined
+      ? new Date(Date.now() - 5 * 60 * 1000)
+      : opts.nextAttemptAt;
   const rows = await adminDb()
     .insert(accountDeletionJobs)
     .values({
@@ -186,6 +199,7 @@ async function seedJob(opts: {
       attempts: opts.attempts ?? 0,
       anonymizedLessonIds: opts.anonymizedLessonIds,
       ...(opts.updatedAt && { updatedAt: opts.updatedAt }),
+      ...(nextAttemptAt !== null && { nextAttemptAt }),
     })
     .returning({ id: accountDeletionJobs.id });
   return rows[0]!.id;
@@ -235,10 +249,16 @@ describe("account-deletion retry drain — transient failure then success", () =
       // Both lesson ids reconciled through the calendar stub.
       expect(sync1.calls.sort()).toEqual([pastLessonId, futureLessonId].sort());
 
-      // Bump updated_at so the retry wait floor doesn't skip us.
+      // The drain pushed next_attempt_at out by the attempts=2 backoff
+      // (~10 min). Reset it to the past so the second pass picks the
+      // row up immediately — the test is about the retry behavior, not
+      // the wall-clock cadence.
       await adminDb()
         .update(accountDeletionJobs)
-        .set({ updatedAt: new Date(Date.now() - 5 * 60 * 1000) })
+        .set({
+          updatedAt: new Date(Date.now() - 5 * 60 * 1000),
+          nextAttemptAt: new Date(Date.now() - 5 * 60 * 1000),
+        })
         .where(eq(accountDeletionJobs.id, jobId));
 
       // Second pass: admin.deleteUser succeeds. Job flips to completed,
@@ -501,6 +521,277 @@ describe("account-deletion retry drain — overlapping ticks", () => {
       expect(after[0]?.status).toBe("completed");
     } finally {
       await adminDb().delete(accountDeletionJobs).where(eq(accountDeletionJobs.id, jobId));
+    }
+  });
+});
+
+// ── Case 6: exponential backoff pushes next_attempt_at per curve ─────────────
+
+describe("account-deletion retry drain — exponential backoff", () => {
+  it("writes the expected next_attempt_at after each real-error attempt (5min → 10 → 20 → 40 … capped at 6h)", async () => {
+    const user = await createTestUser("retry-backoff");
+    testUsers.push(user);
+
+    const jobId = await seedJob({
+      authUserId: user.userId,
+      anonymizedLessonIds: [],
+      attempts: 0,
+    });
+
+    try {
+      const admin = buildFailingAdmin();
+      const sync = buildSyncRecorder();
+
+      // Expected backoff curve in seconds (base 5min, double, cap 6h).
+      // Index is the attempts count AFTER the drain increments.
+      const expectedSeconds = [
+        5 * 60,       // attempt 1
+        10 * 60,      // attempt 2
+        20 * 60,      // attempt 3
+        40 * 60,      // attempt 4
+        80 * 60,      // attempt 5
+        160 * 60,     // attempt 6
+        320 * 60,     // attempt 7 (not yet capped)
+        6 * 60 * 60,  // attempt 8  (cap kicks in)
+        6 * 60 * 60,  // attempt 9
+        6 * 60 * 60,  // attempt 10
+      ];
+
+      let cumulativeSeconds = 0;
+      for (let i = 0; i < expectedSeconds.length; i++) {
+        // Reset next_attempt_at so the drain picks the row up. In
+        // production the cron tick cadence waits for the actual
+        // next_attempt_at; the test fast-forwards.
+        await adminDb()
+          .update(accountDeletionJobs)
+          .set({ nextAttemptAt: new Date(Date.now() - 1000) })
+          .where(eq(accountDeletionJobs.id, jobId));
+
+        const before = Date.now();
+        await runAccountDeletionRetryDrain(logger, {
+          syncAnonymizedLessonToCalendar: sync.sync,
+          supabaseAdmin: admin.admin,
+        });
+
+        const row = await adminDb()
+          .select()
+          .from(accountDeletionJobs)
+          .where(eq(accountDeletionJobs.id, jobId))
+          .limit(1);
+        expect(row[0]?.attempts).toBe(i + 1);
+        expect(row[0]?.status).toBe("pending");
+
+        const expected = expectedSeconds[i]!;
+        cumulativeSeconds += expected;
+        const nextAttemptAt = row[0]?.nextAttemptAt;
+        expect(nextAttemptAt).not.toBeNull();
+        const actualDeltaMs = nextAttemptAt!.getTime() - before;
+        // Allow slop for DB round-trip + Node clock drift. The curve
+        // step is what's being tested, not sub-second precision.
+        expect(actualDeltaMs).toBeGreaterThanOrEqual(expected * 1000 - 2000);
+        expect(actualDeltaMs).toBeLessThanOrEqual(expected * 1000 + 5000);
+      }
+
+      // Sum of waits across 10 inter-attempt gaps = 28.6 hours. The
+      // spec: attempts span at least one day before going terminal.
+      expect(cumulativeSeconds).toBeGreaterThanOrEqual(24 * 60 * 60);
+    } finally {
+      await adminDb().delete(accountDeletionJobs).where(eq(accountDeletionJobs.id, jobId));
+    }
+  });
+
+  it("skips rows whose next_attempt_at is in the future", async () => {
+    const user = await createTestUser("retry-backoff-not-due");
+    testUsers.push(user);
+
+    // Fresh job with next_attempt_at 10 minutes in the future — not
+    // due. The drain should ignore it, not reset the counter.
+    const jobId = await seedJob({
+      authUserId: user.userId,
+      anonymizedLessonIds: [],
+      attempts: 3,
+      nextAttemptAt: new Date(Date.now() + 10 * 60 * 1000),
+    });
+
+    try {
+      const admin = buildFailingAdmin();
+      const sync = buildSyncRecorder();
+      const result = await runAccountDeletionRetryDrain(logger, {
+        syncAnonymizedLessonToCalendar: sync.sync,
+        supabaseAdmin: admin.admin,
+      });
+      expect(result.attempted).toBe(0);
+      expect(admin.deleteUser).not.toHaveBeenCalled();
+
+      const row = await adminDb()
+        .select()
+        .from(accountDeletionJobs)
+        .where(eq(accountDeletionJobs.id, jobId))
+        .limit(1);
+      expect(row[0]?.attempts).toBe(3);
+    } finally {
+      await adminDb().delete(accountDeletionJobs).where(eq(accountDeletionJobs.id, jobId));
+    }
+  });
+
+  it("rows with next_attempt_at NULL are immediately eligible (pre-0071 fallback)", async () => {
+    const user = await createTestUser("retry-backoff-null-next");
+    testUsers.push(user);
+
+    const jobId = await seedJob({
+      authUserId: user.userId,
+      anonymizedLessonIds: [],
+      attempts: 0,
+      nextAttemptAt: null,
+    });
+
+    try {
+      const admin = buildSuccessAdmin();
+      const sync = buildSyncRecorder();
+      const result = await runAccountDeletionRetryDrain(logger, {
+        syncAnonymizedLessonToCalendar: sync.sync,
+        supabaseAdmin: admin.admin,
+      });
+      expect(result.attempted).toBe(1);
+      expect(result.succeeded).toBe(1);
+    } finally {
+      await adminDb().delete(accountDeletionJobs).where(eq(accountDeletionJobs.id, jobId));
+    }
+  });
+});
+
+// ── Case 7: paused on disconnected Google integration doesn't burn attempts ──
+
+describe("account-deletion retry drain — paused on disconnected integration", () => {
+  function buildPausingSync(): NonNullable<AccountDeletionCleanupDeps["syncAnonymizedLessonToCalendar"]> {
+    return vi.fn(
+      async (_lessonId: string): Promise<AnonymizedCalendarSyncOutcome> => ({
+        status: "integration_paused",
+        reason: "not_active",
+      }),
+    );
+  }
+
+  it("holds attempts steady and pushes next_attempt_at out by a short recheck window when all calendar steps are paused and auth succeeds", async () => {
+    const user = await createTestUser("retry-paused-calendar");
+    testUsers.push(user);
+
+    // Anonymized lesson exists but Jason's Google is disconnected. The
+    // paused signal propagates from syncAnonymizedLessonToCalendar →
+    // cleanup.paused → drain treats it as a non-attempt pause.
+    const past = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const pastLessonId = await seedAnonymizedLesson(user.householdId, past);
+    const jobId = await seedJob({
+      authUserId: user.userId,
+      anonymizedLessonIds: [pastLessonId],
+      attempts: 4, // mid-budget so we can prove the counter doesn't move
+    });
+
+    try {
+      const admin = buildSuccessAdmin();
+      const sync = buildPausingSync();
+
+      // Run the drain 10 times. Attempts must stay at 4 through all
+      // 10 passes — Jason's OAuth reconnect window is not an attempt.
+      // The budget (11) would have exhausted after 7 real-error
+      // attempts starting from attempts=4.
+      for (let i = 0; i < 10; i++) {
+        // Reset next_attempt_at so each pass picks the row up.
+        await adminDb()
+          .update(accountDeletionJobs)
+          .set({ nextAttemptAt: new Date(Date.now() - 1000) })
+          .where(eq(accountDeletionJobs.id, jobId));
+
+        const before = Date.now();
+        const result = await runAccountDeletionRetryDrain(logger, {
+          syncAnonymizedLessonToCalendar: sync,
+          supabaseAdmin: admin.admin,
+        });
+        expect(result.paused).toBe(1);
+        expect(result.succeeded).toBe(0);
+        expect(result.failedTerminal).toBe(0);
+
+        const row = await adminDb()
+          .select()
+          .from(accountDeletionJobs)
+          .where(eq(accountDeletionJobs.id, jobId))
+          .limit(1);
+        expect(row[0]?.status).toBe("pending");
+        expect(row[0]?.attempts).toBe(4); // unchanged after N pauses
+        expect(row[0]?.lastError).toBe("paused:integration_needs_reconnect");
+        // Recheck window is 5 minutes (short, matches cron cadence).
+        const nextAttemptAt = row[0]?.nextAttemptAt;
+        expect(nextAttemptAt).not.toBeNull();
+        const deltaMs = nextAttemptAt!.getTime() - before;
+        expect(deltaMs).toBeGreaterThanOrEqual(5 * 60 * 1000 - 2000);
+        expect(deltaMs).toBeLessThanOrEqual(5 * 60 * 1000 + 5000);
+      }
+
+      // Now Jason reconnects: sync returns reconciled, auth succeeds.
+      // The NEXT drain pass completes the job without having spent
+      // any of the budget.
+      await adminDb()
+        .update(accountDeletionJobs)
+        .set({ nextAttemptAt: new Date(Date.now() - 1000) })
+        .where(eq(accountDeletionJobs.id, jobId));
+
+      const reconciledSync = buildSyncRecorder();
+      const finalResult = await runAccountDeletionRetryDrain(logger, {
+        syncAnonymizedLessonToCalendar: reconciledSync.sync,
+        supabaseAdmin: admin.admin,
+      });
+      expect(finalResult.succeeded).toBe(1);
+      const after = await adminDb()
+        .select()
+        .from(accountDeletionJobs)
+        .where(eq(accountDeletionJobs.id, jobId))
+        .limit(1);
+      expect(after[0]?.status).toBe("completed");
+      expect(after[0]?.attempts).toBe(4); // still 4 — pauses don't count
+      expect(after[0]?.lastError).toBeNull();
+    } finally {
+      await adminDb().delete(accountDeletionJobs).where(eq(accountDeletionJobs.id, jobId));
+      await adminDb().delete(lessons).where(eq(lessons.id, pastLessonId));
+    }
+  });
+
+  it("paused calendar + auth-delete failure still counts as a real attempt (the auth step is the one actually broken)", async () => {
+    const user = await createTestUser("retry-paused-plus-auth-fail");
+    testUsers.push(user);
+
+    const pastLessonId = await seedAnonymizedLesson(
+      user.householdId,
+      new Date(Date.now() - 24 * 60 * 60 * 1000),
+    );
+    const jobId = await seedJob({
+      authUserId: user.userId,
+      anonymizedLessonIds: [pastLessonId],
+      attempts: 2,
+    });
+
+    try {
+      const admin = buildFailingAdmin(); // 500 from Supabase
+      const sync = buildPausingSync();
+
+      const result = await runAccountDeletionRetryDrain(logger, {
+        syncAnonymizedLessonToCalendar: sync,
+        supabaseAdmin: admin.admin,
+      });
+      // Not a pause — the auth step failed, so we count the attempt.
+      expect(result.paused).toBe(0);
+      expect(result.attempted).toBe(1);
+
+      const row = await adminDb()
+        .select()
+        .from(accountDeletionJobs)
+        .where(eq(accountDeletionJobs.id, jobId))
+        .limit(1);
+      expect(row[0]?.status).toBe("pending");
+      expect(row[0]?.attempts).toBe(3); // real error → increment
+      expect(row[0]?.lastError).toMatch(/^auth_delete_failed/);
+    } finally {
+      await adminDb().delete(accountDeletionJobs).where(eq(accountDeletionJobs.id, jobId));
+      await adminDb().delete(lessons).where(eq(lessons.id, pastLessonId));
     }
   });
 });

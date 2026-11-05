@@ -22,7 +22,10 @@
 import type { Logger } from "pino";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { syncAnonymizedLessonToCalendar as defaultSyncAnonymizedLessonToCalendar } from "../googleCalendarSync";
+import {
+  syncAnonymizedLessonToCalendar as defaultSyncAnonymizedLessonToCalendar,
+  type AnonymizedCalendarSyncOutcome,
+} from "../googleCalendarSync";
 import { supabaseAdmin as defaultSupabaseAdmin } from "../../lib/supabaseAdmin";
 
 export interface AccountDeletionCleanupJob {
@@ -36,14 +39,25 @@ export interface AccountDeletionCleanupDeps {
   // Injected so tests can mock Google + Supabase without reaching for
   // vi.mock on the import site — and so the retry drain and the route
   // route through the same dependency surface.
-  syncAnonymizedLessonToCalendar?: (lessonId: string) => Promise<void>;
+  syncAnonymizedLessonToCalendar?: (lessonId: string) => Promise<AnonymizedCalendarSyncOutcome>;
   supabaseAdmin?: SupabaseClient;
 }
 
 export interface AccountDeletionCleanupResult {
+  // Every step finished (lessons reconciled AND the auth user is gone
+  // or was already gone). Drain flips the row to 'completed' when true.
   allOk: boolean;
-  // First error's structural summary. Short string the drain writes
-  // into account_deletion_jobs.last_error; no PII, no .message.
+  // No real error occurred, but at least one calendar step reported
+  // integration_paused (disconnected / needs_reconnect / missing-tokens
+  // / invalid_grant). Only meaningful when `allOk` is false AND
+  // `lastError` is null — the drain uses it to push next_attempt_at
+  // out by a short recheck window WITHOUT incrementing attempts, so
+  // Jason's weekly OAuth reconnect doesn't burn the retry budget.
+  paused: boolean;
+  // First structural failure summary from a real error path (a thrown
+  // calendar error, a non-idempotent Supabase admin failure). Null
+  // when all non-successes were paused signals. Short, no PII, no raw
+  // .message — written into account_deletion_jobs.last_error.
   lastError: string | null;
 }
 
@@ -90,14 +104,30 @@ export async function runAccountDeletionCleanup(
   const admin = deps.supabaseAdmin ?? defaultSupabaseAdmin;
 
   let firstError: string | null = null;
+  // Any `integration_paused` outcome from the calendar step means there's
+  // work still outstanding but nothing to actually retry — Jason's
+  // Google OAuth needs reconnecting. The drain uses this to defer the
+  // job's next attempt by a short recheck window without counting it.
+  let anyCalendarPaused = false;
+  // Track whether every lesson reconciled cleanly. If any lesson threw
+  // OR returned paused, we have outstanding calendar work and the job
+  // cannot complete yet.
+  let allLessonsReconciled = true;
 
   // Per-lesson calendar reconcile. One failure never blocks the others
   // — a Google 5xx on event A still lets event B get patched or deleted.
-  // The job row stays pending unless every pass succeeded.
+  // Paused outcomes are also not blocking per se (next lesson might
+  // succeed), but they prevent the overall job from completing on this
+  // pass.
   for (const lessonId of job.anonymizedLessonIds) {
     try {
-      await syncFn(lessonId);
+      const outcome = await syncFn(lessonId);
+      if (outcome.status !== "reconciled") {
+        anyCalendarPaused = true;
+        allLessonsReconciled = false;
+      }
     } catch (err) {
+      allLessonsReconciled = false;
       const summary = safeSummary(err);
       log.error(
         { event: "account_deletion_calendar_sync_failed", jobId: job.id, lessonId, err: summary },
@@ -112,11 +142,13 @@ export async function runAccountDeletionCleanup(
   // Auth user hard-delete. The admin client returns a `{ data, error }`
   // tuple on success/known failure, and throws on transport errors. Both
   // branches collapse `user_not_found` / 404 to success.
+  let authDeleted = true;
   try {
     const { error: deleteErr } = await admin.auth.admin.deleteUser(job.authUserId);
     if (deleteErr) {
       const errRecord = deleteErr as { code?: unknown; status?: unknown; name?: unknown };
       if (!isAlreadyDeletedAuthUserError(errRecord)) {
+        authDeleted = false;
         const summary = safeSummary(deleteErr);
         log.error(
           { event: "account_deletion_auth_delete_failed", jobId: job.id, err: summary },
@@ -130,6 +162,7 @@ export async function runAccountDeletionCleanup(
   } catch (err) {
     const errRecord = err as { code?: unknown; status?: unknown; name?: unknown };
     if (!isAlreadyDeletedAuthUserError(errRecord)) {
+      authDeleted = false;
       const summary = safeSummary(err);
       log.error(
         { event: "account_deletion_auth_delete_failed", jobId: job.id, err: summary },
@@ -141,10 +174,15 @@ export async function runAccountDeletionCleanup(
     }
   }
 
-  return {
-    allOk: firstError === null,
-    lastError: firstError,
-  };
+  const allOk = allLessonsReconciled && authDeleted;
+  // "Paused" is only the final determination when nothing else failed.
+  // A calendar-paused + auth-succeeded run is paused. A calendar-paused
+  // + auth-failed run is a real error — count the attempt, apply the
+  // exponential backoff — because the auth step is what's actually
+  // broken and needs retrying.
+  const paused = !allOk && firstError === null && anyCalendarPaused;
+
+  return { allOk, paused, lastError: firstError };
 }
 
 /** Exported for the route's existing safeErrSummary shim. */

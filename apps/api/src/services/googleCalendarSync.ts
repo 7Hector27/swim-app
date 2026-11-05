@@ -680,6 +680,25 @@ function isRetryableGoogleHttpError(err: unknown): boolean {
 
 const ANONYMIZED_EVENT_SUMMARY = "Lesson (deleted family)";
 
+// Outcome signaled to the account-deletion retry drain. Distinguishing
+// "paused on a disconnected integration" from "actually reconciled" lets
+// the drain decline to burn an attempt while Jason's weekly OAuth token
+// is expired — ADR 034 revision after Phase 4 review.
+export type AnonymizedCalendarSyncOutcome =
+  // The event is in the state the deletion flow needs: past events
+  // patched to the "deleted family" shape, future events deleted. Also
+  // returned for cases where there's nothing the retry can do anyway
+  // (missing googleOAuth env on this deploy, no active coach, lesson
+  // row vanished).
+  | { status: "reconciled" }
+  // Jason's integration is disconnected or needs reauth, OR the active
+  // integration row has null token columns (an unexpected mid-flight
+  // state), OR the refresh returned invalid_grant and we flipped the
+  // row to needs_reconnect just now. The event may still carry swimmer
+  // first names and the home-pool address; the drain pauses this job
+  // and tries again on the next tick without counting an attempt.
+  | { status: "integration_paused"; reason: "not_active" | "null_tokens" | "invalid_grant" };
+
 /**
  * Reconcile an anonymized lesson's Google event with its post-deletion
  * state.
@@ -699,42 +718,50 @@ const ANONYMIZED_EVENT_SUMMARY = "Lesson (deleted family)";
  * stable). Callers invoke this from the deletion post-commit fan-out
  * and from the retry drain; same semantics on either side.
  *
- * MUST NOT reject — the deletion flow and the cron drain both route
- * this through retry state in account_deletion_jobs. Non-retryable
- * failures (missing integration, token revoke) return without the
- * throw; retryable errors (Google 5xx, rate-limit) propagate so the
- * caller can increment the job's attempts counter.
+ * Throws only on retryable Google errors (5xx, rate limit); the drain
+ * catches those and treats them as real failures that count toward the
+ * attempts budget. A paused integration is NOT a throw — see the
+ * AnonymizedCalendarSyncOutcome union for the signal the drain uses to
+ * wait without incrementing attempts.
  */
-export async function syncAnonymizedLessonToCalendar(lessonId: string): Promise<void> {
+export async function syncAnonymizedLessonToCalendar(
+  lessonId: string,
+): Promise<AnonymizedCalendarSyncOutcome> {
   const env = getEnv();
-  if (!env.googleOAuth) return;
+  if (!env.googleOAuth) return { status: "reconciled" };
 
   // Load the anonymized lesson row. requireLiveLessonFields can't be used
   // here — the whole point is that identity columns are null.
   const lessonRows = await db.select().from(lessons).where(eq(lessons.id, lessonId)).limit(1);
   const lesson = lessonRows[0];
-  if (!lesson) return;
+  if (!lesson) return { status: "reconciled" };
   if (lesson.anonymizedAt === null) {
     // Not actually anonymized. Nothing to reconcile from this entry point;
     // the live-lesson sync (syncLessonToGoogle) handles live rows.
-    return;
+    return { status: "reconciled" };
   }
 
   const coachProfileId = await getActiveCoachProfileId();
-  if (!coachProfileId) return;
+  if (!coachProfileId) return { status: "reconciled" };
 
+  // Not scoped to status='active' at the SQL level — we need to detect
+  // the paused state (disconnected / needs_reconnect) and signal it up
+  // to the drain rather than silently treating it as reconciled.
   const integrationRows = await db
     .select()
     .from(coachCalendarIntegrations)
-    .where(
-      and(
-        eq(coachCalendarIntegrations.coachProfileId, coachProfileId),
-        eq(coachCalendarIntegrations.status, "active"),
-      ),
-    )
+    .where(eq(coachCalendarIntegrations.coachProfileId, coachProfileId))
     .limit(1);
   const integration = integrationRows[0];
-  if (!integration) return;
+  if (!integration || integration.status !== "active") {
+    // No integration row at all, or it's needs_reconnect / disconnected.
+    // Jason's Google OAuth is in Testing mode and his refresh token
+    // expires weekly, so this reconnect-window state is a common case,
+    // not an exceptional one. Pause the job rather than burning the
+    // attempts budget — Jason can reconnect at any time and the next
+    // tick picks the lesson up.
+    return { status: "integration_paused", reason: "not_active" };
+  }
 
   if (
     integration.refreshTokenCiphertext === null ||
@@ -742,10 +769,11 @@ export async function syncAnonymizedLessonToCalendar(lessonId: string): Promise<
     integration.refreshTokenTag === null ||
     integration.refreshTokenKeyVersion === null
   ) {
-    // Mirrors the live-sync branch — an active integration with missing
-    // token material is a bug, not something to retry. Treat as a
-    // non-retryable no-op; the retry cron will keep seeing a missing
-    // integration on later ticks.
+    // An "active" row with null token columns is an unexpected mid-flight
+    // state (bad migration, manual DB edit, half-applied disconnect).
+    // Pause rather than terminate — if the row is still broken next
+    // tick, we'll keep pausing, but we won't exhaust the attempts
+    // budget on a state Jason or an operator could fix by reconnecting.
     logger.warn(
       {
         googleError: googleClient.toSafeGoogleError(
@@ -755,7 +783,7 @@ export async function syncAnonymizedLessonToCalendar(lessonId: string): Promise<
       },
       "anonymized sync: active integration with missing token material",
     );
-    return;
+    return { status: "integration_paused", reason: "null_tokens" };
   }
 
   let accessToken: string;
@@ -773,9 +801,17 @@ export async function syncAnonymizedLessonToCalendar(lessonId: string): Promise<
     accessToken = refreshed.accessToken;
   } catch (err) {
     if (err instanceof googleClient.GoogleInvalidGrantError) {
-      // Coach revoked out-of-band. Treat as success — the calendar is
-      // disconnected, there is nothing to reconcile.
-      return;
+      // Coach revoked out-of-band, or Google expired the refresh token
+      // (common in Testing-mode OAuth which expires weekly). Flip the
+      // integration row to needs_reconnect so the status card nudges
+      // Jason to reconnect; subsequent retry passes land on the
+      // not_active branch above and keep pausing until he's back. Not
+      // a reconciled outcome — the past event may still carry PII.
+      await db
+        .update(coachCalendarIntegrations)
+        .set({ status: "needs_reconnect", needsReconnectSince: new Date() })
+        .where(eq(coachCalendarIntegrations.coachProfileId, coachProfileId));
+      return { status: "integration_paused", reason: "invalid_grant" };
     }
     throw err;
   }
@@ -790,7 +826,7 @@ export async function syncAnonymizedLessonToCalendar(lessonId: string): Promise<
       integration.googleCalendarId,
       eventId,
     );
-    return;
+    return { status: "reconciled" };
   }
 
   // Past event: patch to the anonymized shape. Location snapshot was
@@ -810,6 +846,7 @@ export async function syncAnonymizedLessonToCalendar(lessonId: string): Promise<
       location: locationText,
     },
   );
+  return { status: "reconciled" };
 }
 
 /** Exposed for tests. */

@@ -90,15 +90,21 @@ The old approach (null the FK, scrub the payload, keep the row) was rejected. Th
 
 ### External cleanup reliability via `account_deletion_jobs`
 
-External side effects (Google Calendar event deletion, Supabase Auth hard-delete) run in post-commit microtasks and need per-call retry state. A new `account_deletion_jobs` table carries that state:
+External side effects (Google Calendar event reconcile, Supabase Auth hard-delete) run in post-commit microtasks and need per-call retry state. A new `account_deletion_jobs` table carries that state:
 
 ```
-(id, profile_id, auth_user_id, scope, status, attempts, last_error, completed_at, created_at)
+(id, profile_id, auth_user_id, scope, status, attempts,
+ anonymized_lesson_ids, next_attempt_at, last_error, completed_at,
+ created_at, updated_at)
 ```
 
-`scope` is `'solo'` or `'leave'`. The deletion transaction inserts one row with `status = 'pending'` and commits. The post-commit callback runs the external calls and flips status to `'completed'` on success. If any external call fails, the row stays `'pending'` with `attempts` / `last_error` updated, and a small retry-only cron (`accountDeletionRetryDrain`, every ~5 min, bounded batch) re-drives until success or N retries (propose 10, matching the email sender). **Terminal `'failed'` logs at `error` level with `event = "account_deletion_cleanup_failed"` and the job id — no coach notification.** Jason can't fix a Supabase or Google outage from the alerts page, and surfacing it there adds noise without a usable action; log-based alerting routes it to whoever can intervene (ops or Jason via email).
+`scope` is `'solo'` or `'leave'`. The deletion transaction inserts one row with `status = 'pending'` and commits. The post-commit callback runs the external calls and flips status to `'completed'` on success. If any external call fails, the row stays `'pending'` with `attempts` / `last_error` / `next_attempt_at` updated. The retry drain (`runAccountDeletionRetryDrain`) runs inside the shared `/internal/cron/tick` handler (not a separate cron service) and re-drives any row whose `next_attempt_at <= now()` until success or `ACCOUNT_DELETION_MAX_ATTEMPTS` is exhausted. **Terminal `'failed'` logs at `error` level with `event = "account_deletion_cleanup_failed"` and the job id — no coach notification.** Jason can't fix a Supabase or Google outage from the alerts page, and surfacing it there adds noise without a usable action; log-based alerting routes it to whoever can intervene (ops or Jason via email).
 
-**The cron is retry-only.** It does not schedule or discover deletions; the deletion itself ran the moment the user clicked confirm. The cron exists so a Google 500 or a Supabase rate limit doesn't leave the external world inconsistent with the app.
+**Exponential backoff spanning at least a day before terminal.** Review feedback after Phase 4 flagged a real-world concern: a Supabase Auth outage or a delayed Jason-reconnect could blow through a flat retry budget in under an hour. The curve is now 5-minute base doubled per real failure, capped at 6 hours. With `ACCOUNT_DELETION_MAX_ATTEMPTS = 11`, the sum of waits across 10 inter-attempt gaps is `5+10+20+40+80+160+320+360+360+360 = 1715 min ≈ 28.6 h` before the job goes terminal. One extra attempt over the email-outbox budget is cheap and covers the longer-outage profile that two upstream services introduce.
+
+**Paused state when Jason's Google integration is disconnected.** Jason's OAuth is in Testing mode and his refresh token expires weekly. If a family deletes while the integration is in the reconnect window, the calendar step can't run — but that is not a real failure to retry; it's a wait on an external human action. `syncAnonymizedLessonToCalendar` returns `{ status: "integration_paused" }` (not an exception) when the integration row is missing, `needs_reconnect`, `disconnected`, or returns `invalid_grant` on refresh. `runAccountDeletionCleanup` propagates that as `paused: true` when no real error occurred, and the drain writes `next_attempt_at = now() + 5 minutes` (the cron tick cadence) **without incrementing attempts**. The budget is reserved for real failures; Jason's weekly reconnect window does not consume it. A paused calendar step combined with a real auth-delete failure still counts as a real attempt, because the auth step is the one actually broken.
+
+The practical consequence for the review's concern: a disconnected integration during a weekly reconnect window would previously have burned 11 attempts in ~50 minutes and left anonymized events (swimmer first names, home-pool address) on Jason's calendar forever — the reconcile cron already skips anonymized rows (Phase 3.8). Now the deletion-job pauses indefinitely, silently waiting, and reconciles the past events the first tick after Jason reconnects.
 
 Alternatives considered:
 
