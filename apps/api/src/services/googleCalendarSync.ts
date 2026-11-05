@@ -480,8 +480,14 @@ async function runSyncBatch(
   } catch (err) {
     // The inner loop should have caught per-lesson errors — anything that
     // reaches here is from the surrounding setup, not from a per-lesson
-    // sync. Log and continue to the finally so the run marker is cleared.
-    logger.error({ err, coachProfileId }, "sync batch: unexpected failure");
+    // sync. Route through toSafeGoogleError before logging: a gaxios
+    // failure reaching this far would otherwise hand pino an err.config
+    // tree carrying the coach's Authorization header and potentially
+    // the OAuth request body. Mirrors every other catch in this file.
+    logger.error(
+      { googleError: googleClient.toSafeGoogleError(err), coachProfileId },
+      "sync batch: unexpected failure",
+    );
   } finally {
     await db
       .update(coachCalendarIntegrations)
