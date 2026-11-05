@@ -512,6 +512,13 @@
       "when": 1793915325958,
       "tag": "0072_account_deletion_jobs_status_drop_running",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1793922817840,
+      "tag": "0073_lesson_email_outbox_scrubbed_relaxed_checks",
+      "breakpoints": true
     }
   ]
 }

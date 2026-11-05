@@ -125,6 +125,50 @@ Re-auth proves liveness, the typed phrase defends against an accidentally-clicke
 
 Supabase has rolled out a new secret-key format (`sb_secret_…`) that replaces the legacy service-role JWT. The pinned `@supabase/supabase-js@2.117.2` ships `isNewApiKey` and routes the key through the `apikey` header; `auth.admin.deleteUser` works against either format.
 
+### FK audit: every reference into a hard-deleted table
+
+The solo-deletion path hard-deletes rows across many tables in a specific order. Every FK pointing INTO one of those tables has to be either CASCADE, SET NULL, or hand-cleaned before the parent is deleted — otherwise the transaction rolls back on a RESTRICT violation and the parent sees a 500. This audit is the source of truth; every entry should hold true after any schema change to a hard-deleted table.
+
+Hard-deleted tables and the order they go in (`services/accountDeletion/deletion.ts:runAccountDeletion` solo branch): `household_audit_log` → `rating_fault_tags` → `skill_ratings` → `coach_notes` → `evaluation_drafts` → `evaluation_sessions` → `meet_swims` → `swimmer_clubs` → `league_registrations` → `lesson_swimmers` → `swimmers` → (`lesson_email_outbox` scrubbed in place) → `coach_notifications` → `booking_batches` → `lesson_locations` → `household_invites` → `household_members` → `households`. `lessons` is NOT hard-deleted; it's anonymized (identity columns nulled, row kept).
+
+| Parent (hard-deleted) | FK | Policy | Handled by |
+|---|---|---|---|
+| **swimmers** | `swimmer_clubs.swimmer_id` | CASCADE | `hardDeleteHouseholdSwimmerData` deletes explicitly first |
+| | `household_audit_log.target_swimmer_id` | RESTRICT | explicitly deleted in step 1 before swimmers |
+| | `league_registrations.swimmer_id` | CASCADE | deleted in `hardDeleteHouseholdSwimmerData` |
+| | `lesson_swimmers.swimmer_id` | RESTRICT | deleted in `hardDeleteHouseholdSwimmerData` |
+| | `evaluation_sessions.swimmer_id` | RESTRICT | deleted in `hardDeleteHouseholdSwimmerData` |
+| | `skill_ratings.swimmer_id` | RESTRICT | deleted in `hardDeleteHouseholdSwimmerData` |
+| | `evaluation_drafts.swimmer_id` | RESTRICT | deleted in `hardDeleteHouseholdSwimmerData` |
+| | `meet_swims.swimmer_id` | RESTRICT | deleted in `hardDeleteHouseholdSwimmerData` |
+| | `coach_notes.swimmer_id` | RESTRICT | deleted in `hardDeleteHouseholdSwimmerData` |
+| **households** | `swimmers.household_id` | RESTRICT | swimmers deleted first |
+| | `household_members.household_id` | CASCADE | deleted explicitly before households |
+| | `household_audit_log.household_id` | CASCADE | deleted explicitly in step 1 |
+| | `household_invites.household_id` | CASCADE | deleted explicitly before households |
+| | `lesson_locations.household_id` | CASCADE | deleted explicitly before households |
+| | `lessons.household_id` | SET NULL | `anonymizeHouseholdLessons` nulls it in-tx |
+| | `booking_batches.household_id` | RESTRICT | deleted explicitly before households |
+| | `lesson_email_outbox.household_id` | RESTRICT | `scrubEmailOutboxForHousehold` nulls on scrubbed-terminal rows (ADR 034 revision — see below) |
+| **booking_batches** | `lessons.batch_id` | RESTRICT | `anonymizeHouseholdLessons` nulls it in-tx |
+| | `lesson_email_outbox.batch_id` | RESTRICT | `scrubEmailOutboxForHousehold` nulls on scrubbed-terminal rows (ADR 034 revision — see below) |
+| | `coach_notifications.batch_id` | RESTRICT | `hardDeleteCoachNotificationsForHousehold` deletes explicitly first |
+| **lesson_locations** | `blocked_times.location_id` | CASCADE | coach-side, not family-scoped; CASCADE handles any leak |
+| | `bulk_cancellations.location_id` | SET NULL | auto-nulled; bulk_cancellations survives |
+| | `lessons.location_id` | SET NULL | `anonymizeHouseholdLessons` nulls it in-tx |
+| | `travel_buffer_overrides.from/to_location_id` | CASCADE | between named pools, home-pool rows unlikely but CASCADE covers it |
+| **evaluation_sessions** | `skill_ratings.session_id` | RESTRICT | deleted before sessions in `hardDeleteHouseholdSwimmerData` |
+| | `coach_notes.session_id` | RESTRICT | deleted before sessions in `hardDeleteHouseholdSwimmerData` |
+| **skill_ratings** | `rating_fault_tags.rating_id` | CASCADE | deleted explicitly before ratings |
+| | self-refs (`superseded_by_rating_id`, `supersedes_rating_id`) | RESTRICT | all ratings for the household's swimmers delete in one shot, so self-refs don't block |
+| **lessons** (anonymized, not deleted) | `lesson_swimmers.lesson_id` | CASCADE | deleted explicitly in `hardDeleteHouseholdSwimmerData` |
+| | `coach_notes.lesson_id` | RESTRICT | coach_notes deleted first; all remaining notes have no household tie |
+| | `lesson_email_outbox.lesson_id` | RESTRICT | NOT nulled on scrub — the lesson row survives anonymized, so the FK stays valid |
+| | `coach_notifications.lesson_id` | RESTRICT | `hardDeleteCoachNotificationsForHousehold` deletes by `anonymizedLessonIds` |
+| **coach_notifications, household_members, household_invites, lesson_swimmers, rating_fault_tags, swimmer_clubs, league_registrations, evaluation_drafts, meet_swims, coach_notes** | — no inbound FKs | — | leaf tables |
+
+**ADR 034 revision (reviewer-flagged post-ship):** the three `lesson_email_outbox` entries above (`batch_id`, `household_id`) originally relied on the deletion order but the scrubbed-terminal rows we intentionally retain still held their parent FK, so `DELETE FROM booking_batches` tripped the RESTRICT. `scrubEmailOutboxForHousehold` now nulls `batch_id` and `household_id` on every terminal row it scrubs; `lesson_id` is kept because lessons are anonymized, not deleted. The CHECKs `lesson_email_outbox_scope_exactly_one` and `lesson_email_outbox_bulk_household_pair` are relaxed in migration 0073 to allow all-nulls when `payload ? '_scrubbed_at'` (the scrub-sentinel marker).
+
 ## Legal review
 
 Unresolved items the kids'-data legal review owns. Not decisions in this ADR; listed so the review packet is complete:

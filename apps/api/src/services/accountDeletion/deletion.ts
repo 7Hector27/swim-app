@@ -513,9 +513,29 @@ export async function scrubEmailOutboxForHousehold(
       .where(
         and(whereClause, inArray(lessonEmailOutbox.status, nonTerminalStatuses)),
       );
+    // Scrub the payload AND null every FK that points at a hard-deleted
+    // parent in this transaction. The reviewer flagged a FK-violation
+    // 500 when the household had any booking batches: this UPDATE used
+    // to leave batch_id / household_id pointing at the row the solo
+    // teardown was about to hard-delete, and the RESTRICT on
+    // `lesson_email_outbox.batch_id` / `.household_id` rolled the whole
+    // transaction back.
+    //
+    // Null batch_id and household_id on scrubbed terminals — `booking_
+    // batches` and `households` are hard-deleted later in this tx.
+    // Keep lesson_id: lessons are anonymized (identity columns nulled)
+    // but the row survives, so the FK still resolves. Keep bulk_
+    // cancellation_id for the same reason (bulk_cancellations is
+    // coach-side and kept). Migration 0073 relaxes the scope CHECK
+    // + bulk_household_pair CHECK on this table so the all-nulls
+    // shape is legal when `payload ? '_scrubbed_at'`.
     await tx
       .update(lessonEmailOutbox)
-      .set({ payload: sql`jsonb_build_object('_scrubbed_at', now())` })
+      .set({
+        payload: sql`jsonb_build_object('_scrubbed_at', now())`,
+        batchId: null,
+        householdId: null,
+      })
       .where(
         and(
           whereClause,

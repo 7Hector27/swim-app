@@ -1192,19 +1192,33 @@ export const lessonEmailOutbox = pgTable(
       "lesson_email_outbox_claim_pair",
       sql`(${table.status} = 'sending') = (${table.claimedUntil} IS NOT NULL)`,
     ),
-    // Every row is scoped to exactly one of a lesson, a batch, or a bulk
-    // cancellation — never two, never none. See ADR 030 and ADR 033.
+    // Every live row is scoped to exactly one of a lesson, a batch, or a
+    // bulk cancellation — never two, never none. See ADR 030 and ADR 033.
+    // The `payload ? '_scrubbed_at'` escape clause is the ADR 034 account-
+    // deletion revision: a scrubbed-terminal row whose parent batch or
+    // household has been hard-deleted holds null batch_id / household_id
+    // (scrubEmailOutboxForHousehold nulls them so the parent DELETE's
+    // RESTRICT doesn't fire). lesson_id survives because lessons are
+    // anonymized, not deleted, so lesson-scoped scrubbed rows still have
+    // exactly-one and don't need the escape — but the clause covers them
+    // uniformly to keep the shape simple.
     check(
       "lesson_email_outbox_scope_exactly_one",
-      sql`(CASE WHEN ${table.lessonId} IS NOT NULL THEN 1 ELSE 0 END)
-        + (CASE WHEN ${table.batchId} IS NOT NULL THEN 1 ELSE 0 END)
-        + (CASE WHEN ${table.bulkCancellationId} IS NOT NULL THEN 1 ELSE 0 END) = 1`,
+      sql`(${table.payload} ? '_scrubbed_at')
+        OR ((CASE WHEN ${table.lessonId} IS NOT NULL THEN 1 ELSE 0 END)
+          + (CASE WHEN ${table.batchId} IS NOT NULL THEN 1 ELSE 0 END)
+          + (CASE WHEN ${table.bulkCancellationId} IS NOT NULL THEN 1 ELSE 0 END) = 1)`,
     ),
     // household_id is set iff the row is bulk-cancel-scoped. For lesson- and
-    // batch-scoped rows the household is derived from the parent row.
+    // batch-scoped rows the household is derived from the parent row. Same
+    // `payload ? '_scrubbed_at'` escape as the scope CHECK above: ADR 034
+    // nulls household_id on bulk-cancel-scoped scrubbed rows after the
+    // household is hard-deleted, decoupling it from bulk_cancellation_id
+    // (which survives because bulk_cancellations is coach-side and kept).
     check(
       "lesson_email_outbox_bulk_household_pair",
-      sql`(${table.bulkCancellationId} IS NULL) = (${table.householdId} IS NULL)`,
+      sql`(${table.payload} ? '_scrubbed_at')
+        OR ((${table.bulkCancellationId} IS NULL) = (${table.householdId} IS NULL))`,
     ),
     // Partial index on (next_attempt_at) for the drain's hot path. Includes
     // 'sending' because an expired-claim row is a drain candidate.
