@@ -29,6 +29,15 @@ export default async function CoachLessonReschedulePage({ params }: PageProps) {
     throw new Error(`Failed to load lesson (status ${lessonResult.status})`);
   }
 
+  // Anonymized lessons (ADR 034) are terminal history — identity columns are
+  // null, so the reschedule form has nothing to submit against. Render the
+  // 404 page here rather than leaning on the client component's defensive
+  // fallback to render an unsubmittable form. The parent-facing reschedule
+  // page does the same; mirror its behavior on the coach side.
+  if (lessonResult.lesson.anonymizedAt != null) {
+    notFound();
+  }
+
   // Write page — the reschedule form needs the pools list. Throw so the route
   // error boundary renders instead of a form that can't submit.
   if (!locationsResult.ok) {
