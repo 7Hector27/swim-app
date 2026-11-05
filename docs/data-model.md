@@ -627,7 +627,7 @@ RLS is enabled. Policies TBD.
 
 ### `account_deletion_jobs`
 
-Retry state for the post-commit external cleanup after an account is deleted. See ADR 034 and `docs/plans/account-deletion.md`. One row per deletion invocation. Added in migration 0067 (Phase 1 schema prep); writes start in Phase 2 when the deletion engine ships.
+Retry state for the post-commit external cleanup after an account is deleted. See ADR 034 and `docs/plans/account-deletion.md`. One row per deletion invocation. Added in migration 0067 (Phase 1 schema prep); the deletion engine writes rows starting in Phase 2, the Phase 3 retry drain reads them, and the `anonymized_lesson_ids` column added in migration 0070 lets the drain walk the right set of lessons on replay.
 
 | Column | Type | Nullable | Default | Notes |
 |---|---|---|---|---|
@@ -636,16 +636,17 @@ Retry state for the post-commit external cleanup after an account is deleted. Se
 | `auth_user_id` | `uuid` | no | — | The Supabase Auth user to hard-delete. No FK — the row goes away on success. |
 | `scope` | `text` | no | — | CHECK IN (`'solo'`, `'leave'`). Matches the two cases in ADR 034. |
 | `status` | `text` | no | `'pending'` | CHECK IN (`'pending'`, `'running'`, `'completed'`, `'failed'`). |
-| `attempts` | `integer` | no | `0` | Incremented on every retry tick. |
-| `last_error` | `text` | yes | — | Transport / admin-API error from the most recent attempt. No PII. |
+| `attempts` | `integer` | no | `0` | Incremented on every retry tick via `sql\`attempts + 1\`` so overlapping ticks can't overwrite each other's counter. Terminal `'failed'` when this reaches `ACCOUNT_DELETION_MAX_ATTEMPTS` (10, matching the email outbox retry budget). |
+| `anonymized_lesson_ids` | `uuid[]` | no | `'{}'::uuid[]` | Added in migration 0070 (Phase 3). The set of lessons the deletion anonymized. Captured at deletion time because `anonymizeHouseholdLessons` nulls every tie back to the household — the retry drain has no other way to re-derive which Google events to patch (past) vs delete (future) on a replay. Empty for `scope='leave'` and for solo deletions whose household owned no lessons. |
+| `last_error` | `text` | yes | — | Short structural summary of the most recent failure (`"auth_delete_failed:AuthApiError:user_not_found:404"` shape). No PII — never carries the raw Supabase `.message` or any Google error body, since both can echo the user's email or swimmer first names. |
 | `completed_at` | `timestamptz` | yes | — | Set when status moves to `'completed'`. |
 | `created_at` | `timestamptz` | no | `now()` | |
-| `updated_at` | `timestamptz` | no | `now()` | Auto-updated; also doubles as the retry drain's ordering key. |
+| `updated_at` | `timestamptz` | no | `now()` | Auto-updated; also doubles as the retry drain's ordering key. The drain's eligibility filter also enforces `updated_at < now() - 60 seconds` so a transient Supabase/Google blip isn't hammered within the same second a prior attempt gave up. |
 
 Indexes:
 - `account_deletion_jobs_pending_idx` — partial index on `(updated_at)` where `status = 'pending'`, for the retry drain's scan.
 
-RLS is enabled. Policies TBD.
+RLS is enabled. Policies TBD (open follow-up per `docs/plans/account-deletion.md`).
 
 **Notes:** The DB-side deletion runs inside the request transaction; this table only tracks the Supabase Auth hard-delete and the per-lesson Google Calendar sync, which run as post-commit tasks and may fail transiently. Terminal `'failed'` logs at `error` level — no coach notification — because Jason can't fix a Supabase or Google outage from the alerts page.
 

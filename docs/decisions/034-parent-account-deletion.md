@@ -109,6 +109,16 @@ Alternatives considered:
 
 Re-auth proves liveness, the typed phrase defends against an accidentally-clicked confirm button. The confirm screen shows a preview (counts of swimmers, past lessons, future lessons; the household name; the member count) and plain-language copy ("This is immediate and cannot be undone"). If telemetry later shows the combination is too heavy, we can dial back — but not before launch.
 
+**Wrong password returns `403 invalid_password`, not `401`.** The web client's convention is that any `401` from an API call means "your session is dead, sign the user out and redirect to `/api/signout`" (see `apps/web/src/lib/requireAuth.ts` and every Server Action that forwards to the API). Returning `401` on a wrong confirmation password would sign the authenticated user out of the rest of their account the instant they mistyped. `403 invalid_password` is a distinct signal the Phase 4 UI can show as an inline error without triggering the global sign-out. The upstream Supabase `signInWithPassword` error is unchanged; only the public-facing status + code on this route differ.
+
+**Typed-phrase comparison is trimmed + case-insensitive.** iPhone autocapitalizes the first word of the field even with `autoCapitalize="none"` on older iOS versions, so `"Delete my account"` is a genuinely-intended input that a strict `===` check would reject. The phrase itself stays lowercase in the constant so the UI can show the canonical form. Comparison is centralized in `matchesDeletionConfirmationPhrase(input)` in `packages/shared/src/schemas/accountDeletion.ts` so the client's button-enablement rule, the web Server Action's defense-in-depth check, and the API route's authoritative check all agree on what counts as a match. The phrase input carries `autoCapitalize="none"`, `autoCorrect="off"`, `spellCheck={false}` so iOS hints don't rewrite what the user typed.
+
+### Service-role credential posture
+
+`auth.admin.deleteUser(authUserId)` is the first app-side consumer of the Supabase service-role key. The key lives on the Railway API service only — as `SUPABASE_SERVICE_ROLE_KEY` — and **never** on Vercel and **never** in a `NEXT_PUBLIC_*` variable. The API's env validator (`apps/api/src/lib/env.ts`) refuses to boot when `APP_ENV` is `dev` or `prod` and the key is missing or empty, so a deploy that forgot to copy the credential fails in the Railway deploy log rather than silently serving every other route until a parent clicks delete. Local development keeps the key optional; the admin client throws on first access there if the key isn't set, which matches the "no deletion tested locally without the key" expectation.
+
+Supabase has rolled out a new secret-key format (`sb_secret_…`) that replaces the legacy service-role JWT. The pinned `@supabase/supabase-js@2.117.2` ships `isNewApiKey` and routes the key through the `apikey` header; `auth.admin.deleteUser` works against either format.
+
 ## Legal review
 
 Unresolved items the kids'-data legal review owns. Not decisions in this ADR; listed so the review packet is complete:

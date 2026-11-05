@@ -169,11 +169,13 @@ Set under **Service → Variables**. Dev values shown.
 
 Railway has native cron. Under **Service → Settings → Cron**:
 
-- Schedule: `*/5 * * * *` (every 5 minutes — expires pending lessons and auto-completes approved lessons past their end time)
+- Schedule: `*/5 * * * *` (every 5 minutes)
 - Command: `curl -fsS -X POST -H "cron-secret: $CRON_SECRET" "$INTERNAL_URL/internal/cron/tick"`
 - Set service env vars for the cron: `INTERNAL_URL=http://localhost:$PORT` (same service, so the cron hits the API over the Railway private network with no auth round-trip over the public internet).
 
-The route is defined at `apps/api/src/routes/internal.ts:37-81` and uses `timingSafeEqual` on SHA-256 digests of the header vs env. Missing or wrong secret → 401.
+The single `/internal/cron/tick` handler runs the full tick under a shared `cron_leases` lease: expires pending lessons past their deadline, auto-completes approved lessons past their end time, drains the parent-email outbox + scrub, drains the coach push outbox + scrub + release-held + daily summary, kicks off the Google Calendar light/full reconcile pass, and runs the **account-deletion retry drain** (ADR 034 Phase 3 — picks `account_deletion_jobs` with `status='pending'` and `attempts < 10` under `FOR UPDATE SKIP LOCKED`, replays `syncAnonymizedLessonToCalendar` + `auth.admin.deleteUser`, increments attempts, flips terminal `'failed'` after the budget is exhausted). All of these share the one lease, so overlapping cron fires return `{ skipped: true }` without touching the DB. **Alerting todo for prod:** wire log-based alerting on the string `event="account_deletion_cleanup_failed"` so a terminal retry failure reaches an operator (low-urgency — DB already committed).
+
+The route is defined at `apps/api/src/routes/internal.ts` and uses `timingSafeEqual` on SHA-256 digests of the header vs env. Missing or wrong secret → 401.
 
 ---
 

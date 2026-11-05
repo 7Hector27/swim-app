@@ -1,6 +1,6 @@
 # Account deletion
 
-**Status:** Draft (planning only — no code yet)
+**Status:** Done — Phases 1–4 shipped on `feature/account-deletion`. Phase 5 docs rolled into `docs/accounts.md`, `docs/data-model.md`, `docs/deployment.md`, and ADR 034. Open follow-ups listed at the bottom of this document.
 **Branch:** `feature/account-deletion`
 **Related ADR:** [034 — Parent account deletion](../decisions/034-parent-account-deletion.md)
 
@@ -379,10 +379,30 @@ Each phase is its own PR off `feature/account-deletion`, with its own tests.
 - Legal-review handoff doc covering the four items in "Legal review" above
 - `docs/accounts.md` updated to reference this ADR and strike the "out of scope" line
 - `drain.ts:118` TODO removed and the ADR referenced instead
-- Rule added to `docs/accounts.md`: **teen accounts must not ship without extending this flow to cover them** (see open questions)
+- Rule added to `docs/accounts.md`: **teen accounts must not ship without extending this flow to cover them** (see open follow-ups)
+
+## Done
+
+- Phase 1 (schema prep + stale-session guard): migration 0067 adds `account_deletion_jobs`, the three new `lessons` columns (`anonymized_at` / `location_snapshot` / `swimmer_count`), drops the `profiles.id → auth.users.id` CASCADE FK. `requireUser` returns 401 on `disabled_at`. Integration-test cleanup helpers delete profiles explicitly.
+- Phase 2 (deletion engine): `services/accountDeletion/deletion.ts` runs the full teardown / leave / 409 transaction, `/me/deletion/preview` + `/me/deletion/confirm` ship under `requireUser` + the 5-per-hour rate limiter, past-lesson anonymization and future-lesson cancel-then-anonymize work.
+- Phase 3 (external cleanup retry drain + past-event anonymization): migration 0070 adds `anonymized_lesson_ids`. `syncAnonymizedLessonToCalendar` patches past Google events to the "deleted family" shape and deletes future ones (both 404/410 idempotent). `runAccountDeletionRetryDrain` runs inside `/internal/cron/tick` under the shared lease; `FOR UPDATE SKIP LOCKED` on the eligible-set select; terminal `'failed'` after 10 attempts, logged at error level with job id only. The reconcile cron's light/full passes filter on `anonymized_at IS NULL` so anonymized rows are never touched again.
+- Phase 4 (UI): Danger-bordered "Delete account" section at the bottom of `/account`, parent-only. Four render branches (solo-alone, owner-with-only-viewers, leave, blocked-must-transfer). Confirm form: password + typed phrase, button enabled only when `matchesDeletionConfirmationPhrase` (trimmed + case-insensitive) returns true. Error handling: `403 invalid_password` inline (no sign-out), `429` with `Retry-After`-based minutes, `409 must_transfer_first` ("Another adult joined…"), generic fallback. Success signs the user out server-side and redirects to the public `/account/deleted` page.
+- Follow-up fixes that landed alongside the planned phases: `coach lesson detail householdName` filters disabled member profiles (ADR 034); coach reschedule server page returns `notFound()` on anonymized lessons; `googleCalendarSync` uncaught-error branch logs through `toSafeGoogleError`; the `account_deletion_jobs` tag on the coach account-deleted summary notification is keyed off the job id; env validator requires `SUPABASE_SERVICE_ROLE_KEY` when `APP_ENV` is `dev` or `prod` (stale `docs/deployment.md` notes fixed to match).
+
+## Open follow-ups
+
+Items that did not block the shipping branch but need owners before launch or shortly after:
+
+1. **Legal review packet.** Four items the kids'-data legal review owns (none app-reachable):
+   - **Supabase physical backups** retain deleted rows for the plan's PITR window (7–30 days depending on tier). Out of the app's reach.
+   - **Resend / email transport message logs** retain already-sent payloads (swimmer first names, times, home-pool addresses) in the transport's own system. Retention is a provider setting; confirm it meets the posture.
+   - **Google Calendar activity history** on Jason's calendar may retain deleted-event metadata. Overlaps with the open items in `docs/accounts.md` on first names and home-pool addresses in event titles / locations.
+   - **Supabase Auth internal logs** (admin API, GoTrue server logs) may retain the deleted email for their internal retention window.
+2. **Teen-account deletion shape.** When teen accounts ship (per `docs/accounts.md`), decide whether a teen's own-account deletion goes through the same flow as a parent's or is owner-mediated. **Hard rule: no teen-account build may land without extending this flow** to cover the new role. ADR 034's "open questions" section already records this.
+3. **Alerting for terminal retry failures.** The retry drain logs `event = "account_deletion_cleanup_failed"` at error level when a job reaches `ACCOUNT_DELETION_MAX_ATTEMPTS`. Prod setup still needs a log-based alert on that string (Supabase log drains → provider, or whatever log-based alerting the project is using). Pager expectation is low-urgency — the DB side already committed; the lingering effect is one undeleted Google event or auth user an operator can clean up manually.
+4. **Batching `anonymizeHouseholdLessons` at volume.** The current implementation iterates per-lesson for the identity-column UPDATE and the swimmer-count snapshot. Fine for the current scale (double-digit lessons per household). At meaningful volume (hundreds of lessons per household) the transaction time will grow linearly and could push past Postgres's statement timeout. Rework into a set-based UPDATE with a JOIN to the pre-computed snapshot counts before the first household with that profile.
+5. **RLS policies on `account_deletion_jobs`.** The table has `enableRLS()` with no policies, which denies all access — fine today because only the API (DB owner) reads and writes the row. If a future admin UI needs to read deletion-retry state, add an explicit policy rather than relying on the denied-by-default stance.
 
 ## Open questions
 
-Everything else has been folded into decisions above. Remaining:
-
-1. **Teen accounts — deletion shape.** When teen accounts ship (per `docs/accounts.md:9`), confirm whether deletion of a teen's own account is handled the same way as a parent's deletion, or whether it is owner-mediated. Phase 5 adds the rule that **no teen-account build may land without extending this flow**, but the shape is TBD when the feature arrives.
+Everything else has been folded into decisions above. Remaining items are tracked under "Open follow-ups" above.
