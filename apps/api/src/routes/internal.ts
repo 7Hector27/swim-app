@@ -23,6 +23,7 @@ import {
   scrubCoachNotificationPayloads,
 } from "../services/notifications/drain";
 import { runAccountDeletionRetryDrain } from "../services/accountDeletion";
+import { safeCleanupErrSummary } from "../services/accountDeletion/cleanup";
 import type { RequestHandler } from "express";
 
 // Promote the per-tick light pass to a full pass when last_full_reconcile_at
@@ -255,8 +256,11 @@ async function runCronTick(
     try {
       emailDrainResult = await drainLessonEmailOutbox();
     } catch (err) {
+      // Never log err.message directly — Resend / Node fetch messages
+      // can echo recipient email addresses. safeCleanupErrSummary
+      // reduces to { name, code, status } only.
       req.log.error(
-        { err: err instanceof Error ? err.message : String(err) },
+        { err: safeCleanupErrSummary(err) },
         "cron/tick email drain failed",
       );
     }
@@ -264,7 +268,7 @@ async function runCronTick(
       emailScrubResult = await scrubLessonEmailPayloads();
     } catch (err) {
       req.log.error(
-        { err: err instanceof Error ? err.message : String(err) },
+        { err: safeCleanupErrSummary(err) },
         "cron/tick email scrub failed",
       );
     }
