@@ -626,6 +626,16 @@ export async function scrubProfile(
   // The sentinel email keeps the profile row's unique index happy without
   // ever matching a real address. The format is stable and parseable in log
   // scans so an operator can confirm scrubbing happened.
+  //
+  // To tell a scrubbed profile apart from a live one, prefer either
+  // `disabled_at IS NOT NULL` (the deletion marker — set here, never
+  // cleared anywhere else) or the sentinel email prefix
+  // `deleted-user-<uuid>@invalid.local`. Do NOT use `age_attested_at IS
+  // NULL` on its own — this scrub clears it so the attestation consent
+  // record (ADR 016) does not survive the deletion, which means a
+  // never-attested live profile and a deleted profile look identical on
+  // that column alone. Pair either disambiguator above with it if a
+  // query specifically wants "attested at some point in their lifetime."
   await tx
     .update(profiles)
     .set({
