@@ -92,8 +92,15 @@ accountDeletionRouter.post(
       /* best-effort — nothing we can do with a sign-out failure here */
     }
     if (authError || !authData?.user) {
-      req.log.warn({ profileId: req.profile.id, reason: "password_mismatch" }, "deletion re-auth failed");
-      res.status(401).json({ error: "password_mismatch" });
+      // Intentionally NOT 401 — the web client's convention is that any
+      // 401 from an API call signals "your session is dead, sign the
+      // user out" (apps/web/src/lib/requireAuth.ts and every Server
+      // Action that forwards to the API). A wrong password on the
+      // deletion confirmation must not sign the authenticated user out
+      // of the rest of their account; 403 with a distinct code
+      // keeps the UX scoped to the deletion flow.
+      req.log.warn({ profileId: req.profile.id, reason: "invalid_password" }, "deletion re-auth failed");
+      res.status(403).json({ error: "invalid_password" });
       return;
     }
 

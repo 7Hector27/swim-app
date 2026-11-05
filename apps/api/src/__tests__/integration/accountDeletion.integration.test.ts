@@ -370,7 +370,7 @@ describe("POST /me/deletion/confirm (guards)", () => {
     expect(profileRow[0]?.disabledAt).toBeNull();
   });
 
-  it("returns 401 on wrong password", async () => {
+  it("returns 403 invalid_password on wrong password — not 401, so the web client does not sign the user out of the rest of their account", async () => {
     const owner = await createTestUser("delete-guard-password");
     testUsers.push(owner);
 
@@ -379,8 +379,14 @@ describe("POST /me/deletion/confirm (guards)", () => {
       .set("Authorization", `Bearer ${owner.accessToken}`)
       .send({ password: "wrong-password-xyz", confirmationPhrase: DELETION_PHRASE });
 
-    expect(res.status).toBe(401);
-    expect(res.body.error).toBe("password_mismatch");
+    // 403 invalid_password, not 401. The web client's convention
+    // (apps/web/src/lib/requireAuth.ts + every Server Action that
+    // forwards to the API) is to treat any API 401 as "session is
+    // dead → redirect to /api/signout". A wrong confirmation password
+    // must not sign the still-live user out; the Phase 4 UI shows an
+    // inline error on this 403 branch and keeps the user on the page.
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe("invalid_password");
 
     const profileRow = await adminDb()
       .select({ disabledAt: profiles.disabledAt })
@@ -1137,13 +1143,15 @@ describe("POST /me/deletion/confirm — rate limit (addition 3)", () => {
     const owner = await createTestUser("delete-rate-limit");
     testUsers.push(owner);
 
-    // Hit the endpoint 5 times with a wrong password. Each returns 401.
+    // Hit the endpoint 5 times with a wrong password. Each returns 403
+    // invalid_password (intentionally not 401 — see "returns 403 invalid
+    // _password on wrong password" above for the rationale).
     for (let i = 0; i < 5; i++) {
       const res = await request(app)
         .post("/me/deletion/confirm")
         .set("Authorization", `Bearer ${owner.accessToken}`)
         .send({ password: "wrong-password-xyz", confirmationPhrase: DELETION_PHRASE });
-      expect(res.status).toBe(401);
+      expect(res.status).toBe(403);
     }
 
     // 6th attempt is blocked at the limiter — note the limiter increments

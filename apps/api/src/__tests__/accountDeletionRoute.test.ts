@@ -188,8 +188,11 @@ describe("POST /me/deletion/confirm (unit)", () => {
       .set("Authorization", "Bearer token")
       .send({ password: "wrong", confirmationPhrase: "delete my account" });
 
-    expect(res.status).toBe(401);
-    expect(res.body.error).toBe("password_mismatch");
+    // 403 invalid_password, not 401 — the web client's convention is
+    // to sign the user out on any 401 from the API, and a wrong
+    // confirmation-password must not sign the still-live session out.
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe("invalid_password");
     expect(mockReauthSignOut).toHaveBeenCalledTimes(1);
   });
 
