@@ -122,8 +122,18 @@ export async function runAccountDeletionCleanup(
   for (const lessonId of job.anonymizedLessonIds) {
     try {
       const outcome = await syncFn(lessonId);
-      if (outcome.status !== "reconciled") {
+      if (outcome.status === "integration_paused") {
+        // Narrow check (not `outcome.status !== "reconciled"`) so a future
+        // AnonymizedCalendarSyncOutcome variant (e.g. `skipped`,
+        // `not_configured`) can't be silently reinterpreted as paused.
+        // Adding a new variant will now be a type error at this line.
         anyCalendarPaused = true;
+        allLessonsReconciled = false;
+      } else if (outcome.status !== "reconciled") {
+        // Exhaustiveness guard: if a future outcome shape slips through
+        // without an explicit handler, treat it as a real problem rather
+        // than silently succeeding. TypeScript catches this at compile
+        // time; the runtime fallback is here for a stray build.
         allLessonsReconciled = false;
       }
     } catch (err) {
