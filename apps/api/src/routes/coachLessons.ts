@@ -93,10 +93,11 @@ coachLessonsRouter.get(
     // (completed, canceled, no_show, declined, expired) with each row
     // tappable through to /coach/lessons/[id]. The planning subset used for
     // travel buffers and open slots stays limited to pending/approved below.
-    // INNER JOIN on lessonLocations means every returned row has a live
-    // locationId at runtime, and we never show anonymized rows on the
-    // coach schedule — narrow per ADR 034.
-    const lessonRows = (await db
+    // LEFT JOIN on lessonLocations because anonymized rows (ADR 034) have
+    // locationId NULL; those come through with locationName=null and the
+    // mapping below branches on anonymizedAt to surface "Deleted family"
+    // and the locationSnapshot instead.
+    const lessonRows = await db
       .select({
         id: lessons.id,
         householdId: lessons.householdId,
@@ -113,20 +114,25 @@ coachLessonsRouter.get(
         movedAt: lessons.movedAt,
         previousStartsAt: lessons.previousStartsAt,
         createdAt: lessons.createdAt,
+        anonymizedAt: lessons.anonymizedAt,
+        locationSnapshot: lessons.locationSnapshot,
+        swimmerCount: lessons.swimmerCount,
       })
       .from(lessons)
-      .innerJoin(lessonLocations, eq(lessons.locationId, lessonLocations.id))
+      .leftJoin(lessonLocations, eq(lessons.locationId, lessonLocations.id))
       .where(
         sql`date_trunc('day', ${lessons.startsAt} AT TIME ZONE 'America/Los_Angeles') = ${date}::date`,
       )
-      .orderBy(asc(lessons.startsAt))).map(requireLiveLessonFields);
+      .orderBy(asc(lessons.startsAt));
 
     // Planning subset: pending + approved only. Travel buffers between
     // these rows render on the schedule; terminal-status lessons never
-    // generate buffers (they're history, not planning).
-    const planningLessonRows = lessonRows.filter(
-      (row) => row.status === "pending" || row.status === "approved",
-    );
+    // generate buffers (they're history, not planning). Pending/approved
+    // rows are always live (anonymized rows are in terminal statuses) so
+    // narrow per ADR 034.
+    const planningLessonRows = lessonRows
+      .filter((row) => row.status === "pending" || row.status === "approved")
+      .map(requireLiveLessonFields);
 
     const lessonIds = lessonRows.map((row) => row.id);
 
@@ -196,8 +202,10 @@ coachLessonsRouter.get(
     // 4. Build schedule items.
     const items: CoachScheduleItem[] = [];
 
-    // Add lesson items.
+    // Add lesson items. Anonymized rows (ADR 034) surface as "Deleted
+    // family" with the location snapshot standing in for locationName.
     for (const row of lessonRows) {
+      const anonymized = row.anonymizedAt != null;
       const coachLessonResponse = {
         id: row.id,
         householdId: row.householdId,
@@ -206,16 +214,25 @@ coachLessonsRouter.get(
         durationMinutes: row.durationMinutes as 30 | 45 | 60,
         type: row.type,
         status: row.status,
-        swimmers: swimmersByLesson.get(row.id) ?? [],
+        swimmers: anonymized ? [] : swimmersByLesson.get(row.id) ?? [],
         expiresAt: row.expiresAt?.toISOString() ?? null,
         approvedAt: row.approvedAt?.toISOString() ?? null,
         declinedAt: row.declinedAt?.toISOString() ?? null,
-        declineReason: row.declineReason ?? null,
+        declineReason: anonymized ? null : row.declineReason ?? null,
         movedAt: row.movedAt?.toISOString() ?? null,
         previousStartsAt: row.previousStartsAt?.toISOString() ?? null,
         createdAt: row.createdAt.toISOString(),
+        anonymizedAt: row.anonymizedAt?.toISOString() ?? null,
+        locationSnapshot: row.locationSnapshot ?? null,
+        swimmerCount: row.swimmerCount ?? null,
       };
-      items.push({ type: "lesson", lesson: coachLessonResponse, locationName: row.locationName, householdId: row.householdId });
+      items.push({
+        type: "lesson",
+        lesson: coachLessonResponse,
+        locationName: anonymized ? row.locationSnapshot ?? "" : row.locationName ?? "",
+        householdId: row.householdId,
+        ...(anonymized && { householdName: "Deleted family" }),
+      });
     }
 
     // Insert travel buffer items between consecutive pending/approved
@@ -244,8 +261,10 @@ coachLessonsRouter.get(
           type: "travel_buffer",
           startsAt: currentEnd.toISOString(),
           endsAt: bufferEnd.toISOString(),
-          fromLocationName: current.locationName,
-          toLocationName: next.locationName,
+          // Planning rows are live (pending/approved) + narrowed above, so
+          // the LEFT JOIN resolved locationName at runtime. Non-null assertion.
+          fromLocationName: current.locationName!,
+          toLocationName: next.locationName!,
         });
       }
     }
@@ -362,9 +381,10 @@ coachLessonsRouter.get(
     // are returned so past weeks show lessons in their real end state
     // (completed, canceled, no_show, declined, expired) with each card
     // tappable through to /coach/lessons/[id].
-    // INNER JOIN on lessonLocations guarantees locationId non-null at
-    // runtime; narrow per ADR 034.
-    const lessonRows = (await db
+    // LEFT JOIN on lessonLocations — anonymized rows (ADR 034) have
+    // locationId NULL and still need to appear on past-week views with
+    // "Deleted family" + the locationSnapshot.
+    const lessonRows = await db
       .select({
         id: lessons.id,
         householdId: lessons.householdId,
@@ -381,16 +401,19 @@ coachLessonsRouter.get(
         movedAt: lessons.movedAt,
         previousStartsAt: lessons.previousStartsAt,
         createdAt: lessons.createdAt,
+        anonymizedAt: lessons.anonymizedAt,
+        locationSnapshot: lessons.locationSnapshot,
+        swimmerCount: lessons.swimmerCount,
       })
       .from(lessons)
-      .innerJoin(lessonLocations, eq(lessons.locationId, lessonLocations.id))
+      .leftJoin(lessonLocations, eq(lessons.locationId, lessonLocations.id))
       .where(
         and(
           sql`date_trunc('day', ${lessons.startsAt} AT TIME ZONE 'America/Los_Angeles') >= ${startDate}::date`,
           sql`date_trunc('day', ${lessons.startsAt} AT TIME ZONE 'America/Los_Angeles') < ${endDate}::date + interval '1 day'`,
         ),
       )
-      .orderBy(asc(lessons.startsAt))).map(requireLiveLessonFields);
+      .orderBy(asc(lessons.startsAt));
 
     const lessonIds = lessonRows.map((row) => row.id);
 
@@ -454,6 +477,9 @@ coachLessonsRouter.get(
 
       const dayItems = itemsByDate.get(laDate);
       if (dayItems !== undefined) {
+        // ADR 034: anonymized past-week rows show "Deleted family" and the
+        // location snapshot instead of real family/location data.
+        const anonymized = row.anonymizedAt != null;
         dayItems.push({
           type: "lesson",
           lesson: {
@@ -464,17 +490,21 @@ coachLessonsRouter.get(
             durationMinutes: row.durationMinutes as 30 | 45 | 60,
             type: row.type,
             status: row.status,
-            swimmers: swimmersByLesson.get(row.id) ?? [],
+            swimmers: anonymized ? [] : swimmersByLesson.get(row.id) ?? [],
             expiresAt: row.expiresAt?.toISOString() ?? null,
             approvedAt: row.approvedAt?.toISOString() ?? null,
             declinedAt: row.declinedAt?.toISOString() ?? null,
-            declineReason: row.declineReason ?? null,
+            declineReason: anonymized ? null : row.declineReason ?? null,
             movedAt: row.movedAt?.toISOString() ?? null,
             previousStartsAt: row.previousStartsAt?.toISOString() ?? null,
             createdAt: row.createdAt.toISOString(),
+            anonymizedAt: row.anonymizedAt?.toISOString() ?? null,
+            locationSnapshot: row.locationSnapshot ?? null,
+            swimmerCount: row.swimmerCount ?? null,
           },
-          locationName: row.locationName,
+          locationName: anonymized ? row.locationSnapshot ?? "" : row.locationName ?? "",
           householdId: row.householdId,
+          ...(anonymized && { householdName: "Deleted family" }),
         });
       }
     }
@@ -553,9 +583,9 @@ coachLessonsRouter.get(
       filters.push(eq(lessons.calendarSyncStatus, query.calendarSyncStatus));
     }
 
-    // Coach-facing lesson list excludes anonymized rows at the query level;
-    // narrow per ADR 034.
-    const lessonRows = (await db
+    // Coach-facing lesson list. Anonymized rows (ADR 034) come through
+    // with null identity columns and are mapped to "Deleted family" below.
+    const lessonRows = await db
       .select({
         id: lessons.id,
         householdId: lessons.householdId,
@@ -573,11 +603,14 @@ coachLessonsRouter.get(
         createdAt: lessons.createdAt,
         batchId: lessons.batchId,
         batchMode: bookingBatches.mode,
+        anonymizedAt: lessons.anonymizedAt,
+        locationSnapshot: lessons.locationSnapshot,
+        swimmerCount: lessons.swimmerCount,
       })
       .from(lessons)
       .leftJoin(bookingBatches, eq(lessons.batchId, bookingBatches.id))
       .where(filters.length > 0 ? and(...filters) : undefined)
-      .orderBy(asc(lessons.startsAt))).map(requireLiveLessonFields);
+      .orderBy(asc(lessons.startsAt));
 
     const lessonIds = lessonRows.map((row) => row.id);
 
@@ -602,26 +635,32 @@ coachLessonsRouter.get(
       swimmersByLesson.set(row.lessonId, list);
     }
 
-    const body: LessonResponse[] = lessonRows.map((row) => ({
-      id: row.id,
-      householdId: row.householdId,
-      locationId: row.locationId,
-      startsAt: row.startsAt.toISOString(),
-      durationMinutes: row.durationMinutes as 30 | 45 | 60,
-      type: row.type,
-      status: row.status,
-      swimmers: swimmersByLesson.get(row.id) ?? [],
-      expiresAt: row.expiresAt?.toISOString() ?? null,
-      approvedAt: row.approvedAt?.toISOString() ?? null,
-      declinedAt: row.declinedAt?.toISOString() ?? null,
-      declineReason: row.declineReason ?? null,
-      movedAt: row.movedAt?.toISOString() ?? null,
-      previousStartsAt: row.previousStartsAt?.toISOString() ?? null,
-      createdAt: row.createdAt.toISOString(),
-      batchId: row.batchId,
-      batchMode:
-        row.batchMode === "manual" || row.batchMode === "weekly" ? row.batchMode : null,
-    }));
+    const body: LessonResponse[] = lessonRows.map((row) => {
+      const anonymized = row.anonymizedAt != null;
+      return {
+        id: row.id,
+        householdId: row.householdId,
+        locationId: row.locationId,
+        startsAt: row.startsAt.toISOString(),
+        durationMinutes: row.durationMinutes as 30 | 45 | 60,
+        type: row.type,
+        status: row.status,
+        swimmers: anonymized ? [] : swimmersByLesson.get(row.id) ?? [],
+        expiresAt: row.expiresAt?.toISOString() ?? null,
+        approvedAt: row.approvedAt?.toISOString() ?? null,
+        declinedAt: row.declinedAt?.toISOString() ?? null,
+        declineReason: anonymized ? null : row.declineReason ?? null,
+        movedAt: row.movedAt?.toISOString() ?? null,
+        previousStartsAt: row.previousStartsAt?.toISOString() ?? null,
+        createdAt: row.createdAt.toISOString(),
+        batchId: row.batchId,
+        batchMode:
+          row.batchMode === "manual" || row.batchMode === "weekly" ? row.batchMode : null,
+        anonymizedAt: row.anonymizedAt?.toISOString() ?? null,
+        locationSnapshot: row.locationSnapshot ?? null,
+        swimmerCount: row.swimmerCount ?? null,
+      };
+    });
 
     res.json(body);
   }),
@@ -1265,6 +1304,9 @@ coachLessonsRouter.get(
   asyncHandler(async (req, res) => {
     const { id } = req.params as { id: string };
 
+    // LEFT JOIN on lesson_locations — anonymized rows have locationId NULL
+    // and still need to come through (ADR 034). The lesson row's
+    // anonymizedAt is the discriminator.
     const lessonRows = await db
       .select({
         id: lessons.id,
@@ -1287,21 +1329,59 @@ coachLessonsRouter.get(
         movedAt: lessons.movedAt,
         previousStartsAt: lessons.previousStartsAt,
         createdAt: lessons.createdAt,
+        anonymizedAt: lessons.anonymizedAt,
+        locationSnapshot: lessons.locationSnapshot,
+        swimmerCount: lessons.swimmerCount,
       })
       .from(lessons)
-      .innerJoin(lessonLocations, eq(lessons.locationId, lessonLocations.id))
+      .leftJoin(lessonLocations, eq(lessons.locationId, lessonLocations.id))
       .where(eq(lessons.id, id))
       .limit(1);
 
-    const rawLessonRow = lessonRows[0];
-    if (!rawLessonRow) {
+    const lessonRow = lessonRows[0];
+    if (!lessonRow) {
       res.status(404).json({ error: "Lesson not found" });
       return;
     }
-    // ADR 034: coach lesson detail never renders anonymized rows; narrow.
-    const lessonRow = requireLiveLessonFields(rawLessonRow);
 
-    // Load swimmers with club names (deduplicated).
+    if (lessonRow.anonymizedAt != null) {
+      // Anonymized row: identity columns are null, swimmers are gone with
+      // their household. Surface "Deleted family" + the location snapshot.
+      const anonymizedBody: CoachLessonDetail = {
+        id: lessonRow.id,
+        householdId: null,
+        householdName: "Deleted family",
+        locationId: null,
+        locationName: lessonRow.locationSnapshot ?? "",
+        locationAddress: null,
+        locationCity: null,
+        locationState: null,
+        locationZip: null,
+        isHomePool: false,
+        startsAt: lessonRow.startsAt.toISOString(),
+        durationMinutes: lessonRow.durationMinutes as 30 | 45 | 60,
+        type: lessonRow.type,
+        status: lessonRow.status,
+        swimmers: [],
+        expiresAt: lessonRow.expiresAt?.toISOString() ?? null,
+        approvedAt: lessonRow.approvedAt?.toISOString() ?? null,
+        declinedAt: lessonRow.declinedAt?.toISOString() ?? null,
+        declineReason: null,
+        movedAt: lessonRow.movedAt?.toISOString() ?? null,
+        previousStartsAt: lessonRow.previousStartsAt?.toISOString() ?? null,
+        createdAt: lessonRow.createdAt.toISOString(),
+        anonymizedAt: lessonRow.anonymizedAt.toISOString(),
+        locationSnapshot: lessonRow.locationSnapshot,
+        swimmerCount: lessonRow.swimmerCount,
+      };
+      res.json(anonymizedBody);
+      return;
+    }
+
+    // Live row — narrow identity columns and proceed with the existing
+    // detail assembly.
+    const liveLesson = requireLiveLessonFields(lessonRow);
+
     const rawSwimmerRows = await db
       .select({
         swimmerId: lessonSwimmers.swimmerId,
@@ -1328,12 +1408,11 @@ coachLessonsRouter.get(
       }
     }
 
-    // Load household name: prefer the owner, then oldest member.
     const memberRows = await db
       .select({ fullName: profiles.fullName })
       .from(householdMembers)
       .innerJoin(profiles, eq(householdMembers.profileId, profiles.id))
-      .where(eq(householdMembers.householdId, lessonRow.householdId))
+      .where(eq(householdMembers.householdId, liveLesson.householdId))
       .orderBy(
         sql`CASE ${householdMembers.role} WHEN 'owner' THEN 0 WHEN 'manager' THEN 1 ELSE 2 END`,
         asc(householdMembers.joinedAt),
@@ -1343,28 +1422,31 @@ coachLessonsRouter.get(
     const householdName = memberRows[0]?.fullName ?? null;
 
     const body: CoachLessonDetail = {
-      id: lessonRow.id,
-      householdId: lessonRow.householdId,
+      id: liveLesson.id,
+      householdId: liveLesson.householdId,
       householdName,
-      locationId: lessonRow.locationId,
-      locationName: lessonRow.locationName,
-      locationAddress: lessonRow.locationAddress,
-      locationCity: lessonRow.locationCity,
-      locationState: lessonRow.locationState,
-      locationZip: lessonRow.locationZip,
-      isHomePool: lessonRow.isHomePool,
-      startsAt: lessonRow.startsAt.toISOString(),
-      durationMinutes: lessonRow.durationMinutes as 30 | 45 | 60,
-      type: lessonRow.type,
-      status: lessonRow.status,
+      locationId: liveLesson.locationId,
+      locationName: liveLesson.locationName ?? "",
+      locationAddress: liveLesson.locationAddress,
+      locationCity: liveLesson.locationCity,
+      locationState: liveLesson.locationState,
+      locationZip: liveLesson.locationZip,
+      isHomePool: liveLesson.isHomePool,
+      startsAt: liveLesson.startsAt.toISOString(),
+      durationMinutes: liveLesson.durationMinutes as 30 | 45 | 60,
+      type: liveLesson.type,
+      status: liveLesson.status,
       swimmers: [...swimmerMap.values()],
-      expiresAt: lessonRow.expiresAt?.toISOString() ?? null,
-      approvedAt: lessonRow.approvedAt?.toISOString() ?? null,
-      declinedAt: lessonRow.declinedAt?.toISOString() ?? null,
-      declineReason: lessonRow.declineReason ?? null,
-      movedAt: lessonRow.movedAt?.toISOString() ?? null,
-      previousStartsAt: lessonRow.previousStartsAt?.toISOString() ?? null,
-      createdAt: lessonRow.createdAt.toISOString(),
+      expiresAt: liveLesson.expiresAt?.toISOString() ?? null,
+      approvedAt: liveLesson.approvedAt?.toISOString() ?? null,
+      declinedAt: liveLesson.declinedAt?.toISOString() ?? null,
+      declineReason: liveLesson.declineReason ?? null,
+      movedAt: liveLesson.movedAt?.toISOString() ?? null,
+      previousStartsAt: liveLesson.previousStartsAt?.toISOString() ?? null,
+      createdAt: liveLesson.createdAt.toISOString(),
+      anonymizedAt: null,
+      locationSnapshot: null,
+      swimmerCount: null,
     };
 
     res.json(body);
