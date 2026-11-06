@@ -1,6 +1,6 @@
 # Isolate integration tests on a dedicated Supabase stack
 
-**Status:** Draft — planning only, no code.
+**Status:** Implemented — all phases complete on `chore/test-database` (commits `2c242aa`, `2736090`, `7f0ffe3`, `ac6bc8c`).
 **Branch:** `chore/test-database`
 **Related ADR:** [035 — Dedicated test Supabase stack](../decisions/035-test-database-isolation.md)
 
