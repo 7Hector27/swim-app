@@ -1148,6 +1148,121 @@ describe("coach reads after an account deletion (addition 1)", () => {
     await adminDb().delete(coachNotifications).where(eq(coachNotifications.category, "account_deleted"));
     await adminDb().delete(accountDeletionJobs).where(eq(accountDeletionJobs.authUserId, parent.userId));
   });
+
+  it("coach schedule hides anonymized canceled/declined rows but keeps past completed anonymized rows visible", async () => {
+    // Once a household is gone, there's no coach action left on a
+    // canceled-never-happened slot, so the day + week endpoints drop
+    // those rows. Past completed / no_show anonymized rows stay so
+    // the archive still shows a slot ran.
+    const coach = await createTestUser("delete-coach-hide-cancelled-coach");
+    testUsers.push(coach);
+    await adminDb().update(profiles).set({ role: "coach" }).where(eq(profiles.id, coach.userId));
+
+    const parent = await createTestUser("delete-coach-hide-cancelled-parent");
+    testUsers.push(parent);
+    const swimmerId = await createSwimmerForHousehold(parent);
+    const locationId = await seedHomePool(parent.householdId);
+    // Past completed row — survives as an anonymized history card.
+    const pastLessonId = await seedPastLesson(
+      parent.householdId,
+      locationId,
+      parent.userId,
+      swimmerId,
+    );
+    // Future approved row — cancelFutureLessons flips to canceled and
+    // anonymizeHouseholdLessons marks it anonymized. The schedule
+    // endpoints must omit it.
+    const futureLessonId = await seedFutureLesson(
+      parent.householdId,
+      locationId,
+      parent.userId,
+      swimmerId,
+    );
+
+    const lessonLaDate = async (lessonId: string): Promise<string> => {
+      const row = await adminDb()
+        .select({ startsAt: lessons.startsAt })
+        .from(lessons)
+        .where(eq(lessons.id, lessonId))
+        .limit(1);
+      const parts = new Intl.DateTimeFormat("en-US", {
+        timeZone: "America/Los_Angeles",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).formatToParts(row[0]!.startsAt);
+      const partMap: Record<string, string> = {};
+      for (const p of parts) partMap[p.type] = p.value;
+      return `${partMap["year"]}-${partMap["month"]}-${partMap["day"]}`;
+    };
+    const pastLaDate = await lessonLaDate(pastLessonId);
+    const futureLaDate = await lessonLaDate(futureLessonId);
+
+    const delRes = await confirmDeletion(parent.accessToken);
+    expect(delRes.status).toBe(204);
+
+    // Verify the future row is in fact anonymized + canceled before
+    // asserting the endpoint hides it — otherwise an unrelated change
+    // to the deletion engine could pass this test for the wrong reason.
+    const futureAfter = await adminDb()
+      .select({ status: lessons.status, anonymizedAt: lessons.anonymizedAt })
+      .from(lessons)
+      .where(eq(lessons.id, futureLessonId))
+      .limit(1);
+    expect(futureAfter[0]?.status).toBe("canceled");
+    expect(futureAfter[0]?.anonymizedAt).not.toBeNull();
+
+    // Day endpoint on the future lesson's date — the row is excluded.
+    const futureDayRes = await request(app)
+      .get(`/coach/schedule?date=${futureLaDate}`)
+      .set("Authorization", `Bearer ${coach.accessToken}`);
+    expect(futureDayRes.status).toBe(200);
+    const futureDayItems = futureDayRes.body as Array<{
+      type: string;
+      lesson?: { id: string };
+    }>;
+    const futureInDay = futureDayItems.find(
+      (item) => item.type === "lesson" && item.lesson?.id === futureLessonId,
+    );
+    expect(futureInDay).toBeUndefined();
+
+    // Day endpoint on the past lesson's date — the completed anonymized
+    // row stays visible.
+    const pastDayRes = await request(app)
+      .get(`/coach/schedule?date=${pastLaDate}`)
+      .set("Authorization", `Bearer ${coach.accessToken}`);
+    expect(pastDayRes.status).toBe(200);
+    const pastDayItems = pastDayRes.body as Array<{
+      type: string;
+      lesson?: { id: string };
+      householdName?: string;
+    }>;
+    const pastInDay = pastDayItems.find(
+      (item) => item.type === "lesson" && item.lesson?.id === pastLessonId,
+    );
+    expect(pastInDay).toBeDefined();
+    expect(pastInDay?.householdName).toBe("Deleted family");
+
+    // Week endpoint covering the future lesson's date — the canceled
+    // anonymized row is likewise suppressed on the week view.
+    const weekRes = await request(app)
+      .get(`/coach/schedule/week?startDate=${futureLaDate}`)
+      .set("Authorization", `Bearer ${coach.accessToken}`);
+    expect(weekRes.status).toBe(200);
+    const days = (weekRes.body as { days: Array<{ items: Array<{ type: string; lesson?: { id: string } }> }> }).days;
+    const allItems = days.flatMap((day) => day.items);
+    const futureInWeek = allItems.find(
+      (item) => item.type === "lesson" && item.lesson?.id === futureLessonId,
+    );
+    expect(futureInWeek).toBeUndefined();
+
+    // Cleanup.
+    await adminDb()
+      .delete(lessons)
+      .where(inArray(lessons.id, [pastLessonId, futureLessonId]));
+    await adminDb().delete(coachNotifications).where(eq(coachNotifications.category, "account_deleted"));
+    await adminDb().delete(accountDeletionJobs).where(eq(accountDeletionJobs.authUserId, parent.userId));
+  });
 });
 
 // ── Coach writes on anonymized lessons return 409 lesson_anonymized ─────────

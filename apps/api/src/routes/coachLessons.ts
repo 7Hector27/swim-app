@@ -200,8 +200,17 @@ coachLessonsRouter.get(
 
     // Add lesson items. Anonymized rows (ADR 034) surface as "Deleted
     // family" with the location snapshot standing in for locationName.
+    // Exception: hide anonymized rows that ended in canceled/declined —
+    // once the household is gone there is no coach action left on a
+    // never-happened slot, so suppress the card entirely. Past
+    // anonymized rows (completed, no_show) stay visible so the archive
+    // still shows a slot ran, just with "Deleted family" in place of
+    // the identity.
     for (const row of lessonRows) {
       const anonymized = row.anonymizedAt != null;
+      if (anonymized && (row.status === "canceled" || row.status === "declined")) {
+        continue;
+      }
       const coachLessonResponse = {
         id: row.id,
         householdId: row.householdId,
@@ -476,6 +485,13 @@ coachLessonsRouter.get(
         // ADR 034: anonymized past-week rows show "Deleted family" and the
         // location snapshot instead of real family/location data.
         const anonymized = row.anonymizedAt != null;
+        // Hide anonymized rows whose final status is canceled/declined —
+        // after a deletion there's no action left on a never-happened
+        // slot. Past anonymized rows (completed, no_show) stay visible
+        // so the week archive still shows a slot ran.
+        if (anonymized && (row.status === "canceled" || row.status === "declined")) {
+          continue;
+        }
         dayItems.push({
           type: "lesson",
           lesson: {
