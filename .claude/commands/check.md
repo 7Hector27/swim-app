@@ -13,7 +13,7 @@ Run these checks from the repo root, in this order, one at a time:
 
 If $ARGUMENTS is "quick", skip step 4.
 
-Before step 4, check that local Supabase is running. If it isn't, stop and tell me to start it. Don't start it yourself.
+Before step 4, check that the **test** Supabase stack is running (not the manual one). Integration tests only run against the test stack per ADR 035. Quick check: `pnpm db:test:status` should list running services on ports 54421 / 54422, not report every container stopped. If it isn't up, stop and tell me to run `pnpm db:test:up`. Don't start it yourself.
 
 Stop at the first failure. Don't fix anything, don't edit files, don't commit, don't push.
 

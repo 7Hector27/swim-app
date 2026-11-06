@@ -1,7 +1,7 @@
 # 035 — Dedicated test Supabase stack
 
 **Date:** 2026-11-06
-**Status:** Draft
+**Status:** Accepted
 
 ## Context
 

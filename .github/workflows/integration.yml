@@ -61,6 +61,11 @@ jobs:
 
       - name: Run integration tests
         run: pnpm test:integration
+        env:
+          # ADR 035: the local test-stack guard in apps/api/src/__tests__/integration/setup.ts
+          # requires either DB port 54422 or this flag. CI's ephemeral stack
+          # runs on the default port 54322, so we signal CI-safe here.
+          INTEGRATION_TEST_TARGET: "1"
 
       - name: Stop Supabase local stack
         if: always()
