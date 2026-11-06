@@ -1565,8 +1565,12 @@ export const accountDeletionJobs = pgTable(
       "account_deletion_jobs_status_valid",
       sql`${table.status} IN ('pending', 'completed', 'failed')`,
     ),
+    // Partial index on next_attempt_at, which is what the retry drain's
+    // WHERE/ORDER BY hits (services/accountDeletion/retry.ts). Rows at
+    // status='pending' are only candidate when next_attempt_at <= now,
+    // and the drain picks the earliest-eligible row first.
     index("account_deletion_jobs_pending_idx")
-      .on(table.updatedAt.asc())
+      .on(table.nextAttemptAt.asc())
       .where(sql`status = 'pending'`),
   ],
 ).enableRLS();
