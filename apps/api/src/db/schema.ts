@@ -1532,6 +1532,16 @@ export const accountDeletionJobs = pgTable(
   "account_deletion_jobs",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    // No FK to profiles.id, by design. The deletion transaction
+    // scrubs the profile row (null-ing identity fields, setting
+    // disabledAt) and inserts this job row in the same tx; post-commit
+    // microtasks then hard-delete the Supabase auth user. A FK would
+    // force a choice between deleting the profile row (breaking the
+    // scrub-and-retain audit model) or keeping it alive long enough
+    // to satisfy the constraint. Instead, profile_id is a stand-alone
+    // UUID the drain uses for logging only. Diagnostic joins back to
+    // profiles will silently return nulls once the profile row is
+    // eventually removed — expected and not a bug.
     profileId: uuid("profile_id"),
     authUserId: uuid("auth_user_id").notNull(),
     scope: text("scope").notNull(),
