@@ -514,21 +514,33 @@ export async function scrubEmailOutboxForHousehold(
         and(whereClause, inArray(lessonEmailOutbox.status, nonTerminalStatuses)),
       );
     // Scrub the payload AND null every FK that points at a hard-deleted
-    // parent in this transaction. The reviewer flagged a FK-violation
-    // 500 when the household had any booking batches: this UPDATE used
-    // to leave batch_id / household_id pointing at the row the solo
-    // teardown was about to hard-delete, and the RESTRICT on
-    // `lesson_email_outbox.batch_id` / `.household_id` rolled the whole
-    // transaction back.
+    // parent in this transaction. There are two ways this UPDATE was
+    // wrong before:
     //
-    // Null batch_id and household_id on scrubbed terminals — `booking_
-    // batches` and `households` are hard-deleted later in this tx.
-    // Keep lesson_id: lessons are anonymized (identity columns nulled)
-    // but the row survives, so the FK still resolves. Keep bulk_
-    // cancellation_id for the same reason (bulk_cancellations is
-    // coach-side and kept). Migration 0073 relaxes the scope CHECK
-    // + bulk_household_pair CHECK on this table so the all-nulls
-    // shape is legal when `payload ? '_scrubbed_at'`.
+    //   (1) Original scope CHECK forced all three scope FKs non-null,
+    //       so leaving batch_id / household_id set tripped the RESTRICT
+    //       on `booking_batches` / `households` DELETE. Migration 0073
+    //       relaxes both CHECKs when `payload ? '_scrubbed_at'`, and
+    //       this UPDATE writes that sentinel.
+    //   (2) The UPDATE's WHERE clause used to filter on
+    //       `payload ? 'swimmerFirstNames'` so it would be idempotent
+    //       against a second-pass age-based drain. But coach-facing
+    //       outbox events (`coach_booking_request`) never carry
+    //       swimmerFirstNames — their payloads only describe the batch
+    //       at a coach level (lessonCount, locationName, etc.). A
+    //       terminal `sent` coach_booking_request row would be skipped
+    //       by that filter, keeping batch_id set, still tripping the
+    //       RESTRICT. Drop the payload filter entirely: scrub every
+    //       row the scope where-clauses select, regardless of payload
+    //       shape. The deletion transaction runs the scrub exactly
+    //       once; re-running on an already-scrubbed row is a safe
+    //       no-op (same sentinel, same null FKs).
+    //
+    // Null batch_id and household_id — `booking_batches` and
+    // `households` are hard-deleted later in this tx. Keep lesson_id:
+    // lessons are anonymized (identity nulled) but the row survives,
+    // so the FK still resolves. Keep bulk_cancellation_id for the same
+    // reason (bulk_cancellations is coach-side and kept).
     await tx
       .update(lessonEmailOutbox)
       .set({
@@ -536,12 +548,7 @@ export async function scrubEmailOutboxForHousehold(
         batchId: null,
         householdId: null,
       })
-      .where(
-        and(
-          whereClause,
-          sql`${lessonEmailOutbox.payload} ? 'swimmerFirstNames'`,
-        ),
-      );
+      .where(whereClause);
   }
   // bulk_cancellations parent rows stay — they are coach-side operation
   // records, not family-scoped. The per-family outbox rows above carry the
