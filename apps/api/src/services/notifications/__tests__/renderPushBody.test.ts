@@ -126,7 +126,7 @@ describe("renderPushBody", () => {
     expect(result.body).toBe("Freed up: Tue, Oct 28 at 4:30 PM.");
   });
 
-  it("account_deleted with multiple cancelled lessons lists the count and all times", () => {
+  it("account_deleted with 2 or 3 cancelled lessons lists the count and every time inline", () => {
     const payload: CoachNotificationPayload = {
       kind: "account_deleted",
       listTitle: "A family deleted their account",
@@ -147,5 +147,42 @@ describe("renderPushBody", () => {
     expect(result.body).toContain("Tue, Oct 28 at 4:30 PM");
     expect(result.body).toContain("Wed, Oct 29 at 4:30 PM");
     expect(result.body).toContain("Thu, Oct 30 at 4:30 PM");
+    // At or below the inline cap, no "and N more" suffix.
+    expect(result.body).not.toMatch(/and \d+ more/);
+  });
+
+  it("account_deleted with more than 3 cancelled lessons caps the inline list and rolls the rest into 'and N more'", () => {
+    // Keeps the body short enough that the OS push truncation (~100
+    // chars) still surfaces the lesson count and the first few times,
+    // even for a family with a long future-lesson tail.
+    const payload: CoachNotificationPayload = {
+      kind: "account_deleted",
+      listTitle: "A family deleted their account",
+      cancelledLessonTimesUtc: [
+        "2026-10-28T23:30:00Z",
+        "2026-10-29T23:30:00Z",
+        "2026-10-30T23:30:00Z",
+        "2026-10-31T23:30:00Z",
+        "2026-11-01T23:30:00Z",
+      ],
+      cancelledLessonTimesLocalDisplay: [
+        "Tue, Oct 28 at 4:30 PM",
+        "Wed, Oct 29 at 4:30 PM",
+        "Thu, Oct 30 at 4:30 PM",
+        "Fri, Oct 31 at 4:30 PM",
+        "Sat, Nov 1 at 4:30 PM",
+      ],
+      deletedAtUtc: "2026-10-27T15:00:00Z",
+    };
+    const result = renderPushBody(payload, "full_name");
+    expect(result.body).toContain("Freed up 5 lessons");
+    // First three are shown inline.
+    expect(result.body).toContain("Tue, Oct 28 at 4:30 PM");
+    expect(result.body).toContain("Wed, Oct 29 at 4:30 PM");
+    expect(result.body).toContain("Thu, Oct 30 at 4:30 PM");
+    // The overflow is summarised, not listed.
+    expect(result.body).not.toContain("Fri, Oct 31 at 4:30 PM");
+    expect(result.body).not.toContain("Sat, Nov 1 at 4:30 PM");
+    expect(result.body).toContain("and 2 more");
   });
 });
