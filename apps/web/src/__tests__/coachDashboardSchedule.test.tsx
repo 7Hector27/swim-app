@@ -273,3 +273,41 @@ describe("DashboardLessonRow — in-progress state", () => {
     expect(screen.queryByRole("link", { name: "Evaluate Morgan" })).toBeNull();
   });
 });
+
+describe("DashboardLessonRow — anonymized (deleted-family) row", () => {
+  // Household deletion leaves future rows at status='canceled' with
+  // swimmers=[] and anonymizedAt set. The today-card must show
+  // "Deleted family" and skip the Now badge + Evaluate affordances
+  // even if the lesson's time window is currently active.
+  const ANONYMIZED_AT = "2025-05-28T00:00:00.000Z";
+  const nowInProgress = new Date("2025-06-01T17:30:00.000Z").getTime();
+  const anonymizedItem: CoachScheduleItem = {
+    ...lessonItem,
+    householdName: "Deleted family",
+    locationName: "Home pool",
+    lesson: {
+      ...lessonItem.lesson,
+      status: "canceled",
+      swimmers: [],
+      anonymizedAt: ANONYMIZED_AT,
+      locationSnapshot: "Home pool",
+      swimmerCount: 1,
+    },
+  };
+
+  it("renders 'Deleted family' in place of the swimmer list", () => {
+    render(<DashboardLessonRow item={anonymizedItem} now={nowInProgress} />);
+    expect(screen.getByText("Deleted family")).toBeInTheDocument();
+    expect(screen.queryByText("No swimmers")).toBeNull();
+  });
+
+  it("does not show the Now badge for an anonymized row", () => {
+    render(<DashboardLessonRow item={anonymizedItem} now={nowInProgress} />);
+    expect(screen.queryByText("Now")).toBeNull();
+  });
+
+  it("does not show Evaluate links for an anonymized row", () => {
+    render(<DashboardLessonRow item={anonymizedItem} now={nowInProgress} />);
+    expect(screen.queryByRole("link", { name: /^Evaluate / })).toBeNull();
+  });
+});

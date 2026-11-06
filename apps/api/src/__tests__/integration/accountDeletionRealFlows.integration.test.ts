@@ -570,6 +570,32 @@ describe("POST /me/deletion/confirm — solo path, real-flow seed", () => {
     const pastLessonId = pastLessonRows[0]!.id;
     await adminDb().insert(lessonSwimmers).values({ lessonId: pastLessonId, swimmerId });
 
+    // 10. A data-drift case: a FUTURE lesson that somehow ended up in
+    //     status='completed' (the coach marked it complete ahead of
+    //     time, or a prior bug). cancelFutureLessons used to filter on
+    //     ('pending','approved') only, so a row like this stayed as-is
+    //     through anonymization and showed up on the coach's week view
+    //     as a normal card. The broadened filter must flip it to
+    //     'canceled' alongside the pending/approved ones.
+    const futureQuirkStartsAt = laDateTimeToUtc(addDays(anchorLaDate, 5), "15:00");
+    const futureQuirkRows = await adminDb()
+      .insert(lessons)
+      .values({
+        householdId,
+        locationId,
+        startsAt: futureQuirkStartsAt,
+        durationMinutes: 30,
+        type: "private",
+        status: "completed",
+        requestedBy: owner.userId,
+        approvedAt: new Date(PINNED_NOW.getTime() - 60 * 1000),
+        approvedBy: owner.userId,
+        completedAt: new Date(PINNED_NOW.getTime() - 30 * 1000),
+      })
+      .returning({ id: lessons.id });
+    const futureQuirkLessonId = futureQuirkRows[0]!.id;
+    await adminDb().insert(lessonSwimmers).values({ lessonId: futureQuirkLessonId, swimmerId });
+
     // Drain the email outbox so batch-scoped rows reach their terminal
     // status before the deletion. Production hits this state via the
     // cron tick; the earlier version of this test never drained, so
@@ -682,18 +708,45 @@ describe("POST /me/deletion/confirm — solo path, real-flow seed", () => {
     expect(hhAfter).toHaveLength(0);
 
     // Lessons anonymized.
+    const allAnonymizedIds = [
+      singleLessonId,
+      pastLessonId,
+      futureQuirkLessonId,
+      ...manualBatch.lessonIds,
+      ...weeklyBatch.lessonIds,
+    ];
     const lessonsAfter = await adminDb()
       .select()
       .from(lessons)
-      .where(
-        inArray(lessons.id, [singleLessonId, pastLessonId, ...manualBatch.lessonIds, ...weeklyBatch.lessonIds]),
-      );
+      .where(inArray(lessons.id, allAnonymizedIds));
     for (const row of lessonsAfter) {
       expect(row.anonymizedAt).not.toBeNull();
       expect(row.householdId).toBeNull();
       expect(row.locationId).toBeNull();
       expect(row.batchId).toBeNull();
     }
+
+    // Every FUTURE lesson — including the data-drift completed row —
+    // was cancelled before anonymization. The coach schedule shows
+    // these as canceled cards, the slot engine stops holding the
+    // times (planning subset is pending+approved only), and the
+    // post-commit Google Calendar sync deletes the events.
+    const expectedFutureIds = [
+      singleLessonId,
+      futureQuirkLessonId,
+      ...manualBatch.lessonIds,
+      ...weeklyBatch.lessonIds,
+    ];
+    const futureAfter = lessonsAfter.filter((row) => expectedFutureIds.includes(row.id));
+    expect(futureAfter).toHaveLength(expectedFutureIds.length);
+    for (const row of futureAfter) {
+      expect(row.status).toBe("canceled");
+      expect(row.canceledAt).not.toBeNull();
+    }
+    // The past lesson stays in its historical end state (anonymized
+    // but still completed) — anonymization doesn't rewrite history.
+    const pastAfter = lessonsAfter.find((row) => row.id === pastLessonId);
+    expect(pastAfter?.status).toBe("completed");
 
     // Swimmer-linked data gone.
     const swimmerCheck = async <T,>(sel: T) => adminDb().select().from(sel as never);
@@ -750,6 +803,52 @@ describe("POST /me/deletion/confirm — solo path, real-flow seed", () => {
     expect(jobRow).toHaveLength(1);
     expect(jobRow[0]?.scope).toBe("solo");
     expect(["pending", "completed"]).toContain(jobRow[0]?.status);
+
+    // The coach got one account_deleted summary carrying only the
+    // freed-up times (ISO strings), with no family or swimmer names.
+    // Tag is keyed on the deletion job id so retries don't duplicate.
+    // Filter by tag rather than category so a leftover notif from a
+    // prior failed run can't skew the count.
+    const expectedTag = `account-deleted:${jobRow[0]?.id}`;
+    const accountDeletedNotifs = await adminDb()
+      .select()
+      .from(coachNotifications)
+      .where(
+        and(
+          eq(coachNotifications.category, "account_deleted"),
+          eq(coachNotifications.tag, expectedTag),
+        ),
+      );
+    expect(accountDeletedNotifs).toHaveLength(1);
+    const notif = accountDeletedNotifs[0]!;
+    expect(notif.tag).toBe(expectedTag);
+    const notifPayload = notif.payload as {
+      kind: string;
+      cancelledLessonTimesUtc: string[];
+      deletedAtUtc: string;
+    };
+    expect(notifPayload.kind).toBe("account_deleted");
+    // One timestamp per future lesson, sorted ascending, and matching
+    // what's on the cancelled lesson rows.
+    const futureTimesFromDb = futureAfter
+      .map((row) => row.startsAt.toISOString())
+      .sort();
+    const notifTimesSorted = [...notifPayload.cancelledLessonTimesUtc].sort();
+    expect(notifTimesSorted).toEqual(futureTimesFromDb);
+    // No family/swimmer identity in the payload.
+    expect(JSON.stringify(notifPayload)).not.toContain("Alex");
+    expect(JSON.stringify(notifPayload)).not.toContain(householdId);
+
+    // Anonymized rows carry the fields the coach schedule UI reads to
+    // render "Deleted family" + location snapshot in place of the real
+    // household/pool name. (Verifying via the /coach/schedule endpoint
+    // itself is blocked by its "date too far in the future" schema
+    // check, which runs off real time — not the pinned test clock.)
+    const singleAfter = lessonsAfter.find((row) => row.id === singleLessonId);
+    expect(singleAfter?.anonymizedAt).not.toBeNull();
+    expect(singleAfter?.householdId).toBeNull();
+    expect(singleAfter?.locationSnapshot).toBe("Home pool");
+    expect(singleAfter?.swimmerCount).toBe(1);
 
     // ── Housekeeping ─────────────────────────────────────────
     const anonymizedIds = lessonsAfter.map((r) => r.id);

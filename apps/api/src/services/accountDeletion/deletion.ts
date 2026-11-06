@@ -8,7 +8,7 @@
 // sync) are intentionally out of this module — the route enqueues them as
 // post-commit tasks tracked by `account_deletion_jobs`.
 
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, notInArray, sql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 
 import * as schema from "../../db/schema";
@@ -170,7 +170,10 @@ export async function previewAccountDeletion(
       .where(
         and(
           eq(lessons.householdId, householdId),
-          inArray(lessons.status, ["pending", "approved"]),
+          // Mirror the filter in cancelFutureLessons so the preview's
+          // count matches what the deletion actually cancels — any
+          // future row that isn't already canceled/declined.
+          notInArray(lessons.status, ["canceled", "declined"]),
           sql`${lessons.startsAt} > ${now.toISOString()}::timestamptz`,
         ),
       ),
@@ -360,6 +363,14 @@ export async function cancelFutureLessons(
   canceledBy: string,
   now: Date,
 ): Promise<string[]> {
+  // Exclude only statuses that already represent a user-visible "not
+  // happening" end state: canceled and declined. Everything else —
+  // pending, approved, and the data-drift cases where a future lesson
+  // somehow ended up at completed / no_show / expired — needs to flip
+  // to canceled so the coach schedule, slot engine, and Google Calendar
+  // all stop showing or holding the slot. Narrowing to pending/approved
+  // missed non-live future rows in dev data and left them visible as
+  // normal cards after the household was anonymized.
   const rows = await tx
     .update(lessons)
     .set({
@@ -371,7 +382,7 @@ export async function cancelFutureLessons(
     .where(
       and(
         eq(lessons.householdId, householdId),
-        inArray(lessons.status, ["pending", "approved"]),
+        notInArray(lessons.status, ["canceled", "declined"]),
         sql`${lessons.startsAt} > ${now.toISOString()}::timestamptz`,
       ),
     )

@@ -39,19 +39,28 @@ export default function CoachLessonRow({ item }: Props) {
     minute: "2-digit",
   }).format(new Date(lesson.startsAt));
 
-  const swimmerNames =
-    lesson.swimmers.map((swimmer) => swimmer.firstName).join(", ") || "No swimmers";
-  const clubNames = [
-    ...new Set(
-      lesson.swimmers
-        .map((swimmer) => swimmer.clubName)
-        .filter((name): name is string => name !== null),
-    ),
-  ];
+  // Anonymized rows (ADR 034) have swimmers=[] because the family is
+  // gone; surface "Deleted family" so the row is distinguishable from a
+  // legitimately empty lesson. The deletion engine always leaves future
+  // anonymized rows at status='canceled', so the existing status-badge
+  // path renders the "Canceled" chip without extra work here.
+  const isAnonymized = lesson.anonymizedAt != null;
+  const swimmerNames = isAnonymized
+    ? "Deleted family"
+    : lesson.swimmers.map((swimmer) => swimmer.firstName).join(", ") || "No swimmers";
+  const clubNames = isAnonymized
+    ? []
+    : [
+        ...new Set(
+          lesson.swimmers
+            .map((swimmer) => swimmer.clubName)
+            .filter((name): name is string => name !== null),
+        ),
+      ];
   const lessonTypeLabel = lesson.type === "private" ? "Private" : "Family";
-  const isPending = lesson.status === "pending";
+  const isPending = lesson.status === "pending" && !isAnonymized;
   const isCanceled = lesson.status === "canceled" || lesson.status === "declined";
-  const showEvaluate = !isCanceled && lesson.swimmers.length > 0;
+  const showEvaluate = !isCanceled && !isAnonymized && lesson.swimmers.length > 0;
   const approveFormId = `approve-${lesson.id}`;
   const declineFormId = `decline-${lesson.id}`;
 
@@ -72,7 +81,7 @@ export default function CoachLessonRow({ item }: Props) {
         <div className="flex-1 min-w-0 px-4 py-4">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0 flex-1">
-              <p className="text-base font-semibold text-text truncate">{swimmerNames}</p>
+              <p className={`text-base font-semibold truncate ${isAnonymized ? "text-text-secondary italic" : "text-text"}`}>{swimmerNames}</p>
               {clubNames.length > 0 && (
                 <p className="text-xs text-text-secondary mt-0.5 truncate">
                   {clubNames.join(" · ")}

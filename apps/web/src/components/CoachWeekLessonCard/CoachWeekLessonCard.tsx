@@ -19,17 +19,24 @@ export default function CoachWeekLessonCard({ item }: Props) {
 
   const timeSpan = formatTimeSpan(lesson.startsAt, lesson.durationMinutes);
   const durationLabel = `${lesson.durationMinutes} min`;
-  const swimmerNames =
-    lesson.swimmers.map((swimmer) => swimmer.firstName).join(", ") || "No swimmers";
+  // Anonymized rows (ADR 034) have swimmers=[] because the family is gone;
+  // render "Deleted family" instead of the generic "No swimmers" so the
+  // coach can tell a deleted household apart from a legitimately empty
+  // lesson row.
+  const isAnonymized = lesson.anonymizedAt != null;
+  const swimmerNames = isAnonymized
+    ? "Deleted family"
+    : lesson.swimmers.map((swimmer) => swimmer.firstName).join(", ") || "No swimmers";
   const isPending = lesson.status === "pending";
   const isCanceled = lesson.status === "canceled" || lesson.status === "declined";
   const hasStarted = Date.now() >= new Date(lesson.startsAt).getTime();
-  const showEvaluate = hasStarted && !isCanceled && lesson.swimmers.length > 0;
+  const showEvaluate = hasStarted && !isCanceled && !isAnonymized && lesson.swimmers.length > 0;
+  const isMuted = isCanceled || isAnonymized;
 
   const ariaLabel = `${swimmerNames}, ${timeSpan}, ${durationLabel} at ${locationName}. Open lesson.`;
 
   return (
-    <div className="group relative flex flex-col rounded-card border border-border bg-background transition-colors duration-150 ease-out hover:border-accent/60">
+    <div className={`group relative flex flex-col rounded-card border border-border bg-background transition-colors duration-150 ease-out hover:border-accent/60${isMuted ? " opacity-70" : ""}`}>
       <Link
         href={`/coach/lessons/${lesson.id}`}
         aria-label={ariaLabel}
@@ -37,7 +44,7 @@ export default function CoachWeekLessonCard({ item }: Props) {
       />
 
       <div className="relative z-[1] pointer-events-none flex flex-col gap-1 px-2.5 py-2.5">
-        <p className="text-xs font-semibold text-text tabular-nums leading-snug break-words">
+        <p className={`text-xs font-semibold tabular-nums leading-snug break-words ${isMuted ? "text-text-secondary line-through" : "text-text"}`}>
           {timeSpan}
         </p>
         <p className="text-[11px] text-text-secondary tabular-nums leading-snug">
@@ -48,7 +55,12 @@ export default function CoachWeekLessonCard({ item }: Props) {
             Needs approval
           </span>
         )}
-        <p className="text-sm font-semibold text-text leading-snug break-words">
+        {isCanceled && (
+          <span className="inline-flex self-start items-center h-[18px] px-1.5 rounded-full text-[10px] font-semibold uppercase tracking-wide bg-surface-soft text-text-secondary border border-border">
+            Canceled
+          </span>
+        )}
+        <p className={`text-sm font-semibold leading-snug break-words ${isMuted ? "text-text-secondary italic" : "text-text"}`}>
           {swimmerNames}
         </p>
         <p className="text-xs text-text-secondary leading-snug break-words">{locationName}</p>
