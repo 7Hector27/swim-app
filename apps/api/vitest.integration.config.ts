@@ -2,7 +2,9 @@ import { defineConfig } from "vitest/config";
 import { config as dotenvConfig } from "dotenv";
 import { resolve } from "node:path";
 
-dotenvConfig({ path: resolve(__dirname, ".env") });
+// Loads the test-stack credentials — never the manual-stack .env.
+// See docs/decisions/035-test-database-isolation.md.
+dotenvConfig({ path: resolve(__dirname, ".env.test") });
 
 export default defineConfig({
   test: {
