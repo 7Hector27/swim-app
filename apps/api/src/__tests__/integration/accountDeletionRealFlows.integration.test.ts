@@ -34,7 +34,7 @@
 // flows (swimmer_added, etc.).
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import request from "supertest";
 import pino from "pino";
 
