@@ -554,6 +554,66 @@ describe("POST /me/deletion/confirm (guards)", () => {
       .limit(1);
     expect(profileRow[0]?.disabledAt).toBeNull();
   });
+
+  it("returns 403 Forbidden on both /preview and /confirm for a coach token — the coach profile and auth user are untouched", async () => {
+    // Defense-in-depth gate. The web UI hides the deletion section for
+    // coaches (AccountContent.tsx), but the API must reject a coach
+    // token independently. Without requireParent, a coach token calling
+    // /confirm would fall into the orphan-profile solo branch
+    // (deletion.ts), scrub the coach profile, and enqueue
+    // auth.admin.deleteUser against the coach's auth user.
+    const coach = await createTestUser("delete-guard-coach-role");
+    testUsers.push(coach);
+    await adminDb().update(profiles).set({ role: "coach" }).where(eq(profiles.id, coach.userId));
+
+    const previewRes = await request(app)
+      .post("/me/deletion/preview")
+      .set("Authorization", `Bearer ${coach.accessToken}`)
+      .send({});
+    expect(previewRes.status).toBe(403);
+    expect(previewRes.body.error).toBe("Forbidden");
+
+    const confirmRes = await request(app)
+      .post("/me/deletion/confirm")
+      .set("Authorization", `Bearer ${coach.accessToken}`)
+      .send({ password: TEST_PASSWORD, confirmationPhrase: DELETION_PHRASE });
+    expect(confirmRes.status).toBe(403);
+    expect(confirmRes.body.error).toBe("Forbidden");
+
+    // Coach profile row is untouched: role still "coach", nothing
+    // scrubbed, disabledAt still null. If the role gate had been
+    // missing, /confirm would have run scrubProfile (full_name →
+    // "Deleted user", disabledAt = now) before failing on the auth
+    // step, leaving a half-scrubbed coach account.
+    const profileRow = await adminDb()
+      .select({
+        role: profiles.role,
+        fullName: profiles.fullName,
+        disabledAt: profiles.disabledAt,
+      })
+      .from(profiles)
+      .where(eq(profiles.id, coach.userId))
+      .limit(1);
+    expect(profileRow[0]?.role).toBe("coach");
+    expect(profileRow[0]?.fullName).not.toBe("Deleted user");
+    expect(profileRow[0]?.disabledAt).toBeNull();
+
+    // No account_deletion_jobs row for this user — the gate ran before
+    // runAccountDeletion could insert one.
+    const jobRows = await adminDb()
+      .select({ id: accountDeletionJobs.id })
+      .from(accountDeletionJobs)
+      .where(eq(accountDeletionJobs.authUserId, coach.userId));
+    expect(jobRows).toHaveLength(0);
+
+    // The auth user is still alive — the coach token still signs in
+    // and reaches an authenticated route. If auth.admin.deleteUser had
+    // fired, the token would 401 here.
+    const whoamiRes = await request(app)
+      .get("/me")
+      .set("Authorization", `Bearer ${coach.accessToken}`);
+    expect(whoamiRes.status).toBe(200);
+  });
 });
 
 // ── Solo path end-to-end ─────────────────────────────────────────────────────

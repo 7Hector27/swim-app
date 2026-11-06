@@ -25,6 +25,7 @@ import { accountDeletionJobs } from "../db/schema";
 import { getEnv } from "../lib/env";
 import { nowUtc as getNowUtc } from "../lib/clock";
 import { asyncHandler } from "../middleware/asyncHandler";
+import { requireParent } from "../middleware/requireParent";
 import { requireUser } from "../middleware/requireUser";
 import { validate } from "../middleware/validate";
 import { accountDeletionConfirmLimiter } from "../middleware/accountDeletionRateLimit";
@@ -46,6 +47,13 @@ export const accountDeletionRouter = Router();
 accountDeletionRouter.post(
   "/me/deletion/preview",
   requireUser,
+  // Parent-only. The UI already hides the deletion section for coaches
+  // (AccountContent.tsx), but the API must enforce it independently —
+  // a coach token calling this directly would otherwise reach
+  // previewAccountDeletion with a profile that has no household row,
+  // and a subsequent /confirm would scrub the coach profile and
+  // enqueue auth.admin.deleteUser against the coach's auth user.
+  requireParent,
   validate({}),
   asyncHandler(async (req, res) => {
     const preview = await db.transaction(async (tx) =>
@@ -61,6 +69,9 @@ accountDeletionRouter.post(
 accountDeletionRouter.post(
   "/me/deletion/confirm",
   requireUser,
+  // Parent-only — same reason as /preview above. requireParent runs
+  // before the rate limiter so a coach token never consumes a slot.
+  requireParent,
   accountDeletionConfirmLimiter,
   validate({ body: DeletionConfirmBodySchema }),
   asyncHandler(async (req, res) => {
