@@ -50,6 +50,7 @@ import {
   householdAuditLog,
   householdMembers,
   households,
+  LESSON_EMAIL_OUTBOX_TERMINAL_STATUSES,
   leagueRegistrations,
   lessonEmailOutbox,
   lessonLocations,
@@ -66,6 +67,7 @@ import {
 import { __resetEnvCacheForTests } from "../../lib/env";
 import { __setClockForTests } from "../../lib/clock";
 import { __settlePendingCoachAlertsForTests } from "../../lib/lessonApproval";
+import { drainLessonEmailOutbox } from "../../services/emails/drain";
 import {
   __resetSenderTransportForTests,
   __setSenderTransportForTests,
@@ -568,20 +570,48 @@ describe("POST /me/deletion/confirm — solo path, real-flow seed", () => {
     const pastLessonId = pastLessonRows[0]!.id;
     await adminDb().insert(lessonSwimmers).values({ lessonId: pastLessonId, swimmerId });
 
-    // Precondition: real flows actually wrote the booking_batches rows
-    // and outbox rows we're about to assert the scrub cleans up. If this
-    // precondition ever fails, the test is seeding something wrong —
-    // the FK fix would appear to work for the wrong reason.
+    // Drain the email outbox so batch-scoped rows reach their terminal
+    // status before the deletion. Production hits this state via the
+    // cron tick; the earlier version of this test never drained, so
+    // every outbox row was 'pending' and got deleted by the non-
+    // terminal branch — which hid the reported FK bug (terminal
+    // coach_booking_request rows the scrub previously skipped).
+    await drainLessonEmailOutbox();
+    // Settle any sender microtasks the drain spawned.
+    await __settlePendingCoachAlertsForTests();
+
+    // Precondition: real flows + drain actually produced booking_batches
+    // rows + TERMINAL batch-scoped outbox rows (including at least one
+    // coach_booking_request — the family-agnostic payload shape the
+    // reviewer flagged). If this precondition fails, the test is
+    // seeding something wrong and the FK fix would appear to work
+    // for the wrong reason.
     const batchesBefore = await adminDb()
       .select({ id: bookingBatches.id })
       .from(bookingBatches)
       .where(eq(bookingBatches.householdId, householdId));
     expect(batchesBefore.length).toBeGreaterThanOrEqual(2);
     const batchScopedOutboxBefore = await adminDb()
-      .select({ id: lessonEmailOutbox.id, status: lessonEmailOutbox.status, batchId: lessonEmailOutbox.batchId })
+      .select({
+        id: lessonEmailOutbox.id,
+        status: lessonEmailOutbox.status,
+        event: lessonEmailOutbox.event,
+        batchId: lessonEmailOutbox.batchId,
+      })
       .from(lessonEmailOutbox)
       .where(inArray(lessonEmailOutbox.batchId, batchesBefore.map((b) => b.id)));
     expect(batchScopedOutboxBefore.length).toBeGreaterThan(0);
+    const terminalBatchScoped = batchScopedOutboxBefore.filter((r) =>
+      LESSON_EMAIL_OUTBOX_TERMINAL_STATUSES.includes(r.status as (typeof LESSON_EMAIL_OUTBOX_TERMINAL_STATUSES)[number]),
+    );
+    expect(terminalBatchScoped.length).toBeGreaterThan(0);
+    // At least one coach-facing terminal row whose payload doesn't
+    // carry swimmerFirstNames — this is the specific shape the old
+    // scrub filter skipped.
+    const coachFacingTerminals = terminalBatchScoped.filter(
+      (r) => r.event === "coach_booking_request",
+    );
+    expect(coachFacingTerminals.length).toBeGreaterThan(0);
 
     // ── Delete ───────────────────────────────────────────────
     const res = await confirmDeletion(owner.accessToken);
