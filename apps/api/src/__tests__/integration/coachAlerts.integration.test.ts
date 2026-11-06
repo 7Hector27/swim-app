@@ -1031,3 +1031,60 @@ describe("POST /coach/push/subscriptions — key normalization", () => {
     expect(rows).toHaveLength(0);
   });
 });
+
+// Regression: before ADR 034's `account_deleted` category was added to
+// the shared Zod enum, any coach whose list contained one of these rows
+// got a 502 at parse time at the client, dropping the whole bell list.
+// Assert the API-side response schema parses an account_deleted row and
+// the renderer composes the expected title + body — this is the full
+// in-app list path the bell exercises on every open.
+describe("GET /coach/notifications — account_deleted (ADR 034)", () => {
+  const app = createApp(pino({ level: "silent" }));
+
+  it("returns a 200 with the account_deleted row parsed through the shared schema", async () => {
+    await cleanAllNotifications();
+    await adminDb()
+      .insert(coachNotifications)
+      .values({
+        profileId: coachProfile.userId,
+        category: "account_deleted",
+        urgency: "standard",
+        payload: {
+          kind: "account_deleted",
+          listTitle: "A family deleted their account",
+          cancelledLessonTimesUtc: ["2026-10-28T23:30:00Z"],
+          cancelledLessonTimesLocalDisplay: ["Tue, Oct 28 at 4:30 PM"],
+          deletedAtUtc: "2026-10-27T15:00:00Z",
+        },
+        clickUrl: "https://example.test/coach/alerts",
+        tag: "account-deleted:test-job",
+      });
+
+    const res = await request(app)
+      .get("/coach/notifications")
+      .set("Authorization", `Bearer ${coachProfile.accessToken}`);
+    expect(res.status).toBe(200);
+    const items = res.body.items as Array<{
+      category: string;
+      title: string;
+      body: string;
+      scrubbed: boolean;
+    }>;
+    const accountDeletedItems = items.filter((item) => item.category === "account_deleted");
+    expect(accountDeletedItems).toHaveLength(1);
+    const item = accountDeletedItems[0]!;
+    expect(item.title).toBe("A family deleted their account");
+    expect(item.body).toContain("Tue, Oct 28 at 4:30 PM");
+    // Payload is real (not scrubbed), so no "no longer available" fallback.
+    expect(item.scrubbed).toBe(false);
+
+    await adminDb()
+      .delete(coachNotifications)
+      .where(
+        and(
+          eq(coachNotifications.profileId, coachProfile.userId),
+          eq(coachNotifications.category, "account_deleted"),
+        ),
+      );
+  });
+});

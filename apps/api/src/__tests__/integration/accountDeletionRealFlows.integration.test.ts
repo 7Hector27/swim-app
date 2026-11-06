@@ -824,10 +824,13 @@ describe("POST /me/deletion/confirm — solo path, real-flow seed", () => {
     expect(notif.tag).toBe(expectedTag);
     const notifPayload = notif.payload as {
       kind: string;
+      listTitle: string;
       cancelledLessonTimesUtc: string[];
+      cancelledLessonTimesLocalDisplay: string[];
       deletedAtUtc: string;
     };
     expect(notifPayload.kind).toBe("account_deleted");
+    expect(notifPayload.listTitle).toBe("A family deleted their account");
     // One timestamp per future lesson, sorted ascending, and matching
     // what's on the cancelled lesson rows.
     const futureTimesFromDb = futureAfter
@@ -835,6 +838,16 @@ describe("POST /me/deletion/confirm — solo path, real-flow seed", () => {
       .sort();
     const notifTimesSorted = [...notifPayload.cancelledLessonTimesUtc].sort();
     expect(notifTimesSorted).toEqual(futureTimesFromDb);
+    // A pre-formatted LA wall-time string per cancelled lesson, same
+    // length as the ISO array — the renderer reads these so the bell
+    // and push both render human times without reparsing in the client.
+    expect(notifPayload.cancelledLessonTimesLocalDisplay).toHaveLength(
+      notifPayload.cancelledLessonTimesUtc.length,
+    );
+    for (const display of notifPayload.cancelledLessonTimesLocalDisplay) {
+      expect(typeof display).toBe("string");
+      expect(display.length).toBeGreaterThan(0);
+    }
     // No family/swimmer identity in the payload.
     expect(JSON.stringify(notifPayload)).not.toContain("Alex");
     expect(JSON.stringify(notifPayload)).not.toContain(householdId);

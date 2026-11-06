@@ -101,6 +101,20 @@ export function renderPushBody(
       }
       return { title: "Daily summary", body: parts.join(" ") };
     }
+    case "account_deleted": {
+      // ADR 034. No family name or swimmer names — the row is here so
+      // Jason knows a slot freed up, not whose. Display strings are
+      // pre-computed at enqueue time (LA wall time) so the renderer
+      // stays pure.
+      const times = payload.cancelledLessonTimesLocalDisplay;
+      const body =
+        times.length === 0
+          ? "A family deleted their account."
+          : times.length === 1
+            ? `Freed up: ${times[0]}.`
+            : `Freed up ${times.length} lessons: ${times.join(", ")}.`;
+      return { title: "A family deleted their account", body };
+    }
   }
 }
 

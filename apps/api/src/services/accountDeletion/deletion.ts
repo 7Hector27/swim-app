@@ -40,6 +40,7 @@ import {
 } from "../../db/schema";
 import { getActiveCoachProfile } from "../../lib/coachProfile";
 import { getEnv } from "../../lib/env";
+import { formatLessonTimeDisplay } from "../emails/format";
 import { AlreadyDeletedError, OwnerMustTransferFirstError } from "./errors";
 import { ACCOUNT_DELETION_INITIAL_DELAY_SECONDS } from "./retry";
 
@@ -604,16 +605,28 @@ export async function insertAccountDeletedSummary(
   if (!coach) return;
 
   const { siteUrl } = getEnv();
+  // Pre-compute LA wall-time display strings so the push renderer and
+  // the in-app list builder stay pure functions of the payload. ISO
+  // strings are kept alongside for downstream tooling (reporting, retry
+  // logs) that needs machine-readable timestamps.
+  const cancelledLessonTimesUtc = cancelledLessonTimes.map((d) => d.toISOString());
+  const cancelledLessonTimesLocalDisplay = cancelledLessonTimes.map((d) =>
+    formatLessonTimeDisplay(d),
+  );
   await tx.insert(coachNotifications).values({
     profileId: coach.id,
     category: "account_deleted",
     urgency: "standard",
     // No lesson_id / batch_id — the referenced family is gone. Payload
-    // carries only the freed-up times (ISO strings) plus the operation
-    // timestamp; no family name, no swimmer names, no household id.
+    // carries only the freed-up times (UTC + pre-formatted LA display)
+    // plus the operation timestamp; no family name, no swimmer names,
+    // no household id. `listTitle` is the short label the in-app bell
+    // row renders — the push renderer composes its own.
     payload: {
       kind: "account_deleted",
-      cancelledLessonTimesUtc: cancelledLessonTimes.map((d) => d.toISOString()),
+      listTitle: "A family deleted their account",
+      cancelledLessonTimesUtc,
+      cancelledLessonTimesLocalDisplay,
       deletedAtUtc: now.toISOString(),
     },
     clickUrl: `${siteUrl}/coach/alerts`,
