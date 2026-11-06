@@ -7,6 +7,9 @@ import type {
   SeasonWithIsCurrent,
 } from "@swim-app/shared";
 
+import { isQuarterHour } from "@swim-app/shared";
+
+import TimeSelect from "@/components/TimeSelect";
 import { formatMonthDay, isValidDateIso } from "./availabilityFormat";
 import styles from "./CoachAvailabilityContent.module.css";
 
@@ -133,6 +136,15 @@ export default function SeasonFormModal({
     if (teachesWeekday && !weekdayEnd) errors.weekdayEnd = "Required";
     if (teachesWeekend && !weekendStart) errors.weekendStart = "Required";
     if (teachesWeekend && !weekendEnd) errors.weekendEnd = "Required";
+    const quarterMessage = "Must be on a 15-minute step";
+    if (teachesWeekday && weekdayStart && !isQuarterHour(weekdayStart))
+      errors.weekdayStart = quarterMessage;
+    if (teachesWeekday && weekdayEnd && !isQuarterHour(weekdayEnd))
+      errors.weekdayEnd = quarterMessage;
+    if (teachesWeekend && weekendStart && !isQuarterHour(weekendStart))
+      errors.weekendStart = quarterMessage;
+    if (teachesWeekend && weekendEnd && !isQuarterHour(weekendEnd))
+      errors.weekendEnd = quarterMessage;
 
     if (Object.keys(errors).length > 0) {
       setFieldErrors(errors);
@@ -291,12 +303,10 @@ export default function SeasonFormModal({
                 <label htmlFor="weekday-start" className={fieldLabelClass}>
                   Start
                 </label>
-                <input
+                <TimeSelect
                   id="weekday-start"
-                  type="time"
-                  step={900}
                   value={weekdayStart}
-                  onChange={(event) => setWeekdayStart(event.target.value)}
+                  onChange={setWeekdayStart}
                   className={inputClass}
                 />
                 {fieldErrors.weekdayStart && (
@@ -307,12 +317,10 @@ export default function SeasonFormModal({
                 <label htmlFor="weekday-end" className={fieldLabelClass}>
                   End
                 </label>
-                <input
+                <TimeSelect
                   id="weekday-end"
-                  type="time"
-                  step={900}
                   value={weekdayEnd}
-                  onChange={(event) => setWeekdayEnd(event.target.value)}
+                  onChange={setWeekdayEnd}
                   className={inputClass}
                 />
                 {fieldErrors.weekdayEnd && (
@@ -331,12 +339,10 @@ export default function SeasonFormModal({
                 <label htmlFor="weekend-start" className={fieldLabelClass}>
                   Start
                 </label>
-                <input
+                <TimeSelect
                   id="weekend-start"
-                  type="time"
-                  step={900}
                   value={weekendStart}
-                  onChange={(event) => setWeekendStart(event.target.value)}
+                  onChange={setWeekendStart}
                   className={inputClass}
                 />
                 {fieldErrors.weekendStart && (
@@ -347,12 +353,10 @@ export default function SeasonFormModal({
                 <label htmlFor="weekend-end" className={fieldLabelClass}>
                   End
                 </label>
-                <input
+                <TimeSelect
                   id="weekend-end"
-                  type="time"
-                  step={900}
                   value={weekendEnd}
-                  onChange={(event) => setWeekendEnd(event.target.value)}
+                  onChange={setWeekendEnd}
                   className={inputClass}
                 />
                 {fieldErrors.weekendEnd && (

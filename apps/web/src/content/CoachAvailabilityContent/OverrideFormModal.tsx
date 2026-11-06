@@ -7,6 +7,9 @@ import type {
   PatchOverrideBody,
 } from "@swim-app/shared";
 
+import { isQuarterHour } from "@swim-app/shared";
+
+import TimeSelect from "@/components/TimeSelect";
 import styles from "./CoachAvailabilityContent.module.css";
 
 interface Props {
@@ -86,6 +89,10 @@ export default function OverrideFormModal({ open, override, onCancel, onSubmit, 
     if (mode === "custom_hours") {
       if (!startTime || !endTime) {
         setErrorMessage("Pick start and end times for the custom hours.");
+        return;
+      }
+      if (!isQuarterHour(startTime) || !isQuarterHour(endTime)) {
+        setErrorMessage("Times must be on a 15-minute step.");
         return;
       }
       body = {
@@ -224,13 +231,11 @@ export default function OverrideFormModal({ open, override, onCancel, onSubmit, 
               <label htmlFor="override-start-time" className={labelClass}>
                 Starts
               </label>
-              <input
+              <TimeSelect
                 id="override-start-time"
-                type="time"
-                step={900}
                 required
                 value={startTime}
-                onChange={(event) => setStartTime(event.target.value)}
+                onChange={setStartTime}
                 className={inputClass}
               />
             </div>
@@ -238,13 +243,11 @@ export default function OverrideFormModal({ open, override, onCancel, onSubmit, 
               <label htmlFor="override-end-time" className={labelClass}>
                 Ends
               </label>
-              <input
+              <TimeSelect
                 id="override-end-time"
-                type="time"
-                step={900}
                 required
                 value={endTime}
-                onChange={(event) => setEndTime(event.target.value)}
+                onChange={setEndTime}
                 className={inputClass}
               />
             </div>

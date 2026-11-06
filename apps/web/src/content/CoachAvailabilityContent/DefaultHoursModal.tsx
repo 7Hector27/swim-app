@@ -2,7 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { AvailabilityConfig, PatchAvailabilityConfigBody } from "@swim-app/shared";
+import { isQuarterHour } from "@swim-app/shared";
 
+import TimeSelect from "@/components/TimeSelect";
 import styles from "./CoachAvailabilityContent.module.css";
 
 interface Props {
@@ -22,12 +24,6 @@ const DAY_OPTIONS = [
   { value: 6, label: "Sat" },
   { value: 7, label: "Sun" },
 ] as const;
-
-function isQuarterHour(time: string): boolean {
-  const parts = time.split(":");
-  const minutes = parts[1];
-  return minutes === "00" || minutes === "15" || minutes === "30" || minutes === "45";
-}
 
 export default function DefaultHoursModal({
   open,
@@ -156,13 +152,11 @@ export default function DefaultHoursModal({
             <label htmlFor="default-start-time" className={labelClass}>
               Start
             </label>
-            <input
+            <TimeSelect
               id="default-start-time"
-              type="time"
-              step={900}
               required
               value={startTime}
-              onChange={(event) => setStartTime(event.target.value)}
+              onChange={setStartTime}
               className={inputClass}
             />
           </div>
@@ -170,13 +164,11 @@ export default function DefaultHoursModal({
             <label htmlFor="default-end-time" className={labelClass}>
               End
             </label>
-            <input
+            <TimeSelect
               id="default-end-time"
-              type="time"
-              step={900}
               required
               value={endTime}
-              onChange={(event) => setEndTime(event.target.value)}
+              onChange={setEndTime}
               className={inputClass}
             />
           </div>
