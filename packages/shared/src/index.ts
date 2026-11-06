@@ -142,6 +142,7 @@ export {
   deviationFromBest,
 } from "./lib/swimTime";
 export { bookingWindowEnd, isAfterBookingWindow, laCalendarDate } from "./lib/bookingWindow";
+export { isQuarterHour, QUARTER_HOUR_MINUTES } from "./lib/quarterHour";
 export { displayUnitToMeasurementEnum, INTENTIONALLY_UNMAPPED_CATALOG_UNITS } from "./lib/measurementUnit";
 export { validateRatingAgainstSkill } from "./lib/ratingValidation";
 export type {

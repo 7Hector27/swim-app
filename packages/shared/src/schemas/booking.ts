@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { isQuarterHour } from "../lib/quarterHour";
+
 // ── Lesson location ───────────────────────────────────────────────────────────
 
 export const LessonLocationSchema = z.object({
@@ -48,16 +50,7 @@ export type PatchLocationBody = z.infer<typeof PatchLocationBodySchema>;
 
 const QuarterHourTimeStringSchema = z
   .string()
-  .regex(/^\d{2}:\d{2}$/)
-  .refine(
-    (value) => {
-      const parts = value.split(":");
-      const minutes = parts[1];
-      if (minutes === undefined) return false;
-      return minutes === "00" || minutes === "15" || minutes === "30" || minutes === "45";
-    },
-    { message: "Time must be on a 15-minute step." },
-  );
+  .refine(isQuarterHour, { message: "Time must be on a 15-minute step." });
 
 export const AvailabilityConfigSchema = z.object({
   id: z.string().uuid(),
@@ -514,10 +507,10 @@ export const CreateSeasonBodySchema = z.object({
   startDate: DateStringSchema,
   endDate: DateStringSchema,
   teachesDays: z.array(z.number().int().min(1).max(7)).min(1),
-  weekdayStartTime: TimeStringSchema.nullable(),
-  weekdayEndTime: TimeStringSchema.nullable(),
-  weekendStartTime: TimeStringSchema.nullable(),
-  weekendEndTime: TimeStringSchema.nullable(),
+  weekdayStartTime: QuarterHourTimeStringSchema.nullable(),
+  weekdayEndTime: QuarterHourTimeStringSchema.nullable(),
+  weekendStartTime: QuarterHourTimeStringSchema.nullable(),
+  weekendEndTime: QuarterHourTimeStringSchema.nullable(),
   startsAtDst: z.boolean().optional(),
 });
 export type CreateSeasonBody = z.infer<typeof CreateSeasonBodySchema>;
@@ -527,10 +520,10 @@ export const PatchSeasonBodySchema = z.object({
   startDate: DateStringSchema.optional(),
   endDate: DateStringSchema.optional(),
   teachesDays: z.array(z.number().int().min(1).max(7)).min(1).optional(),
-  weekdayStartTime: TimeStringSchema.nullable().optional(),
-  weekdayEndTime: TimeStringSchema.nullable().optional(),
-  weekendStartTime: TimeStringSchema.nullable().optional(),
-  weekendEndTime: TimeStringSchema.nullable().optional(),
+  weekdayStartTime: QuarterHourTimeStringSchema.nullable().optional(),
+  weekdayEndTime: QuarterHourTimeStringSchema.nullable().optional(),
+  weekendStartTime: QuarterHourTimeStringSchema.nullable().optional(),
+  weekendEndTime: QuarterHourTimeStringSchema.nullable().optional(),
   startsAtDst: z.boolean().optional(),
 });
 export type PatchSeasonBody = z.infer<typeof PatchSeasonBodySchema>;
@@ -539,8 +532,8 @@ export const CreateOverrideBodySchema = z.object({
   kind: AvailabilityOverrideKindSchema,
   startDate: DateStringSchema,
   endDate: DateStringSchema,
-  startTime: TimeStringSchema.optional(),
-  endTime: TimeStringSchema.optional(),
+  startTime: QuarterHourTimeStringSchema.optional(),
+  endTime: QuarterHourTimeStringSchema.optional(),
   note: z.string().max(500).optional(),
 });
 export type CreateOverrideBody = z.infer<typeof CreateOverrideBodySchema>;
@@ -549,8 +542,8 @@ export const PatchOverrideBodySchema = z.object({
   kind: AvailabilityOverrideKindSchema.optional(),
   startDate: DateStringSchema.optional(),
   endDate: DateStringSchema.optional(),
-  startTime: TimeStringSchema.nullable().optional(),
-  endTime: TimeStringSchema.nullable().optional(),
+  startTime: QuarterHourTimeStringSchema.nullable().optional(),
+  endTime: QuarterHourTimeStringSchema.nullable().optional(),
   note: z.string().max(500).nullable().optional(),
 });
 export type PatchOverrideBody = z.infer<typeof PatchOverrideBodySchema>;

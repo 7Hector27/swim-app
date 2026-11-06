@@ -872,7 +872,7 @@ describe("POST /coach/seasons", () => {
     expect(res.body).toMatchObject({ season: { id: SEASON_A_ID }, warnings: [] });
   });
 
-  it("returns 422 invalid_time_granularity when start time is :07", async () => {
+  it("returns 422 Validation error when start time is :07", async () => {
     authAs(coachProfile);
     mockDbSelect.mockReturnValueOnce(requireUserSelect(coachProfile));
 
@@ -891,7 +891,10 @@ describe("POST /coach/seasons", () => {
       });
 
     expect(res.status).toBe(422);
-    expect(res.body).toMatchObject({ error: "invalid_time_granularity" });
+    expect(res.body.error).toBe("Validation error");
+    const issue = (res.body.issues as { path: (string | number)[]; message: string }[])
+      .find((entry) => entry.path.includes("weekdayStartTime"));
+    expect(issue?.message).toMatch(/15-minute step/);
   });
 
   it("returns 422 season_date_taken when another season has the same start_date", async () => {
