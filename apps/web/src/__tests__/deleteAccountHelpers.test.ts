@@ -62,6 +62,30 @@ describe("classifyDeleteAccountCase", () => {
       }),
     ).toBe("blocked_owner_must_transfer");
   });
+
+  it("callerRole === null → solo_alone, even when memberCount > 1 (orphan-profile fallback)", () => {
+    // The API returns callerRole === null for the shouldn't-happen
+    // case of a profile with no household_members row — a caller that
+    // passed requireUser normally always has one. Its deletion engine
+    // runs a full solo teardown on that branch, so the UI must render
+    // the teardown copy, not the "you'll be removed from this
+    // household" leave copy that the memberCount > 1 fallthrough
+    // would otherwise produce.
+    expect(
+      classifyDeleteAccountCase({
+        ...base(),
+        memberCount: 3,
+        callerRole: null,
+      }),
+    ).toBe("solo_alone");
+    expect(
+      classifyDeleteAccountCase({
+        ...base(),
+        memberCount: 1,
+        callerRole: null,
+      }),
+    ).toBe("solo_alone");
+  });
 });
 
 describe("formatRetryAfterMinutes", () => {

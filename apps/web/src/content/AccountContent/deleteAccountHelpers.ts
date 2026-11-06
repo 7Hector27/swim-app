@@ -35,6 +35,13 @@ export type DeleteAccountCase =
 
 export function classifyDeleteAccountCase(preview: DeletionPreviewResponse): DeleteAccountCase {
   if (preview.ownerMustTransferFirst) return "blocked_owner_must_transfer";
+  // callerRole is null only for the orphan-profile fallback the API
+  // returns when the profile has no household_members row. The API-side
+  // deletion engine runs a full solo teardown on that branch, so the
+  // UI must match: "solo_alone" shows the teardown copy, not the
+  // "you'll be removed from this household" leave copy that the
+  // memberCount > 1 fallthrough would otherwise produce.
+  if (preview.callerRole === null) return "solo_alone";
   if (preview.memberCount <= 1) return "solo_alone";
   if (preview.callerRole === "owner") return "solo_owner_with_viewers";
   return "leave";
