@@ -21,8 +21,8 @@ function requireEnv(name: string): string {
   if (!value) {
     throw new Error(
       `Integration tests require ${name} to be set. ` +
-        `Run \`pnpm db:status\` (or \`supabase status\`) to get the values ` +
-        `and add them to apps/api/.env.`,
+        `Run \`pnpm db:test:status\` to get the test-stack values ` +
+        `and add them to apps/api/.env.test (template: apps/api/.env.test.example).`,
     );
   }
   return value;
