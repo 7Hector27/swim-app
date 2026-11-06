@@ -77,9 +77,19 @@ function assertTestTarget(rawUrl: string): void {
     );
   }
 
+  if (port === "") {
+    throw new Error(
+      `Refusing to run integration tests: INTEGRATION_DATABASE_URL has no port. ` +
+        `Expected the test stack's port ${TEST_STACK_DB_PORT}. ` +
+        `Regenerate apps/api/.env.test from pnpm db:test:status — the URL ` +
+        `should look like postgresql://postgres:postgres@127.0.0.1:${TEST_STACK_DB_PORT}/postgres. ` +
+        `See ADR 035.`,
+    );
+  }
+
   throw new Error(
     `Refusing to run integration tests: INTEGRATION_DATABASE_URL port ` +
-      `${port || "(none)"} is not the test stack's port ${TEST_STACK_DB_PORT}, ` +
+      `${port} is not the test stack's port ${TEST_STACK_DB_PORT}, ` +
       `and INTEGRATION_TEST_TARGET=1 is not set. ` +
       `Locally, start the test stack with: pnpm db:test:up. ` +
       `In CI, set INTEGRATION_TEST_TARGET=1. See ADR 035.`,
