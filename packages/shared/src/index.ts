@@ -7,7 +7,7 @@ export { LeagueSchema, LeagueRegistrationParamsSchema } from "./schemas/registra
 export { currentSeasonStartYear, CLUB_SEASON_START_MONTH } from "./lib/currentSeasonStartYear";
 export { findActiveSeasonId } from "./lib/findActiveSeasonId";
 
-export type { SwimmerCount, PackageTier, PackagePriceResult } from "./lib/pricing";
+export type { PackagePriceResult } from "./lib/pricing";
 export {
   SWIMMER_COUNTS,
   PACKAGE_TIERS,
@@ -16,6 +16,25 @@ export {
   packagePrice,
   approximatePrivateHours,
 } from "./lib/pricing";
+
+export type {
+  SwimmerCount,
+  PackageTier,
+  BalanceEntryType,
+  LedgerEntry,
+  BalanceResponse,
+  CheckoutSessionBody,
+  CheckoutSessionResponse,
+} from "./schemas/payments";
+export {
+  SwimmerCountSchema,
+  PackageTierSchema,
+  BalanceEntryTypeSchema,
+  LedgerEntrySchema,
+  BalanceResponseSchema,
+  CheckoutSessionBodySchema,
+  CheckoutSessionResponseSchema,
+} from "./schemas/payments";
 
 export {
   findDeepestLowFoundation,

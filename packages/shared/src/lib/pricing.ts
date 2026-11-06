@@ -1,4 +1,5 @@
 import type { LessonDurationMinutes } from "../schemas/booking";
+import type { PackageTier, SwimmerCount } from "../schemas/payments";
 
 // All public amounts in integer cents. The rate card is the single source of
 // truth for lesson and package pricing; API callers compute amounts via these
@@ -13,11 +14,8 @@ import type { LessonDurationMinutes } from "../schemas/booking";
 //
 // The only half-dollar price in the system is (3 swimmers, 45 min) = $148.50.
 
-export const SWIMMER_COUNTS = [1, 2, 3, 4] as const;
-export type SwimmerCount = (typeof SWIMMER_COUNTS)[number];
-
-export const PACKAGE_TIERS = ["cannonball", "deep_end"] as const;
-export type PackageTier = (typeof PACKAGE_TIERS)[number];
+export const SWIMMER_COUNTS: readonly SwimmerCount[] = [1, 2, 3, 4];
+export const PACKAGE_TIERS: readonly PackageTier[] = ["cannonball", "deep_end"];
 
 const HOURLY_RATE_CENTS: Record<SwimmerCount, number> = {
   1: 12_000,
