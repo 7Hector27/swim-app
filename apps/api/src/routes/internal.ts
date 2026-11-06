@@ -333,8 +333,12 @@ async function runCronTick(
     try {
       accountDeletionRetryResult = await runAccountDeletionRetryDrain(req.log);
     } catch (err) {
+      // Never log err.message directly — Supabase Admin SDK errors can
+      // echo the user's email in .message and Google Calendar errors
+      // can embed swimmer names from event titles. safeCleanupErrSummary
+      // reduces to { name, code, status } only.
       req.log.error(
-        { err: err instanceof Error ? err.message : String(err) },
+        { err: safeCleanupErrSummary(err) },
         "cron/tick account-deletion retry drain failed",
       );
     }
