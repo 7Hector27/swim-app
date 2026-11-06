@@ -1,0 +1,4 @@
+-- Intentionally empty. Supabase CLI reads this during `db reset` per the
+-- [db.seed] block in config.toml; dropping a file here silences the
+-- missing-file warning. Real seed data for development lives in
+-- apps/api/src/db/seed.ts and is run by `pnpm db:seed`.

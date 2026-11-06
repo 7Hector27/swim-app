@@ -1,0 +1,3 @@
+-- Intentionally empty. Supabase CLI reads this during `db reset` per the
+-- [db.seed] block in config.toml. Integration tests manage their own
+-- fixture data; no shared seed is loaded into the test stack.

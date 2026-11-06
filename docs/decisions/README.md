@@ -23,7 +23,15 @@
 | [021](021-lesson-approval-rules.md) | Lesson approval rules |
 | [022](022-evaluation-sessions-append-only-ratings-void.md) | Evaluation sessions: append-only ratings with void |
 | [023](023-leaderboard-eligibility-and-scoring-rules.md) | Leaderboard eligibility and scoring rules (draft — confirm with Jason) |
+| [024](024-screen-model.md) | Screen model replaces per-session category |
+| [025](025-golf-score-age-groups.md) | Golf score age-group bands use standard swim-meet age groups |
+| [026](026-availability-seasons-overrides-defaults.md) | Availability uses default hours + seasons + one-off overrides |
+| [027](027-google-calendar-sync.md) | Google Calendar sync for coach lessons |
 | [028](028-parent-booking-emails.md) | Parent booking emails via transactional outbox |
 | [029](029-coach-booking.md) | Coach booking on behalf of a family |
 | [030](030-parent-batch-booking.md) | Parent multi-lesson batch booking (manual + weekly repeat) |
 | [031](031-coach-alerts-web-push.md) | Coach alerts via web push |
+| [032](032-correction-rows-for-editing-evaluations.md) | Correction rows for editing evaluations |
+| [033](033-coach-bulk-cancel.md) | Cancellation policy and coach bulk cancel |
+| [034](034-parent-account-deletion.md) | Parent account deletion |
+| [035](035-test-database-isolation.md) | Dedicated test Supabase stack |

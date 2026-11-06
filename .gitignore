@@ -2,6 +2,9 @@ node_modules
 .next
 dist
 .env
+.env.*
+!.env.example
+!.env.test.example
 *.local
 supabase/snippets/
 .claude/settings.local.json

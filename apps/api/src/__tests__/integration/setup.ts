@@ -1,21 +1,28 @@
-// Integration test setup — runs against a real local Supabase stack.
+// Integration test setup — runs against the dedicated test Supabase stack.
 //
 // All connection details must be set in the environment — no hardcoded
-// defaults. Locally, Vitest loads apps/api/.env which should contain these
-// vars (copy from `pnpm db:status`). In CI they are written to $GITHUB_ENV
-// from `supabase status -o env` immediately after the stack starts.
+// defaults. Locally, Vitest loads apps/api/.env.test (see
+// vitest.integration.config.ts), which the developer generates from
+// `pnpm db:test:status`. In CI, `supabase status -o env` writes the values
+// to $GITHUB_ENV immediately after the stack starts.
 //
-// Safety guard: refuses to run if INTEGRATION_DATABASE_URL doesn't resolve to
-// a loopback address. Hitting a shared or production DB would create real auth
-// users and delete rows.
+// Two safety guards:
+//   1. INTEGRATION_DATABASE_URL must resolve to a loopback address.
+//   2. It must point at the dedicated test stack (DB port 54422), OR
+//      INTEGRATION_TEST_TARGET=1 must be set. CI sets the env var because
+//      its ephemeral stack still runs on the default port 54322 but the
+//      runner VM is the isolation boundary. Locally, no override — the
+//      developer must point at the test stack.
+//
+// See docs/decisions/035-test-database-isolation.md.
 
 function requireEnv(name: string): string {
   const value = process.env[name];
   if (!value) {
     throw new Error(
       `Integration tests require ${name} to be set. ` +
-        `Run \`pnpm db:status\` (or \`supabase status\`) to get the values ` +
-        `and add them to apps/api/.env.`,
+        `Run \`pnpm db:test:status\` to get the test-stack values ` +
+        `and add them to apps/api/.env.test (template: apps/api/.env.test.example).`,
     );
   }
   return value;
@@ -26,7 +33,10 @@ requireEnv("SUPABASE_URL");
 requireEnv("SUPABASE_PUBLISHABLE_KEY");
 requireEnv("SUPABASE_SERVICE_ROLE_KEY");
 
-function assertLocalhost(rawUrl: string): void {
+const TEST_STACK_DB_PORT = "54422";
+const MANUAL_STACK_DB_PORT = "54322";
+
+function assertTestTarget(rawUrl: string): void {
   let parsed: URL;
   try {
     parsed = new URL(rawUrl);
@@ -49,9 +59,44 @@ function assertLocalhost(rawUrl: string): void {
         `Got hostname: ${hostname}`,
     );
   }
+
+  const port = parsed.port;
+  const ciAllow = process.env["INTEGRATION_TEST_TARGET"] === "1";
+
+  if (port === TEST_STACK_DB_PORT || ciAllow) {
+    return;
+  }
+
+  if (port === MANUAL_STACK_DB_PORT) {
+    throw new Error(
+      `Refusing to run integration tests against the manual Supabase stack ` +
+        `(port ${MANUAL_STACK_DB_PORT}). Integration tests must target the ` +
+        `dedicated test stack (port ${TEST_STACK_DB_PORT}). ` +
+        `Start it with: pnpm db:test:up, then regenerate apps/api/.env.test ` +
+        `from pnpm db:test:status. See ADR 035.`,
+    );
+  }
+
+  if (port === "") {
+    throw new Error(
+      `Refusing to run integration tests: INTEGRATION_DATABASE_URL has no port. ` +
+        `Expected the test stack's port ${TEST_STACK_DB_PORT}. ` +
+        `Regenerate apps/api/.env.test from pnpm db:test:status — the URL ` +
+        `should look like postgresql://postgres:postgres@127.0.0.1:${TEST_STACK_DB_PORT}/postgres. ` +
+        `See ADR 035.`,
+    );
+  }
+
+  throw new Error(
+    `Refusing to run integration tests: INTEGRATION_DATABASE_URL port ` +
+      `${port} is not the test stack's port ${TEST_STACK_DB_PORT}, ` +
+      `and INTEGRATION_TEST_TARGET=1 is not set. ` +
+      `Locally, start the test stack with: pnpm db:test:up. ` +
+      `In CI, set INTEGRATION_TEST_TARGET=1. See ADR 035.`,
+  );
 }
 
-assertLocalhost(INTEGRATION_DATABASE_URL);
+assertTestTarget(INTEGRATION_DATABASE_URL);
 
 // db/client.ts reads DATABASE_URL at import time, so we must set it before any
 // test file imports the app.

@@ -14,7 +14,7 @@ pnpm typecheck        # tsc --noEmit across all packages
 pnpm lint             # eslint across the monorepo
 pnpm format           # prettier --write across the monorepo
 pnpm test             # vitest run across all packages
-pnpm test:integration # integration tests — requires local Supabase stack (pnpm db:up)
+pnpm test:integration # integration tests — requires the TEST Supabase stack (pnpm db:test:up), never the manual stack
 
 # Run tests for one package only
 pnpm --filter api test
@@ -30,7 +30,18 @@ pnpm db:status        # show running services and connection strings
 pnpm db:generate      # generate Drizzle migration files from schema changes
 pnpm db:migrate       # apply pending migrations
 pnpm db:sync-catalog  # upsert skills catalog reference data (idempotent; run after catalog edits)
+
+# Dedicated test stack (ADR 035) — isolated DB for pnpm test:integration
+pnpm db:test:up       # start test Supabase stack (DB 54422, API 54421; Studio/Storage/Mailpit disabled)
+pnpm db:test:down     # stop test stack
+pnpm db:test:status   # test-stack services and connection strings
+pnpm db:test:migrate  # apply pending migrations to the test stack
+pnpm db:test:reset    # wipe + reseed the test stack (manual only — never automatic)
+pnpm db:test:sync-catalog  # upsert skills catalog into the test stack
+# Rough Windows Docker cost: ~700 MB – 1 GB on top of the manual stack.
 ```
+
+**Integration tests run against the test stack only.** `pnpm test:integration` is guarded against the manual stack; never point `INTEGRATION_DATABASE_URL` at port 54322.
 
 ## Workflow rules
 
