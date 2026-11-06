@@ -58,7 +58,7 @@ const logger = pino({ level: "silent" });
 const app = createApp(logger);
 
 const TEST_PASSWORD = "integration-test-password-1";
-const DELETION_PHRASE = "delete my account";
+const DELETION_PHRASE = "delete";
 
 // Track every test user we create so afterEach cleanup runs even on
 // failure. Mirrors the pattern in accountDeletion.integration.test.ts.

@@ -56,7 +56,7 @@ const logger = pino({ level: "silent" });
 const app = createApp(logger);
 
 const TEST_PASSWORD = "integration-test-password-1";
-const DELETION_PHRASE = "delete my account";
+const DELETION_PHRASE = "delete";
 
 // Track every test user so afterEach cleanup runs even on failure.
 const testUsers: TestUser[] = [];
@@ -457,14 +457,14 @@ describe("POST /me/deletion/preview vs. /confirm — scope agreement", () => {
 // ── Guards: typed phrase + password ──────────────────────────────────────────
 
 describe("POST /me/deletion/confirm (guards)", () => {
-  it("returns 422 when the confirmation phrase doesn't match (missing word)", async () => {
+  it("returns 422 when the confirmation phrase doesn't match (wrong word)", async () => {
     const owner = await createTestUser("delete-guard-phrase");
     testUsers.push(owner);
 
     const res = await request(app)
       .post("/me/deletion/confirm")
       .set("Authorization", `Bearer ${owner.accessToken}`)
-      .send({ password: TEST_PASSWORD, confirmationPhrase: "delete account" });
+      .send({ password: TEST_PASSWORD, confirmationPhrase: "delete my account" });
 
     expect(res.status).toBe(422);
     expect(res.body.error).toBe("confirmation_phrase_mismatch");
@@ -479,22 +479,22 @@ describe("POST /me/deletion/confirm (guards)", () => {
   });
 
   it("accepts autocapitalized and whitespace-padded phrases — comparison is trimmed + case-insensitive", async () => {
-    // iPhone autocapitalizes the first word of the field even with
+    // iPhone autocapitalizes the first letter of the field even with
     // autoCapitalize="none" on older iOS versions; the server-side
-    // comparison must not reject "Delete my account" as a phrase
-    // mismatch. The test is paired with the UI's identical client-side
-    // normalization so an iPhone user never submits a form that would
-    // bounce at the API. Using a wrong password keeps the deletion
-    // from committing — the phrase check passes before the password
-    // one, so the 403 is the signal that the phrase got through.
+    // comparison must not reject "Delete" as a phrase mismatch. The
+    // test is paired with the UI's identical client-side normalization
+    // so an iPhone user never submits a form that would bounce at the
+    // API. Using a wrong password keeps the deletion from committing —
+    // the phrase check passes before the password one, so the 403 is
+    // the signal that the phrase got through.
     const owner = await createTestUser("delete-guard-phrase-normalized");
     testUsers.push(owner);
 
     const variants = [
-      "Delete my account",
-      "DELETE MY ACCOUNT",
-      "  delete my account  ",
-      "delete my account\n",
+      "Delete",
+      "DELETE",
+      "  delete  ",
+      "delete\n",
     ];
     for (const variant of variants) {
       const res = await request(app)

@@ -146,7 +146,7 @@ describe("POST /me/deletion/confirm (unit)", () => {
     const res = await request(app)
       .post("/me/deletion/confirm")
       .set("Authorization", "Bearer token")
-      .send({ password: "any-password", confirmationPhrase: "delete my account" });
+      .send({ password: "any-password", confirmationPhrase: "delete" });
 
     expect(res.status).toBe(500);
     expect(res.body.error).toBe("account_deletion_id_mismatch");
@@ -189,7 +189,7 @@ describe("POST /me/deletion/confirm (unit)", () => {
     const res = await request(app)
       .post("/me/deletion/confirm")
       .set("Authorization", "Bearer token")
-      .send({ password: "wrong", confirmationPhrase: "delete my account" });
+      .send({ password: "wrong", confirmationPhrase: "delete" });
 
     // 403 invalid_password, not 401 — the web client's convention is
     // to sign the user out on any 401 from the API, and a wrong
@@ -226,7 +226,7 @@ describe("POST /me/deletion/confirm (unit)", () => {
     await request(app)
       .post("/me/deletion/confirm")
       .set("Authorization", "Bearer token")
-      .send({ password: "any", confirmationPhrase: "delete my account" });
+      .send({ password: "any", confirmationPhrase: "delete" });
 
     expect(mockReauthSignOut).toHaveBeenCalled();
     for (const call of mockReauthSignOut.mock.calls) {

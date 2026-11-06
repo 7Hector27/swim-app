@@ -8,31 +8,30 @@ import {
 describe("matchesDeletionConfirmationPhrase", () => {
   it("matches the canonical lowercase phrase", () => {
     expect(matchesDeletionConfirmationPhrase(DELETION_CONFIRMATION_PHRASE)).toBe(true);
-    expect(matchesDeletionConfirmationPhrase("delete my account")).toBe(true);
+    expect(matchesDeletionConfirmationPhrase("delete")).toBe(true);
   });
 
-  it("matches with autocapitalized first word (iPhone default)", () => {
-    expect(matchesDeletionConfirmationPhrase("Delete my account")).toBe(true);
+  it("matches with autocapitalized first letter (iPhone default)", () => {
+    expect(matchesDeletionConfirmationPhrase("Delete")).toBe(true);
   });
 
   it("matches uppercase and mixed case", () => {
-    expect(matchesDeletionConfirmationPhrase("DELETE MY ACCOUNT")).toBe(true);
-    expect(matchesDeletionConfirmationPhrase("DeLeTe My AcCoUnT")).toBe(true);
+    expect(matchesDeletionConfirmationPhrase("DELETE")).toBe(true);
+    expect(matchesDeletionConfirmationPhrase("DeLeTe")).toBe(true);
   });
 
   it("trims leading and trailing whitespace", () => {
-    expect(matchesDeletionConfirmationPhrase("delete my account ")).toBe(true);
-    expect(matchesDeletionConfirmationPhrase("  delete my account")).toBe(true);
-    expect(matchesDeletionConfirmationPhrase("\tdelete my account\n")).toBe(true);
-    expect(matchesDeletionConfirmationPhrase("  Delete my account  ")).toBe(true);
+    expect(matchesDeletionConfirmationPhrase("delete ")).toBe(true);
+    expect(matchesDeletionConfirmationPhrase("  delete")).toBe(true);
+    expect(matchesDeletionConfirmationPhrase("\tdelete\n")).toBe(true);
+    expect(matchesDeletionConfirmationPhrase("  Delete  ")).toBe(true);
   });
 
-  it("rejects wrong words, wrong order, or extra interior whitespace", () => {
-    expect(matchesDeletionConfirmationPhrase("delete account")).toBe(false);
-    expect(matchesDeletionConfirmationPhrase("delete my acount")).toBe(false);
-    expect(matchesDeletionConfirmationPhrase("delete my  account")).toBe(false); // two spaces mid-phrase
-    expect(matchesDeletionConfirmationPhrase("delete the account")).toBe(false);
-    expect(matchesDeletionConfirmationPhrase("account delete my")).toBe(false);
+  it("rejects wrong words or extra interior content", () => {
+    expect(matchesDeletionConfirmationPhrase("delete my account")).toBe(false);
+    expect(matchesDeletionConfirmationPhrase("delet")).toBe(false);
+    expect(matchesDeletionConfirmationPhrase("del ete")).toBe(false);
+    expect(matchesDeletionConfirmationPhrase("DELETE!")).toBe(false);
   });
 
   it("rejects the empty string", () => {

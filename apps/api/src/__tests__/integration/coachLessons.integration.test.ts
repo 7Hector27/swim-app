@@ -320,7 +320,7 @@ describe("GET /coach/lessons/:id — householdName after a leave-deletion", () =
         .set("Authorization", `Bearer ${manager.accessToken}`)
         .send({
           password: "integration-test-password-1",
-          confirmationPhrase: "delete my account",
+          confirmationPhrase: "delete",
         });
       expect(delRes.status).toBe(204);
 

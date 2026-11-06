@@ -96,7 +96,7 @@ const app = createApp(logger);
 const PINNED_NOW = new Date("2035-11-05T18:00:00.000Z");
 
 const TEST_PASSWORD = "integration-test-password-1";
-const DELETION_PHRASE = "delete my account";
+const DELETION_PHRASE = "delete";
 
 // ── Email-sender capture transport ──────────────────────────────────────────
 

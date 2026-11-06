@@ -5,13 +5,13 @@
 import { z } from "zod";
 
 // The phrase a parent must type to prove they meant to click the button.
-// Mobile keyboards autocapitalize the first word — "Delete my account" is a
+// Mobile keyboards autocapitalize the first word — "Delete" is a
 // genuinely-intended input that would otherwise fail a strict ===. The
 // comparison trims surrounding whitespace and lowercases both sides; the
 // phrase itself is kept lowercase so the UI can show the canonical form.
 // Any divergence of this constant is a semantic change and needs a plan +
 // ADR update, not a silent tweak.
-export const DELETION_CONFIRMATION_PHRASE = "delete my account";
+export const DELETION_CONFIRMATION_PHRASE = "delete";
 
 // Normalizes an input phrase for comparison. Used by the client's button-
 // enablement check, the web Server Action's defense-in-depth check, and

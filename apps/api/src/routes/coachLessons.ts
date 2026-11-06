@@ -1449,7 +1449,7 @@ coachLessonsRouter.get(
     // has `disabled_at` set and `full_name = NULL`, so skipping disabled
     // profiles avoids surfacing `null` to the UI when a member has been
     // deleted but the household still exists (e.g. a manager left via the
-    // "delete my account" leave path while the owner remains). The
+    // "delete" leave path while the owner remains). The
     // deletion engine prevents the owner from self-deleting while another
     // owner/manager remains, so for a live household at least one of the
     // first two priority tiers still has a live member.

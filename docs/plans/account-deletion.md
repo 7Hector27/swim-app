@@ -8,7 +8,7 @@
 
 Today a parent has no way to close their own account. `profiles.disabled_at` exists as scaffolding and `apps/api/src/services/emails/drain.ts:118` carries a `TODO(account-deletion)` for the outbox, but the actual flow was explicitly deferred (`docs/accounts.md:103`: *"Profiles are never hard-deleted. … the full account deletion flow is out of scope for now."*).
 
-This plan closes that gap. A parent clicks delete on their account page, re-authenticates, types `delete my account`, and the deletion runs immediately. All database work happens inside one transaction; external cleanup (Jason's Google Calendar, the Supabase Auth user) runs in post-commit tasks with their own retry state.
+This plan closes that gap. A parent clicks delete on their account page, re-authenticates, types `delete`, and the deletion runs immediately. All database work happens inside one transaction; external cleanup (Jason's Google Calendar, the Supabase Auth user) runs in post-commit tasks with their own retry state.
 
 Three constraints frame the design:
 
@@ -147,10 +147,10 @@ The alternative — keep the FK, call `auth.admin.updateUserById` to scrub `emai
 
 ### 1. Immediate deletion on re-auth + typed confirmation
 
-Clicking "Delete my account" on the account page requires:
+Clicking "Delete account" on the account page requires:
 
 1. **Re-authentication** — the parent re-enters their password; the API calls `supabase.auth.signInWithPassword` server-side to verify liveness. Must succeed within ~2 minutes of the delete confirm POST (nonce in a short-lived cookie).
-2. **Typed phrase** — the parent types `delete my account` into a confirmation field.
+2. **Typed phrase** — the parent types `delete` into a confirmation field.
 
 Both guards are intentional: re-auth proves this is the account owner, the phrase defends against an accidentally-clicked confirm button. Once both pass, the API opens a transaction and runs the full deletion in one shot. On commit, post-commit tasks fire for the Supabase Auth hard-delete and the per-lesson Google Calendar sync.
 
@@ -242,7 +242,7 @@ The parent navigates to **Account → Delete account**. The screen shows a previ
 - "The following person will be notified: your coach"
 - A plain-language explanation: "This is immediate and cannot be undone. Your login will stop working the moment you click delete."
 
-To proceed: re-auth → type `delete my account` → click confirm. If the parent is an owner with other members, the confirm button is disabled and a block screen explains the transfer-first requirement with a link to household settings.
+To proceed: re-auth → type `delete` → click confirm. If the parent is an owner with other members, the confirm button is disabled and a block screen explains the transfer-first requirement with a link to household settings.
 
 ## Transaction shape
 
