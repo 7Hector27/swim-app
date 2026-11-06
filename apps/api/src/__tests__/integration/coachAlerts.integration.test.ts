@@ -1040,8 +1040,9 @@ describe("POST /coach/push/subscriptions — key normalization", () => {
 // in-app list path the bell exercises on every open.
 describe("GET /coach/notifications — account_deleted (ADR 034)", () => {
   const app = createApp(pino({ level: "silent" }));
+  const scheduleDayUrl = "https://example.test/coach/schedule?view=day&date=2026-10-28";
 
-  it("returns a 200 with the account_deleted row parsed through the shared schema", async () => {
+  it("returns a 200 with the account_deleted row parsed through the shared schema and the schedule day-view clickUrl flows through to the bell", async () => {
     await cleanAllNotifications();
     await adminDb()
       .insert(coachNotifications)
@@ -1056,7 +1057,9 @@ describe("GET /coach/notifications — account_deleted (ADR 034)", () => {
           cancelledLessonTimesLocalDisplay: ["Tue, Oct 28 at 4:30 PM"],
           deletedAtUtc: "2026-10-27T15:00:00Z",
         },
-        clickUrl: "https://example.test/coach/alerts",
+        // The fixed link target (ADR 034) — never /coach/alerts, never
+        // /coach/lessons/<id> (both would 404 after anonymization).
+        clickUrl: scheduleDayUrl,
         tag: "account-deleted:test-job",
       });
 
@@ -1068,6 +1071,7 @@ describe("GET /coach/notifications — account_deleted (ADR 034)", () => {
       category: string;
       title: string;
       body: string;
+      clickUrl: string;
       scrubbed: boolean;
     }>;
     const accountDeletedItems = items.filter((item) => item.category === "account_deleted");
@@ -1075,8 +1079,63 @@ describe("GET /coach/notifications — account_deleted (ADR 034)", () => {
     const item = accountDeletedItems[0]!;
     expect(item.title).toBe("A family deleted their account");
     expect(item.body).toContain("Tue, Oct 28 at 4:30 PM");
+    // Bell link: schedule day view keyed on the first freed lesson's
+    // LA date. The notification-sender path (sender.ts) passes the same
+    // column into push.click_url, so verifying the DB column here is
+    // the same contract for both channels.
+    expect(item.clickUrl).toBe(scheduleDayUrl);
     // Payload is real (not scrubbed), so no "no longer available" fallback.
     expect(item.scrubbed).toBe(false);
+
+    await adminDb()
+      .delete(coachNotifications)
+      .where(
+        and(
+          eq(coachNotifications.profileId, coachProfile.userId),
+          eq(coachNotifications.category, "account_deleted"),
+        ),
+      );
+  });
+
+  it("sendCoachNotification hands the schedule day-view URL to the push transport as click_url", async () => {
+    await cleanAllNotifications();
+    // Opt the coach into parent_change so the sender doesn't skip
+    // (account_deleted follows the parent_change pref per ADR 034).
+    await getOrCreateCoachNotificationPreferences(coachProfile.userId);
+    await updateCoachNotificationPreferences(coachProfile.userId, {
+      parentChangeEnabled: true,
+      quietHoursEnabled: false,
+    });
+    await adminDb().insert(coachPushSubscriptions).values({
+      profileId: coachProfile.userId,
+      endpoint: "https://push.test/account-deleted-push",
+      p256dh: "aGVsbG8rLy93b3JsZA",
+      auth: "QS9CKzE",
+      isActive: true,
+    });
+
+    const rows = await adminDb()
+      .insert(coachNotifications)
+      .values({
+        profileId: coachProfile.userId,
+        category: "account_deleted",
+        urgency: "standard",
+        payload: {
+          kind: "account_deleted",
+          listTitle: "A family deleted their account",
+          cancelledLessonTimesUtc: ["2026-10-28T23:30:00Z"],
+          cancelledLessonTimesLocalDisplay: ["Tue, Oct 28 at 4:30 PM"],
+          deletedAtUtc: "2026-10-27T15:00:00Z",
+        },
+        clickUrl: scheduleDayUrl,
+        tag: "account-deleted:test-push-job",
+      })
+      .returning({ id: coachNotifications.id });
+    await sendCoachNotification(rows[0]!.id);
+
+    expect(transport.sends).toHaveLength(1);
+    expect(transport.sends[0]?.body.click_url).toBe(scheduleDayUrl);
+    expect(transport.sends[0]?.body.title).toBe("A family deleted their account");
 
     await adminDb()
       .delete(coachNotifications)

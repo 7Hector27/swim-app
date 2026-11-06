@@ -312,6 +312,7 @@ function ConfirmForm({
           id={phraseId}
           name="confirmationPhrase"
           type="text"
+          placeholder={DELETION_CONFIRMATION_PHRASE}
           autoComplete="off"
           autoCapitalize="none"
           autoCorrect="off"

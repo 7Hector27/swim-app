@@ -62,6 +62,18 @@ const DELETION_PHRASE = "delete";
 const testUsers: TestUser[] = [];
 
 afterEach(async () => {
+  // ADR 034's solo deletion now writes a coach-side
+  // `coach_account_deleted` email outbox row with no lesson/batch
+  // scope. The per-test housekeeping blocks below clean up the data
+  // they seeded; sweep the un-anchored outbox rows globally so they
+  // don't leak across tests.
+  try {
+    await adminDb()
+      .delete(lessonEmailOutbox)
+      .where(eq(lessonEmailOutbox.event, "coach_account_deleted"));
+  } catch {
+    /* best-effort — table might be unavailable mid-teardown */
+  }
   for (const user of testUsers.splice(0)) {
     await user.cleanup().catch(() => { /* best-effort */ });
   }

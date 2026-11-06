@@ -34,7 +34,7 @@
 // flows (swimmer_added, etc.).
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import request from "supertest";
 import pino from "pino";
 
@@ -201,6 +201,16 @@ afterAll(async () => {
 const testUsers: TestUser[] = [];
 
 afterEach(async () => {
+  // Sweep ADR 034's `coach_account_deleted` outbox rows so a test
+  // that throws before reaching its inline housekeeping can't leave
+  // residue for the next test.
+  try {
+    await adminDb()
+      .delete(lessonEmailOutbox)
+      .where(eq(lessonEmailOutbox.event, "coach_account_deleted"));
+  } catch {
+    /* best-effort */
+  }
   for (const user of testUsers.splice(0)) {
     await user.cleanup().catch(() => { /* best-effort */ });
   }
@@ -822,6 +832,14 @@ describe("POST /me/deletion/confirm — solo path, real-flow seed", () => {
     expect(accountDeletedNotifs).toHaveLength(1);
     const notif = accountDeletedNotifs[0]!;
     expect(notif.tag).toBe(expectedTag);
+    // Click URL must open the coach schedule day view on the first
+    // freed lesson's LA date — never /coach/alerts or /coach/lessons
+    // (those targets 404 after anonymization). Powers both the bell
+    // link (GET /coach/notifications returns this column) and the
+    // push click_url (sender passes it through to the transport).
+    expect(notif.clickUrl).toMatch(
+      /\/coach\/schedule\?view=day&date=\d{4}-\d{2}-\d{2}$/,
+    );
     const notifPayload = notif.payload as {
       kind: string;
       listTitle: string;
@@ -852,6 +870,70 @@ describe("POST /me/deletion/confirm — solo path, real-flow seed", () => {
     expect(JSON.stringify(notifPayload)).not.toContain("Alex");
     expect(JSON.stringify(notifPayload)).not.toContain(householdId);
 
+    // The solo deletion enqueued exactly one coach_account_deleted
+    // email outbox row (ADR 034). The row has no lesson / batch /
+    // household scope (the family is gone), lists every freed slot
+    // with pool labels, and the payload carries no family / swimmer
+    // names or addresses. "Home pool" replaces the pool name for
+    // home-pool rows — identifying, so docs/accounts.md kids'-data
+    // rules apply.
+    // Scope the query to this deletion's recipient — both the
+    // notification and the email resolve the coach via
+    // getActiveCoachProfile() inside the same tx, so they share the
+    // same profile id. This stays correct across parallel test files
+    // with multiple role=coach rows.
+    const coachEmails = await adminDb()
+      .select()
+      .from(lessonEmailOutbox)
+      .where(
+        and(
+          eq(lessonEmailOutbox.event, "coach_account_deleted"),
+          sql`${lessonEmailOutbox.recipientProfileIds} = ARRAY[${notif.profileId}]::uuid[]`,
+        ),
+      );
+    expect(coachEmails).toHaveLength(1);
+    const coachEmail = coachEmails[0]!;
+    expect(coachEmail.lessonId).toBeNull();
+    expect(coachEmail.batchId).toBeNull();
+    expect(coachEmail.householdId).toBeNull();
+    expect(coachEmail.bulkCancellationId).toBeNull();
+    expect(coachEmail.recipientProfileIds).toEqual([notif.profileId]);
+    const emailPayload = coachEmail.payload as {
+      kind: string;
+      cancelledLessons: Array<{
+        startsAtUtc: string;
+        startsAtLocalDisplay: string;
+        poolLabel: string;
+      }>;
+      scheduleUrl: string;
+      deletedAtUtc: string;
+    };
+    expect(emailPayload.kind).toBe("account_deleted_email");
+    expect(emailPayload.cancelledLessons.length).toBe(expectedFutureIds.length);
+    // Every entry is a home-pool slot — this test seeds a home pool
+    // via seedHomePool (lessonLocations.householdId = the family). The
+    // snapshot rule converts those to "Home pool" with no address.
+    for (const entry of emailPayload.cancelledLessons) {
+      expect(entry.poolLabel).toBe("Home pool");
+      expect(typeof entry.startsAtUtc).toBe("string");
+      expect(typeof entry.startsAtLocalDisplay).toBe("string");
+      expect(entry.startsAtLocalDisplay.length).toBeGreaterThan(0);
+    }
+    // Schedule URL matches the fixed notification target (day view on
+    // the first freed lesson's LA date).
+    expect(emailPayload.scheduleUrl).toMatch(
+      /\/coach\/schedule\?view=day&date=\d{4}-\d{2}-\d{2}$/,
+    );
+    // The payload MUST NOT contain any family or swimmer identity —
+    // no "Alex" (swimmer first name), no household id, no address
+    // fragments ("Pool Lane", "Irvine"), no family label.
+    const payloadStr = JSON.stringify(emailPayload);
+    expect(payloadStr).not.toContain("Alex");
+    expect(payloadStr).not.toContain(householdId);
+    expect(payloadStr).not.toContain("Pool Lane");
+    expect(payloadStr).not.toContain("Irvine");
+    expect(payloadStr).not.toContain("Realflow Solo");
+
     // Anonymized rows carry the fields the coach schedule UI reads to
     // render "Deleted family" + location snapshot in place of the real
     // household/pool name. (Verifying via the /coach/schedule endpoint
@@ -868,6 +950,9 @@ describe("POST /me/deletion/confirm — solo path, real-flow seed", () => {
     await adminDb()
       .delete(lessonEmailOutbox)
       .where(inArray(lessonEmailOutbox.lessonId, anonymizedIds));
+    await adminDb()
+      .delete(lessonEmailOutbox)
+      .where(eq(lessonEmailOutbox.event, "coach_account_deleted"));
     await adminDb().delete(lessons).where(inArray(lessons.id, anonymizedIds));
     await adminDb().delete(coachNotifications).where(eq(coachNotifications.category, "account_deleted"));
     await adminDb()
@@ -1025,6 +1110,22 @@ describe("POST /me/deletion/confirm — leave path, real-flow seed", () => {
       .limit(1);
     expect(jobRow).toHaveLength(1);
     expect(jobRow[0]?.scope).toBe("leave");
+
+    // A leave deletion must NOT enqueue a coach_account_deleted email
+    // (ADR 034) — the household is still active, Jason's schedule is
+    // unchanged, and the email's "freed slots" summary would be
+    // outright wrong. Filter by recipientProfileIds so a stray row
+    // from a concurrent test can't make this assertion fail.
+    const coachEmails = await adminDb()
+      .select()
+      .from(lessonEmailOutbox)
+      .where(
+        and(
+          eq(lessonEmailOutbox.event, "coach_account_deleted"),
+          sql`${lessonEmailOutbox.recipientProfileIds} = ARRAY[${coach.userId}]::uuid[]`,
+        ),
+      );
+    expect(coachEmails).toHaveLength(0);
 
     // ── Housekeeping ─────────────────────────────────────────
     // Settle any lingering sender microtasks before teardown touches

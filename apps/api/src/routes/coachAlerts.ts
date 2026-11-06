@@ -585,6 +585,8 @@ function categoryFallbackLabel(category: string): string {
       return "Auto-approved booking";
     case "daily_summary":
       return "Daily summary";
+    case "account_deleted":
+      return "A family deleted their account";
     default:
       return "Notification";
   }

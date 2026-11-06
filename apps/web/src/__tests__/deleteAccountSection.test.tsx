@@ -230,17 +230,20 @@ describe("DeleteAccountSection — confirm button disabled state", () => {
     expect(button).toBeDisabled();
 
     // Partial match.
-    await user.type(input, "delete my acc");
+    await user.type(input, "delet");
     expect(button).toBeDisabled();
 
-    // Typo — stays disabled.
+    // Extra content — stays disabled (strict equality after normalization).
+    // The comparison is trim+lowercase ===, not a startsWith, so a
+    // longer string that starts with the phrase must not enable the
+    // button.
     await user.clear(input);
-    await user.type(input, "delete me account");
+    await user.type(input, "delete my account");
     expect(button).toBeDisabled();
 
     // Canonical lowercase match.
     await user.clear(input);
-    await user.type(input, "delete my account");
+    await user.type(input, "delete");
     expect(button).toBeEnabled();
 
     // Trailing whitespace is now accepted — the client mirrors the
@@ -258,18 +261,18 @@ describe("DeleteAccountSection — confirm button disabled state", () => {
     const button = screen.getByTestId("delete-account-confirm-button");
     const input = screen.getByTestId("delete-account-phrase-input");
 
-    // First-word autocapitalization — the common iOS case.
-    await user.type(input, "Delete my account");
+    // First-letter autocapitalization — the common iOS case.
+    await user.type(input, "Delete");
     expect(button).toBeEnabled();
 
     // All uppercase.
     await user.clear(input);
-    await user.type(input, "DELETE MY ACCOUNT");
+    await user.type(input, "DELETE");
     expect(button).toBeEnabled();
 
     // Leading + trailing padding.
     await user.clear(input);
-    await user.type(input, "  delete my account  ");
+    await user.type(input, "  delete  ");
     expect(button).toBeEnabled();
   });
 
@@ -297,7 +300,7 @@ describe("DeleteAccountSection — error states do not sign the user out", () =>
     await user.click(screen.getByTestId("delete-account-expand"));
 
     await user.type(screen.getByLabelText(/your password/i), "wrong");
-    await user.type(screen.getByTestId("delete-account-phrase-input"), "delete my account");
+    await user.type(screen.getByTestId("delete-account-phrase-input"), "delete");
     await user.click(screen.getByTestId("delete-account-confirm-button"));
 
     await waitFor(() => {
@@ -317,7 +320,7 @@ describe("DeleteAccountSection — error states do not sign the user out", () =>
     await user.click(screen.getByTestId("delete-account-expand"));
 
     await user.type(screen.getByLabelText(/your password/i), "any");
-    await user.type(screen.getByTestId("delete-account-phrase-input"), "delete my account");
+    await user.type(screen.getByTestId("delete-account-phrase-input"), "delete");
     await user.click(screen.getByTestId("delete-account-confirm-button"));
 
     await waitFor(() => {
@@ -334,7 +337,7 @@ describe("DeleteAccountSection — error states do not sign the user out", () =>
     await user.click(screen.getByTestId("delete-account-expand"));
 
     await user.type(screen.getByLabelText(/your password/i), "any");
-    await user.type(screen.getByTestId("delete-account-phrase-input"), "delete my account");
+    await user.type(screen.getByTestId("delete-account-phrase-input"), "delete");
     await user.click(screen.getByTestId("delete-account-confirm-button"));
 
     await waitFor(() => {
@@ -355,7 +358,7 @@ describe("DeleteAccountSection — error states do not sign the user out", () =>
     await user.click(screen.getByTestId("delete-account-expand"));
 
     await user.type(screen.getByLabelText(/your password/i), "any");
-    await user.type(screen.getByTestId("delete-account-phrase-input"), "delete my account");
+    await user.type(screen.getByTestId("delete-account-phrase-input"), "delete");
     await user.click(screen.getByTestId("delete-account-confirm-button"));
 
     await waitFor(() => {
@@ -369,12 +372,13 @@ describe("DeleteAccountSection — error states do not sign the user out", () =>
 // ── Success path (sign-out + redirect) ──────────────────────────────────────
 
 describe("DeleteAccountSection — success handoff", () => {
-  // The server action redirects to /account/deleted on 204 by throwing a
-  // Next.js redirect(). From the component's perspective that surfaces as
-  // the action's returned promise rejecting with a NEXT_REDIRECT marker.
-  // Testing the exact redirect belongs in the action's own tests; here
-  // we assert the component drives the action with the right inputs on
-  // the happy path.
+  // The server action redirects to /?account-deleted=1 on 204 (the
+  // landing page's AccountDeletedModal reads the param). From the
+  // component's perspective that surfaces as the action's returned
+  // promise rejecting with a NEXT_REDIRECT marker. Testing the exact
+  // redirect belongs in the action's own tests; here we assert the
+  // component drives the action with the right inputs on the happy
+  // path.
   it("submits password + confirmation phrase to the server action on confirm", async () => {
     mockConfirm.mockResolvedValueOnce({ status: "idle" });
     const user = userEvent.setup();
@@ -382,12 +386,12 @@ describe("DeleteAccountSection — success handoff", () => {
     await user.click(screen.getByTestId("delete-account-expand"));
 
     await user.type(screen.getByLabelText(/your password/i), "right-password");
-    await user.type(screen.getByTestId("delete-account-phrase-input"), "delete my account");
+    await user.type(screen.getByTestId("delete-account-phrase-input"), "delete");
     await user.click(screen.getByTestId("delete-account-confirm-button"));
 
     await waitFor(() => expect(mockConfirm).toHaveBeenCalledTimes(1));
     const formData = mockConfirm.mock.calls[0]![1] as FormData;
     expect(formData.get("password")).toBe("right-password");
-    expect(formData.get("confirmationPhrase")).toBe("delete my account");
+    expect(formData.get("confirmationPhrase")).toBe("delete");
   });
 });

@@ -135,11 +135,17 @@ export default function CoachLessonRow({ item }: Props) {
                 Evaluate {swimmer.firstName} &rarr;
               </Link>
             ))
-          ) : (
+          ) : isCanceled ? (
+            // Only echo the actual terminal status. Earlier this branch
+            // defaulted to "Declined" whenever showEvaluate was false,
+            // so an anonymized completed/no_show row (swimmers=[]) read
+            // "Completed" on the badge and "Declined" in the action rail
+            // at the same time. The LessonStatusBadge above already
+            // labels every other state, so render nothing here.
             <span className="inline-flex items-center min-h-[44px] text-sm text-text-secondary italic">
               {lesson.status === "canceled" ? "Canceled" : "Declined"}
             </span>
-          )}
+          ) : null}
         </div>
         <Link
           href={`/coach/lessons/${lesson.id}`}

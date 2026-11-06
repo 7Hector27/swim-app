@@ -519,6 +519,13 @@
       "when": 1793922817840,
       "tag": "0073_lesson_email_outbox_scrubbed_relaxed_checks",
       "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1793982573941,
+      "tag": "0074_lesson_email_outbox_coach_account_deleted",
+      "breakpoints": true
     }
   ]
 }

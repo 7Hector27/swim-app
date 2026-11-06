@@ -1,3 +1,4 @@
+import AccountDeletedModal from "@/components/AccountDeletedModal";
 import WaveDivider from "@/components/WaveDivider";
 
 import CoachBioSection from "./CoachBioSection";
@@ -26,6 +27,7 @@ export default function HomepageContent({ isAuthenticatedParent, ctaVariant }: P
         <WaveDivider from="background" to="section" />
         <CtaBandSection variant={ctaVariant} />
       </main>
+      <AccountDeletedModal />
     </>
   );
 }

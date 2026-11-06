@@ -37,6 +37,7 @@ import {
   runAccountDeletionCleanup,
   ROUTE_POST_COMMIT_FAILURE_BACKOFF_SECONDS,
 } from "../services/accountDeletion";
+import { sendLessonEmailOutboxRow } from "../services/emails/sender";
 
 export const accountDeletionRouter = Router();
 
@@ -167,6 +168,15 @@ accountDeletionRouter.post(
     // branch below); Jason can't fix a Supabase or Google outage from an
     // alert anyway, so there is no coach notification path.
     res.status(204).end();
+
+    // Solo path only: coach-side "A family deleted their account" email
+    // (ADR 034). The outbox row was written inside the deletion tx, so
+    // it is already durable; this microtask just drives an immediate
+    // send. The drain is the fallback if the microtask fails.
+    if (result.coachAccountDeletedOutboxId !== null) {
+      const emailOutboxId = result.coachAccountDeletedOutboxId;
+      queueMicrotask(() => { void sendLessonEmailOutboxRow(emailOutboxId); });
+    }
 
     // Post-commit fan-out. The shared cleanup helper walks every
     // anonymized lesson id (past → patch Google event; future → delete)

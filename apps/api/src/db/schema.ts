@@ -1178,7 +1178,7 @@ export const lessonEmailOutbox = pgTable(
       .where(sql`bulk_cancellation_id IS NOT NULL`),
     check(
       "lesson_email_outbox_event_valid",
-      sql`${table.event} IN ('booking_requested', 'lesson_confirmed', 'request_declined', 'request_expired', 'lesson_canceled', 'lesson_rescheduled', 'batch_booked', 'batch_approved', 'batch_canceled', 'coach_booking_request', 'coach_bulk_cancel')`,
+      sql`${table.event} IN ('booking_requested', 'lesson_confirmed', 'request_declined', 'request_expired', 'lesson_canceled', 'lesson_rescheduled', 'batch_booked', 'batch_approved', 'batch_canceled', 'coach_booking_request', 'coach_bulk_cancel', 'coach_account_deleted')`,
     ),
     check(
       "lesson_email_outbox_status_valid",
@@ -1202,9 +1202,16 @@ export const lessonEmailOutbox = pgTable(
     // anonymized, not deleted, so lesson-scoped scrubbed rows still have
     // exactly-one and don't need the escape — but the clause covers them
     // uniformly to keep the shape simple.
+    // coach_account_deleted rows (ADR 034) have no lesson/batch/bulk_
+    // cancellation scope — the family is gone, there's nothing to tie
+    // them to. The row is a coach-only email that carries freed-slot
+    // info in its payload, and it's enqueued inside the deletion
+    // transaction. Exempt that event from the "exactly one scope"
+    // rule alongside the already-existing scrubbed-row escape.
     check(
       "lesson_email_outbox_scope_exactly_one",
       sql`(${table.payload} ? '_scrubbed_at')
+        OR (${table.event} = 'coach_account_deleted')
         OR ((CASE WHEN ${table.lessonId} IS NOT NULL THEN 1 ELSE 0 END)
           + (CASE WHEN ${table.batchId} IS NOT NULL THEN 1 ELSE 0 END)
           + (CASE WHEN ${table.bulkCancellationId} IS NOT NULL THEN 1 ELSE 0 END) = 1)`,
@@ -1218,6 +1225,7 @@ export const lessonEmailOutbox = pgTable(
     check(
       "lesson_email_outbox_bulk_household_pair",
       sql`(${table.payload} ? '_scrubbed_at')
+        OR (${table.event} = 'coach_account_deleted')
         OR ((${table.bulkCancellationId} IS NULL) = (${table.householdId} IS NULL))`,
     ),
     // Partial index on (next_attempt_at) for the drain's hot path. Includes

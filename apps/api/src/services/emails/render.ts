@@ -40,6 +40,10 @@ const SUBJECT_PREFIX: Record<LessonEmailEvent, string> = {
   // Bulk-cancel rows render through a dedicated sender path, not through
   // this file. Entry present so the Record stays exhaustive.
   coach_bulk_cancel: "Lessons canceled",
+  // Coach-side account-deleted email renders through its dedicated
+  // sender path with a flat subject (no "<prefix>: <when>" shape), so
+  // this entry is never used. Present so the Record stays exhaustive.
+  coach_account_deleted: "A family deleted their account",
 };
 
 type CoachBackupPayload = BookingRequestLessonPayload | BookingRequestBatchPayload;
@@ -111,5 +115,12 @@ function selectTemplate(
     case "coach_bulk_cancel":
       // Rendered by sendBulkCancelInner, not through this dispatcher.
       throw new Error("coach_bulk_cancel rendered through sendBulkCancelInner, not renderEmail");
+    case "coach_account_deleted":
+      // Rendered by sendCoachAccountDeletedInner, not through this
+      // dispatcher — its payload shape (AccountDeletedEmailPayload) does
+      // not match LessonEmailPayload.
+      throw new Error(
+        "coach_account_deleted rendered through sendCoachAccountDeletedInner, not renderEmail",
+      );
   }
 }

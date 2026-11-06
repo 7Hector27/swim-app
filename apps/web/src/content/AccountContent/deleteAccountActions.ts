@@ -21,8 +21,11 @@ function parseRetryAfter(header: string | null): number | null {
 // Server action handed to <form action={...}>. Returns a state object the
 // component renders inline. The one non-return branch is success (204):
 // the action signs the user out server-side and redirects to the public
-// post-deletion page, so the component never sees a "success" state —
-// Next.js replaces the page on redirect.
+// landing page with a one-time ?account-deleted=1 flag the modal reads,
+// so the component never sees a "success" state — Next.js replaces the
+// page on redirect. Redirecting back into /account would land on the
+// layout's requireAuth() gate (now the user is signed out) and show
+// the inactive screen instead of the confirmation.
 export async function confirmDeletionAction(
   _prev: DeleteAccountState,
   formData: FormData,
@@ -82,7 +85,7 @@ export async function confirmDeletionAction(
       // task anyway, so a failed signOut here can't leave a usable session
       // behind for long.
     }
-    redirect("/account/deleted");
+    redirect("/?account-deleted=1");
   }
 
   if (response.status === 403) {

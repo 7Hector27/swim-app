@@ -35,6 +35,7 @@ import {
   accountDeletionJobs,
   coachNotifications,
   households,
+  lessonEmailOutbox,
   lessons,
   profiles,
 } from "../../db/schema";
@@ -65,6 +66,16 @@ const DELETION_PHRASE = "delete";
 const testUsers: TestUser[] = [];
 
 afterEach(async () => {
+  // Sweep ADR 034's `coach_account_deleted` outbox rows. The retry
+  // tests don't inspect them, but each solo deletion enqueues one, and
+  // they accumulate across tests otherwise.
+  try {
+    await adminDb()
+      .delete(lessonEmailOutbox)
+      .where(eq(lessonEmailOutbox.event, "coach_account_deleted"));
+  } catch {
+    /* best-effort */
+  }
   for (const user of testUsers.splice(0)) {
     await user.cleanup().catch(() => { /* best-effort */ });
   }

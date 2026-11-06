@@ -19,6 +19,12 @@ export type {
   RunAccountDeletionResult,
 } from "./deletion";
 export { AlreadyDeletedError, OwnerMustTransferFirstError } from "./errors";
+export { buildAccountDeletedScheduleUrl } from "./scheduleUrl";
+export { enqueueCoachAccountDeletedEmail } from "../emails/coachAccountDeletedOutbox";
+export type {
+  AccountDeletedEmailLesson,
+  AccountDeletedEmailPayload,
+} from "../emails/accountDeletedTypes";
 export { runAccountDeletionCleanup } from "./cleanup";
 export type {
   AccountDeletionCleanupJob,

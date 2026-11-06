@@ -40,9 +40,12 @@ import {
 } from "../../db/schema";
 import { getActiveCoachProfile } from "../../lib/coachProfile";
 import { getEnv } from "../../lib/env";
+import type { AccountDeletedEmailLesson } from "../emails/accountDeletedTypes";
+import { enqueueCoachAccountDeletedEmail } from "../emails/coachAccountDeletedOutbox";
 import { formatLessonTimeDisplay } from "../emails/format";
 import { AlreadyDeletedError, OwnerMustTransferFirstError } from "./errors";
 import { ACCOUNT_DELETION_INITIAL_DELAY_SECONDS } from "./retry";
+import { buildAccountDeletedScheduleUrl } from "./scheduleUrl";
 
 type Tx = PostgresJsDatabase<typeof schema>;
 
@@ -114,6 +117,11 @@ export interface RunAccountDeletionResult {
   // and delete future ones; the retry drain re-reads it from the
   // deletion job row.
   anonymizedLessonIds: string[];
+  // Outbox row id for the coach-side account-deleted email (ADR 034).
+  // Non-null only on the solo path when an active coach profile exists.
+  // The route's post-commit code queues a microtask send; the drain is
+  // the fallback for a failed or missed immediate send.
+  coachAccountDeletedOutboxId: string | null;
 }
 
 export async function previewAccountDeletion(
@@ -248,7 +256,20 @@ export async function runAccountDeletion(
     // delete so the orphan is cleaned up.
     await scrubProfile(tx, profileId, now);
     const jobId = await enqueueDeletionJob(tx, profileId, authUserId, "solo", []);
-    return { scope: "solo", jobId, cancelledFutureLessonIds: [], anonymizedLessonIds: [] };
+    return {
+      scope: "solo",
+      jobId,
+      cancelledFutureLessonIds: [],
+      anonymizedLessonIds: [],
+      // Orphan-profile solo path. No household → nothing freed, but we
+      // still send the "a family deleted" email since this is the full-
+      // teardown branch. ADR 034's "always send on solo" applies.
+      coachAccountDeletedOutboxId: await enqueueCoachAccountDeletedEmail(tx, {
+        cancelledLessons: [],
+        scheduleUrl: buildAccountDeletedScheduleUrl(getEnv().siteUrl, null),
+        now,
+      }),
+    };
   }
 
   const householdId = membership.householdId;
@@ -300,21 +321,52 @@ export async function runAccountDeletion(
       );
     await scrubProfile(tx, profileId, now);
     const jobId = await enqueueDeletionJob(tx, profileId, authUserId, "leave", []);
-    return { scope: "leave", jobId, cancelledFutureLessonIds: [], anonymizedLessonIds: [] };
+    // Leave path: the household lives on, Jason's schedule is
+    // unchanged, nothing to email. ADR 034 explicitly keeps this
+    // channel solo-only.
+    return {
+      scope: "leave",
+      jobId,
+      cancelledFutureLessonIds: [],
+      anonymizedLessonIds: [],
+      coachAccountDeletedOutboxId: null,
+    };
   }
 
   // Solo path. Full teardown.
   const cancelledFutureLessonIds = await cancelFutureLessons(tx, householdId, profileId, now);
 
-  // Load cancelled-lesson start times for the summary coach notification
-  // before the rows get anonymized and lose their household linkage.
-  const futureLessonTimes = cancelledFutureLessonIds.length === 0
-    ? []
-    : (await tx
-        .select({ startsAt: lessons.startsAt })
-        .from(lessons)
-        .where(inArray(lessons.id, cancelledFutureLessonIds))
-        .orderBy(lessons.startsAt)).map((row) => row.startsAt);
+  // Load cancelled-lesson start times + location snapshot for the coach
+  // summary notification AND the coach-side email, before the rows get
+  // anonymized and lose their household / location linkage.
+  // Pool label mirrors anonymizeHouseholdLessons's rule: a location
+  // whose household_id is non-null is a family's home pool → "Home pool"
+  // (never the address — same kids'-data posture as the notification).
+  // A named pool (household_id IS NULL on the location) keeps its name.
+  const freedLessonSummaries: Array<{ startsAt: Date; poolLabel: string }> =
+    cancelledFutureLessonIds.length === 0
+      ? []
+      : (
+          await tx
+            .select({
+              startsAt: lessons.startsAt,
+              locationName: lessonLocations.name,
+              locationHouseholdId: lessonLocations.householdId,
+            })
+            .from(lessons)
+            .leftJoin(lessonLocations, eq(lessons.locationId, lessonLocations.id))
+            .where(inArray(lessons.id, cancelledFutureLessonIds))
+            .orderBy(lessons.startsAt)
+        ).map((row) => ({
+          startsAt: row.startsAt,
+          poolLabel:
+            row.locationName === null
+              ? "Home pool"
+              : row.locationHouseholdId === null
+                ? row.locationName
+                : "Home pool",
+        }));
+  const futureLessonTimes = freedLessonSummaries.map((row) => row.startsAt);
 
   const anonymizedLessonIds = await anonymizeHouseholdLessons(tx, householdId, now);
 
@@ -341,6 +393,32 @@ export async function runAccountDeletion(
     await insertAccountDeletedSummary(tx, futureLessonTimes, now, jobId);
   }
 
+  // Coach-side email (ADR 034). Always enqueued on the solo path,
+  // regardless of push settings / quiet hours — it's rare and it
+  // actually changes Jason's schedule. Body lists the freed slots with
+  // "Home pool" semantics (no addresses, no family or swimmer names),
+  // or "No upcoming lessons were affected" when the list is empty.
+  // Must run AFTER scrubEmailOutboxForHousehold so this new row's
+  // all-null scope columns don't overlap with any scrub where-clause.
+  const emailLessons: AccountDeletedEmailLesson[] = freedLessonSummaries.map(
+    (row) => ({
+      startsAtUtc: row.startsAt.toISOString(),
+      startsAtLocalDisplay: formatLessonTimeDisplay(row.startsAt),
+      poolLabel: row.poolLabel,
+    }),
+  );
+  const { siteUrl } = getEnv();
+  const firstFreedLessonUtc = freedLessonSummaries[0]?.startsAt ?? null;
+  const emailScheduleUrl = buildAccountDeletedScheduleUrl(
+    siteUrl,
+    firstFreedLessonUtc,
+  );
+  const coachAccountDeletedOutboxId = await enqueueCoachAccountDeletedEmail(tx, {
+    cancelledLessons: emailLessons,
+    scheduleUrl: emailScheduleUrl,
+    now,
+  });
+
   // Batches, home pools, invites, members, household — in dependency order.
   // The household's cascade would wipe household_invites and
   // household_members too, but we delete explicitly so the order is
@@ -353,7 +431,13 @@ export async function runAccountDeletion(
 
   await scrubProfile(tx, profileId, now);
 
-  return { scope: "solo", jobId, cancelledFutureLessonIds, anonymizedLessonIds };
+  return {
+    scope: "solo",
+    jobId,
+    cancelledFutureLessonIds,
+    anonymizedLessonIds,
+    coachAccountDeletedOutboxId,
+  };
 }
 
 // ── Pure step functions ──────────────────────────────────────────────────────
@@ -613,6 +697,15 @@ export async function insertAccountDeletedSummary(
   const cancelledLessonTimesLocalDisplay = cancelledLessonTimes.map((d) =>
     formatLessonTimeDisplay(d),
   );
+  // Caller only invokes this helper when at least one lesson was freed,
+  // but guard against an empty array anyway so the URL helper stays the
+  // single source of truth for the "no freed lessons → today view" rule.
+  // Click URL targets the coach schedule day view on the first freed
+  // lesson's LA date (or today-view fallback). Never a /coach/alerts or
+  // /coach/lessons/<id> link — the referenced family is gone, and the
+  // bulk-cancel day view is where Jason acts on the freed slots.
+  const firstFreedLessonUtc = cancelledLessonTimes[0] ?? null;
+  const clickUrl = buildAccountDeletedScheduleUrl(siteUrl, firstFreedLessonUtc);
   await tx.insert(coachNotifications).values({
     profileId: coach.id,
     category: "account_deleted",
@@ -629,7 +722,7 @@ export async function insertAccountDeletedSummary(
       cancelledLessonTimesLocalDisplay,
       deletedAtUtc: now.toISOString(),
     },
-    clickUrl: `${siteUrl}/coach/alerts`,
+    clickUrl,
     // Tag keyed on the deletion job id — stable, already-unique, and
     // not a time-derived value (the previous now.getTime() was inert
     // today but inconsistent with the "no time-derived identifiers in
