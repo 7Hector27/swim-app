@@ -8,12 +8,12 @@ One row per authenticated user. Created automatically by the `on_auth_user_creat
 
 | Column | Type | Nullable | Default | Notes |
 |---|---|---|---|---|
-| `id` | `uuid` | no | — | Primary key; mirrors `auth.users.id` (FK, on delete cascade) |
+| `id` | `uuid` | no | — | Primary key; mirrors `auth.users.id` (set by the `on_auth_user_created` trigger). Per ADR 034, the FK to `auth.users` was dropped so the scrubbed profile row can survive the hard-delete of its auth user during account deletion. |
 | `role` | `user_role` | no | `parent` | Enum: `coach`, `parent` |
-| `full_name` | `text` | yes | — | Populated from `raw_user_meta_data` at signup |
-| `phone` | `text` | yes | — | |
-| `age_attested_at` | `timestamptz` | yes | — | Set when a parent attests they are 18+ |
-| `disabled_at` | `timestamptz` | yes | — | Soft-disable; non-null means account is inactive |
+| `full_name` | `text` | yes | — | Populated from `raw_user_meta_data` at signup. Scrubbed to `NULL` on account deletion (ADR 034). |
+| `phone` | `text` | yes | — | Scrubbed to `NULL` on account deletion. |
+| `age_attested_at` | `timestamptz` | yes | — | Set when a parent attests they are 18+. Scrubbed to `NULL` on account deletion. |
+| `disabled_at` | `timestamptz` | yes | — | Non-null means the account is deleted (ADR 034). `requireUser` returns `401` on any request whose profile has this set, so stale access tokens stop working the instant the deletion transaction commits. |
 | `email` | `text` | yes | — | Mirror of `auth.users.email`, kept in sync by the `on_auth_user_created` and `on_auth_user_updated` triggers. Read-only from app code; the API uses this for parent-email recipient resolution. See ADR 028. |
 | `email_verified_at` | `timestamptz` | yes | — | Mirror of `auth.users.email_confirmed_at`. Non-null means the parent completed email verification. The booking-email sender only sends to profiles where this is non-null. |
 | `created_at` | `timestamptz` | no | `now()` | |
@@ -586,6 +586,9 @@ One row per lesson booking request.
 | `calendar_sequence` | `integer` | no | `0` | **Next** `.ics` `SEQUENCE:` value to issue for this lesson, per RFC 5545. Snapshot into `lesson_email_outbox.ics_sequence` and then incremented inside the same lesson transaction. First `REQUEST` ships `SEQUENCE:0`. See ADR 028. |
 | `calendar_invite_sent_at` | `timestamptz` | yes | — | Set to `now()` the first time an outbox row with `ics_method='REQUEST'` is written. Lets the cancel/decline/expire paths decide whether a `METHOD:CANCEL` `.ics` is required (prior invite went out) or no `.ics` (never confirmed). Never cleared. |
 | `batch_id` | `uuid` | yes | — | FK → `booking_batches.id` (`ON DELETE RESTRICT`). Non-null when this lesson was written through `POST /lessons/batch`; null for single-lesson parent bookings and all coach bookings. Immutable after insert in v1. Added in migration 0055. See ADR 030. |
+| `anonymized_at` | `timestamptz` | yes | — | Added in migration 0067 for the account-deletion flow (ADR 034). Phase 1 adds the column only; Phase 2 is the only writer. When a household is deleted, past-lesson rows have their identity columns nulled and this timestamp set so Jason's teaching history survives without any family identity on the row. |
+| `location_snapshot` | `text` | yes | — | Added in migration 0067 for the account-deletion flow (ADR 034). Written at anonymization time with a coarse location label ("Home pool" or the named-pool name) so Jason can still read the row after `location_id` is nulled. |
+| `swimmer_count` | `integer` | yes | — | Added in migration 0067 for the account-deletion flow (ADR 034). Written at anonymization time so Jason can tell a 1-on-1 from a sibling lesson after `lesson_swimmers` rows cascade away with the swimmers. |
 | `created_at` | `timestamptz` | no | `now()` | |
 | `updated_at` | `timestamptz` | no | `now()` | Auto-updated |
 
@@ -619,6 +622,34 @@ Constraints: composite PK `(lesson_id, swimmer_id)`.
 RLS is enabled. Policies TBD.
 
 **Notes:** Swimmers are restricted (not cascaded) on delete so that archiving a swimmer does not silently erase lesson history. A swimmer with past lessons cannot be hard-deleted.
+
+---
+
+### `account_deletion_jobs`
+
+Retry state for the post-commit external cleanup after an account is deleted. See ADR 034 and `docs/plans/account-deletion.md`. One row per deletion invocation. Added in migration 0067 (Phase 1 schema prep); the deletion engine writes rows starting in Phase 2, the Phase 3 retry drain reads them, and the `anonymized_lesson_ids` column added in migration 0070 lets the drain walk the right set of lessons on replay.
+
+| Column | Type | Nullable | Default | Notes |
+|---|---|---|---|---|
+| `id` | `uuid` | no | `gen_random_uuid()` | Primary key |
+| `profile_id` | `uuid` | yes | — | The scrubbed profile this job cleans up after. No FK — kept for log correlation only. |
+| `auth_user_id` | `uuid` | no | — | The Supabase Auth user to hard-delete. No FK — the row goes away on success. |
+| `scope` | `text` | no | — | CHECK IN (`'solo'`, `'leave'`). Matches the two cases in ADR 034. |
+| `status` | `text` | no | `'pending'` | CHECK IN (`'pending'`, `'running'`, `'completed'`, `'failed'`). |
+| `attempts` | `integer` | no | `0` | Incremented on every **real-error** retry tick via `sql\`attempts + 1\`` so overlapping ticks can't overwrite each other's counter. A "paused" tick (calendar step waiting on Jason's disconnected Google integration) deliberately does NOT increment; see the `next_attempt_at` note below. Terminal `'failed'` when this reaches `ACCOUNT_DELETION_MAX_ATTEMPTS` (11 — one more than the email outbox budget because the deletion drain depends on two services whose outages can last longer than Resend's). |
+| `anonymized_lesson_ids` | `uuid[]` | no | `'{}'::uuid[]` | Added in migration 0070 (Phase 3). The set of lessons the deletion anonymized. Captured at deletion time because `anonymizeHouseholdLessons` nulls every tie back to the household — the retry drain has no other way to re-derive which Google events to patch (past) vs delete (future) on a replay. Empty for `scope='leave'` and for solo deletions whose household owned no lessons. |
+| `next_attempt_at` | `timestamptz` | yes | — | Added in migration 0071 (Phase 3 follow-up). Earliest time the retry drain is allowed to re-pick this row. Null means "immediately eligible" (fresh row before the route's post-commit fan-out has written, or a pre-migration row). The drain writes this on every pass: an exponential backoff on real-error ticks (5 min, 10, 20, 40, 80, 160, 320, then capped at 6 h — sum across 10 inter-attempt gaps is ≈28.6 h, well over a day before the attempts budget exhausts), a short 5-minute recheck window on paused ticks (so a Jason-reconnected window is picked up on the very next tick without burning the budget), and `null` on `'completed'` / `'failed'` terminal writes. |
+| `last_error` | `text` | yes | — | Short structural summary of the most recent non-success. Three shapes: `"auth_delete_failed:AuthApiError:user_not_found:404"` for real admin-API failures, `"calendar_sync_failed:…"` for thrown calendar errors, and the literal `"paused:integration_needs_reconnect"` when the calendar step is blocked on a disconnected Google integration and no other error occurred. No PII — never carries the raw Supabase `.message` or any Google error body, since both can echo the user's email or swimmer first names. |
+| `completed_at` | `timestamptz` | yes | — | Set when status moves to `'completed'`. |
+| `created_at` | `timestamptz` | no | `now()` | |
+| `updated_at` | `timestamptz` | no | `now()` | Auto-updated; also the retry drain's ordering key. |
+
+Indexes:
+- `account_deletion_jobs_pending_idx` — partial index on `(updated_at)` where `status = 'pending'`, for the retry drain's scan.
+
+RLS is enabled. Policies TBD (open follow-up per `docs/plans/account-deletion.md`).
+
+**Notes:** The DB-side deletion runs inside the request transaction; this table only tracks the Supabase Auth hard-delete and the per-lesson Google Calendar sync, which run as post-commit tasks and may fail transiently. Terminal `'failed'` logs at `error` level — no coach notification — because Jason can't fix a Supabase or Google outage from the alerts page.
 
 ---
 

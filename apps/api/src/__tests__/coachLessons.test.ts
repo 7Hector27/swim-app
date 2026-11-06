@@ -162,6 +162,11 @@ const pendingLessonRow = {
   calendarSyncStatus: "not_synced",
   calendarSyncError: null as string | null,
   calendarSyncAttempts: 0,
+  // ADR 034: the new nullable columns on lessons live on the mock too so
+  // read paths can discriminate live vs anonymized rows.
+  anonymizedAt: null as Date | null,
+  locationSnapshot: null as string | null,
+  swimmerCount: null as number | null,
   createdAt: now,
   updatedAt: now,
 };
@@ -574,11 +579,13 @@ describe("GET /coach/schedule", () => {
       createdAt: now,
     };
 
-    // 1. lessons + innerJoin(lessonLocations) .where(...).orderBy()
+    // 1. lessons + leftJoin(lessonLocations) .where(...).orderBy() — ADR 034
+    //    switched to LEFT JOIN so anonymized rows (locationId NULL) come
+    //    through alongside live rows.
     const lessonsOrderBy = vi.fn().mockResolvedValue([lessonA, lessonB]);
     const lessonsWhere = vi.fn().mockReturnValue({ orderBy: lessonsOrderBy });
-    const lessonsInnerJoin = vi.fn().mockReturnValue({ where: lessonsWhere });
-    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ innerJoin: lessonsInnerJoin }) });
+    const lessonsLeftJoin = vi.fn().mockReturnValue({ where: lessonsWhere });
+    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ leftJoin: lessonsLeftJoin }) });
 
     // 2. lessonSwimmers + innerJoin(swimmers).leftJoin(swimmerClubs).leftJoin(clubs).where()
     const swimmerWhere = vi.fn().mockResolvedValue([
@@ -703,10 +710,11 @@ describe("GET /coach/schedule", () => {
       createdAt: now,
     };
 
+    // ADR 034: /coach/schedule uses LEFT JOIN on lessonLocations now.
     const lessonsOrderBy = vi.fn().mockResolvedValue([lessonA]);
     const lessonsWhere = vi.fn().mockReturnValue({ orderBy: lessonsOrderBy });
-    const lessonsInnerJoin = vi.fn().mockReturnValue({ where: lessonsWhere });
-    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ innerJoin: lessonsInnerJoin }) });
+    const lessonsLeftJoin = vi.fn().mockReturnValue({ where: lessonsWhere });
+    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ leftJoin: lessonsLeftJoin }) });
 
     const swimmerWhere = vi.fn().mockResolvedValue([
       { lessonId: LESSON_ID, swimmerId: SWIMMER_ID, firstName: "Alice", lastName: "Smith", clubName: null, otherClubName: null },
@@ -844,6 +852,10 @@ describe("GET /coach/lessons/:id", () => {
     movedAt: null as Date | null,
     previousStartsAt: null as Date | null,
     createdAt: now,
+    // ADR 034 anonymization markers — null on live rows.
+    anonymizedAt: null as Date | null,
+    locationSnapshot: null as string | null,
+    swimmerCount: null as number | null,
   };
 
   function mockGetLessonDetail(
@@ -851,11 +863,12 @@ describe("GET /coach/lessons/:id", () => {
     swimmerRows: unknown[] = [],
     memberRows: { fullName: string | null }[] = [{ fullName: "Smith Family" }],
   ) {
-    // 1. lesson + location inner join
+    // 1. lesson + LEFT JOIN on location — ADR 034 switched to LEFT JOIN so
+    //    anonymized rows (locationId NULL) come through alongside live rows.
     const lessonLimit = vi.fn().mockResolvedValue(row ? [row] : []);
     const lessonWhere = vi.fn().mockReturnValue({ limit: lessonLimit });
-    const lessonInnerJoin = vi.fn().mockReturnValue({ where: lessonWhere });
-    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ innerJoin: lessonInnerJoin }) });
+    const lessonLeftJoin = vi.fn().mockReturnValue({ where: lessonWhere });
+    mockDbSelect.mockReturnValueOnce({ from: vi.fn().mockReturnValue({ leftJoin: lessonLeftJoin }) });
     if (!row) return;
 
     // 2. swimmers: innerJoin + leftJoin + leftJoin + where
@@ -924,4 +937,12 @@ describe("GET /coach/lessons/:id", () => {
     expect(res.body.isHomePool).toBe(true);
     expect(res.body.locationAddress).toBe("45 Ovation");
   });
+
+  // The scrubbed-member-doesn't-leak-null case is covered end-to-end by
+  // the integration test in coachLessons.integration.test.ts: a
+  // household where one member ran leave-deletion, then
+  // GET /coach/lessons/:id resolves the remaining owner's name. Exercising
+  // it against the real DB gives a stronger guarantee than a drizzle-SQL
+  // inspection could — if drizzle ever rearranges the where tree, the
+  // unit-level check would break for the wrong reason.
 });

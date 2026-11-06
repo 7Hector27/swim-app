@@ -61,7 +61,7 @@ From **Project Settings → Database → Connection string → Session pooler** 
 - Copy as `DATABASE_URL` (used by Drizzle migrations and the API at runtime).
 - Session pooler is required because the API uses `postgres-js` with persistent connections; direct DB can't survive Railway cold starts, and transaction pooler breaks prepared statements that Drizzle uses.
 
-The service role key is **not** used by the app. Don't copy it to Railway or Vercel. The migration workflow does need it-free session-pooler `DATABASE_URL` only.
+The service role key **is** required on Railway (the API service) and **only** there. ADR 034's account-deletion flow calls `supabase.auth.admin.deleteUser(…)` in a post-commit task; the service-role key is the credential for that call. Copy **Project API Keys → service_role** to the Railway API service as `SUPABASE_SERVICE_ROLE_KEY` (see §2b). **Never** copy it to Vercel, and **never** expose it in a `NEXT_PUBLIC_*` variable — the web app has no need for service-role privilege and `NEXT_PUBLIC_*` would ship the key to every browser. The env validator (`apps/api/src/lib/env.ts`) now refuses to boot the API without it when `APP_ENV=dev` or `APP_ENV=prod`.
 
 ### 1c. Settings to change in Studio
 
@@ -153,6 +153,7 @@ Set under **Service → Variables**. Dev values shown.
 | `DATABASE_URL`             | Postgres connection string                      | `apps/api/src/db/client.ts:5`, `db/migrate.ts:7`  | Supabase session pooler string from §1b                     |
 | `SUPABASE_URL`             | Supabase project API URL                        | `apps/api/src/lib/supabase.ts:3`                  | from §1b                                                    |
 | `SUPABASE_PUBLISHABLE_KEY` | Supabase anon key                               | `apps/api/src/lib/supabase.ts:4`                  | from §1b                                                    |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service-role key (ADR 034 account deletion) | `apps/api/src/lib/supabaseAdmin.ts:17`     | **Project API Keys → service_role** from §1b. Railway only; never on Vercel, never `NEXT_PUBLIC_*` |
 | `SITE_URL`                 | Public web URL — builds invite + email redirect | `apps/api/src/app.ts:107`, `routes/households.ts:143` | `https://dev.axiomaquatics.io`                          |
 | `CORS_ORIGINS`             | Allow-list for CORS (comma-separated)           | `apps/api/src/app.ts:49`                          | `https://dev.axiomaquatics.io`                              |
 | `TRUST_PROXY`              | Reverse-proxy hops to trust for `req.ip`        | `apps/api/src/app.ts:44`                          | `1` (Railway = 1 proxy hop; required for rate limiter)      |
@@ -168,11 +169,13 @@ Set under **Service → Variables**. Dev values shown.
 
 Railway has native cron. Under **Service → Settings → Cron**:
 
-- Schedule: `*/5 * * * *` (every 5 minutes — expires pending lessons and auto-completes approved lessons past their end time)
+- Schedule: `*/5 * * * *` (every 5 minutes)
 - Command: `curl -fsS -X POST -H "cron-secret: $CRON_SECRET" "$INTERNAL_URL/internal/cron/tick"`
 - Set service env vars for the cron: `INTERNAL_URL=http://localhost:$PORT` (same service, so the cron hits the API over the Railway private network with no auth round-trip over the public internet).
 
-The route is defined at `apps/api/src/routes/internal.ts:37-81` and uses `timingSafeEqual` on SHA-256 digests of the header vs env. Missing or wrong secret → 401.
+The single `/internal/cron/tick` handler runs the full tick under a shared `cron_leases` lease: expires pending lessons past their deadline, auto-completes approved lessons past their end time, drains the parent-email outbox + scrub, drains the coach push outbox + scrub + release-held + daily summary, kicks off the Google Calendar light/full reconcile pass, and runs the **account-deletion retry drain** (ADR 034 Phase 3 — picks `account_deletion_jobs` with `status='pending'` and `attempts < 10` under `FOR UPDATE SKIP LOCKED`, replays `syncAnonymizedLessonToCalendar` + `auth.admin.deleteUser`, increments attempts, flips terminal `'failed'` after the budget is exhausted). All of these share the one lease, so overlapping cron fires return `{ skipped: true }` without touching the DB. **Alerting todo for prod:** wire log-based alerting on the string `event="account_deletion_cleanup_failed"` so a terminal retry failure reaches an operator (low-urgency — DB already committed).
+
+The route is defined at `apps/api/src/routes/internal.ts` and uses `timingSafeEqual` on SHA-256 digests of the header vs env. Missing or wrong secret → 401.
 
 ---
 
@@ -202,7 +205,7 @@ Vercel supports per-environment values (**Production**, **Preview**, **Developme
 | `NEXT_PUBLIC_SUPABASE_URL`                 | Supabase project API URL                     | `apps/web/src/lib/supabase/server.ts:7`, `updateSession.ts:8`                   | from §1b                                           |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`     | Supabase anon key                            | `apps/web/src/lib/supabase/server.ts:8`, `updateSession.ts:9`                   | from §1b                                           |
 
-Set the same four vars under **Production** scope using the prod values once prod exists (§8). The dev project does **not** need a service_role key.
+Set the same four vars under **Production** scope using the prod values once prod exists (§8). Vercel **never** receives `SUPABASE_SERVICE_ROLE_KEY` — that credential lives on Railway only (the API's account-deletion flow is its only consumer; see §1b). Don't put it in any `NEXT_PUBLIC_*` variable either — those are inlined into the browser bundle.
 
 > `NEXT_PUBLIC_API_URL` has no default anywhere in the code. If missing, every `fetch(\`${process.env.NEXT_PUBLIC_API_URL}/...\`)` becomes `fetch("undefined/...")` and fails immediately. Make sure both Production and Preview scopes have it set.
 
@@ -404,7 +407,7 @@ Prod goes through all the same steps as dev, with these changes:
 
 **Separate Supabase project**: `swim-app-prod`, same region (us-west-1), its own password, its own anon key, its own session-pooler `DATABASE_URL`. No data copied from dev.
 
-**Separate Railway service**: `api-prod`, custom domain `api.axiomaquatics.io`. Env vars identical to dev's but with prod values: `SITE_URL=https://axiomaquatics.io`, `CORS_ORIGINS=https://axiomaquatics.io,https://www.axiomaquatics.io`, prod Supabase keys, a fresh `CRON_SECRET`.
+**Separate Railway service**: `api-prod`, custom domain `api.axiomaquatics.io`. Env vars identical to dev's but with prod values: `SITE_URL=https://axiomaquatics.io`, `CORS_ORIGINS=https://axiomaquatics.io,https://www.axiomaquatics.io`, prod Supabase keys (anon + service_role), a fresh `CRON_SECRET`.
 
 **Vercel production branch**: `main`. Set the Production-scope env vars with prod values. Preview deployments on PRs still off (or paid plan if we want them on).
 
@@ -434,6 +437,7 @@ Railway is already pay-as-you-go.
 - [ ] Resend domain verified (DKIM green, SPF green)
 - [ ] DMARC in `p=quarantine` or `p=reject` with a monitored `rua=` mailbox
 - [ ] Prod `CRON_SECRET` is a fresh value (not reused from dev)
+- [ ] Prod `SUPABASE_SERVICE_ROLE_KEY` is set on the Railway API service only (never on Vercel, never in `NEXT_PUBLIC_*`); API refuses to boot without it under `APP_ENV=prod`
 - [ ] Prod Railway cron is firing — check logs for `cron/tick` entries every 5 min
 - [ ] Smoke test ([§6](#6-smoke-test-checklist)) passes on prod
 - [ ] Someone besides the owner has recovery access to Supabase, Vercel, Railway, Resend, and the DNS zone

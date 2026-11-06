@@ -1,0 +1,1 @@
+ALTER TABLE "account_deletion_jobs" ADD COLUMN "next_attempt_at" timestamp with time zone;

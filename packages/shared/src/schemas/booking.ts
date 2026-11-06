@@ -190,8 +190,13 @@ export type LessonSwimmer = z.infer<typeof LessonSwimmerSchema>;
 
 export const LessonResponseSchema = z.object({
   id: z.string().uuid(),
-  householdId: z.string().uuid(),
-  locationId: z.string().uuid(),
+  // Nullable on anonymized rows per ADR 034: when the household that owned
+  // this lesson was deleted, the identity columns are nulled but the row
+  // survives on the coach side. Parent-facing routes filter by household_id,
+  // so parent responses never carry a null here at runtime — the null is a
+  // coach-side surface.
+  householdId: z.string().uuid().nullable(),
+  locationId: z.string().uuid().nullable(),
   startsAt: z.string().datetime({ offset: true }),
   durationMinutes: LessonDurationMinutesSchema,
   type: LessonTypeSchema,
@@ -210,6 +215,13 @@ export const LessonResponseSchema = z.object({
   // the coach side consumes them from the /coach/lessons endpoint.
   batchId: z.string().uuid().nullable().optional(),
   batchMode: z.enum(["manual", "weekly"]).nullable().optional(),
+  // Anonymization markers (ADR 034). Non-null on rows whose household was
+  // deleted; null on live rows. The coach UI reads these to show
+  // "Deleted family" and the location snapshot in place of the real
+  // household/location.
+  anonymizedAt: z.string().datetime({ offset: true }).nullable().optional(),
+  locationSnapshot: z.string().nullable().optional(),
+  swimmerCount: z.number().int().nullable().optional(),
 });
 export type LessonResponse = z.infer<typeof LessonResponseSchema>;
 
@@ -274,14 +286,20 @@ export const UpcomingLessonsQuerySchema = z.object({
 });
 export type UpcomingLessonsQuery = z.infer<typeof UpcomingLessonsQuerySchema>;
 
-export const UpcomingLessonSchema = LessonResponseSchema.omit({ householdId: true }).extend({
-  locationName: z.string(),
-  // Set when the lesson was booked as part of a multi-lesson or weekly batch.
-  // Dashboard uses `batchMode` to render a small "Weekly" / "Multi-booking"
-  // label next to the lesson.
-  batchId: z.string().uuid().nullable(),
-  batchMode: z.enum(["manual", "weekly"]).nullable(),
-});
+export const UpcomingLessonSchema = LessonResponseSchema
+  .omit({ householdId: true, locationId: true, anonymizedAt: true, locationSnapshot: true, swimmerCount: true })
+  .extend({
+    // Non-null on the parent side — parent routes filter by household_id,
+    // so an anonymized row (whose household_id is null) never appears here.
+    // ADR 034.
+    locationId: z.string().uuid(),
+    locationName: z.string(),
+    // Set when the lesson was booked as part of a multi-lesson or weekly batch.
+    // Dashboard uses `batchMode` to render a small "Weekly" / "Multi-booking"
+    // label next to the lesson.
+    batchId: z.string().uuid().nullable(),
+    batchMode: z.enum(["manual", "weekly"]).nullable(),
+  });
 export type UpcomingLesson = z.infer<typeof UpcomingLessonSchema>;
 
 export const UpcomingLessonsResponseSchema = z.object({
@@ -589,7 +607,14 @@ export const CoachScheduleLessonItemSchema = z.object({
   type: z.literal("lesson"),
   lesson: CoachLessonResponseSchema,
   locationName: z.string(),
-  householdId: z.string().uuid(),
+  // Nullable on anonymized rows per ADR 034. The lesson itself carries
+  // `anonymizedAt` so the client can distinguish; this field stays here
+  // for existing consumers that need the household context.
+  householdId: z.string().uuid().nullable(),
+  // "Deleted family" when the row is anonymized; otherwise the actual
+  // household name. Added so the coach schedule can label anonymized
+  // history without a second lookup. ADR 034.
+  householdName: z.string().optional(),
 });
 export type CoachScheduleLessonItem = z.infer<typeof CoachScheduleLessonItemSchema>;
 
@@ -602,14 +627,15 @@ export type CoachScheduleItem = z.infer<typeof CoachScheduleItemSchema>;
 
 export const CoachLessonDetailSchema = z.object({
   id: z.string().uuid(),
-  householdId: z.string().uuid(),
+  // Identity fields are nullable on anonymized rows per ADR 034.
+  householdId: z.string().uuid().nullable(),
   householdName: z.string().nullable(),
-  locationId: z.string().uuid(),
+  locationId: z.string().uuid().nullable(),
   locationName: z.string(),
-  locationAddress: z.string(),
-  locationCity: z.string(),
-  locationState: z.string(),
-  locationZip: z.string(),
+  locationAddress: z.string().nullable(),
+  locationCity: z.string().nullable(),
+  locationState: z.string().nullable(),
+  locationZip: z.string().nullable(),
   isHomePool: z.boolean(),
   startsAt: z.string().datetime({ offset: true }),
   durationMinutes: LessonDurationMinutesSchema,
@@ -623,6 +649,13 @@ export const CoachLessonDetailSchema = z.object({
   movedAt: z.string().datetime({ offset: true }).nullable(),
   previousStartsAt: z.string().datetime({ offset: true }).nullable(),
   createdAt: z.string().datetime({ offset: true }),
+  // Anonymization markers (ADR 034). Non-null on rows whose household was
+  // deleted. When set, householdName is "Deleted family", locationName is
+  // the coarse snapshot ("Home pool" or named-pool name), swimmers is [],
+  // and the address columns are null.
+  anonymizedAt: z.string().datetime({ offset: true }).nullable().optional(),
+  locationSnapshot: z.string().nullable().optional(),
+  swimmerCount: z.number().int().nullable().optional(),
 });
 export type CoachLessonDetail = z.infer<typeof CoachLessonDetailSchema>;
 

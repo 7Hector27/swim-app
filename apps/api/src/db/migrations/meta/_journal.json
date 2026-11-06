@@ -470,6 +470,69 @@
       "when": 1793762800111,
       "tag": "0066_fancy_nuke",
       "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1793834089285,
+      "tag": "0067_account_deletion_prep",
+      "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1793842004302,
+      "tag": "0068_lessons_nullable_identity_cols",
+      "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1793848640012,
+      "tag": "0069_coach_notifications_account_deleted",
+      "breakpoints": true
+    },
+    {
+      "idx": 70,
+      "version": "7",
+      "when": 1793901120819,
+      "tag": "0070_account_deletion_jobs_lesson_ids",
+      "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1793908479750,
+      "tag": "0071_account_deletion_jobs_next_attempt_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1793915325958,
+      "tag": "0072_account_deletion_jobs_status_drop_running",
+      "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1793922817840,
+      "tag": "0073_lesson_email_outbox_scrubbed_relaxed_checks",
+      "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1793982573941,
+      "tag": "0074_lesson_email_outbox_coach_account_deleted",
+      "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1793985814782,
+      "tag": "0075_cultured_winter_soldier",
+      "breakpoints": true
     }
   ]
 }

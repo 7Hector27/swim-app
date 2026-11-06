@@ -291,6 +291,52 @@ export async function deleteEventIdempotent(
   }
 }
 
+export interface CalendarEventPatchBody {
+  summary: string;
+  description: string;
+  location: string;
+}
+
+/**
+ * Patch an event's title, description, and location by id. Used by the
+ * account-deletion flow to anonymize past events (ADR 034 Phase 3) —
+ * title becomes "Lesson (deleted family)", location gets the coarse
+ * snapshot, description loses swimmer/parent/address text. Start / end
+ * / timeZone are preserved so the historical slot on the coach's
+ * calendar stays accurate.
+ *
+ * Idempotent: 404 (event never existed on this calendar) and 410
+ * (already gone) are treated as success. A second patch pass against
+ * an already-anonymized event is a no-op. Any other error propagates.
+ */
+export async function patchEventIdempotent(
+  env: GoogleOAuthEnv,
+  accessToken: string,
+  calendarId: string,
+  eventId: string,
+  body: CalendarEventPatchBody,
+): Promise<void> {
+  const api = buildCalendarApi(env, accessToken);
+  try {
+    await withTimeout(
+      api.events.patch({
+        calendarId,
+        eventId,
+        requestBody: {
+          summary: body.summary,
+          description: body.description,
+          location: body.location,
+        },
+      }),
+      "google.events.patch",
+    );
+  } catch (err: unknown) {
+    const status = (err as { code?: number; status?: number }).code ?? (err as { status?: number }).status;
+    if (status === 404 || status === 410) return;
+    throw err;
+  }
+}
+
 function buildCalendarApi(env: GoogleOAuthEnv, accessToken: string) {
   const client = buildOAuth2Client(env);
   client.setCredentials({ access_token: accessToken });

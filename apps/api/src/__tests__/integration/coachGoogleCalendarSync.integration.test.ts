@@ -27,6 +27,7 @@ vi.mock("../../services/googleCalendarClient", async () => {
     refreshAccessToken: vi.fn(),
     upsertEvent: vi.fn(),
     deleteEventIdempotent: vi.fn(),
+    patchEventIdempotent: vi.fn(),
   };
 });
 
@@ -246,7 +247,7 @@ async function clearIntegrationAndLessons(): Promise<void> {
 }
 
 async function seedLesson(opts: {
-  status: "pending" | "approved" | "canceled" | "declined";
+  status: "pending" | "approved" | "canceled" | "declined" | "completed";
   startsAt: Date;
   swimmerIndex?: number[];
   googleCalendarEventId?: string | null;
@@ -309,6 +310,7 @@ beforeEach(() => {
   vi.mocked(googleClient.refreshAccessToken).mockResolvedValue({ accessToken: "access-token" });
   vi.mocked(googleClient.upsertEvent).mockResolvedValue(undefined);
   vi.mocked(googleClient.deleteEventIdempotent).mockResolvedValue(undefined);
+  vi.mocked(googleClient.patchEventIdempotent).mockResolvedValue(undefined);
 });
 
 afterEach(async () => {
@@ -531,6 +533,76 @@ describe("runFullSyncPass", () => {
     expect(synced).toContain(stripDashes(futureApprovedB));
     expect(synced).not.toContain(stripDashes(futurePending));
     expect(synced).not.toContain(stripDashes(beforeWindowApproved));
+  });
+
+  it("leaves anonymized rows alone — no upsert, no delete, no patch (ADR 034 past-event invariant)", async () => {
+    // Seed an anonymized lesson at a startsAt inside the full-pass window
+    // (today or later) with every attribute that would normally cause
+    // the cron to touch it: status='completed', calendarSyncStatus=
+    // 'sync_failed', AND a non-null googleCalendarEventId (so the full
+    // pass's `isNotNull(googleCalendarEventId)` branch would ALSO select
+    // it). The deletion engine nulls this column during anonymization,
+    // but a mid-migration state or a future refactor could leave it set
+    // — the filter must defend against both. The expected outcome is
+    // ZERO Google client calls: the reconcile cron treats anonymized
+    // rows as terminal and leaves their past events exactly where the
+    // deletion flow's post-commit patch left them.
+    await seedCoachIntegration();
+    const earlierToday = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    const anonymizedLessonId = await seedLesson({
+      status: "completed",
+      startsAt: earlierToday,
+      googleCalendarEventId: "some-event-id-left-behind",
+      calendarSyncStatus: "sync_failed",
+    });
+    await adminDb()
+      .update(lessons)
+      .set({
+        anonymizedAt: new Date(earlierToday.getTime() + 60_000),
+        locationSnapshot: "Home pool",
+        swimmerCount: 1,
+      })
+      .where(eq(lessons.id, anonymizedLessonId));
+
+    // Live control row so we're not asserting against an empty pass.
+    const liveApproved = await seedLesson({ status: "approved", startsAt: future(24) });
+
+    await runFullSyncPass(coach.userId);
+
+    const upsertEventIds = vi
+      .mocked(googleClient.upsertEvent)
+      .mock.calls.map((call) => call[3]);
+    const deleteEventIds = vi
+      .mocked(googleClient.deleteEventIdempotent)
+      .mock.calls.map((call) => call[3]);
+    const patchEventIds = vi
+      .mocked(googleClient.patchEventIdempotent)
+      .mock.calls.map((call) => call[3]);
+    const anonymizedEventId = stripDashes(anonymizedLessonId);
+
+    // The anonymized row's deterministic event id must never appear in
+    // any of the three call records.
+    expect(upsertEventIds).not.toContain(anonymizedEventId);
+    expect(deleteEventIds).not.toContain(anonymizedEventId);
+    expect(patchEventIds).not.toContain(anonymizedEventId);
+
+    // Live control row did get synced — proves the pass ran.
+    expect(upsertEventIds).toContain(stripDashes(liveApproved));
+
+    // The anonymized row's DB state is unchanged (no sync_failed→synced
+    // flip, no event-id null write).
+    const [after] = await adminDb()
+      .select({
+        anonymizedAt: lessons.anonymizedAt,
+        calendarSyncStatus: lessons.calendarSyncStatus,
+        googleCalendarEventId: lessons.googleCalendarEventId,
+      })
+      .from(lessons)
+      .where(eq(lessons.id, anonymizedLessonId))
+      .limit(1);
+    expect(after?.anonymizedAt).not.toBeNull();
+    expect(after?.calendarSyncStatus).toBe("sync_failed");
+    expect(after?.googleCalendarEventId).toBe("some-event-id-left-behind");
   });
 });
 

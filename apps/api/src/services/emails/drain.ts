@@ -115,13 +115,13 @@ export async function drainLessonEmailOutbox(): Promise<DrainResult> {
 
 export async function scrubLessonEmailPayloads(): Promise<ScrubResult> {
   const cutoff = new Date(Date.now() - SCRUB_AGE_DAYS * 24 * 60 * 60 * 1000);
-  // TODO(account-deletion): ADR 028 requires that account deletion also
-  // clears outbox rows for the household being deleted. When the deletion
-  // flow lands, add a `DELETE FROM lesson_email_outbox WHERE lesson_id IN
-  // (SELECT id FROM lessons WHERE household_id = :h)` call to the
-  // deletion transaction and wire a reminder into docs/accounts.md. This
-  // scrub only handles time-based retention and does not know about
-  // account deletion.
+  // ADR 034 handles the account-deletion side of this: the deletion
+  // transaction scrubs outbox rows for the deleted household in one
+  // shot (see services/accountDeletion/deletion.ts:scrubEmailOutboxFor
+  // Household) — non-terminal rows deleted, terminal rows payload-
+  // nulled to the same shape this age-based pass writes, so a later
+  // tick is a no-op. The function below handles time-based retention
+  // only.
   //
   // Target: terminal rows older than 30 days whose payload still carries
   // render inputs. The jsonb `? 'swimmerFirstNames'` operator keeps the

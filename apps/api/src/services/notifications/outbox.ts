@@ -8,6 +8,7 @@
 import { and, eq, inArray } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 
+import { requireLiveLocationId } from "../../db/liveLesson";
 import * as schema from "../../db/schema";
 import {
   bookingBatches,
@@ -356,8 +357,10 @@ async function loadLessonBase(tx: Tx, lessonId: string): Promise<LessonBase> {
     .from(lessons)
     .where(eq(lessons.id, lessonId))
     .limit(1);
-  const lesson = lessonRows[0];
-  if (!lesson) throw new Error(`enqueueCoachNotification: lesson ${lessonId} not found`);
+  const rawLesson = lessonRows[0];
+  if (!rawLesson) throw new Error(`enqueueCoachNotification: lesson ${lessonId} not found`);
+  // ADR 034: coach notifications are only enqueued for live lessons; narrow.
+  const lesson = requireLiveLocationId(rawLesson);
 
   const locationRows = await tx
     .select({ name: lessonLocations.name })

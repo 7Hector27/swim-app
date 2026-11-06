@@ -187,6 +187,57 @@ describe("CoachWeekLessonCard — Evaluate control", () => {
   });
 });
 
+describe("CoachWeekLessonCard — anonymized (deleted-family) row", () => {
+  // Household deletion anonymizes the lesson (swimmers=[], anonymizedAt
+  // set, status flipped to canceled before anonymization). The coach
+  // week view must render these as "Deleted family" with the cancelled
+  // chip — not the generic "No swimmers" label with normal styling.
+  const ANONYMIZED_AT = "2026-05-28T00:00:00.000Z";
+
+  it("renders 'Deleted family' in place of the swimmer list", () => {
+    render(
+      <CoachWeekLessonCard
+        item={makeItem({
+          startsAt: FUTURE_STARTS_AT,
+          status: "canceled",
+          swimmers: [],
+          anonymizedAt: ANONYMIZED_AT,
+        })}
+      />,
+    );
+    expect(screen.getByText("Deleted family")).toBeInTheDocument();
+    expect(screen.queryByText("No swimmers")).toBeNull();
+  });
+
+  it("shows the Canceled chip for an anonymized row", () => {
+    render(
+      <CoachWeekLessonCard
+        item={makeItem({
+          startsAt: FUTURE_STARTS_AT,
+          status: "canceled",
+          swimmers: [],
+          anonymizedAt: ANONYMIZED_AT,
+        })}
+      />,
+    );
+    expect(screen.getByText("Canceled")).toBeInTheDocument();
+  });
+
+  it("hides Evaluate for an anonymized row even if it has started", () => {
+    render(
+      <CoachWeekLessonCard
+        item={makeItem({
+          status: "canceled",
+          swimmers: [],
+          anonymizedAt: ANONYMIZED_AT,
+        })}
+      />,
+    );
+    expect(screen.queryByRole("link", { name: /^Evaluate / })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Evaluate$/ })).toBeNull();
+  });
+});
+
 describe("CoachWeekLessonCard — Evaluate does not trigger the card link", () => {
   it("renders the Evaluate link as a sibling of the open-lesson overlay, not a descendant", () => {
     render(<CoachWeekLessonCard item={makeItem()} />);

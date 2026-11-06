@@ -1,0 +1,2 @@
+ALTER TABLE "account_deletion_jobs" DROP CONSTRAINT "account_deletion_jobs_status_valid";--> statement-breakpoint
+ALTER TABLE "account_deletion_jobs" ADD CONSTRAINT "account_deletion_jobs_status_valid" CHECK ("account_deletion_jobs"."status" IN ('pending', 'completed', 'failed'));

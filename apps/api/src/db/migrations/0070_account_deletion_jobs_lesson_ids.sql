@@ -1,0 +1,1 @@
+ALTER TABLE "account_deletion_jobs" ADD COLUMN "anonymized_lesson_ids" uuid[] DEFAULT '{}'::uuid[] NOT NULL;

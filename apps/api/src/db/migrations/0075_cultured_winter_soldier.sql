@@ -1,0 +1,2 @@
+DROP INDEX "account_deletion_jobs_pending_idx";--> statement-breakpoint
+CREATE INDEX "account_deletion_jobs_pending_idx" ON "account_deletion_jobs" USING btree ("next_attempt_at") WHERE status = 'pending';

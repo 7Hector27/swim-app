@@ -18,7 +18,13 @@ export type LessonEmailEvent =
   // is a BulkCancelEmailPayload (see ./bulkCancelTypes.ts), NOT a
   // LessonEmailPayload. Row scope is (bulk_cancellation_id, household_id),
   // never a lesson or batch id.
-  | "coach_bulk_cancel";
+  | "coach_bulk_cancel"
+  // One row per solo account deletion (ADR 034). Enqueued inside the
+  // deletion transaction. Payload is an AccountDeletedEmailPayload — no
+  // family or swimmer names, just freed-slot times + pool labels so
+  // Jason knows what opened up. Row has no lesson/batch/bulk scope
+  // (the family is gone); the scope CHECK carves out this event.
+  | "coach_account_deleted";
 
 export type LessonEmailStatus =
   | "pending"

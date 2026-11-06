@@ -27,6 +27,7 @@ import { parentProgressRouter } from "./routes/parentProgress";
 import { coachRouter } from "./routes/coach";
 import { integrationsGoogleRouter } from "./routes/integrationsGoogle";
 import { leaderboardRouter } from "./routes/leaderboard";
+import { accountDeletionRouter } from "./routes/accountDeletion";
 import {
   calculateAge,
   HealthQuerySchema,
@@ -213,6 +214,7 @@ export function createApp(logger: Logger) {
   // without a Bearer token — state verification binds it to a coach instead.
   app.use("/integrations", integrationsGoogleRouter);
   app.use("/coach", coachRouter);
+  app.use(accountDeletionRouter);
   app.use(leaderboardRouter);
 
   app.use(errorHandler);

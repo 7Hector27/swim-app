@@ -33,7 +33,9 @@ import {
 import type { BulkCancelEmailPayload } from "./bulkCancelTypes";
 import { buildIcs } from "./ics";
 import { renderEmail } from "./render";
+import type { AccountDeletedEmailPayload } from "./accountDeletedTypes";
 import Batch from "./templates/Batch";
+import CoachAccountDeleted from "./templates/CoachAccountDeleted";
 import CoachBulkCancel from "./templates/CoachBulkCancel";
 import { createTransport, type EmailTransport, type IcsAttachment, type TransportError } from "./transport";
 import type { IcsMethod, LessonEmailEvent, LessonEmailPayload } from "./types";
@@ -124,6 +126,8 @@ export async function sendLessonEmailOutboxRow(outboxId: string): Promise<void> 
       await sendCoachBookingBackupInner(outboxId);
     } else if (row.event === "coach_bulk_cancel") {
       await sendBulkCancelInner(outboxId);
+    } else if (row.event === "coach_account_deleted") {
+      await sendCoachAccountDeletedInner(outboxId);
     } else if (row.lessonId !== null) {
       await sendInner(outboxId);
     } else if (row.batchId !== null) {
@@ -1188,6 +1192,139 @@ function buildBulkCancelSubject(payload: BulkCancelEmailPayload): string {
   }
   const total = cancelled + declined;
   return `${total} ${total === 1 ? "lesson" : "lessons"}${poolClause} canceled`;
+}
+
+// ─── Coach account-deleted sender (ADR 034) ─────────────────────────────
+//
+// `coach_account_deleted` rows carry no lesson/batch/bulk-cancellation
+// scope — the family is gone. The row's recipient is the active coach
+// (resolved at enqueue time), the payload holds freed-slot summaries,
+// and the sender renders a stand-alone subject (not the "<prefix>:
+// <when>" shape). Always delivers regardless of push settings / quiet
+// hours — this is an email channel, and the coach's schedule actually
+// changed. The sender just needs to ship the row and finalize it.
+
+interface ClaimedAccountDeletedRow {
+  id: string;
+  recipientProfileIds: string[];
+  payload: AccountDeletedEmailPayload;
+  attempts: number;
+}
+
+async function claimCoachAccountDeletedRow(
+  outboxId: string,
+): Promise<ClaimedAccountDeletedRow | null> {
+  const nowAtClaim = new Date();
+  return await db.transaction(async (tx) => {
+    const rows = await tx
+      .select({
+        id: lessonEmailOutbox.id,
+        recipientProfileIds: lessonEmailOutbox.recipientProfileIds,
+        payload: lessonEmailOutbox.payload,
+        status: lessonEmailOutbox.status,
+        attempts: lessonEmailOutbox.attempts,
+        claimedUntil: lessonEmailOutbox.claimedUntil,
+      })
+      .from(lessonEmailOutbox)
+      .where(
+        and(
+          eq(lessonEmailOutbox.id, outboxId),
+          eq(lessonEmailOutbox.event, "coach_account_deleted"),
+          or(
+            inArray(lessonEmailOutbox.status, ["pending", "failed"]),
+            and(
+              eq(lessonEmailOutbox.status, "sending"),
+              lt(lessonEmailOutbox.claimedUntil, nowAtClaim),
+            ),
+          ),
+        ),
+      )
+      .for("update", { skipLocked: true })
+      .limit(1);
+    const row = rows[0];
+    if (!row) return null;
+
+    const leaseUntil = new Date(Date.now() + CLAIM_LEASE_MS);
+    await tx
+      .update(lessonEmailOutbox)
+      .set({
+        status: "sending",
+        claimedUntil: leaseUntil,
+        lastAttemptAt: new Date(),
+      })
+      .where(eq(lessonEmailOutbox.id, outboxId));
+    return {
+      id: row.id,
+      recipientProfileIds: row.recipientProfileIds,
+      payload: row.payload as AccountDeletedEmailPayload,
+      attempts: row.attempts,
+    };
+  });
+}
+
+async function sendCoachAccountDeletedInner(outboxId: string): Promise<void> {
+  const transport = getTransport();
+  if (!transport) {
+    await finalizeSkipped(outboxId, "transport_not_configured");
+    return;
+  }
+  const claimed = await claimCoachAccountDeletedRow(outboxId);
+  if (!claimed) return;
+
+  const deliverable = await resolveRecipients(claimed.recipientProfileIds);
+  if (deliverable.length === 0) {
+    await finalizeSkipped(outboxId, "no_deliverable_recipients");
+    log.info({ outboxId }, "coach-account-deleted email skipped (no deliverable recipients)");
+    return;
+  }
+
+  const siteUrl = getEnv().siteUrl;
+  const replyToEmail = getEnv().email?.replyTo ?? null;
+  const element = CoachAccountDeleted({
+    payload: claimed.payload,
+    siteUrl,
+    replyToEmail,
+  });
+  const [html, text] = await Promise.all([
+    renderReactEmail(element),
+    renderReactEmail(element, { plainText: true }),
+  ]);
+  const subject = "A family deleted their account";
+
+  const emailEnv = getEnv().email!;
+  const result = await transport.send({
+    from: emailEnv.from,
+    replyTo: emailEnv.replyTo,
+    to: deliverable,
+    subject,
+    text,
+    ...(html && { html }),
+    idempotencyKey: outboxId,
+  });
+
+  if (result.ok) {
+    await finalizeSent(outboxId, result.providerMessageId);
+    log.info(
+      {
+        outboxId,
+        attempts: claimed.attempts + 1,
+        transport: emailEnv.transport,
+        cancelledLessonCount: claimed.payload.cancelledLessons.length,
+      },
+      "coach-account-deleted email sent",
+    );
+    return;
+  }
+  await finalizeFailed(outboxId, result.error?.kind ?? "unexpected", result.errorMessage);
+  log.warn(
+    {
+      outboxId,
+      transport: emailEnv.transport,
+      attempts: claimed.attempts + 1,
+      errorKind: result.error?.kind,
+    },
+    "coach-account-deleted email send failed",
+  );
 }
 
 // Rough RFC-5321-ish email match. Strict on the local-part so random

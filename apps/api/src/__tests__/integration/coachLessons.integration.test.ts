@@ -7,10 +7,12 @@ import {
   adminDb,
   closeAdminDb,
   createTestUser,
+  createTestUserInHousehold,
   settleAndCleanupCoachNotificationsForHousehold,
   type TestUser,
 } from "./helpers";
 import {
+  accountDeletionJobs,
   availabilityConfig,
   availabilitySeasons,
   lessonEmailOutbox,
@@ -248,5 +250,113 @@ describe("PATCH /lessons/:id coach reschedule (integration)", () => {
         .delete(lessons)
         .where(inArray(lessons.id, allIds));
     });
+  });
+});
+
+// ── GET /coach/lessons/:id householdName picks a non-scrubbed member ─────────
+
+describe("GET /coach/lessons/:id — householdName after a leave-deletion", () => {
+  it("returns the remaining owner's fullName (never null) when a household member ran leave-deletion and their profile is now scrubbed", async () => {
+    // Set up a household with a named owner and a manager who will
+    // self-delete. The engine's leave path removes the manager's
+    // household_members row AND scrubs their profile (full_name = NULL,
+    // disabled_at set), but the household and the owner's membership
+    // survive untouched. If the coach lesson detail picker didn't
+    // filter on disabled_at, a household where the scrubbed manager
+    // happened to sort first would surface null as householdName.
+    const owner = await createTestUser("hh-name-leave-owner");
+    const manager = await createTestUserInHousehold(
+      "hh-name-leave-manager",
+      owner.householdId,
+      "manager",
+    );
+
+    // Give the owner a distinctive fullName so the assertion can key
+    // off the real database state rather than a sentinel. The signup
+    // trigger leaves fullName null; patch it directly.
+    const ownerDisplayName = "Smith Family";
+    await adminDb()
+      .update(profiles)
+      .set({ fullName: ownerDisplayName })
+      .where(eq(profiles.id, owner.userId));
+
+    // Seed a lesson for this household that the coach can read.
+    const swimmerRows = await adminDb()
+      .insert(swimmers)
+      .values({
+        firstName: "LeaveInt",
+        lastName: "Swimmer",
+        birthDate: "2015-01-01",
+        sex: "female",
+        isPublic: false,
+        householdId: owner.householdId,
+      })
+      .returning({ id: swimmers.id });
+    const swimmerId = swimmerRows[0]!.id;
+
+    const lessonRows = await adminDb()
+      .insert(lessons)
+      .values({
+        householdId: owner.householdId,
+        locationId,
+        startsAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+        durationMinutes: 30,
+        type: "private",
+        status: "completed",
+        requestedBy: owner.userId,
+        approvedAt: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000),
+        approvedBy: owner.userId,
+        completedAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000 + 30 * 60 * 1000),
+      })
+      .returning({ id: lessons.id });
+    const lessonId = lessonRows[0]!.id;
+    await adminDb().insert(lessonSwimmers).values({ lessonId, swimmerId });
+
+    try {
+      // Manager runs leave-deletion. Profile gets scrubbed + member row
+      // removed; household and owner stay.
+      const delRes = await request(app)
+        .post("/me/deletion/confirm")
+        .set("Authorization", `Bearer ${manager.accessToken}`)
+        .send({
+          password: "integration-test-password-1",
+          confirmationPhrase: "delete",
+        });
+      expect(delRes.status).toBe(204);
+
+      // Confirm the state the coach picker is about to query: owner
+      // profile live with fullName set, manager profile scrubbed.
+      const [ownerAfter, managerAfter] = await Promise.all([
+        adminDb().select().from(profiles).where(eq(profiles.id, owner.userId)).limit(1),
+        adminDb().select().from(profiles).where(eq(profiles.id, manager.userId)).limit(1),
+      ]);
+      expect(ownerAfter[0]?.disabledAt).toBeNull();
+      expect(ownerAfter[0]?.fullName).toBe(ownerDisplayName);
+      expect(managerAfter[0]?.disabledAt).not.toBeNull();
+      expect(managerAfter[0]?.fullName).toBeNull();
+
+      // Coach fetches the lesson detail. The household-members picker
+      // in the route filters on profiles.disabled_at IS NULL, so the
+      // scrubbed manager is skipped and the owner's name is returned.
+      const detailRes = await request(app)
+        .get(`/coach/lessons/${lessonId}`)
+        .set("Authorization", `Bearer ${coach.accessToken}`);
+      expect(detailRes.status).toBe(200);
+      expect(detailRes.body.householdName).toBe(ownerDisplayName);
+      expect(detailRes.body.householdName).not.toBeNull();
+    } finally {
+      // Teardown. lesson_swimmers → lesson first (both FK to the
+      // lesson), then the swimmer, then account_deletion_jobs for the
+      // manager, then the test users (owner cleanup removes the
+      // household and audit log).
+      await adminDb().delete(lessonSwimmers).where(eq(lessonSwimmers.lessonId, lessonId));
+      await adminDb().delete(lessons).where(eq(lessons.id, lessonId));
+      await adminDb().delete(swimmers).where(eq(swimmers.id, swimmerId));
+      await adminDb()
+        .delete(accountDeletionJobs)
+        .where(eq(accountDeletionJobs.authUserId, manager.userId));
+      await manager.cleanup();
+      await owner.cleanup();
+    }
   });
 });

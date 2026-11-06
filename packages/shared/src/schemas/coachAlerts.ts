@@ -1,6 +1,10 @@
 import { z } from "zod";
 
 // Coach alert categories (ADR 031).
+// `account_deleted` is the summary row written when a parent closes
+// their account (ADR 034); it must be listed here so the bell + full
+// notifications page parse the response. Missing categories cause the
+// whole list to 502 at the client side.
 export const CoachNotificationCategorySchema = z.enum([
   "booking_request",
   "request_expiring_soon",
@@ -8,6 +12,7 @@ export const CoachNotificationCategorySchema = z.enum([
   "calendar_disconnected",
   "auto_approved_summary",
   "daily_summary",
+  "account_deleted",
 ]);
 export type CoachNotificationCategory = z.infer<typeof CoachNotificationCategorySchema>;
 

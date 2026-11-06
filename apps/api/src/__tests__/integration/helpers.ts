@@ -231,7 +231,11 @@ export async function createTestUser(emailPrefix: string): Promise<TestUser> {
         // Delete members before household (profileId has ON DELETE RESTRICT on profiles).
         await adminDb().delete(householdMembers).where(eq(householdMembers.householdId, householdId));
         await adminDb().delete(households).where(eq(households.id, householdId));
+        // ADR 034: profiles.id → auth.users.id is no longer ON DELETE CASCADE,
+        // so deleting the auth user no longer removes the profile row. Delete
+        // the profile explicitly to avoid leaving orphans across test runs.
         await deleteSupabaseUser(userId);
+        await adminDb().delete(profiles).where(eq(profiles.id, userId));
       },
     };
   } catch (err) {
@@ -296,7 +300,9 @@ export async function createTestUserInHousehold(
         // Remove any audit log entries this user created in the target household.
         await adminDb().delete(householdAuditLog).where(eq(householdAuditLog.actorId, userId));
         await adminDb().delete(householdMembers).where(eq(householdMembers.profileId, userId));
+        // ADR 034: profiles.id → auth.users.id is no longer ON DELETE CASCADE.
         await deleteSupabaseUser(userId);
+        await adminDb().delete(profiles).where(eq(profiles.id, userId));
       },
     };
   } catch (err) {

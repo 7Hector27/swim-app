@@ -101,7 +101,35 @@ export function renderPushBody(
       }
       return { title: "Daily summary", body: parts.join(" ") };
     }
+    case "account_deleted": {
+      // ADR 034. No family name or swimmer names — the row is here so
+      // Jason knows a slot freed up, not whose. Display strings are
+      // pre-computed at enqueue time (LA wall time) so the renderer
+      // stays pure. A family with many future lessons would otherwise
+      // produce a body hundreds of characters long; cap the inline
+      // list at 3 and roll the rest into "and N more" so the OS push
+      // truncation (~100 chars) still shows the summary count.
+      const times = payload.cancelledLessonTimesLocalDisplay;
+      const body =
+        times.length === 0
+          ? "A family deleted their account."
+          : times.length === 1
+            ? `Freed up: ${times[0]}.`
+            : `Freed up ${times.length} lessons: ${formatAccountDeletedTimes(times)}.`;
+      return { title: "A family deleted their account", body };
+    }
   }
+}
+
+const ACCOUNT_DELETED_MAX_INLINE_TIMES = 3;
+
+function formatAccountDeletedTimes(times: string[]): string {
+  if (times.length <= ACCOUNT_DELETED_MAX_INLINE_TIMES) {
+    return times.join(", ");
+  }
+  const shown = times.slice(0, ACCOUNT_DELETED_MAX_INLINE_TIMES);
+  const extra = times.length - ACCOUNT_DELETED_MAX_INLINE_TIMES;
+  return `${shown.join(", ")} and ${extra} more`;
 }
 
 function chooseNames(

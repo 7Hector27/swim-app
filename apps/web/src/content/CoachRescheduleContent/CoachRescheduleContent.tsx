@@ -103,13 +103,21 @@ const VIEW_TOGGLE_ACTIVE = "bg-heading text-background border-heading";
 const VIEW_TOGGLE_INACTIVE = "border-border text-text hover:bg-surface-soft";
 
 export default function CoachRescheduleContent({ lesson, locations }: Props) {
+  // Anonymized lessons (ADR 034) are terminal history — their identity
+  // columns are null and they can't be rescheduled. The server page should
+  // never render this component for one, so fall back to the current
+  // lesson's (possibly null) locationId by coercing to an empty string in
+  // the state initializer below. A stray render path hitting an anonymized
+  // lesson is bounded: the reschedule UI won't successfully preview or
+  // submit against an empty locationId.
+  const initialLocationId: string = lesson.locationId ?? "";
   const today = todayLA();
   const lessonDateLA = getLessonDateLA(lesson.startsAt);
   const lessonStartHHMM = getSlotHHMM(lesson.startsAt);
 
   const [calendarView, setCalendarView] = useState<CalendarView>("week");
   const [currentDate, setCurrentDate] = useState<string>(lessonDateLA);
-  const [locationId, setLocationId] = useState<string>(lesson.locationId);
+  const [locationId, setLocationId] = useState<string>(initialLocationId);
   const [durationMinutes, setDurationMinutes] = useState<30 | 45 | 60>(lesson.durationMinutes);
   const [selectedStartsAt, setSelectedStartsAt] = useState<string | null>(null);
   const [weekData, setWeekData] = useState<WeekAvailabilityResponse | null>(null);

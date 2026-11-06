@@ -41,12 +41,18 @@ export default function DashboardLessonRow({ item, now }: Props) {
 
   const startsAtMs = new Date(lesson.startsAt).getTime();
   const endsAtMs = startsAtMs + lesson.durationMinutes * 60_000;
-  const isInProgress = now !== null && now >= startsAtMs && now < endsAtMs + 15 * 60_000;
-  const isPending = lesson.status === "pending";
+  // Anonymized rows (ADR 034) are always status='canceled' and have no
+  // swimmers; suppress the in-progress / evaluate affordances and show
+  // "Deleted family" in place of the generic "No swimmers".
+  const isAnonymized = lesson.anonymizedAt != null;
+  const isInProgress =
+    !isAnonymized && now !== null && now >= startsAtMs && now < endsAtMs + 15 * 60_000;
+  const isPending = lesson.status === "pending" && !isAnonymized;
 
   const startLabel = formatTime(lesson.startsAt);
-  const swimmerNames =
-    lesson.swimmers.map((swimmer) => swimmer.firstName).join(", ") || "No swimmers";
+  const swimmerNames = isAnonymized
+    ? "Deleted family"
+    : lesson.swimmers.map((swimmer) => swimmer.firstName).join(", ") || "No swimmers";
 
   const approveFormId = `dash-approve-${lesson.id}`;
   const declineFormId = `dash-decline-${lesson.id}`;
@@ -66,7 +72,7 @@ export default function DashboardLessonRow({ item, now }: Props) {
           {startLabel}
         </span>
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-text truncate">{swimmerNames}</p>
+          <p className={`text-sm font-semibold truncate ${isAnonymized ? "text-text-secondary italic" : "text-text"}`}>{swimmerNames}</p>
           <p className="text-xs text-text-secondary mt-0.5 truncate">{locationName}</p>
         </div>
         {isInProgress && (

@@ -28,6 +28,7 @@ const prodDeployBase = {
   SITE_URL: "https://app.axiomaquatics.io",
   CORS_ORIGINS: "https://app.axiomaquatics.io",
   CRON_SECRET: "a".repeat(32),
+  SUPABASE_SERVICE_ROLE_KEY: "service-role-key",
   GOOGLE_OAUTH_CLIENT_ID: "client-id",
   GOOGLE_OAUTH_CLIENT_SECRET: "client-secret",
   GOOGLE_OAUTH_REDIRECT_URI: "https://api.axiomaquatics.io/integrations/google/callback",
@@ -121,6 +122,7 @@ describe("parseEnv — APP_ENV=prod", () => {
     expect(env.appEnv).toBe("prod");
     expect(env.corsOrigins).toEqual(["https://app.axiomaquatics.io"]);
     expect(env.cronSecret).toBe("a".repeat(32));
+    expect(env.supabaseServiceRoleKey).toBe("service-role-key");
     expect(env.email).toBeDefined();
     expect(env.email?.transport).toBe("resend");
   });
@@ -143,6 +145,23 @@ describe("parseEnv — APP_ENV=prod", () => {
     expectIssue(
       { ...prodDeployBase, CRON_SECRET: "a".repeat(31) },
       /CRON_SECRET.*at least 32 characters/,
+    );
+  });
+
+  it("rejects a missing SUPABASE_SERVICE_ROLE_KEY (required by ADR 034 account deletion)", () => {
+    // Without the service-role key the API boots fine today and only
+    // crashes when the first parent clicks delete (supabaseAdmin.ts
+    // throws on first access). Fail boot so the mistake surfaces in
+    // the deploy log, not a user-facing error.
+    const raw = { ...prodDeployBase } as Record<string, string | undefined>;
+    delete raw.SUPABASE_SERVICE_ROLE_KEY;
+    expectIssue(raw, /SUPABASE_SERVICE_ROLE_KEY/);
+  });
+
+  it("rejects an empty SUPABASE_SERVICE_ROLE_KEY", () => {
+    expectIssue(
+      { ...prodDeployBase, SUPABASE_SERVICE_ROLE_KEY: "" },
+      /SUPABASE_SERVICE_ROLE_KEY/,
     );
   });
 

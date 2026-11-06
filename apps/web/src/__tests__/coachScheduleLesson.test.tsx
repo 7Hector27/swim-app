@@ -153,6 +153,74 @@ describe("CoachLessonRow — Evaluate links", () => {
   });
 });
 
+describe("CoachLessonRow — anonymized (deleted-family) row", () => {
+  // Household deletion anonymizes future lessons: swimmers=[], the
+  // row flips to status='canceled' and anonymizedAt is set. The day
+  // view must show "Deleted family" in place of "No swimmers" and
+  // hide Evaluate — same muted state as any cancelled lesson.
+  const ANONYMIZED_AT = "2026-05-28T00:00:00.000Z";
+  const anonymizedItem: CoachScheduleLessonItem = {
+    ...privateItem,
+    householdName: "Deleted family",
+    locationName: "Home pool",
+    lesson: {
+      ...privateItem.lesson,
+      status: "canceled",
+      swimmers: [],
+      anonymizedAt: ANONYMIZED_AT,
+      locationSnapshot: "Home pool",
+      swimmerCount: 1,
+    },
+  };
+
+  it("renders 'Deleted family' in place of the swimmer list", () => {
+    renderRow(anonymizedItem);
+    expect(screen.getByText("Deleted family")).toBeInTheDocument();
+    expect(screen.queryByText("No swimmers")).toBeNull();
+  });
+
+  it("hides Evaluate for an anonymized row", () => {
+    renderRow(anonymizedItem);
+    expect(screen.queryByRole("link", { name: /^Evaluate / })).toBeNull();
+  });
+
+  it("does not show the Approve/Decline buttons for an anonymized pending-looking row", () => {
+    // Defensive: anonymized rows are always status='canceled' per the
+    // engine, but if one ever slipped through as 'pending', the row
+    // must not expose coach actions that would hit a non-existent
+    // household.
+    renderRow({
+      ...anonymizedItem,
+      lesson: { ...anonymizedItem.lesson, status: "pending" },
+    });
+    expect(screen.queryByRole("button", { name: /Approve/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Decline/ })).toBeNull();
+  });
+
+  it("does not render a 'Declined' action-rail label for an anonymized completed row", () => {
+    // Regression: the action-rail fallback used to be binary ("Canceled"
+    // vs. "Declined"), so an anonymized past-completed row (showEvaluate
+    // false because swimmers=[]) rendered the status badge as
+    // "Completed" and the action rail as "Declined" at the same time.
+    renderRow({
+      ...anonymizedItem,
+      lesson: { ...anonymizedItem.lesson, status: "completed" },
+    });
+    expect(screen.queryByText("Declined")).toBeNull();
+    // Evaluate is hidden too (anonymized), so the rail area is empty
+    // apart from the Open-lesson link on the right.
+    expect(screen.queryByRole("link", { name: /^Evaluate / })).toBeNull();
+  });
+
+  it("does not render a 'Declined' action-rail label for an anonymized no-show row", () => {
+    renderRow({
+      ...anonymizedItem,
+      lesson: { ...anonymizedItem.lesson, status: "no_show" },
+    });
+    expect(screen.queryByText("Declined")).toBeNull();
+  });
+});
+
 describe("CoachLessonRow — Open lesson link", () => {
   it("renders an Open lesson link pointing to the lesson page", () => {
     renderRow(privateItem);

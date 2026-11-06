@@ -1,9 +1,14 @@
-import type { GoogleCalendarStatusResponse, MeResponse } from "@swim-app/shared";
+import type {
+  DeletionPreviewResponse,
+  GoogleCalendarStatusResponse,
+  MeResponse,
+} from "@swim-app/shared";
 
 import Button from "@/components/Button";
 import { capitalizeFirst } from "@/lib/capitalizeFirst";
 
 import AccountSectionNav from "./AccountSectionNav";
+import DeleteAccountSection from "./DeleteAccountSection";
 import EditProfileForm from "./EditProfileForm";
 import GoogleCalendarCard from "./GoogleCalendarCard";
 import NotificationsSection from "./NotificationsSection";
@@ -20,6 +25,10 @@ interface AccountContentProps {
   // Threaded down to PushSubscriptionManager so client code never touches
   // @/lib/env. Undefined when not configured (local dev without VAPID keys).
   vapidPublicKey: string | undefined;
+  // ADR 034 Phase 4. Server-side pre-fetch so the Delete account section
+  // can render its per-case copy without a client round-trip. Null for
+  // coaches (not supported in v1) and when the preview endpoint failed.
+  deletionPreview: DeletionPreviewResponse | null;
 }
 
 export default function AccountContent({
@@ -28,6 +37,7 @@ export default function AccountContent({
   googleConnectError,
   googleDisconnectError,
   vapidPublicKey,
+  deletionPreview,
 }: AccountContentProps) {
   // Hide the Calendar section entirely when the API hasn't been configured
   // for Google (dev without env vars, or an API deploy that doesn't support
@@ -38,6 +48,11 @@ export default function AccountContent({
     googleCalendarStatus.status !== "not_configured";
 
   const showNotifications = profile.role === "coach";
+  // Parent-only (ADR 034). Coaches don't self-delete through this flow
+  // in v1. The preview being null is treated as "section unavailable" —
+  // the component renders a short apology but the nav entry stays so
+  // the user can still find it.
+  const showDeleteAccount = profile.role === "parent";
 
   // Only list sections the role actually sees — no placeholder entries for
   // features the current role can't touch.
@@ -47,6 +62,7 @@ export default function AccountContent({
   if (showCalendarCard) navItems.push({ id: "calendar", label: "Calendar" });
   if (showNotifications) navItems.push({ id: "notifications", label: "Notifications" });
   navItems.push({ id: "security", label: "Security" });
+  if (showDeleteAccount) navItems.push({ id: "delete-account", label: "Delete account" });
 
   return (
     <div className="flex flex-col flex-1">
@@ -124,6 +140,15 @@ export default function AccountContent({
                   </Button>
                 </form>
               </section>
+
+              {showDeleteAccount && (
+                <div
+                  id="delete-account"
+                  className="scroll-mt-[calc(var(--header-height)+1rem)]"
+                >
+                  <DeleteAccountSection preview={deletionPreview} />
+                </div>
+              )}
             </div>
           </div>
         </div>

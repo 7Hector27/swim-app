@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import AccountContent from "@/content/AccountContent";
+import { fetchDeletionPreview } from "@/lib/api/accountDeletion";
 import { fetchGoogleCalendarStatus } from "@/lib/api/googleCalendar";
 import { publicEnv } from "@/lib/env";
 import { requireAuth } from "@/lib/requireAuth";
@@ -20,6 +21,14 @@ export default async function AccountPage({ searchParams }: AccountPageProps) {
     auth.profile.role === "coach"
       ? await fetchGoogleCalendarStatus(auth.accessToken)
       : null;
+  // Deletion preview is pre-fetched on the server so the section can
+  // render per-case copy without a client round-trip when the user
+  // opens it. Parent-only (ADR 034) — the coach account isn't managed
+  // through this flow in v1.
+  const deletionPreview =
+    auth.profile.role === "parent"
+      ? await fetchDeletionPreview(auth.accessToken)
+      : null;
   const resolvedParams = await searchParams;
   const googleParam = Array.isArray(resolvedParams.google) ? resolvedParams.google[0] : resolvedParams.google;
   const googleConnectError = googleParam === "error";
@@ -31,6 +40,7 @@ export default async function AccountPage({ searchParams }: AccountPageProps) {
       googleConnectError={googleConnectError}
       googleDisconnectError={googleDisconnectError}
       vapidPublicKey={publicEnv.vapidPublicKey}
+      deletionPreview={deletionPreview}
     />
   );
 }

@@ -1,5 +1,4 @@
 import { sql } from "drizzle-orm";
-import { authUsers } from "drizzle-orm/supabase";
 import {
   AnyPgColumn,
   boolean,
@@ -123,10 +122,12 @@ export const householdRoleEnum = pgEnum("household_role", ["owner", "manager", "
 export const profiles = pgTable(
   "profiles",
   {
-    // No default — this id mirrors auth.users.id and is set by the on_auth_user_created trigger.
-    id: uuid("id")
-      .primaryKey()
-      .references(() => authUsers.id, { onDelete: "cascade" }),
+    // No default — this id mirrors auth.users.id and is set by the
+    // on_auth_user_created trigger. The FK to auth.users was intentionally
+    // dropped per ADR 034: account deletion hard-deletes the auth user via
+    // the Admin API but keeps the scrubbed profile row for FK integrity
+    // across household_audit_log, swimmers.public_consent_by, etc.
+    id: uuid("id").primaryKey(),
     role: userRoleEnum("role").notNull().default("parent"),
     fullName: text("full_name"),
     phone: text("phone"),
@@ -542,13 +543,19 @@ export const lessonTypeEnum = pgEnum("lesson_type", ["private", "family"]);
 
 export const lessons = pgTable("lessons", {
   id: uuid("id").primaryKey().defaultRandom(),
-  householdId: uuid("household_id").notNull().references(() => households.id, { onDelete: "restrict" }),
-  locationId: uuid("location_id").notNull().references(() => lessonLocations.id, { onDelete: "restrict" }),
+  // ADR 034: household_id, location_id, and the actor columns are nullable
+  // for anonymized past-lesson rows that survive their household's deletion.
+  // Every live-lesson code path filters `anonymized_at IS NULL` (or the FK
+  // is populated because the row was loaded before any anonymization ran),
+  // so for those paths the nulls can never appear at runtime — enforce that
+  // invariant at query boundaries with `requireLiveLessonFields`.
+  householdId: uuid("household_id").references(() => households.id, { onDelete: "set null" }),
+  locationId: uuid("location_id").references(() => lessonLocations.id, { onDelete: "set null" }),
   startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
   durationMinutes: integer("duration_minutes").notNull(),
   type: lessonTypeEnum("type").notNull(),
   status: lessonStatusEnum("status").notNull().default("pending"),
-  requestedBy: uuid("requested_by").notNull().references(() => profiles.id),
+  requestedBy: uuid("requested_by").references(() => profiles.id),
   approvedAt: timestamp("approved_at", { withTimezone: true }),
   approvedBy: uuid("approved_by").references(() => profiles.id),
   declinedAt: timestamp("declined_at", { withTimezone: true }),
@@ -580,6 +587,16 @@ export const lessons = pgTable("lessons", {
   // other lesson (single-lesson parent bookings, coach bookings).
   // Immutable after insert in v1. See ADR 030.
   batchId: uuid("batch_id").references((): AnyPgColumn => bookingBatches.id, { onDelete: "restrict" }),
+  // ADR 034 reserves these three columns for anonymized past-lesson rows
+  // that survive their household's deletion. Phase 1 adds the columns only;
+  // the migration that drops NOT NULL on household_id / location_id / the
+  // actor columns and starts writing anonymized rows lands in Phase 2
+  // alongside the deletion engine, so the ~30 call sites that currently
+  // treat the identity columns as non-null are audited in the same PR
+  // that needs the capability.
+  anonymizedAt: timestamp("anonymized_at", { withTimezone: true }),
+  locationSnapshot: text("location_snapshot"),
+  swimmerCount: integer("swimmer_count"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdateFn(() => new Date()),
 }, (table) => [
@@ -1045,6 +1062,35 @@ export const bookingBatches = pgTable(
 // (lesson_id, event, sequence) unique key prevents duplicate rows; the
 // claim-before-send protocol (claimed_until + status='sending') prevents
 // duplicate sends. See docs/plans/parent-booking-emails.md.
+
+// Single source of truth for lesson_email_outbox.status values. The CHECK
+// constraint below references these literally — any status added here
+// MUST be reflected there and vice versa. Downstream code (e.g. the
+// account-deletion engine's outbox scrub) derives its filter lists from
+// these constants so a new status can't be silently missed.
+export const LESSON_EMAIL_OUTBOX_TERMINAL_STATUSES = [
+  "sent",
+  "skipped",
+  "superseded",
+  "abandoned",
+] as const;
+export type LessonEmailOutboxTerminalStatus =
+  (typeof LESSON_EMAIL_OUTBOX_TERMINAL_STATUSES)[number];
+
+export const LESSON_EMAIL_OUTBOX_NON_TERMINAL_STATUSES = [
+  "pending",
+  "sending",
+  "failed",
+] as const;
+export type LessonEmailOutboxNonTerminalStatus =
+  (typeof LESSON_EMAIL_OUTBOX_NON_TERMINAL_STATUSES)[number];
+
+export const LESSON_EMAIL_OUTBOX_STATUSES = [
+  ...LESSON_EMAIL_OUTBOX_NON_TERMINAL_STATUSES,
+  ...LESSON_EMAIL_OUTBOX_TERMINAL_STATUSES,
+] as const;
+export type LessonEmailOutboxStatus = (typeof LESSON_EMAIL_OUTBOX_STATUSES)[number];
+
 export const lessonEmailOutbox = pgTable(
   "lesson_email_outbox",
   {
@@ -1132,7 +1178,7 @@ export const lessonEmailOutbox = pgTable(
       .where(sql`bulk_cancellation_id IS NOT NULL`),
     check(
       "lesson_email_outbox_event_valid",
-      sql`${table.event} IN ('booking_requested', 'lesson_confirmed', 'request_declined', 'request_expired', 'lesson_canceled', 'lesson_rescheduled', 'batch_booked', 'batch_approved', 'batch_canceled', 'coach_booking_request', 'coach_bulk_cancel')`,
+      sql`${table.event} IN ('booking_requested', 'lesson_confirmed', 'request_declined', 'request_expired', 'lesson_canceled', 'lesson_rescheduled', 'batch_booked', 'batch_approved', 'batch_canceled', 'coach_booking_request', 'coach_bulk_cancel', 'coach_account_deleted')`,
     ),
     check(
       "lesson_email_outbox_status_valid",
@@ -1146,19 +1192,41 @@ export const lessonEmailOutbox = pgTable(
       "lesson_email_outbox_claim_pair",
       sql`(${table.status} = 'sending') = (${table.claimedUntil} IS NOT NULL)`,
     ),
-    // Every row is scoped to exactly one of a lesson, a batch, or a bulk
-    // cancellation — never two, never none. See ADR 030 and ADR 033.
+    // Every live row is scoped to exactly one of a lesson, a batch, or a
+    // bulk cancellation — never two, never none. See ADR 030 and ADR 033.
+    // The `payload ? '_scrubbed_at'` escape clause is the ADR 034 account-
+    // deletion revision: a scrubbed-terminal row whose parent batch or
+    // household has been hard-deleted holds null batch_id / household_id
+    // (scrubEmailOutboxForHousehold nulls them so the parent DELETE's
+    // RESTRICT doesn't fire). lesson_id survives because lessons are
+    // anonymized, not deleted, so lesson-scoped scrubbed rows still have
+    // exactly-one and don't need the escape — but the clause covers them
+    // uniformly to keep the shape simple.
+    // coach_account_deleted rows (ADR 034) have no lesson/batch/bulk_
+    // cancellation scope — the family is gone, there's nothing to tie
+    // them to. The row is a coach-only email that carries freed-slot
+    // info in its payload, and it's enqueued inside the deletion
+    // transaction. Exempt that event from the "exactly one scope"
+    // rule alongside the already-existing scrubbed-row escape.
     check(
       "lesson_email_outbox_scope_exactly_one",
-      sql`(CASE WHEN ${table.lessonId} IS NOT NULL THEN 1 ELSE 0 END)
-        + (CASE WHEN ${table.batchId} IS NOT NULL THEN 1 ELSE 0 END)
-        + (CASE WHEN ${table.bulkCancellationId} IS NOT NULL THEN 1 ELSE 0 END) = 1`,
+      sql`(${table.payload} ? '_scrubbed_at')
+        OR (${table.event} = 'coach_account_deleted')
+        OR ((CASE WHEN ${table.lessonId} IS NOT NULL THEN 1 ELSE 0 END)
+          + (CASE WHEN ${table.batchId} IS NOT NULL THEN 1 ELSE 0 END)
+          + (CASE WHEN ${table.bulkCancellationId} IS NOT NULL THEN 1 ELSE 0 END) = 1)`,
     ),
     // household_id is set iff the row is bulk-cancel-scoped. For lesson- and
-    // batch-scoped rows the household is derived from the parent row.
+    // batch-scoped rows the household is derived from the parent row. Same
+    // `payload ? '_scrubbed_at'` escape as the scope CHECK above: ADR 034
+    // nulls household_id on bulk-cancel-scoped scrubbed rows after the
+    // household is hard-deleted, decoupling it from bulk_cancellation_id
+    // (which survives because bulk_cancellations is coach-side and kept).
     check(
       "lesson_email_outbox_bulk_household_pair",
-      sql`(${table.bulkCancellationId} IS NULL) = (${table.householdId} IS NULL)`,
+      sql`(${table.payload} ? '_scrubbed_at')
+        OR (${table.event} = 'coach_account_deleted')
+        OR ((${table.bulkCancellationId} IS NULL) = (${table.householdId} IS NULL))`,
     ),
     // Partial index on (next_attempt_at) for the drain's hot path. Includes
     // 'sending' because an expired-claim row is a drain candidate.
@@ -1284,7 +1352,10 @@ export const coachNotifications = pgTable(
   (table) => [
     check(
       "coach_notifications_category_valid",
-      sql`${table.category} IN ('booking_request', 'request_expiring_soon', 'parent_change', 'calendar_disconnected', 'auto_approved_summary', 'daily_summary')`,
+      // 'account_deleted' added for ADR 034 — the summary row Jason sees
+      // when a family deletes their account, listing the freed-up lesson
+      // times with no family or swimmer identity.
+      sql`${table.category} IN ('booking_request', 'request_expiring_soon', 'parent_change', 'calendar_disconnected', 'auto_approved_summary', 'daily_summary', 'account_deleted')`,
     ),
     check(
       "coach_notifications_urgency_valid",
@@ -1312,7 +1383,7 @@ export const coachNotifications = pgTable(
         (${table.category} IN ('booking_request', 'request_expiring_soon', 'parent_change', 'auto_approved_summary')
          AND ((CASE WHEN ${table.lessonId} IS NOT NULL THEN 1 ELSE 0 END)
             + (CASE WHEN ${table.batchId} IS NOT NULL THEN 1 ELSE 0 END) = 1))
-        OR (${table.category} IN ('calendar_disconnected', 'daily_summary')
+        OR (${table.category} IN ('calendar_disconnected', 'daily_summary', 'account_deleted')
             AND ${table.lessonId} IS NULL AND ${table.batchId} IS NULL)
       )`,
     ),
@@ -1443,6 +1514,74 @@ export const coachNotificationPreferences = pgTable(
       "coach_notification_preferences_lock_screen_detail_valid",
       sql`${table.lockScreenDetail} IN ('first_initial', 'full_name')`,
     ),
+  ],
+).enableRLS();
+
+// ── Account deletion jobs (ADR 034) ───────────────────────────────────────────
+// Retry state for post-commit external cleanup after a parent account is
+// deleted. The DB-side deletion runs inside the request transaction; this
+// table only tracks the Supabase Auth hard-delete and the per-lesson Google
+// Calendar sync, which run as post-commit tasks and may fail transiently.
+//
+// profile_id is nullable with no FK — the scrubbed profile row survives, but
+// the id is kept here purely for log correlation and may be cleared by a
+// future retention policy. auth_user_id names the Supabase auth user to
+// delete and does not reference auth.users (that row goes away on success).
+
+export const accountDeletionJobs = pgTable(
+  "account_deletion_jobs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // No FK to profiles.id, by design. The deletion transaction
+    // scrubs the profile row (null-ing identity fields, setting
+    // disabledAt) and inserts this job row in the same tx; post-commit
+    // microtasks then hard-delete the Supabase auth user. A FK would
+    // force a choice between deleting the profile row (breaking the
+    // scrub-and-retain audit model) or keeping it alive long enough
+    // to satisfy the constraint. Instead, profile_id is a stand-alone
+    // UUID the drain uses for logging only. Diagnostic joins back to
+    // profiles will silently return nulls once the profile row is
+    // eventually removed — expected and not a bug.
+    profileId: uuid("profile_id"),
+    authUserId: uuid("auth_user_id").notNull(),
+    scope: text("scope").notNull(),
+    status: text("status").notNull().default("pending"),
+    attempts: integer("attempts").notNull().default(0),
+    // Lesson ids this deletion anonymized (past lessons still in Google
+    // Calendar need patching, future ones need deleting). Captured at
+    // deletion time because the anonymization itself nulled the ties
+    // back to the household — the retry drain needs an authoritative
+    // list to walk. Empty for 'leave' scope and for solo deletions
+    // whose household owned no lessons.
+    anonymizedLessonIds: uuid("anonymized_lesson_ids").array().notNull().default(sql`'{}'::uuid[]`),
+    // Earliest time this row is eligible for the retry drain. Null
+    // means immediately eligible (fresh insert, pre-0071 rows). The
+    // drain sets this to now() + exponential backoff on real errors,
+    // or now() + a short pause when the calendar step is blocked on
+    // a disconnected Google integration. See the backoff constants
+    // in services/accountDeletion/retry.ts.
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }),
+    lastError: text("last_error"),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdateFn(() => new Date()),
+  },
+  (table) => [
+    check(
+      "account_deletion_jobs_scope_valid",
+      sql`${table.scope} IN ('solo', 'leave')`,
+    ),
+    check(
+      "account_deletion_jobs_status_valid",
+      sql`${table.status} IN ('pending', 'completed', 'failed')`,
+    ),
+    // Partial index on next_attempt_at, which is what the retry drain's
+    // WHERE/ORDER BY hits (services/accountDeletion/retry.ts). Rows at
+    // status='pending' are only candidate when next_attempt_at <= now,
+    // and the drain picks the earliest-eligible row first.
+    index("account_deletion_jobs_pending_idx")
+      .on(table.nextAttemptAt.asc())
+      .where(sql`status = 'pending'`),
   ],
 ).enableRLS();
 

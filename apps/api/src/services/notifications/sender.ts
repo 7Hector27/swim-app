@@ -597,6 +597,12 @@ function isCategoryEnabled(
       return true;
     case "daily_summary":
       return prefs.dailySummaryEnabled;
+    case "account_deleted":
+      // Follows the "Parent cancels or reschedules" toggle (ADR 034) —
+      // the schedule impact on Jason is the same shape as a parent
+      // cancellation, so re-use the existing pref rather than adding a
+      // new one the coach has to discover.
+      return prefs.parentChangeEnabled;
   }
 }
 

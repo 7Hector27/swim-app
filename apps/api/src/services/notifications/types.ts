@@ -7,7 +7,8 @@ export type CoachNotificationCategory =
   | "parent_change"
   | "calendar_disconnected"
   | "auto_approved_summary"
-  | "daily_summary";
+  | "daily_summary"
+  | "account_deleted";
 
 export type CoachNotificationUrgency = "standard" | "urgent";
 
@@ -112,6 +113,18 @@ export interface DailySummaryPayload extends BasePayload {
   heldAlertCount: number;
 }
 
+// ADR 034. Written when a parent closes their account. No lesson_id /
+// batch_id is attached because the referenced family is gone; the
+// payload carries only the freed-up lesson start times, pre-formatted
+// to LA wall-time so the renderer stays pure. Raw ISO strings are kept
+// alongside the display list for downstream tooling.
+export interface AccountDeletedPayload extends BasePayload {
+  kind: "account_deleted";
+  cancelledLessonTimesUtc: string[];
+  cancelledLessonTimesLocalDisplay: string[];
+  deletedAtUtc: string;
+}
+
 export type CoachNotificationPayload =
   | BookingRequestLessonPayload
   | BookingRequestBatchPayload
@@ -120,4 +133,5 @@ export type CoachNotificationPayload =
   | RequestExpiringSoonPayload
   | AutoApprovedPayload
   | CalendarDisconnectedPayload
-  | DailySummaryPayload;
+  | DailySummaryPayload
+  | AccountDeletedPayload;

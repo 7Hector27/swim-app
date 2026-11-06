@@ -22,6 +22,8 @@ import {
   releaseHeldCoachNotifications,
   scrubCoachNotificationPayloads,
 } from "../services/notifications/drain";
+import { runAccountDeletionRetryDrain } from "../services/accountDeletion";
+import { safeCleanupErrSummary } from "../services/accountDeletion/cleanup";
 import type { RequestHandler } from "express";
 
 // Promote the per-tick light pass to a full pass when last_full_reconcile_at
@@ -254,8 +256,11 @@ async function runCronTick(
     try {
       emailDrainResult = await drainLessonEmailOutbox();
     } catch (err) {
+      // Never log err.message directly — Resend / Node fetch messages
+      // can echo recipient email addresses. safeCleanupErrSummary
+      // reduces to { name, code, status } only.
       req.log.error(
-        { err: err instanceof Error ? err.message : String(err) },
+        { err: safeCleanupErrSummary(err) },
         "cron/tick email drain failed",
       );
     }
@@ -263,7 +268,7 @@ async function runCronTick(
       emailScrubResult = await scrubLessonEmailPayloads();
     } catch (err) {
       req.log.error(
-        { err: err instanceof Error ? err.message : String(err) },
+        { err: safeCleanupErrSummary(err) },
         "cron/tick email scrub failed",
       );
     }
@@ -317,6 +322,27 @@ async function runCronTick(
       );
     }
 
+    // Account-deletion retry drain (ADR 034 Phase 3). Shares the cron
+    // tick lease — no new scheduler. Picks pending jobs whose attempts
+    // < MAX and whose updated_at is older than the retry wait floor,
+    // replays the external cleanup (calendar reconcile + auth user
+    // delete), increments attempts. Terminal 'failed' when retries are
+    // exhausted; logs event=account_deletion_cleanup_failed at that
+    // point for log-based alerting.
+    let accountDeletionRetryResult = { attempted: 0, succeeded: 0, paused: 0, failedTerminal: 0 };
+    try {
+      accountDeletionRetryResult = await runAccountDeletionRetryDrain(req.log);
+    } catch (err) {
+      // Never log err.message directly — Supabase Admin SDK errors can
+      // echo the user's email in .message and Google Calendar errors
+      // can embed swimmer names from event titles. safeCleanupErrSummary
+      // reduces to { name, code, status } only.
+      req.log.error(
+        { err: safeCleanupErrSummary(err) },
+        "cron/tick account-deletion retry drain failed",
+      );
+    }
+
     req.log.info(
       {
         expiredCount: expired.length,
@@ -334,6 +360,10 @@ async function runCronTick(
         coachAbandoned: coachDrainResult.abandoned,
         coachScrubbed: coachScrubResult.scrubbed,
         coachDeadSubsPurged: coachScrubResult.deadSubscriptionsPurged,
+        accountDeletionRetryAttempted: accountDeletionRetryResult.attempted,
+        accountDeletionRetrySucceeded: accountDeletionRetryResult.succeeded,
+        accountDeletionRetryPaused: accountDeletionRetryResult.paused,
+        accountDeletionRetryFailedTerminal: accountDeletionRetryResult.failedTerminal,
       },
       "cron/tick",
     );
@@ -354,5 +384,9 @@ async function runCronTick(
       coachAbandoned: coachDrainResult.abandoned,
       coachScrubbed: coachScrubResult.scrubbed,
       coachDeadSubsPurged: coachScrubResult.deadSubscriptionsPurged,
+      accountDeletionRetryAttempted: accountDeletionRetryResult.attempted,
+      accountDeletionRetrySucceeded: accountDeletionRetryResult.succeeded,
+      accountDeletionRetryPaused: accountDeletionRetryResult.paused,
+      accountDeletionRetryFailedTerminal: accountDeletionRetryResult.failedTerminal,
     };
 }
