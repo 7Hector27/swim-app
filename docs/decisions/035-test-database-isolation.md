@@ -49,9 +49,11 @@ A Node wrapper at `apps/api/scripts/runIntegration.ts` owns the chain so Windows
 
 ### Guard integration tests on the test target, not just localhost
 
-`apps/api/src/__tests__/integration/setup.ts` keeps the existing hostname assertion (`localhost`, `127.0.0.1`, or `::1`) and adds a second check: the run is allowed only if `INTEGRATION_DATABASE_URL` contains the test-stack DB port (`:54422/`) or `INTEGRATION_TEST_TARGET=1` is set. The port check catches the local case (anything pointing at 54322 is the manual stack and is refused); the env variable allows CI, whose ephemeral stack still runs on the default port 54322 but is throwaway and therefore safe. A third assertion refuses when `INTEGRATION_DATABASE_URL === DATABASE_URL`, catching a copy-paste where both end up on the same port.
+`apps/api/src/__tests__/integration/setup.ts` keeps the existing hostname assertion (`localhost`, `127.0.0.1`, or `::1`) and adds a second check: the run is allowed only if `INTEGRATION_DATABASE_URL` contains the test-stack DB port (`:54422/`) or `INTEGRATION_TEST_TARGET=1` is set. The port check catches the local case (anything pointing at 54322 is the manual stack and is refused); the env variable allows CI, whose ephemeral stack still runs on the default port 54322 but is throwaway and therefore safe.
 
 The guard throws in `setup.ts`, which runs once before any test file imports the app, so a wrong target fails before any database connection opens.
+
+A planned third assertion — `INTEGRATION_DATABASE_URL === DATABASE_URL` as a belt-and-braces check — was dropped once `scripts/runIntegration.ts` landed. The runner intentionally sets `DATABASE_URL = INTEGRATION_DATABASE_URL` for its migrate and vitest subprocesses, so the equality would fire on every happy-path run.
 
 Alternatives considered:
 

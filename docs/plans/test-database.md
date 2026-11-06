@@ -212,7 +212,7 @@ Refuse to run integration tests unless:
 
 - Locally, the user must point at port 54422 — which is impossible unless they filled in `.env.test` from the test stack. Running against the manual stack (54322) throws before any test opens a connection.
 - CI sets `INTEGRATION_TEST_TARGET=1` because its ephemeral stack still runs on the default port 54322. The guard lets it through on that signal; everything else — ephemerality, physical isolation of the VM — is already true.
-- As an extra belt-and-braces check: refuse if `INTEGRATION_DATABASE_URL === DATABASE_URL`. Catches a copy-paste where both end up on the manual port locally.
+- An `INTEGRATION_DATABASE_URL === DATABASE_URL` equality check was considered during planning and dropped. `scripts/runIntegration.ts` intentionally sets `DATABASE_URL = INTEGRATION_DATABASE_URL` for the migrate + vitest subprocesses, so the equality would fire on every happy-path run.
 
 ### What changes in CI
 
@@ -277,6 +277,14 @@ Refuse to run integration tests unless:
 2. **Disabled services in the test stack.** Proposed: disable Studio, Storage, and Mailpit (tests inject their own transports and never dial them). Keep auth + API. Any you want kept on for occasional debugging?
 3. **Automatic reset on every `test:integration` run?** Proposed: no (adds 30–60 s per run); keep `pnpm db:test:reset` as a manual escape hatch. Fine, or prefer auto-reset?
 4. **Keep `.env.test` gitignored or commit the placeholders?** Proposed: gitignore the file; document generation via `supabase status --workdir supabase-test -o env`. Match the existing `.env` posture.
+
+## Known issues (pre-existing, flagged for later)
+
+- `apps/api/src/db/migrations/0027_third_killer_shrike.sql` is orphaned on disk — not referenced by `meta/_journal.json`, which only tracks `0027_chunky_monster_badoon`. Drizzle applies 76 migrations, matching the journal. The orphan file does not run and does not break `db:test:migrate`, but it will trip up anyone reading the migrations folder expecting a contiguous sequence. Not touched in this branch.
+
+## Verified test seed requirements
+
+Running the full 34-file / 404-test suite against a freshly migrated test stack passes with no pre-seed step. Each suite creates and tears down its own data; `skillsCatalogSync.integration.test.ts` exercises the catalog sync as part of its own setup. `runIntegration.ts` therefore does not need a `sync-catalog` step between migrate and vitest. If a future suite depends on static reference data, add a Drizzle-level seed or extend `runIntegration.ts` then.
 
 ## Decisions taken
 
