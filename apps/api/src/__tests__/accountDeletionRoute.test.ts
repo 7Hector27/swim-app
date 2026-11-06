@@ -153,8 +153,11 @@ describe("POST /me/deletion/confirm (unit)", () => {
 
     // signOut was called on the re-auth client (success path) so no
     // extra Supabase session lingers for the deleted-but-not-matched
-    // auth user.
+    // auth user. Scope MUST be "local" — Supabase's default global
+    // scope would also kill the parent's live browser session and
+    // sign them out of the rest of the app on a failed confirm.
     expect(mockReauthSignOut).toHaveBeenCalledTimes(1);
+    expect(mockReauthSignOut).toHaveBeenCalledWith({ scope: "local" });
 
     // The id-mismatch event was logged with UUIDs only — no email, no
     // password, no raw error message.
@@ -193,7 +196,43 @@ describe("POST /me/deletion/confirm (unit)", () => {
     // confirmation-password must not sign the still-live session out.
     expect(res.status).toBe(403);
     expect(res.body.error).toBe("invalid_password");
+    // signOut on the re-auth client ran, with scope "local" so only
+    // the API-side session the re-auth minted gets invalidated.
+    // Supabase's default global scope would also kill the parent's
+    // browser session and sign them out of the rest of the app —
+    // exactly the symptom the user reported after a failed confirm.
     expect(mockReauthSignOut).toHaveBeenCalledTimes(1);
+    expect(mockReauthSignOut).toHaveBeenCalledWith({ scope: "local" });
+  });
+
+  it("re-auth sign-out never uses Supabase's default global scope — guards the parent's live browser session against failed-confirm sign-outs", async () => {
+    // One-line regression guard. The user reported that any failed
+    // confirm (403 wrong password, 500 mid-tx) also signed them out
+    // of the live app. Root cause: `authCheckClient.auth.signOut()`
+    // defaulted to scope "global" which revokes every refresh token
+    // for that user, including the one the browser was holding. This
+    // test fails loudly if any future refactor drops the explicit
+    // scope argument on any of the sign-out code paths.
+    authAsOwner();
+    mockReauthSignIn.mockResolvedValue({
+      data: { user: { id: PROFILE_ID, email: "jane@example.com" } },
+      error: null,
+    });
+    // Short-circuit the deletion tx to an internal error so the test
+    // doesn't need to seed real DB state; the sign-out ran before
+    // this point.
+    mockDbTransaction.mockRejectedValueOnce(new Error("test short-circuit"));
+
+    await request(app)
+      .post("/me/deletion/confirm")
+      .set("Authorization", "Bearer token")
+      .send({ password: "any", confirmationPhrase: "delete my account" });
+
+    expect(mockReauthSignOut).toHaveBeenCalled();
+    for (const call of mockReauthSignOut.mock.calls) {
+      const arg = call[0] as { scope?: string } | undefined;
+      expect(arg?.scope).toBe("local");
+    }
   });
 
   it("safeErrSummary never surfaces a Supabase error's .message to the log (would otherwise echo the user's email)", async () => {

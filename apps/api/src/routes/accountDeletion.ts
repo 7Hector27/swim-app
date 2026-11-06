@@ -92,8 +92,17 @@ accountDeletionRouter.post(
     // still creates a real server-side session with a refresh token;
     // signOut invalidates it so a failed deleteUser retry window doesn't
     // leave a second live session attached to a deleted account.
+    //
+    // CRITICAL: scope "local". Supabase's default scope is "global",
+    // which revokes EVERY refresh token for this user — including the
+    // one the parent's browser is using. The practical effect of the
+    // default was: any failed confirm (wrong password, 500 mid-tx)
+    // signed the parent out of their live browser session. The API-
+    // side re-auth client only owns the one session it just minted;
+    // scope "local" ends only that session and leaves the browser
+    // alone. Tested at the route level in accountDeletionRoute.test.ts.
     try {
-      await authCheckClient.auth.signOut();
+      await authCheckClient.auth.signOut({ scope: "local" });
     } catch {
       /* best-effort — nothing we can do with a sign-out failure here */
     }
