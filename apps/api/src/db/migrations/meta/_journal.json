@@ -533,6 +533,20 @@
       "when": 1793985814782,
       "tag": "0075_cultured_winter_soldier",
       "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1794008369121,
+      "tag": "0076_loose_sunspot",
+      "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1794009355395,
+      "tag": "0077_household_balance_ledger_append_only_trigger",
+      "breakpoints": true
     }
   ]
 }

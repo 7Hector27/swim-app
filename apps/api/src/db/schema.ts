@@ -1528,6 +1528,121 @@ export const coachNotificationPreferences = pgTable(
 // future retention policy. auth_user_id names the Supabase auth user to
 // delete and does not reference auth.users (that row goes away on success).
 
+// ── Payments: balance ledger + Stripe idempotency ─────────────────────────────
+
+// Enum matches packages/shared/src/schemas/payments.ts BalanceEntryTypeSchema.
+// See ADR 036 for the semantics of each value.
+export const balanceEntryTypeEnum = pgEnum("balance_entry_type", [
+  "card_topup",
+  "package_purchase",
+  "package_bonus",
+  "lesson_charge",
+  "refund_to_balance",
+  "coach_adjustment",
+  "free_lesson",
+]);
+
+// Append-only per ADR 036: a BEFORE UPDATE OR DELETE trigger (installed by a
+// custom migration — drizzle-kit can't express it) rejects any mutation. The
+// account-deletion anonymization path (ADR 036 §7, Phase 8) will later relax
+// the trigger to permit an UPDATE that nulls household_id + actor_id only.
+// Until then, rows are strictly append-only.
+//
+// household_id is nullable from day one solely to carry anonymized rows after
+// that Phase 8 lands — live code paths always insert with a non-null value.
+// amount_cents is signed: positive for credits (top-ups, refunds, bonuses),
+// negative for lesson charges, zero for free-lesson markers.
+export const householdBalanceLedger = pgTable(
+  "household_balance_ledger",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    householdId: uuid("household_id").references(() => households.id, { onDelete: "set null" }),
+    entryType: balanceEntryTypeEnum("entry_type").notNull(),
+    amountCents: integer("amount_cents").notNull(),
+    // Set for lesson_charge / refund_to_balance / free_lesson. Refunds read
+    // the matching lesson_charge row by lesson_id and write the inverse.
+    lessonId: uuid("lesson_id").references(() => lessons.id, { onDelete: "set null" }),
+    // Set for card_topup / package_purchase / package_bonus. The partial
+    // UNIQUE index below anchors webhook idempotency on card_topup and
+    // package_purchase; package_bonus can repeat the id for diagnostics.
+    stripeCheckoutSessionId: text("stripe_checkout_session_id"),
+    stripePaymentIntentId: text("stripe_payment_intent_id"),
+    // Null for cron-driven refunds and for rows written after the acting
+    // profile was scrubbed by account deletion.
+    actorId: uuid("actor_id").references(() => profiles.id, { onDelete: "set null" }),
+    // Required on coach_adjustment rows (enforced by the check below).
+    reason: text("reason"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    // Amount sign and zero rules per entry type. Keeps the ledger honest
+    // without relying on service-layer discipline.
+    check(
+      "balance_ledger_amount_sign_valid",
+      sql`(
+        (${table.entryType} IN ('card_topup', 'package_purchase', 'package_bonus', 'refund_to_balance') AND ${table.amountCents} > 0)
+        OR (${table.entryType} = 'lesson_charge' AND ${table.amountCents} < 0)
+        OR (${table.entryType} = 'free_lesson' AND ${table.amountCents} = 0)
+        OR (${table.entryType} = 'coach_adjustment' AND ${table.amountCents} <> 0)
+      )`,
+    ),
+    // lesson_id is present exactly for the three lesson-scoped entry types.
+    check(
+      "balance_ledger_lesson_id_scope_valid",
+      sql`(
+        (${table.entryType} IN ('lesson_charge', 'refund_to_balance', 'free_lesson') AND ${table.lessonId} IS NOT NULL)
+        OR (${table.entryType} NOT IN ('lesson_charge', 'refund_to_balance', 'free_lesson') AND ${table.lessonId} IS NULL)
+      )`,
+    ),
+    // stripe_checkout_session_id is present exactly for the three Stripe-paid
+    // entry types (card_topup, package_purchase, package_bonus). The partial
+    // UNIQUE below enforces idempotency on card_topup and package_purchase.
+    check(
+      "balance_ledger_stripe_session_scope_valid",
+      sql`(
+        (${table.entryType} IN ('card_topup', 'package_purchase', 'package_bonus') AND ${table.stripeCheckoutSessionId} IS NOT NULL)
+        OR (${table.entryType} NOT IN ('card_topup', 'package_purchase', 'package_bonus') AND ${table.stripeCheckoutSessionId} IS NULL)
+      )`,
+    ),
+    // Coach adjustments carry a required non-empty reason; other entry types
+    // leave reason null (keeps the audit story crisp — no stray notes on
+    // automated rows).
+    check(
+      "balance_ledger_adjustment_reason_valid",
+      sql`(
+        (${table.entryType} = 'coach_adjustment' AND ${table.reason} IS NOT NULL AND length(trim(${table.reason})) > 0)
+        OR (${table.entryType} <> 'coach_adjustment' AND ${table.reason} IS NULL)
+      )`,
+    ),
+    // Balance sum and per-household history view both key on household_id.
+    // Compound with created_at so the history pagination sort is covered.
+    index("balance_ledger_household_created_idx").on(table.householdId, table.createdAt.desc()),
+    // Refund lookup reads by lesson_id; partial because live rows are only
+    // the three lesson-scoped entry types.
+    index("balance_ledger_lesson_idx").on(table.lessonId).where(sql`lesson_id IS NOT NULL`),
+    // Webhook idempotency anchor — a second card_topup or package_purchase
+    // for the same Stripe session is rejected by this unique index, even if
+    // the stripe_events table's own idempotency somehow misses. package_bonus
+    // is excluded from the uniqueness scope because it legitimately repeats
+    // its sibling package_purchase's session id.
+    uniqueIndex("balance_ledger_stripe_session_uq")
+      .on(table.stripeCheckoutSessionId)
+      .where(sql`entry_type IN ('card_topup', 'package_purchase')`),
+  ],
+).enableRLS();
+
+// Primary webhook-idempotency table (ADR 036 §3). Carries only what dedup and
+// debugging need; the full event payload stays on Stripe's side and is
+// re-fetchable via the event id if debugging ever requires it. No card data
+// of any kind.
+export const stripeEvents = pgTable("stripe_events", {
+  stripeEventId: text("stripe_event_id").primaryKey(),
+  eventType: text("event_type").notNull(),
+  stripeCheckoutSessionId: text("stripe_checkout_session_id"),
+  receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
+  processedAt: timestamp("processed_at", { withTimezone: true }),
+}).enableRLS();
+
 export const accountDeletionJobs = pgTable(
   "account_deletion_jobs",
   {
