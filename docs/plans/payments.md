@@ -468,11 +468,22 @@ What the kids'-data / payments legal review needs to see:
 - Templates reuse the same sender identity as existing transactional emails (no new sender).
 - FAQ edits: credit-never-expires line, balance-model explainer, insufficient-funds explainer. Ages answer rewritten so it no longer says "20-minute bursts" — proposed copy: *"Little ones book 30 minutes, same as everyone else. In the water, Jason keeps the drills in short bursts so attention stays fresh."*
 
-**Phase 8 — Unused balance (depends on §6 outcome)**
+**Phase 8 — Account deletion integration**
 
-- If Option A: deletion-flow preflight; Jason-mediated refund via Stripe dashboard with a mirrored negative `coach_adjustment` row.
-- If Option B: automatic-refund engine in the deletion job post-commit task.
-- If Option C: forfeiture row and the legal/copy work.
+This phase is the one the earlier migrations deliberately deferred. It has two parts; the first is unconditional and must land regardless of which §6 option Jason picks.
+
+Part A — ledger anonymization (unconditional):
+
+- **Relax the append-only trigger from migration 0077** to permit a narrow `UPDATE` that nulls `household_id`, `actor_id`, and (if the migration-0077 column set ever grows) any other explicit identity columns — nothing else. The trigger's `IS DISTINCT FROM` check on every column must gain an allowlist of nullable-identity columns whose transition from non-null to null is legal during the account-deletion transaction. Pattern: follow the session-variable / transaction-tag approach ADR 034 already established for the skills-ledger `DELETE` exception (`SET LOCAL app.account_deletion = 'on'` inside the deletion transaction; the trigger checks for the tag and permits the anonymization update only when it's set). New migration, not an edit to 0077.
+- **Integrate the ledger scrub into the ADR 034 solo-deletion engine.** For the deleted household, run `UPDATE household_balance_ledger SET household_id = NULL, actor_id = NULL WHERE household_id = <deleted household>` inside the same transaction as the rest of the teardown. No DELETE — rows survive with amounts intact for tax retention.
+- **Audit-log payloads referencing the deleted household's ledger rows** are already covered by ADR 034's audit-payload scrub rule; no new scrub needed.
+- **`stripe_events` rows are not touched** — they carry no identifying data under this plan's data-minimization posture.
+
+Part B — unused-balance path (depends on §6 outcome, pending Jason):
+
+- If Option A: deletion-flow preflight; Jason-mediated refund via Stripe dashboard with a mirrored negative `coach_adjustment` row. Deletion blocks until balance = $0.
+- If Option B: automatic-refund engine in the deletion job post-commit task walks `card_topup` + `package_purchase` rows most-recent-first and issues Stripe refunds until the remaining balance is zero, flagging any residual beyond Stripe's 180-day refund window for Jason.
+- If Option C: forfeiture row (`coach_adjustment` with `amount_cents = -balance` and `reason = 'account_deletion_forfeit'`) written in the deletion transaction, plus the legal/copy work.
 
 ---
 
