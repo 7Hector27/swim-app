@@ -91,6 +91,10 @@ After adding a migration, always state whether it was applied locally. Productio
 
 Audit log writes (`householdAuditLog` inserts) always go inside the same `db.transaction()` as the change they record. Never write the audit log as a separate call after the update — if the insert fails, the whole transaction rolls back and the data change is not committed.
 
+**Payments**
+
+The balance ledger (`householdBalanceLedger`) is append-only; a trigger rejects every `UPDATE` and `DELETE`. Writes always pair with an `householdAuditLog` entry in the same transaction. Amounts are always computed server-side from `packages/shared` pricing — never trust an amount sent by the browser.
+
 **Logging**
 
 `apps/api/src/logger.ts` creates the pino singleton. Pretty-printed in dev (`NODE_ENV !== "production"`), JSON in production. `authorization` and `cookie` request headers are always redacted. Route handlers log via `req.log` (the per-request child logger set by pino-http), not the global logger. Never use `console` in apps/api.
