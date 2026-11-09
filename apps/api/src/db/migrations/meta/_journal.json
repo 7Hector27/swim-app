@@ -561,6 +561,13 @@
       "when": 1794259382265,
       "tag": "0079_balance_ledger_allow_identity_nullification",
       "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1794266831653,
+      "tag": "0080_balance_ledger_refund_per_charge",
+      "breakpoints": true
     }
   ]
 }

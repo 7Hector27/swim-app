@@ -72,6 +72,11 @@ export type LedgerEntryInput =
       actorId: string;
       amountCents: number;
       lessonId: string;
+      // The lesson_charge ledger row this refund offsets (ADR 036
+      // Phase 4, migration 0080). "One refund per charge" idempotency
+      // is enforced by the DB-level partial UNIQUE index on
+      // (refund_of_ledger_id) scoped to entry_type='refund_to_balance'.
+      refundOfLedgerId: string;
     }
   | {
       entryType: "coach_adjustment";
@@ -158,6 +163,9 @@ export async function applyLedgerEntry(
 
   const reason = input.entryType === "coach_adjustment" ? input.reason : null;
 
+  const refundOfLedgerId =
+    input.entryType === "refund_to_balance" ? input.refundOfLedgerId : null;
+
   const insertedRows = await tx
     .insert(householdBalanceLedger)
     .values({
@@ -169,6 +177,7 @@ export async function applyLedgerEntry(
       stripePaymentIntentId,
       actorId: input.actorId,
       reason,
+      refundOfLedgerId,
     })
     .returning({ id: householdBalanceLedger.id });
 
@@ -230,49 +239,89 @@ export type RefundLessonChargeResult =
   | { refunded: true; amountCents: number; ledgerId: string };
 
 /**
- * Read the lesson's `lesson_charge` row and, if present, write the inverse
- * `refund_to_balance` row plus audit. Refunds are idempotent per lesson: a
- * second call for the same lesson returns `{ refunded: false, reason:
- * "already_refunded" }` without writing a second row. The DB enforces the
- * invariant via the `balance_ledger_refund_lesson_uq` partial unique index,
- * so concurrent refund paths (e.g. a cron retry racing with a human action)
- * also collapse to a single refund row — one caller wins the insert, the
- * other's `ON CONFLICT DO NOTHING` returns zero rows and reports the no-op.
- * The DB — not service discipline — is the ultimate gatekeeper.
+ * Find the lesson's current outstanding `lesson_charge` row — the one that
+ * has not yet been offset by a `refund_to_balance`. A lesson may accumulate
+ * several lesson_charge rows across its lifetime (duration-change
+ * reschedule refunds the old charge and writes a new one at the new
+ * price), so "the charge" isn't a fixed concept per lesson; it's "the
+ * most recent charge that has no matching refund". Returns null if no such
+ * row exists (free lessons, pre-Phase-4 rows, or a lesson whose charge
+ * has already been refunded).
+ */
+async function findOutstandingLessonCharge(
+  tx: Db,
+  lessonId: string,
+): Promise<{ id: string; amountCents: number } | null> {
+  const rows = await tx.execute<{
+    id: string;
+    amount_cents: number;
+  }>(sql`
+    SELECT charge.id, charge.amount_cents
+    FROM household_balance_ledger AS charge
+    LEFT JOIN household_balance_ledger AS refund
+      ON refund.refund_of_ledger_id = charge.id
+      AND refund.entry_type = 'refund_to_balance'
+    WHERE charge.lesson_id = ${lessonId}
+      AND charge.entry_type = 'lesson_charge'
+      AND refund.id IS NULL
+    ORDER BY charge.created_at DESC
+    LIMIT 1
+  `);
+  const row = rows[0];
+  if (!row) return null;
+  return { id: row.id, amountCents: row.amount_cents };
+}
+
+/**
+ * Write a `refund_to_balance` row that offsets the lesson's current
+ * outstanding charge, in the same transaction as the caller's state
+ * change. Refunds are idempotent per charge: once a charge has been
+ * offset, a second call for the same lesson returns `{ refunded: false,
+ * reason: "already_refunded" }` without writing a second row (and
+ * without loosening the DB uniqueness guard that prevents the concurrent
+ * double-refund race).
  *
- * Refund amount is read from the stored charge — never recomputed from the
- * current rate card — so rate changes between booking and refund don't
- * leak either direction.
+ * Multiple lifetime charges per lesson are supported: a lesson charged,
+ * refunded (reschedule-reprice), re-charged, then cancelled will refund
+ * the current (newer) charge on the cancel — not the already-offset
+ * first charge.
+ *
+ * Refund amount is read from the stored charge — never recomputed from
+ * the current rate card — so rate changes between booking and refund
+ * don't leak either direction.
  */
 export async function refundLessonCharge(
   tx: Db,
   args: { householdId: string; lessonId: string; actorId: string },
 ): Promise<RefundLessonChargeResult> {
-  const chargeRows = await tx
-    .select({ amountCents: householdBalanceLedger.amountCents })
-    .from(householdBalanceLedger)
-    .where(
-      and(
-        eq(householdBalanceLedger.lessonId, args.lessonId),
-        eq(householdBalanceLedger.entryType, "lesson_charge"),
-      ),
-    )
-    .limit(1);
-
-  const chargeAmount = chargeRows[0]?.amountCents;
-  if (chargeAmount === undefined) {
-    return { refunded: false, reason: "no_charge" };
+  const outstanding = await findOutstandingLessonCharge(tx, args.lessonId);
+  if (!outstanding) {
+    // Either the lesson has no lesson_charge rows at all (free lesson,
+    // pre-Phase-4 row) or every charge already has a matching refund.
+    // We can distinguish these by looking at the raw charge count, but
+    // callers only care about "nothing to do" semantics.
+    const anyChargeRows = await tx
+      .select({ id: householdBalanceLedger.id })
+      .from(householdBalanceLedger)
+      .where(
+        and(
+          eq(householdBalanceLedger.lessonId, args.lessonId),
+          eq(householdBalanceLedger.entryType, "lesson_charge"),
+        ),
+      )
+      .limit(1);
+    return {
+      refunded: false,
+      reason: anyChargeRows.length === 0 ? "no_charge" : "already_refunded",
+    };
   }
 
-  // Charge amounts are stored negative; flip the sign to produce the refund.
-  const refundAmount = -chargeAmount;
-
-  // Insert directly with ON CONFLICT DO NOTHING against the partial unique
-  // index that scopes "one refund per lesson." We cannot use the shared
-  // applyLedgerEntry helper here because a unique-violation in Postgres
-  // aborts the enclosing transaction — a try/catch would leave the tx in
-  // the aborted state, breaking the audit insert and anything the caller
-  // wanted to do after. ON CONFLICT DO NOTHING keeps the tx healthy.
+  // Charge amounts are stored negative; flip the sign to produce the
+  // refund. The DB enforces at most one refund per lesson_charge row via
+  // the partial UNIQUE on (refund_of_ledger_id) scoped to
+  // entry_type='refund_to_balance'. ON CONFLICT DO NOTHING keeps the
+  // transaction healthy on the (rare, requires-lock-bypass) race.
+  const refundAmount = -outstanding.amountCents;
   const insertedRows = await tx
     .insert(householdBalanceLedger)
     .values({
@@ -281,9 +330,10 @@ export async function refundLessonCharge(
       amountCents: refundAmount,
       lessonId: args.lessonId,
       actorId: args.actorId,
+      refundOfLedgerId: outstanding.id,
     })
     .onConflictDoNothing({
-      target: householdBalanceLedger.lessonId,
+      target: householdBalanceLedger.refundOfLedgerId,
       // The partial unique index is predicated on entry_type; Postgres
       // requires the inference predicate to match the index predicate
       // exactly before it will use the partial index for the conflict
@@ -306,6 +356,7 @@ export async function refundLessonCharge(
       entryType: "refund_to_balance",
       amountCents: refundAmount,
       lessonId: args.lessonId,
+      refundOfLedgerId: outstanding.id,
     },
   });
 

@@ -1572,6 +1572,11 @@ export const householdBalanceLedger = pgTable(
     actorId: uuid("actor_id").references(() => profiles.id, { onDelete: "set null" }),
     // Required on coach_adjustment rows (enforced by the check below).
     reason: text("reason"),
+    // Refund idempotency anchor (ADR 036 Phase 4, migration 0080).
+    // Required on refund_to_balance rows; points at the lesson_charge row
+    // this refund offsets. NULL for every other entry type. The partial
+    // UNIQUE below enforces "one refund per charge".
+    refundOfLedgerId: uuid("refund_of_ledger_id").references((): AnyPgColumn => householdBalanceLedger.id),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
@@ -1620,6 +1625,16 @@ export const householdBalanceLedger = pgTable(
         OR (${table.entryType} <> 'coach_adjustment' AND ${table.reason} IS NULL)
       )`,
     ),
+    // Refund rows must name the charge they offset; non-refund rows must
+    // not (ADR 036 Phase 4). The partial UNIQUE below then guarantees
+    // one refund per charge.
+    check(
+      "balance_ledger_refund_of_scope_valid",
+      sql`(
+        (${table.entryType} = 'refund_to_balance' AND ${table.refundOfLedgerId} IS NOT NULL)
+        OR (${table.entryType} <> 'refund_to_balance' AND ${table.refundOfLedgerId} IS NULL)
+      )`,
+    ),
     // Balance sum and per-household history view both key on household_id.
     // Compound with created_at so the history pagination sort is covered.
     index("balance_ledger_household_created_idx").on(table.householdId, table.createdAt.desc()),
@@ -1634,14 +1649,18 @@ export const householdBalanceLedger = pgTable(
     uniqueIndex("balance_ledger_stripe_session_uq")
       .on(table.stripeCheckoutSessionId)
       .where(sql`entry_type IN ('card_topup', 'package_purchase')`),
-    // Refund idempotency anchor — a lesson can have at most one
-    // refund_to_balance row, enforced by the DB rather than by service-layer
-    // discipline alone. Two concurrent refund paths for the same lesson
-    // (e.g. a coach decline racing with a parent cancel, or a cron retry
-    // overlapping with a human action) lose at the unique constraint;
-    // `refundLessonCharge` catches the violation and reports the no-op.
-    uniqueIndex("balance_ledger_refund_lesson_uq")
-      .on(table.lessonId)
+    // Refund idempotency anchor — each lesson_charge row has at most one
+    // refund_to_balance row offsetting it (ADR 036 Phase 4, migration
+    // 0080). Enforced by the DB rather than service-layer discipline
+    // alone: two concurrent refund paths pointing at the same charge
+    // lose at the unique constraint and `refundLessonCharge`'s
+    // ON CONFLICT DO NOTHING collapses the loser to a no-op. Scoping
+    // by charge row (not by lesson) means a lesson that's been
+    // charged → refunded → re-charged (duration-change reschedule) can
+    // be refunded again when it's cancelled, since the second refund
+    // offsets a different charge row.
+    uniqueIndex("balance_ledger_refund_of_uq")
+      .on(table.refundOfLedgerId)
       .where(sql`entry_type = 'refund_to_balance'`),
   ],
 ).enableRLS();
