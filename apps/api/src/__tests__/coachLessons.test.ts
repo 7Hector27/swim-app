@@ -42,6 +42,9 @@ const {
   mockDbTransaction,
   mockComputeSlots,
   mockMergeSlotWindows,
+  mockGetHouseholdBalance,
+  mockApplyLedgerEntry,
+  mockRefundLessonCharge,
 } = vi.hoisted(() => ({
   mockGetUser: vi.fn(),
   mockDbSelect: vi.fn(),
@@ -50,6 +53,16 @@ const {
   mockDbTransaction: vi.fn(),
   mockComputeSlots: vi.fn(),
   mockMergeSlotWindows: vi.fn(),
+  // ADR 036 Phase 4 balance service — mocked at the module boundary so
+  // unit tests don't have to teach their mocked `tx` chains about the
+  // balance ledger. Real balance behavior is covered by
+  // coachLessonsCharge / refundPaths integration tests against the
+  // dedicated test Supabase stack.
+  mockGetHouseholdBalance: vi.fn().mockResolvedValue(1_000_000_000),
+  mockApplyLedgerEntry: vi.fn().mockResolvedValue("ledger-id-stub"),
+  mockRefundLessonCharge: vi
+    .fn()
+    .mockResolvedValue({ refunded: false, reason: "no_charge" }),
 }));
 
 vi.mock("../lib/supabase", () => ({
@@ -105,6 +118,12 @@ vi.mock("../services/emails/drain", () => ({
 vi.mock("../lib/slots", () => ({
   computeAvailableSlots: mockComputeSlots,
   mergeSlotWindows: mockMergeSlotWindows,
+}));
+
+vi.mock("../services/balance", () => ({
+  getHouseholdBalance: mockGetHouseholdBalance,
+  applyLedgerEntry: mockApplyLedgerEntry,
+  refundLessonCharge: mockRefundLessonCharge,
 }));
 
 import { createApp } from "../app";
@@ -362,7 +381,14 @@ describe("PATCH /coach/lessons/:id/decline", () => {
     const where = vi.fn().mockReturnValue({ returning });
     const set = vi.fn().mockReturnValue({ where });
     mockDbTransaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) =>
-      callback({ update: vi.fn().mockReturnValue({ set }) }),
+      callback({
+        update: vi.fn().mockReturnValue({ set }),
+        // ADR 036 Phase 4: decline now acquires the per-household balance
+        // advisory lock inside the same tx before writing the status
+        // change. The balance service itself is mocked at the module
+        // boundary (see top of file) so a no-op execute is enough here.
+        execute: vi.fn().mockResolvedValue(undefined),
+      }),
     );
 
     // swimmer fetch
@@ -454,7 +480,15 @@ describe("POST /internal/cron/tick", () => {
   }
 
   it("expires pending lessons past their deadline", async () => {
-    const expiredRow = { id: LESSON_ID };
+    // ADR 036 Phase 4: the expired pass now also returns householdId +
+    // requestedBy so it can issue per-household refunds. Shape the mock
+    // row accordingly; refundLessonCharge itself is mocked at the module
+    // boundary (see top of file).
+    const expiredRow = {
+      id: LESSON_ID,
+      householdId: HOUSEHOLD_ID,
+      requestedBy: PARENT_PROFILE_ID,
+    };
     mockDbTransaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) => {
       const expireReturning = vi.fn().mockResolvedValue([expiredRow]);
       const expireWhere = vi.fn().mockReturnValue({ returning: expireReturning });
@@ -468,6 +502,8 @@ describe("POST /internal/cron/tick", () => {
         update: vi.fn()
           .mockReturnValueOnce({ set: expireSet })
           .mockReturnValueOnce({ set: completeSet }),
+        // Balance-lock acquisition per household — no-op in the unit test.
+        execute: vi.fn().mockResolvedValue(undefined),
       };
       return callback(tx);
     });

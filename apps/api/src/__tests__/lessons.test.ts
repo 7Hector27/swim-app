@@ -45,6 +45,9 @@ const {
   mockComputeSlots,
   mockClassifyDaySlots,
   mockNeedsApproval,
+  mockGetHouseholdBalance,
+  mockApplyLedgerEntry,
+  mockRefundLessonCharge,
 } = vi.hoisted(() => ({
   mockGetUser: vi.fn(),
   mockDbSelect: vi.fn(),
@@ -54,6 +57,21 @@ const {
   mockComputeSlots: vi.fn(),
   mockClassifyDaySlots: vi.fn(),
   mockNeedsApproval: vi.fn(),
+  // ADR 036 Phase 4 balance service — mocked at the module boundary so
+  // unit tests don't have to teach their mocked `tx` chains about the
+  // balance ledger's selects/inserts. Real balance behavior is covered
+  // by parentBookingCharge / coachLessonsCharge / parentBatchBookingCharge
+  // / refundPaths integration tests against the dedicated test Supabase
+  // stack.
+  //
+  // Defaults: huge balance (so the insufficient_balance gate never fires)
+  // and no-op refund. Tests can override per-test via
+  // mockGetHouseholdBalance.mockResolvedValueOnce(...).
+  mockGetHouseholdBalance: vi.fn().mockResolvedValue(1_000_000_000),
+  mockApplyLedgerEntry: vi.fn().mockResolvedValue("ledger-id-stub"),
+  mockRefundLessonCharge: vi
+    .fn()
+    .mockResolvedValue({ refunded: false, reason: "no_charge" }),
 }));
 
 vi.mock("../lib/supabase", () => ({
@@ -98,6 +116,12 @@ vi.mock("../services/emails/outbox", () => ({
 
 vi.mock("../services/emails/sender", () => ({
   sendLessonEmailOutboxRow: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock("../services/balance", () => ({
+  getHouseholdBalance: mockGetHouseholdBalance,
+  applyLedgerEntry: mockApplyLedgerEntry,
+  refundLessonCharge: mockRefundLessonCharge,
 }));
 
 import { createApp } from "../app";
