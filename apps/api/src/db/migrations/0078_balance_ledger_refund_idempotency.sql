@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "balance_ledger_refund_lesson_uq" ON "household_balance_ledger" USING btree ("lesson_id") WHERE entry_type = 'refund_to_balance';

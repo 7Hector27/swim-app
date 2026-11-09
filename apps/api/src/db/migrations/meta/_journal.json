@@ -547,6 +547,13 @@
       "when": 1794009355395,
       "tag": "0077_household_balance_ledger_append_only_trigger",
       "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1794251241391,
+      "tag": "0078_balance_ledger_refund_idempotency",
+      "breakpoints": true
     }
   ]
 }

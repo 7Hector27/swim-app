@@ -224,16 +224,23 @@ export async function withBalanceLock<T>(
 }
 
 export type RefundLessonChargeResult =
-  | { refunded: false }
+  | { refunded: false; reason: "no_charge" | "already_refunded" }
   | { refunded: true; amountCents: number; ledgerId: string };
 
 /**
  * Read the lesson's `lesson_charge` row and, if present, write the inverse
- * `refund_to_balance` row plus audit. No-op on lessons that never had a
- * charge recorded (free-lesson markers, any pre-payments-era bookings that
- * might appear). Refund amount is read from the stored charge — never
- * recomputed from the current rate card — so rate changes between booking
- * and refund don't leak either direction.
+ * `refund_to_balance` row plus audit. Refunds are idempotent per lesson: a
+ * second call for the same lesson returns `{ refunded: false, reason:
+ * "already_refunded" }` without writing a second row. The DB enforces the
+ * invariant via the `balance_ledger_refund_lesson_uq` partial unique index,
+ * so concurrent refund paths (e.g. a cron retry racing with a human action)
+ * also collapse to a single refund row — one caller wins the insert, the
+ * other's `ON CONFLICT DO NOTHING` returns zero rows and reports the no-op.
+ * The DB — not service discipline — is the ultimate gatekeeper.
+ *
+ * Refund amount is read from the stored charge — never recomputed from the
+ * current rate card — so rate changes between booking and refund don't
+ * leak either direction.
  */
 export async function refundLessonCharge(
   tx: Db,
@@ -252,17 +259,53 @@ export async function refundLessonCharge(
 
   const chargeAmount = chargeRows[0]?.amountCents;
   if (chargeAmount === undefined) {
-    return { refunded: false };
+    return { refunded: false, reason: "no_charge" };
   }
 
   // Charge amounts are stored negative; flip the sign to produce the refund.
   const refundAmount = -chargeAmount;
-  const ledgerId = await applyLedgerEntry(tx, {
-    entryType: "refund_to_balance",
+
+  // Insert directly with ON CONFLICT DO NOTHING against the partial unique
+  // index that scopes "one refund per lesson." We cannot use the shared
+  // applyLedgerEntry helper here because a unique-violation in Postgres
+  // aborts the enclosing transaction — a try/catch would leave the tx in
+  // the aborted state, breaking the audit insert and anything the caller
+  // wanted to do after. ON CONFLICT DO NOTHING keeps the tx healthy.
+  const insertedRows = await tx
+    .insert(householdBalanceLedger)
+    .values({
+      householdId: args.householdId,
+      entryType: "refund_to_balance",
+      amountCents: refundAmount,
+      lessonId: args.lessonId,
+      actorId: args.actorId,
+    })
+    .onConflictDoNothing({
+      target: householdBalanceLedger.lessonId,
+      // The partial unique index is predicated on entry_type; Postgres
+      // requires the inference predicate to match the index predicate
+      // exactly before it will use the partial index for the conflict
+      // check.
+      where: sql`entry_type = 'refund_to_balance'`,
+    })
+    .returning({ id: householdBalanceLedger.id });
+
+  const ledgerId = insertedRows[0]?.id;
+  if (!ledgerId) {
+    return { refunded: false, reason: "already_refunded" };
+  }
+
+  await tx.insert(householdAuditLog).values({
     householdId: args.householdId,
     actorId: args.actorId,
-    lessonId: args.lessonId,
-    amountCents: refundAmount,
+    action: AUDIT_ACTIONS["refund_to_balance"],
+    payload: {
+      ledgerId,
+      entryType: "refund_to_balance",
+      amountCents: refundAmount,
+      lessonId: args.lessonId,
+    },
   });
+
   return { refunded: true, amountCents: refundAmount, ledgerId };
 }

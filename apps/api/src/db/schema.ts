@@ -1628,6 +1628,15 @@ export const householdBalanceLedger = pgTable(
     uniqueIndex("balance_ledger_stripe_session_uq")
       .on(table.stripeCheckoutSessionId)
       .where(sql`entry_type IN ('card_topup', 'package_purchase')`),
+    // Refund idempotency anchor — a lesson can have at most one
+    // refund_to_balance row, enforced by the DB rather than by service-layer
+    // discipline alone. Two concurrent refund paths for the same lesson
+    // (e.g. a coach decline racing with a parent cancel, or a cron retry
+    // overlapping with a human action) lose at the unique constraint;
+    // `refundLessonCharge` catches the violation and reports the no-op.
+    uniqueIndex("balance_ledger_refund_lesson_uq")
+      .on(table.lessonId)
+      .where(sql`entry_type = 'refund_to_balance'`),
   ],
 ).enableRLS();
 

@@ -40,6 +40,7 @@ import {
   getHouseholdBalance,
   refundLessonCharge,
   withBalanceLock,
+  type RefundLessonChargeResult,
 } from "../../services/balance";
 import { packagePrice } from "@swim-app/shared";
 
@@ -321,7 +322,7 @@ describe("refundLessonCharge", () => {
       }),
     );
 
-    expect(result).toEqual({ refunded: false });
+    expect(result).toEqual({ refunded: false, reason: "no_charge" });
     expect(await getHouseholdBalance(owner.householdId)).toBe(balanceBefore);
 
     // And no refund_to_balance row was written for this lesson.
@@ -368,6 +369,120 @@ describe("refundLessonCharge", () => {
 
     expect(await getHouseholdBalance(owner.householdId)).toBe(
       balanceAfterCharge + 7_500,
+    );
+  });
+
+  it("sequential double-refund writes exactly one refund_to_balance row and no-ops the second call", async () => {
+    const lessonId = await seedLesson();
+
+    await withBalanceLock(owner.householdId, async (tx) =>
+      applyLedgerEntry(tx, {
+        entryType: "lesson_charge",
+        householdId: owner.householdId,
+        actorId: owner.userId,
+        amountCents: -6_000,
+        lessonId,
+      }),
+    );
+
+    const first = await withBalanceLock(owner.householdId, async (tx) =>
+      refundLessonCharge(tx, {
+        householdId: owner.householdId,
+        lessonId,
+        actorId: owner.userId,
+      }),
+    );
+    expect(first.refunded).toBe(true);
+    if (first.refunded === true) expect(first.amountCents).toBe(6_000);
+
+    const balanceAfterFirstRefund = await getHouseholdBalance(owner.householdId);
+
+    // Second call for the same lesson — must be a no-op with no balance move.
+    const second = await withBalanceLock(owner.householdId, async (tx) =>
+      refundLessonCharge(tx, {
+        householdId: owner.householdId,
+        lessonId,
+        actorId: owner.userId,
+      }),
+    );
+    expect(second).toEqual({ refunded: false, reason: "already_refunded" });
+    expect(await getHouseholdBalance(owner.householdId)).toBe(
+      balanceAfterFirstRefund,
+    );
+
+    const refundRows = await adminDb()
+      .select({ id: householdBalanceLedger.id })
+      .from(householdBalanceLedger)
+      .where(
+        and(
+          eq(householdBalanceLedger.lessonId, lessonId),
+          eq(householdBalanceLedger.entryType, "refund_to_balance"),
+        ),
+      );
+    expect(refundRows).toHaveLength(1);
+  });
+
+  it("two concurrent refunds for the same lesson collapse to one refund_to_balance row (DB unique index enforces)", async () => {
+    const lessonId = await seedLesson();
+
+    await withBalanceLock(owner.householdId, async (tx) =>
+      applyLedgerEntry(tx, {
+        entryType: "lesson_charge",
+        householdId: owner.householdId,
+        actorId: owner.userId,
+        amountCents: -9_000,
+        lessonId,
+      }),
+    );
+
+    const balanceAfterCharge = await getHouseholdBalance(owner.householdId);
+
+    // Fire two refund attempts in parallel. The balance lock serializes
+    // them under normal use; even so, the DB unique index is the final
+    // gatekeeper — simulate that by having both callers hit the ledger
+    // with no lock, so they race to the insert. One wins with 23505, the
+    // other no-ops. In production the lock makes this a non-race; the
+    // test proves the invariant holds even if a caller forgot it.
+    async function raceRefund(): Promise<RefundLessonChargeResult> {
+      return db.transaction(async (tx) =>
+        refundLessonCharge(tx, {
+          householdId: owner.householdId,
+          lessonId,
+          actorId: owner.userId,
+        }),
+      );
+    }
+
+    const [a, b] = await Promise.all([raceRefund(), raceRefund()]);
+
+    const successes = [a, b].filter((result) => result.refunded === true);
+    const noops = [a, b].filter((result) => result.refunded === false);
+    expect(successes).toHaveLength(1);
+    expect(noops).toHaveLength(1);
+    const success = successes[0];
+    const noop = noops[0];
+    if (success?.refunded !== true || noop?.refunded !== false) {
+      throw new Error("unreachable: filter should guarantee shape");
+    }
+    expect(success.amountCents).toBe(9_000);
+    expect(noop.reason).toBe("already_refunded");
+
+    // Exactly one refund row survives in the DB — the unique index is doing
+    // the work regardless of how many callers raced to insert.
+    const refundRows = await adminDb()
+      .select({ id: householdBalanceLedger.id })
+      .from(householdBalanceLedger)
+      .where(
+        and(
+          eq(householdBalanceLedger.lessonId, lessonId),
+          eq(householdBalanceLedger.entryType, "refund_to_balance"),
+        ),
+      );
+    expect(refundRows).toHaveLength(1);
+
+    // Balance moved by exactly one refund's worth.
+    expect(await getHouseholdBalance(owner.householdId)).toBe(
+      balanceAfterCharge + 9_000,
     );
   });
 });
