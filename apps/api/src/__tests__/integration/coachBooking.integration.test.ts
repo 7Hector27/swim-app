@@ -7,7 +7,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import request from "supertest";
 import pino from "pino";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { createApp } from "../../app";
 import {
   adminDb,
@@ -224,14 +224,27 @@ async function wipeHouseholdBookingArtifacts(householdId: string): Promise<void>
     await adminDb().delete(lessonSwimmers).where(inArray(lessonSwimmers.lessonId, ids));
     await adminDb().delete(lessons).where(inArray(lessons.id, ids));
   }
+  // Scrub audit rows for this household — including the
+  // balance_lesson_charged / balance_free_lesson / balance_lesson_refunded
+  // actions that applyLedgerEntry writes alongside the ledger rows.
+  // If left behind, they reference the coach's profile via actor_id
+  // (FK ON DELETE RESTRICT) and block coach.cleanup() in afterAll.
   await adminDb()
     .delete(householdAuditLog)
-    .where(
-      and(
-        eq(householdAuditLog.householdId, householdId),
-        eq(householdAuditLog.action, "lesson_booked_by_coach"),
-      ),
+    .where(eq(householdAuditLog.householdId, householdId));
+  // Lesson-scoped ledger rows only (lesson_charge | free_lesson |
+  // refund_to_balance). The coach_adjustment seed row from beforeAll
+  // is preserved so subsequent tests still have balance. The
+  // append-only trigger blocks a plain DELETE so we bypass it under
+  // session_replication_role=replica.
+  await adminDb().transaction(async (tx) => {
+    await tx.execute(sql`SET LOCAL session_replication_role = replica`);
+    await tx.execute(
+      sql`DELETE FROM household_balance_ledger
+          WHERE household_id = ${householdId}::uuid
+          AND lesson_id IS NOT NULL`,
     );
+  });
 }
 
 beforeAll(async () => {

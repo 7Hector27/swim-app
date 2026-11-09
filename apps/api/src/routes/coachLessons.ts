@@ -32,6 +32,9 @@ import {
   DeclineLessonBodySchema,
   MarkNoShowBodySchema,
   UndoNoShowBodySchema,
+  priceForLesson,
+  type LessonDurationMinutes,
+  type SwimmerCount,
 } from "@swim-app/shared";
 import { db } from "../db/client";
 import { requireLiveLessonFields, requireLiveLocationId } from "../db/liveLesson";
@@ -70,6 +73,11 @@ import {
 import { syncLessonToGoogle } from "../services/googleCalendarSync";
 import { enqueueLessonEmail } from "../services/emails/outbox";
 import { sendLessonEmailOutboxRow } from "../services/emails/sender";
+import {
+  applyLedgerEntry,
+  getHouseholdBalance,
+  refundLessonCharge,
+} from "../services/balance";
 import { computeAvailableSlots, mergeSlotWindows } from "../lib/slots";
 import { z } from "zod";
 
@@ -1708,11 +1716,25 @@ coachLessonsRouter.post(
       }
     }
 
+    // Authoritative price (ADR 036). Only used when chargeType='balance';
+    // `free` bookings don't touch money. Schema caps swimmerIds at 4 and
+    // durationMinutes to {30, 45, 60}, so the casts are safe.
+    const swimmerCount = body.swimmerIds.length as SwimmerCount;
+    const durationMinutes = body.durationMinutes as LessonDurationMinutes;
+    const priceCents = priceForLesson(durationMinutes, swimmerCount);
+
     // ── Transact: advisory lock → overlap check → insert ──────────────────────
     const result = await db.transaction(async (tx) => {
       // Same lock key as POST /lessons so parent + coach writes serialize.
       await tx.execute(
         sql`SELECT pg_advisory_xact_lock(hashtext(${"lesson-day:" + laDateStr}))`,
+      );
+      // Per-household balance lock, strictly after the day lock (ADR 036
+      // §1). Taken for both chargeType='balance' and ='free' so a free
+      // lesson's marker insert and a concurrent charge for the same
+      // household still serialize.
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtext(${"household-balance:" + body.householdId}))`,
       );
 
       // Re-fetch existing lessons inside the lock. Hard reject on any time
@@ -1735,7 +1757,22 @@ coachLessonsRouter.post(
         const existingEndMs = existingStartMs + row.durationMinutes * 60_000;
         return newStartMs < existingEndMs && existingStartMs < newEndMs;
       });
-      if (overlaps) return null;
+      if (overlaps) return { kind: "slot_unavailable" as const };
+
+      // Balance gate for chargeType='balance'. A coach-triggered
+      // insufficient_balance is a UI error the coach needs to hear
+      // about distinctly — the UI will offer "switch to free lesson"
+      // or "ask the family to top up".
+      if (body.chargeType === "balance") {
+        const balanceCents = await getHouseholdBalance(body.householdId, tx);
+        if (balanceCents < priceCents) {
+          return {
+            kind: "insufficient_balance" as const,
+            balanceCents,
+            priceCents,
+          };
+        }
+      }
 
       const type: "private" | "family" = body.swimmerIds.length === 1 ? "private" : "family";
       const now = new Date();
@@ -1762,6 +1799,27 @@ coachLessonsRouter.post(
         body.swimmerIds.map((swimmerId) => ({ lessonId: inserted.id, swimmerId })),
       );
 
+      // ADR 036 §4: balance → charge the family at the current price.
+      // free → write a `free_lesson` marker (amount 0) so the family's
+      // history page can explain the lesson's existence; a cancel of a
+      // free lesson later refunds nothing (refundLessonCharge no-ops).
+      if (body.chargeType === "balance") {
+        await applyLedgerEntry(tx, {
+          entryType: "lesson_charge",
+          householdId: body.householdId,
+          actorId: coachProfileId,
+          lessonId: inserted.id,
+          amountCents: -priceCents,
+        });
+      } else {
+        await applyLedgerEntry(tx, {
+          entryType: "free_lesson",
+          householdId: body.householdId,
+          actorId: coachProfileId,
+          lessonId: inserted.id,
+        });
+      }
+
       // Audit row — SAME transaction as the lesson insert (CLAUDE.md rule).
       // `override` holds the SERVER-computed warnings for this submission,
       // or null when no warning fired. Never the client's acknowledgement set.
@@ -1776,6 +1834,7 @@ coachLessonsRouter.post(
           durationMinutes: body.durationMinutes,
           swimmerIds: body.swimmerIds,
           override: anyWarning ? warnings : null,
+          chargeType: body.chargeType,
         },
       });
 
@@ -1795,11 +1854,25 @@ coachLessonsRouter.post(
       // coach via the lesson's coach_id column.
       const coachNotificationId = await notifyBookingCreated(tx, inserted.id, true);
 
-      return { lesson: inserted, outboxId, coachNotificationId };
+      return {
+        kind: "ok" as const,
+        lesson: inserted,
+        outboxId,
+        coachNotificationId,
+      };
     });
 
-    if (!result) {
+    if (result.kind === "slot_unavailable") {
       res.status(422).json({ error: "slot_unavailable" });
+      return;
+    }
+    if (result.kind === "insufficient_balance") {
+      res.status(422).json({
+        error: "insufficient_balance",
+        balanceCents: result.balanceCents,
+        priceCents: result.priceCents,
+        shortfallCents: result.priceCents - result.balanceCents,
+      });
       return;
     }
     const { lesson: committed, outboxId, coachNotificationId } = result;

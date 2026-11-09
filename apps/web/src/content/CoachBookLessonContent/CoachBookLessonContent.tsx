@@ -139,6 +139,10 @@ export default function CoachBookLessonContent({
       durationMinutes: pending.summary.durationMinutes,
       overrideWindow: pending.overrideWindow || serverWarnings !== null,
       acknowledgedWarnings,
+      // ADR 036 Phase 4: balance / free toggle lands with the balance
+      // panel UX. Until then, coach bookings always charge the balance
+      // (matches the server default).
+      chargeType: "balance",
     });
     setIsSubmitting(false);
 

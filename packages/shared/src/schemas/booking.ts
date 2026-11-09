@@ -744,6 +744,14 @@ export const CoachBookingWarningsSchema = z.object({
 });
 export type CoachBookingWarnings = z.infer<typeof CoachBookingWarningsSchema>;
 
+// How the coach-booked lesson is paid (ADR 036 §4). `balance` charges the
+// family's balance like a parent booking — the server refuses with
+// insufficient_balance if the household can't cover it. `free` marks the
+// lesson as a comp (no charge, no refund on cancel) and writes a
+// `free_lesson` ledger marker for audit completeness.
+export const CoachChargeTypeSchema = z.enum(["balance", "free"]);
+export type CoachChargeType = z.infer<typeof CoachChargeTypeSchema>;
+
 export const CoachCreateLessonBodySchema = z.object({
   householdId: z.string().uuid(),
   swimmerIds: z.array(z.string().uuid()).min(1).max(4),
@@ -755,6 +763,9 @@ export const CoachCreateLessonBodySchema = z.object({
   // true in acknowledgedWarnings OR the server returns 409.
   overrideWindow: z.boolean().default(false),
   acknowledgedWarnings: CoachBookingWarningsSchema.default({}),
+  // ADR 036 Phase 4. Defaults to 'balance' so a coach that forgets to
+  // pass the field doesn't accidentally give a free lesson.
+  chargeType: CoachChargeTypeSchema.default("balance"),
 });
 export type CoachCreateLessonBody = z.infer<typeof CoachCreateLessonBodySchema>;
 
