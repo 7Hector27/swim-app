@@ -24,6 +24,7 @@ import {
   closeAdminDb,
   createTestUser,
   createTestUserInHousehold,
+  seedHouseholdBalanceForTest,
   type TestUser,
 } from "./helpers";
 import {
@@ -306,6 +307,13 @@ beforeAll(async () => {
       .where(eq(availabilityConfig.id, config.id));
   }
   owner = await createTestUser("batch-owner");
+  // ADR 036 Phase 4: parent batch bookings charge the balance per
+  // lesson. Seed generously so a 20-lesson batch can't exhaust it.
+  await seedHouseholdBalanceForTest({
+    householdId: owner.householdId,
+    actorId: owner.userId,
+    amountCents: 10_000_000,
+  });
   viewer = await createTestUserInHousehold("batch-viewer", owner.householdId, "viewer");
 
   const locs = await adminDb()
@@ -978,6 +986,11 @@ describe("POST /lessons/batch — Phase 1", () => {
       // trying to book the same slot (ADR 021 doesn't allow a household to
       // double-book itself anyway).
       const other = await createTestUser("batch-concurrent-other");
+      await seedHouseholdBalanceForTest({
+        householdId: other.householdId,
+        actorId: other.userId,
+        amountCents: 1_000_000,
+      });
       const otherSwimmerRows = await adminDb()
         .insert(swimmers)
         .values({

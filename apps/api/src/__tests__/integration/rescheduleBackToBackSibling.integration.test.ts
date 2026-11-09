@@ -7,6 +7,7 @@ import {
   adminDb,
   closeAdminDb,
   createTestUser,
+  seedHouseholdBalanceForTest,
   settleAndCleanupCoachNotificationsForHousehold,
   type TestUser,
 } from "./helpers";
@@ -114,6 +115,11 @@ async function findSlotWithRoomForBackToBack(
 
 beforeAll(async () => {
   owner = await createTestUser("reschedule-sibling-owner");
+  await seedHouseholdBalanceForTest({
+    householdId: owner.householdId,
+    actorId: owner.userId,
+    amountCents: 1_000_000,
+  });
   coach = await createTestUser("reschedule-sibling-coach");
   await makeCoach(coach.userId);
 

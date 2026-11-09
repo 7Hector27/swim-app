@@ -83,6 +83,7 @@ import {
   closeAdminDb,
   createTestUser,
   createTestUserInHousehold,
+  seedHouseholdBalanceForTest,
   type TestUser,
 } from "./helpers";
 
@@ -487,6 +488,11 @@ describe("POST /me/deletion/confirm — solo path, real-flow seed", () => {
 
     const owner = await createTestUser("realflow-solo-owner");
     testUsers.push(owner);
+    await seedHouseholdBalanceForTest({
+      householdId: owner.householdId,
+      actorId: owner.userId,
+      amountCents: 1_000_000,
+    });
     const householdId = owner.householdId;
     const authUserId = owner.userId;
     const swimmerId = await createSwimmer(owner, "Alex");
@@ -971,6 +977,11 @@ describe("POST /me/deletion/confirm — leave path, real-flow seed", () => {
 
     const owner = await createTestUser("realflow-leave-owner");
     testUsers.push(owner);
+    await seedHouseholdBalanceForTest({
+      householdId: owner.householdId,
+      actorId: owner.userId,
+      amountCents: 1_000_000,
+    });
     const manager = await createTestUserInHousehold(
       "realflow-leave-manager",
       owner.householdId,

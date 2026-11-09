@@ -21,6 +21,7 @@ import {
   closeAdminDb,
   createTestUser,
   createTestUserInHousehold,
+  seedHouseholdBalanceForTest,
   type TestUser,
 } from "./helpers";
 import {
@@ -239,6 +240,11 @@ beforeAll(async () => {
   }
 
   owner = await createTestUser("batch-phase3-owner");
+  await seedHouseholdBalanceForTest({
+    householdId: owner.householdId,
+    actorId: owner.userId,
+    amountCents: 10_000_000,
+  });
   viewer = await createTestUserInHousehold("batch-phase3-viewer", owner.householdId, "viewer");
   coach = await createTestUser("batch-phase3-coach");
   await adminDb().update(profiles).set({ role: "coach" }).where(eq(profiles.id, coach.userId));
@@ -642,6 +648,11 @@ describe("Phase 3 — DELETE /lessons/batch/:batchId/remaining", () => {
     await withAllDaysEnabled(async () => {
       const trustId = await seedTrust();
       const other = await createTestUser("batch-phase3-other");
+      await seedHouseholdBalanceForTest({
+        householdId: other.householdId,
+        actorId: other.userId,
+        amountCents: 1_000_000,
+      });
       try {
         const startDate = futureLaDate(165);
         const weekday = isoWeekdayFor(startDate);

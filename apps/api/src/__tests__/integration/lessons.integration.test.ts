@@ -8,6 +8,7 @@ import {
   closeAdminDb,
   createTestUser,
   createTestUserInHousehold,
+  seedHouseholdBalanceForTest,
   settleAndCleanupCoachNotificationsForHousehold,
   type TestUser,
 } from "./helpers";
@@ -58,6 +59,14 @@ function futureSlot(): string {
 
 beforeAll(async () => {
   owner = await createTestUser("lessons-owner");
+  // ADR 036 Phase 4: parent bookings charge the balance. Seed enough to
+  // cover every booking in this file plus headroom; individual tests
+  // don't assert on specific balance values.
+  await seedHouseholdBalanceForTest({
+    householdId: owner.householdId,
+    actorId: owner.userId,
+    amountCents: 1_000_000,
+  });
   viewer = await createTestUserInHousehold("lessons-viewer", owner.householdId, "viewer");
 
   // Get the first named location.
@@ -187,6 +196,11 @@ describe("POST /lessons (integration)", () => {
       // First, create a second test user so we have two separate households
       // trying to book the same slot simultaneously.
       const owner2 = await createTestUser("lessons-concurrent");
+      await seedHouseholdBalanceForTest({
+        householdId: owner2.householdId,
+        actorId: owner2.userId,
+        amountCents: 1_000_000,
+      });
       const swimmerRows2 = await adminDb()
         .insert(swimmers)
         .values({

@@ -3,12 +3,13 @@
 // attests their age so requireUser accepts them, and returns a cleanup fn.
 
 import { createClient } from "@supabase/supabase-js";
-import { eq, inArray } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import {
   coachNotifications,
   householdAuditLog,
+  householdBalanceLedger,
   householdMembers,
   households,
   lessons,
@@ -84,6 +85,49 @@ export async function settleAndCleanupCoachNotificationsForHousehold(
       .delete(coachNotifications)
       .where(inArray(coachNotifications.lessonId, lessonIds));
   }
+}
+
+/**
+ * Credits a household's balance in one insert — writes a coach_adjustment
+ * ledger row with the given actor and a `reason` that marks it as test
+ * seed data. The balance derivation (`SUM(amount_cents)`) picks it up
+ * immediately; booking paths see the full seeded amount.
+ *
+ * Doesn't take the balance advisory lock — tests call this at setup time,
+ * before any booking activity, so no concurrent writer exists. The lock
+ * is only required when a reader is going to decide a write based on
+ * what it sees (ADR 036 §1 concurrency).
+ */
+export async function seedHouseholdBalanceForTest(
+  args: {
+    householdId: string;
+    actorId: string;
+    amountCents: number;
+    reason?: string;
+  },
+): Promise<void> {
+  await adminDb().insert(householdBalanceLedger).values({
+    householdId: args.householdId,
+    actorId: args.actorId,
+    entryType: "coach_adjustment",
+    amountCents: args.amountCents,
+    reason: args.reason ?? "integration-test-seed",
+  });
+}
+
+/**
+ * Hard-deletes the test household's ledger + audit rows at cleanup time.
+ * The append-only trigger blocks a plain DELETE, so we bypass it under
+ * session_replication_role=replica (same pattern as
+ * balanceLedger.integration.test.ts / stripeWebhook.integration.test.ts).
+ */
+export async function clearHouseholdBalanceForTest(householdId: string): Promise<void> {
+  await adminDb().transaction(async (tx) => {
+    await tx.execute(sql`SET LOCAL session_replication_role = replica`);
+    await tx.execute(
+      sql`DELETE FROM household_balance_ledger WHERE household_id = ${householdId}::uuid`,
+    );
+  });
 }
 
 /**
@@ -188,6 +232,13 @@ async function attestAge(userId: string): Promise<void> {
  * Creates a real Supabase auth user, signs them in, and attests their age so
  * requireUser accepts them. The on_auth_user_created trigger creates the
  * household + owner membership atomically; this helper queries that record.
+ *
+ * Parent bookings charge the balance (ADR 036 Phase 4); each test that
+ * exercises POST /lessons must seed its household's balance up-front via
+ * `seedHouseholdBalanceForTest` (or helpers that wrap it). The deliberate
+ * choice not to auto-seed here: Phase 8 hasn't relaxed the append-only
+ * trigger to permit ledger nullification during account deletion, so a
+ * ledger row would break the /me/deletion/confirm path.
  */
 export async function createTestUser(emailPrefix: string): Promise<TestUser> {
   const email = uniqueEmail(emailPrefix);
@@ -226,6 +277,11 @@ export async function createTestUser(emailPrefix: string): Promise<TestUser> {
         for (const row of swimmerRows) {
           await hardDeleteSwimmer(row.id);
         }
+        // Ledger is append-only; the trigger blocks a plain DELETE so we
+        // bypass it under session_replication_role=replica. Done before
+        // the household delete even though the FK is ON DELETE SET NULL,
+        // so leftover test rows don't accumulate forever.
+        await clearHouseholdBalanceForTest(householdId);
         // Delete remaining audit log rows (member_added etc. with no swimmer ref).
         await adminDb().delete(householdAuditLog).where(eq(householdAuditLog.householdId, householdId));
         // Delete members before household (profileId has ON DELETE RESTRICT on profiles).

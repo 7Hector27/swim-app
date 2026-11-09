@@ -13,6 +13,7 @@ import {
   adminDb,
   closeAdminDb,
   createTestUser,
+  seedHouseholdBalanceForTest,
   settleAndCleanupCoachNotificationsForHousehold,
   type TestUser,
 } from "./helpers";
@@ -238,6 +239,19 @@ beforeAll(async () => {
   await makeCoach(coach.userId);
   ownerA = await createTestUser("coach-booking-ownerA");
   ownerB = await createTestUser("coach-booking-ownerB");
+  // ADR 036 Phase 4: parent bookings charge the balance. These tests
+  // exercise the parent-books-after-coach trust flow, so each parent
+  // household needs a balance.
+  await seedHouseholdBalanceForTest({
+    householdId: ownerA.householdId,
+    actorId: ownerA.userId,
+    amountCents: 1_000_000,
+  });
+  await seedHouseholdBalanceForTest({
+    householdId: ownerB.householdId,
+    actorId: ownerB.userId,
+    amountCents: 1_000_000,
+  });
 
   // Named pool (public, shared across all households).
   const locs = await adminDb()

@@ -42,6 +42,9 @@ import {
   UpcomingLessonsQuerySchema,
   bookingWindowEnd,
   isAfterBookingWindow,
+  priceForLesson,
+  type LessonDurationMinutes,
+  type SwimmerCount,
 } from "@swim-app/shared";
 import { db } from "../db/client";
 import { requireLiveLessonFields, requireLiveLocationId } from "../db/liveLesson";
@@ -88,6 +91,11 @@ import {
 import { syncLessonToGoogle } from "../services/googleCalendarSync";
 import { enqueueLessonEmail } from "../services/emails/outbox";
 import { sendLessonEmailOutboxRow } from "../services/emails/sender";
+import {
+  applyLedgerEntry,
+  getHouseholdBalance,
+  refundLessonCharge,
+} from "../services/balance";
 import type { BatchEmailLesson, BatchEmailPayload } from "../services/emails/batchTypes";
 import { isActiveSwimmer } from "../db/queries";
 
@@ -600,12 +608,26 @@ lessonsRouter.post(
       return;
     }
 
+    // Authoritative price for this booking (ADR 036). swimmerIds is capped
+    // at 4 by CreateLessonBodySchema; durationMinutes is validated against
+    // LESSON_DURATION_MINUTES. The casts are safe at the schema boundary.
+    const swimmerCount = body.swimmerIds.length as SwimmerCount;
+    const durationMinutes = body.durationMinutes as LessonDurationMinutes;
+    const priceCents = priceForLesson(durationMinutes, swimmerCount);
+
     // ── Transact: advisory lock → re-validate slot → insert ──────────────────
     const newLesson = await db.transaction(async (tx) => {
       // Serialize concurrent bookings on the same calendar day (LA time).
       // pg_advisory_xact_lock takes a bigint; we hash the day string.
       await tx.execute(
         sql`SELECT pg_advisory_xact_lock(hashtext(${"lesson-day:" + laDateStr}))`,
+      );
+      // Per-household balance lock, acquired strictly after the day lock to
+      // match the global ordering (ADR 036 §1). Concurrent bookings on the
+      // same household serialize; concurrent bookings on different
+      // households do not.
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtext(${"household-balance:" + householdId}))`,
       );
 
       // Fetch fresh state inside the lock.
@@ -653,7 +675,20 @@ lessonsRouter.post(
 
       if (!slotAvailable) {
         const reason = diagnoseSlotRejection(slotParams, startsAt.getTime());
-        return { rejected: true as const, reason };
+        return { kind: "rejected" as const, reason };
+      }
+
+      // Balance gate (ADR 036 §4). Read inside the household lock so a
+      // concurrent charge/refund can't flip the number between the read
+      // and the ledger insert below. The 422 response carries the
+      // shortfall so the UI can show the exact "add $X" CTA.
+      const balanceCents = await getHouseholdBalance(householdId, tx);
+      if (balanceCents < priceCents) {
+        return {
+          kind: "insufficient_balance" as const,
+          balanceCents,
+          priceCents,
+        };
       }
 
       const approval = await needsApproval(householdId, body.locationId, tx);
@@ -683,6 +718,18 @@ lessonsRouter.post(
         body.swimmerIds.map((swimmerId) => ({ lessonId: inserted.id, swimmerId })),
       );
 
+      // Charge the balance for this lesson. applyLedgerEntry writes the
+      // matching household_audit_log row in the same tx, so a rollback
+      // unwinds the lesson insert, the swimmer links, and the charge
+      // together.
+      await applyLedgerEntry(tx, {
+        entryType: "lesson_charge",
+        householdId,
+        actorId: profileId,
+        lessonId: inserted.id,
+        amountCents: -priceCents,
+      });
+
       // Parent booking email outbox (ADR 028). Auto-approved bookings get
       // the confirmed email directly; never a request-received email on top.
       const outboxId = await enqueueLessonEmail(tx, {
@@ -705,10 +752,15 @@ lessonsRouter.post(
         inserted.status === "approved",
       );
 
-      return { lesson: inserted, outboxId, coachNotificationId };
+      return {
+        kind: "ok" as const,
+        lesson: inserted,
+        outboxId,
+        coachNotificationId,
+      };
     });
 
-    if ("rejected" in newLesson) {
+    if (newLesson.kind === "rejected") {
       req.log.warn(
         {
           event: "slot_unavailable",
@@ -721,6 +773,15 @@ lessonsRouter.post(
         "slot rejected on booking recheck",
       );
       res.status(422).json({ error: "slot_unavailable" });
+      return;
+    }
+    if (newLesson.kind === "insufficient_balance") {
+      res.status(422).json({
+        error: "insufficient_balance",
+        balanceCents: newLesson.balanceCents,
+        priceCents: newLesson.priceCents,
+        shortfallCents: newLesson.priceCents - newLesson.balanceCents,
+      });
       return;
     }
     const {

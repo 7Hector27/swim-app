@@ -456,9 +456,14 @@ describe("POST /webhooks/stripe", () => {
     expect(res.status).toBe(200);
     expect(res.body.reason).toBe("household_missing");
 
+    // Scope to a session-id check — no card_topup or package_purchase
+    // row should exist for the bad household. Global ledger emptiness
+    // is not a valid assertion here: other integration tests seed
+    // charge rows in their own households that persist across files.
     const ledgerRows = await adminDb()
       .select({ id: householdBalanceLedger.id })
-      .from(householdBalanceLedger);
+      .from(householdBalanceLedger)
+      .where(eq(householdBalanceLedger.stripeCheckoutSessionId, sessionId));
     expect(ledgerRows).toHaveLength(0);
   });
 
