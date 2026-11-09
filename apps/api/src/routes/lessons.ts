@@ -849,6 +849,20 @@ class BatchPicksConflictError extends Error {
   }
 }
 
+// ADR 036 Phase 4: batch bookings are all-or-nothing on the household
+// balance. Sum of per-lesson prices is computed under the household
+// balance lock; if balance is below the total, the whole batch rolls
+// back and the parent sees 422 insufficient_balance with the shortfall.
+class BatchInsufficientBalanceError extends Error {
+  constructor(
+    readonly balanceCents: number,
+    readonly totalPriceCents: number,
+  ) {
+    super("insufficient_balance");
+    this.name = "BatchInsufficientBalanceError";
+  }
+}
+
 interface BatchContext {
   config: typeof availabilityConfig.$inferSelect;
   seasons: ReturnType<typeof mapSeasonRow>[];
@@ -1242,6 +1256,13 @@ lessonsRouter.post(
           sql`SELECT pg_advisory_xact_lock(hashtext(${"lesson-day:" + laDate}))`,
         );
       }
+      // Per-household balance lock, taken strictly after all the per-day
+      // locks (ADR 036 §1). This batch's day locks → balance lock is a
+      // superset of the single-lesson acquire order so there is still one
+      // consistent global ordering across all booking paths.
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtext(${"household-balance:" + householdId}))`,
+      );
 
       const [blockedRows, bufferRows, existingLessonRows] = await Promise.all([
         tx.select().from(blockedTimes),
@@ -1301,6 +1322,25 @@ lessonsRouter.post(
         throw new BatchPicksConflictError(conflicts);
       }
 
+      // ADR 036 Phase 4: all-or-nothing on the total. Sum per-lesson
+      // prices (one row per lesson, never a single row for the batch
+      // total — the ledger history keeps refunds per-lesson-scoped).
+      const totalPriceCents = picksAsc.reduce(
+        (sum, pick) =>
+          sum +
+          priceForLesson(
+            pick.durationMinutes as LessonDurationMinutes,
+            pick.swimmerIds.length as SwimmerCount,
+          ),
+        0,
+      );
+      const balanceCents = await getHouseholdBalance(householdId, tx);
+      if (balanceCents < totalPriceCents) {
+        // Same mechanic as BatchPicksConflictError — exception rolls the
+        // whole thing back, the outer catch maps to 422.
+        throw new BatchInsufficientBalanceError(balanceCents, totalPriceCents);
+      }
+
       const approvalRequired = await needsApproval(householdId, body.locationId, tx);
       const now = new Date();
       const noticeMs = config.bookingMinAdvanceHours * 60 * 60 * 1000;
@@ -1344,6 +1384,25 @@ lessonsRouter.post(
           pick.swimmerIds.map((swimmerId) => ({ lessonId: pick.id, swimmerId })),
         ),
       );
+
+      // ADR 036 §4: one lesson_charge ledger row per lesson, never a
+      // single row for the batch total. Each row's lesson_id points at
+      // exactly one lesson so a cancel of one lesson out of a batch reads
+      // that lesson's charge row and refunds exactly that amount, leaving
+      // the rest of the batch's charges untouched.
+      for (const pick of picksWithIds) {
+        const pickPrice = priceForLesson(
+          pick.durationMinutes as LessonDurationMinutes,
+          pick.swimmerIds.length as SwimmerCount,
+        );
+        await applyLedgerEntry(tx, {
+          entryType: "lesson_charge",
+          householdId,
+          actorId: profileId,
+          lessonId: pick.id,
+          amountCents: -pickPrice,
+        });
+      }
 
       // Approved lessons: snapshot calendar_sequence (0) into the payload and
       // bump to 1 for the next REQUEST, set calendar_invite_sent_at.
@@ -1530,6 +1589,24 @@ lessonsRouter.post(
           "batch rejected on recheck",
         );
         res.status(422).json({ error: "picks_conflict", conflicts: err.conflicts });
+        return;
+      }
+      if (err instanceof BatchInsufficientBalanceError) {
+        req.log.warn(
+          {
+            event: "insufficient_balance",
+            route: "POST /lessons/batch",
+            balanceCents: err.balanceCents,
+            totalPriceCents: err.totalPriceCents,
+          },
+          "batch rejected on balance check",
+        );
+        res.status(422).json({
+          error: "insufficient_balance",
+          balanceCents: err.balanceCents,
+          priceCents: err.totalPriceCents,
+          shortfallCents: err.totalPriceCents - err.balanceCents,
+        });
         return;
       }
       throw err;
