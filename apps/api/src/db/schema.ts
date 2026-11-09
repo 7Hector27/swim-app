@@ -1586,12 +1586,18 @@ export const householdBalanceLedger = pgTable(
         OR (${table.entryType} = 'coach_adjustment' AND ${table.amountCents} <> 0)
       )`,
     ),
-    // lesson_id is present exactly for the three lesson-scoped entry types.
+    // lesson_id must be NULL for non-lesson-scoped entry types; the
+    // inverse direction (lesson-scoped entry types normally have a
+    // non-null lesson_id) is enforced in the service layer via the
+    // LedgerEntryInput discriminated union, so the DB check can accept
+    // NULL on a lesson-scoped row too — the Phase 8 anonymization step
+    // sets `lesson_id` to NULL when a lesson is torn down during account
+    // deletion (ADR 036 §7, migration 0079).
     check(
       "balance_ledger_lesson_id_scope_valid",
       sql`(
-        (${table.entryType} IN ('lesson_charge', 'refund_to_balance', 'free_lesson') AND ${table.lessonId} IS NOT NULL)
-        OR (${table.entryType} NOT IN ('lesson_charge', 'refund_to_balance', 'free_lesson') AND ${table.lessonId} IS NULL)
+        ${table.lessonId} IS NULL
+        OR ${table.entryType} IN ('lesson_charge', 'refund_to_balance', 'free_lesson')
       )`,
     ),
     // stripe_checkout_session_id is present exactly for the three Stripe-paid

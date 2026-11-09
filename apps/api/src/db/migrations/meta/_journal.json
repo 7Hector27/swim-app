@@ -554,6 +554,13 @@
       "when": 1794251241391,
       "tag": "0078_balance_ledger_refund_idempotency",
       "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1794259382265,
+      "tag": "0079_balance_ledger_allow_identity_nullification",
+      "breakpoints": true
     }
   ]
 }
