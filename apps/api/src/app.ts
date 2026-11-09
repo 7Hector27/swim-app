@@ -28,6 +28,8 @@ import { coachRouter } from "./routes/coach";
 import { integrationsGoogleRouter } from "./routes/integrationsGoogle";
 import { leaderboardRouter } from "./routes/leaderboard";
 import { accountDeletionRouter } from "./routes/accountDeletion";
+import { paymentsRouter } from "./routes/payments";
+import { processWebhook } from "./services/stripe";
 import {
   calculateAge,
   HealthQuerySchema,
@@ -82,6 +84,36 @@ export function createApp(logger: Logger) {
   // Installed after pinoHttp so req.log is available for the warn, and before
   // body parsing / auth so we can simulate failures on any route cheaply.
   app.use(failRoutes(env.failRoutes));
+
+  // Stripe webhook mounted BEFORE express.json() so the raw body is
+  // preserved for signature verification (ADR 036 §3). Stripe signs the
+  // exact bytes of the request body; any JSON parse-and-re-stringify
+  // breaks the signature. The route's own `express.raw` parser only
+  // matches application/json and stops at the standard Stripe payload
+  // ceiling — Stripe delivers events well under 256 KB.
+  app.post(
+    "/webhooks/stripe",
+    express.raw({ type: "application/json", limit: "256kb" }),
+    asyncHandler(async (req, res) => {
+      const stripeEnv = env.stripe;
+      if (!stripeEnv) {
+        // Local boot without Stripe keys: fail loudly so a developer who
+        // hits the webhook accidentally sees why. Deployed envs can't
+        // reach here — env parsing refuses to boot without the keys.
+        req.log.error("stripe webhook hit without STRIPE_WEBHOOK_SECRET set");
+        res.status(503).json({ error: "Stripe is not configured" });
+        return;
+      }
+      const signature = req.header("stripe-signature");
+      const result = await processWebhook({
+        rawBody: req.body as Buffer,
+        signature,
+        webhookSecret: stripeEnv.webhookSecret,
+        logger: req.log,
+      });
+      res.status(result.status).json({ reason: result.reason });
+    }),
+  );
 
   // Ceiling is a full-catalog coach evaluation save
   // (POST /coach/swimmers/:id/sessions). ~132 skills in the catalog;
@@ -214,6 +246,7 @@ export function createApp(logger: Logger) {
   // without a Bearer token — state verification binds it to a coach instead.
   app.use("/integrations", integrationsGoogleRouter);
   app.use("/coach", coachRouter);
+  app.use("/payments", paymentsRouter);
   app.use(accountDeletionRouter);
   app.use(leaderboardRouter);
 
