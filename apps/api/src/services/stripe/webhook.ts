@@ -62,6 +62,7 @@ export interface WebhookResult {
     | "metadata_invalid"
     | "amount_mismatch"
     | "household_missing"
+    | "payment_not_paid"
     | "already_credited"
     | "signature_invalid";
 }
@@ -134,6 +135,31 @@ async function handleCheckoutCompleted(
     const session = await getStripe().checkout.sessions.retrieve(
       sessionFromEvent.id,
     );
+
+    // checkout.session.completed fires when the Checkout flow terminates in
+    // a success state — Stripe-side success, which for async-funded
+    // payment methods (bank debits, some wallets) may still be settling.
+    // Credit only when Stripe says the funds are in: payment_status "paid".
+    // Any other value (unpaid, no_payment_required) means the money isn't
+    // ours and we must not move balance. Stripe resends the event when
+    // the payment_status transitions to paid (checkout.session.async_payment_succeeded
+    // and a second completed), and our idempotency layers collapse those
+    // into a single credit when the time comes.
+    if (session.payment_status !== "paid") {
+      logger.warn(
+        {
+          eventId: event.id,
+          sessionId: session.id,
+          paymentStatus: session.payment_status,
+        },
+        "stripe webhook payment not paid — no credit",
+      );
+      await tx
+        .update(stripeEvents)
+        .set({ processedAt: new Date() })
+        .where(eq(stripeEvents.stripeEventId, event.id));
+      return { status: 200, reason: "payment_not_paid" };
+    }
 
     const metadataResult = CheckoutMetadataSchema.safeParse(session.metadata);
     if (!metadataResult.success) {

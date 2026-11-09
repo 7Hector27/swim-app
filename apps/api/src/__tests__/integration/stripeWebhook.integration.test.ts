@@ -60,6 +60,10 @@ interface SeededSession {
   amount_total: number;
   metadata: Record<string, string>;
   payment_intent: string | null;
+  // "paid" is the only value that credits; the webhook skips crediting
+  // on anything else. Default to "paid" at seed time so the many
+  // happy-path tests don't repeat it.
+  payment_status?: Stripe.Checkout.Session.PaymentStatus;
 }
 
 const seededSessions = new Map<string, SeededSession>();
@@ -105,6 +109,7 @@ function makeStubStripe(): StripeAdapter {
       amount_total: session.amount_total,
       metadata: session.metadata,
       payment_intent: session.payment_intent,
+      payment_status: session.payment_status ?? "paid",
       // Fields the service reads but doesn't branch on; empty values keep
       // the types happy.
       currency: "usd",
@@ -455,6 +460,52 @@ describe("POST /webhooks/stripe", () => {
       .select({ id: householdBalanceLedger.id })
       .from(householdBalanceLedger);
     expect(ledgerRows).toHaveLength(0);
+  });
+
+  it("refuses to credit when payment_status is 'unpaid' even on a completed event (async-funded method still settling)", async () => {
+    const sessionId = await makeSessionId("unpaid");
+    const eventId = await makeEventId("unpaid");
+    const expected = priceForLesson(30, 1);
+    const session: SeededSession = {
+      id: sessionId,
+      amount_total: expected,
+      metadata: {
+        kind: "topup",
+        householdId: owner.householdId,
+        actorId: owner.userId,
+        durationMinutes: "30",
+        swimmerCount: "1",
+      },
+      payment_intent: "pi_unpaid",
+      payment_status: "unpaid",
+    };
+    seedSession(session);
+    const event = completedEvent({ eventId, session });
+
+    const res = await request(app)
+      .post("/webhooks/stripe")
+      .set("Stripe-Signature", `sig:${eventId}`)
+      .set("Content-Type", "application/json")
+      .send(jsonBody(event));
+    expect(res.status).toBe(200);
+    expect(res.body.reason).toBe("payment_not_paid");
+
+    const ledgerRows = await adminDb()
+      .select({ id: householdBalanceLedger.id })
+      .from(householdBalanceLedger)
+      .where(eq(householdBalanceLedger.householdId, owner.householdId));
+    expect(ledgerRows).toHaveLength(0);
+
+    // Event is recorded with processed_at set so Stripe stops retrying
+    // this specific event id; the real resettlement arrives as a fresh
+    // event with its own id (and the idempotency layers below the
+    // payment_status gate will handle any collisions).
+    const eventRows = await adminDb()
+      .select({ processedAt: stripeEvents.processedAt })
+      .from(stripeEvents)
+      .where(eq(stripeEvents.stripeEventId, eventId));
+    expect(eventRows).toHaveLength(1);
+    expect(eventRows[0]?.processedAt).not.toBeNull();
   });
 
   it("refuses to credit when metadata is missing the discriminator", async () => {
