@@ -130,3 +130,11 @@ process.env["EMAIL_SMTP_PORT"] ??= "54325";
 process.env["VAPID_PUBLIC_KEY"] ??= "B".repeat(87);
 process.env["VAPID_PRIVATE_KEY"] ??= "k".repeat(43);
 process.env["VAPID_SUBJECT"] ??= "mailto:ops@test.local";
+
+// Stripe (ADR 036 Phase 3). Integration tests inject a stub client via
+// __setStripeClientForTests; the env parser still needs STRIPE_SECRET_KEY
+// and STRIPE_WEBHOOK_SECRET to be set so env.stripe is non-null. Set
+// here (before any test imports) because env.ts caches on first getEnv()
+// call, which happens at module-load via lib/supabase.ts.
+process.env["STRIPE_SECRET_KEY"] ??= "sk_test_integration_dummy";
+process.env["STRIPE_WEBHOOK_SECRET"] ??= "whsec_test_secret";

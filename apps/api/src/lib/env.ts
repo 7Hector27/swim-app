@@ -78,6 +78,14 @@ const RawEnvSchema = z.object({
   // request returns a 500 before the route handler runs. parseEnv refuses to
   // boot if this is set in any environment other than APP_ENV=local.
   FAIL_ROUTES: z.string().optional(),
+  // Stripe (ADR 036 Phase 3). Secret key authenticates the API against
+  // Stripe's REST API; the webhook secret verifies the signature on
+  // incoming webhook events. Both live on the API service only — never
+  // on Vercel, never as NEXT_PUBLIC_*. Required on dev/prod so a boot
+  // without them surfaces in the Railway deploy log, not at first
+  // parent click on "Buy".
+  STRIPE_SECRET_KEY: z.string().optional(),
+  STRIPE_WEBHOOK_SECRET: z.string().optional(),
 });
 
 export interface GoogleOAuthEnv {
@@ -103,6 +111,11 @@ export interface VapidEnv {
   subject: string;
 }
 
+export interface StripeEnv {
+  secretKey: string;
+  webhookSecret: string;
+}
+
 export interface ApiEnv {
   nodeEnv: "development" | "test" | "production";
   appEnv: "local" | "dev" | "prod";
@@ -125,6 +138,10 @@ export interface ApiEnv {
   // Undefined when APP_ENV=local AND no VAPID_* vars are set — the coach
   // alert sender becomes a no-op in that case. Required on dev/prod.
   vapid: VapidEnv | undefined;
+  // Undefined when APP_ENV=local AND Stripe vars aren't set — the payments
+  // service throws on use in that case so a local run without Stripe keys
+  // only breaks the payments routes, not the rest of the API.
+  stripe: StripeEnv | undefined;
   // Empty unless APP_ENV=local and FAIL_ROUTES was set. See the schema
   // comment on FAIL_ROUTES.
   failRoutes: readonly string[];
@@ -154,6 +171,7 @@ export function parseEnv(raw: Record<string, string | undefined>): ApiEnv {
   const googleOAuth = parseGoogleOAuthEnv(parsed);
   const email = parseEmailEnv(parsed);
   const vapid = parseVapidEnv(parsed);
+  const stripe = parseStripeEnv(parsed);
   const failRoutes = parseFailRoutes(parsed);
 
   const isDeployed = parsed.APP_ENV === "dev" || parsed.APP_ENV === "prod";
@@ -188,6 +206,7 @@ export function parseEnv(raw: Record<string, string | undefined>): ApiEnv {
     issues.push(...validateGoogleOAuthForDeployed(parsed));
     issues.push(...validateEmailForDeployed(parsed));
     issues.push(...validateVapidForDeployed(parsed));
+    issues.push(...validateStripeForDeployed(parsed));
     if (issues.length > 0) {
       throw new EnvValidationError(issues);
     }
@@ -208,8 +227,34 @@ export function parseEnv(raw: Record<string, string | undefined>): ApiEnv {
     googleOAuth,
     email,
     vapid,
+    stripe,
     failRoutes,
   };
+}
+
+function parseStripeEnv(parsed: RawParsedEnv): StripeEnv | undefined {
+  const { STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET } = parsed;
+  if (!STRIPE_SECRET_KEY || !STRIPE_WEBHOOK_SECRET) return undefined;
+  return {
+    secretKey: STRIPE_SECRET_KEY,
+    webhookSecret: STRIPE_WEBHOOK_SECRET,
+  };
+}
+
+function validateStripeForDeployed(parsed: RawParsedEnv): string[] {
+  const issues: string[] = [];
+  const { STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET } = parsed;
+  if (!STRIPE_SECRET_KEY) {
+    issues.push("STRIPE_SECRET_KEY: required when APP_ENV is 'dev' or 'prod'");
+  } else if (!STRIPE_SECRET_KEY.startsWith("sk_")) {
+    issues.push("STRIPE_SECRET_KEY: must start with 'sk_' (secret keys are sk_test_... or sk_live_...)");
+  }
+  if (!STRIPE_WEBHOOK_SECRET) {
+    issues.push("STRIPE_WEBHOOK_SECRET: required when APP_ENV is 'dev' or 'prod'");
+  } else if (!STRIPE_WEBHOOK_SECRET.startsWith("whsec_")) {
+    issues.push("STRIPE_WEBHOOK_SECRET: must start with 'whsec_'");
+  }
+  return issues;
 }
 
 function parseFailRoutes(parsed: RawParsedEnv): readonly string[] {
