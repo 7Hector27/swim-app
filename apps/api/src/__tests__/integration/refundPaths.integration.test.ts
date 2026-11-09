@@ -341,19 +341,4 @@ describe("Phase 4 — refund paths", () => {
     });
   });
 
-  it("PATCH /lessons/:id rejects durationMinutes changes with 422 duration_change_not_supported (reschedule is time-only, ADR 036 §2)", async () => {
-    await wipeArtifacts();
-    await withAllDaysEnabled(async () => {
-      const { lessonId } = await bookOneAsOwner();
-
-      const res = await request(app)
-        .patch(`/lessons/${lessonId}`)
-        .set("Authorization", `Bearer ${owner.accessToken}`)
-        .send({ durationMinutes: 60 });
-
-      expect(res.status).toBe(422);
-      expect(res.body.error).toBe("duration_change_not_supported");
-      expect(res.body.hint).toMatch(/cancel/i);
-    });
-  });
 });

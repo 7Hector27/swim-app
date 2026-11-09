@@ -2231,24 +2231,12 @@ lessonsRouter.patch(
       return;
     }
 
-    // ADR 036 §2: reschedule is time-only. Duration is a pricing input;
-    // changing it mid-lesson would either silently re-price or require
-    // a secondary ledger row we don't want. The documented path is
-    // cancel-and-rebook — a cancel refunds the lesson_charge, a rebook
-    // writes a fresh charge at the current rate.
-    if (
-      body.durationMinutes !== undefined &&
-      body.durationMinutes !== existingLesson.durationMinutes
-    ) {
-      res.status(422).json({
-        error: "duration_change_not_supported",
-        hint: "Cancel this lesson and book a new one at the desired duration.",
-      });
-      return;
-    }
-
     const newStartsAt = body.startsAt !== undefined ? new Date(body.startsAt) : existingLesson.startsAt;
     const newDurationMinutes = (body.durationMinutes ?? existingLesson.durationMinutes) as 30 | 45 | 60;
+    // Whether the reschedule changes the price (ADR 036 §2 was revised:
+    // duration CAN change on reschedule. If it does, we refund the old
+    // charge and write a new one at the new price inside the same tx).
+    const durationChanged = newDurationMinutes !== existingLesson.durationMinutes;
     const newLocationId = body.locationId ?? existingLesson.locationId;
     const nowUtc = getNowUtc();
 
@@ -2313,6 +2301,16 @@ lessonsRouter.patch(
       await tx.execute(
         sql`SELECT pg_advisory_xact_lock(hashtext(${"lesson-day:" + laDateStr}))`,
       );
+      // ADR 036 §2 (revised): if the reschedule changes duration, we also
+      // refund the current charge and write a new one at the new price.
+      // Take the household balance lock after the day lock to preserve the
+      // global acquire order (day → balance). Time-only reschedules skip
+      // the balance work entirely.
+      if (durationChanged) {
+        await tx.execute(
+          sql`SELECT pg_advisory_xact_lock(hashtext(${"household-balance:" + existingLesson.householdId}))`,
+        );
+      }
 
       const [blockedRows, bufferRows, existingLessonRows] = await Promise.all([
         tx.select().from(blockedTimes),
@@ -2360,6 +2358,82 @@ lessonsRouter.patch(
       if (!slotAvailable) {
         const reason = diagnoseSlotRejection(slotParams, newStartsAt.getTime());
         return { rejected: true as const, reason };
+      }
+
+      // ADR 036 §2 (revised): duration-change reprice. Only kicks in when
+      // the lesson has an outstanding lesson_charge row — free_lesson
+      // markers and lessons with no ledger rows (pre-Phase-4) just change
+      // duration with no money movement, matching Jason's "free stays
+      // free" rule.
+      if (durationChanged) {
+        const swimmerCountRows = await tx
+          .select({ swimmerId: lessonSwimmers.swimmerId })
+          .from(lessonSwimmers)
+          .where(eq(lessonSwimmers.lessonId, id));
+        const swimmerCount = swimmerCountRows.length as 1 | 2 | 3 | 4;
+
+        // Find the current outstanding lesson_charge row — a lesson may
+        // accumulate several lesson_charge rows over its lifetime (prior
+        // reprice), but only one is outstanding at a time.
+        const outstandingRows = await tx.execute<{
+          id: string;
+          amount_cents: number;
+        }>(sql`
+          SELECT charge.id, charge.amount_cents
+          FROM household_balance_ledger AS charge
+          LEFT JOIN household_balance_ledger AS refund
+            ON refund.refund_of_ledger_id = charge.id
+            AND refund.entry_type = 'refund_to_balance'
+          WHERE charge.lesson_id = ${id}
+            AND charge.entry_type = 'lesson_charge'
+            AND refund.id IS NULL
+          ORDER BY charge.created_at DESC
+          LIMIT 1
+        `);
+        const outstanding = outstandingRows[0]
+          ? {
+              id: outstandingRows[0].id,
+              amountCents: outstandingRows[0].amount_cents,
+            }
+          : null;
+
+        if (outstanding) {
+          const newPriceCents = priceForLesson(newDurationMinutes, swimmerCount);
+          const currentBalance = await getHouseholdBalance(
+            existingLesson.householdId,
+            tx,
+          );
+          // Available after refund = balance + abs(outstanding). The
+          // shortfall shown to the client is the delta the household
+          // would have to top up — what matters is NEW price against
+          // the post-refund available total, not the raw current balance.
+          const availableAfterRefund =
+            currentBalance + Math.abs(outstanding.amountCents);
+          if (availableAfterRefund < newPriceCents) {
+            return {
+              kind: "insufficient_balance" as const,
+              balanceCents: availableAfterRefund,
+              priceCents: newPriceCents,
+            };
+          }
+          // Refund the old charge; write the new charge at the new price.
+          // Both ride in this same tx — rollback on any later failure
+          // unwinds both and leaves the money in its original state.
+          await refundLessonCharge(tx, {
+            householdId: existingLesson.householdId,
+            lessonId: id,
+            actorId: profileId,
+          });
+          await applyLedgerEntry(tx, {
+            entryType: "lesson_charge",
+            householdId: existingLesson.householdId,
+            actorId: profileId,
+            lessonId: id,
+            amountCents: -newPriceCents,
+          });
+        }
+        // No outstanding charge → free_lesson marker or pre-Phase-4 row.
+        // Duration changes but no money moves (Jason's "free stays free").
       }
 
       let newStatus = existingLesson!.status;
@@ -2459,23 +2533,34 @@ lessonsRouter.patch(
       return { updated, outboxIds, coachNotificationId };
     });
 
-    if (!updatedLesson || "rejected" in updatedLesson) {
-      if (updatedLesson && "rejected" in updatedLesson) {
-        req.log.warn(
-          {
-            event: "slot_unavailable",
-            route: "PATCH /lessons/:id",
-            reason: updatedLesson.reason,
-            lessonId: id,
-            role: isCoach ? "coach" : "parent",
-            startsAt: newStartsAt.toISOString(),
-            durationMinutes: newDurationMinutes,
-            locationId: newLocationId,
-          },
-          "slot rejected on reschedule recheck",
-        );
-      }
+    if (!updatedLesson) {
+      res.status(404).json({ error: "Lesson not found" });
+      return;
+    }
+    if ("rejected" in updatedLesson) {
+      req.log.warn(
+        {
+          event: "slot_unavailable",
+          route: "PATCH /lessons/:id",
+          reason: updatedLesson.reason,
+          lessonId: id,
+          role: isCoach ? "coach" : "parent",
+          startsAt: newStartsAt.toISOString(),
+          durationMinutes: newDurationMinutes,
+          locationId: newLocationId,
+        },
+        "slot rejected on reschedule recheck",
+      );
       res.status(422).json({ error: "slot_unavailable" });
+      return;
+    }
+    if ("kind" in updatedLesson && updatedLesson.kind === "insufficient_balance") {
+      res.status(422).json({
+        error: "insufficient_balance",
+        balanceCents: updatedLesson.balanceCents,
+        priceCents: updatedLesson.priceCents,
+        shortfallCents: updatedLesson.priceCents - updatedLesson.balanceCents,
+      });
       return;
     }
     const rescheduleOutboxIds = updatedLesson.outboxIds;
