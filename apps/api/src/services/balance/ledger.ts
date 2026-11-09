@@ -30,8 +30,10 @@ type Db = PostgresJsDatabase<typeof schema>;
 // Discriminated union of every ledger entry the service accepts. Shape
 // matches the per-entry-type CHECK constraints on `household_balance_ledger`
 // so a caller that satisfies the type also satisfies the DB. `actorId` is
-// required here — the cron-driven refund path (nullable actor on the row)
-// is a Phase-4 concern and will extend this type when it lands.
+// required on every write — the cron-driven expired-pending refund path
+// passes the lesson's original `requestedBy` as the actor so the audit
+// log's NOT NULL actor_id stays happy and the audit entry still names a
+// meaningful party.
 export type LedgerEntryInput =
   | {
       entryType: "card_topup";

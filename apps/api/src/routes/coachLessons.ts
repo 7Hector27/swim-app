@@ -1031,6 +1031,20 @@ coachLessonsRouter.patch(
       // schema-level null widening on identity columns.
       const row = requireLiveLessonFields(rawRow);
 
+      // ADR 036 §4: decline refunds to the balance in the same tx as
+      // the status change. Acquire the household balance lock first so
+      // a concurrent charge or refund can't race us. refundLessonCharge
+      // no-ops on a lesson that never had a charge (free-lesson rows,
+      // pre-payments-era rows).
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtext(${"household-balance:" + row.householdId}))`,
+      );
+      await refundLessonCharge(tx, {
+        householdId: row.householdId,
+        lessonId: row.id,
+        actorId: req.profile.id,
+      });
+
       // Parent booking email outbox (ADR 028). Today the state machine only
       // allows decline from pending, so this never emits a CANCEL .ics; the
       // enqueue helper handles the approved→declined future case defensively.
@@ -1155,6 +1169,21 @@ coachLessonsRouter.patch(
       if (!rawUpdated) throw new Error("no-show update returned no row");
       // This UPDATE targets a live lesson; narrow identity columns.
       const updated = requireLiveLessonFields(rawUpdated);
+
+      // ADR 036 §4: no-show refunds the balance (Jason's rule — see
+      // the plan §4 "cancellations, declines, bulk-cancels, no-shows,
+      // and expired-pending all refund in full"). Acquire the household
+      // balance lock after the row-level `FOR UPDATE` taken above —
+      // the row lock orders no-show-vs-no-show-undo on the same lesson;
+      // the balance lock orders no-show-vs-charges on the household.
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtext(${"household-balance:" + updated.householdId}))`,
+      );
+      await refundLessonCharge(tx, {
+        householdId: updated.householdId,
+        lessonId: updated.id,
+        actorId: coachProfileId,
+      });
 
       await tx.insert(householdAuditLog).values({
         householdId: updated.householdId,

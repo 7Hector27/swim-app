@@ -24,6 +24,7 @@ import {
 } from "../services/notifications/drain";
 import { runAccountDeletionRetryDrain } from "../services/accountDeletion";
 import { safeCleanupErrSummary } from "../services/accountDeletion/cleanup";
+import { refundLessonCharge } from "../services/balance";
 import type { RequestHandler } from "express";
 
 // Promote the per-tick light pass to a full pass when last_full_reconcile_at
@@ -159,7 +160,41 @@ async function runCronTick(
             lt(lessons.expiresAt, now),
           ),
         )
-        .returning({ id: lessons.id });
+        .returning({
+          id: lessons.id,
+          householdId: lessons.householdId,
+          requestedBy: lessons.requestedBy,
+        });
+
+      // ADR 036 §4: expired-pending refunds in the same tx as the
+      // status change. Take each affected household's balance lock in
+      // a stable sorted order so the cron never deadlocks against
+      // concurrent parent / coach writes. refundLessonCharge no-ops on
+      // pre-Phase-4 rows (nothing to invert). The audit row needs a
+      // non-null actor (household_audit_log.actor_id is NOT NULL) —
+      // the lesson's original requestedBy is a meaningful stand-in
+      // for the cron (same parent whose balance is affected).
+      const householdsToRefund = Array.from(
+        new Set(
+          expiredRows
+            .map((row) => row.householdId)
+            .filter((hid): hid is string => hid !== null),
+        ),
+      ).sort();
+      for (const hid of householdsToRefund) {
+        await tx.execute(
+          sql`SELECT pg_advisory_xact_lock(hashtext(${"household-balance:" + hid}))`,
+        );
+      }
+      for (const row of expiredRows) {
+        if (row.householdId === null) continue; // anonymized row — skip
+        if (row.requestedBy === null) continue; // defensive: shouldn't happen on live rows
+        await refundLessonCharge(tx, {
+          householdId: row.householdId,
+          lessonId: row.id,
+          actorId: row.requestedBy,
+        });
+      }
 
       // Parent booking email outbox write (ADR 028): same transaction as
       // the expiry UPDATE so an email can never be lost between commit and

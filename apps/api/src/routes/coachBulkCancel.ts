@@ -50,6 +50,7 @@ import type {
 import type { LessonEmailLocation } from "../services/emails/types";
 import { sendLessonEmailOutboxRow } from "../services/emails/sender";
 import { syncLessonToGoogle } from "../services/googleCalendarSync";
+import { refundLessonCharge } from "../services/balance";
 
 export const coachBulkCancelRouter = Router();
 
@@ -319,6 +320,30 @@ coachBulkCancelRouter.post(
             ...(message !== null && { declineReason: message }),
           })
           .where(inArray(lessons.id, pendingToDecline.map((lesson) => lesson.id)));
+      }
+
+      // ADR 036 §4: one refund_to_balance per affected lesson, in the
+      // same tx as the status change. Acquire each household's balance
+      // lock in a stable order (sorted by householdId) to keep the
+      // global acquire order consistent — day locks first (above), then
+      // balance locks. refundLessonCharge no-ops on free lessons and
+      // pre-Phase-4 rows (nothing to invert). Decline + cancel both
+      // qualify — ADR 036 §4 "cancellations, declines, bulk-cancels …
+      // refund in full".
+      const householdsToRefund = Array.from(
+        new Set(affected.map((lesson) => lesson.householdId)),
+      ).sort();
+      for (const hid of householdsToRefund) {
+        await tx.execute(
+          sql`SELECT pg_advisory_xact_lock(hashtext(${"household-balance:" + hid}))`,
+        );
+      }
+      for (const lesson of affected) {
+        await refundLessonCharge(tx, {
+          householdId: lesson.householdId,
+          lessonId: lesson.id,
+          actorId: coachProfileId,
+        });
       }
 
       // Block the cleared range so the slot engine refuses rebooking.

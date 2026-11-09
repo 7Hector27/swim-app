@@ -2127,10 +2127,25 @@ lessonsRouter.delete(
     }
 
     const cancelResult = await db.transaction(async (tx) => {
+      // ADR 036 §4: cancel refunds to the balance in the same tx as the
+      // status change. Per-household balance lock keeps a concurrent
+      // charge or refund from racing us. Free-lesson rows have no
+      // matching lesson_charge, so refundLessonCharge no-ops; pre-Phase-4
+      // historical lessons similarly refund $0.
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtext(${"household-balance:" + lessonToCancel.householdId}))`,
+      );
+
       await tx
         .update(lessons)
         .set({ status: "canceled", canceledAt: new Date(), canceledBy: profileId })
         .where(eq(lessons.id, id));
+
+      await refundLessonCharge(tx, {
+        householdId: lessonToCancel.householdId!,
+        lessonId: id,
+        actorId: profileId,
+      });
 
       // Parent booking email outbox (ADR 028). Writes CANCEL .ics iff a
       // prior invite was issued; sends a plain-content email otherwise.
@@ -2213,6 +2228,22 @@ lessonsRouter.patch(
 
     if (!isCoach && existingLesson.startsAt <= new Date()) {
       res.status(422).json({ error: "lesson_in_past" });
+      return;
+    }
+
+    // ADR 036 §2: reschedule is time-only. Duration is a pricing input;
+    // changing it mid-lesson would either silently re-price or require
+    // a secondary ledger row we don't want. The documented path is
+    // cancel-and-rebook — a cancel refunds the lesson_charge, a rebook
+    // writes a fresh charge at the current rate.
+    if (
+      body.durationMinutes !== undefined &&
+      body.durationMinutes !== existingLesson.durationMinutes
+    ) {
+      res.status(422).json({
+        error: "duration_change_not_supported",
+        hint: "Cancel this lesson and book a new one at the desired duration.",
+      });
       return;
     }
 
