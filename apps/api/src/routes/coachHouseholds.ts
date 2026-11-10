@@ -25,11 +25,14 @@ import { and, asc, desc, eq, inArray, lt, or, sql } from "drizzle-orm";
 import {
   approximatePrivateHours,
   BalanceHistoryQuerySchema,
+  CoachAdjustBalanceBodySchema,
   IdParamsSchema,
   type BalanceHistoryEntry,
   type BalanceHistoryQuery,
   type BalanceHistoryResponse,
   type BalanceResponse,
+  type CoachAdjustBalanceBody,
+  type CoachAdjustBalanceResponse,
   type CoachHouseholdBalanceListResponse,
   type CoachHouseholdBalanceSummary,
   type IdParams,
@@ -45,7 +48,11 @@ import {
 } from "../db/schema";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { validate } from "../middleware/validate";
-import { getHouseholdBalance } from "../services/balance/ledger";
+import {
+  applyLedgerEntry,
+  getHouseholdBalance,
+  withBalanceLock,
+} from "../services/balance/ledger";
 
 export const coachHouseholdsRouter = Router();
 
@@ -350,3 +357,90 @@ coachHouseholdsRouter.get(
   }),
 );
 
+// ── POST /coach/households/:householdId/balance/adjust ──────────────────────
+//
+// Coach-initiated adjustment. Signed `amountCents` + required `reason`. A
+// negative amount that would drop the running balance below zero is rejected
+// with 422 insufficient_balance; the write + its audit row land in the same
+// transaction via `applyLedgerEntry` inside `withBalanceLock`, so the
+// read-check-write cycle is atomic per CLAUDE.md's audit-log rule and ADR
+// 036 §1.
+//
+// Phase 7 will wire the balance_adjusted email outbox row. The ledger
+// service already writes `balance_coach_adjusted` into
+// `household_audit_log` in the same transaction, so the outbox dispatcher
+// can key off that audit action — no email-specific hook lives here yet.
+
+coachHouseholdsRouter.post(
+  "/households/:id/balance/adjust",
+  validate({ params: IdParamsSchema, body: CoachAdjustBalanceBodySchema }),
+  asyncHandler(async (req, res) => {
+    const { id } = req.params as unknown as IdParams;
+    const body = req.body as CoachAdjustBalanceBody;
+
+    const householdRows = await db
+      .select({ id: households.id })
+      .from(households)
+      .where(eq(households.id, id))
+      .limit(1);
+    if (householdRows.length === 0) {
+      res.status(404).json({ error: "household_not_found" });
+      return;
+    }
+
+    const result = await withBalanceLock(id, async (tx) => {
+      const currentBalance = await getHouseholdBalance(id, tx);
+      const nextBalance = currentBalance + body.amountCents;
+      if (nextBalance < 0) {
+        return {
+          kind: "insufficient_balance" as const,
+          balanceCents: currentBalance,
+          // For a negative amount, "price" is the absolute magnitude we
+          // can't cover — reuses the parent-side 422 shape so UI mapping
+          // (readInsufficientBalanceBody) stays uniform.
+          priceCents: -body.amountCents,
+          shortfallCents: -body.amountCents - currentBalance,
+        };
+      }
+      const ledgerId = await applyLedgerEntry(tx, {
+        entryType: "coach_adjustment",
+        householdId: id,
+        actorId: req.profile.id,
+        amountCents: body.amountCents,
+        reason: body.reason.trim(),
+      });
+      return {
+        kind: "ok" as const,
+        ledgerId,
+        balanceCents: nextBalance,
+      };
+    });
+
+    if (result.kind === "insufficient_balance") {
+      req.log.warn(
+        {
+          event: "insufficient_balance",
+          route: "POST /coach/households/:id/balance/adjust",
+          householdId: id,
+          balanceCents: result.balanceCents,
+          priceCents: result.priceCents,
+          shortfallCents: result.shortfallCents,
+        },
+        "coach adjustment rejected: would take balance below zero",
+      );
+      res.status(422).json({
+        error: "insufficient_balance",
+        balanceCents: result.balanceCents,
+        priceCents: result.priceCents,
+        shortfallCents: result.shortfallCents,
+      });
+      return;
+    }
+
+    const response: CoachAdjustBalanceResponse = {
+      balanceCents: result.balanceCents,
+      ledgerId: result.ledgerId,
+    };
+    res.status(201).json(response);
+  }),
+);

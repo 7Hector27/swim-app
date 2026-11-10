@@ -166,3 +166,32 @@ export type CoachHouseholdBalanceListResponse = z.infer<
   typeof CoachHouseholdBalanceListResponseSchema
 >;
 
+// POST /coach/households/:householdId/balance/adjust — manual coach
+// adjustment. amountCents may be positive or negative but must not be
+// zero (a no-op has no ledger row). Reason is required on every call
+// so the "Jason adjusted · <reason>" display line in parent history
+// is never blank. A negative adjustment that would drop the balance
+// below zero is rejected server-side with 422 insufficient_balance.
+export const CoachAdjustBalanceBodySchema = z
+  .object({
+    amountCents: z
+      .number()
+      .int()
+      .refine((value) => value !== 0, "amountCents must be non-zero"),
+    reason: z
+      .string()
+      .trim()
+      .min(1, "reason is required")
+      .max(500, "reason must be 500 characters or fewer"),
+  })
+  .strict();
+export type CoachAdjustBalanceBody = z.infer<typeof CoachAdjustBalanceBodySchema>;
+
+export const CoachAdjustBalanceResponseSchema = z.object({
+  balanceCents: z.number().int(),
+  ledgerId: z.string().uuid(),
+});
+export type CoachAdjustBalanceResponse = z.infer<
+  typeof CoachAdjustBalanceResponseSchema
+>;
+
