@@ -102,4 +102,13 @@ export interface LessonEmailPayload {
   // LessonConfirmed template branches on this to render coach-scheduled
   // copy. Null on every other event.
   initiatedBy: "parent" | "coach" | null;
+  // ADR 036 Phase 7: when a refund-emitting event (cancel / decline /
+  // expire) lands in the same tx as a `refund_to_balance` ledger row,
+  // these capture the refund amount and the household's balance AFTER
+  // the refund. Both are null when no refund happened — free lessons,
+  // pre-Phase-4 rows, or already-refunded charges. The template renders
+  // a one-line "Refunded $X. New balance: $Y." only when both are
+  // non-null.
+  refundAmountCents: number | null;
+  newBalanceCents: number | null;
 }

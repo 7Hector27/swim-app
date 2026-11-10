@@ -33,6 +33,8 @@ const basePayload: LessonEmailPayload = {
   expiryHoursBeforeStart: null,
   coachFirstName: "Jason",
   initiatedBy: null,
+  refundAmountCents: null,
+  newBalanceCents: null,
 };
 
 const ALL_EVENTS: LessonEmailEvent[] = [

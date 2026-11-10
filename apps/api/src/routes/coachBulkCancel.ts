@@ -50,7 +50,7 @@ import type {
 import type { LessonEmailLocation } from "../services/emails/types";
 import { sendLessonEmailOutboxRow } from "../services/emails/sender";
 import { syncLessonToGoogle } from "../services/googleCalendarSync";
-import { refundLessonCharge } from "../services/balance";
+import { getHouseholdBalance, refundLessonCharge } from "../services/balance";
 
 export const coachBulkCancelRouter = Router();
 
@@ -338,12 +338,30 @@ coachBulkCancelRouter.post(
           sql`SELECT pg_advisory_xact_lock(hashtext(${"household-balance:" + hid}))`,
         );
       }
+      // Per-family refund totals + post-refund balance. Fed into the
+      // email payload below so each family sees "Refunded $X. New
+      // balance: $Y." for THEIR slice of the bulk cancel. refundLessonCharge
+      // no-ops (returns refunded:false) on free / already-refunded lessons,
+      // so the totals naturally exclude those.
+      const refundTotalByHouseholdId = new Map<string, number>();
       for (const lesson of affected) {
-        await refundLessonCharge(tx, {
+        const refund = await refundLessonCharge(tx, {
           householdId: lesson.householdId,
           lessonId: lesson.id,
           actorId: coachProfileId,
         });
+        if (refund.refunded) {
+          refundTotalByHouseholdId.set(
+            lesson.householdId,
+            (refundTotalByHouseholdId.get(lesson.householdId) ?? 0) + refund.amountCents,
+          );
+        }
+      }
+      const newBalanceByHouseholdId = new Map<string, number>();
+      for (const hid of householdsToRefund) {
+        // Read every household's balance under its held lock so the
+        // snapshot is coherent with the refunds we just wrote.
+        newBalanceByHouseholdId.set(hid, await getHouseholdBalance(hid, tx));
       }
 
       // Block the cleared range so the slot engine refuses rebooking.
@@ -506,6 +524,8 @@ coachBulkCancelRouter.post(
             location: locationById.get(lesson.locationId)!,
           }));
 
+        const householdRefundTotal =
+          refundTotalByHouseholdId.get(householdId) ?? 0;
         const payload: BulkCancelEmailPayload = {
           bulkCancellationId,
           householdId,
@@ -519,6 +539,11 @@ coachBulkCancelRouter.post(
           deepLink: buildDashboardLink(siteUrl),
           cancelledLessons,
           declinedRequests,
+          refundAmountCents: householdRefundTotal > 0 ? householdRefundTotal : null,
+          newBalanceCents:
+            householdRefundTotal > 0
+              ? newBalanceByHouseholdId.get(householdId) ?? null
+              : null,
         };
 
         const recipientProfileIds = recipientsByHousehold.get(householdId) ?? [];

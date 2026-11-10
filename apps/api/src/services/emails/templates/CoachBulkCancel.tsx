@@ -3,7 +3,7 @@ import type { BulkCancelEmailPayload } from "../bulkCancelTypes";
 import EmailLayout from "./shared/EmailLayout";
 import CtaButton from "./shared/CtaButton";
 import { emailTheme } from "./shared/theme";
-import { coachDisplay, formatSwimmerList } from "./shared/copyHelpers";
+import { coachDisplay, formatSwimmerList, refundSentence } from "./shared/copyHelpers";
 import { LESSON_TIME_ZONE } from "../format";
 
 const LESSON_TIME_ZONE_LABEL =
@@ -84,6 +84,17 @@ export default function CoachBulkCancel({ payload, siteUrl, replyToEmail }: Prop
         Times shown are {LESSON_TIME_ZONE_LABEL}. If any of these should still happen,
         please rebook from the dashboard.
       </Text>
+      {(() => {
+        const refundLine = refundSentence(
+          payload.refundAmountCents,
+          payload.newBalanceCents,
+        );
+        return refundLine !== null ? (
+          <Text style={refundLineStyle} data-testid="refund-line">
+            {refundLine}
+          </Text>
+        ) : null;
+      })()}
       <CtaButton href={payload.deepLink} label="Open your lessons" />
     </EmailLayout>
   );
@@ -193,4 +204,12 @@ const lineWhenStyle = {
 
 const lineMetaStyle = {
   color: emailTheme.color.textSecondary,
+};
+
+const refundLineStyle = {
+  fontSize: "14px",
+  lineHeight: "20px",
+  color: emailTheme.color.text,
+  margin: "12px 0",
+  fontVariantNumeric: "tabular-nums",
 };

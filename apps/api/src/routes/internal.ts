@@ -24,7 +24,7 @@ import {
 } from "../services/notifications/drain";
 import { runAccountDeletionRetryDrain } from "../services/accountDeletion";
 import { safeCleanupErrSummary } from "../services/accountDeletion/cleanup";
-import { refundLessonCharge } from "../services/balance";
+import { getHouseholdBalance, refundLessonCharge } from "../services/balance";
 import type { RequestHandler } from "express";
 
 // Promote the per-tick light pass to a full pass when last_full_reconcile_at
@@ -186,14 +186,19 @@ async function runCronTick(
           sql`SELECT pg_advisory_xact_lock(hashtext(${"household-balance:" + hid}))`,
         );
       }
+      // Keyed by lesson id so the email-enqueue loop below can snapshot
+      // the refund amount into each row's email payload without re-reading
+      // the ledger.
+      const refundByLessonId = new Map<string, number>();
       for (const row of expiredRows) {
         if (row.householdId === null) continue; // anonymized row — skip
         if (row.requestedBy === null) continue; // defensive: shouldn't happen on live rows
-        await refundLessonCharge(tx, {
+        const refund = await refundLessonCharge(tx, {
           householdId: row.householdId,
           lessonId: row.id,
           actorId: row.requestedBy,
         });
+        if (refund.refunded) refundByLessonId.set(row.id, refund.amountCents);
       }
 
       // Parent booking email outbox write (ADR 028): same transaction as
@@ -202,11 +207,22 @@ async function runCronTick(
       // if the lesson's starts_at has already passed by send time.
       const emailOutboxIds: string[] = [];
       for (const row of expiredRows) {
+        const refundAmountCents = refundByLessonId.get(row.id) ?? null;
+        // Post-refund household balance snapshot — null when no refund
+        // (free lesson or already-refunded) so the template suppresses
+        // the refund line. Household id is guaranteed non-null when we
+        // emit an email (anonymized rows were skipped above).
+        const newBalanceCents =
+          refundAmountCents !== null && row.householdId !== null
+            ? await getHouseholdBalance(row.householdId, tx)
+            : null;
         emailOutboxIds.push(
           await enqueueLessonEmail(tx, {
             lessonId: row.id,
             event: "request_expired",
             actorRole: "system",
+            refundAmountCents,
+            newBalanceCents,
           }),
         );
       }

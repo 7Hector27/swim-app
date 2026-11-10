@@ -33,6 +33,8 @@ const basePayload: LessonEmailPayload = {
   expiryHoursBeforeStart: null,
   coachFirstName: "Jason",
   initiatedBy: null,
+  refundAmountCents: null,
+  newBalanceCents: null,
 };
 
 const fixedNow = new Date("2026-10-20T15:00:00.000Z");

@@ -4,7 +4,7 @@ import EmailLayout from "./shared/EmailLayout";
 import LessonCard from "./shared/LessonCard";
 import CtaButton from "./shared/CtaButton";
 import { emailTheme } from "./shared/theme";
-import { coachDisplay, formatSwimmerList } from "./shared/copyHelpers";
+import { coachDisplay, formatSwimmerList, refundSentence } from "./shared/copyHelpers";
 
 interface Props {
   payload: LessonEmailPayload;
@@ -20,6 +20,10 @@ export default function LessonCanceled({ payload, siteUrl, replyToEmail }: Props
     payload.actorRole === "coach"
       ? `${coach} canceled this lesson. If you would like to rebook, availability is open in the app.`
       : `A household member canceled this lesson. If this was a mistake, please book again. The slot may still be open.`;
+  const refundLine = refundSentence(
+    payload.refundAmountCents,
+    payload.newBalanceCents,
+  );
   return (
     <EmailLayout
       siteUrl={siteUrl}
@@ -34,6 +38,11 @@ export default function LessonCanceled({ payload, siteUrl, replyToEmail }: Props
         whenDisplay={payload.startsAtLocalDisplay}
         location={payload.location}
       />
+      {refundLine !== null && (
+        <Text style={refundStyle} data-testid="refund-line">
+          {refundLine}
+        </Text>
+      )}
       <CtaButton href={payload.deepLink} label="Book another slot" />
     </EmailLayout>
   );
@@ -52,4 +61,12 @@ const bodyStyle = {
   lineHeight: "22px",
   color: emailTheme.color.text,
   margin: 0,
+};
+
+const refundStyle = {
+  fontSize: "14px",
+  lineHeight: "20px",
+  color: emailTheme.color.text,
+  margin: "12px 0 0",
+  fontVariantNumeric: "tabular-nums",
 };

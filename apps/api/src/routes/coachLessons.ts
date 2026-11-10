@@ -1040,11 +1040,14 @@ coachLessonsRouter.patch(
       await tx.execute(
         sql`SELECT pg_advisory_xact_lock(hashtext(${"household-balance:" + row.householdId}))`,
       );
-      await refundLessonCharge(tx, {
+      const refund = await refundLessonCharge(tx, {
         householdId: row.householdId,
         lessonId: row.id,
         actorId: req.profile.id,
       });
+      const newBalanceCents = refund.refunded
+        ? await getHouseholdBalance(row.householdId, tx)
+        : null;
 
       // Parent booking email outbox (ADR 028). Today the state machine only
       // allows decline from pending, so this never emits a CANCEL .ics; the
@@ -1054,6 +1057,8 @@ coachLessonsRouter.patch(
         event: "request_declined",
         actorRole: "coach",
         declineReason: body.reason ?? null,
+        refundAmountCents: refund.refunded ? refund.amountCents : null,
+        newBalanceCents,
       });
 
       return { row, outboxId };

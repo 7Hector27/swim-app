@@ -4,7 +4,7 @@ import EmailLayout from "./shared/EmailLayout";
 import LessonCard from "./shared/LessonCard";
 import CtaButton from "./shared/CtaButton";
 import { emailTheme } from "./shared/theme";
-import { coachDisplay, formatSwimmerList } from "./shared/copyHelpers";
+import { coachDisplay, formatSwimmerList, refundSentence } from "./shared/copyHelpers";
 
 interface Props {
   payload: LessonEmailPayload;
@@ -36,6 +36,17 @@ export default function RequestDeclined({ payload, siteUrl, replyToEmail }: Prop
         location={payload.location}
         hideAddress
       />
+      {(() => {
+        const refundLine = refundSentence(
+          payload.refundAmountCents,
+          payload.newBalanceCents,
+        );
+        return refundLine !== null ? (
+          <Text style={refundStyle} data-testid="refund-line">
+            {refundLine}
+          </Text>
+        ) : null;
+      })()}
       <CtaButton href={payload.deepLink} label="Browse open slots" />
     </EmailLayout>
   );
@@ -54,4 +65,12 @@ const bodyStyle = {
   lineHeight: "22px",
   color: emailTheme.color.text,
   margin: 0,
+};
+
+const refundStyle = {
+  fontSize: "14px",
+  lineHeight: "20px",
+  color: emailTheme.color.text,
+  margin: "12px 0 0",
+  fontVariantNumeric: "tabular-nums",
 };

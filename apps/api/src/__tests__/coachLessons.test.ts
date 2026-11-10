@@ -249,6 +249,17 @@ afterAll(() => {
 
 beforeEach(() => {
   vi.resetAllMocks();
+  // resetAllMocks clears the .mockResolvedValue() defaults set in the
+  // hoisted block, which leaves subsequent calls returning `undefined` —
+  // fine when the caller ignores the return (pre-ADR 036 Phase 7) but
+  // crashes once the refund email path reads `refund.refunded`. Re-seed
+  // the balance mocks here so every test starts from a sane no-op state.
+  mockGetHouseholdBalance.mockResolvedValue(1_000_000_000);
+  mockApplyLedgerEntry.mockResolvedValue("ledger-id-stub");
+  mockRefundLessonCharge.mockResolvedValue({
+    refunded: false,
+    reason: "no_charge",
+  });
 });
 
 // ── GET /coach/lessons ────────────────────────────────────────────────────────

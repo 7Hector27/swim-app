@@ -2141,11 +2141,18 @@ lessonsRouter.delete(
         .set({ status: "canceled", canceledAt: new Date(), canceledBy: profileId })
         .where(eq(lessons.id, id));
 
-      await refundLessonCharge(tx, {
+      const refund = await refundLessonCharge(tx, {
         householdId: lessonToCancel.householdId!,
         lessonId: id,
         actorId: profileId,
       });
+      // Phase 7: when the refund actually landed, snapshot the amount +
+      // post-refund balance into the email payload. `refunded: false`
+      // (free lesson or already-refunded) leaves both null, and the
+      // template suppresses the refund line.
+      const newBalanceCents = refund.refunded
+        ? await getHouseholdBalance(lessonToCancel.householdId!, tx)
+        : null;
 
       // Parent booking email outbox (ADR 028). Writes CANCEL .ics iff a
       // prior invite was issued; sends a plain-content email otherwise.
@@ -2153,6 +2160,8 @@ lessonsRouter.delete(
         lessonId: id,
         event: "lesson_canceled",
         actorRole: isCoach ? "coach" : "parent",
+        refundAmountCents: refund.refunded ? refund.amountCents : null,
+        newBalanceCents,
       });
 
       // Coach alert row (ADR 031). Inside the same tx so a rollback also
