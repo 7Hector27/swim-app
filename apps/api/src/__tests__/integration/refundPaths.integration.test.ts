@@ -341,4 +341,38 @@ describe("Phase 4 — refund paths", () => {
     });
   });
 
+  it("DELETE /lessons/:id (coach cancels on behalf of a family) refunds the lesson's charge to the family's balance", async () => {
+    await wipeArtifacts();
+    await withAllDaysEnabled(async () => {
+      const { lessonId, price } = await bookOneAsOwner();
+      // Balance = 0 after the booking's charge consumed the seed.
+      expect(await getHouseholdBalance(owner.householdId)).toBe(0);
+
+      // Coach — not a household member — cancels the lesson.
+      const res = await request(app)
+        .delete(`/lessons/${lessonId}`)
+        .set("Authorization", `Bearer ${coach.accessToken}`);
+      expect(res.status).toBe(204);
+
+      const refundRows = await adminDb()
+        .select({
+          amountCents: householdBalanceLedger.amountCents,
+          actorId: householdBalanceLedger.actorId,
+        })
+        .from(householdBalanceLedger)
+        .where(
+          and(
+            eq(householdBalanceLedger.lessonId, lessonId),
+            eq(householdBalanceLedger.entryType, "refund_to_balance"),
+          ),
+        );
+      expect(refundRows).toHaveLength(1);
+      expect(refundRows[0]?.amountCents).toBe(price);
+      // Audit actor is the coach — the cancel-on-behalf actor, not the family.
+      expect(refundRows[0]?.actorId).toBe(coach.userId);
+
+      expect(await getHouseholdBalance(owner.householdId)).toBe(price);
+    });
+  });
+
 });
