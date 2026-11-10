@@ -1178,7 +1178,7 @@ export const lessonEmailOutbox = pgTable(
       .where(sql`bulk_cancellation_id IS NOT NULL`),
     check(
       "lesson_email_outbox_event_valid",
-      sql`${table.event} IN ('booking_requested', 'lesson_confirmed', 'request_declined', 'request_expired', 'lesson_canceled', 'lesson_rescheduled', 'batch_booked', 'batch_approved', 'batch_canceled', 'coach_booking_request', 'coach_bulk_cancel', 'coach_account_deleted')`,
+      sql`${table.event} IN ('booking_requested', 'lesson_confirmed', 'request_declined', 'request_expired', 'lesson_canceled', 'lesson_rescheduled', 'batch_booked', 'batch_approved', 'batch_canceled', 'coach_booking_request', 'coach_bulk_cancel', 'coach_account_deleted', 'balance_funded', 'balance_adjusted')`,
     ),
     check(
       "lesson_email_outbox_status_valid",
@@ -1210,8 +1210,12 @@ export const lessonEmailOutbox = pgTable(
     // rule alongside the already-existing scrubbed-row escape.
     check(
       "lesson_email_outbox_scope_exactly_one",
+      // ADR 036 Phase 7: balance_funded + balance_adjusted rows are
+      // household-scoped (no lesson/batch/bulk tie). They ride the same
+      // escape coach_account_deleted does — scope columns all null,
+      // household_id carries the identity.
       sql`(${table.payload} ? '_scrubbed_at')
-        OR (${table.event} = 'coach_account_deleted')
+        OR (${table.event} IN ('coach_account_deleted', 'balance_funded', 'balance_adjusted'))
         OR ((CASE WHEN ${table.lessonId} IS NOT NULL THEN 1 ELSE 0 END)
           + (CASE WHEN ${table.batchId} IS NOT NULL THEN 1 ELSE 0 END)
           + (CASE WHEN ${table.bulkCancellationId} IS NOT NULL THEN 1 ELSE 0 END) = 1)`,
@@ -1224,8 +1228,11 @@ export const lessonEmailOutbox = pgTable(
     // (which survives because bulk_cancellations is coach-side and kept).
     check(
       "lesson_email_outbox_bulk_household_pair",
+      // balance_funded + balance_adjusted set household_id on their own
+      // (not paired with bulk_cancellation_id), so they also carve out of
+      // the "bulk_cancellation_id IS NULL iff household_id IS NULL" rule.
       sql`(${table.payload} ? '_scrubbed_at')
-        OR (${table.event} = 'coach_account_deleted')
+        OR (${table.event} IN ('coach_account_deleted', 'balance_funded', 'balance_adjusted'))
         OR ((${table.bulkCancellationId} IS NULL) = (${table.householdId} IS NULL))`,
     ),
     // Partial index on (next_attempt_at) for the drain's hot path. Includes

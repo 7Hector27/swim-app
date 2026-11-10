@@ -568,6 +568,13 @@
       "when": 1794266831653,
       "tag": "0080_balance_ledger_refund_per_charge",
       "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1794349747904,
+      "tag": "0081_balance_outbox_events",
+      "breakpoints": true
     }
   ]
 }

@@ -32,6 +32,9 @@ import {
   householdBalanceLedger,
   stripeEvents,
 } from "../../db/schema";
+import { getHouseholdBalance } from "../balance/ledger";
+import { enqueueBalanceFundedEmail } from "../emails/balanceFundedOutbox";
+import { sendLessonEmailOutboxRow } from "../emails/sender";
 import { getStripe } from "./client";
 import { CheckoutMetadataSchema, type CheckoutMetadata } from "./metadata";
 
@@ -42,6 +45,10 @@ export interface WebhookInput {
   signature: string | undefined;
   webhookSecret: string;
   logger: Logger;
+  // Threaded through so the funds-added email outbox writer (ADR 036
+  // Phase 7) can build an absolute CTA link without re-reading env
+  // inside the transaction.
+  siteUrl: string;
 }
 
 export class WebhookSignatureError extends Error {
@@ -96,12 +103,13 @@ export async function processWebhook(input: WebhookInput): Promise<WebhookResult
     return { status: 200, reason: "ignored_event_type" };
   }
 
-  return handleCheckoutCompleted(event, input.logger);
+  return handleCheckoutCompleted(event, input.logger, input.siteUrl);
 }
 
 async function handleCheckoutCompleted(
   event: Stripe.Event,
   logger: Logger,
+  siteUrl: string,
 ): Promise<WebhookResult> {
   const sessionFromEvent = event.data.object as Stripe.Checkout.Session;
 
@@ -246,13 +254,26 @@ async function handleCheckoutCompleted(
       .set({ processedAt: new Date() })
       .where(eq(stripeEvents.stripeEventId, event.id));
 
-    if (creditResult === "already_credited") {
+    if (creditResult.kind === "already_credited") {
       logger.warn(
         { eventId: event.id, sessionId: session.id },
         "stripe webhook — ledger row already present for session id (Layer 2 guard fired)",
       );
       return { status: 200, reason: "already_credited" };
     }
+
+    // ADR 036 Phase 7: enqueue the parent-facing "funds added" email
+    // inside this same transaction. Post-refund balance is already
+    // snapshotted by writeCredit → the family sees the exact number
+    // their account showed when the ledger committed.
+    const fundedOutboxId = await enqueueBalanceFundedEmail(tx, {
+      householdId: metadata.householdId,
+      type: metadata.kind === "topup" ? "topup" : "package",
+      amountPaidCents: creditResult.amountPaidCents,
+      bonusCents: creditResult.bonusCents,
+      newBalanceCents: creditResult.newBalanceCents,
+      siteUrl,
+    });
 
     logger.info(
       {
@@ -261,9 +282,19 @@ async function handleCheckoutCompleted(
         householdId: metadata.householdId,
         kind: metadata.kind,
         amountCents: expectedAmount,
+        fundedOutboxId,
       },
       "stripe webhook credited balance",
     );
+    // Hand the outbox row to the post-commit sender so it goes out
+    // immediately on success. On rollback the row never commits, so
+    // the sender has nothing to pick up — the Promise rejects silently
+    // via the ambient catch in sendLessonEmailOutboxRow.
+    if (fundedOutboxId !== null) {
+      queueMicrotask(() => {
+        void sendLessonEmailOutboxRow(fundedOutboxId);
+      });
+    }
     return { status: 200, reason: "processed" };
   });
 }
@@ -284,10 +315,22 @@ interface WriteCreditInput {
   expectedAmount: number;
 }
 
+// ADR 036 Phase 7: writeCredit returns the amount paid + bonus + new
+// balance so the caller can hand them to the funds-added email outbox
+// without re-reading the ledger.
+type WriteCreditResult =
+  | { kind: "already_credited" }
+  | {
+      kind: "written";
+      amountPaidCents: number;
+      bonusCents: number;
+      newBalanceCents: number;
+    };
+
 async function writeCredit(
   tx: Tx,
   input: WriteCreditInput,
-): Promise<"written" | "already_credited"> {
+): Promise<WriteCreditResult> {
   // Layer 2 idempotency: the partial UNIQUE index on
   // `balance_ledger_stripe_session_uq` (scoped to card_topup | package_purchase)
   // catches any second credit for the same session that somehow bypasses
@@ -312,7 +355,7 @@ async function writeCredit(
       .returning({ id: householdBalanceLedger.id });
 
     const ledgerId = insertedLedger[0]?.id;
-    if (!ledgerId) return "already_credited";
+    if (!ledgerId) return { kind: "already_credited" };
 
     await tx.insert(householdAuditLog).values({
       householdId: input.metadata.householdId,
@@ -325,7 +368,16 @@ async function writeCredit(
         stripeSessionId: input.sessionId,
       },
     });
-    return "written";
+    const newBalanceCents = await getHouseholdBalance(
+      input.metadata.householdId,
+      tx,
+    );
+    return {
+      kind: "written",
+      amountPaidCents: input.expectedAmount,
+      bonusCents: 0,
+      newBalanceCents,
+    };
   }
 
   // Package purchase writes both rows in one go so the balance moves by
@@ -352,7 +404,7 @@ async function writeCredit(
     .returning({ id: householdBalanceLedger.id });
 
   const purchaseLedgerId = insertedPurchase[0]?.id;
-  if (!purchaseLedgerId) return "already_credited";
+  if (!purchaseLedgerId) return { kind: "already_credited" };
 
   const insertedBonus = await tx
     .insert(householdBalanceLedger)
@@ -399,6 +451,15 @@ async function writeCredit(
         },
       },
     ]);
-  return "written";
+  const newBalanceCents = await getHouseholdBalance(
+    input.metadata.householdId,
+    tx,
+  );
+  return {
+    kind: "written",
+    amountPaidCents: priceCents,
+    bonusCents,
+    newBalanceCents,
+  };
 }
 

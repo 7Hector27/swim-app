@@ -110,6 +110,7 @@ export function createApp(logger: Logger) {
         signature,
         webhookSecret: stripeEnv.webhookSecret,
         logger: req.log,
+        siteUrl: env.siteUrl,
       });
       res.status(result.status).json({ reason: result.reason });
     }),

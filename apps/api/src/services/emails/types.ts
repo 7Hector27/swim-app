@@ -24,7 +24,18 @@ export type LessonEmailEvent =
   // family or swimmer names, just freed-slot times + pool labels so
   // Jason knows what opened up. Row has no lesson/batch/bulk scope
   // (the family is gone); the scope CHECK carves out this event.
-  | "coach_account_deleted";
+  | "coach_account_deleted"
+  // ADR 036 Phase 7 balance-triggered family email. Enqueued inside the
+  // Stripe webhook transaction that credits the balance; payload is a
+  // `BalanceFundedEmailPayload` (see ./balanceFundedTypes.ts), carries
+  // the amount the parent paid, the package bonus (if any), and the
+  // new balance. Row is household-scoped — scope CHECK carves out.
+  | "balance_funded"
+  // ADR 036 Phase 7 coach-adjusted balance email. Enqueued inside the
+  // coach adjust-balance transaction. Payload is a
+  // `BalanceAdjustedEmailPayload`; carries signed amount, new balance,
+  // and the coach's reason (the family will see it). Household-scoped.
+  | "balance_adjusted";
 
 export type LessonEmailStatus =
   | "pending"

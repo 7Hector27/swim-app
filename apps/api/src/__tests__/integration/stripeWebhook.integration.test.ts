@@ -39,6 +39,7 @@ import {
 import {
   householdAuditLog,
   householdBalanceLedger,
+  lessonEmailOutbox,
   stripeEvents,
 } from "../../db/schema";
 import { priceForLesson, packagePrice } from "@swim-app/shared";
@@ -196,6 +197,17 @@ afterEach(async () => {
   await adminDb()
     .delete(householdAuditLog)
     .where(eq(householdAuditLog.householdId, owner.householdId));
+  // Phase 7: the webhook now enqueues a `balance_funded` outbox row in
+  // the same transaction as the ledger credit. Clear those between
+  // tests so the household FK survives teardown.
+  await adminDb()
+    .delete(lessonEmailOutbox)
+    .where(
+      and(
+        eq(lessonEmailOutbox.householdId, owner.householdId),
+        eq(lessonEmailOutbox.event, "balance_funded"),
+      ),
+    );
   await adminDb().delete(stripeEvents);
 });
 
@@ -681,5 +693,152 @@ describe("ADR 036 §3: success redirect never credits", () => {
       .set("Content-Type", "application/json")
       .send(jsonBody({ id: "evt_unsigned", type: "checkout.session.completed" }));
     expect(res.status).toBe(400);
+  });
+});
+
+describe("ADR 036 Phase 7: funds-added email enqueued in the same tx as the credit", () => {
+  it("topup → one balance_funded row with the paid amount, zero bonus, and the post-credit balance", async () => {
+    const sessionId = await makeSessionId("funded-topup");
+    const eventId = await makeEventId("funded-topup");
+    const expected = priceForLesson(30, 1);
+    const session: SeededSession = {
+      id: sessionId,
+      amount_total: expected,
+      metadata: {
+        kind: "topup",
+        householdId: owner.householdId,
+        actorId: owner.userId,
+        durationMinutes: "30",
+        swimmerCount: "1",
+      },
+      payment_intent: "pi_funded_topup",
+    };
+    seedSession(session);
+    const event = completedEvent({ eventId, session });
+
+    const res = await request(app)
+      .post("/webhooks/stripe")
+      .set("Stripe-Signature", `sig:${eventId}`)
+      .set("Content-Type", "application/json")
+      .send(jsonBody(event));
+    expect(res.status).toBe(200);
+
+    const outboxRows = await adminDb()
+      .select({
+        id: lessonEmailOutbox.id,
+        event: lessonEmailOutbox.event,
+        householdId: lessonEmailOutbox.householdId,
+        payload: lessonEmailOutbox.payload,
+        recipientProfileIds: lessonEmailOutbox.recipientProfileIds,
+      })
+      .from(lessonEmailOutbox)
+      .where(
+        and(
+          eq(lessonEmailOutbox.event, "balance_funded"),
+          eq(lessonEmailOutbox.householdId, owner.householdId),
+        ),
+      );
+    expect(outboxRows).toHaveLength(1);
+    const row = outboxRows[0]!;
+    expect(row.householdId).toBe(owner.householdId);
+    expect(row.recipientProfileIds).toContain(owner.userId);
+    const payload = row.payload as {
+      type: string;
+      amountPaidCents: number;
+      bonusCents: number;
+      newBalanceCents: number;
+    };
+    expect(payload.type).toBe("topup");
+    expect(payload.amountPaidCents).toBe(expected);
+    expect(payload.bonusCents).toBe(0);
+    expect(payload.newBalanceCents).toBe(expected);
+  });
+
+  it("package → one balance_funded row with paid + bonus + new balance (sum of both ledger rows)", async () => {
+    const sessionId = await makeSessionId("funded-package");
+    const eventId = await makeEventId("funded-package");
+    const { priceCents, bonusCents } = packagePrice("cannonball", 1);
+    const session: SeededSession = {
+      id: sessionId,
+      amount_total: priceCents,
+      metadata: {
+        kind: "package",
+        householdId: owner.householdId,
+        actorId: owner.userId,
+        packageTier: "cannonball",
+        swimmerCount: "1",
+      },
+      payment_intent: "pi_funded_package",
+    };
+    seedSession(session);
+    const event = completedEvent({ eventId, session });
+
+    const res = await request(app)
+      .post("/webhooks/stripe")
+      .set("Stripe-Signature", `sig:${eventId}`)
+      .set("Content-Type", "application/json")
+      .send(jsonBody(event));
+    expect(res.status).toBe(200);
+
+    const outboxRows = await adminDb()
+      .select({ payload: lessonEmailOutbox.payload })
+      .from(lessonEmailOutbox)
+      .where(
+        and(
+          eq(lessonEmailOutbox.event, "balance_funded"),
+          eq(lessonEmailOutbox.householdId, owner.householdId),
+        ),
+      );
+    expect(outboxRows).toHaveLength(1);
+    const payload = outboxRows[0]!.payload as {
+      type: string;
+      amountPaidCents: number;
+      bonusCents: number;
+      newBalanceCents: number;
+    };
+    expect(payload.type).toBe("package");
+    expect(payload.amountPaidCents).toBe(priceCents);
+    expect(payload.bonusCents).toBe(bonusCents);
+    expect(payload.newBalanceCents).toBe(priceCents + bonusCents);
+  });
+
+  it("replay (same event id) credits once AND emails once — no second balance_funded row on the dedup branch", async () => {
+    const sessionId = await makeSessionId("funded-replay");
+    const eventId = await makeEventId("funded-replay");
+    const expected = priceForLesson(30, 1);
+    const session: SeededSession = {
+      id: sessionId,
+      amount_total: expected,
+      metadata: {
+        kind: "topup",
+        householdId: owner.householdId,
+        actorId: owner.userId,
+        durationMinutes: "30",
+        swimmerCount: "1",
+      },
+      payment_intent: "pi_funded_replay",
+    };
+    seedSession(session);
+    const event = completedEvent({ eventId, session });
+
+    for (let i = 0; i < 2; i++) {
+      const res = await request(app)
+        .post("/webhooks/stripe")
+        .set("Stripe-Signature", `sig:${eventId}`)
+        .set("Content-Type", "application/json")
+        .send(jsonBody(event));
+      expect(res.status).toBe(200);
+    }
+
+    const outboxRows = await adminDb()
+      .select({ id: lessonEmailOutbox.id })
+      .from(lessonEmailOutbox)
+      .where(
+        and(
+          eq(lessonEmailOutbox.event, "balance_funded"),
+          eq(lessonEmailOutbox.householdId, owner.householdId),
+        ),
+      );
+    expect(outboxRows).toHaveLength(1);
   });
 });
