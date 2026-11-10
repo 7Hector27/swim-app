@@ -28,7 +28,7 @@ import { coachRouter } from "./routes/coach";
 import { integrationsGoogleRouter } from "./routes/integrationsGoogle";
 import { leaderboardRouter } from "./routes/leaderboard";
 import { accountDeletionRouter } from "./routes/accountDeletion";
-import { paymentsRouter } from "./routes/payments";
+import { balanceRouter, paymentsRouter } from "./routes/payments";
 import { processWebhook } from "./services/stripe";
 import {
   calculateAge,
@@ -247,6 +247,10 @@ export function createApp(logger: Logger) {
   app.use("/integrations", integrationsGoogleRouter);
   app.use("/coach", coachRouter);
   app.use("/payments", paymentsRouter);
+  // balanceRouter serves GET /me/balance and /me/balance/history under
+  // the root; mounted alongside accountDeletionRouter which owns the
+  // other /me/* paths.
+  app.use(balanceRouter);
   app.use(accountDeletionRouter);
   app.use(leaderboardRouter);
 

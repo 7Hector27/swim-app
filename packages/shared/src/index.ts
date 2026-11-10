@@ -23,6 +23,9 @@ export type {
   BalanceEntryType,
   LedgerEntry,
   BalanceResponse,
+  BalanceHistoryEntry,
+  BalanceHistoryResponse,
+  BalanceHistoryQuery,
   CheckoutSessionBody,
   CheckoutSessionResponse,
 } from "./schemas/payments";
@@ -32,6 +35,9 @@ export {
   BalanceEntryTypeSchema,
   LedgerEntrySchema,
   BalanceResponseSchema,
+  BalanceHistoryEntrySchema,
+  BalanceHistoryResponseSchema,
+  BalanceHistoryQuerySchema,
   CheckoutSessionBodySchema,
   CheckoutSessionResponseSchema,
 } from "./schemas/payments";

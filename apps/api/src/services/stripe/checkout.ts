@@ -38,6 +38,15 @@ export async function createCheckoutSession(
 ): Promise<CreateCheckoutSessionResult> {
   const { metadata, amountCents, description } = buildLineItem(input);
 
+  // The browser can suggest a relative path to return to after Checkout
+  // (via `body.successReturnTo`); the Zod schema already forbids a scheme
+  // or host, so joining it under `input.siteUrl` can't escape our origin.
+  // Defaults to the balance page.
+  const returnPath = input.body.successReturnTo ?? "/account/balance";
+  const separator = returnPath.includes("?") ? "&" : "?";
+  const successUrl = `${input.siteUrl}${returnPath}${separator}topup=success`;
+  const cancelUrl = `${input.siteUrl}${returnPath}${separator}topup=cancelled`;
+
   // All amounts are integer cents under our pricing module; USD is the
   // only currency the business operates in.
   const session = await getStripe().checkout.sessions.create({
@@ -60,10 +69,9 @@ export async function createCheckoutSession(
     ],
     // ADR 036 §3: the success redirect is cosmetic. The balance page
     // re-reads from the DB and shows a toast; it never writes, so a
-    // forged success URL cannot mint credit. Cancel returns the user
-    // to the balance page with no toast.
-    success_url: `${input.siteUrl}/account/balance?topup=success`,
-    cancel_url: `${input.siteUrl}/account/balance?topup=cancelled`,
+    // forged success URL cannot mint credit.
+    success_url: successUrl,
+    cancel_url: cancelUrl,
     // Metadata is flat string→string per Stripe's API shape. The webhook
     // handler parses it back with CheckoutMetadataSchema.
     metadata: toStringMap(metadata),

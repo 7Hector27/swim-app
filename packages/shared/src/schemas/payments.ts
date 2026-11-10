@@ -62,18 +62,34 @@ export type BalanceResponse = z.infer<typeof BalanceResponseSchema>;
 // carries no amount, no price, and no household id (that comes from the auth
 // session). Both variants use .strict() so a body with an extra `amountCents`
 // key (or any other unexpected field) is rejected rather than quietly ignored.
+//
+// `successReturnTo` is an optional relative path the server uses to build
+// the Stripe success_url. Server validates it starts with "/" and contains
+// no scheme/host — all browsers and Stripe land the parent back on our
+// own domain. Defaults to "/account/balance" when omitted.
+const SuccessReturnToSchema = z
+  .string()
+  .regex(/^\/[^/\\]/, "successReturnTo must be a relative path starting with '/'")
+  .refine(
+    (value) => !/^(https?:)?\/\//i.test(value) && !value.includes("\\"),
+    { message: "successReturnTo must not include a scheme or host" },
+  )
+  .optional();
+
 const CheckoutSessionTopupBodySchema = z.object({
   kind: z.literal("topup"),
   lessonTopup: z.object({
     durationMinutes: LessonDurationMinutesSchema,
     swimmerCount: SwimmerCountSchema,
   }).strict(),
+  successReturnTo: SuccessReturnToSchema,
 }).strict();
 
 const CheckoutSessionPackageBodySchema = z.object({
   kind: z.literal("package"),
   packageTier: PackageTierSchema,
   swimmerCount: SwimmerCountSchema,
+  successReturnTo: SuccessReturnToSchema,
 }).strict();
 
 export const CheckoutSessionBodySchema = z.discriminatedUnion("kind", [
@@ -90,3 +106,33 @@ export const CheckoutSessionResponseSchema = z.object({
   sessionId: z.string(),
 });
 export type CheckoutSessionResponse = z.infer<typeof CheckoutSessionResponseSchema>;
+
+// GET /me/balance/history — reverse-chronological ledger entries for the
+// caller's household, with plain-language `displayType` and the running
+// balance after each entry so the client renders a one-row-one-number
+// table without re-summing. Paginated at 50 rows via `nextCursor`
+// (opaque — the server reads it back to pick up where the last page left
+// off; the client treats it as a forward token).
+export const BalanceHistoryEntrySchema = z.object({
+  id: z.string().uuid(),
+  entryType: BalanceEntryTypeSchema,
+  amountCents: z.number().int(),
+  runningBalanceCents: z.number().int(),
+  createdAt: z.string().datetime({ offset: true }),
+  // Plain-language short label — server-rendered so the client doesn't
+  // have to reproduce the "Package: Cannonball (2 swimmers)" / "Jason
+  // adjusted" phrasing from ledger fields.
+  displayType: z.string(),
+});
+export type BalanceHistoryEntry = z.infer<typeof BalanceHistoryEntrySchema>;
+
+export const BalanceHistoryResponseSchema = z.object({
+  entries: z.array(BalanceHistoryEntrySchema),
+  nextCursor: z.string().nullable(),
+});
+export type BalanceHistoryResponse = z.infer<typeof BalanceHistoryResponseSchema>;
+
+export const BalanceHistoryQuerySchema = z.object({
+  cursor: z.string().optional(),
+});
+export type BalanceHistoryQuery = z.infer<typeof BalanceHistoryQuerySchema>;
