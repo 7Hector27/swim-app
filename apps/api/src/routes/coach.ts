@@ -6,6 +6,7 @@ import { coachAvailabilityRouter } from "./coachAvailability";
 import { coachBatchesRouter } from "./coachBatches";
 import { coachBulkCancelRouter } from "./coachBulkCancel";
 import { coachCalendarRouter } from "./coachCalendar";
+import { coachHouseholdsRouter } from "./coachHouseholds";
 import { coachLessonsRouter } from "./coachLessons";
 import { coachSwimmersRouter } from "./coachSwimmers";
 import { evaluationsRouter, ratingsRouter, coachCategoriesRouter, coachScreensRouter, sessionsRouter } from "./evaluations";
@@ -30,6 +31,10 @@ coachRouter.use(coachCalendarRouter);
 // Bulk-cancel endpoints live under /coach/lessons/bulk-cancel. Mount before
 // coachLessonsRouter so the specific path matches first.
 coachRouter.use(coachBulkCancelRouter);
+// coachHouseholdsRouter owns /coach/households/balances + per-id balance
+// views. Mount it before coachLessonsRouter (which hosts GET
+// /coach/households search) so the specific /balances suffix matches first.
+coachRouter.use(coachHouseholdsRouter);
 coachRouter.use(coachLessonsRouter);
 coachRouter.use(coachCategoriesRouter);
 coachRouter.use(coachScreensRouter);

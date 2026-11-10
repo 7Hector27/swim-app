@@ -136,3 +136,33 @@ export const BalanceHistoryQuerySchema = z.object({
   cursor: z.string().optional(),
 });
 export type BalanceHistoryQuery = z.infer<typeof BalanceHistoryQuerySchema>;
+
+// ── Coach-side household-balance views (ADR 036 Phase 6) ─────────────────
+//
+// GET /coach/households/balances — one row per household with the fields
+// Jason needs to glance at the full roster: name, who's in it, how many
+// active swimmers, current balance, and when the last ledger move
+// happened (so a long-silent family is visibly different from an
+// active one). Client sorts; server returns a stable name-alphabetical
+// order so consecutive renders don't jitter.
+export const CoachHouseholdBalanceSummarySchema = z.object({
+  householdId: z.string().uuid(),
+  householdName: z.string(),
+  memberFullNames: z.array(z.string()),
+  activeSwimmerCount: z.number().int().nonnegative(),
+  balanceCents: z.number().int(),
+  // Null when the household has no ledger rows at all — the client renders
+  // "—" rather than guessing an epoch date.
+  lastActivityAt: z.string().datetime({ offset: true }).nullable(),
+});
+export type CoachHouseholdBalanceSummary = z.infer<
+  typeof CoachHouseholdBalanceSummarySchema
+>;
+
+export const CoachHouseholdBalanceListResponseSchema = z.array(
+  CoachHouseholdBalanceSummarySchema,
+);
+export type CoachHouseholdBalanceListResponse = z.infer<
+  typeof CoachHouseholdBalanceListResponseSchema
+>;
+

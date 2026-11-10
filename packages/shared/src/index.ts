@@ -28,6 +28,8 @@ export type {
   BalanceHistoryQuery,
   CheckoutSessionBody,
   CheckoutSessionResponse,
+  CoachHouseholdBalanceSummary,
+  CoachHouseholdBalanceListResponse,
 } from "./schemas/payments";
 export {
   SwimmerCountSchema,
@@ -40,6 +42,8 @@ export {
   BalanceHistoryQuerySchema,
   CheckoutSessionBodySchema,
   CheckoutSessionResponseSchema,
+  CoachHouseholdBalanceSummarySchema,
+  CoachHouseholdBalanceListResponseSchema,
 } from "./schemas/payments";
 
 export {
