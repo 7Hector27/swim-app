@@ -34,9 +34,11 @@ import type { BulkCancelEmailPayload } from "./bulkCancelTypes";
 import { buildIcs } from "./ics";
 import { renderEmail } from "./render";
 import type { AccountDeletedEmailPayload } from "./accountDeletedTypes";
+import type { BalanceAdjustedEmailPayload } from "./balanceAdjustedTypes";
 import type { BalanceFundedEmailPayload } from "./balanceFundedTypes";
 import { formatMoneyCents } from "./templates/shared/copyHelpers";
 import Batch from "./templates/Batch";
+import BalanceAdjusted from "./templates/BalanceAdjusted";
 import BalanceFunded from "./templates/BalanceFunded";
 import CoachAccountDeleted from "./templates/CoachAccountDeleted";
 import CoachBulkCancel from "./templates/CoachBulkCancel";
@@ -133,6 +135,8 @@ export async function sendLessonEmailOutboxRow(outboxId: string): Promise<void> 
       await sendCoachAccountDeletedInner(outboxId);
     } else if (row.event === "balance_funded") {
       await sendBalanceFundedInner(outboxId);
+    } else if (row.event === "balance_adjusted") {
+      await sendBalanceAdjustedInner(outboxId);
     } else if (row.lessonId !== null) {
       await sendInner(outboxId);
     } else if (row.batchId !== null) {
@@ -1456,6 +1460,132 @@ async function sendBalanceFundedInner(outboxId: string): Promise<void> {
       errorKind: result.error?.kind,
     },
     "balance_funded email send failed",
+  );
+}
+
+// ── balance_adjusted sender (ADR 036 Phase 7) ───────────────────────────────
+
+interface ClaimedBalanceAdjustedRow {
+  id: string;
+  recipientProfileIds: string[];
+  payload: BalanceAdjustedEmailPayload;
+  attempts: number;
+}
+
+async function claimBalanceAdjustedRow(
+  outboxId: string,
+): Promise<ClaimedBalanceAdjustedRow | null> {
+  const nowAtClaim = new Date();
+  return await db.transaction(async (tx) => {
+    const rows = await tx
+      .select({
+        id: lessonEmailOutbox.id,
+        recipientProfileIds: lessonEmailOutbox.recipientProfileIds,
+        payload: lessonEmailOutbox.payload,
+        attempts: lessonEmailOutbox.attempts,
+      })
+      .from(lessonEmailOutbox)
+      .where(
+        and(
+          eq(lessonEmailOutbox.id, outboxId),
+          eq(lessonEmailOutbox.event, "balance_adjusted"),
+          or(
+            inArray(lessonEmailOutbox.status, ["pending", "failed"]),
+            and(
+              eq(lessonEmailOutbox.status, "sending"),
+              lt(lessonEmailOutbox.claimedUntil, nowAtClaim),
+            ),
+          ),
+        ),
+      )
+      .for("update", { skipLocked: true })
+      .limit(1);
+    const row = rows[0];
+    if (!row) return null;
+    const leaseUntil = new Date(Date.now() + CLAIM_LEASE_MS);
+    await tx
+      .update(lessonEmailOutbox)
+      .set({
+        status: "sending",
+        claimedUntil: leaseUntil,
+        lastAttemptAt: new Date(),
+      })
+      .where(eq(lessonEmailOutbox.id, outboxId));
+    return {
+      id: row.id,
+      recipientProfileIds: row.recipientProfileIds,
+      payload: row.payload as BalanceAdjustedEmailPayload,
+      attempts: row.attempts,
+    };
+  });
+}
+
+async function sendBalanceAdjustedInner(outboxId: string): Promise<void> {
+  const transport = getTransport();
+  if (!transport) {
+    await finalizeSkipped(outboxId, "transport_not_configured");
+    return;
+  }
+  const claimed = await claimBalanceAdjustedRow(outboxId);
+  if (!claimed) return;
+
+  const deliverable = await resolveRecipients(claimed.recipientProfileIds);
+  if (deliverable.length === 0) {
+    await finalizeSkipped(outboxId, "no_deliverable_recipients");
+    log.info({ outboxId }, "balance_adjusted email skipped (no deliverable recipients)");
+    return;
+  }
+
+  const siteUrl = getEnv().siteUrl;
+  const replyToEmail = getEnv().email?.replyTo ?? null;
+  const element = BalanceAdjusted({
+    payload: claimed.payload,
+    siteUrl,
+    replyToEmail,
+  });
+  const [html, text] = await Promise.all([
+    renderReactEmail(element),
+    renderReactEmail(element, { plainText: true }),
+  ]);
+  const abs = Math.abs(claimed.payload.amountCents);
+  const subject =
+    claimed.payload.amountCents > 0
+      ? `Balance credit: ${formatMoneyCents(abs)}`
+      : `Balance adjustment: ${formatMoneyCents(abs)}`;
+
+  const emailEnv = getEnv().email!;
+  const result = await transport.send({
+    from: emailEnv.from,
+    replyTo: emailEnv.replyTo,
+    to: deliverable,
+    subject,
+    text,
+    ...(html && { html }),
+    idempotencyKey: outboxId,
+  });
+
+  if (result.ok) {
+    await finalizeSent(outboxId, result.providerMessageId);
+    log.info(
+      {
+        outboxId,
+        attempts: claimed.attempts + 1,
+        transport: emailEnv.transport,
+        signedAmountCents: claimed.payload.amountCents,
+      },
+      "balance_adjusted email sent",
+    );
+    return;
+  }
+  await finalizeFailed(outboxId, result.error?.kind ?? "unexpected", result.errorMessage);
+  log.warn(
+    {
+      outboxId,
+      transport: emailEnv.transport,
+      attempts: claimed.attempts + 1,
+      errorKind: result.error?.kind,
+    },
+    "balance_adjusted email send failed",
   );
 }
 

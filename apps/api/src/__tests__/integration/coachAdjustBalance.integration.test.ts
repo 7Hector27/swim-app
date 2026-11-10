@@ -20,6 +20,7 @@ import {
 import {
   householdAuditLog,
   householdBalanceLedger,
+  lessonEmailOutbox,
   profiles,
 } from "../../db/schema";
 
@@ -41,6 +42,17 @@ afterAll(async () => {
       sql`DELETE FROM household_balance_ledger WHERE household_id = ${family.householdId}::uuid`,
     );
   });
+  // Phase 7: the adjust endpoint now enqueues a balance_adjusted outbox
+  // row per call. Delete them before the household so the FK survives
+  // teardown.
+  await adminDb()
+    .delete(lessonEmailOutbox)
+    .where(
+      and(
+        eq(lessonEmailOutbox.householdId, family.householdId),
+        eq(lessonEmailOutbox.event, "balance_adjusted"),
+      ),
+    );
   await Promise.all([coach.cleanup(), family.cleanup()]);
   await closeAdminDb();
 });
@@ -184,5 +196,94 @@ describe("POST /coach/households/:id/balance/adjust", () => {
       .set("Authorization", `Bearer ${family.accessToken}`)
       .send({ amountCents: 1_000, reason: "parent attempt" });
     expect(res.status).toBe(403);
+  });
+
+  it("Phase 7: enqueues a balance_adjusted outbox row in the same transaction as the ledger row", async () => {
+    // Fresh ledger + fresh outbox slice.
+    await adminDb().transaction(async (tx) => {
+      await tx.execute(sql`SET LOCAL session_replication_role = replica`);
+      await tx.execute(
+        sql`DELETE FROM household_balance_ledger WHERE household_id = ${family.householdId}::uuid`,
+      );
+    });
+    await adminDb()
+      .delete(lessonEmailOutbox)
+      .where(
+        and(
+          eq(lessonEmailOutbox.householdId, family.householdId),
+          eq(lessonEmailOutbox.event, "balance_adjusted"),
+        ),
+      );
+
+    const res = await request(app)
+      .post(`/coach/households/${family.householdId}/balance/adjust`)
+      .set("Authorization", `Bearer ${coach.accessToken}`)
+      .send({ amountCents: 2_500, reason: "Birthday credit" });
+    expect(res.status).toBe(201);
+
+    const outboxRows = await adminDb()
+      .select({
+        householdId: lessonEmailOutbox.householdId,
+        payload: lessonEmailOutbox.payload,
+        recipientProfileIds: lessonEmailOutbox.recipientProfileIds,
+      })
+      .from(lessonEmailOutbox)
+      .where(
+        and(
+          eq(lessonEmailOutbox.event, "balance_adjusted"),
+          eq(lessonEmailOutbox.householdId, family.householdId),
+        ),
+      );
+    expect(outboxRows).toHaveLength(1);
+    const row = outboxRows[0]!;
+    expect(row.householdId).toBe(family.householdId);
+    expect(row.recipientProfileIds).toContain(family.userId);
+    const payload = row.payload as {
+      amountCents: number;
+      newBalanceCents: number;
+      reason: string;
+    };
+    expect(payload.amountCents).toBe(2_500);
+    expect(payload.newBalanceCents).toBe(2_500);
+    expect(payload.reason).toBe("Birthday credit");
+  });
+
+  it("Phase 7: a rejected overdraft adjustment writes NO balance_adjusted row (same tx rolls both back)", async () => {
+    await adminDb().transaction(async (tx) => {
+      await tx.execute(sql`SET LOCAL session_replication_role = replica`);
+      await tx.execute(
+        sql`DELETE FROM household_balance_ledger WHERE household_id = ${family.householdId}::uuid`,
+      );
+    });
+    await adminDb()
+      .delete(lessonEmailOutbox)
+      .where(
+        and(
+          eq(lessonEmailOutbox.householdId, family.householdId),
+          eq(lessonEmailOutbox.event, "balance_adjusted"),
+        ),
+      );
+    await seedHouseholdBalanceForTest({
+      householdId: family.householdId,
+      actorId: family.userId,
+      amountCents: 500,
+    });
+
+    const res = await request(app)
+      .post(`/coach/households/${family.householdId}/balance/adjust`)
+      .set("Authorization", `Bearer ${coach.accessToken}`)
+      .send({ amountCents: -10_000, reason: "Would overdraft" });
+    expect(res.status).toBe(422);
+
+    const outboxRows = await adminDb()
+      .select({ id: lessonEmailOutbox.id })
+      .from(lessonEmailOutbox)
+      .where(
+        and(
+          eq(lessonEmailOutbox.event, "balance_adjusted"),
+          eq(lessonEmailOutbox.householdId, family.householdId),
+        ),
+      );
+    expect(outboxRows).toHaveLength(0);
   });
 });

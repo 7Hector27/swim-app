@@ -46,6 +46,7 @@ import {
   profiles,
   swimmers,
 } from "../db/schema";
+import { getEnv } from "../lib/env";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { validate } from "../middleware/validate";
 import {
@@ -53,6 +54,8 @@ import {
   getHouseholdBalance,
   withBalanceLock,
 } from "../services/balance/ledger";
+import { enqueueBalanceAdjustedEmail } from "../services/emails/balanceAdjustedOutbox";
+import { sendLessonEmailOutboxRow } from "../services/emails/sender";
 
 export const coachHouseholdsRouter = Router();
 
@@ -388,6 +391,8 @@ coachHouseholdsRouter.post(
       return;
     }
 
+    const siteUrl = getEnv().siteUrl;
+    const trimmedReason = body.reason.trim();
     const result = await withBalanceLock(id, async (tx) => {
       const currentBalance = await getHouseholdBalance(id, tx);
       const nextBalance = currentBalance + body.amountCents;
@@ -407,12 +412,23 @@ coachHouseholdsRouter.post(
         householdId: id,
         actorId: req.profile.id,
         amountCents: body.amountCents,
-        reason: body.reason.trim(),
+        reason: trimmedReason,
+      });
+      // ADR 036 Phase 7: enqueue the family-facing email in the same
+      // transaction. The adjust modal warns Jason the family sees this
+      // reason — the payload stores it verbatim.
+      const outboxId = await enqueueBalanceAdjustedEmail(tx, {
+        householdId: id,
+        amountCents: body.amountCents,
+        newBalanceCents: nextBalance,
+        reason: trimmedReason,
+        siteUrl,
       });
       return {
         kind: "ok" as const,
         ledgerId,
         balanceCents: nextBalance,
+        outboxId,
       };
     });
 
@@ -442,5 +458,14 @@ coachHouseholdsRouter.post(
       ledgerId: result.ledgerId,
     };
     res.status(201).json(response);
+    // Post-commit microtask — the transaction is already committed by
+    // the time this fires. A rollback would've thrown above and we never
+    // reach here, so the outbox row either exists or the `outboxId` is
+    // null (edge case: no household members to email).
+    if (result.outboxId !== null) {
+      queueMicrotask(() => {
+        void sendLessonEmailOutboxRow(result.outboxId!);
+      });
+    }
   }),
 );
