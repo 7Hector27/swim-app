@@ -12,9 +12,14 @@ export function coachDisplay(coachFirstName: string | null): string {
   return coachFirstName && coachFirstName.length > 0 ? coachFirstName : "The coach";
 }
 
-// Integer-cents → `$X.YY` for email body copy. Emails are plain-text to
-// a human, so no locale awareness or sign prefix is needed (the sign is
-// always implicit from context — "Refunded $X. New balance: $Y.").
+// Integer-cents → `$X,XXX.YY` for email body copy. Canonical money
+// renderer across every email that shows money — refund line, balance_
+// funded (paid / bonus / new balance), balance_adjusted (amount / new
+// balance), and the matching subject lines in sender.ts. Always two
+// decimals, always comma thousands, no locale guessing — the sign is
+// always implicit from context ("Refunded $X. New balance: $Y.",
+// "Jason removed $X from your balance."), so callers pass the absolute
+// value for positive-prefixed copy.
 export function formatMoneyCents(cents: number): string {
   const abs = Math.abs(cents);
   const dollars = Math.floor(abs / 100);

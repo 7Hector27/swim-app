@@ -1125,7 +1125,10 @@ coachLessonsRouter.patch(
 // targets rows where status='approved', so once a lesson is no_show it is
 // never auto-promoted back to completed. Keeps the lesson's Google Calendar
 // event (ADR 027: no_show now mirrors completed on the shouldExist side).
-// No parent email: parents see the status change in-app ("Missed").
+// No parent email: parents see the status change in-app ("Missed"). The
+// ADR 036 §4 refund still writes a `refund_to_balance` ledger row in the
+// same tx, which surfaces in /me/balance/history as a "Refund" entry —
+// that is how the parent sees the money come back without a new email.
 
 coachLessonsRouter.patch(
   "/lessons/:id/no-show",

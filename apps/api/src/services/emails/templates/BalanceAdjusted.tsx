@@ -23,7 +23,7 @@ export default function BalanceAdjusted({ payload, siteUrl, replyToEmail }: Prop
   const heading = isCredit ? "Balance credit." : "Balance adjustment.";
   const previewText = isCredit
     ? `${coach} added ${formatMoneyCents(absAmount)} to your balance.`
-    : `${coach} debited ${formatMoneyCents(absAmount)} from your balance.`;
+    : `${coach} removed ${formatMoneyCents(absAmount)} from your balance.`;
   return (
     <EmailLayout
       siteUrl={siteUrl}
@@ -33,7 +33,7 @@ export default function BalanceAdjusted({ payload, siteUrl, replyToEmail }: Prop
     >
       <Heading style={headingStyle}>{heading}</Heading>
       <Text style={bodyStyle} data-testid="amount-line">
-        {isCredit ? `${coach} added ` : `${coach} debited `}
+        {isCredit ? `${coach} added ` : `${coach} removed `}
         <span style={{ fontWeight: 600 }}>{formatMoneyCents(absAmount)}</span>
         {isCredit ? " to your balance." : " from your balance."}
       </Text>

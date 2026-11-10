@@ -55,20 +55,23 @@ describe("BalanceAdjusted template — credit (positive amount)", () => {
 });
 
 describe("BalanceAdjusted template — debit (negative amount)", () => {
-  it("renders 'Jason debited $X from your balance.' with the absolute value", async () => {
+  it("renders 'Jason removed $X from your balance.' with the absolute value", async () => {
     const { html, text } = await renderTemplate({
       ...BASE_PAYLOAD,
       amountCents: -3_000,
       newBalanceCents: 7_000,
       reason: "Refund correction",
     });
-    expect(text).toMatch(/Jason debited \$30\.00 from your balance\./);
+    expect(text).toMatch(/Jason removed \$30\.00 from your balance\./);
     expect(text).toContain("New balance: $70.00");
     expect(text).toContain("Refund correction");
     expect(html).toContain("Balance adjustment.");
     // Never render the raw minus-prefixed amount — the sign is implicit
-    // in "debited from your balance".
+    // in "removed from your balance".
     expect(text).not.toContain("-$30.00");
+    // Phase 7 fix 3: the stricter "debited" phrasing was replaced with
+    // plain-language "removed".
+    expect(text).not.toContain("debited");
   });
 });
 
