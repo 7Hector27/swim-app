@@ -75,7 +75,35 @@ export type CoachCreateLessonResult =
   | { kind: "created"; lesson: LessonResponse }
   | { kind: "warnings"; body: CoachCreateLessonWarningsResponse }
   | { kind: "slot_unavailable" }
+  | {
+      kind: "insufficient_balance";
+      balanceCents: number;
+      priceCents: number;
+      shortfallCents: number;
+    }
   | { kind: "error"; message: string };
+
+function readCoachInsufficientBalance(
+  body: unknown,
+):
+  | { balanceCents: number; priceCents: number; shortfallCents: number }
+  | null {
+  if (typeof body !== "object" || body === null) return null;
+  const record = body as Record<string, unknown>;
+  if (record.error !== "insufficient_balance") return null;
+  if (
+    typeof record.balanceCents !== "number" ||
+    typeof record.priceCents !== "number" ||
+    typeof record.shortfallCents !== "number"
+  ) {
+    return null;
+  }
+  return {
+    balanceCents: record.balanceCents,
+    priceCents: record.priceCents,
+    shortfallCents: record.shortfallCents,
+  };
+}
 
 export async function createCoachLesson(
   accessToken: string,
@@ -121,14 +149,21 @@ export async function createCoachLesson(
     return { kind: "error", message: "Server reported warnings but the payload was unexpected." };
   }
 
-  if (
-    responseStatus === 422 &&
-    typeof responseBody === "object" &&
-    responseBody !== null &&
-    "error" in responseBody &&
-    (responseBody as { error: unknown }).error === "slot_unavailable"
-  ) {
-    return { kind: "slot_unavailable" };
+  if (responseStatus === 422) {
+    // Map 422 by error code — insufficient_balance and slot_unavailable
+    // both land on 422, so the status alone is ambiguous.
+    const shortfall = readCoachInsufficientBalance(responseBody);
+    if (shortfall !== null) {
+      return { kind: "insufficient_balance", ...shortfall };
+    }
+    if (
+      typeof responseBody === "object" &&
+      responseBody !== null &&
+      "error" in responseBody &&
+      (responseBody as { error: unknown }).error === "slot_unavailable"
+    ) {
+      return { kind: "slot_unavailable" };
+    }
   }
 
   const message =

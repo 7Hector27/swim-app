@@ -3,6 +3,7 @@
 import PendingLabel from "@/components/PendingLabel";
 import { lessonPrice } from "@/lib/pricing";
 import { formatSlotRangeWithDate } from "./helpers";
+import { formatDollars } from "@/content/AccountBalanceContent/formatters";
 
 interface Props {
   selectedStartsAt: string | null;
@@ -11,6 +12,13 @@ interface Props {
   swimmerIds: string[];
   needsApproval: boolean;
   bookingMinAdvanceHours: number | null;
+  // Household balance in cents, authoritative server value. `null` when
+  // the server fetch failed — the bar hides the balance line rather than
+  // guessing.
+  balanceCents?: number | null;
+  // Server-pricing total for the current selection in cents. Zero when
+  // the parent hasn't picked a swimmer or slot yet.
+  totalPriceCents?: number;
   onConfirm: () => void;
   isConfirming: boolean;
 }
@@ -22,6 +30,8 @@ export default function BottomBar({
   swimmerIds,
   needsApproval,
   bookingMinAdvanceHours,
+  balanceCents = null,
+  totalPriceCents = 0,
   onConfirm,
   isConfirming,
 }: Props) {
@@ -64,6 +74,18 @@ export default function BottomBar({
     return null;
   })();
 
+  // Pre-submit shortfall guard. When balance is known and the current
+  // selection already exceeds it, show the "short by" line; the server
+  // still gets the final say via 422 insufficient_balance, which opens
+  // the modal.
+  const showBalanceLine =
+    balanceCents !== null && hasSelection && !tooSoon && hasSwimmers;
+  const isShort =
+    showBalanceLine && totalPriceCents > (balanceCents ?? 0);
+  const shortfallCents = isShort
+    ? totalPriceCents - (balanceCents ?? 0)
+    : 0;
+
   return (
     <div
       role="region"
@@ -84,6 +106,23 @@ export default function BottomBar({
           )}
           {priceLabel !== null && (
             <p className="text-xs opacity-70">{priceLabel}</p>
+          )}
+          {showBalanceLine && (
+            <p
+              className="text-xs opacity-70 mt-0.5"
+              data-testid="single-balance-line"
+              style={{ fontVariantNumeric: "tabular-nums" }}
+            >
+              Balance: {formatDollars(balanceCents ?? 0)}
+              {isShort && (
+                <>
+                  {" · "}
+                  <span className="font-semibold">
+                    Short by {formatDollars(shortfallCents)}
+                  </span>
+                </>
+              )}
+            </p>
           )}
           {needsApproval && hasSelection && !tooSoon && (
             <p className="text-xs opacity-70 mt-0.5">Jason will confirm this one.</p>

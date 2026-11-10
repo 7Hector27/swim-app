@@ -5,6 +5,24 @@ import { isApiBody } from "@/lib/mapZodErrors";
 export type BookingState =
   | { status: "idle" }
   | { status: "error"; message: string }
+  | {
+      status: "insufficient_balance";
+      // Full 422 shape from the API — used by the modal to show the
+      // shortfall and to pre-fill the top-up flow with the same lesson
+      // inputs the parent just attempted.
+      balanceCents: number;
+      priceCents: number;
+      shortfallCents: number;
+      // The inputs the parent tried to book, so the modal's "add credit
+      // for this lesson" CTA tops up at the exact price the booking
+      // needs, and the resumed /book?resume=1 page re-prefills them.
+      attempt: {
+        startsAt: string;
+        durationMinutes: 30 | 45 | 60;
+        locationId: string;
+        swimmerIds: string[];
+      };
+    }
   | { status: "success"; lessonId: string; autoApproved: boolean };
 
 export function getMondayOfWeek(dateStr: string): string {
@@ -229,6 +247,26 @@ const ERROR_CODE_MESSAGES: Record<string, string> = {
   slot_unavailable: "That time isn't available anymore. Pick another one.",
 };
 
+interface InsufficientBalanceBody {
+  error: "insufficient_balance";
+  balanceCents: number;
+  priceCents: number;
+  shortfallCents: number;
+}
+
+function isInsufficientBalanceBody(
+  body: unknown,
+): body is InsufficientBalanceBody {
+  if (typeof body !== "object" || body === null) return false;
+  const record = body as Record<string, unknown>;
+  return (
+    record.error === "insufficient_balance" &&
+    typeof record.balanceCents === "number" &&
+    typeof record.priceCents === "number" &&
+    typeof record.shortfallCents === "number"
+  );
+}
+
 export function tooSoonMessage(hours: number | null): string {
   if (hours === null) {
     // Server didn't echo a window on this response. Don't invent one —
@@ -260,12 +298,28 @@ export function firstAvailableDayInWeek(
 export function mapBookingApiResponse(
   status: number,
   body: unknown,
-): { status: "error"; message: string } {
+  attempt?: {
+    startsAt: string;
+    durationMinutes: 30 | 45 | 60;
+    locationId: string;
+    swimmerIds: string[];
+  },
+): Exclude<BookingState, { status: "idle" } | { status: "success"; lessonId: string; autoApproved: boolean }> {
   if (status === 403) {
     return {
       status: "error",
       message:
         "You don't have permission to book lessons. Ask the household owner for booking access.",
+    };
+  }
+
+  if (status === 422 && isInsufficientBalanceBody(body) && attempt) {
+    return {
+      status: "insufficient_balance",
+      balanceCents: body.balanceCents,
+      priceCents: body.priceCents,
+      shortfallCents: body.shortfallCents,
+      attempt,
     };
   }
 

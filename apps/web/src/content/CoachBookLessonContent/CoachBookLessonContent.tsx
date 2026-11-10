@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import type {
   CoachBookingWarnings,
+  CoachCreateLessonBody,
   CoachHouseholdSearchResult,
   LessonLocation,
 } from "@swim-app/shared";
@@ -65,6 +66,14 @@ export default function CoachBookLessonContent({
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [success, setSuccess] = useState<SuccessState | null>(null);
+  // When the family can't cover the lesson, the server returns 422
+  // insufficient_balance. The dialog keeps the booking inputs and offers
+  // "Book as free lesson" — the coach's escape hatch per ADR 036 Phase 4.
+  const [balanceShortfall, setBalanceShortfall] = useState<{
+    balanceCents: number;
+    priceCents: number;
+    shortfallCents: number;
+  } | null>(null);
 
   function handleSelectHousehold(next: CoachHouseholdSearchResult) {
     setHousehold(next);
@@ -127,7 +136,10 @@ export default function CoachBookLessonContent({
     setSubmitError(null);
   }
 
-  async function submitBooking(acknowledgedWarnings: CoachBookingWarnings) {
+  async function submitBooking(
+    acknowledgedWarnings: CoachBookingWarnings,
+    chargeType: CoachCreateLessonBody["chargeType"] = "balance",
+  ) {
     if (!pending) return;
     setIsSubmitting(true);
     setSubmitError(null);
@@ -139,10 +151,7 @@ export default function CoachBookLessonContent({
       durationMinutes: pending.summary.durationMinutes,
       overrideWindow: pending.overrideWindow || serverWarnings !== null,
       acknowledgedWarnings,
-      // ADR 036 Phase 4: balance / free toggle lands with the balance
-      // panel UX. Until then, coach bookings always charge the balance
-      // (matches the server default).
-      chargeType: "balance",
+      chargeType,
     });
     setIsSubmitting(false);
 
@@ -156,6 +165,7 @@ export default function CoachBookLessonContent({
         swimmerFirstNames,
       });
       setPending(null);
+      setBalanceShortfall(null);
       setStep("success");
       return;
     }
@@ -175,13 +185,41 @@ export default function CoachBookLessonContent({
       );
       return;
     }
+    if (result.kind === "insufficient_balance") {
+      // Map by error code so a payment problem never surfaces as "that
+      // time isn't available." Coach's escape hatch is "Book as free" —
+      // the dialog shows balance/price/shortfall and offers a retry.
+      setBalanceShortfall({
+        balanceCents: result.balanceCents,
+        priceCents: result.priceCents,
+        shortfallCents: result.shortfallCents,
+      });
+      return;
+    }
     setSubmitError(result.message);
+  }
+
+  function handleBookAsFree() {
+    // Family-balance gate failed; rerun the same booking inputs with
+    // chargeType='free'. The server writes a free_lesson ledger marker
+    // and no charge is made.
+    void submitBooking(
+      serverWarnings ?? ({
+        outsideHours: false,
+        maxAdvanceExceeded: false,
+        travelBufferViolated: false,
+        dailyCapExceeded: false,
+        blockedTimeOverlap: false,
+      } satisfies CoachBookingWarnings),
+      "free",
+    );
   }
 
   function handleCancelConfirm() {
     setPending(null);
     setServerWarnings(null);
     setSubmitError(null);
+    setBalanceShortfall(null);
   }
 
   if (success !== null) {
@@ -228,11 +266,13 @@ export default function CoachBookLessonContent({
           open={true}
           summary={pending.summary}
           warnings={serverWarnings}
+          balanceShortfall={balanceShortfall}
           bookingMaxAdvanceWeeks={bookingMaxAdvanceWeeks}
           isSubmitting={isSubmitting}
           errorMessage={submitError}
           onCancel={handleCancelConfirm}
           onSubmit={(acknowledgedWarnings) => submitBooking(acknowledgedWarnings)}
+          onBookAsFree={handleBookAsFree}
         />
       )}
     </div>

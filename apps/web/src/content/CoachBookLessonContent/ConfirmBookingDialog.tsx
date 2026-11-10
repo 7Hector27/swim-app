@@ -10,6 +10,7 @@ import {
   hasAnyWarning,
   warningCopy,
 } from "./helpers";
+import { formatDollars } from "@/content/AccountBalanceContent/formatters";
 
 export interface ConfirmSummary {
   householdName: string;
@@ -29,6 +30,14 @@ interface Props {
   // dialog renders an acknowledge checkbox per TRUE flag; Submit is disabled
   // until every TRUE flag is acknowledged.
   warnings: CoachBookingWarnings | null;
+  // Set when the server rejected a balance-charged booking with 422
+  // insufficient_balance. The dialog surfaces balance/price/shortfall and
+  // switches the primary action to "Book as free lesson."
+  balanceShortfall?: {
+    balanceCents: number;
+    priceCents: number;
+    shortfallCents: number;
+  } | null;
   // Server config value used to render the max-advance warning string.
   bookingMaxAdvanceWeeks: number;
   isSubmitting: boolean;
@@ -37,6 +46,9 @@ interface Props {
   // Called when the coach submits. acknowledgedWarnings mirrors the shape of
   // the server-computed warnings — true for each one the coach checked.
   onSubmit: (acknowledgedWarnings: CoachBookingWarnings) => void;
+  // Resend the same booking with chargeType='free'. Optional for callers
+  // that don't surface the balance path yet (e.g. older tests).
+  onBookAsFree?: () => void;
 }
 
 const DIALOG_FORM_ID = "coach-booking-confirm-form";
@@ -45,11 +57,13 @@ export default function ConfirmBookingDialog({
   open,
   summary,
   warnings,
+  balanceShortfall = null,
   bookingMaxAdvanceWeeks,
   isSubmitting,
   errorMessage,
   onCancel,
   onSubmit,
+  onBookAsFree,
 }: Props) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [acknowledged, setAcknowledged] = useState<CoachBookingWarnings>(emptyWarnings());
@@ -96,6 +110,12 @@ export default function ConfirmBookingDialog({
     onSubmit(acknowledged);
   }
 
+  // A balance shortfall takes over the dialog: the balance CTA is out of
+  // reach, so the primary action switches to "Book as free lesson" if the
+  // parent passed a handler. Keep the regular submit button rendered for
+  // rendering simplicity but disable it.
+  const hasShortfall = balanceShortfall !== null;
+
   return (
     <ConfirmDialog
       dialogRef={dialogRef}
@@ -116,6 +136,40 @@ export default function ConfirmBookingDialog({
             {formatLessonTimeDisplay(summary.startsAtUtc)}
           </p>
         </div>
+
+        {hasShortfall && balanceShortfall !== null && (
+          <div
+            role="alert"
+            data-testid="coach-balance-shortfall"
+            className="rounded-card border border-danger/50 bg-danger/5 p-3 text-sm text-text"
+          >
+            <p className="font-semibold text-heading">
+              Family can&apos;t cover this lesson
+            </p>
+            <p
+              className="text-text-secondary mt-1"
+              style={{ fontVariantNumeric: "tabular-nums" }}
+            >
+              Balance: {formatDollars(balanceShortfall.balanceCents)} · Lesson:{" "}
+              {formatDollars(balanceShortfall.priceCents)} · Short by{" "}
+              <span className="font-semibold text-danger">
+                {formatDollars(balanceShortfall.shortfallCents)}
+              </span>
+              .
+            </p>
+            {onBookAsFree !== undefined && (
+              <button
+                type="button"
+                onClick={onBookAsFree}
+                disabled={isSubmitting}
+                data-testid="coach-book-as-free"
+                className="mt-3 min-h-[44px] px-4 rounded-button bg-button-primary-background text-button-primary-text text-sm font-semibold disabled:opacity-60"
+              >
+                {isSubmitting ? "Booking…" : "Book as free lesson"}
+              </button>
+            )}
+          </div>
+        )}
 
         {needsAck && warnings !== null && (
           <div

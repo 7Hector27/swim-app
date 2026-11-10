@@ -173,7 +173,12 @@ export async function createBookingAction(
     return { status: "success", lessonId, autoApproved };
   }
 
-  return mapBookingApiResponse(responseStatus, responseBody);
+  return mapBookingApiResponse(responseStatus, responseBody, {
+    startsAt: parsed.data.startsAt,
+    durationMinutes: parsed.data.durationMinutes,
+    locationId: parsed.data.locationId,
+    swimmerIds: parsed.data.swimmerIds,
+  });
 }
 
 // ── Batch (ADR 030) ──────────────────────────────────────────────────────────
@@ -210,8 +215,36 @@ export async function previewBatchAction(body: BatchPreviewBody): Promise<BatchP
 export type BatchSubmitResult =
   | { kind: "ok"; data: BatchSubmitSuccessResponse }
   | { kind: "conflict"; data: BatchSubmitConflictResponse }
+  | {
+      kind: "insufficient_balance";
+      balanceCents: number;
+      priceCents: number;
+      shortfallCents: number;
+    }
   | { kind: "forbidden" }
   | { kind: "error"; message: string };
+
+function readInsufficientBalanceBody(
+  body: unknown,
+):
+  | { balanceCents: number; priceCents: number; shortfallCents: number }
+  | null {
+  if (typeof body !== "object" || body === null) return null;
+  const record = body as Record<string, unknown>;
+  if (record.error !== "insufficient_balance") return null;
+  if (
+    typeof record.balanceCents !== "number" ||
+    typeof record.priceCents !== "number" ||
+    typeof record.shortfallCents !== "number"
+  ) {
+    return null;
+  }
+  return {
+    balanceCents: record.balanceCents,
+    priceCents: record.priceCents,
+    shortfallCents: record.shortfallCents,
+  };
+}
 
 export async function submitBatchAction(body: BatchSubmitBody): Promise<BatchSubmitResult> {
   const supabase = await createClient();
@@ -226,10 +259,17 @@ export async function submitBatchAction(body: BatchSubmitBody): Promise<BatchSub
     });
     if (response.status === 403) return { kind: "forbidden" };
     if (response.status === 422) {
+      // Both insufficient_balance and picks_conflict ride on 422, so map by
+      // the error code — not the status — to avoid mislabeling a payment
+      // problem as an availability conflict.
       const json: unknown = await response.json().catch(() => null);
+      const shortfall = readInsufficientBalanceBody(json);
+      if (shortfall !== null) {
+        return { kind: "insufficient_balance", ...shortfall };
+      }
       const parsed = BatchSubmitConflictResponseSchema.safeParse(json);
       if (parsed.success) return { kind: "conflict", data: parsed.data };
-      return { kind: "error", message: "Some lessons are no longer available." };
+      return { kind: "error", message: "Could not book your lessons. Please try again." };
     }
     if (response.status === 201) {
       const json: unknown = await response.json();

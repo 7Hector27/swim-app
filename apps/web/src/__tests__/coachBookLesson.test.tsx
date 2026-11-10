@@ -198,6 +198,36 @@ describe("ConfirmBookingDialog warnings + 409 flow", () => {
     expect(submittedAck.travelBufferViolated).toBe(false);
   });
 
+  it("renders the insufficient-balance panel + 'Book as free lesson' when the server rejects the charge", () => {
+    const onBookAsFree = vi.fn();
+    render(
+      <ConfirmBookingDialog
+        open
+        summary={summary}
+        warnings={null}
+        balanceShortfall={{
+          balanceCents: 2000,
+          priceCents: 6000,
+          shortfallCents: 4000,
+        }}
+        bookingMaxAdvanceWeeks={10}
+        isSubmitting={false}
+        errorMessage={null}
+        onCancel={vi.fn()}
+        onSubmit={vi.fn()}
+        onBookAsFree={onBookAsFree}
+      />,
+    );
+    const panel = screen.getByTestId("coach-balance-shortfall");
+    expect(panel.textContent).toMatch(/Balance.*\$20\.00/);
+    expect(panel.textContent).toMatch(/Lesson.*\$60\.00/);
+    expect(panel.textContent).toMatch(/Short by.*\$40\.00/);
+
+    const freeBtn = screen.getByTestId("coach-book-as-free");
+    fireEvent.click(freeBtn);
+    expect(onBookAsFree).toHaveBeenCalledTimes(1);
+  });
+
   it("surfaces slot_unavailable error without closing the dialog", () => {
     const onCancel = vi.fn();
     const { rerender } = render(

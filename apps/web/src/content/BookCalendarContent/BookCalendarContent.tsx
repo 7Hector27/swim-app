@@ -6,6 +6,7 @@ import {
   BATCH_LESSON_MAX,
   BATCH_LESSON_MIN,
   LESSON_DURATION_MINUTES,
+  priceForLesson,
   todayLA,
   type BatchPatternPair,
   type BatchPreviewBody,
@@ -15,6 +16,7 @@ import {
   type LessonDurationMinutes,
   type MonthAvailabilityResponse,
   type ParentSwimmer,
+  type SwimmerCount,
   type WeekAvailabilityResponse,
 } from "@swim-app/shared";
 
@@ -52,6 +54,7 @@ import {
   type PickWithDuration,
 } from "./batchHelpers";
 import { lessonPrice } from "@/lib/pricing";
+import { formatDollars } from "@/content/AccountBalanceContent/formatters";
 import CalendarConfigRow from "./CalendarConfigRow";
 import WeekNav, { type WeekNavDot } from "./WeekNav";
 import { useWeekPrefetch } from "./useWeekPrefetch";
@@ -63,6 +66,13 @@ import PhoneTimeList from "./PhoneTimeList";
 import BottomBar from "./BottomBar";
 import ReviewSheet from "./ReviewSheet";
 import ConfirmDiscardDialog from "./ConfirmDiscardDialog";
+import InsufficientBalanceModal, {
+  stashPendingBooking,
+  readPendingBooking,
+  clearPendingBooking,
+} from "./InsufficientBalanceModal";
+import BookResumeBanner from "./BookResumeBanner";
+import { startBookingShortfallTopupAction } from "@/content/AccountBalanceContent/actions";
 import modeStyles from "./BookCalendarContent.module.css";
 
 interface Location {
@@ -79,6 +89,12 @@ interface Props {
   householdFailed?: boolean;
   initialView?: "week" | "month";
   initialDate?: string;
+  // Authoritative household balance in cents, fetched server-side and
+  // passed down so the bottom bar and review sheet can show a pre-submit
+  // shortfall guard. `null` means the fetch failed; the UI falls back to
+  // "balance unknown" and relies on the server's 422 insufficient_balance
+  // response.
+  balanceCents?: number | null;
 }
 
 type CalendarView = "week" | "month";
@@ -114,6 +130,7 @@ export default function BookCalendarContent({
   householdFailed = false,
   initialView = "week",
   initialDate,
+  balanceCents = null,
 }: Props) {
   const router = useRouter();
   const today = todayLA();
@@ -323,6 +340,73 @@ export default function BookCalendarContent({
     router.push(`/dashboard?booked=${bookingState.lessonId}`);
   }, [bookingState, router]);
 
+  // Imperative state for the Phase-5 insufficient-balance modal — either
+  // fed from a fresh POST /lessons 422 (bookingState.status) or from the
+  // resume-banner path, which runs the same server action from the top
+  // of the page.
+  const [shortfall, setShortfall] = useState<
+    Extract<BookingState, { status: "insufficient_balance" }> | null
+  >(null);
+  useEffect(() => {
+    if (bookingState.status === "insufficient_balance") {
+      setShortfall(bookingState);
+    }
+  }, [bookingState]);
+
+  // Server-authoritative shortfall for a batch submit (Multiple / Recurring).
+  // Set when POST /lessons/batch returns 422 insufficient_balance, so the
+  // review sheet flips from "Book" to the insufficient-funds view with the
+  // same numbers the server used to reject the batch.
+  const [batchShortfall, setBatchShortfall] = useState<{
+    balanceCents: number;
+    priceCents: number;
+    shortfallCents: number;
+  } | null>(null);
+  // Picks or pattern changed → the server's last "short by $N" number is
+  // stale. Clearing lets the client-side derived guard take over so the
+  // parent can get back to Book once they drop or shrink picks.
+  useEffect(() => {
+    setBatchShortfall(null);
+  }, [multiplePicks, pattern, recurringWeeks]);
+
+  // ADR 036 Phase 5 — resume. Tracks the "Add credit" top-up button so
+  // the review sheet can show "Starting checkout…" while we wait for
+  // the server to open the Stripe session.
+  const [isAddingCredit, setIsAddingCredit] = useState(false);
+
+  // Batch-mode resume. Runs once on mount when the URL carries ?resume=1
+  // and a non-expired batch stash exists — rehydrates mode / picks /
+  // pattern / weeks / pool and pops the review sheet open so the parent
+  // picks up exactly where they were before the Stripe hop. "Nothing
+  // books automatically" per ADR 036 Phase 5: the parent still has to
+  // tap Book inside the sheet.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("resume") !== "1") return;
+    const stored = readPendingBooking();
+    if (stored === null) return;
+    if (stored.mode === "single") return; // Handled by BookResumeBanner.
+    if (stored.locationId !== locationId) {
+      setLocationId(stored.locationId);
+    }
+    if (stored.mode === "multiple") {
+      setBookingMode("multiple");
+      setMultiplePicks(stored.picks);
+      setReviewOpen(true);
+    } else if (stored.mode === "recurring") {
+      setBookingMode("recurring");
+      setPattern(stored.pattern);
+      setRecurringStartDate(stored.startDate);
+      setRecurringWeeks(stored.weeks);
+      setReviewOpen(true);
+    }
+    // Keep the stash until the parent books or starts over — a dropped
+    // network on the preview could otherwise lose their picks if the
+    // user refreshes the page mid-resume.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // ── Derived values ─────────────────────────────────────────────────────────
 
   // Largest number of weeks whose pattern slots land inside the booking
@@ -377,6 +461,56 @@ export default function BookCalendarContent({
       : bookingMode === "recurring"
         ? plannedStartsAt.reduce((sum, pick) => sum + pick.durationMinutes, 0)
         : 0;
+
+  // Total price in cents across every current pick, used for the balance
+  // shortfall guard on the bottom bar and review sheet. Server-side pricing
+  // is authoritative (packages/shared/lib/pricing); the browser never
+  // overrides it — this value is display-only and must match what the API
+  // would charge so the guard doesn't lie to the parent.
+  function clampSwimmerCount(count: number): SwimmerCount {
+    if (count <= 1) return 1;
+    if (count >= 4) return 4;
+    return count as SwimmerCount;
+  }
+  const totalPriceCents = useMemo(() => {
+    if (bookingMode === "single") {
+      if (selectedStartsAt === null || swimmerIds.length === 0) return 0;
+      return priceForLesson(durationMinutes, clampSwimmerCount(swimmerIds.length));
+    }
+    if (bookingMode === "multiple") {
+      return multiplePicks.reduce(
+        (sum, pick) =>
+          sum + priceForLesson(pick.durationMinutes, clampSwimmerCount(pick.swimmerIds.length)),
+        0,
+      );
+    }
+    if (bookingMode === "recurring") {
+      return plannedStartsAt.reduce((sum, pick) => {
+        const pair = pattern.find(
+          (candidate) =>
+            candidate.weekday === laIsoWeekday(pick.startsAt) &&
+            candidate.timeOfDay === laTimeOfDay(pick.startsAt),
+        );
+        const count = pair ? pair.swimmerIds.length : 0;
+        if (count === 0) return sum;
+        return sum + priceForLesson(pick.durationMinutes, clampSwimmerCount(count));
+      }, 0);
+    }
+    return 0;
+  }, [
+    bookingMode,
+    selectedStartsAt,
+    swimmerIds,
+    durationMinutes,
+    multiplePicks,
+    plannedStartsAt,
+    pattern,
+  ]);
+
+  const batchShortBy =
+    balanceCents !== null && totalPriceCents > balanceCents
+      ? totalPriceCents - balanceCents
+      : 0;
 
   // Flat per-pick list for span, overlap, and daily-cap feedback. Each entry
   // carries its own duration so a shorter new pick can land inside a longer
@@ -628,6 +762,9 @@ export default function BookCalendarContent({
     setSelectedStartsAt(null);
     setShowPickList(false);
     setPendingMode(null);
+    // Switching modes is a "start over" gesture — the resume stash
+    // belonged to the picks the parent is now discarding.
+    clearPendingBooking();
     // Reset recurring start to today so a fresh pattern starts "from now."
     if (next === "recurring") setRecurringStartDate(todayLaDateStr());
   }
@@ -988,6 +1125,9 @@ export default function BookCalendarContent({
         setSkippedIndexes(new Set());
         setRemovedIndexes(new Set());
         setOverridesMap(new Map());
+        // The resume stash is one-shot — a successful batch means the
+        // parent won't be coming back to this snapshot.
+        clearPendingBooking();
         buildSuccessView(result.data);
       } else if (result.kind === "conflict") {
         setPreviewPicks((current) =>
@@ -1003,6 +1143,15 @@ export default function BookCalendarContent({
           }),
         );
         setSubmitError("Some lessons are no longer available. Review and try again.");
+      } else if (result.kind === "insufficient_balance") {
+        // Race between preview and submit — the server is authoritative, so
+        // snap the review sheet into its insufficient-funds view with the
+        // numbers the server returned.
+        setBatchShortfall({
+          balanceCents: result.balanceCents,
+          priceCents: result.priceCents,
+          shortfallCents: result.shortfallCents,
+        });
       } else if (result.kind === "forbidden") {
         setSubmitError(
           "You do not have permission to book lessons. Ask the household owner for access.",
@@ -1011,6 +1160,117 @@ export default function BookCalendarContent({
         setSubmitError(result.message);
       }
     });
+  }
+
+  // Capture everything the resume effect needs to put the parent back where
+  // they were before the Stripe hop: mode, pool, and every pick/pattern
+  // with its own length and swimmers. Falls back to `null` when there is
+  // nothing to resume (e.g. Single mode with no selection — that path
+  // stashes a single-lesson attempt separately).
+  function buildBatchStashSnapshot():
+    | Extract<
+        ReturnType<typeof readPendingBooking>,
+        { mode: "multiple" | "recurring" }
+      >
+    | null {
+    if (locationId === null) return null;
+    if (bookingMode === "multiple") {
+      if (multiplePicks.length === 0) return null;
+      return {
+        mode: "multiple",
+        stashedAt: new Date().toISOString(),
+        locationId,
+        picks: multiplePicks.map((pick) => ({
+          startsAt: pick.startsAt,
+          durationMinutes: pick.durationMinutes,
+          swimmerIds: [...pick.swimmerIds],
+        })),
+      };
+    }
+    if (bookingMode === "recurring") {
+      if (pattern.length === 0 || recurringWeeks < 1) return null;
+      return {
+        mode: "recurring",
+        stashedAt: new Date().toISOString(),
+        locationId,
+        pattern: pattern.map((pair) => ({
+          weekday: pair.weekday,
+          timeOfDay: pair.timeOfDay,
+          durationMinutes: pair.durationMinutes,
+          swimmerIds: [...pair.swimmerIds],
+        })),
+        startDate: recurringStartDate,
+        weeks: recurringWeeks,
+      };
+    }
+    return null;
+  }
+
+  // "Add $N of credit" button on the batch review sheet. The top-up API
+  // takes a single (duration, swimmerCount) pair, so we pick the most
+  // expensive configuration in the batch — this guarantees one top-up
+  // click covers at least one of the batch's lessons.
+  const addCreditUnit = useMemo<
+    { durationMinutes: LessonDurationMinutes; swimmerCount: SwimmerCount } | null
+  >(() => {
+    const candidates: Array<{
+      durationMinutes: LessonDurationMinutes;
+      swimmerCount: SwimmerCount;
+    }> = [];
+    if (bookingMode === "multiple") {
+      for (const pick of multiplePicks) {
+        if (pick.swimmerIds.length === 0) continue;
+        candidates.push({
+          durationMinutes: pick.durationMinutes,
+          swimmerCount: clampSwimmerCount(pick.swimmerIds.length),
+        });
+      }
+    } else if (bookingMode === "recurring") {
+      for (const pair of pattern) {
+        if (pair.swimmerIds.length === 0) continue;
+        candidates.push({
+          durationMinutes: pair.durationMinutes,
+          swimmerCount: clampSwimmerCount(pair.swimmerIds.length),
+        });
+      }
+    }
+    if (candidates.length === 0) return null;
+    return candidates.reduce((best, candidate) =>
+      priceForLesson(candidate.durationMinutes, candidate.swimmerCount) >
+      priceForLesson(best.durationMinutes, best.swimmerCount)
+        ? candidate
+        : best,
+    );
+  }, [bookingMode, multiplePicks, pattern]);
+  const addCreditCents =
+    addCreditUnit !== null
+      ? priceForLesson(addCreditUnit.durationMinutes, addCreditUnit.swimmerCount)
+      : null;
+
+  function handleBatchBuyPackage() {
+    const snapshot = buildBatchStashSnapshot();
+    if (snapshot !== null) stashPendingBooking(snapshot);
+    window.location.href = "/account/balance?resume=book";
+  }
+
+  function handleBatchAddCredit() {
+    if (addCreditUnit === null) return;
+    const snapshot = buildBatchStashSnapshot();
+    if (snapshot !== null) stashPendingBooking(snapshot);
+    setIsAddingCredit(true);
+    void (async () => {
+      const result = await startBookingShortfallTopupAction(
+        addCreditUnit.durationMinutes,
+        addCreditUnit.swimmerCount,
+        "/dashboard/book?resume=1",
+      );
+      setIsAddingCredit(false);
+      if (result.kind === "redirect") {
+        window.location.href = result.url;
+        return;
+      }
+      setSubmitError(result.message);
+    })();
   }
 
   function buildSuccessView(data: BatchSubmitSuccessResponse) {
@@ -1151,6 +1411,31 @@ export default function BookCalendarContent({
       flagMissingSwimmer();
       return;
     }
+    // Pre-submit shortfall guard — surface the insufficient-funds modal
+    // without the round-trip when the balance is already known to be
+    // short. The server still has the final word; a race there lands on
+    // the same modal via the existing 422 insufficient_balance handler.
+    if (balanceCents !== null) {
+      const priceCents = priceForLesson(
+        durationMinutes,
+        clampSwimmerCount(swimmerIds.length),
+      );
+      if (priceCents > balanceCents) {
+        setShortfall({
+          status: "insufficient_balance",
+          balanceCents,
+          priceCents,
+          shortfallCents: priceCents - balanceCents,
+          attempt: {
+            startsAt: selectedStartsAt,
+            durationMinutes,
+            locationId,
+            swimmerIds: [...swimmerIds],
+          },
+        });
+        return;
+      }
+    }
     const form = new FormData();
     form.append("startsAt", selectedStartsAt);
     form.append("durationMinutes", String(durationMinutes));
@@ -1222,6 +1507,18 @@ export default function BookCalendarContent({
 
   return (
     <div className="flex flex-col gap-5 pb-32">
+      {/* Resume banner for the parent returning from a Stripe top-up
+          that was started mid-booking (ADR 036 Phase 5). Reads its
+          state from sessionStorage + the URL; renders nothing when
+          not resuming. */}
+      <BookResumeBanner
+        onBooked={(state) => {
+          router.push(`/dashboard?booked=${state.lessonId}`);
+        }}
+        onInsufficient={(state) => {
+          setShortfall(state);
+        }}
+      />
       {/* Heading + view toggle */}
       <div className="flex items-center gap-4 flex-wrap">
         <h1 className="font-heading text-3xl tablet:text-4xl text-heading flex-1">
@@ -1442,6 +1739,8 @@ export default function BookCalendarContent({
               swimmerIds={swimmerIds}
               needsApproval={weekData?.needsApproval ?? false}
               bookingMinAdvanceHours={bookingMinAdvanceHours}
+              balanceCents={balanceCents}
+              totalPriceCents={totalPriceCents}
               onConfirm={handleConfirmSingle}
               isConfirming={isBooking}
             />
@@ -1462,6 +1761,8 @@ export default function BookCalendarContent({
               onReview={openReview}
               overCap={overCap}
               emptyPicksNonce={emptyPicksNonce}
+              balanceCents={balanceCents}
+              totalPriceCents={totalPriceCents}
             />
           )}
           {bookingMode === "recurring" && (
@@ -1493,6 +1794,8 @@ export default function BookCalendarContent({
               onReview={openReview}
               overCap={overCap}
               emptyPicksNonce={emptyPicksNonce}
+              balanceCents={balanceCents}
+              totalPriceCents={totalPriceCents}
             />
           )}
         </>
@@ -1526,11 +1829,14 @@ export default function BookCalendarContent({
         isLoading={isPreviewLoading}
         previewError={previewError}
         submitError={submitError}
-        canSubmit={canSubmitReview}
+        canSubmit={canSubmitReview && batchShortBy === 0 && batchShortfall === null}
         isSubmitting={isSubmitting}
         needsApproval={previewNeedsApproval}
         bookingMinAdvanceHours={bookingMinAdvanceHours}
         success={success}
+        balanceCents={balanceCents}
+        totalPriceCents={totalPriceCents}
+        serverShortfall={batchShortfall}
         {...(bookDisabledReason !== null && { bookDisabledReason })}
         onClose={closeReview}
         onApplySuggestion={handleApplySuggestion}
@@ -1539,6 +1845,10 @@ export default function BookCalendarContent({
         onUnskip={handleUnskipIndex}
         onBook={handleBookBatch}
         onBackToCalendar={handleBackToCalendar}
+        onBuyPackage={handleBatchBuyPackage}
+        onAddCredit={handleBatchAddCredit}
+        addCreditCents={addCreditCents}
+        isAddingCredit={isAddingCredit}
       />
 
       <ConfirmDiscardDialog
@@ -1549,6 +1859,17 @@ export default function BookCalendarContent({
         onConfirm={() => pendingMode && applyModeChange(pendingMode)}
         onCancel={cancelModeChange}
       />
+
+      {shortfall ? (
+        <InsufficientBalanceModal
+          open={shortfall !== null}
+          balanceCents={shortfall.balanceCents}
+          priceCents={shortfall.priceCents}
+          shortfallCents={shortfall.shortfallCents}
+          attempt={shortfall.attempt}
+          onClose={() => setShortfall(null)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -1744,6 +2065,8 @@ interface MultipleBottomBarProps {
   onReview: () => void;
   overCap: boolean;
   emptyPicksNonce: number;
+  balanceCents: number | null;
+  totalPriceCents: number;
 }
 
 function MultipleBottomBar({
@@ -1761,6 +2084,8 @@ function MultipleBottomBar({
   onReview,
   overCap,
   emptyPicksNonce,
+  balanceCents,
+  totalPriceCents,
 }: MultipleBottomBarProps) {
   const firstNameById = new Map(swimmers.map((swimmer) => [swimmer.id, swimmer.firstName]));
   const atCap = picks.length >= BATCH_LESSON_MAX;
@@ -1809,6 +2134,23 @@ function MultipleBottomBar({
                 {totalPrice !== null && ` \u00b7 $${totalPrice}`}
                 {" \u00b7 "}
                 mixed lengths welcome
+              </p>
+            )}
+            {hasPicks && balanceCents !== null && (
+              <p
+                className="text-xs opacity-70 mt-0.5"
+                data-testid="multiple-balance-line"
+                style={{ fontVariantNumeric: "tabular-nums" }}
+              >
+                Balance: {formatDollars(balanceCents)}
+                {totalPriceCents > balanceCents && (
+                  <>
+                    {" · "}
+                    <span className="font-semibold">
+                      Short by {formatDollars(totalPriceCents - balanceCents)}
+                    </span>
+                  </>
+                )}
               </p>
             )}
             {needsApproval && hasPicks && (
@@ -1954,6 +2296,8 @@ interface RecurringBottomBarProps {
   onReview: () => void;
   overCap: boolean;
   emptyPicksNonce: number;
+  balanceCents: number | null;
+  totalPriceCents: number;
 }
 
 function RecurringBottomBar({
@@ -1976,6 +2320,8 @@ function RecurringBottomBar({
   onReview,
   overCap,
   emptyPicksNonce,
+  balanceCents,
+  totalPriceCents,
 }: RecurringBottomBarProps) {
   const firstNameById = new Map(swimmers.map((swimmer) => [swimmer.id, swimmer.firstName]));
   const hasPattern = pattern.length > 0;
@@ -2020,6 +2366,23 @@ function RecurringBottomBar({
               )}
               {hasPattern && !overCap && totalPrice !== null && ` \u00b7 $${totalPrice}`}
             </p>
+            {hasPattern && !overCap && balanceCents !== null && (
+              <p
+                className="text-xs opacity-70 mt-0.5"
+                data-testid="recurring-balance-line"
+                style={{ fontVariantNumeric: "tabular-nums" }}
+              >
+                Balance: {formatDollars(balanceCents)}
+                {totalPriceCents > balanceCents && (
+                  <>
+                    {" · "}
+                    <span className="font-semibold">
+                      Short by {formatDollars(totalPriceCents - balanceCents)}
+                    </span>
+                  </>
+                )}
+              </p>
+            )}
             {needsApproval && hasPattern && !overCap && (
               <p className="text-xs opacity-70 mt-0.5">Jason will confirm each one.</p>
             )}
