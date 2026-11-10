@@ -47,6 +47,7 @@ import {
   clubs,
   coachNotes,
   householdAuditLog,
+  householdBalanceLedger,
   householdMembers,
   households,
   lessonEmailOutbox,
@@ -1267,6 +1268,7 @@ coachLessonsRouter.patch(
   validate({ params: LessonIdParamsSchema, body: UndoNoShowBodySchema }),
   asyncHandler(async (req, res) => {
     const { id } = req.params as { id: string };
+    const body = req.body as { chargeType: "balance" | "free" };
     const now = new Date();
     const coachProfileId = req.profile.id;
 
@@ -1287,6 +1289,57 @@ coachLessonsRouter.patch(
       }
       if (lessonRow.status !== "no_show") {
         return { kind: "not_no_show" as const };
+      }
+
+      // ADR 036 Phase 4: undoing a no-show re-charges the lesson (the
+      // original no-show refunded). If the family's balance can't cover
+      // the re-charge, return 409 so the coach can retry with
+      // chargeType='free' to land the undo as a comp instead. Lessons
+      // that were originally free (no-show refunded nothing) stay free
+      // on undo regardless of chargeType.
+      const hadRefund = await tx
+        .select({ id: householdBalanceLedger.id })
+        .from(householdBalanceLedger)
+        .where(
+          and(
+            eq(householdBalanceLedger.lessonId, id),
+            eq(householdBalanceLedger.entryType, "refund_to_balance"),
+          ),
+        )
+        .limit(1);
+      const wasCharged = hadRefund.length > 0;
+
+      if (wasCharged && body.chargeType === "balance") {
+        // Balance lock first (global acquire order: row lock FOR UPDATE
+        // already taken above, so balance lock comes next).
+        await tx.execute(
+          sql`SELECT pg_advisory_xact_lock(hashtext(${"household-balance:" + lessonRow.householdId}))`,
+        );
+
+        const swimmerRows = await tx
+          .select({ swimmerId: lessonSwimmers.swimmerId })
+          .from(lessonSwimmers)
+          .where(eq(lessonSwimmers.lessonId, id));
+        const swimmerCount = swimmerRows.length as 1 | 2 | 3 | 4;
+        const recharge = priceForLesson(
+          lessonRow.durationMinutes as LessonDurationMinutes,
+          swimmerCount,
+        );
+        const balance = await getHouseholdBalance(lessonRow.householdId!, tx);
+        if (balance < recharge) {
+          return {
+            kind: "insufficient_balance" as const,
+            balanceCents: balance,
+            priceCents: recharge,
+          };
+        }
+        await applyLedgerEntry(tx, {
+          entryType: "lesson_charge",
+          householdId: lessonRow.householdId!,
+          actorId: coachProfileId,
+          lessonId: id,
+          amountCents: -recharge,
+        });
       }
 
       const endMs = lessonRow.startsAt.getTime() + lessonRow.durationMinutes * 60_000;
@@ -1316,6 +1369,7 @@ coachLessonsRouter.patch(
         payload: {
           lessonId: updated.id,
           newStatus: nextStatus,
+          chargeType: wasCharged ? body.chargeType : "free",
         },
       });
 
@@ -1332,6 +1386,18 @@ coachLessonsRouter.patch(
     }
     if (outcome.kind === "not_no_show") {
       res.status(422).json({ error: "lesson_not_no_show" });
+      return;
+    }
+    if (outcome.kind === "insufficient_balance") {
+      // 409 (not 422): the undo request itself is well-formed; the
+      // conflict is state — the family can't cover the re-charge. The
+      // coach's follow-up is to re-send with chargeType='free'.
+      res.status(409).json({
+        error: "insufficient_balance",
+        balanceCents: outcome.balanceCents,
+        priceCents: outcome.priceCents,
+        shortfallCents: outcome.priceCents - outcome.balanceCents,
+      });
       return;
     }
 

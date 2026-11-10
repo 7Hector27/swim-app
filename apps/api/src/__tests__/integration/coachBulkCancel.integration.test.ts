@@ -270,11 +270,18 @@ describe("POST /coach/lessons/bulk-cancel (integration)", () => {
       .where(inArray(lessons.id, [l1, l2, l3]));
     expect(canceledRows.every((row) => row.status === "canceled")).toBe(true);
 
-    // One outbox row per family, not per lesson.
+    // One outbox row per family, not per lesson. Scope to the test's
+    // households so parallel test files writing coach_bulk_cancel rows
+    // (e.g. coachBulkCancelRefund) don't inflate the count.
     const outboxRows = await adminDb()
       .select()
       .from(lessonEmailOutbox)
-      .where(eq(lessonEmailOutbox.event, "coach_bulk_cancel"));
+      .where(
+        and(
+          eq(lessonEmailOutbox.event, "coach_bulk_cancel"),
+          inArray(lessonEmailOutbox.householdId, [parentA.householdId, parentB.householdId]),
+        ),
+      );
     expect(outboxRows).toHaveLength(2);
     const householdsEmailed = new Set(outboxRows.map((row) => row.householdId));
     expect(householdsEmailed.has(parentA.householdId)).toBe(true);
@@ -286,11 +293,17 @@ describe("POST /coach/lessons/bulk-cancel (integration)", () => {
     expect(parentARow?.icsMethod).toBe("CANCEL");
     expect(parentBRow?.icsMethod).toBe("CANCEL");
 
-    // Per-family audit rows written.
+    // Per-family audit rows written. Scope to this test's households for
+    // the same reason as the outbox query above.
     const auditRows = await adminDb()
       .select()
       .from(householdAuditLog)
-      .where(eq(householdAuditLog.action, "lessons_bulk_canceled_by_coach"));
+      .where(
+        and(
+          eq(householdAuditLog.action, "lessons_bulk_canceled_by_coach"),
+          inArray(householdAuditLog.householdId, [parentA.householdId, parentB.householdId]),
+        ),
+      );
     expect(auditRows).toHaveLength(2);
 
     // Google sync fan-out: one call per cancelled approved lesson.

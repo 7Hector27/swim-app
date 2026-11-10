@@ -225,7 +225,14 @@ export type ApproveLessonBody = z.infer<typeof ApproveLessonBodySchema>;
 // carries the intent. See apps/api/src/routes/coachLessons.ts.
 export const MarkNoShowBodySchema = z.object({});
 export type MarkNoShowBody = z.infer<typeof MarkNoShowBodySchema>;
-export const UndoNoShowBodySchema = z.object({});
+// ADR 036 Phase 4: undoing a no-show re-charges the lesson's balance by
+// default. `chargeType: 'free'` lets the coach keep the lesson as a comp
+// (useful when balance can't cover the re-charge and the coach already
+// knows they want the undo to land anyway). Defaults to 'balance' so the
+// common undo path flows money back out automatically.
+export const UndoNoShowBodySchema = z.object({
+  chargeType: z.enum(["balance", "free"]).default("balance"),
+});
 export type UndoNoShowBody = z.infer<typeof UndoNoShowBodySchema>;
 
 // Max length for a coach-entered decline reason. Enforced at the API
