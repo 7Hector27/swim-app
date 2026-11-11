@@ -24,6 +24,7 @@ import {
   closeAdminDb,
   createTestUser,
   createTestUserInHousehold,
+  seedHouseholdBalanceForTest,
   type TestUser,
 } from "./helpers";
 import {
@@ -33,6 +34,7 @@ import {
   evaluationDrafts,
   evaluationSessions,
   householdAuditLog,
+  householdBalanceLedger,
   householdMembers,
   households,
   LESSON_EMAIL_OUTBOX_TERMINAL_STATUSES,
@@ -1706,6 +1708,163 @@ describe("scrubEmailOutboxForHousehold", () => {
     await adminDb().delete(householdAuditLog).where(eq(householdAuditLog.targetSwimmerId, swimmerB));
     await adminDb().delete(swimmers).where(eq(swimmers.id, swimmerB));
     await adminDb().delete(lessonLocations).where(eq(lessonLocations.id, locationB));
+  });
+});
+
+// ── ADR 036 Phase 8 Part A — balance ledger anonymization ─────────────────
+
+describe("ADR 036 Phase 8 Part A: solo deletion anonymizes the balance ledger", () => {
+  it("leaves every ledger row for the household with household_id=NULL and actor_id=NULL, amounts intact", async () => {
+    const owner = await createTestUser("delete-ledger-owner");
+    testUsers.push(owner);
+
+    // Seed two ledger rows via the test helper (coach_adjustment with a
+    // reason — the only entry type the helper writes). Reads them back so
+    // the post-deletion comparison has a stable id set to query.
+    await seedHouseholdBalanceForTest({
+      householdId: owner.householdId,
+      actorId: owner.userId,
+      amountCents: 10_000,
+    });
+    await seedHouseholdBalanceForTest({
+      householdId: owner.householdId,
+      actorId: owner.userId,
+      amountCents: 2_500,
+    });
+
+    const seeded = await adminDb()
+      .select({
+        id: householdBalanceLedger.id,
+        amountCents: householdBalanceLedger.amountCents,
+      })
+      .from(householdBalanceLedger)
+      .where(eq(householdBalanceLedger.householdId, owner.householdId));
+    expect(seeded).toHaveLength(2);
+    const seededIds = seeded.map((row) => row.id);
+
+    const res = await confirmDeletion(owner.accessToken);
+    expect(res.status).toBe(204);
+
+    const after = await adminDb()
+      .select({
+        id: householdBalanceLedger.id,
+        householdId: householdBalanceLedger.householdId,
+        actorId: householdBalanceLedger.actorId,
+        amountCents: householdBalanceLedger.amountCents,
+        entryType: householdBalanceLedger.entryType,
+      })
+      .from(householdBalanceLedger)
+      .where(inArray(householdBalanceLedger.id, seededIds));
+    expect(after).toHaveLength(2);
+    for (const row of after) {
+      expect(row.householdId).toBeNull();
+      expect(row.actorId).toBeNull();
+      // Amount + entry type survive — tax-retention invariant from ADR 036 §7.
+      expect([10_000, 2_500]).toContain(row.amountCents);
+      expect(row.entryType).toBe("coach_adjustment");
+    }
+  });
+
+  it("future lessons cancelled by the deletion get a refund_to_balance row BEFORE the ledger is anonymized", async () => {
+    const owner = await createTestUser("delete-ledger-refund-owner");
+    testUsers.push(owner);
+    const swimmerId = await createSwimmerForHousehold(owner);
+    const locationId = await seedHomePool(owner.householdId);
+
+    // Start the household with a positive balance, book a future lesson,
+    // and manually record the lesson_charge row the normal booking path
+    // would have written. The deletion engine's cancelFutureLessons now
+    // refunds it; we assert the refund_to_balance row landed, then that
+    // the final rows are all anonymized.
+    await seedHouseholdBalanceForTest({
+      householdId: owner.householdId,
+      actorId: owner.userId,
+      amountCents: 24_000,
+    });
+    const lessonId = await seedFutureLesson(
+      owner.householdId,
+      locationId,
+      owner.userId,
+      swimmerId,
+    );
+    await adminDb().insert(householdBalanceLedger).values({
+      householdId: owner.householdId,
+      entryType: "lesson_charge",
+      amountCents: -6_000,
+      lessonId,
+      actorId: owner.userId,
+    });
+
+    const res = await confirmDeletion(owner.accessToken);
+    expect(res.status).toBe(204);
+
+    // The deletion anonymized household_id on every ledger row for this
+    // household. Match by lesson_id — lessons are anonymized, not
+    // deleted, and the ledger's lesson_id FK stays attached.
+    const refundRows = await adminDb()
+      .select({
+        amountCents: householdBalanceLedger.amountCents,
+        householdId: householdBalanceLedger.householdId,
+        actorId: householdBalanceLedger.actorId,
+        refundOfLedgerId: householdBalanceLedger.refundOfLedgerId,
+      })
+      .from(householdBalanceLedger)
+      .where(
+        and(
+          eq(householdBalanceLedger.lessonId, lessonId),
+          eq(householdBalanceLedger.entryType, "refund_to_balance"),
+        ),
+      );
+    expect(refundRows).toHaveLength(1);
+    expect(refundRows[0]!.amountCents).toBe(6_000);
+    expect(refundRows[0]!.householdId).toBeNull();
+    expect(refundRows[0]!.actorId).toBeNull();
+    expect(refundRows[0]!.refundOfLedgerId).not.toBeNull();
+  });
+
+  it("leave path: the household's ledger rows are UNTOUCHED (balance stays with the household)", async () => {
+    const ownerRes = await createTestUser("delete-ledger-leave-owner");
+    testUsers.push(ownerRes);
+    await seedHouseholdBalanceForTest({
+      householdId: ownerRes.householdId,
+      actorId: ownerRes.userId,
+      amountCents: 8_000,
+    });
+    const manager = await createTestUserInHousehold(
+      "delete-ledger-leave-mgr",
+      ownerRes.householdId,
+      "manager",
+    );
+    testUsers.push(manager);
+
+    const seeded = await adminDb()
+      .select({ id: householdBalanceLedger.id })
+      .from(householdBalanceLedger)
+      .where(eq(householdBalanceLedger.householdId, ownerRes.householdId));
+    expect(seeded).toHaveLength(1);
+    const ledgerId = seeded[0]!.id;
+
+    // Manager leaves. Owner + household stay.
+    const res = await confirmDeletion(manager.accessToken);
+    expect(res.status).toBe(204);
+
+    const after = await adminDb()
+      .select({
+        id: householdBalanceLedger.id,
+        householdId: householdBalanceLedger.householdId,
+        actorId: householdBalanceLedger.actorId,
+        amountCents: householdBalanceLedger.amountCents,
+      })
+      .from(householdBalanceLedger)
+      .where(eq(householdBalanceLedger.id, ledgerId));
+    expect(after).toHaveLength(1);
+    // Household + actor pointers survive the leave — the balance stays
+    // with the household, not with the departing member.
+    expect(after[0]!.householdId).toBe(ownerRes.householdId);
+    // Actor was the owner (seedHouseholdBalanceForTest actorId); the
+    // departing user was the manager, so the actor pointer is untouched.
+    expect(after[0]!.actorId).toBe(ownerRes.userId);
+    expect(after[0]!.amountCents).toBe(8_000);
   });
 });
 

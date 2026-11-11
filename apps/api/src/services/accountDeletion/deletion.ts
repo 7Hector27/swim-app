@@ -40,12 +40,17 @@ import {
 } from "../../db/schema";
 import { getActiveCoachProfile } from "../../lib/coachProfile";
 import { getEnv } from "../../lib/env";
+import { refundLessonCharge } from "../balance";
 import type { AccountDeletedEmailLesson } from "../emails/accountDeletedTypes";
 import { enqueueCoachAccountDeletedEmail } from "../emails/coachAccountDeletedOutbox";
 import { formatLessonTimeDisplay } from "../emails/format";
 import { AlreadyDeletedError, OwnerMustTransferFirstError } from "./errors";
 import { ACCOUNT_DELETION_INITIAL_DELAY_SECONDS } from "./retry";
 import { buildAccountDeletedScheduleUrl } from "./scheduleUrl";
+
+// Imported so the solo-deletion path can null `household_balance_ledger`
+// identity columns inside the same transaction as the household DELETE.
+import { householdBalanceLedger } from "../../db/schema";
 
 type Tx = PostgresJsDatabase<typeof schema>;
 
@@ -419,6 +424,17 @@ export async function runAccountDeletion(
     now,
   });
 
+  // ADR 036 Phase 8 Part A: strip household_id + actor_id from this
+  // household's balance ledger rows before the household row goes.
+  // Append-only trigger from migration 0079 permits this; the rows
+  // themselves survive for tax retention.
+  //
+  // Stripe: we don't create a Stripe customer per household today —
+  // top-ups + package purchases ride through ephemeral Checkout sessions
+  // (see apps/api/src/services/stripe/*). Nothing to delete or redact on
+  // Stripe's side. Revisit if we ever persist a customer id.
+  await anonymizeHouseholdLedger(tx, householdId);
+
   // Batches, home pools, invites, members, household — in dependency order.
   // The household's cascade would wipe household_invites and
   // household_members too, but we delete explicitly so the order is
@@ -472,7 +488,52 @@ export async function cancelFutureLessons(
       ),
     )
     .returning({ id: lessons.id });
+
+  // ADR 036 Phase 8 Part A: future lessons cancelled by a deletion get
+  // the same refund-to-balance treatment as any other cancellation. The
+  // enclosing deletion transaction already acquired the per-profile
+  // advisory lock; acquire the per-household balance lock here too so
+  // the read-check-write cycle is atomic against a concurrent coach
+  // adjustment on this same household (unlikely but cheap to defend).
+  // Free-lesson and pre-Phase-4 rows refund $0 — the service no-ops
+  // and the lesson's audit entry still lands via the UPDATE above.
+  if (rows.length > 0) {
+    await tx.execute(
+      sql`SELECT pg_advisory_xact_lock(hashtext(${"household-balance:" + householdId}))`,
+    );
+    for (const row of rows) {
+      await refundLessonCharge(tx, {
+        householdId,
+        lessonId: row.id,
+        actorId: canceledBy,
+      });
+    }
+  }
+
   return rows.map((row) => row.id);
+}
+
+// ADR 036 Phase 8 Part A: on a solo deletion, keep the household's
+// ledger rows (append-only tax history) but strip identity. The trigger
+// from migration 0079 permits non-null → NULL transitions on
+// household_id, actor_id, and lesson_id; this UPDATE sets household_id
+// and actor_id to null in one statement. lesson_id stays as-is — a
+// later FK ON DELETE SET NULL on lessons would fire only if a lesson
+// row got hard-deleted, and solo deletion anonymizes lessons instead of
+// deleting them. The household's `ON DELETE SET NULL` FK would also
+// null household_id when the household row is deleted below, but we do
+// it explicitly here so a) actor_id goes with it in the same statement
+// and b) the step is auditable.
+export async function anonymizeHouseholdLedger(
+  tx: Tx,
+  householdId: string,
+): Promise<number> {
+  const result = await tx
+    .update(householdBalanceLedger)
+    .set({ householdId: null, actorId: null })
+    .where(eq(householdBalanceLedger.householdId, householdId))
+    .returning({ id: householdBalanceLedger.id });
+  return result.length;
 }
 
 export async function anonymizeHouseholdLessons(
