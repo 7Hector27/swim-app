@@ -69,6 +69,11 @@ interface CoachSwimmerDetailContentProps {
   // with an empty state.
   evaluationsResult?: SectionResult<GetEvaluationsItem[]>;
   sectionFailures?: CoachSwimmerSectionFailures;
+  // Current family balance in cents, soft-fetched on the server page.
+  // Null when the fetch fails — the snippet renders a muted "—" and the
+  // Low badge stays off so a transient fetch error doesn't look like
+  // "running low."
+  familyBalanceCents?: number | null;
 }
 
 const LEAGUE_LABELS: Record<League, string> = {
@@ -437,6 +442,7 @@ export default function CoachSwimmerDetailContent({
   golfScoreTrends,
   evaluationsResult = { ok: true, data: [] },
   sectionFailures = {},
+  familyBalanceCents = null,
 }: CoachSwimmerDetailContentProps) {
   const [activeTab, setActiveTab] = useState<TabId>("feed");
   const [timesFormMode, setTimesFormMode] = useState<"closed" | "meet" | "practice">("closed");
@@ -610,6 +616,11 @@ export default function CoachSwimmerDetailContent({
                   </section>
                 )
               )}
+
+              <FamilyBalanceSnippet
+                householdId={swimmer.householdId}
+                balanceCents={familyBalanceCents}
+              />
 
               {swimmer.members.length > 0 && (
                 <section
@@ -1102,5 +1113,58 @@ function LevelsPane({
         grades={grades}
       />
     </div>
+  );
+}
+
+// ADR 036 Phase 6: a compact balance snippet on the swimmer detail's left
+// rail. Links through to the full /coach/families/:id detail where the
+// coach can see the history + adjust the balance; this card stays
+// read-only so the swimmer page never grows a parallel adjust UI.
+const FAMILY_LOW_BALANCE_THRESHOLD_CENTS = 6_000;
+
+function FamilyBalanceSnippet({
+  householdId,
+  balanceCents,
+}: {
+  householdId: string;
+  balanceCents: number | null;
+}) {
+  const isLow =
+    balanceCents !== null && balanceCents < FAMILY_LOW_BALANCE_THRESHOLD_CENTS;
+  const display =
+    balanceCents === null
+      ? "—"
+      : `$${Math.floor(balanceCents / 100).toLocaleString("en-US")}.${String(
+          Math.abs(balanceCents % 100),
+        ).padStart(2, "0")}`;
+  return (
+    <section
+      aria-label="Family balance"
+      data-testid="coach-swimmer-family-balance"
+      className="rounded-lg border border-border bg-background p-4 flex flex-col gap-2"
+    >
+      <div className="flex items-start justify-between gap-2">
+        <h2 className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">
+          Family balance
+        </h2>
+        {isLow && (
+          <span className="inline-flex items-center rounded-full border border-danger/50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-danger">
+            Low
+          </span>
+        )}
+      </div>
+      <p
+        className="text-xl font-semibold text-text"
+        style={{ fontVariantNumeric: "tabular-nums" }}
+      >
+        {display}
+      </p>
+      <a
+        href={`/coach/families/${householdId}`}
+        className="text-xs font-semibold text-link underline underline-offset-2"
+      >
+        Open family
+      </a>
+    </section>
   );
 }

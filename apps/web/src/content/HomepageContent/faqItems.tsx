@@ -111,9 +111,22 @@ export const FAQ_ITEMS: FaqItem[] = [
     answer: (
       <p className={txt}>
         Book 30, 45 or 60 minutes. Lessons are {usd(PRIVATE_HOURLY_RATE)}/hour, billed by the
-        minute: {usd(LESSON_30_MIN)} for 30 minutes, {usd(LESSON_45_MIN)} for 45. Prepaid packages
-        save 10% (10 hours, {usd(PACKAGE_10H)}) or 20% (20 hours, {usd(PACKAGE_20H)}), and the
-        hours never expire.
+        minute: {usd(LESSON_30_MIN)} for 30 minutes, {usd(LESSON_45_MIN)} for 45. Two prepaid
+        packages save you money and never expire: <strong>Cannonball</strong> (pay{" "}
+        {usd(PACKAGE_10H)}, get {usd(PRIVATE_HOURLY_RATE * 10)} of lesson credit — 10% off) and{" "}
+        <strong>Deep End</strong> (pay {usd(PACKAGE_20H)}, get{" "}
+        {usd(PRIVATE_HOURLY_RATE * 20)} of lesson credit — 20% off). Credit never expires.
+      </p>
+    ),
+  },
+  {
+    question: "How does the balance work?",
+    answer: (
+      <p className={txt}>
+        Everyone adds funds first. Each lesson draws from your balance at the price for the swimmers
+        in it — one swimmer for a 30-minute lesson is {usd(LESSON_30_MIN)}, two siblings on the same
+        booking is less per swimmer than booking them separately. Credit never expires, so anything
+        extra stays on your balance for the next lesson.
       </p>
     ),
   },
@@ -136,9 +149,9 @@ export const FAQ_ITEMS: FaqItem[] = [
     question: "What ages and levels do you teach?",
     answer: (
       <p className={txt}>
-        First-timers through competitive club and league swimmers. Little ones (3 and under) do best
-        in short 20-minute bursts. Every swimmer is rated skill by skill, 1–5, so you see exactly
-        what they&rsquo;ve mastered and what&rsquo;s next.
+        First-timers through competitive club and league swimmers. Little ones (3 and under) book
+        30&nbsp;minutes like everyone else. Every swimmer is rated skill by skill, 1–5, so you see
+        exactly what they&rsquo;ve mastered and what&rsquo;s next.
       </p>
     ),
   },
@@ -148,7 +161,8 @@ export const FAQ_ITEMS: FaqItem[] = [
       <p className={txt}>
         It runs on the honor system. Life happens, and I won&rsquo;t penalize a family for an
         emergency or illness they couldn&rsquo;t avoid. All I ask is as much notice as you can give,
-        so the slot can go to another swimmer.
+        so the slot can go to another swimmer. Cancelled lessons and no-shows go back to your
+        balance in full.
       </p>
     ),
   },
@@ -179,17 +193,8 @@ export const FAQ_ITEMS: FaqItem[] = [
     question: "How do I pay?",
     answer: (
       <p className={txt}>
-        Cash, Zelle, check or{" "}
-        <a
-          href={siteLinks.venmo.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-link hover:text-link-hover transition-colors duration-150"
-        >
-          Venmo ({siteLinks.venmo.handle})
-          <span className="sr-only"> (opens in a new tab)</span>
-        </a>
-        .
+        By card, right in the app. Add credit to your balance or buy a package from the balance
+        page; lessons draw from your balance as you book them.
       </p>
     ),
   },

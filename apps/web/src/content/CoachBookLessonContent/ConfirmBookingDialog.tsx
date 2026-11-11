@@ -1,7 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { CoachBookingWarnings } from "@swim-app/shared";
+import type {
+  CoachBookingWarnings,
+  CoachCreateLessonBody,
+} from "@swim-app/shared";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import {
   activeWarningKeys,
@@ -38,6 +41,14 @@ interface Props {
     priceCents: number;
     shortfallCents: number;
   } | null;
+  // Family balance in cents + this lesson's price. When both are known
+  // the dialog renders the Charge/Free toggle and the balance line; when
+  // balanceCents is null the dialog hides the balance line and relies on
+  // the server's 422 fallback.
+  balanceCents?: number | null;
+  priceCents?: number | null;
+  chargeType?: CoachCreateLessonBody["chargeType"];
+  onChangeChargeType?: (next: CoachCreateLessonBody["chargeType"]) => void;
   // Server config value used to render the max-advance warning string.
   bookingMaxAdvanceWeeks: number;
   isSubmitting: boolean;
@@ -58,6 +69,10 @@ export default function ConfirmBookingDialog({
   summary,
   warnings,
   balanceShortfall = null,
+  balanceCents = null,
+  priceCents = null,
+  chargeType = "balance",
+  onChangeChargeType,
   bookingMaxAdvanceWeeks,
   isSubmitting,
   errorMessage,
@@ -136,6 +151,74 @@ export default function ConfirmBookingDialog({
             {formatLessonTimeDisplay(summary.startsAtUtc)}
           </p>
         </div>
+
+        {priceCents !== null && !hasShortfall && (
+          <div
+            data-testid="coach-charge-toggle"
+            className="flex flex-col gap-2"
+          >
+            <p
+              className="text-sm text-text"
+              style={{ fontVariantNumeric: "tabular-nums" }}
+            >
+              Lesson: <span className="font-semibold">{formatDollars(priceCents)}</span>
+              {balanceCents !== null && (
+                <>
+                  {" · "}
+                  Balance:{" "}
+                  <span className="font-semibold">{formatDollars(balanceCents)}</span>
+                </>
+              )}
+            </p>
+            <div
+              role="radiogroup"
+              aria-label="How to charge this lesson"
+              className="flex rounded-full border border-border overflow-hidden"
+            >
+              <button
+                type="button"
+                role="radio"
+                aria-checked={chargeType === "balance"}
+                disabled={
+                  balanceCents !== null && balanceCents < priceCents
+                }
+                onClick={() => onChangeChargeType?.("balance")}
+                data-testid="coach-charge-balance"
+                className={`flex-1 min-h-[44px] text-sm font-semibold transition-colors duration-150 ${
+                  chargeType === "balance"
+                    ? "bg-heading text-background"
+                    : "text-text hover:bg-surface-soft"
+                } disabled:bg-transparent disabled:text-text-secondary disabled:cursor-not-allowed`}
+              >
+                Charge balance
+              </button>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={chargeType === "free"}
+                onClick={() => onChangeChargeType?.("free")}
+                data-testid="coach-charge-free"
+                className={`flex-1 min-h-[44px] text-sm font-semibold border-l border-border transition-colors duration-150 ${
+                  chargeType === "free"
+                    ? "bg-heading text-background"
+                    : "text-text hover:bg-surface-soft"
+                }`}
+              >
+                Free lesson
+              </button>
+            </div>
+            {balanceCents !== null && balanceCents < priceCents && (
+              <p
+                className="text-xs text-danger"
+                data-testid="coach-charge-short-hint"
+                style={{ fontVariantNumeric: "tabular-nums" }}
+              >
+                Family is short by {formatDollars(priceCents - balanceCents)} —
+                choose Free lesson, or ask them to top up.
+              </p>
+            )}
+          </div>
+        )}
 
         {hasShortfall && balanceShortfall !== null && (
           <div

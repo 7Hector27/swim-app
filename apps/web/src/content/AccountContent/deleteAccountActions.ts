@@ -73,7 +73,35 @@ export async function confirmDeletionAction(
     return { status: "generic_error" };
   }
 
-  if (response.status === 204) {
+  if (response.status === 204 || response.status === 200) {
+    // 200 is the ADR 036 Phase 8 Part B Stop 2 shape: carries a
+    // `cashOut.breakdown` with the refunded + written-off cents. We
+    // forward both as URL params so the post-deletion modal can render
+    // the amounts without a second round-trip. 204 is the legacy shape
+    // (leave / orphan / zero-balance) and leaves the params unset.
+    let redirectTarget = "/?account-deleted=1";
+    if (response.status === 200) {
+      try {
+        const body = (await response.json()) as {
+          cashOut?: {
+            breakdown?: { refundableCents?: number; writeOffCents?: number };
+          };
+        };
+        const refundable = body.cashOut?.breakdown?.refundableCents;
+        const writeOff = body.cashOut?.breakdown?.writeOffCents;
+        const params = new URLSearchParams({ "account-deleted": "1" });
+        if (typeof refundable === "number" && refundable > 0) {
+          params.set("refunded", String(refundable));
+        }
+        if (typeof writeOff === "number" && writeOff > 0) {
+          params.set("forfeited", String(writeOff));
+        }
+        redirectTarget = `/?${params.toString()}`;
+      } catch {
+        // Fall back to the plain flag if the body isn't JSON for any
+        // reason. The modal still opens; the amounts just don't show.
+      }
+    }
     // Success. Sign the user out server-side so the SSR cookie is gone
     // before the post-deletion page renders — the client's local Supabase
     // session (if any) gets cleared on next pageload; the SSR cookie is
@@ -85,7 +113,7 @@ export async function confirmDeletionAction(
       // task anyway, so a failed signOut here can't leave a usable session
       // behind for long.
     }
-    redirect("/?account-deleted=1");
+    redirect(redirectTarget);
   }
 
   if (response.status === 403) {

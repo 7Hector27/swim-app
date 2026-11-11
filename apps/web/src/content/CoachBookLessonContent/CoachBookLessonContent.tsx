@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import type {
   CoachBookingWarnings,
@@ -8,6 +8,7 @@ import type {
   CoachHouseholdSearchResult,
   LessonLocation,
 } from "@swim-app/shared";
+import { priceForLesson } from "@swim-app/shared";
 
 import Step1HouseholdPicker from "./Step1HouseholdPicker";
 import Step2TimePicker from "./Step2TimePicker";
@@ -15,7 +16,7 @@ import Step3Success from "./Step3Success";
 import ConfirmBookingDialog, {
   type ConfirmSummary,
 } from "./ConfirmBookingDialog";
-import { submitCoachBookingAction } from "./actions";
+import { fetchFamilyBalanceAction, submitCoachBookingAction } from "./actions";
 import { type BookingStep } from "./helpers";
 
 interface Props {
@@ -74,6 +75,31 @@ export default function CoachBookLessonContent({
     priceCents: number;
     shortfallCents: number;
   } | null>(null);
+  // Family balance for the chosen household. Null until the fetch
+  // resolves OR when the fetch fails — the dialog hides the balance line
+  // in that case and relies on the server's 422 fallback.
+  const [balanceCents, setBalanceCents] = useState<number | null>(null);
+  // Up-front Charge / Free toggle in the confirm dialog. Defaults to
+  // "balance" per ADR 036 Phase 6; the dialog flips to "free" automatically
+  // when the family can't cover the lesson.
+  const [chargeType, setChargeType] =
+    useState<CoachCreateLessonBody["chargeType"]>("balance");
+
+  useEffect(() => {
+    if (!household) {
+      setBalanceCents(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const result = await fetchFamilyBalanceAction(household.householdId);
+      if (cancelled) return;
+      setBalanceCents(result ? result.balanceCents : null);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [household]);
 
   function handleSelectHousehold(next: CoachHouseholdSearchResult) {
     setHousehold(next);
@@ -138,11 +164,12 @@ export default function CoachBookLessonContent({
 
   async function submitBooking(
     acknowledgedWarnings: CoachBookingWarnings,
-    chargeType: CoachCreateLessonBody["chargeType"] = "balance",
+    chargeTypeOverride?: CoachCreateLessonBody["chargeType"],
   ) {
     if (!pending) return;
     setIsSubmitting(true);
     setSubmitError(null);
+    const effectiveChargeType = chargeTypeOverride ?? chargeType;
     const result = await submitCoachBookingAction({
       householdId: pending.householdId,
       swimmerIds: pending.swimmerIds,
@@ -151,7 +178,7 @@ export default function CoachBookLessonContent({
       durationMinutes: pending.summary.durationMinutes,
       overrideWindow: pending.overrideWindow || serverWarnings !== null,
       acknowledgedWarnings,
-      chargeType,
+      chargeType: effectiveChargeType,
     });
     setIsSubmitting(false);
 
@@ -220,7 +247,18 @@ export default function CoachBookLessonContent({
     setServerWarnings(null);
     setSubmitError(null);
     setBalanceShortfall(null);
+    setChargeType("balance");
   }
+
+  // Price the pending lesson in cents so the dialog can show
+  // balance + lesson + Charge/Free toggle. Server pricing is
+  // authoritative; this is display-only.
+  const pendingPriceCents = pending
+    ? priceForLesson(
+        pending.summary.durationMinutes,
+        Math.max(1, Math.min(4, pending.swimmerIds.length)) as 1 | 2 | 3 | 4,
+      )
+    : null;
 
   if (success !== null) {
     return <Step3Success {...success} />;
@@ -267,6 +305,10 @@ export default function CoachBookLessonContent({
           summary={pending.summary}
           warnings={serverWarnings}
           balanceShortfall={balanceShortfall}
+          balanceCents={balanceCents}
+          priceCents={pendingPriceCents}
+          chargeType={chargeType}
+          onChangeChargeType={setChargeType}
           bookingMaxAdvanceWeeks={bookingMaxAdvanceWeeks}
           isSubmitting={isSubmitting}
           errorMessage={submitError}

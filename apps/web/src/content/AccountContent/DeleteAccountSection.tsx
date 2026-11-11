@@ -10,6 +10,7 @@ import {
 } from "@swim-app/shared";
 
 import Button from "@/components/Button";
+import { formatDollars } from "@/content/AccountBalanceContent/formatters";
 
 import { confirmDeletionAction } from "./deleteAccountActions";
 import {
@@ -133,6 +134,40 @@ export default function DeleteAccountSection({ preview }: DeleteAccountSectionPr
 
 // ── Preview copy per case ────────────────────────────────────────────────────
 
+function CashOutBreakdownCopy({
+  preview,
+}: {
+  preview: DeletionPreviewResponse;
+}) {
+  // Null on leave/orphan paths or zero-balance owners — nothing to say.
+  if (preview.cashOutPreview === null) return null;
+  const { refundableCents, writeOffCents } = preview.cashOutPreview;
+  if (refundableCents === 0 && writeOffCents === 0) return null;
+
+  // Render each half independently so a zero on one side hides just
+  // that sentence.
+  return (
+    <p className="text-text" data-testid="delete-account-preview-cashout">
+      {refundableCents > 0 && (
+        <>
+          <strong data-testid="delete-account-preview-refund">
+            {formatDollars(refundableCents)}
+          </strong>{" "}
+          will be refunded to your card.{" "}
+        </>
+      )}
+      {writeOffCents > 0 && (
+        <>
+          <strong data-testid="delete-account-preview-writeoff">
+            {formatDollars(writeOffCents)}
+          </strong>{" "}
+          of unused bonus credit will be forfeited.
+        </>
+      )}
+    </p>
+  );
+}
+
 function DeletionPreviewCopy({
   preview,
   deletionCase,
@@ -174,6 +209,7 @@ function DeletionPreviewCopy({
             )}
             <li>Your household and home pool address</li>
           </ul>
+          <CashOutBreakdownCopy preview={preview} />
           <p className="text-text-secondary" data-testid="delete-account-preview-kept">
             Past lessons stay on Coach Jason&apos;s records with no names attached.
             {preview.pastLessonCount > 0
@@ -205,6 +241,7 @@ function DeletionPreviewCopy({
             )}
             <li>The household and home pool address</li>
           </ul>
+          <CashOutBreakdownCopy preview={preview} />
           <p className="text-text-secondary">
             The viewers on this household stay signed in; they&apos;ll be released from{" "}
             {preview.householdName || "this household"} and can be invited to another one.

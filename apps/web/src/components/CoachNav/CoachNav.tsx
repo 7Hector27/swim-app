@@ -20,6 +20,7 @@ const BOTTOM_NAV_TABS = [
 ] as const;
 
 const MORE_SHEET_ITEMS = [
+  { label: "Families", href: "/coach/families" },
   { label: "Meets", href: "/coach/meets" },
   { label: "Availability", href: "/coach/availability" },
   { label: "Account settings", href: "/account" },
@@ -31,6 +32,7 @@ const DESKTOP_NAV_LINKS = [
   { label: "Schedule", href: "/coach/schedule" },
   { label: "Availability", href: "/coach/availability" },
   { label: "Swimmers", href: "/coach/swimmers" },
+  { label: "Families", href: "/coach/families" },
   { label: "Meets", href: "/coach/meets" },
 ] as const;
 

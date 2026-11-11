@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { fetchCoachWeekSchedule, fetchRangeAvailability } from "@/lib/api/lessons";
 import {
   WeekAvailabilityResponseSchema,
+  type BalanceResponse,
   type CoachCreateLessonBody,
   type CoachHouseholdSearchResponse,
   type WeekAvailabilityResponse,
@@ -13,6 +14,7 @@ import {
   fetchCoachHouseholds,
   type CoachCreateLessonResult,
 } from "@/lib/api/coachBooking";
+import { fetchCoachFamilyBalance } from "@/lib/api/coachHouseholds";
 import { loadError, type LoadResult } from "@/lib/loadResult";
 
 // Flat shape used by the custom-time overlap check. Captures the minimum
@@ -101,4 +103,19 @@ export async function submitCoachBookingAction(
     return { kind: "error", message: "Session expired. Please sign in again." };
   }
   return createCoachLesson(token, body);
+}
+
+// Fetch the selected family's current balance for the up-front Charge /
+// Free toggle. Returns null on any failure so the UI falls back to
+// "balance unknown" instead of guessing — the server's 422 fallback still
+// catches an over-draft on submit.
+export async function fetchFamilyBalanceAction(
+  householdId: string,
+): Promise<BalanceResponse | null> {
+  const token = await getAccessToken();
+  if (!token) return null;
+  const result = await fetchCoachFamilyBalance(token, householdId);
+  if ("kind" in result) return null;
+  if (!result.ok) return null;
+  return result.data;
 }

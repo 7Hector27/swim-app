@@ -17,6 +17,7 @@ import {
   fetchSwimmerEvaluations,
   fetchSwimmerSkills,
 } from "@/lib/api/evaluations";
+import { fetchCoachFamilyBalance } from "@/lib/api/coachHouseholds";
 import { fetchSwimmerMeetSwims, fetchMeets } from "@/lib/api/meets";
 
 export const metadata: Metadata = {
@@ -62,6 +63,16 @@ export default async function CoachSwimmerPage({ params }: CoachSwimmerPageProps
     if (swimmerResult.status === 403) redirect("/dashboard");
     throw new Error(`Failed to load swimmer (status ${swimmerResult.status})`);
   }
+
+  // Family balance for the left-rail snippet — soft-fails to null so a
+  // transient /coach/households/:id/balance error doesn't break the whole
+  // swimmer page.
+  const balanceResult = await fetchCoachFamilyBalance(
+    auth.accessToken,
+    swimmerResult.swimmer.householdId,
+  );
+  const familyBalanceCents =
+    "ok" in balanceResult && balanceResult.ok ? balanceResult.data.balanceCents : null;
 
   const grades: SwimmerSkillsResponse["grades"] = skillsResult.ok ? skillsResult.data.grades : {};
   const startGrades: SwimmerSkillsResponse["startGrades"] = skillsResult.ok ? skillsResult.data.startGrades : {};
@@ -111,6 +122,7 @@ export default async function CoachSwimmerPage({ params }: CoachSwimmerPageProps
       golfScoreTrends={golfScoreTrends}
       evaluationsResult={evaluationsSection}
       sectionFailures={sectionFailures}
+      familyBalanceCents={familyBalanceCents}
     />
   );
 }

@@ -29,6 +29,7 @@ const submitCoachBookingSpy = vi.fn();
 const fetchCoachRangeSpy = vi.fn();
 const fetchCoachWeekLessonsSpy = vi.fn();
 const fetchHouseholdByIdSpy = vi.fn();
+const fetchFamilyBalanceSpy = vi.fn().mockResolvedValue(null);
 
 vi.mock("@/content/CoachBookLessonContent/actions", () => ({
   searchHouseholdsAction: (...args: unknown[]) => searchHouseholdsSpy(...args),
@@ -37,6 +38,7 @@ vi.mock("@/content/CoachBookLessonContent/actions", () => ({
   fetchCoachWeekLessonsAction: (...args: unknown[]) =>
     fetchCoachWeekLessonsSpy(...args),
   fetchHouseholdByIdAction: (...args: unknown[]) => fetchHouseholdByIdSpy(...args),
+  fetchFamilyBalanceAction: (...args: unknown[]) => fetchFamilyBalanceSpy(...args),
 }));
 
 vi.mock("next/navigation", () => ({
