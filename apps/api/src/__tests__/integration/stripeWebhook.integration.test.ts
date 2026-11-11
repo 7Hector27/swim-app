@@ -142,9 +142,17 @@ function makeStubStripe(): StripeAdapter {
     } as unknown as Stripe.Response<Stripe.Checkout.Session>;
   }) as CreateFn);
 
+  // ADR 036 Phase 8 Part B — the StripeAdapter grew a `refunds.create`
+  // surface for the cash-out drain. Checkout tests don't exercise it;
+  // a vi.fn stub keeps the type happy.
+  const refundsCreateStub = vi.fn((async () => {
+    throw new Error("stub: refunds.create not expected in webhook tests");
+  }) as StripeAdapter["refunds"]["create"]);
+
   return {
     checkout: { sessions: { create: createStub, retrieve: retrieveStub } },
     webhooks: { constructEvent: constructEventStub },
+    refunds: { create: refundsCreateStub },
   };
 }
 

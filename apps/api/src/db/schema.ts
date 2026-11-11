@@ -1178,7 +1178,9 @@ export const lessonEmailOutbox = pgTable(
       .where(sql`bulk_cancellation_id IS NOT NULL`),
     check(
       "lesson_email_outbox_event_valid",
-      sql`${table.event} IN ('booking_requested', 'lesson_confirmed', 'request_declined', 'request_expired', 'lesson_canceled', 'lesson_rescheduled', 'batch_booked', 'batch_approved', 'batch_canceled', 'coach_booking_request', 'coach_bulk_cancel', 'coach_account_deleted', 'balance_funded', 'balance_adjusted')`,
+      // ADR 036 Phase 8 Part B: `balance_cashed_out` rides the same
+      // household-scoped path as `balance_funded` and `balance_adjusted`.
+      sql`${table.event} IN ('booking_requested', 'lesson_confirmed', 'request_declined', 'request_expired', 'lesson_canceled', 'lesson_rescheduled', 'batch_booked', 'batch_approved', 'batch_canceled', 'coach_booking_request', 'coach_bulk_cancel', 'coach_account_deleted', 'balance_funded', 'balance_adjusted', 'balance_cashed_out')`,
     ),
     check(
       "lesson_email_outbox_status_valid",
@@ -1214,8 +1216,10 @@ export const lessonEmailOutbox = pgTable(
       // household-scoped (no lesson/batch/bulk tie). They ride the same
       // escape coach_account_deleted does — scope columns all null,
       // household_id carries the identity.
+      // ADR 036 Phase 8 Part B: balance_cashed_out joins the same
+      // household-scoped carve-out.
       sql`(${table.payload} ? '_scrubbed_at')
-        OR (${table.event} IN ('coach_account_deleted', 'balance_funded', 'balance_adjusted'))
+        OR (${table.event} IN ('coach_account_deleted', 'balance_funded', 'balance_adjusted', 'balance_cashed_out'))
         OR ((CASE WHEN ${table.lessonId} IS NOT NULL THEN 1 ELSE 0 END)
           + (CASE WHEN ${table.batchId} IS NOT NULL THEN 1 ELSE 0 END)
           + (CASE WHEN ${table.bulkCancellationId} IS NOT NULL THEN 1 ELSE 0 END) = 1)`,
@@ -1231,8 +1235,10 @@ export const lessonEmailOutbox = pgTable(
       // balance_funded + balance_adjusted set household_id on their own
       // (not paired with bulk_cancellation_id), so they also carve out of
       // the "bulk_cancellation_id IS NULL iff household_id IS NULL" rule.
+      // ADR 036 Phase 8 Part B: balance_cashed_out is the same shape
+      // (household_id set, bulk_cancellation_id null).
       sql`(${table.payload} ? '_scrubbed_at')
-        OR (${table.event} IN ('coach_account_deleted', 'balance_funded', 'balance_adjusted'))
+        OR (${table.event} IN ('coach_account_deleted', 'balance_funded', 'balance_adjusted', 'balance_cashed_out'))
         OR ((${table.bulkCancellationId} IS NULL) = (${table.householdId} IS NULL))`,
     ),
     // Partial index on (next_attempt_at) for the drain's hot path. Includes
@@ -1547,6 +1553,21 @@ export const balanceEntryTypeEnum = pgEnum("balance_entry_type", [
   "refund_to_balance",
   "coach_adjustment",
   "free_lesson",
+  // ADR 036 Phase 8 Part B: cash-out refund engine. A `cash_refund` row
+  // records a Stripe refund issued back to the original card payment
+  // (negative amount). It carries the original payment's checkout
+  // session + payment-intent ids so the drain can call
+  // `stripe.refunds.create` idempotently, and `refund_of_ledger_id`
+  // points at the original `card_topup`/`package_purchase` row so the
+  // "how much have we already refunded off this payment?" math is a
+  // simple GROUP BY.
+  "cash_refund",
+  // ADR 036 Phase 8 Part B: cash-out refund engine. A `balance_writeoff`
+  // row zeroes the residual that isn't refundable to card — coach gifts,
+  // unused package bonuses, and any cents that couldn't be allocated to
+  // a live Stripe payment. Negative amount; carries nothing else (no
+  // Stripe ids, no refund target, no lesson, no reason).
+  "balance_writeoff",
 ]);
 
 // Append-only per ADR 036: a BEFORE UPDATE OR DELETE trigger (installed by a
@@ -1596,6 +1617,10 @@ export const householdBalanceLedger = pgTable(
         OR (${table.entryType} = 'lesson_charge' AND ${table.amountCents} < 0)
         OR (${table.entryType} = 'free_lesson' AND ${table.amountCents} = 0)
         OR (${table.entryType} = 'coach_adjustment' AND ${table.amountCents} <> 0)
+        -- ADR 036 Phase 8 Part B: cash-outs decrement the balance back to
+        -- Stripe (cash_refund) or zero out unrefundable residual
+        -- (balance_writeoff). Both land as negative amounts.
+        OR (${table.entryType} IN ('cash_refund', 'balance_writeoff') AND ${table.amountCents} < 0)
       )`,
     ),
     // lesson_id must be NULL for non-lesson-scoped entry types; the
@@ -1618,8 +1643,12 @@ export const householdBalanceLedger = pgTable(
     check(
       "balance_ledger_stripe_session_scope_valid",
       sql`(
-        (${table.entryType} IN ('card_topup', 'package_purchase', 'package_bonus') AND ${table.stripeCheckoutSessionId} IS NOT NULL)
-        OR (${table.entryType} NOT IN ('card_topup', 'package_purchase', 'package_bonus') AND ${table.stripeCheckoutSessionId} IS NULL)
+        -- ADR 036 Phase 8 Part B: cash_refund rows must carry the original
+        -- payment's checkout session id so the drain can reconcile a
+        -- refund back to what it reverses, same as card_topup /
+        -- package_purchase / package_bonus write it on the way in.
+        (${table.entryType} IN ('card_topup', 'package_purchase', 'package_bonus', 'cash_refund') AND ${table.stripeCheckoutSessionId} IS NOT NULL)
+        OR (${table.entryType} NOT IN ('card_topup', 'package_purchase', 'package_bonus', 'cash_refund') AND ${table.stripeCheckoutSessionId} IS NULL)
       )`,
     ),
     // Coach adjustments carry a required non-empty reason; other entry types
@@ -1638,8 +1667,15 @@ export const householdBalanceLedger = pgTable(
     check(
       "balance_ledger_refund_of_scope_valid",
       sql`(
-        (${table.entryType} = 'refund_to_balance' AND ${table.refundOfLedgerId} IS NOT NULL)
-        OR (${table.entryType} <> 'refund_to_balance' AND ${table.refundOfLedgerId} IS NULL)
+        -- ADR 036 Phase 8 Part B: cash_refund rows also point at the
+        -- original payment via refund_of_ledger_id so the "already
+        -- refunded off this payment" roll-up is a single GROUP BY. The
+        -- partial UNIQUE on refund_of_ledger_id is predicated on
+        -- entry_type='refund_to_balance', so cash_refund rows are
+        -- outside that index and may share a target payment (one card
+        -- top-up can be partially refunded across several cash-outs).
+        (${table.entryType} IN ('refund_to_balance', 'cash_refund') AND ${table.refundOfLedgerId} IS NOT NULL)
+        OR (${table.entryType} NOT IN ('refund_to_balance', 'cash_refund') AND ${table.refundOfLedgerId} IS NULL)
       )`,
     ),
     // Balance sum and per-household history view both key on household_id.
@@ -1683,6 +1719,61 @@ export const stripeEvents = pgTable("stripe_events", {
   receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
   processedAt: timestamp("processed_at", { withTimezone: true }),
 }).enableRLS();
+
+// Cash-out refund drain (ADR 036 Phase 8 Part B).
+//
+// One row per `cash_refund` ledger row. The cash-out service writes the
+// ledger row + this job inside one transaction; a post-commit microtask
+// kicks the drain, which claims pending rows, calls Stripe's refund API
+// with `idempotency_key` set to the job's `idempotency_key`, and marks
+// the row succeeded / needs_manual_handling / leaves pending on
+// retryable errors. Shape mirrors `accountDeletionJobs`: atomic claim
+// via `UPDATE ... RETURNING`, bounded attempts budget, exponential
+// backoff on retryable failures.
+export const cashRefundJobStatusEnum = pgEnum("cash_refund_job_status", [
+  "pending",
+  "succeeded",
+  "needs_manual_handling",
+]);
+
+export const cashRefundJobs = pgTable(
+  "cash_refund_jobs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // FK to the `cash_refund` ledger row this job executes. One job per
+    // ledger row; UNIQUE enforces that.
+    ledgerId: uuid("ledger_id").notNull().unique().references(() => householdBalanceLedger.id),
+    // Kept null-able so a later account-deletion anonymization pass can
+    // null it without dropping the job row (same posture as ledger).
+    householdId: uuid("household_id").references(() => households.id, { onDelete: "set null" }),
+    stripePaymentIntentId: text("stripe_payment_intent_id").notNull(),
+    // Stripe idempotency key — UUID, used verbatim as the Stripe
+    // `idempotency_key` header so a retry never double-charges.
+    idempotencyKey: uuid("idempotency_key").notNull().unique(),
+    // Positive cents — the refund amount sent to Stripe. The matching
+    // ledger row stores the negative of this.
+    amountCents: integer("amount_cents").notNull(),
+    status: cashRefundJobStatusEnum("status").notNull().default("pending"),
+    attempts: integer("attempts").notNull().default(0),
+    claimedUntil: timestamp("claimed_until", { withTimezone: true }),
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).notNull().defaultNow(),
+    lastError: text("last_error"),
+    lastAttemptAt: timestamp("last_attempt_at", { withTimezone: true }),
+    stripeRefundId: text("stripe_refund_id"),
+    succeededAt: timestamp("succeeded_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdateFn(() => new Date()),
+  },
+  (table) => [
+    check("cash_refund_jobs_amount_positive", sql`${table.amountCents} > 0`),
+    // Partial index on next_attempt_at — the drain filter is
+    // `status='pending' AND next_attempt_at <= now()` and we want it
+    // index-only on the hot path.
+    index("cash_refund_jobs_drain_idx")
+      .on(table.nextAttemptAt)
+      .where(sql`status = 'pending'`),
+  ],
+).enableRLS();
 
 export const accountDeletionJobs = pgTable(
   "account_deletion_jobs",

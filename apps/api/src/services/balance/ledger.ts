@@ -90,6 +90,22 @@ export type LedgerEntryInput =
       householdId: string;
       actorId: string;
       lessonId: string;
+    }
+  // ADR 036 Phase 8 Part B — cash-out refund engine.
+  | {
+      entryType: "cash_refund";
+      householdId: string;
+      actorId: string;
+      amountCents: number; // negative
+      stripeCheckoutSessionId: string; // of the original payment
+      stripePaymentIntentId: string; // of the original payment
+      refundOfLedgerId: string; // the card_topup / package_purchase row
+    }
+  | {
+      entryType: "balance_writeoff";
+      householdId: string;
+      actorId: string;
+      amountCents: number; // negative
     };
 
 // One audit action per entry type (ADR 036 §1). `package_bonus` shares the
@@ -103,6 +119,9 @@ const AUDIT_ACTIONS: Record<LedgerEntryInput["entryType"], string> = {
   refund_to_balance: "balance_lesson_refunded",
   coach_adjustment: "balance_coach_adjusted",
   free_lesson: "balance_free_lesson",
+  // ADR 036 Phase 8 Part B — cash-out refund engine.
+  cash_refund: "balance_cash_refunded",
+  balance_writeoff: "balance_written_off",
 };
 
 /**
@@ -151,6 +170,7 @@ export async function applyLedgerEntry(
     input.entryType === "card_topup"
       || input.entryType === "package_purchase"
       || input.entryType === "package_bonus"
+      || input.entryType === "cash_refund"
       ? input.stripeCheckoutSessionId
       : null;
 
@@ -159,12 +179,17 @@ export async function applyLedgerEntry(
       || input.entryType === "package_purchase"
       || input.entryType === "package_bonus"
       ? input.stripePaymentIntentId
+      : input.entryType === "cash_refund"
+      ? input.stripePaymentIntentId
       : null;
 
   const reason = input.entryType === "coach_adjustment" ? input.reason : null;
 
   const refundOfLedgerId =
-    input.entryType === "refund_to_balance" ? input.refundOfLedgerId : null;
+    input.entryType === "refund_to_balance"
+      || input.entryType === "cash_refund"
+      ? input.refundOfLedgerId
+      : null;
 
   const insertedRows = await tx
     .insert(householdBalanceLedger)

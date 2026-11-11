@@ -35,7 +35,14 @@ export type LessonEmailEvent =
   // coach adjust-balance transaction. Payload is a
   // `BalanceAdjustedEmailPayload`; carries signed amount, new balance,
   // and the coach's reason (the family will see it). Household-scoped.
-  | "balance_adjusted";
+  | "balance_adjusted"
+  // ADR 036 Phase 8 Part B cash-out email. Enqueued inside the
+  // executeCashOut transaction that writes the cash_refund +
+  // balance_writeoff ledger rows. Payload is a
+  // `BalanceCashedOutEmailPayload` carrying the breakdown fields the
+  // family receipt shows (paid / used / prior refunds / refunded /
+  // written off). Household-scoped.
+  | "balance_cashed_out";
 
 export type LessonEmailStatus =
   | "pending"

@@ -6,3 +6,5 @@ export { processWebhook, WebhookSignatureError } from "./webhook";
 export type { WebhookInput, WebhookResult } from "./webhook";
 export { CheckoutMetadataSchema } from "./metadata";
 export type { CheckoutMetadata } from "./metadata";
+export { createCashRefund } from "./refunds";
+export type { CreateRefundInput, CreateRefundResult } from "./refunds";

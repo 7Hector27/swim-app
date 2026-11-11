@@ -24,7 +24,11 @@ import {
 } from "../services/notifications/drain";
 import { runAccountDeletionRetryDrain } from "../services/accountDeletion";
 import { safeCleanupErrSummary } from "../services/accountDeletion/cleanup";
-import { getHouseholdBalance, refundLessonCharge } from "../services/balance";
+import {
+  getHouseholdBalance,
+  refundLessonCharge,
+  runCashRefundRetryDrain,
+} from "../services/balance";
 import type { RequestHandler } from "express";
 
 // Promote the per-tick light pass to a full pass when last_full_reconcile_at
@@ -394,6 +398,27 @@ async function runCronTick(
       );
     }
 
+    // Cash-refund drain (ADR 036 Phase 8 Part B). Shares the cron tick
+    // lease and runs here too. The drain's own loop catches per-job
+    // errors into DB state; this outer catch handles a drain-level
+    // throw (e.g. the claim UPDATE failing) so one bad pass can't
+    // starve the response.
+    let cashRefundDrainResult = {
+      attempted: 0,
+      succeeded: 0,
+      paused: 0 as const,
+      failedTerminal: 0,
+      needsManualHandling: 0,
+    };
+    try {
+      cashRefundDrainResult = await runCashRefundRetryDrain(req.log);
+    } catch (err) {
+      req.log.error(
+        { err: safeCleanupErrSummary(err) },
+        "cron/tick cash-refund retry drain failed",
+      );
+    }
+
     req.log.info(
       {
         expiredCount: expired.length,
@@ -415,6 +440,10 @@ async function runCronTick(
         accountDeletionRetrySucceeded: accountDeletionRetryResult.succeeded,
         accountDeletionRetryPaused: accountDeletionRetryResult.paused,
         accountDeletionRetryFailedTerminal: accountDeletionRetryResult.failedTerminal,
+        cashRefundAttempted: cashRefundDrainResult.attempted,
+        cashRefundSucceeded: cashRefundDrainResult.succeeded,
+        cashRefundFailedTerminal: cashRefundDrainResult.failedTerminal,
+        cashRefundNeedsManualHandling: cashRefundDrainResult.needsManualHandling,
       },
       "cron/tick",
     );
@@ -439,5 +468,9 @@ async function runCronTick(
       accountDeletionRetrySucceeded: accountDeletionRetryResult.succeeded,
       accountDeletionRetryPaused: accountDeletionRetryResult.paused,
       accountDeletionRetryFailedTerminal: accountDeletionRetryResult.failedTerminal,
+      cashRefundAttempted: cashRefundDrainResult.attempted,
+      cashRefundSucceeded: cashRefundDrainResult.succeeded,
+      cashRefundFailedTerminal: cashRefundDrainResult.failedTerminal,
+      cashRefundNeedsManualHandling: cashRefundDrainResult.needsManualHandling,
     };
 }

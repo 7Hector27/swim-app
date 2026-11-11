@@ -23,6 +23,12 @@ export interface StripeAdapter {
   webhooks: {
     constructEvent: Stripe["webhooks"]["constructEvent"];
   };
+  // ADR 036 Phase 8 Part B — cash-out refund engine. The drain calls
+  // refunds.create with the job's idempotency_key so a retry after a
+  // network blip never double-charges.
+  refunds: {
+    create: Stripe["refunds"]["create"];
+  };
 }
 
 let override: StripeAdapter | undefined;

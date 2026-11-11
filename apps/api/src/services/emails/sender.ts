@@ -35,10 +35,12 @@ import { buildIcs } from "./ics";
 import { renderEmail } from "./render";
 import type { AccountDeletedEmailPayload } from "./accountDeletedTypes";
 import type { BalanceAdjustedEmailPayload } from "./balanceAdjustedTypes";
+import type { BalanceCashedOutEmailPayload } from "./balanceCashedOutTypes";
 import type { BalanceFundedEmailPayload } from "./balanceFundedTypes";
 import { formatMoneyCents } from "./templates/shared/copyHelpers";
 import Batch from "./templates/Batch";
 import BalanceAdjusted from "./templates/BalanceAdjusted";
+import BalanceCashedOut from "./templates/BalanceCashedOut";
 import BalanceFunded from "./templates/BalanceFunded";
 import CoachAccountDeleted from "./templates/CoachAccountDeleted";
 import CoachBulkCancel from "./templates/CoachBulkCancel";
@@ -137,6 +139,8 @@ export async function sendLessonEmailOutboxRow(outboxId: string): Promise<void> 
       await sendBalanceFundedInner(outboxId);
     } else if (row.event === "balance_adjusted") {
       await sendBalanceAdjustedInner(outboxId);
+    } else if (row.event === "balance_cashed_out") {
+      await sendBalanceCashedOutInner(outboxId);
     } else if (row.lessonId !== null) {
       await sendInner(outboxId);
     } else if (row.batchId !== null) {
@@ -1586,6 +1590,135 @@ async function sendBalanceAdjustedInner(outboxId: string): Promise<void> {
       errorKind: result.error?.kind,
     },
     "balance_adjusted email send failed",
+  );
+}
+
+// ── balance_cashed_out sender (ADR 036 Phase 8 Part B) ─────────────────────
+
+interface ClaimedBalanceCashedOutRow {
+  id: string;
+  recipientProfileIds: string[];
+  payload: BalanceCashedOutEmailPayload;
+  attempts: number;
+}
+
+async function claimBalanceCashedOutRow(
+  outboxId: string,
+): Promise<ClaimedBalanceCashedOutRow | null> {
+  const nowAtClaim = new Date();
+  return await db.transaction(async (tx) => {
+    const rows = await tx
+      .select({
+        id: lessonEmailOutbox.id,
+        recipientProfileIds: lessonEmailOutbox.recipientProfileIds,
+        payload: lessonEmailOutbox.payload,
+        attempts: lessonEmailOutbox.attempts,
+      })
+      .from(lessonEmailOutbox)
+      .where(
+        and(
+          eq(lessonEmailOutbox.id, outboxId),
+          eq(lessonEmailOutbox.event, "balance_cashed_out"),
+          or(
+            inArray(lessonEmailOutbox.status, ["pending", "failed"]),
+            and(
+              eq(lessonEmailOutbox.status, "sending"),
+              lt(lessonEmailOutbox.claimedUntil, nowAtClaim),
+            ),
+          ),
+        ),
+      )
+      .for("update", { skipLocked: true })
+      .limit(1);
+    const row = rows[0];
+    if (!row) return null;
+    const leaseUntil = new Date(Date.now() + CLAIM_LEASE_MS);
+    await tx
+      .update(lessonEmailOutbox)
+      .set({
+        status: "sending",
+        claimedUntil: leaseUntil,
+        lastAttemptAt: new Date(),
+      })
+      .where(eq(lessonEmailOutbox.id, outboxId));
+    return {
+      id: row.id,
+      recipientProfileIds: row.recipientProfileIds,
+      payload: row.payload as BalanceCashedOutEmailPayload,
+      attempts: row.attempts,
+    };
+  });
+}
+
+async function sendBalanceCashedOutInner(outboxId: string): Promise<void> {
+  const transport = getTransport();
+  if (!transport) {
+    await finalizeSkipped(outboxId, "transport_not_configured");
+    return;
+  }
+  const claimed = await claimBalanceCashedOutRow(outboxId);
+  if (!claimed) return;
+
+  const deliverable = await resolveRecipients(claimed.recipientProfileIds);
+  if (deliverable.length === 0) {
+    await finalizeSkipped(outboxId, "no_deliverable_recipients");
+    log.info(
+      { outboxId },
+      "balance_cashed_out email skipped (no deliverable recipients)",
+    );
+    return;
+  }
+
+  const siteUrl = getEnv().siteUrl;
+  const replyToEmail = getEnv().email?.replyTo ?? null;
+  const element = BalanceCashedOut({
+    payload: claimed.payload,
+    siteUrl,
+    replyToEmail,
+  });
+  const [html, text] = await Promise.all([
+    renderReactEmail(element),
+    renderReactEmail(element, { plainText: true }),
+  ]);
+  const subject =
+    claimed.payload.refundableCents > 0
+      ? `Balance cashed out: ${formatMoneyCents(claimed.payload.refundableCents)} refunded`
+      : "Balance cashed out";
+
+  const emailEnv = getEnv().email!;
+  const result = await transport.send({
+    from: emailEnv.from,
+    replyTo: emailEnv.replyTo,
+    to: deliverable,
+    subject,
+    text,
+    ...(html && { html }),
+    idempotencyKey: outboxId,
+  });
+
+  if (result.ok) {
+    await finalizeSent(outboxId, result.providerMessageId);
+    log.info(
+      {
+        outboxId,
+        attempts: claimed.attempts + 1,
+        transport: emailEnv.transport,
+        refundableCents: claimed.payload.refundableCents,
+        writeOffCents: claimed.payload.writeOffCents,
+      },
+      "balance_cashed_out email sent",
+    );
+    return;
+  }
+  await finalizeFailed(outboxId, result.error?.kind ?? "unexpected", result.errorMessage);
+  log.warn(
+    {
+      outboxId,
+      transport: emailEnv.transport,
+      attempts: claimed.attempts + 1,
+      errorKind: result.error?.kind,
+    },
+    "balance_cashed_out email send failed",
   );
 }
 

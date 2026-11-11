@@ -50,6 +50,9 @@ const SUBJECT_PREFIX: Record<LessonEmailEvent, string> = {
   // exhaustive.
   balance_funded: "Balance added",
   balance_adjusted: "Balance updated",
+  // ADR 036 Phase 8 Part B cash-out email — same pattern: rendered by
+  // its own sender path, entry present to keep the Record exhaustive.
+  balance_cashed_out: "Balance cashed out",
 };
 
 type CoachBackupPayload = BookingRequestLessonPayload | BookingRequestBatchPayload;
@@ -135,6 +138,10 @@ function selectTemplate(
     case "balance_adjusted":
       throw new Error(
         "balance_adjusted rendered through sendBalanceAdjustedInner, not renderEmail",
+      );
+    case "balance_cashed_out":
+      throw new Error(
+        "balance_cashed_out rendered through sendBalanceCashedOutInner, not renderEmail",
       );
   }
 }

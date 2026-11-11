@@ -27,6 +27,12 @@ export const BalanceEntryTypeSchema = z.enum([
   "refund_to_balance",
   "coach_adjustment",
   "free_lesson",
+  // ADR 036 Phase 8 Part B — cash-out refund engine. `cash_refund` rows
+  // record a Stripe refund issued back to the original card; `balance_
+  // writeoff` rows absorb unused bonus / coach gifts that can't be
+  // refunded off-platform. Both are negative amounts in the ledger.
+  "cash_refund",
+  "balance_writeoff",
 ]);
 export type BalanceEntryType = z.infer<typeof BalanceEntryTypeSchema>;
 
@@ -194,4 +200,30 @@ export const CoachAdjustBalanceResponseSchema = z.object({
 export type CoachAdjustBalanceResponse = z.infer<
   typeof CoachAdjustBalanceResponseSchema
 >;
+
+// ── Cash-out (ADR 036 Phase 8 Part B) ───────────────────────────────────
+
+// Breakdown of a cash-out: paid, used, refunded, written off. Matches
+// the plain-language policy surfaces. All fields non-negative integer
+// cents; see docs/plans/payments.md §8 for the refund-rule derivation.
+export const CashOutBreakdownSchema = z.object({
+  totalCardPaidCents: z.number().int().nonnegative(),
+  totalCashRefundedCents: z.number().int().nonnegative(),
+  netLessonSpendingCents: z.number().int().nonnegative(),
+  currentBalanceCents: z.number().int().nonnegative(),
+  refundableCents: z.number().int().nonnegative(),
+  writeOffCents: z.number().int().nonnegative(),
+});
+export type CashOutBreakdown = z.infer<typeof CashOutBreakdownSchema>;
+
+// What the service returns after writing the ledger rows + jobs. The
+// `needsManualHandlingCents` field is the residual that could not be
+// allocated to any payment (e.g. all card payments are older than
+// Stripe's 180-day window) — surfaced to the caller so Jason sees it.
+export const CashOutResponseSchema = z.object({
+  breakdown: CashOutBreakdownSchema,
+  refundJobCount: z.number().int().nonnegative(),
+  needsManualHandlingCents: z.number().int().nonnegative(),
+});
+export type CashOutResponse = z.infer<typeof CashOutResponseSchema>;
 
