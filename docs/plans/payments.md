@@ -294,7 +294,7 @@ Sum the per-lesson prices, compare to balance under the household lock, commit t
 - **Receipt sender identity:** same sender setup as the existing transactional emails (ADR 028). No new sender identity for balance emails.
 - **"Buy a package" available to brand-new households** before they've booked a lesson: yes.
 - **Refund cutoff:** none. Full refund any time, including immediately before the lesson, including 30 minutes before — the earlier "30-minute parent-cancel cutoff" referenced in planning does not exist.
-- **Age gate:** none at the pricing layer. Kids 3 and under book 30 minutes the same way everyone else books 30 minutes — no special rule, no server-side age gate on duration. The FAQ ages answer gets edited (see §8) so it no longer promises "20-minute bursts."
+- **Age gate:** none at the pricing layer. Kids 3 and under book 30 minutes the same way everyone else books 30 minutes — no special rule, no server-side age gate on duration. The FAQ ages answer gets edited (see §9) so it no longer promises "20-minute bursts."
 - **Unused balance (Q1-from-brief):** still waiting on Jason. Options A / B / C remain in §6 with A recommended.
 
 ---
@@ -405,7 +405,94 @@ What the kids'-data / payments legal review needs to see:
 
 ---
 
-## 8. Phases on this branch — backend before UI
+## 8. Terms, policies, and acceptance
+
+The plain-language policy work ships with Phase 8 Part B, once Jason confirms the refund rule in §6. Everything below is a draft shape for that bundle — no code changes between now and then. Every item in this section is **draft, pending lawyer review before launch**.
+
+### What exists today
+
+- `/terms` — `apps/web/src/app/terms/page.tsx` renders `TermsContent` behind a prominent "Draft — not in effect" banner. Covers who-can-use, acceptable use, accounts, account suspension, a lesson section whose cancellation line is a `[Cancellation policy]` placeholder, and placeholder stubs for liability, governing law, and contact. No payment, pricing, or refund language.
+- `/privacy` — `apps/web/src/app/privacy/page.tsx` renders `PrivacyContent` behind the same draft banner. Covers age gate (18+), account data basics, lesson-records privacy, and placeholder stubs for data retention, user rights, and governing law. No Stripe or payment-data section.
+- No `/refund-policy`, no `/payments-policy`, no dedicated payments legal page.
+- Signup (`SignupContent.tsx`) already renders one checkbox: *"I agree to the Terms of Service and Privacy Policy"*, with both terms linked. `SignUpBodySchema` requires `acceptedTerms: z.literal(true)` at the API boundary — a false/absent value returns 422. **Nothing is stored**: the acceptance is a gate, not a record. No version string, no timestamp, no audit log row.
+
+### What ships with Phase 8 Part B
+
+A new "Payments & Refund Policy" page plus the storage and re-acceptance mechanics. The content below is the draft plain-language section for that page (or a new "Payments, credit, and refunds" block appended to `TermsContent` — the shape depends on how long the final copy runs; pick at implementation time).
+
+### Draft content — "Payments, credit, and refunds"
+
+Audience is parents with no finance jargon. Headings below are the final headings; body is the shape of the copy, not the final wording.
+
+- **Your prepaid balance.** One balance per family in your account. Every lesson comes out of it; every refund goes back into it. You add to it with a card.
+- **What a lesson costs.** $120 an hour, billed by the minute (30 min = $60, 45 min = $90, 60 min = $120). Lessons with more than one swimmer from the same family are cheaper per swimmer: 2 at $180/hr, 3 at $198/hr, 4 at $216/hr. The booking screen shows the exact price before you confirm.
+- **Packages and bonus credit.** Buying a package gives you more lesson credit than it costs. *Cannonball* is 10 hours of lessons for 10% off. *Deep End* is 20 hours for 20% off. The extra credit (the discount part) is a bonus we add on top of what you paid; see "If you ask for your unused money back" for how it's treated if you later ask for a refund.
+- **Credit never expires.** Whatever is on your balance stays there until you spend it or ask for it back.
+- **Prices are locked at booking.** The price shown when you book is the price you're charged, and it's also the amount refunded if that lesson is later cancelled — even if Jason's rates change in between.
+- **Booking needs enough balance.** If your balance isn't enough for a lesson, the booking screen walks you through adding exactly the shortfall or buying a package. No surprise charges and no negative balances.
+- **Cancellations, declines, no-shows: full refund, any time.** If you cancel, if Jason declines or cancels on his side, if a lesson is marked no-show, or if a pending lesson expires without approval, the full lesson price goes back onto your balance. No cutoff window. No fee.
+- **Jason can adjust your balance.** If Jason credits or debits your balance by hand — for example to credit an off-platform payment or fix a mistake — your balance history shows the amount, the time, and the reason he typed.
+- **If you ask for your unused money back.** You can ask Jason to refund the leftover credit to your card at any time. We treat the lessons you've already taken as if you had paid regular (non-package) prices for them; whatever's left of what you actually paid comes back to your card. Bonus credit from a package isn't cash and isn't returned.
+  - Worked example: you buy Cannonball for $1,080 (which puts $1,200 of credit on your balance) and take $600 of lessons. $600 of lessons at regular prices means $1,080 − $600 = **$480 refunded to your card**. Any balance remaining after that is unused package bonus, which isn't cash.
+- **Refunds on account deletion.** When you delete your account, any leftover money is refunded to your card automatically using the same rule above. If a charge is older than Stripe's 180-day refund window, Jason will contact you to arrange it by hand.
+- **How payments are handled.** Card payments go through Stripe. Your card number, CVV, and expiry are entered on Stripe's own pages — we never see them, store them, or log them. Stripe sends you a receipt for every top-up.
+- **Questions.** Email Jason at [contact email] for anything about charges, refunds, or your balance.
+
+> Note on the refund rule: the "leftover-credit refund" copy above (*lessons taken count at the regular price, the rest of what you paid comes back*) is a refinement of §6 Option B's post-commit refund engine. Under this rule, the refundable amount is `cashPaid − valueConsumedAtRegularPrices`, not `balanceRemaining`. The implementation and the final copy both land once Jason confirms the rule.
+
+### Signup acceptance
+
+**UI.** The single checkbox is reworded to cover the new policy:
+
+> I agree to the **Terms of Service** and the **Payments & Refund Policy**.
+
+Both names linked. The Privacy Policy stays linked from the surrounding copy (final wording TBD with the lawyer) because it's a notice of practice, not something the user can bargain away — but the lawyer may want it inside the checkbox. Flagged in the legal review.
+
+**Schema (`packages/shared`).** `SignUpBodySchema` gains an `acceptedPolicyVersion: z.string()` field alongside the existing `acceptedTerms: z.literal(true)`. The web form submits the version string the server-rendered page carries in a hidden input, so the client cannot invent a version it did not actually see.
+
+**Storage.** New table `user_policy_acceptances`:
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | uuid PK | |
+| `user_id` | uuid not null → profiles | indexed |
+| `policy_slug` | text not null | `'terms'`, `'privacy'`, `'payments_refund'` — validated by Zod, not a DB enum, so new slugs are a copy-code change not a migration |
+| `version` | text not null | the policy document's version string at acceptance time |
+| `accepted_at` | timestamptz not null default now() | |
+| `source` | text not null | `'signup'` or `'reaccept_prompt'` |
+
+Append-only (same trigger shape as the balance ledger). Re-acceptances write new rows — never updates. Every insert pairs with a `household_audit_log` row in the same transaction (new audit actions `policy_accepted_signup`, `policy_accepted_reprompt`).
+
+**Policy versions.** Each policy page exports a module-level constant — e.g. `export const PAYMENTS_POLICY_VERSION = '2026-11-15'` — that the Terms / Privacy / Payments pages render in a footer line (*"Version 2026-11-15"*) and that the signup page passes as the hidden field. Bumping a policy is a one-line change: edit the copy, bump the constant.
+
+### Re-acceptance on policy change
+
+When any policy's `VERSION` constant changes, existing parents must re-accept before booking a lesson or adding funds.
+
+- A new API helper `requireCurrentPolicyAcceptance` runs **after** `requireParent` on `POST /lessons`, `POST /parent/batch-bookings`, and `POST /payments/checkout-session`. It reads the latest `(user, policy)` row per tracked policy and returns 409 `{ error: 'policy_acceptance_required', missing: ['terms'|'privacy'|'payments_refund', ...] }` if any row is below the current version.
+- On the web side, the booking and balance pages catch the 409 and redirect to `/policy-updated` — an interstitial listing the changed policies with a short "What changed" summary and a single accept-all button. Accepting posts to `POST /me/policies/accept`, which writes new rows for every stale policy and audits them.
+- The interstitial is the only screen that mutates acceptance outside signup. It is **not** shown on login or on read-only pages; parents who only read dashboards never see it.
+
+### Add-funds and package screens
+
+Both surfaces get a one-line link directly above the pay button:
+
+> Payments and refunds are covered by our [Payments & Refund Policy](/refund-policy).
+
+Not a checkbox at the pay button — acceptance was captured at signup (and recaptured on version change). The link is a visibility nudge, not a gate. Placement: one line below the price, one line above the primary CTA, matching the spacing rhythm the booking confirm screen already uses.
+
+### Legal review additions
+
+The §7 packet grows by these items, every one flagged **"draft, pending lawyer review before launch"**:
+
+- **Payments & Refund Policy copy** — the draft in this section, including the leftover-credit refund rule and the automatic-refund-on-deletion behavior.
+- **Signup acceptance mechanics** — the two-linked-policies checkbox wording, the stored `(policy, version, timestamp)` record, and the audit trail. Legal confirms the checkbox wording and whether the Privacy Policy belongs inside the checkbox or alongside it.
+- **Re-acceptance flow on policy change** — the version-bump interstitial. Legal confirms whether an affirmative click is required or whether a passive notice ("we've updated our terms") satisfies the jurisdiction (we're implementing affirmative; if legal says passive is enough, scope drops to a banner).
+- **Privacy Policy payments section** — the current `PrivacyContent` has a `[Additional data collection details — e.g. lesson records, payment information, cookies — to be completed.]` placeholder. The Phase 8 Part B bundle fills it with the Stripe-boundary language already in §7: *card number/CVV/expiry never touch our servers; we store integer-cents balance movements, Stripe session and payment-intent ids, and event metadata; no full Stripe payloads; no copied customer details.*
+
+---
+
+## 9. Phases on this branch — backend before UI
 
 **Phase 1 — Schema and shared pricing (no behavior change yet)**
 
@@ -482,16 +569,27 @@ Part A — ledger anonymization (unconditional):
 Part B — unused-balance path (depends on §6 outcome, pending Jason):
 
 - If Option A: deletion-flow preflight; Jason-mediated refund via Stripe dashboard with a mirrored negative `coach_adjustment` row. Deletion blocks until balance = $0.
-- If Option B: automatic-refund engine in the deletion job post-commit task walks `card_topup` + `package_purchase` rows most-recent-first and issues Stripe refunds until the remaining balance is zero, flagging any residual beyond Stripe's 180-day refund window for Jason.
+- If Option B: automatic-refund engine in the deletion job post-commit task walks `card_topup` + `package_purchase` rows most-recent-first and issues Stripe refunds until the remaining balance is zero, flagging any residual beyond Stripe's 180-day refund window for Jason. If Jason confirms the leftover-credit refund rule in §8 (*lessons taken count at regular prices, the rest of what they paid comes back*), the refundable total is `cashPaid − valueConsumedAtRegularPrices`, not `balanceRemaining` — the engine honors that rule.
 - If Option C: forfeiture row (`coach_adjustment` with `amount_cents = -balance` and `reason = 'account_deletion_forfeit'`) written in the deletion transaction, plus the legal/copy work.
+
+**Terms, policies, and acceptance** also ships in Part B, per §8:
+
+- New `user_policy_acceptances` table, append-only, audited.
+- `SignUpBodySchema` gains `acceptedPolicyVersion`; signup writes one `user_policy_acceptances` row per tracked policy in the same transaction as account creation.
+- "Payments & Refund Policy" page (or appended section on `/terms`) with the §8 draft content.
+- `requireCurrentPolicyAcceptance` middleware on `POST /lessons`, `POST /parent/batch-bookings`, `POST /payments/checkout-session`. 409 on stale acceptance.
+- `/policy-updated` interstitial + `POST /me/policies/accept` endpoint for re-acceptance.
+- Refund-policy link above the pay button on `/account/balance` package cards and the "Add credit for one lesson" form.
+- `PrivacyContent` payments-section placeholder filled with the Stripe-boundary language from §7.
 
 ---
 
-## 9. Open questions
+## 10. Open questions
 
 ### For Jason
 
-1. **Unused-balance policy** — Option A, B, or C in §6. Recommendation: A.
+1. **Unused-balance policy** — Option A, B, or C in §6. Recommendation: A. The plain-language policy draft in §8 is written against Option B with the leftover-credit refund rule; if Jason picks a different option the §8 copy and the Phase 8 Part B refund engine both change to match.
+2. **Leftover-credit refund rule** — sign off on the §8 wording: *lessons taken count at regular prices, the rest of what you paid comes back; package bonus credit isn't cash and isn't returned.* Confirmation unblocks the Phase 8 Part B refund-engine implementation and the final Payments & Refund Policy copy.
 
 ### Calls I'm making myself (will proceed unless flagged)
 
@@ -513,4 +611,7 @@ Part B — unused-balance path (depends on §6 outcome, pending Jason):
 - **Package tier switcher** lets parents buy any swimmer-count variant; household's active count is highlighted as the default.
 - **Coach-adjustment reason is required.**
 - **Stripe receipts stay on.** Same sender identity as existing emails for our outbox messages.
-- **Legal review covers the Stripe data boundary, the anonymize-not-delete ledger scrub, the "full refund any time" policy copy, and the unclaimed-property question** before the first production charge.
+- **Legal review covers the Stripe data boundary, the anonymize-not-delete ledger scrub, the "full refund any time" policy copy, the unclaimed-property question, the §8 Payments & Refund Policy draft, the signup acceptance mechanics, and the re-acceptance interstitial flow** before the first production charge.
+- **Signup records acceptance as data, not just a gate.** `SignUpBodySchema` gains `acceptedPolicyVersion`; a new `user_policy_acceptances` table stores one append-only row per `(user, policy, version)` acceptance, paired with a `household_audit_log` row in the same transaction.
+- **Policy version bumps trigger an affirmative re-acceptance interstitial** on the next booking or add-funds attempt. Read-only pages never prompt.
+- **Refund-policy link lives above the pay button** on package cards and the "Add credit for one lesson" form. Not a checkbox at the pay button — acceptance was captured at signup and recaptured on version change.
