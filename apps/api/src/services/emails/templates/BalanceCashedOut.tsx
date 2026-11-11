@@ -72,8 +72,8 @@ export default function BalanceCashedOut({
         </Text>
       )}
       <Text style={bodyStyle}>
-        Your balance is now zero. Refunds land on your card within five to
-        ten business days.
+        Your balance is now zero. Your refund is on its way to your card
+        and can take a few business days to appear.
       </Text>
       <CtaButton href={payload.deepLink} label="View balance" />
     </EmailLayout>

@@ -21,6 +21,7 @@ import { getEnv } from "../../lib/env";
 import { enqueueBalanceCashedOutEmail } from "../emails/balanceCashedOutOutbox";
 import { applyLedgerEntry, withBalanceLock } from "./ledger";
 import { INITIAL_POST_COMMIT_DELAY_SECONDS } from "./cashRefundDrain";
+import { enqueueCashRefundNeedsManualNotification } from "./notifications";
 
 type Db = PostgresJsDatabase<typeof schema>;
 
@@ -183,137 +184,222 @@ export interface ExecuteCashOutResult {
  *
  * Caller is responsible for kicking the drain (e.g. microtask) after
  * this function returns.
+ *
+ * `opts.skipEmail` suppresses the parent `balance_cashed_out` outbox
+ * row — the account-deletion path uses it because the parent sees the
+ * amounts on the confirm-endpoint response instead. Defaults to
+ * false so the coach-initiated cash-out still emails the family.
  */
 export async function executeCashOut(args: {
   householdId: string;
   actorId: string;
+  opts?: { skipEmail?: boolean };
 }): Promise<ExecuteCashOutResult> {
-  return withBalanceLock(args.householdId, async (tx) => {
-    const breakdown = await getCashOutBreakdown(args.householdId, tx);
-    if (breakdown.refundableCents === 0 && breakdown.writeOffCents === 0) {
-      return {
-        breakdown,
-        cashRefundLedgerIds: [],
-        writeOffLedgerId: null,
-        cashRefundJobIds: [],
-        emailOutboxId: null,
-        needsManualHandlingCents: 0,
-      };
-    }
+  return withBalanceLock(args.householdId, async (tx) =>
+    executeCashOutInTx(tx, args),
+  );
+}
 
-    // Allocate the refundable total across available payments
-    // newest-first. Payments with a null payment-intent id are
-    // skipped — we can't call Stripe without one. Allocation uses
-    // pure math on the remaining totals so no Stripe call happens
-    // inside the transaction.
-    const payments = await loadRefundablePayments(tx, args.householdId);
-    let remaining = breakdown.refundableCents;
-    const allocations: Array<{
-      payment: PaymentRemaining;
-      amountCents: number;
-    }> = [];
-    for (const payment of payments) {
-      if (remaining <= 0) break;
-      if (payment.remainingCents <= 0) continue;
-      if (payment.stripePaymentIntentId === null) continue;
-      const take = Math.min(remaining, payment.remainingCents);
-      allocations.push({ payment, amountCents: take });
-      remaining -= take;
-    }
-    const needsManualHandlingCents = Math.max(0, remaining);
+/**
+ * Same as `executeCashOut` but runs inside a caller-owned transaction
+ * that already holds the per-household balance advisory lock. The
+ * account-deletion solo path uses this so the cash-refund rows land
+ * inside the deletion transaction, before `anonymizeHouseholdLedger`
+ * nulls their `household_id`. Caller is responsible for the lock —
+ * `withBalanceLock` is the preferred entry point for anyone else.
+ */
+export async function executeCashOutInTx(
+  tx: Db,
+  args: {
+    householdId: string;
+    actorId: string;
+    opts?: { skipEmail?: boolean };
+  },
+): Promise<ExecuteCashOutResult> {
+  const skipEmail = args.opts?.skipEmail ?? false;
+  const breakdown = await getCashOutBreakdown(args.householdId, tx);
+  if (breakdown.refundableCents === 0 && breakdown.writeOffCents === 0) {
+    return {
+      breakdown,
+      cashRefundLedgerIds: [],
+      writeOffLedgerId: null,
+      cashRefundJobIds: [],
+      emailOutboxId: null,
+      needsManualHandlingCents: 0,
+    };
+  }
 
-    const cashRefundLedgerIds: string[] = [];
-    const cashRefundJobIds: string[] = [];
+  // Allocate the refundable total across available payments
+  // newest-first. Payments with a null payment-intent id are
+  // skipped — we can't call Stripe without one. Allocation uses
+  // pure math on the remaining totals so no Stripe call happens
+  // inside the transaction.
+  const payments = await loadRefundablePayments(tx, args.householdId);
+  let remaining = breakdown.refundableCents;
+  const allocations: Array<{
+    payment: PaymentRemaining;
+    amountCents: number;
+  }> = [];
+  for (const payment of payments) {
+    if (remaining <= 0) break;
+    if (payment.remainingCents <= 0) continue;
+    if (payment.stripePaymentIntentId === null) continue;
+    const take = Math.min(remaining, payment.remainingCents);
+    allocations.push({ payment, amountCents: take });
+    remaining -= take;
+  }
+  const needsManualHandlingCents = Math.max(0, remaining);
 
-    for (const alloc of allocations) {
-      // Narrow: allocations only include payments with a non-null
-      // payment_intent_id (filter above).
-      const paymentIntentId = alloc.payment.stripePaymentIntentId;
-      if (paymentIntentId === null) continue;
-      const ledgerId = await applyLedgerEntry(tx, {
-        entryType: "cash_refund",
+  const cashRefundLedgerIds: string[] = [];
+  const cashRefundJobIds: string[] = [];
+
+  for (const alloc of allocations) {
+    // Narrow: allocations only include payments with a non-null
+    // payment_intent_id (filter above).
+    const paymentIntentId = alloc.payment.stripePaymentIntentId;
+    if (paymentIntentId === null) continue;
+    const ledgerId = await applyLedgerEntry(tx, {
+      entryType: "cash_refund",
+      householdId: args.householdId,
+      actorId: args.actorId,
+      amountCents: -alloc.amountCents,
+      stripeCheckoutSessionId: alloc.payment.stripeCheckoutSessionId,
+      stripePaymentIntentId: paymentIntentId,
+      refundOfLedgerId: alloc.payment.ledgerId,
+    });
+    cashRefundLedgerIds.push(ledgerId);
+    const jobRows = await tx
+      .insert(cashRefundJobs)
+      .values({
+        ledgerId,
         householdId: args.householdId,
-        actorId: args.actorId,
-        amountCents: -alloc.amountCents,
-        stripeCheckoutSessionId: alloc.payment.stripeCheckoutSessionId,
         stripePaymentIntentId: paymentIntentId,
-        refundOfLedgerId: alloc.payment.ledgerId,
-      });
-      cashRefundLedgerIds.push(ledgerId);
-      const jobRows = await tx
-        .insert(cashRefundJobs)
-        .values({
-          ledgerId,
-          householdId: args.householdId,
-          stripePaymentIntentId: paymentIntentId,
-          idempotencyKey: randomUUID(),
-          amountCents: alloc.amountCents,
-        })
-        .returning({ id: cashRefundJobs.id });
-      const jobId = jobRows[0]?.id;
-      if (!jobId) {
-        throw new Error(
-          "executeCashOut: cash_refund_jobs insert returned no row",
-        );
-      }
-      cashRefundJobIds.push(jobId);
+        idempotencyKey: randomUUID(),
+        amountCents: alloc.amountCents,
+      })
+      .returning({ id: cashRefundJobs.id });
+    const jobId = jobRows[0]?.id;
+    if (!jobId) {
+      throw new Error(
+        "executeCashOut: cash_refund_jobs insert returned no row",
+      );
     }
+    cashRefundJobIds.push(jobId);
+  }
 
-    // The write-off is the gap between the family's current balance
-    // and what we can refund to card. Anything that remains after the
-    // refundable allocation (unused bonus, coach gifts, or residual
-    // payments-older-than-180-days amounts that couldn't be allocated)
-    // is written off here so the balance zeroes.
-    let writeOffLedgerId: string | null = null;
-    const writeOffTotal = breakdown.writeOffCents + needsManualHandlingCents;
-    if (writeOffTotal > 0) {
-      writeOffLedgerId = await applyLedgerEntry(tx, {
-        entryType: "balance_writeoff",
+  // Stop 2 shape change: refundable residual that couldn't be matched
+  // to any live payment is no longer silently folded into the
+  // write-off. Instead we write a separate `cash_refund` ledger row
+  // (null stripe ids — the CHECK was relaxed to allow this) + a
+  // `cash_refund_jobs` row directly at status='needs_manual_handling'
+  // with the reason tag so Jason's family-page banner surfaces the
+  // amount he owes the family off platform. Only true write-off
+  // amounts (unused bonus credit + coach gifts) stay as
+  // `balance_writeoff` — those are money we never collected to begin
+  // with.
+  if (needsManualHandlingCents > 0) {
+    const residualLedgerId = await applyLedgerEntry(tx, {
+      entryType: "cash_refund",
+      householdId: args.householdId,
+      actorId: args.actorId,
+      amountCents: -needsManualHandlingCents,
+    });
+    cashRefundLedgerIds.push(residualLedgerId);
+
+    const residualReason = "no_refundable_card_payment";
+    const residualJobRows = await tx
+      .insert(cashRefundJobs)
+      .values({
+        ledgerId: residualLedgerId,
         householdId: args.householdId,
-        actorId: args.actorId,
-        amountCents: -writeOffTotal,
-      });
+        stripePaymentIntentId: null,
+        idempotencyKey: randomUUID(),
+        amountCents: needsManualHandlingCents,
+        status: "needs_manual_handling",
+        attempts: 0,
+        needsManualReason: residualReason,
+      })
+      .returning({ id: cashRefundJobs.id });
+    const residualJobId = residualJobRows[0]?.id;
+    if (!residualJobId) {
+      throw new Error(
+        "executeCashOut: cash_refund_jobs residual insert returned no row",
+      );
     }
+    cashRefundJobIds.push(residualJobId);
 
-    // Seed `next_attempt_at` on the fresh jobs so a concurrent cron
-    // tick firing between the INSERT above and the post-commit kick
-    // can't claim the row before the kick fires (same posture as the
-    // account-deletion flow). Overwrites the row's `now()` default.
-    // postgres-js serializes JS arrays into Postgres `=`/`IN` lists
-    // correctly via drizzle's `inArray`, but a bare ANY($1::uuid[])
-    // passes the array stringified as "uuid" which Postgres rejects
-    // as a malformed array literal. Use `inArray` instead.
-    if (cashRefundJobIds.length > 0) {
-      await tx
-        .update(cashRefundJobs)
-        .set({
-          nextAttemptAt: sql`now() + make_interval(secs => ${INITIAL_POST_COMMIT_DELAY_SECONDS})`,
-        })
-        .where(inArray(cashRefundJobs.id, cashRefundJobIds));
-    }
+    await enqueueCashRefundNeedsManualNotification(tx, {
+      jobId: residualJobId,
+      householdId: args.householdId,
+      amountCents: needsManualHandlingCents,
+      reason: residualReason,
+      siteUrl: getEnv().siteUrl,
+    });
+  }
 
-    // Enqueue the parent `balance_cashed_out` email in the same
-    // transaction so the family receipt lands with the ledger rows or
-    // not at all. Prior cash-refund total excludes the rows this
-    // cash-out just wrote (so a family that was never partially
-    // refunded sees "$0 previously refunded").
-    const emailOutboxId = await enqueueBalanceCashedOutEmail(tx, {
+  // The write-off is ONLY the gap between what was refundable and the
+  // family's current balance: unused bonus credit and coach gifts
+  // that came in without a card payment. Residual-that-couldn't-be-
+  // matched is no longer folded in here — it rides on the cash_refund
+  // row above instead so the audit trail reads "we owe this money"
+  // rather than "we forfeit it."
+  let writeOffLedgerId: string | null = null;
+  if (breakdown.writeOffCents > 0) {
+    writeOffLedgerId = await applyLedgerEntry(tx, {
+      entryType: "balance_writeoff",
+      householdId: args.householdId,
+      actorId: args.actorId,
+      amountCents: -breakdown.writeOffCents,
+    });
+  }
+
+  // Seed `next_attempt_at` on the fresh drain-eligible jobs so a
+  // concurrent cron tick firing between the INSERT above and the
+  // post-commit kick can't claim the row before the kick fires (same
+  // posture as the account-deletion flow). Overwrites the row's
+  // `now()` default. Only `pending` rows are drain-eligible — the
+  // residual needs-manual-handling job is already terminal-until-
+  // resolve and never claimed by the drain. postgres-js serializes
+  // JS arrays into Postgres `=`/`IN` lists correctly via drizzle's
+  // `inArray`, but a bare ANY($1::uuid[]) passes the array
+  // stringified as "uuid" which Postgres rejects as a malformed array
+  // literal. Use `inArray` instead.
+  const drainEligibleJobIds = cashRefundJobIds.slice(0, allocations.length);
+  if (drainEligibleJobIds.length > 0) {
+    await tx
+      .update(cashRefundJobs)
+      .set({
+        nextAttemptAt: sql`now() + make_interval(secs => ${INITIAL_POST_COMMIT_DELAY_SECONDS})`,
+      })
+      .where(inArray(cashRefundJobs.id, drainEligibleJobIds));
+  }
+
+  // Enqueue the parent `balance_cashed_out` email in the same
+  // transaction so the family receipt lands with the ledger rows or
+  // not at all. Prior cash-refund total excludes the rows this
+  // cash-out just wrote (so a family that was never partially
+  // refunded sees "$0 previously refunded"). Skipped on the deletion
+  // path — the parent sees amounts on the confirm-endpoint response
+  // and the follow-up account-deleted email instead.
+  let emailOutboxId: string | null = null;
+  if (!skipEmail) {
+    emailOutboxId = await enqueueBalanceCashedOutEmail(tx, {
       householdId: args.householdId,
       totalCardPaidCents: breakdown.totalCardPaidCents,
       totalCashRefundedPriorCents: breakdown.totalCashRefundedCents,
       netLessonSpendingCents: breakdown.netLessonSpendingCents,
       refundableCents: breakdown.refundableCents,
-      writeOffCents: breakdown.writeOffCents + needsManualHandlingCents,
+      writeOffCents: breakdown.writeOffCents,
       siteUrl: getEnv().siteUrl,
     });
+  }
 
-    return {
-      breakdown,
-      cashRefundLedgerIds,
-      writeOffLedgerId,
-      cashRefundJobIds,
-      emailOutboxId,
-      needsManualHandlingCents,
-    };
-  });
+  return {
+    breakdown,
+    cashRefundLedgerIds,
+    writeOffLedgerId,
+    cashRefundJobIds,
+    emailOutboxId,
+    needsManualHandlingCents,
+  };
 }

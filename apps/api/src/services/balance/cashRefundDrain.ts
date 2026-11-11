@@ -18,7 +18,9 @@ import { sql } from "drizzle-orm";
 import type { Logger } from "pino";
 
 import { db } from "../../db/client";
+import { getEnv } from "../../lib/env";
 import { createCashRefund, type CreateRefundResult } from "../stripe/refunds";
+import { enqueueCashRefundNeedsManualNotification } from "./notifications";
 
 // Attempts budget. Shorter than account-deletion's 11 — Stripe refund
 // errors that aren't code-level terminal are usually transient
@@ -100,6 +102,7 @@ export async function runCashRefundRetryDrain(
   const claimed = await db.execute<{
     id: string;
     ledger_id: string;
+    household_id: string | null;
     stripe_payment_intent_id: string;
     idempotency_key: string;
     amount_cents: number;
@@ -113,17 +116,19 @@ export async function runCashRefundRetryDrain(
       SELECT id FROM cash_refund_jobs
       WHERE status = 'pending'
         AND attempts < ${CASH_REFUND_MAX_ATTEMPTS}
+        AND stripe_payment_intent_id IS NOT NULL
         AND next_attempt_at <= now()
       ORDER BY next_attempt_at ASC
       LIMIT ${DRAIN_BATCH_SIZE}
       FOR UPDATE SKIP LOCKED
     )
-    RETURNING id, ledger_id, stripe_payment_intent_id, idempotency_key, amount_cents, attempts
+    RETURNING id, ledger_id, household_id, stripe_payment_intent_id, idempotency_key, amount_cents, attempts
   `);
 
   const eligible = claimed.map((row) => ({
     id: row.id,
     ledgerId: row.ledger_id,
+    householdId: row.household_id,
     stripePaymentIntentId: row.stripe_payment_intent_id,
     idempotencyKey: row.idempotency_key,
     amountCents: row.amount_cents,
@@ -183,17 +188,32 @@ export async function runCashRefundRetryDrain(
 
     // Terminal: either non-retryable or budget exhausted after this
     // increment. Ledger row stays (append-only); we just flag the job
-    // for Jason to resolve off-platform. Log at `error` level so a
+    // for Jason to resolve off-platform. The UPDATE + the coach
+    // notification insert run inside one transaction so the bell row
+    // and the state transition commit or roll back together — a lone
+    // UPDATE without a matching notification would leave the family-
+    // page banner feeding off stale data. Log at `error` level so a
     // log-based alert can fire.
-    await db.execute(sql`
-      UPDATE cash_refund_jobs
-      SET status = 'needs_manual_handling',
-          attempts = attempts + 1,
-          last_error = ${result.reason},
-          next_attempt_at = now(),
-          claimed_until = NULL
-      WHERE id = ${job.id}
-    `);
+    const needsManualReason = `stripe_refund_failed:${result.reason}`;
+    await db.transaction(async (tx) => {
+      await tx.execute(sql`
+        UPDATE cash_refund_jobs
+        SET status = 'needs_manual_handling',
+            attempts = attempts + 1,
+            last_error = ${result.reason},
+            needs_manual_reason = ${needsManualReason},
+            next_attempt_at = now(),
+            claimed_until = NULL
+        WHERE id = ${job.id}
+      `);
+      await enqueueCashRefundNeedsManualNotification(tx, {
+        jobId: job.id,
+        householdId: job.householdId,
+        amountCents: job.amountCents,
+        reason: needsManualReason,
+        siteUrl: getEnv().siteUrl,
+      });
+    });
     log.error(
       {
         event: "cash_refund_needs_manual_handling",

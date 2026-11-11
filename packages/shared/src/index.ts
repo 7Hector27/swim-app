@@ -34,6 +34,10 @@ export type {
   CoachAdjustBalanceResponse,
   CashOutBreakdown,
   CashOutResponse,
+  NeedsManualRefundJob,
+  NeedsManualRefundListResponse,
+  MarkCashRefundHandledBody,
+  MarkCashRefundHandledResponse,
 } from "./schemas/payments";
 export {
   SwimmerCountSchema,
@@ -52,6 +56,10 @@ export {
   CoachAdjustBalanceResponseSchema,
   CashOutBreakdownSchema,
   CashOutResponseSchema,
+  NeedsManualRefundJobSchema,
+  NeedsManualRefundListResponseSchema,
+  MarkCashRefundHandledBodySchema,
+  MarkCashRefundHandledResponseSchema,
 } from "./schemas/payments";
 
 export {

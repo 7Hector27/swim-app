@@ -227,3 +227,34 @@ export const CashOutResponseSchema = z.object({
 });
 export type CashOutResponse = z.infer<typeof CashOutResponseSchema>;
 
+// Needs-manual-handling cash-refund job as surfaced to the coach banner
+// on a family page (ADR 036 Phase 8 Part B Stop 2). The amount is
+// positive cents; the family is owed this amount back and Jason must
+// refund it off platform (e.g. via the Stripe dashboard for a payment
+// older than 180 days, or Venmo for one that no longer exists).
+export const NeedsManualRefundJobSchema = z.object({
+  id: z.string().uuid(),
+  amountCents: z.number().int().positive(),
+  reason: z.string(),
+  createdAt: z.string().datetime({ offset: true }),
+});
+export type NeedsManualRefundJob = z.infer<typeof NeedsManualRefundJobSchema>;
+
+export const NeedsManualRefundListResponseSchema = z.object({
+  jobs: z.array(NeedsManualRefundJobSchema),
+});
+export type NeedsManualRefundListResponse = z.infer<typeof NeedsManualRefundListResponseSchema>;
+
+// Request body for the coach "Mark as refunded" action — Jason types a
+// note describing how he settled the refund off-platform.
+export const MarkCashRefundHandledBodySchema = z.object({
+  note: z.string().trim().min(1, "note is required").max(500, "note must be 500 characters or fewer"),
+}).strict();
+export type MarkCashRefundHandledBody = z.infer<typeof MarkCashRefundHandledBodySchema>;
+
+export const MarkCashRefundHandledResponseSchema = z.object({
+  jobId: z.string().uuid(),
+  status: z.literal("succeeded"),
+});
+export type MarkCashRefundHandledResponse = z.infer<typeof MarkCashRefundHandledResponseSchema>;
+

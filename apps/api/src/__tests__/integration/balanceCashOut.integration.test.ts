@@ -19,11 +19,13 @@ import {
 } from "./helpers";
 import {
   cashRefundJobs,
+  coachNotifications,
   householdAuditLog,
   householdBalanceLedger,
   lessonEmailOutbox,
   lessons,
   lessonLocations,
+  profiles,
 } from "../../db/schema";
 import {
   applyLedgerEntry,
@@ -39,6 +41,7 @@ createApp(pino({ level: "silent" }));
 const silentLog = pino({ level: "silent" });
 
 let owner: TestUser;
+let coach: TestUser | undefined;
 let locationId: string;
 const seededLessonIds: string[] = [];
 
@@ -95,10 +98,20 @@ async function clearHousehold(): Promise<void> {
         eq(lessonEmailOutbox.event, "balance_cashed_out"),
       ),
     );
+  // Clear needs-manual-handling notifications; getActiveCoachProfile
+  // picks an arbitrary coach in a shared test DB, so key on category.
+  await adminDb()
+    .delete(coachNotifications)
+    .where(eq(coachNotifications.category, "cash_refund_needs_manual_handling"));
 }
 
 beforeAll(async () => {
   owner = await createTestUser("cashout-owner");
+  coach = await createTestUser("cashout-coach");
+  await adminDb()
+    .update(profiles)
+    .set({ role: "coach" })
+    .where(eq(profiles.id, coach.userId));
   const locs = await adminDb()
     .select({ id: lessonLocations.id })
     .from(lessonLocations)
@@ -121,6 +134,7 @@ afterAll(async () => {
       .where(eq(lessons.householdId, owner.householdId));
   }
   await owner.cleanup();
+  if (coach) await coach.cleanup();
   await closeAdminDb();
 });
 
@@ -710,5 +724,18 @@ describe("cash-refund drain", () => {
       (entry) => entry["event"] === "cash_refund_needs_manual_handling",
     );
     expect(match).toBeDefined();
+
+    // Stop 2: terminal transition also inserts a coach notification
+    // so Jason's family-page banner surfaces the "needs manual" job.
+    // getActiveCoachProfile picks an arbitrary coach in a shared test
+    // DB, so key the query on the jobId-derived tag.
+    const notifs = await adminDb()
+      .select({
+        category: coachNotifications.category,
+      })
+      .from(coachNotifications)
+      .where(eq(coachNotifications.tag, `cash-refund-needs-manual:${jobId}`));
+    expect(notifs).toHaveLength(1);
+    expect(notifs[0]?.category).toBe("cash_refund_needs_manual_handling");
   });
 });

@@ -1368,7 +1368,10 @@ export const coachNotifications = pgTable(
       // 'account_deleted' added for ADR 034 — the summary row Jason sees
       // when a family deletes their account, listing the freed-up lesson
       // times with no family or swimmer identity.
-      sql`${table.category} IN ('booking_request', 'request_expiring_soon', 'parent_change', 'calendar_disconnected', 'auto_approved_summary', 'daily_summary', 'account_deleted')`,
+      // 'cash_refund_needs_manual_handling' added for ADR 036 Phase 8
+      // Part B Stop 2 — the bell row Jason sees when a cash-refund drain
+      // can't complete the refund and he needs to settle it off platform.
+      sql`${table.category} IN ('booking_request', 'request_expiring_soon', 'parent_change', 'calendar_disconnected', 'auto_approved_summary', 'daily_summary', 'account_deleted', 'cash_refund_needs_manual_handling')`,
     ),
     check(
       "coach_notifications_urgency_valid",
@@ -1389,14 +1392,15 @@ export const coachNotifications = pgTable(
       sql`(${table.pushStatus} = 'held') = (${table.releaseAt} IS NOT NULL)`,
     ),
     // Scope rules: per-lesson categories carry lesson_id xor batch_id;
-    // calendar_disconnected and daily_summary carry neither.
+    // calendar_disconnected, daily_summary, account_deleted, and
+    // cash_refund_needs_manual_handling carry neither.
     check(
       "coach_notifications_scope_valid",
       sql`(
         (${table.category} IN ('booking_request', 'request_expiring_soon', 'parent_change', 'auto_approved_summary')
          AND ((CASE WHEN ${table.lessonId} IS NOT NULL THEN 1 ELSE 0 END)
             + (CASE WHEN ${table.batchId} IS NOT NULL THEN 1 ELSE 0 END) = 1))
-        OR (${table.category} IN ('calendar_disconnected', 'daily_summary', 'account_deleted')
+        OR (${table.category} IN ('calendar_disconnected', 'daily_summary', 'account_deleted', 'cash_refund_needs_manual_handling')
             AND ${table.lessonId} IS NULL AND ${table.batchId} IS NULL)
       )`,
     ),
@@ -1643,11 +1647,17 @@ export const householdBalanceLedger = pgTable(
     check(
       "balance_ledger_stripe_session_scope_valid",
       sql`(
-        -- ADR 036 Phase 8 Part B: cash_refund rows must carry the original
-        -- payment's checkout session id so the drain can reconcile a
-        -- refund back to what it reverses, same as card_topup /
-        -- package_purchase / package_bonus write it on the way in.
-        (${table.entryType} IN ('card_topup', 'package_purchase', 'package_bonus', 'cash_refund') AND ${table.stripeCheckoutSessionId} IS NOT NULL)
+        -- ADR 036 Phase 8 Part B: cash_refund rows normally carry the
+        -- original payment's checkout session id so the drain can
+        -- reconcile a refund back to what it reverses, same as
+        -- card_topup / package_purchase / package_bonus on the way in.
+        -- Stop 2 relaxes this so a cash_refund MAY have a null session
+        -- id when the refundable residual couldn't be matched to a live
+        -- card payment (pre-ADR-036 rows, test fixtures, or cards that
+        -- no longer exist) — the amount still lands as money we owe the
+        -- family, resolved off platform by Jason.
+        (${table.entryType} IN ('card_topup', 'package_purchase', 'package_bonus') AND ${table.stripeCheckoutSessionId} IS NOT NULL)
+        OR (${table.entryType} = 'cash_refund')
         OR (${table.entryType} NOT IN ('card_topup', 'package_purchase', 'package_bonus', 'cash_refund') AND ${table.stripeCheckoutSessionId} IS NULL)
       )`,
     ),
@@ -1667,14 +1677,18 @@ export const householdBalanceLedger = pgTable(
     check(
       "balance_ledger_refund_of_scope_valid",
       sql`(
-        -- ADR 036 Phase 8 Part B: cash_refund rows also point at the
+        -- ADR 036 Phase 8 Part B: cash_refund rows normally point at the
         -- original payment via refund_of_ledger_id so the "already
         -- refunded off this payment" roll-up is a single GROUP BY. The
         -- partial UNIQUE on refund_of_ledger_id is predicated on
         -- entry_type='refund_to_balance', so cash_refund rows are
         -- outside that index and may share a target payment (one card
         -- top-up can be partially refunded across several cash-outs).
-        (${table.entryType} IN ('refund_to_balance', 'cash_refund') AND ${table.refundOfLedgerId} IS NOT NULL)
+        -- Stop 2 relaxes this: a cash_refund MAY have a null refund_of
+        -- link when the refundable residual could not be matched to any
+        -- live payment (same shape as the stripe-session relaxation).
+        (${table.entryType} = 'refund_to_balance' AND ${table.refundOfLedgerId} IS NOT NULL)
+        OR (${table.entryType} = 'cash_refund')
         OR (${table.entryType} NOT IN ('refund_to_balance', 'cash_refund') AND ${table.refundOfLedgerId} IS NULL)
       )`,
     ),
@@ -1746,7 +1760,11 @@ export const cashRefundJobs = pgTable(
     // Kept null-able so a later account-deletion anonymization pass can
     // null it without dropping the job row (same posture as ledger).
     householdId: uuid("household_id").references(() => households.id, { onDelete: "set null" }),
-    stripePaymentIntentId: text("stripe_payment_intent_id").notNull(),
+    // Nullable as of Stop 2 — when the refundable residual couldn't be
+    // matched to a live card payment (pre-ADR-036 rows, test fixtures,
+    // a card that no longer exists) the job lands directly at
+    // status='needs_manual_handling' with no Stripe target to refund.
+    stripePaymentIntentId: text("stripe_payment_intent_id"),
     // Stripe idempotency key — UUID, used verbatim as the Stripe
     // `idempotency_key` header so a retry never double-charges.
     idempotencyKey: uuid("idempotency_key").notNull().unique(),
@@ -1761,11 +1779,31 @@ export const cashRefundJobs = pgTable(
     lastAttemptAt: timestamp("last_attempt_at", { withTimezone: true }),
     stripeRefundId: text("stripe_refund_id"),
     succeededAt: timestamp("succeeded_at", { withTimezone: true }),
+    // Stop 2: coach note typed into the "Mark as refunded" modal when
+    // Jason settles a needs_manual_handling job off platform. Null on
+    // every drain-resolved job.
+    resolutionNote: text("resolution_note"),
+    // Stop 2: machine-readable short reason set when a job lands in
+    // needs_manual_handling. The coach-facing banner maps this to a
+    // human-safe string via `reasonForBanner`. Null while status is
+    // 'pending' or on drain-succeeded rows.
+    needsManualReason: text("needs_manual_reason"),
+    // Stop 2: coach profile that ran POST /mark-refunded. Null on
+    // every drain-resolved job. ON DELETE SET NULL so a profile scrub
+    // (account deletion) doesn't cascade-delete the audit trail.
+    resolvedBy: uuid("resolved_by").references(() => profiles.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdateFn(() => new Date()),
   },
   (table) => [
     check("cash_refund_jobs_amount_positive", sql`${table.amountCents} > 0`),
+    // Stop 2: once status='succeeded', succeeded_at must be populated.
+    // Mirrored by the service writes on both paths (drain + mark-
+    // refunded); the CHECK stops a future refactor from forgetting.
+    check(
+      "succeeded_requires_timestamp",
+      sql`${table.status} <> 'succeeded' OR ${table.succeededAt} IS NOT NULL`,
+    ),
     // Partial index on next_attempt_at — the drain filter is
     // `status='pending' AND next_attempt_at <= now()` and we want it
     // index-only on the hot path.

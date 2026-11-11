@@ -92,6 +92,10 @@ export type LedgerEntryInput =
       lessonId: string;
     }
   // ADR 036 Phase 8 Part B — cash-out refund engine.
+  // Two shapes: matched (normal — allocated to a live card payment) and
+  // unmatched (Stop 2 — refundable residual that couldn't be matched to
+  // a live card payment; the ledger row carries null Stripe ids and
+  // null refund_of, the CHECKs permit both as of migration 0083).
   | {
       entryType: "cash_refund";
       householdId: string;
@@ -100,6 +104,12 @@ export type LedgerEntryInput =
       stripeCheckoutSessionId: string; // of the original payment
       stripePaymentIntentId: string; // of the original payment
       refundOfLedgerId: string; // the card_topup / package_purchase row
+    }
+  | {
+      entryType: "cash_refund";
+      householdId: string;
+      actorId: string;
+      amountCents: number; // negative
     }
   | {
       entryType: "balance_writeoff";
@@ -166,30 +176,19 @@ export async function applyLedgerEntry(
       ? input.lessonId
       : null;
 
+  // `cash_refund` has two shapes (matched + unmatched residual); use
+  // `in` checks instead of entryType-only narrowing so the discriminator
+  // overlap doesn't break property access.
   const stripeCheckoutSessionId =
-    input.entryType === "card_topup"
-      || input.entryType === "package_purchase"
-      || input.entryType === "package_bonus"
-      || input.entryType === "cash_refund"
-      ? input.stripeCheckoutSessionId
-      : null;
+    "stripeCheckoutSessionId" in input ? input.stripeCheckoutSessionId : null;
 
   const stripePaymentIntentId =
-    input.entryType === "card_topup"
-      || input.entryType === "package_purchase"
-      || input.entryType === "package_bonus"
-      ? input.stripePaymentIntentId
-      : input.entryType === "cash_refund"
-      ? input.stripePaymentIntentId
-      : null;
+    "stripePaymentIntentId" in input ? input.stripePaymentIntentId : null;
 
   const reason = input.entryType === "coach_adjustment" ? input.reason : null;
 
   const refundOfLedgerId =
-    input.entryType === "refund_to_balance"
-      || input.entryType === "cash_refund"
-      ? input.refundOfLedgerId
-      : null;
+    "refundOfLedgerId" in input ? input.refundOfLedgerId : null;
 
   const insertedRows = await tx
     .insert(householdBalanceLedger)
