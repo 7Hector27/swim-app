@@ -25,21 +25,28 @@ import { and, asc, desc, eq, inArray, lt, or, sql } from "drizzle-orm";
 import {
   approximatePrivateHours,
   BalanceHistoryQuerySchema,
+  CashOutBreakdownSchema,
+  CashOutResponseSchema,
   CoachAdjustBalanceBodySchema,
   IdParamsSchema,
   type BalanceHistoryEntry,
   type BalanceHistoryQuery,
   type BalanceHistoryResponse,
   type BalanceResponse,
+  type CashOutBreakdown,
+  type CashOutResponse,
   type CoachAdjustBalanceBody,
   type CoachAdjustBalanceResponse,
   type CoachHouseholdBalanceListResponse,
   type CoachHouseholdBalanceSummary,
   type IdParams,
+  type NeedsManualRefundJob,
+  type NeedsManualRefundListResponse,
 } from "@swim-app/shared";
 
 import { db } from "../db/client";
 import {
+  cashRefundJobs,
   households,
   householdMembers,
   householdBalanceLedger,
@@ -51,9 +58,13 @@ import { asyncHandler } from "../middleware/asyncHandler";
 import { validate } from "../middleware/validate";
 import {
   applyLedgerEntry,
+  executeCashOut,
+  getCashOutBreakdown,
   getHouseholdBalance,
+  kickCashRefundDrain,
+  reasonForBanner,
   withBalanceLock,
-} from "../services/balance/ledger";
+} from "../services/balance";
 import { enqueueBalanceAdjustedEmail } from "../services/emails/balanceAdjustedOutbox";
 import { sendLessonEmailOutboxRow } from "../services/emails/sender";
 
@@ -467,5 +478,133 @@ coachHouseholdsRouter.post(
         void sendLessonEmailOutboxRow(result.outboxId!);
       });
     }
+  }),
+);
+
+// ── GET /coach/households/:householdId/balance/cash-out/preview ────────────
+//
+// Returns the breakdown Jason sees before clicking "Refund leftover balance"
+// on the family detail page (ADR 036 Phase 8 Part B Stop 2). Pure read; no
+// ledger writes. The same breakdown runs again inside executeCashOut's
+// transaction so the preview is advisory — a concurrent coach adjustment
+// between preview and confirm is resolved by the write-side balance lock.
+
+coachHouseholdsRouter.get(
+  "/households/:id/balance/cash-out/preview",
+  validate({ params: IdParamsSchema }),
+  asyncHandler(async (req, res) => {
+    const { id } = req.params as unknown as IdParams;
+    const householdRows = await db
+      .select({ id: households.id })
+      .from(households)
+      .where(eq(households.id, id))
+      .limit(1);
+    if (householdRows.length === 0) {
+      res.status(404).json({ error: "household_not_found" });
+      return;
+    }
+    const breakdown: CashOutBreakdown = await getCashOutBreakdown(id);
+    // Shape confirmation — the schema is the contract with the UI.
+    res.json(CashOutBreakdownSchema.parse(breakdown));
+  }),
+);
+
+// ── POST /coach/households/:householdId/balance/cash-out ────────────────────
+//
+// Writes the cash_refund + balance_writeoff ledger rows and their drain
+// jobs inside one transaction, then kicks the post-commit drain. Also
+// enqueues the parent `balance_cashed_out` email (ADR 036 Phase 7). The
+// deletion-path variant (`skipEmail: true`) is NOT used here — a coach-
+// initiated cash-out always notifies the family.
+
+coachHouseholdsRouter.post(
+  "/households/:id/balance/cash-out",
+  validate({ params: IdParamsSchema }),
+  asyncHandler(async (req, res) => {
+    const { id } = req.params as unknown as IdParams;
+    const householdRows = await db
+      .select({ id: households.id })
+      .from(households)
+      .where(eq(households.id, id))
+      .limit(1);
+    if (householdRows.length === 0) {
+      res.status(404).json({ error: "household_not_found" });
+      return;
+    }
+
+    const result = await executeCashOut({
+      householdId: id,
+      actorId: req.profile.id,
+    });
+
+    const response: CashOutResponse = {
+      breakdown: result.breakdown,
+      refundJobCount: result.cashRefundJobIds.length,
+      needsManualHandlingCents: result.needsManualHandlingCents,
+    };
+    res.status(200).json(CashOutResponseSchema.parse(response));
+
+    // Post-commit kick — the drain claims pending rows and calls Stripe
+    // with the idempotency key. Does nothing when no drain-eligible jobs
+    // were written (no-op or all-residual cash-outs).
+    if (result.cashRefundJobIds.length > 0) {
+      kickCashRefundDrain(req.log);
+    }
+    // Family receipt — queue the outbox send so the HTTP response
+    // returns promptly. Null outboxId is the "no recipients" edge case.
+    if (result.emailOutboxId !== null) {
+      const emailOutboxId = result.emailOutboxId;
+      queueMicrotask(() => {
+        void sendLessonEmailOutboxRow(emailOutboxId);
+      });
+    }
+  }),
+);
+
+// ── GET /coach/households/:householdId/needs-manual-refund ─────────────────
+//
+// Returns the pending needs-manual-handling cash-refund jobs the coach
+// family-page banner surfaces. Reason strings are mapped through
+// `reasonForBanner` so the UI never sees Stripe internals.
+
+coachHouseholdsRouter.get(
+  "/households/:id/needs-manual-refund",
+  validate({ params: IdParamsSchema }),
+  asyncHandler(async (req, res) => {
+    const { id } = req.params as unknown as IdParams;
+    const householdRows = await db
+      .select({ id: households.id })
+      .from(households)
+      .where(eq(households.id, id))
+      .limit(1);
+    if (householdRows.length === 0) {
+      res.status(404).json({ error: "household_not_found" });
+      return;
+    }
+
+    const jobRows = await db
+      .select({
+        id: cashRefundJobs.id,
+        amountCents: cashRefundJobs.amountCents,
+        needsManualReason: cashRefundJobs.needsManualReason,
+        createdAt: cashRefundJobs.createdAt,
+      })
+      .from(cashRefundJobs)
+      .where(
+        and(
+          eq(cashRefundJobs.householdId, id),
+          eq(cashRefundJobs.status, "needs_manual_handling"),
+        ),
+      )
+      .orderBy(desc(cashRefundJobs.createdAt));
+
+    const jobs: NeedsManualRefundJob[] = jobRows.map((row) => ({
+      id: row.id,
+      amountCents: row.amountCents,
+      reason: reasonForBanner(row.needsManualReason),
+      createdAt: row.createdAt.toISOString(),
+    }));
+    const response: NeedsManualRefundListResponse = { jobs };
+    res.json(response);
   }),
 );

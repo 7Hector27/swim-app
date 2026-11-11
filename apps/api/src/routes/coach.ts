@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { requireUser } from "../middleware/requireUser";
 import { requireCoach } from "../middleware/requireCoach";
+import { cashRefundJobsRouter } from "./cashRefundJobs";
 import { coachAlertsRouter } from "./coachAlerts";
 import { coachAvailabilityRouter } from "./coachAvailability";
 import { coachBatchesRouter } from "./coachBatches";
@@ -24,6 +25,7 @@ coachRouter.get("/ping", validate({}), (_req, res) => {
   res.json({ pong: true });
 });
 
+coachRouter.use(cashRefundJobsRouter);
 coachRouter.use(coachAlertsRouter);
 coachRouter.use(coachAvailabilityRouter);
 coachRouter.use(coachBatchesRouter);
