@@ -481,14 +481,26 @@ Both surfaces get a one-line link directly above the pay button:
 
 Not a checkbox at the pay button — acceptance was captured at signup (and recaptured on version change). The link is a visibility nudge, not a gate. Placement: one line below the price, one line above the primary CTA, matching the spacing rhythm the booking confirm screen already uses.
 
-### Legal review additions
+### Versioning rule
 
-The §7 packet grows by these items, every one flagged **"draft, pending lawyer review before launch"**:
+Each policy page carries a version constant — `TERMS_VERSION`, `PRIVACY_VERSION`, `PAYMENTS_REFUND_VERSION` — exported from `packages/shared/src/schemas/policyAcceptance.ts` and rendered in a footer on every policy page via the `PolicyMeta` component (`Last updated <date> · Version <string>`).
 
-- **Payments & Refund Policy copy** — the draft in this section, including the leftover-credit refund rule and the automatic-refund-on-deletion behavior.
-- **Signup acceptance mechanics** — the two-linked-policies checkbox wording, the stored `(policy, version, timestamp)` record, and the audit trail. Legal confirms the checkbox wording and whether the Privacy Policy belongs inside the checkbox or alongside it.
-- **Re-acceptance flow on policy change** — the version-bump interstitial. Legal confirms whether an affirmative click is required or whether a passive notice ("we've updated our terms") satisfies the jurisdiction (we're implementing affirmative; if legal says passive is enough, scope drops to a banner).
-- **Privacy Policy payments section** — the current `PrivacyContent` has a `[Additional data collection details — e.g. lesson records, payment information, cookies — to be completed.]` placeholder. The Phase 8 Part B bundle fills it with the Stripe-boundary language already in §7: *card number/CVV/expiry never touch our servers; we store integer-cents balance movements, Stripe session and payment-intent ids, and event metadata; no full Stripe payloads; no copied customer details.*
+**Any text change to a policy page must bump that policy's version constant.** The next time an existing parent lands on a booking or add-funds route, the `requireCurrentPolicyAcceptance` middleware (Stop 3 piece 2) returns 409 with the stale slug, and the web app redirects them to the `/policy-updated` interstitial. They accept the new version there before the original action proceeds. Reviewers should treat the version bump as part of the copy edit, not a follow-up task.
+
+A version-bump workflow looks like: edit the copy → bump the constant in `packages/shared/src/schemas/policyAcceptance.ts` → the version footer on the page rerenders → new signups see the hidden input carry the new version → existing parents re-accept on their next write.
+
+### Legal review list
+
+Three items ship as **"draft, pending lawyer review"** on this branch. Each has a live page under `/terms`, `/privacy`, `/refund-policy` with a prominent "Draft — not in effect" banner the lawyer removes when the final text is signed off.
+
+- **Terms of Service** — `/terms`, rendered by `TermsContent`. Covers who-can-use, acceptable use, accounts, suspension, lessons (pointer at the Payments & Refund Policy), changes-to-terms (describes the version-bump re-acceptance flow), contact, governing law. Liability and governing-law sections are still placeholder. **Draft, pending lawyer review.**
+- **Privacy Policy** — `/privacy`, rendered by `PrivacyContent`. Covers age gate, information collected (including lesson records), how we use information, lesson-records privacy, **a new Payments and Stripe section** (Stripe is the payment processor and PCI data owner; our side stores amount + Stripe session/payment ids + timestamp + kind; no card data; Stripe retains the full payment record), **a new Data-retention-after-account-deletion section** (payment records survive anonymized — only amount + Stripe ids + date; no name, email, or household pointer), rights, contact, governing law. Rights and governing-law still placeholder. **Draft, pending lawyer review.**
+- **Payments & Refund Policy** — `/refund-policy`, rendered by `RefundPolicyContent`. Plain-language sections: prepaid balance; per-minute + sibling pricing; Cannonball / Deep End packages and bonus credit; credit never expires; prices locked at booking; booking needs enough balance; cancellations/declines/no-shows refund in full; Jason's adjustments with reason; the cash-out rule (lessons at regular prices, rest to card, bonus + gift credit forfeited) with a Deep End worked example; automatic refund on account deletion; Stripe boundary and receipts; contact. **Draft, pending lawyer review.**
+
+Also flagged for the review packet but not rendered on a page:
+
+- **Signup acceptance mechanics** — the three-linked-policies checkbox on `/signup`, the stored `(policy, version, timestamp, source)` record in `user_policy_acceptances`, the audit trail. Legal confirms the checkbox wording and whether all three policies belong inside one acceptance or whether the Privacy Policy stays alongside (notice vs agreement).
+- **Re-acceptance flow on policy change** — `/policy-updated` interstitial gated by the `requireCurrentPolicyAcceptance` middleware on booking + add-funds. Legal confirms affirmative-click vs passive-notice (we're implementing affirmative; if a notice suffices the interstitial drops to a banner).
 
 ---
 
