@@ -106,6 +106,14 @@ export async function processWebhook(input: WebhookInput): Promise<WebhookResult
   return handleCheckoutCompleted(event, input.logger, input.siteUrl);
 }
 
+interface HandleCheckoutCompletedTxResult {
+  result: WebhookResult;
+  // The funds-added outbox row id to kick off post-commit. Null when no
+  // credit was written (replay / amount mismatch / etc.) or when the
+  // household has no deliverable recipients.
+  fundedOutboxId: string | null;
+}
+
 async function handleCheckoutCompleted(
   event: Stripe.Event,
   logger: Logger,
@@ -118,7 +126,13 @@ async function handleCheckoutCompleted(
   // credit. If the credit path fails midway, both roll back and Stripe
   // retries; if it succeeds, both commit and the replay check above will
   // return `replay` next time.
-  return db.transaction(async (tx) => {
+  //
+  // The outbox row is enqueued INSIDE the transaction (so it commits with
+  // the credit), but the sender kick is queued AFTER the transaction has
+  // resolved — a microtask queued inside the callback would run before
+  // the COMMIT reached the DB, and the sender's `FOR UPDATE SKIP LOCKED`
+  // would skip the uncommitted row and leave the email waiting on cron.
+  const txResult: HandleCheckoutCompletedTxResult = await db.transaction(async (tx) => {
     const recorded = await tx
       .insert(stripeEvents)
       .values({
@@ -134,7 +148,7 @@ async function handleCheckoutCompleted(
         { eventId: event.id, sessionId: sessionFromEvent.id },
         "stripe webhook replay — no credit",
       );
-      return { status: 200, reason: "replay" };
+      return { result: { status: 200, reason: "replay" }, fundedOutboxId: null };
     }
 
     // Retrieve the session from Stripe for authoritative data — the webhook
@@ -166,7 +180,7 @@ async function handleCheckoutCompleted(
         .update(stripeEvents)
         .set({ processedAt: new Date() })
         .where(eq(stripeEvents.stripeEventId, event.id));
-      return { status: 200, reason: "payment_not_paid" };
+      return { result: { status: 200, reason: "payment_not_paid" }, fundedOutboxId: null };
     }
 
     const metadataResult = CheckoutMetadataSchema.safeParse(session.metadata);
@@ -188,7 +202,7 @@ async function handleCheckoutCompleted(
         .update(stripeEvents)
         .set({ processedAt: new Date() })
         .where(eq(stripeEvents.stripeEventId, event.id));
-      return { status: 200, reason: "metadata_invalid" };
+      return { result: { status: 200, reason: "metadata_invalid" }, fundedOutboxId: null };
     }
 
     const metadata = metadataResult.data;
@@ -208,7 +222,7 @@ async function handleCheckoutCompleted(
         .update(stripeEvents)
         .set({ processedAt: new Date() })
         .where(eq(stripeEvents.stripeEventId, event.id));
-      return { status: 200, reason: "amount_mismatch" };
+      return { result: { status: 200, reason: "amount_mismatch" }, fundedOutboxId: null };
     }
 
     const householdRows = await tx
@@ -226,7 +240,7 @@ async function handleCheckoutCompleted(
         .update(stripeEvents)
         .set({ processedAt: new Date() })
         .where(eq(stripeEvents.stripeEventId, event.id));
-      return { status: 200, reason: "household_missing" };
+      return { result: { status: 200, reason: "household_missing" }, fundedOutboxId: null };
     }
 
     // Enter the per-household balance lock before any ledger read-or-write.
@@ -259,7 +273,7 @@ async function handleCheckoutCompleted(
         { eventId: event.id, sessionId: session.id },
         "stripe webhook — ledger row already present for session id (Layer 2 guard fired)",
       );
-      return { status: 200, reason: "already_credited" };
+      return { result: { status: 200, reason: "already_credited" }, fundedOutboxId: null };
     }
 
     // ADR 036 Phase 7: enqueue the parent-facing "funds added" email
@@ -286,17 +300,26 @@ async function handleCheckoutCompleted(
       },
       "stripe webhook credited balance",
     );
-    // Hand the outbox row to the post-commit sender so it goes out
-    // immediately on success. On rollback the row never commits, so
-    // the sender has nothing to pick up — the Promise rejects silently
-    // via the ambient catch in sendLessonEmailOutboxRow.
-    if (fundedOutboxId !== null) {
-      queueMicrotask(() => {
-        void sendLessonEmailOutboxRow(fundedOutboxId);
-      });
-    }
-    return { status: 200, reason: "processed" };
+    // Hand the outbox row id back to the caller — the post-commit sender
+    // kick happens AFTER `await db.transaction(...)` resolves. A queue
+    // queued here would run before the COMMIT reached Postgres, so the
+    // sender's `FOR UPDATE SKIP LOCKED` would skip the still-uncommitted
+    // row and the email would sit in `pending` until the next cron tick.
+    return {
+      result: { status: 200, reason: "processed" },
+      fundedOutboxId,
+    };
   });
+
+  // Post-commit: kick the sender now that the credit + outbox row are
+  // actually on disk. On rollback the tx promise rejects and we never
+  // reach here, so there's no row to try to send.
+  if (txResult.fundedOutboxId !== null) {
+    queueMicrotask(() => {
+      void sendLessonEmailOutboxRow(txResult.fundedOutboxId!);
+    });
+  }
+  return txResult.result;
 }
 
 function expectedAmountCents(metadata: CheckoutMetadata): number {

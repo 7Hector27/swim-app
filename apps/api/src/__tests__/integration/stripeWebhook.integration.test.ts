@@ -47,6 +47,15 @@ import {
   __setStripeClientForTests,
   type StripeAdapter,
 } from "../../services/stripe";
+import {
+  __resetSenderTransportForTests,
+  __setSenderTransportForTests,
+} from "../../services/emails/sender";
+import type {
+  EmailTransport,
+  TransportResult,
+  TransportSendOptions,
+} from "../../services/emails/transport";
 
 // ── Stripe test double ───────────────────────────────────────────────────────
 // setup.ts seeds STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET so env.stripe
@@ -696,6 +705,48 @@ describe("ADR 036 §3: success redirect never credits", () => {
   });
 });
 
+// ── Capturing transport for post-commit sender assertions ──────────────────
+//
+// The Phase 7 fix queues the sender via queueMicrotask AFTER
+// `await db.transaction(...)` resolves. A test that only queries the DB
+// won't catch a regression where the queue moves back inside the
+// transaction — the row still gets inserted, so the row-existence check
+// passes, but the email never ships until cron. Hooking the sender's
+// transport lets us assert the sender actually ran right after the
+// webhook returned.
+
+interface CapturedSend {
+  options: TransportSendOptions;
+  at: number;
+}
+
+class CaptureTransport implements EmailTransport {
+  readonly sends: CapturedSend[] = [];
+  async send(opts: TransportSendOptions): Promise<TransportResult> {
+    this.sends.push({ options: opts, at: Date.now() });
+    return {
+      ok: true,
+      providerMessageId: `msg-${Math.random().toString(36).slice(2, 10)}`,
+      error: null,
+      errorMessage: null,
+    };
+  }
+}
+
+async function waitForSend(
+  transport: CaptureTransport,
+  predicate: (send: CapturedSend) => boolean,
+  timeoutMs = 1_000,
+): Promise<CapturedSend | null> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const match = transport.sends.find(predicate);
+    if (match) return match;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  return null;
+}
+
 describe("ADR 036 Phase 7: funds-added email enqueued in the same tx as the credit", () => {
   it("topup → one balance_funded row with the paid amount, zero bonus, and the post-credit balance", async () => {
     const sessionId = await makeSessionId("funded-topup");
@@ -840,5 +891,56 @@ describe("ADR 036 Phase 7: funds-added email enqueued in the same tx as the cred
         ),
       );
     expect(outboxRows).toHaveLength(1);
+  });
+});
+
+describe("ADR 036 Phase 7: funds-added email ships RIGHT AFTER the webhook (regression)", () => {
+  it("the sender fires via a post-commit microtask — not deferred to cron — so Mailpit sees the email on the same tick as the credit", async () => {
+    // Hook the sender's transport so we can observe the post-commit kick
+    // actually ran. A regression that moves the queueMicrotask back
+    // inside db.transaction(...) would still write the outbox row (the
+    // row-existence tests above pass), but the sender's SKIP LOCKED
+    // claim would skip the uncommitted row and the email would wait
+    // for cron. This test fails loudly in that case.
+    const transport = new CaptureTransport();
+    __setSenderTransportForTests(transport);
+    try {
+      const sessionId = await makeSessionId("funded-microtask");
+      const eventId = await makeEventId("funded-microtask");
+      const expected = priceForLesson(30, 1);
+      const session: SeededSession = {
+        id: sessionId,
+        amount_total: expected,
+        metadata: {
+          kind: "topup",
+          householdId: owner.householdId,
+          actorId: owner.userId,
+          durationMinutes: "30",
+          swimmerCount: "1",
+        },
+        payment_intent: "pi_funded_microtask",
+      };
+      seedSession(session);
+      const event = completedEvent({ eventId, session });
+
+      const res = await request(app)
+        .post("/webhooks/stripe")
+        .set("Stripe-Signature", `sig:${eventId}`)
+        .set("Content-Type", "application/json")
+        .send(jsonBody(event));
+      expect(res.status).toBe(200);
+
+      // Give the post-commit microtask a short window to finish.
+      // Without the fix (sender queued inside the transaction) the send
+      // either never happens or picks up a NULL claim — the predicate
+      // below never matches and we time out at 1s.
+      const match = await waitForSend(transport, (send) =>
+        send.options.subject.startsWith("Balance added: "),
+      );
+      expect(match).not.toBeNull();
+      expect(match!.options.subject).toBe(`Balance added: $60.00`);
+    } finally {
+      __resetSenderTransportForTests();
+    }
   });
 });
