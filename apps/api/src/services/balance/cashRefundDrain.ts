@@ -87,6 +87,15 @@ export interface CashRefundDrainDeps {
     amountCents: number;
     idempotencyKey: string;
   }) => Promise<CreateRefundResult>;
+  // When present, claim only these specific job ids and skip the
+  // normal `next_attempt_at <= now()` eligibility filter. Used by the
+  // post-commit kick (`kickCashRefundDrain`) so the just-written jobs
+  // process immediately, before the 2-minute cron-tick lead window
+  // on their `next_attempt_at` would otherwise block them. The claim
+  // still takes FOR UPDATE SKIP LOCKED and still checks status and
+  // attempts, so a job already being processed by the cron tick is
+  // safely skipped.
+  onlyJobIds?: string[];
 }
 
 export async function runCashRefundRetryDrain(
@@ -95,10 +104,42 @@ export async function runCashRefundRetryDrain(
 ): Promise<CashRefundRetryDrainResult> {
   const createRefundFn = deps.createRefund ?? createCashRefund;
 
+  const useOnlyJobIds = deps.onlyJobIds !== undefined;
+  if (useOnlyJobIds && deps.onlyJobIds!.length === 0) {
+    // Caller explicitly passed an empty list: there's nothing to do
+    // and we don't want to fall through to the full eligibility scan.
+    return {
+      attempted: 0,
+      succeeded: 0,
+      paused: 0,
+      failedTerminal: 0,
+      needsManualHandling: 0,
+    };
+  }
+
   // Atomic claim: single UPDATE statement that pushes next_attempt_at
   // into the future on every row the drain is about to process. The
   // inner SELECT uses FOR UPDATE SKIP LOCKED so two concurrent drain
   // passes against the same eligible set get disjoint rows.
+  //
+  // Two selection modes:
+  //  - Default (cron tick): rows where next_attempt_at <= now().
+  //  - onlyJobIds (post-commit kick): the specific ids the caller just
+  //    inserted, bypassing the time-based filter so Stripe is called
+  //    immediately. The `status='pending'` and `attempts<MAX` and
+  //    `stripe_payment_intent_id IS NOT NULL` guards still apply.
+  // Postgres array binding via postgres-js ignores a bare JS array in
+  // `ANY($1::uuid[])` (serializes to `uuid` which the server rejects
+  // as a malformed array literal; the same footnote is in cashOut.ts).
+  // Expand the id list as `IN (uuid, uuid, ...)` with `sql.join` so
+  // each id is bound individually.
+  const eligibilityClause = useOnlyJobIds
+    ? sql`id IN (${sql.join(
+        deps.onlyJobIds!.map((id) => sql`${id}::uuid`),
+        sql`, `,
+      )})`
+    : sql`next_attempt_at <= now()`;
+
   const claimed = await db.execute<{
     id: string;
     ledger_id: string;
@@ -117,7 +158,7 @@ export async function runCashRefundRetryDrain(
       WHERE status = 'pending'
         AND attempts < ${CASH_REFUND_MAX_ATTEMPTS}
         AND stripe_payment_intent_id IS NOT NULL
-        AND next_attempt_at <= now()
+        AND ${eligibilityClause}
       ORDER BY next_attempt_at ASC
       LIMIT ${DRAIN_BATCH_SIZE}
       FOR UPDATE SKIP LOCKED
@@ -251,9 +292,15 @@ export async function runCashRefundRetryDrain(
  * calls run in the background. The drain swallows its own errors into
  * per-row state; a top-level throw is logged but never re-thrown.
  */
-export function kickCashRefundDrain(log: Logger): void {
+export function kickCashRefundDrain(log: Logger, jobIds?: string[]): void {
+  // Pass the just-written job ids so the drain bypasses its
+  // next_attempt_at eligibility filter for them. Without this, the
+  // 2-minute cron-tick lead window on next_attempt_at would delay
+  // Stripe refunds by up to 5 minutes (next cron tick) even though
+  // the microtask fires immediately after commit.
+  const deps = jobIds === undefined ? undefined : { onlyJobIds: jobIds };
   queueMicrotask(() => {
-    void runCashRefundRetryDrain(log).catch((err) => {
+    void runCashRefundRetryDrain(log, deps).catch((err) => {
       log.error(
         { err: err instanceof Error ? err.message : String(err) },
         "kickCashRefundDrain: top-level drain throw",

@@ -6,7 +6,7 @@
 //   GET  /coach/households/:id/needs-manual-refund
 //   POST /coach/cash-refund-jobs/:jobId/mark-refunded
 
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import request from "supertest";
 import pino from "pino";
 import { and, eq, sql } from "drizzle-orm";
@@ -30,8 +30,55 @@ import {
   applyLedgerEntry,
   withBalanceLock,
 } from "../../services/balance";
+import { __setStripeClientForTests } from "../../services/stripe";
 
 const app = createApp(pino({ level: "silent" }));
+
+// Stripe stub — the post-commit kick (`kickCashRefundDrain`) fires a
+// microtask after every successful cash-out, which calls `refunds.create`.
+// Tests mustn't hit real Stripe, so we install a minimal stub that
+// records calls and returns a fake refund id.
+const refundsCreateStub = vi.fn().mockImplementation(async () => ({
+  id: `re_test_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+}));
+
+function makeStubStripe() {
+  return {
+    checkout: {
+      sessions: {
+        create: vi.fn(async () => {
+          throw new Error("stub: checkout.sessions.create not expected");
+        }),
+        retrieve: vi.fn(async () => {
+          throw new Error("stub: checkout.sessions.retrieve not expected");
+        }),
+      },
+    },
+    refunds: {
+      create: refundsCreateStub,
+    },
+    webhooks: {
+      constructEvent: vi.fn(() => {
+        throw new Error("stub: webhooks.constructEvent not expected");
+      }),
+    },
+  } as unknown as Parameters<typeof __setStripeClientForTests>[0];
+}
+
+// Poll until a condition holds or the timeout elapses — the drain
+// kick is a queueMicrotask callback that awaits DB work, so simple
+// setImmediate flushing isn't enough.
+async function waitUntil(
+  condition: () => boolean | Promise<boolean>,
+  timeoutMs = 2_000,
+): Promise<void> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    if (await condition()) return;
+    await new Promise<void>((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error("waitUntil: condition did not hold within timeout");
+}
 
 let coach: TestUser;
 let owner: TestUser;
@@ -107,14 +154,17 @@ beforeAll(async () => {
   coach = await createTestUser("coach-cashout-coach");
   owner = await createTestUser("coach-cashout-owner");
   await adminDb().update(profiles).set({ role: "coach" }).where(eq(profiles.id, coach.userId));
+  __setStripeClientForTests(makeStubStripe());
 });
 
 afterEach(async () => {
   await clearHousehold();
+  refundsCreateStub.mockClear();
 });
 
 afterAll(async () => {
   await clearHousehold();
+  __setStripeClientForTests(undefined);
   await owner.cleanup();
   await coach.cleanup();
   await closeAdminDb();
@@ -156,6 +206,43 @@ describe("POST /coach/households/:id/balance/cash-out", () => {
         ),
       );
     expect(emailRows).toHaveLength(1);
+  });
+
+  it("kicks the drain immediately — Stripe refund fires without a cron tick", async () => {
+    await seedCardTopup(20_000);
+    const res = await request(app)
+      .post(`/coach/households/${owner.householdId}/balance/cash-out`)
+      .set("Authorization", `Bearer ${coach.accessToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body.refundJobCount).toBe(1);
+
+    // The post-commit kick is a queueMicrotask callback that awaits
+    // DB work. Poll until the stub records the call — if the kick
+    // was broken (e.g. the 2-minute next_attempt_at window blocks
+    // the drain's claim), this times out and the test fails loud.
+    await waitUntil(() => refundsCreateStub.mock.calls.length > 0);
+
+    // Stripe was called via the kick, not a cron tick — we never
+    // invoked runCashRefundRetryDrain manually in this test.
+    expect(refundsCreateStub).toHaveBeenCalledTimes(1);
+    const callArgs = refundsCreateStub.mock.calls[0];
+    expect(callArgs?.[0]).toMatchObject({ amount: 20_000 });
+
+    // Job moved to succeeded by the kick's drain pass.
+    await waitUntil(async () => {
+      const rows = await adminDb()
+        .select({ status: cashRefundJobs.status })
+        .from(cashRefundJobs)
+        .where(eq(cashRefundJobs.householdId, owner.householdId));
+      return rows[0]?.status === "succeeded";
+    });
+    const jobRows = await adminDb()
+      .select({ status: cashRefundJobs.status, refundId: cashRefundJobs.stripeRefundId })
+      .from(cashRefundJobs)
+      .where(eq(cashRefundJobs.householdId, owner.householdId));
+    expect(jobRows).toHaveLength(1);
+    expect(jobRows[0]?.status).toBe("succeeded");
+    expect(jobRows[0]?.refundId).toMatch(/^re_test_/);
   });
 
   it("empty-balance cash-out is a no-op with refundJobCount=0", async () => {

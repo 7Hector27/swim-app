@@ -136,6 +136,10 @@ export interface CashOutExecutionSummary {
   breakdown: CashOutBreakdown;
   refundJobCount: number;
   needsManualHandlingCents: number;
+  // Drain-eligible cash_refund_jobs ids the route hands to
+  // `kickCashRefundDrain` so Stripe is called immediately after
+  // commit rather than on the next cron tick (ADR 036 Phase 8 Part B).
+  drainEligibleJobIds: string[];
 }
 
 export interface RunAccountDeletionResult {
@@ -417,6 +421,7 @@ export async function runAccountDeletion(
           breakdown: cashOutResult.breakdown,
           refundJobCount: cashOutResult.cashRefundJobIds.length,
           needsManualHandlingCents: cashOutResult.needsManualHandlingCents,
+          drainEligibleJobIds: cashOutResult.drainEligibleJobIds,
         };
 
   // Load cancelled-lesson start times + location snapshot for the coach

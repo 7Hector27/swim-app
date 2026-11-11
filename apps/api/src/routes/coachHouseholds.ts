@@ -544,11 +544,14 @@ coachHouseholdsRouter.post(
     };
     res.status(200).json(CashOutResponseSchema.parse(response));
 
-    // Post-commit kick — the drain claims pending rows and calls Stripe
-    // with the idempotency key. Does nothing when no drain-eligible jobs
-    // were written (no-op or all-residual cash-outs).
-    if (result.cashRefundJobIds.length > 0) {
-      kickCashRefundDrain(req.log);
+    // Post-commit kick — the drain claims the just-written jobs and
+    // calls Stripe immediately. Passing the id list bypasses the
+    // 2-minute cron-tick lead window on next_attempt_at so refunds
+    // don't wait for the next tick. Residual needs-manual-handling
+    // jobs are excluded from drainEligibleJobIds (no payment intent
+    // to refund against).
+    if (result.drainEligibleJobIds.length > 0) {
+      kickCashRefundDrain(req.log, result.drainEligibleJobIds);
     }
     // Family receipt — queue the outbox send so the HTTP response
     // returns promptly. Null outboxId is the "no recipients" edge case.

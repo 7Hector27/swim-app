@@ -161,7 +161,18 @@ export interface ExecuteCashOutResult {
   breakdown: CashOutBreakdown;
   cashRefundLedgerIds: string[];
   writeOffLedgerId: string | null;
+  // Every `cash_refund_jobs` row this cash-out wrote — drain-eligible
+  // rows first, residual (status='needs_manual_handling' on insert)
+  // appended at the end.
   cashRefundJobIds: string[];
+  // Subset of `cashRefundJobIds` the drain should process immediately
+  // on the post-commit kick: rows with a non-null payment-intent id
+  // and `status='pending'`. The kick passes these ids to
+  // `runCashRefundRetryDrain` so the drain bypasses its usual
+  // `next_attempt_at <= now()` eligibility filter (the service seeds
+  // a 2-minute lead to protect the row from a racing cron tick; the
+  // kick is the immediate path).
+  drainEligibleJobIds: string[];
   // Id of the `balance_cashed_out` outbox row enqueued inside the same
   // transaction. Null when the cash-out was a no-op (zero balance,
   // nothing to refund or write off) or the household has no owner /
@@ -170,9 +181,9 @@ export interface ExecuteCashOutResult {
   // Residual that couldn't be allocated to any live card payment
   // (e.g. all the family's top-ups had a null payment_intent_id —
   // pre-ADR-036 rows, test fixtures, or a card that no longer exists).
-  // Folded into the write-off row so the balance zeroes, but reported
-  // to the caller so Jason knows he must refund that amount off
-  // platform.
+  // Lands on a cash_refund ledger row with null stripe ids + a
+  // cash_refund_jobs row directly at status='needs_manual_handling',
+  // never silently written off.
   needsManualHandlingCents: number;
 }
 
@@ -224,6 +235,7 @@ export async function executeCashOutInTx(
       cashRefundLedgerIds: [],
       writeOffLedgerId: null,
       cashRefundJobIds: [],
+      drainEligibleJobIds: [],
       emailOutboxId: null,
       needsManualHandlingCents: 0,
     };
@@ -403,6 +415,7 @@ export async function executeCashOutInTx(
     cashRefundLedgerIds,
     writeOffLedgerId,
     cashRefundJobIds,
+    drainEligibleJobIds,
     emailOutboxId,
     needsManualHandlingCents,
   };
