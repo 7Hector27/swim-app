@@ -58,7 +58,7 @@ import { buildAccountDeletedScheduleUrl } from "./scheduleUrl";
 
 // Imported so the solo-deletion path can null `household_balance_ledger`
 // identity columns inside the same transaction as the household DELETE.
-import { householdBalanceLedger } from "../../db/schema";
+import { householdBalanceLedger, userPolicyAcceptances } from "../../db/schema";
 
 type Tx = PostgresJsDatabase<typeof schema>;
 
@@ -517,6 +517,10 @@ export async function runAccountDeletion(
   // (see apps/api/src/services/stripe/*). Nothing to delete or redact on
   // Stripe's side. Revisit if we ever persist a customer id.
   await anonymizeHouseholdLedger(tx, householdId);
+  // ADR 036 Phase 8 Part B Stop 3: policy-acceptance rows survive the
+  // deletion for audit (same posture as the ledger). The append-only
+  // trigger on migration 0084 permits non-null → NULL on user_id.
+  await anonymizeUserPolicyAcceptances(tx, profileId);
 
   // Batches, home pools, invites, members, household — in dependency order.
   // The household's cascade would wipe household_invites and
@@ -627,6 +631,24 @@ export async function anonymizeHouseholdLedger(
     .update(cashRefundJobs)
     .set({ householdId: null })
     .where(eq(cashRefundJobs.householdId, householdId));
+  return result.length;
+}
+
+// ADR 036 Phase 8 Part B Stop 3: policy-acceptance rows survive the
+// deletion for audit but have their user_id nulled so they no longer
+// point at the deleted profile. The append-only trigger from migration
+// 0084 allows this specific non-null → NULL transition (same pattern as
+// household_balance_ledger per migration 0079). Rejects every other
+// column change loudly.
+export async function anonymizeUserPolicyAcceptances(
+  tx: Tx,
+  profileId: string,
+): Promise<number> {
+  const result = await tx
+    .update(userPolicyAcceptances)
+    .set({ userId: null })
+    .where(eq(userPolicyAcceptances.userId, profileId))
+    .returning({ id: userPolicyAcceptances.id });
   return result.length;
 }
 

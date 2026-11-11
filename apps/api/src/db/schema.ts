@@ -1870,3 +1870,37 @@ export const accountDeletionJobs = pgTable(
   ],
 ).enableRLS();
 
+// ── User policy acceptances (ADR 036 Phase 8 Part B Stop 3) ─────────────────
+//
+// Append-only record of every (user, policy, version) acceptance. The custom
+// trigger from migration 0084 rejects every UPDATE and DELETE except the
+// non-null → NULL transition on user_id used by the account-deletion
+// anonymization step (same posture as household_balance_ledger per
+// migration 0079). user_id is nullable solely to carry anonymized rows.
+export const userPolicyAcceptances = pgTable(
+  "user_policy_acceptances",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // Nullable only to carry rows after account deletion — the row
+    // survives for audit; identity nulled by the anonymization step.
+    userId: uuid("user_id").references(() => profiles.id, { onDelete: "set null" }),
+    policySlug: text("policy_slug").notNull(),
+    version: text("version").notNull(),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }).notNull().defaultNow(),
+    source: text("source").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    check(
+      "user_policy_acceptances_slug_valid",
+      sql`${table.policySlug} IN ('terms', 'privacy', 'payments_refund')`,
+    ),
+    check(
+      "user_policy_acceptances_source_valid",
+      sql`${table.source} IN ('signup', 'reaccept_prompt')`,
+    ),
+    index("user_policy_acceptances_user_policy_accepted_at_idx")
+      .on(table.userId, table.policySlug, table.acceptedAt.desc()),
+  ],
+).enableRLS();
+

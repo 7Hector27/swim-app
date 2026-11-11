@@ -589,6 +589,13 @@
       "when": 1794422779126,
       "tag": "0083_cash_refund_manual_handling",
       "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1794435498065,
+      "tag": "0084_user_policy_acceptances",
+      "breakpoints": true
     }
   ]
 }

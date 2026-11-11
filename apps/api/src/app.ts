@@ -5,7 +5,7 @@ import pinoHttp from "pino-http";
 import type { Logger } from "pino";
 import { sql, eq } from "drizzle-orm";
 import { db } from "./db/client";
-import { profiles } from "./db/schema";
+import { householdMembers, profiles } from "./db/schema";
 import { buildHealthResponse } from "./health";
 import { getEnv } from "./lib/env";
 import { requestId } from "./middleware/requestId";
@@ -29,14 +29,18 @@ import { integrationsGoogleRouter } from "./routes/integrationsGoogle";
 import { leaderboardRouter } from "./routes/leaderboard";
 import { accountDeletionRouter } from "./routes/accountDeletion";
 import { balanceRouter, paymentsRouter } from "./routes/payments";
+import { policiesRouter } from "./routes/policies";
+import { applyPolicyAcceptance } from "./services/policyAcceptance";
 import { processWebhook } from "./services/stripe";
 import {
   calculateAge,
+  currentVersionFor,
   HealthQuerySchema,
   isSafeReturnTo,
   type MeResponse,
   type PatchMeBody,
   PatchMeBodySchema,
+  type PolicySlug,
   type SignUpBody,
   SignUpBodySchema,
   todayLA,
@@ -158,6 +162,28 @@ export function createApp(logger: Logger) {
       return;
     }
 
+    // ADR 036 Phase 8 Part B Stop 3: validate submitted policy versions
+    // BEFORE calling Supabase auth so we never create a user whose
+    // acceptance can't be recorded. Each field must equal the server's
+    // current constant; the web form carries the constants as hidden
+    // inputs rendered by the server page.
+    const slugToSubmitted: Record<PolicySlug, string> = {
+      terms: body.acceptedPolicyVersions.terms,
+      privacy: body.acceptedPolicyVersions.privacy,
+      payments_refund: body.acceptedPolicyVersions.payments_refund,
+    };
+    const stale: { policySlug: PolicySlug; currentVersion: string }[] = [];
+    for (const slug of ["terms", "privacy", "payments_refund"] as const) {
+      const expected = currentVersionFor(slug);
+      if (slugToSubmitted[slug] !== expected) {
+        stale.push({ policySlug: slug, currentVersion: expected });
+      }
+    }
+    if (stale.length > 0) {
+      res.status(422).json({ error: "stale_policy_versions", missing: stale });
+      return;
+    }
+
     // Always set emailRedirectTo so GoTrue never falls back to the bare site_url
     // as .RedirectTo — that would break the template's &token_hash= separator.
     // Trailing ? on the normal-signup path lets the template safely append &token_hash=...
@@ -185,17 +211,63 @@ export function createApp(logger: Logger) {
       return;
     }
 
-    const rows = await db
-      .update(profiles)
-      .set({
-        ageAttestedAt: new Date(),
-        ...(body.phone !== undefined && { phone: body.phone }),
-      })
-      .where(eq(profiles.id, data.user.id))
-      .returning();
+    const authUserId = data.user.id;
 
-    if (!rows[0]) {
-      req.log.error({ userId: data.user.id }, "Profile row missing after signUp");
+    // Wrap profile update + policy acceptance inserts in one transaction
+    // so a failure anywhere rolls everything back together. The
+    // on_auth_user_created trigger has already run by the time Supabase's
+    // signUp returns, so the profile row + household + owner membership
+    // all exist.
+    let profileMissing = false;
+    let householdMissing = false;
+    await db.transaction(async (tx) => {
+      const rows = await tx
+        .update(profiles)
+        .set({
+          ageAttestedAt: new Date(),
+          ...(body.phone !== undefined && { phone: body.phone }),
+        })
+        .where(eq(profiles.id, authUserId))
+        .returning();
+
+      if (!rows[0]) {
+        profileMissing = true;
+        return;
+      }
+
+      const memberRows = await tx
+        .select({ householdId: householdMembers.householdId })
+        .from(householdMembers)
+        .where(eq(householdMembers.profileId, authUserId))
+        .limit(1);
+      const householdId = memberRows[0]?.householdId;
+      if (!householdId) {
+        householdMissing = true;
+        return;
+      }
+
+      for (const slug of ["terms", "privacy", "payments_refund"] as const) {
+        await applyPolicyAcceptance(tx, {
+          userId: authUserId,
+          policySlug: slug,
+          version: currentVersionFor(slug),
+          source: "signup",
+          actorId: authUserId,
+          householdId,
+        });
+      }
+    });
+
+    if (profileMissing) {
+      req.log.error({ userId: authUserId }, "Profile row missing after signUp");
+      res.status(500).json({ error: "Internal server error" });
+      return;
+    }
+    if (householdMissing) {
+      req.log.error(
+        { userId: authUserId },
+        "Household membership missing after signUp — on_auth_user_created trigger didn't fire or rolled back",
+      );
       res.status(500).json({ error: "Internal server error" });
       return;
     }
@@ -253,6 +325,10 @@ export function createApp(logger: Logger) {
   // other /me/* paths.
   app.use(balanceRouter);
   app.use(accountDeletionRouter);
+  // Policy acceptance (ADR 036 Phase 8 Part B Stop 3). requireUser lives
+  // on the mount point so both /me/policies/missing and /me/policies/accept
+  // reject unauthenticated callers at a single choke point.
+  app.use("/me/policies", requireUser, policiesRouter);
   app.use(leaderboardRouter);
 
   app.use(errorHandler);

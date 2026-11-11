@@ -186,7 +186,7 @@ async function createSupabaseUser(
   return data.id;
 }
 
-async function deleteSupabaseUser(userId: string): Promise<void> {
+export async function deleteSupabaseUser(userId: string): Promise<void> {
   const url = `${getSupabaseUrl()}/auth/v1/admin/users/${userId}`;
   const key = getServiceRoleKey();
   const response = await fetch(url, {

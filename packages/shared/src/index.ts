@@ -106,6 +106,24 @@ export {
 export type { SignUpBody, LoginBody } from "./schemas/auth";
 export { SignUpBodySchema, LoginBodySchema } from "./schemas/auth";
 
+// Policy acceptance (ADR 036 Phase 8 Part B Stop 3)
+export type {
+  PolicySlug,
+  AcceptPoliciesBody,
+  AcceptPoliciesResponse,
+  MissingPolicyAcceptancesResponse,
+} from "./schemas/policyAcceptance";
+export {
+  PolicySlugSchema,
+  AcceptPoliciesBodySchema,
+  AcceptPoliciesResponseSchema,
+  MissingPolicyAcceptancesResponseSchema,
+  TERMS_VERSION,
+  PRIVACY_VERSION,
+  PAYMENTS_REFUND_VERSION,
+  currentVersionFor,
+} from "./schemas/policyAcceptance";
+
 export type {
   Sex,
   Swimmer,
