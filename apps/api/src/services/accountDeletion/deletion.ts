@@ -40,7 +40,7 @@ import {
 } from "../../db/schema";
 import { getActiveCoachProfile } from "../../lib/coachProfile";
 import { getEnv } from "../../lib/env";
-import { refundLessonCharge } from "../balance";
+import { getHouseholdBalance, refundLessonCharge } from "../balance";
 import type { AccountDeletedEmailLesson } from "../emails/accountDeletedTypes";
 import { enqueueCoachAccountDeletedEmail } from "../emails/coachAccountDeletedOutbox";
 import { formatLessonTimeDisplay } from "../emails/format";
@@ -107,6 +107,12 @@ export interface AccountDeletionPreview {
   // leave and owner-with-only-viewers show distinct explanations. Null
   // only in the orphan "profile with no household" fallback.
   callerRole: "owner" | "manager" | "viewer" | null;
+  // ADR 036 Phase 8 Part A: pre-deletion balance snapshot in integer
+  // cents. The UI surfaces a non-blocking note when > 0 — Part B of
+  // Phase 8 (unused-balance policy) is still blocked on Jason, so
+  // deletion proceeds with the ledger anonymized either way. Null only
+  // in the orphan "profile with no household" fallback.
+  balanceCents: number | null;
 }
 
 export interface RunAccountDeletionResult {
@@ -152,10 +158,19 @@ export async function previewAccountDeletion(
       futureLessonCount: 0,
       ownerMustTransferFirst: false,
       callerRole: null,
+      // Orphan profile: no household → no ledger rows attributable to it.
+      balanceCents: null,
     };
   }
 
   const householdId = membership.householdId;
+
+  // ADR 036 Phase 8 Part A: pre-deletion balance snapshot. The preview
+  // page surfaces a non-blocking note when balanceCents > 0 so the
+  // parent knows deletion won't auto-refund. Reading without the
+  // balance lock is safe: the preview is advisory, and confirm doesn't
+  // gate on this value (Part B is still blocked on Jason).
+  const balanceCents = await getHouseholdBalance(householdId, tx);
 
   const [householdRows, memberRows, swimmerRows, pastCount, futureCount] = await Promise.all([
     tx.select({ name: households.name }).from(households).where(eq(households.id, householdId)).limit(1),
@@ -213,6 +228,7 @@ export async function previewAccountDeletion(
     futureLessonCount: futureCount[0]?.count ?? 0,
     ownerMustTransferFirst,
     callerRole: membership.role,
+    balanceCents,
   };
 }
 

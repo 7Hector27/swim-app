@@ -45,6 +45,15 @@ export const DeletionPreviewResponseSchema = z
     // only for the shouldn't-happen "profile with no household"
     // fallback — a caller that passed requireUser always has one.
     callerRole: z.enum(["owner", "manager", "viewer"]).nullable(),
+    // ADR 036 Phase 8 Part A: household's remaining balance in integer
+    // cents. The UI shows a non-blocking note when this is > 0 ("Your
+    // remaining balance of $X won't be refunded automatically. Contact
+    // Jason before deleting if you'd like it back.") — deletion still
+    // proceeds; the ledger rows survive anonymized. Zero on the leave
+    // path (that call doesn't touch the ledger). Null when the preview
+    // couldn't read the balance (fetch failure) — the UI hides the
+    // note rather than guess.
+    balanceCents: z.number().int().nullable(),
   })
   .strict();
 

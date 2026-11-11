@@ -358,6 +358,37 @@ describe("POST /me/deletion/preview", () => {
     expect(res.body.memberCount).toBe(2);
     expect(res.body.ownerMustTransferFirst).toBe(true);
   });
+
+  it("ADR 036 Phase 8 Part A: returns balanceCents when the household has a positive balance", async () => {
+    const owner = await createTestUser("delete-preview-balance-positive");
+    testUsers.push(owner);
+    await seedHouseholdBalanceForTest({
+      householdId: owner.householdId,
+      actorId: owner.userId,
+      amountCents: 24_000,
+    });
+
+    const res = await request(app)
+      .post("/me/deletion/preview")
+      .set("Authorization", `Bearer ${owner.accessToken}`)
+      .send({});
+
+    expect(res.status).toBe(200);
+    expect(res.body.balanceCents).toBe(24_000);
+  });
+
+  it("ADR 036 Phase 8 Part A: returns balanceCents=0 when the household has no ledger rows (so the UI can suppress the note)", async () => {
+    const owner = await createTestUser("delete-preview-balance-zero");
+    testUsers.push(owner);
+
+    const res = await request(app)
+      .post("/me/deletion/preview")
+      .set("Authorization", `Bearer ${owner.accessToken}`)
+      .send({});
+
+    expect(res.status).toBe(200);
+    expect(res.body.balanceCents).toBe(0);
+  });
 });
 
 // ── Preview and confirm agree on the scope decision ─────────────────────────

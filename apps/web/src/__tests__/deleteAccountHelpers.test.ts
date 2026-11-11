@@ -16,6 +16,7 @@ function base(): DeletionPreviewResponse {
     futureLessonCount: 0,
     ownerMustTransferFirst: false,
     callerRole: "owner",
+    balanceCents: 0,
   };
 }
 
