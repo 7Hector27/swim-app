@@ -333,6 +333,10 @@ export async function executeCashOutInTx(
       householdId: args.householdId,
       amountCents: needsManualHandlingCents,
       reason: residualReason,
+      // Direct-needs-manual path: no card payment could be matched, so
+      // there is no payment intent id to pass. Jason will refund off
+      // platform (e.g. Venmo); the Stripe dashboard field stays blank.
+      stripePaymentIntentId: null,
       siteUrl: getEnv().siteUrl,
     });
   }

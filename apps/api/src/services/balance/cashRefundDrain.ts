@@ -211,6 +211,9 @@ export async function runCashRefundRetryDrain(
         householdId: job.householdId,
         amountCents: job.amountCents,
         reason: needsManualReason,
+        // Drain row — the job has a payment intent (claim query filters
+        // out null ids) that Jason can paste into the Stripe dashboard.
+        stripePaymentIntentId: job.stripePaymentIntentId,
         siteUrl: getEnv().siteUrl,
       });
     });

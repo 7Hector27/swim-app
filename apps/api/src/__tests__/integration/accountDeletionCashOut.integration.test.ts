@@ -25,6 +25,7 @@ import {
   cashRefundJobs,
   coachNotifications,
   householdBalanceLedger,
+  households,
   lessonEmailOutbox,
 } from "../../db/schema";
 import {
@@ -255,8 +256,11 @@ describe("account deletion × cash-out confirm", () => {
     expect(jobRows[0]?.householdId).toBeNull();
     expect(jobRows[0]?.needsManualReason).toBe("no_refundable_card_payment");
 
-    // The coach notification payload captured the household name
-    // snapshot before anonymization, so Jason still sees "Family X".
+    // The coach notification exists but carries NO family-name field —
+    // after deletion the family's name must not survive anywhere on our
+    // side. Jason identifies the refund via the Stripe payment intent
+    // id (null here — this is the no-matching-card-payment path) + the
+    // jobId tag.
     const notifs = await adminDb()
       .select({
         payload: coachNotifications.payload,
@@ -264,8 +268,9 @@ describe("account deletion × cash-out confirm", () => {
       .from(coachNotifications)
       .where(eq(coachNotifications.category, "cash_refund_needs_manual_handling"));
     expect(notifs).toHaveLength(1);
-    const payload = notifs[0]?.payload as { householdNameSnapshot: string | null };
-    expect(typeof payload.householdNameSnapshot).toBe("string");
+    expect(Object.keys(notifs[0]?.payload as object)).not.toContain(
+      "householdNameSnapshot",
+    );
 
     // Sanity: the previously-live household id is gone from
     // cash_refund_jobs so any future query won't tie back.
@@ -312,7 +317,89 @@ describe("account deletion × cash-out confirm", () => {
       );
     expect(matching).toHaveLength(1);
   });
+
+  it("no family name survives in any stored notification or job after deletion", async () => {
+    // Belt-and-braces scrub test. Set a distinctive household name on
+    // the owner, run deletion-with-residual (so a cash_refund_jobs row
+    // + a coach_notifications row both land), then grep every string-
+    // valued artifact that could carry the name and assert it doesn't.
+    const owner = await createTestUser("delete-cashout-name-scrub");
+    testUsers.push(owner);
+    const householdIdSnapshot = owner.householdId;
+    // Name is wildly distinctive so a substring match can't false-
+    // positive against a Drizzle-generated default or a pi_ prefix.
+    const distinctiveName = `XYZZY-SCRUB-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    await adminDb()
+      .update(households)
+      .set({ name: distinctiveName })
+      .where(eq(households.id, householdIdSnapshot));
+
+    // Residual seed so cash-out writes a direct-needs-manual job + its
+    // bell row; a live payment-intent path writes only a drain-eligible
+    // job whose notification is only produced on terminal failure.
+    await seedCardTopupWithoutPaymentIntent(owner, 9_000);
+
+    const confirm = await confirmDeletion(owner.accessToken);
+    expect(confirm.status).toBe(200);
+
+    // (1) No coach_notifications payload contains the household name.
+    const allNotifs = await adminDb()
+      .select({ payload: coachNotifications.payload })
+      .from(coachNotifications)
+      .where(eq(coachNotifications.category, "cash_refund_needs_manual_handling"));
+    for (const notif of allNotifs) {
+      const asJson = JSON.stringify(notif.payload);
+      expect(asJson).not.toContain(distinctiveName);
+    }
+
+    // (2) No cash_refund_jobs column carries the name. There's no name
+    // column on the table (verified at schema time), but assert the
+    // post-anonymization row has a null household_id so nothing can
+    // join back to the now-deleted household row.
+    const jobRows = await adminDb()
+      .select({
+        householdId: cashRefundJobs.householdId,
+        amountCents: cashRefundJobs.amountCents,
+      })
+      .from(cashRefundJobs)
+      .where(
+        and(
+          sql`household_id IS NULL`,
+          eq(cashRefundJobs.amountCents, 9_000),
+        ),
+      );
+    expect(jobRows).toHaveLength(1);
+    expect(jobRows[0]?.householdId).toBeNull();
+
+    // (3) No household_balance_ledger.reason (or any string column) on
+    // the anonymized rows carries the name. The ledger rows survive
+    // anonymized (household_id null); the reason column is only set
+    // for coach_adjustment entries, so it should be null everywhere
+    // here, but sweep anyway.
+    const anonLedger = await adminDb()
+      .select({
+        reason: householdBalanceLedger.reason,
+        stripeCheckoutSessionId: householdBalanceLedger.stripeCheckoutSessionId,
+        stripePaymentIntentId: householdBalanceLedger.stripePaymentIntentId,
+      })
+      .from(householdBalanceLedger)
+      .where(sql`household_id IS NULL`);
+    for (const row of anonLedger) {
+      expect(row.reason ?? "").not.toContain(distinctiveName);
+      expect(row.stripeCheckoutSessionId ?? "").not.toContain(distinctiveName);
+      expect(row.stripePaymentIntentId ?? "").not.toContain(distinctiveName);
+    }
+
+    // (4) The household row itself is gone — belt-and-braces check that
+    // deletion removed the row that held the name in the first place.
+    const stillThere = await adminDb()
+      .select({ id: households.id })
+      .from(households)
+      .where(eq(households.id, householdIdSnapshot));
+    expect(stillThere).toHaveLength(0);
+  });
 });
 
 // Silence unused-import warnings on helpers not every test exercises.
 void inArray;
+void request;

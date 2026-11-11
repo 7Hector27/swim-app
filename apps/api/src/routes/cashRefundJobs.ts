@@ -19,7 +19,7 @@ import {
 } from "@swim-app/shared";
 
 import { db } from "../db/client";
-import { cashRefundJobs, coachAuditLog } from "../db/schema";
+import { cashRefundJobs, coachAuditLog, coachNotifications } from "../db/schema";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { validate } from "../middleware/validate";
 
@@ -80,6 +80,16 @@ cashRefundJobsRouter.post(
           note: body.note.trim(),
         },
       });
+
+      // Drop the paired bell row in the same transaction so Jason's
+      // notification list clears the moment he resolves the job.
+      // Idempotent: zero rows affected is fine (the notification may
+      // already have been dismissed or the row may never have been
+      // written because no active coach profile existed at enqueue
+      // time).
+      await tx
+        .delete(coachNotifications)
+        .where(eq(coachNotifications.tag, `cash-refund-needs-manual:${jobId}`));
 
       return { kind: "ok" as const };
     });

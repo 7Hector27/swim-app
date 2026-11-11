@@ -1,5 +1,5 @@
 // Coach notifications tied to the cash-refund drain (ADR 036 Phase 8
-// Part B Stop 2).
+// Part B).
 //
 // When a cash-refund job lands in `status = 'needs_manual_handling'`
 // (either on insert because the refundable residual couldn't be matched
@@ -10,15 +10,16 @@
 //
 // The helper runs inside the caller's transaction so the notification
 // lands with the UPDATE/INSERT that transitioned the job (CLAUDE.md
-// audit-log rule). The payload carries `householdNameSnapshot` read in
-// the same tx so the banner still reads the family's name even after a
-// later account-deletion anonymization nulls `cash_refund_jobs.household_id`.
+// audit-log rule). The payload carries `stripePaymentIntentId` (or null
+// for direct-needs-manual with no matched payment) so Jason can copy-
+// paste it into the Stripe dashboard — we no longer snapshot the family
+// name anywhere: after deletion a family's name must not survive on our
+// side.
 
-import { eq } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 
 import * as schema from "../../db/schema";
-import { coachNotifications, households } from "../../db/schema";
+import { coachNotifications } from "../../db/schema";
 import { getActiveCoachProfile } from "../../lib/coachProfile";
 
 type Tx = PostgresJsDatabase<typeof schema>;
@@ -50,6 +51,11 @@ export interface EnqueueCashRefundNeedsManualArgs {
   // Raw `needs_manual_reason` string stored on the job row. Mapped to
   // a human-safe label via `reasonForBanner` for the payload.
   reason: string;
+  // The Stripe payment intent id attached to the job (null when the
+  // residual couldn't be matched to any live card payment — the direct-
+  // needs-manual path). Lets Jason paste the id into the Stripe
+  // dashboard without needing a family name on file.
+  stripePaymentIntentId: string | null;
   siteUrl: string;
 }
 
@@ -70,19 +76,9 @@ export async function enqueueCashRefundNeedsManualNotification(
   const coach = await getActiveCoachProfile();
   if (!coach) return null;
 
-  let householdNameSnapshot: string | null = null;
-  if (args.householdId !== null) {
-    const rows = await tx
-      .select({ name: households.name })
-      .from(households)
-      .where(eq(households.id, args.householdId))
-      .limit(1);
-    householdNameSnapshot = rows[0]?.name ?? null;
-  }
-
   const clickUrl = args.householdId !== null
     ? `${args.siteUrl}/coach/families/${args.householdId}`
-    : `${args.siteUrl}/coach`;
+    : `${args.siteUrl}/coach/families`;
 
   const inserted = await tx
     .insert(coachNotifications)
@@ -95,7 +91,7 @@ export async function enqueueCashRefundNeedsManualNotification(
         jobId: args.jobId,
         amountCents: args.amountCents,
         reason: reasonForBanner(args.reason),
-        householdNameSnapshot,
+        stripePaymentIntentId: args.stripePaymentIntentId,
       },
       clickUrl,
       tag: `cash-refund-needs-manual:${args.jobId}`,

@@ -11,6 +11,7 @@
 //      also writes a `coach_notifications` row tagged by job id.
 
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import request from "supertest";
 import pino from "pino";
 import { and, eq, sql } from "drizzle-orm";
 
@@ -23,6 +24,7 @@ import {
 } from "./helpers";
 import {
   cashRefundJobs,
+  coachAuditLog,
   coachNotifications,
   householdAuditLog,
   householdBalanceLedger,
@@ -123,6 +125,13 @@ afterEach(async () => {
 
 afterAll(async () => {
   await clearHousehold();
+  // The mark-refunded route inserts a coach_audit_log row keyed to this
+  // file's coach. coach.cleanup() hard-deletes the profile and the
+  // audit log FK is RESTRICT, so the leftover row would error out the
+  // teardown. Delete the coach's audit rows first.
+  await adminDb()
+    .delete(coachAuditLog)
+    .where(eq(coachAuditLog.coachId, coach.userId));
   await owner.cleanup();
   await coach.cleanup();
   await closeAdminDb();
@@ -232,19 +241,27 @@ describe("cash-refund needs-manual-handling", () => {
       jobId: string;
       amountCents: number;
       reason: string;
-      householdNameSnapshot: string | null;
+      stripePaymentIntentId: string | null;
     };
     expect(payload.jobId).toBe(jobId);
     expect(payload.amountCents).toBe(8_000);
     expect(payload.reason).toBe("No matching card payment");
-    expect(typeof payload.householdNameSnapshot).toBe("string");
+    // Direct-needs-manual path: no card payment matched, so the payload
+    // carries null. Jason refunds off-platform; the Stripe dashboard
+    // field stays blank.
+    expect(payload.stripePaymentIntentId).toBeNull();
+    // Belt-and-braces scrub check: no family-name field survives the
+    // payload under any key.
+    expect(Object.keys(notifs[0]?.payload as object)).not.toContain(
+      "householdNameSnapshot",
+    );
   });
 
   it("drain transition to needs_manual_handling also inserts a coach notification tagged by job id", async () => {
     // Live payment intent → cash-out writes a normal drain-eligible
     // job. Force the drain stub to permanently fail; the terminal
     // transition writes the bell row.
-    await seedCardTopup(12_000);
+    const { paymentIntentId } = await seedCardTopup(12_000);
     const result = await executeCashOut({
       householdId: owner.householdId,
       actorId: owner.userId,
@@ -288,8 +305,60 @@ describe("cash-refund needs-manual-handling", () => {
       .from(coachNotifications)
       .where(eq(coachNotifications.tag, `cash-refund-needs-manual:${jobId}`));
     expect(notifs).toHaveLength(1);
-    const payload = notifs[0]?.payload as { reason: string; jobId: string };
+    const payload = notifs[0]?.payload as {
+      reason: string;
+      jobId: string;
+      stripePaymentIntentId: string | null;
+    };
     expect(payload.jobId).toBe(jobId);
     expect(payload.reason).toBe("Stripe refund failed");
+    // Drain path: the job row has a payment intent id, which the
+    // notification helper copies into the payload so Jason can paste it
+    // into the Stripe dashboard.
+    expect(payload.stripePaymentIntentId).toBe(paymentIntentId);
+    expect(Object.keys(notifs[0]?.payload as object)).not.toContain(
+      "householdNameSnapshot",
+    );
+  });
+
+  it("mark-refunded deletes the paired coach notification", async () => {
+    // Direct-needs-manual path inserts both the job row and a bell row.
+    // POST /coach/cash-refund-jobs/:jobId/mark-refunded moves the job to
+    // succeeded AND deletes the notification in the same transaction so
+    // Jason's bell list clears the moment he resolves.
+    await seedCardTopupWithoutPaymentIntent(5_000);
+    const result = await executeCashOut({
+      householdId: owner.householdId,
+      actorId: owner.userId,
+    });
+    const jobId = result.cashRefundJobIds[0];
+    if (!jobId) throw new Error("expected a job id");
+
+    const beforeNotifs = await adminDb()
+      .select({ id: coachNotifications.id })
+      .from(coachNotifications)
+      .where(eq(coachNotifications.tag, `cash-refund-needs-manual:${jobId}`));
+    expect(beforeNotifs).toHaveLength(1);
+
+    // Authenticated coach request: the route lives under /coach/* which
+    // requires requireCoach, so sign in as the coach we minted above.
+    const app = createApp(pino({ level: "silent" }));
+    const response = await request(app)
+      .post(`/coach/cash-refund-jobs/${jobId}/mark-refunded`)
+      .set("Authorization", `Bearer ${coach.accessToken}`)
+      .send({ note: "Refunded via Venmo, confirmed with family." });
+    expect(response.status).toBe(200);
+
+    const afterNotifs = await adminDb()
+      .select({ id: coachNotifications.id })
+      .from(coachNotifications)
+      .where(eq(coachNotifications.tag, `cash-refund-needs-manual:${jobId}`));
+    expect(afterNotifs).toHaveLength(0);
+
+    const afterJob = await adminDb()
+      .select({ status: cashRefundJobs.status })
+      .from(cashRefundJobs)
+      .where(eq(cashRefundJobs.id, jobId));
+    expect(afterJob[0]?.status).toBe("succeeded");
   });
 });
