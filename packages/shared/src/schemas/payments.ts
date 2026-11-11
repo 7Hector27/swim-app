@@ -258,3 +258,33 @@ export const MarkCashRefundHandledResponseSchema = z.object({
 });
 export type MarkCashRefundHandledResponse = z.infer<typeof MarkCashRefundHandledResponseSchema>;
 
+// Entry in the global "Refunds needing attention" list shown at the top
+// of /coach/families (ADR 036 Phase 8 Part B). Lives across household
+// deletion: a deleted family renders as "Deleted family" and is
+// identified by the Stripe payment intent id (or lack thereof). The
+// "Mark as refunded" button on each entry hits the same cash-refund-
+// jobs/:id/mark-refunded endpoint as the per-family banner.
+export const CashRefundNeedsAttentionEntrySchema = z.object({
+  jobId: z.string().uuid(),
+  amountCents: z.number().int().positive(),
+  reason: z.string(),
+  createdAt: z.string().datetime({ offset: true }),
+  stripePaymentIntentId: z.string().nullable(),
+  // Null when the household has been anonymized (account deletion ran).
+  // The web renders this as "Deleted family" and omits the family-page
+  // link — the entry is still actionable via Mark as refunded.
+  household: z
+    .object({ id: z.string().uuid(), name: z.string() })
+    .nullable(),
+});
+export type CashRefundNeedsAttentionEntry = z.infer<
+  typeof CashRefundNeedsAttentionEntrySchema
+>;
+
+export const CashRefundNeedsAttentionResponseSchema = z.object({
+  jobs: z.array(CashRefundNeedsAttentionEntrySchema),
+});
+export type CashRefundNeedsAttentionResponse = z.infer<
+  typeof CashRefundNeedsAttentionResponseSchema
+>;
+

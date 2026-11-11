@@ -1,4 +1,4 @@
-// Coach-side cash-refund-job resolution (ADR 036 Phase 8 Part B Stop 2).
+// Coach-side cash-refund-job resolution (ADR 036 Phase 8 Part B).
 //
 // POST /coach/cash-refund-jobs/:jobId/mark-refunded — Jason types a note
 // after settling a needs_manual_handling job off platform (e.g. via the
@@ -6,22 +6,35 @@
 // card that no longer exists). The job row moves to status='succeeded'
 // without any further Stripe call; the audit trail stores the note and
 // the resolver's id.
+//
+// GET /coach/cash-refunds/needs-attention — global list of every job
+// still at status='needs_manual_handling', across live and deleted
+// households. Powers the attention section at the top of /coach/families.
 
 import { Router } from "express";
-import { eq, sql } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import {
+  CashRefundNeedsAttentionResponseSchema,
   MarkCashRefundHandledBodySchema,
   MarkCashRefundHandledResponseSchema,
+  type CashRefundNeedsAttentionEntry,
+  type CashRefundNeedsAttentionResponse,
   type MarkCashRefundHandledBody,
   type MarkCashRefundHandledResponse,
 } from "@swim-app/shared";
 
 import { db } from "../db/client";
-import { cashRefundJobs, coachAuditLog, coachNotifications } from "../db/schema";
+import {
+  cashRefundJobs,
+  coachAuditLog,
+  coachNotifications,
+  households,
+} from "../db/schema";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { validate } from "../middleware/validate";
+import { reasonForBanner } from "../services/balance/notifications";
 
 export const cashRefundJobsRouter = Router();
 
@@ -108,5 +121,52 @@ cashRefundJobsRouter.post(
       status: "succeeded",
     };
     res.status(200).json(MarkCashRefundHandledResponseSchema.parse(response));
+  }),
+);
+
+// ── GET /coach/cash-refunds/needs-attention ────────────────────────────────
+//
+// Global list of every cash_refund_jobs row still at needs_manual_handling,
+// across live AND deleted households. The left join lets rows with
+// household_id = NULL (anonymized by account deletion) still appear; the
+// web renders those as "Deleted family" and uses the Stripe payment
+// intent id as the identifier Jason copies into the Stripe dashboard.
+//
+// Newest-first so the most recently flagged refund is on top. No query
+// params — the list is short by construction; pagination is only worth
+// adding if it ever grows past a few dozen entries.
+cashRefundJobsRouter.get(
+  "/cash-refunds/needs-attention",
+  validate({}),
+  asyncHandler(async (_req, res) => {
+    const rows = await db
+      .select({
+        jobId: cashRefundJobs.id,
+        amountCents: cashRefundJobs.amountCents,
+        needsManualReason: cashRefundJobs.needsManualReason,
+        createdAt: cashRefundJobs.createdAt,
+        stripePaymentIntentId: cashRefundJobs.stripePaymentIntentId,
+        householdId: households.id,
+        householdName: households.name,
+      })
+      .from(cashRefundJobs)
+      .leftJoin(households, eq(cashRefundJobs.householdId, households.id))
+      .where(eq(cashRefundJobs.status, "needs_manual_handling"))
+      .orderBy(desc(cashRefundJobs.createdAt));
+
+    const jobs: CashRefundNeedsAttentionEntry[] = rows.map((row) => ({
+      jobId: row.jobId,
+      amountCents: row.amountCents,
+      reason: reasonForBanner(row.needsManualReason),
+      createdAt: row.createdAt.toISOString(),
+      stripePaymentIntentId: row.stripePaymentIntentId,
+      household:
+        row.householdId !== null && row.householdName !== null
+          ? { id: row.householdId, name: row.householdName }
+          : null,
+    }));
+
+    const response: CashRefundNeedsAttentionResponse = { jobs };
+    res.status(200).json(CashRefundNeedsAttentionResponseSchema.parse(response));
   }),
 );

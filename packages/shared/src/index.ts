@@ -38,6 +38,8 @@ export type {
   NeedsManualRefundListResponse,
   MarkCashRefundHandledBody,
   MarkCashRefundHandledResponse,
+  CashRefundNeedsAttentionEntry,
+  CashRefundNeedsAttentionResponse,
 } from "./schemas/payments";
 export {
   SwimmerCountSchema,
@@ -60,6 +62,8 @@ export {
   NeedsManualRefundListResponseSchema,
   MarkCashRefundHandledBodySchema,
   MarkCashRefundHandledResponseSchema,
+  CashRefundNeedsAttentionEntrySchema,
+  CashRefundNeedsAttentionResponseSchema,
 } from "./schemas/payments";
 
 export {
