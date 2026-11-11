@@ -657,7 +657,10 @@ describe("POST /me/deletion/confirm — solo path, real-flow seed", () => {
 
     // ── Delete ───────────────────────────────────────────────
     const res = await confirmDeletion(owner.accessToken);
-    expect(res.status).toBe(204);
+    // ADR 036 Phase 8 Part B Stop 2: 10,000 USD seeded balance → the
+    // deletion runs a cash-out in-tx and returns 200 with the
+    // breakdown instead of the pre-Stop-2 204-no-body.
+    expect(res.status).toBe(200);
 
     // ── Assertions ───────────────────────────────────────────
 

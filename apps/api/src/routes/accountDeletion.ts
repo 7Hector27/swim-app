@@ -38,6 +38,7 @@ import {
   runAccountDeletionCleanup,
   ROUTE_POST_COMMIT_FAILURE_BACKOFF_SECONDS,
 } from "../services/accountDeletion";
+import { kickCashRefundDrain } from "../services/balance";
 import { sendLessonEmailOutboxRow } from "../services/emails/sender";
 
 export const accountDeletionRouter = Router();
@@ -178,7 +179,17 @@ accountDeletionRouter.post(
     // calls. A terminal retry failure logs at error level (see post-commit
     // branch below); Jason can't fix a Supabase or Google outage from an
     // alert anyway, so there is no coach notification path.
-    res.status(204).end();
+    //
+    // ADR 036 Phase 8 Part B Stop 2: when a cash-out actually ran we
+    // switch to 200 JSON with the breakdown so the UI can render the
+    // refund amounts on the deletion-complete screen. Zero-balance,
+    // leave, and orphan paths keep the existing 204-no-body shape so
+    // every existing caller keeps working unchanged.
+    if (result.cashOut !== null) {
+      res.status(200).json({ cashOut: result.cashOut });
+    } else {
+      res.status(204).end();
+    }
 
     // Solo path only: coach-side "A family deleted their account" email
     // (ADR 034). The outbox row was written inside the deletion tx, so
@@ -187,6 +198,19 @@ accountDeletionRouter.post(
     if (result.coachAccountDeletedOutboxId !== null) {
       const emailOutboxId = result.coachAccountDeletedOutboxId;
       queueMicrotask(() => { void sendLessonEmailOutboxRow(emailOutboxId); });
+    }
+
+    // ADR 036 Phase 8 Part B Stop 2: kick the cash-refund drain so any
+    // drain-eligible pending job (live payment intent on the family's
+    // ledger) is attempted immediately. Needs-manual-handling jobs are
+    // never drain-eligible, but they share the same job table, so a
+    // cash-out that produced at least one refundable row is reason
+    // enough to kick. No-op on empty/leave paths.
+    if (
+      result.cashOut !== null
+      && result.cashOut.breakdown.refundableCents > 0
+    ) {
+      kickCashRefundDrain(req.log);
     }
 
     // Post-commit fan-out. The shared cleanup helper walks every

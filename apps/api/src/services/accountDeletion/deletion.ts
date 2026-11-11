@@ -38,9 +38,17 @@ import {
   leagueRegistrations,
   coachNotes,
 } from "../../db/schema";
+import type { CashOutBreakdown } from "@swim-app/shared";
+
 import { getActiveCoachProfile } from "../../lib/coachProfile";
 import { getEnv } from "../../lib/env";
-import { getHouseholdBalance, refundLessonCharge } from "../balance";
+import {
+  executeCashOutInTx,
+  getCashOutBreakdown,
+  getHouseholdBalance,
+  refundLessonCharge,
+} from "../balance";
+import { cashRefundJobs } from "../../db/schema";
 import type { AccountDeletedEmailLesson } from "../emails/accountDeletedTypes";
 import { enqueueCoachAccountDeletedEmail } from "../emails/coachAccountDeletedOutbox";
 import { formatLessonTimeDisplay } from "../emails/format";
@@ -113,6 +121,21 @@ export interface AccountDeletionPreview {
   // deletion proceeds with the ledger anonymized either way. Null only
   // in the orphan "profile with no household" fallback.
   balanceCents: number | null;
+  // ADR 036 Phase 8 Part B Stop 2: pre-deletion cash-out breakdown so
+  // the parent sees "$X refunded to card, $Y forfeited (bonus credit)"
+  // on the confirmation step. Null when `balanceCents` is zero or the
+  // orphan fallback fires — nothing to refund.
+  cashOutPreview: CashOutBreakdown | null;
+}
+
+// ADR 036 Phase 8 Part B Stop 2: cash-out side effects captured inside
+// the deletion transaction. Surfaced on the confirm-endpoint response so
+// the parent's deletion confirmation UI can render the amounts without a
+// follow-up email (`executeCashOutInTx` is called with `skipEmail: true`).
+export interface CashOutExecutionSummary {
+  breakdown: CashOutBreakdown;
+  refundJobCount: number;
+  needsManualHandlingCents: number;
 }
 
 export interface RunAccountDeletionResult {
@@ -133,6 +156,10 @@ export interface RunAccountDeletionResult {
   // The route's post-commit code queues a microtask send; the drain is
   // the fallback for a failed or missed immediate send.
   coachAccountDeletedOutboxId: string | null;
+  // ADR 036 Phase 8 Part B Stop 2: cash-out side effects captured
+  // inside the solo deletion transaction. Null on the leave path and
+  // on solo paths with a zero balance (no cash-out ran).
+  cashOut: CashOutExecutionSummary | null;
 }
 
 export async function previewAccountDeletion(
@@ -160,6 +187,7 @@ export async function previewAccountDeletion(
       callerRole: null,
       // Orphan profile: no household → no ledger rows attributable to it.
       balanceCents: null,
+      cashOutPreview: null,
     };
   }
 
@@ -220,6 +248,14 @@ export async function previewAccountDeletion(
     lastInitial: row.lastName.length > 0 ? `${row.lastName.charAt(0).toUpperCase()}.` : "",
   }));
 
+  // ADR 036 Phase 8 Part B Stop 2: pre-compute the cash-out breakdown
+  // so the parent sees the same split the confirm flow will apply.
+  // Advisory read (no balance lock) — the confirm path re-reads inside
+  // the deletion transaction while holding the lock.
+  const cashOutPreview = balanceCents > 0
+    ? await getCashOutBreakdown(householdId, tx)
+    : null;
+
   return {
     householdName,
     memberCount: memberRows.length,
@@ -229,6 +265,7 @@ export async function previewAccountDeletion(
     ownerMustTransferFirst,
     callerRole: membership.role,
     balanceCents,
+    cashOutPreview,
   };
 }
 
@@ -290,6 +327,7 @@ export async function runAccountDeletion(
         scheduleUrl: buildAccountDeletedScheduleUrl(getEnv().siteUrl, null),
         now,
       }),
+      cashOut: null,
     };
   }
 
@@ -351,11 +389,35 @@ export async function runAccountDeletion(
       cancelledFutureLessonIds: [],
       anonymizedLessonIds: [],
       coachAccountDeletedOutboxId: null,
+      cashOut: null,
     };
   }
 
   // Solo path. Full teardown.
   const cancelledFutureLessonIds = await cancelFutureLessons(tx, householdId, profileId, now);
+
+  // ADR 036 Phase 8 Part B Stop 2: run cash-out INSIDE the deletion
+  // transaction so the refund + write-off rows commit or roll back
+  // with everything else. `cancelFutureLessons` already acquired the
+  // per-household balance advisory lock, so the in-tx variant reuses
+  // the same transaction without a second lock acquire (the xact lock
+  // is session-scoped; re-taking it is a no-op). Email is skipped —
+  // the parent sees the amounts on the confirm-endpoint response and
+  // the account-deleted email instead.
+  const cashOutResult = await executeCashOutInTx(tx, {
+    householdId,
+    actorId: profileId,
+    opts: { skipEmail: true },
+  });
+  const cashOut: CashOutExecutionSummary | null =
+    cashOutResult.cashRefundLedgerIds.length === 0
+      && cashOutResult.writeOffLedgerId === null
+      ? null
+      : {
+          breakdown: cashOutResult.breakdown,
+          refundJobCount: cashOutResult.cashRefundJobIds.length,
+          needsManualHandlingCents: cashOutResult.needsManualHandlingCents,
+        };
 
   // Load cancelled-lesson start times + location snapshot for the coach
   // summary notification AND the coach-side email, before the rows get
@@ -469,6 +531,7 @@ export async function runAccountDeletion(
     cancelledFutureLessonIds,
     anonymizedLessonIds,
     coachAccountDeletedOutboxId,
+    cashOut,
   };
 }
 
@@ -549,6 +612,16 @@ export async function anonymizeHouseholdLedger(
     .set({ householdId: null, actorId: null })
     .where(eq(householdBalanceLedger.householdId, householdId))
     .returning({ id: householdBalanceLedger.id });
+  // ADR 036 Phase 8 Part B Stop 2: null the cash_refund_jobs rows'
+  // household_id in the same statement so needs-manual-handling jobs
+  // survive the deletion for Jason to resolve off platform, but no
+  // longer tie back to a specific family. The coach notification
+  // written when the job was created already captured a household
+  // name snapshot in its payload.
+  await tx
+    .update(cashRefundJobs)
+    .set({ householdId: null })
+    .where(eq(cashRefundJobs.householdId, householdId));
   return result.length;
 }
 

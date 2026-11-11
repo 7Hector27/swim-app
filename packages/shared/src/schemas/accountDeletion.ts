@@ -4,6 +4,8 @@
 
 import { z } from "zod";
 
+import { CashOutBreakdownSchema } from "./payments";
+
 // The phrase a parent must type to prove they meant to click the button.
 // Mobile keyboards autocapitalize the first word — "Delete" is a
 // genuinely-intended input that would otherwise fail a strict ===. The
@@ -54,6 +56,12 @@ export const DeletionPreviewResponseSchema = z
     // couldn't read the balance (fetch failure) — the UI hides the
     // note rather than guess.
     balanceCents: z.number().int().nullable(),
+    // ADR 036 Phase 8 Part B Stop 2: pre-deletion cash-out breakdown
+    // so the UI can render "$X will be refunded to your card. $Y of
+    // unused bonus credit will be forfeited." instead of the generic
+    // Phase-8-Part-A warning. Null when balanceCents is zero or the
+    // orphan fallback fires — nothing to refund.
+    cashOutPreview: CashOutBreakdownSchema.nullable(),
   })
   .strict();
 

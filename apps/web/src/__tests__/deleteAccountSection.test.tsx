@@ -33,6 +33,7 @@ function soloAlonePreview(): DeletionPreviewResponse {
     ownerMustTransferFirst: false,
     callerRole: "owner",
     balanceCents: 0,
+    cashOutPreview: null,
   };
 }
 
@@ -46,6 +47,7 @@ function leavePreview(): DeletionPreviewResponse {
     ownerMustTransferFirst: false,
     callerRole: "manager",
     balanceCents: 0,
+    cashOutPreview: null,
   };
 }
 
@@ -59,6 +61,7 @@ function ownerWithViewersPreview(): DeletionPreviewResponse {
     ownerMustTransferFirst: false,
     callerRole: "owner",
     balanceCents: 0,
+    cashOutPreview: null,
   };
 }
 
@@ -72,6 +75,7 @@ function blockedPreview(): DeletionPreviewResponse {
     ownerMustTransferFirst: true,
     callerRole: "owner",
     balanceCents: 0,
+    cashOutPreview: null,
   };
 }
 

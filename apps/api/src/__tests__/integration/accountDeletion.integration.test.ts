@@ -1774,7 +1774,10 @@ describe("ADR 036 Phase 8 Part A: solo deletion anonymizes the balance ledger", 
     const seededIds = seeded.map((row) => row.id);
 
     const res = await confirmDeletion(owner.accessToken);
-    expect(res.status).toBe(204);
+    // ADR 036 Phase 8 Part B Stop 2: deletions with a positive balance
+    // now carry the cash-out breakdown in the response body (200), not
+    // 204. The ledger anonymization behavior is unchanged.
+    expect(res.status).toBe(200);
 
     const after = await adminDb()
       .select({
@@ -1827,7 +1830,9 @@ describe("ADR 036 Phase 8 Part A: solo deletion anonymizes the balance ledger", 
     });
 
     const res = await confirmDeletion(owner.accessToken);
-    expect(res.status).toBe(204);
+    // ADR 036 Phase 8 Part B Stop 2: positive remaining balance after
+    // the lesson refund → cash-out ran → 200 (body) instead of 204.
+    expect(res.status).toBe(200);
 
     // The deletion anonymized household_id on every ledger row for this
     // household. Match by lesson_id — lessons are anonymized, not

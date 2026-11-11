@@ -17,6 +17,7 @@ function base(): DeletionPreviewResponse {
     ownerMustTransferFirst: false,
     callerRole: "owner",
     balanceCents: 0,
+    cashOutPreview: null,
   };
 }
 
