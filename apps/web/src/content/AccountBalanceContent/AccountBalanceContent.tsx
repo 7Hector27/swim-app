@@ -14,6 +14,8 @@ import type {
 } from "@swim-app/shared";
 import {
   LESSON_DURATION_MINUTES,
+  LESSON_TOPUP_MAX_QUANTITY,
+  LESSON_TOPUP_MIN_QUANTITY,
   PACKAGE_TIERS,
   SWIMMER_COUNTS,
   packagePrice,
@@ -82,12 +84,20 @@ export default function AccountBalanceContent({
 
         <BalanceCard balance={balance} topupState={topupState} />
 
-        <PackagesSection
+        {/* ADR 036 Phase 8 Part B Stop 3 piece 10: balance-page
+            section order. Single-lesson purchases land closest to the
+            balance so the common case (top up a few lessons) is one
+            scroll away; packages are the step up for parents whose
+            tally already pushes into package territory (the single-
+            lesson form nudges to them inline); history preview sits
+            below the buying surfaces where it belongs on a
+            balance-page hierarchy. */}
+        <BuyLessonsSection
           defaultSwimmerCount={activeSwimmerCount}
           successReturnTo={resumeBookingReturnTo ?? "/account/balance"}
         />
 
-        <LessonTopUpSection
+        <PackagesSection
           defaultSwimmerCount={activeSwimmerCount}
           successReturnTo={resumeBookingReturnTo ?? "/account/balance"}
         />
@@ -337,7 +347,7 @@ function PackageCard({
         type="button"
         onClick={handleBuy}
         disabled={pending}
-        className="w-full min-h-[52px] rounded-full bg-accent text-on-accent font-body font-bold text-base disabled:opacity-60"
+        className="w-full min-h-[52px] rounded-full bg-button-primary-background text-button-primary-text font-body font-bold text-base disabled:opacity-60 transition-[transform,opacity] duration-150 ease-out active:scale-[0.97] motion-reduce:transform-none"
       >
         {pending ? "Starting checkout…" : `Buy ${copy.name}`}
       </button>
@@ -350,9 +360,22 @@ function PackageCard({
   );
 }
 
-// ── Lesson top-up form ───────────────────────────────────────────────────────
+// ── Buy single lessons ───────────────────────────────────────────────────────
 
-function LessonTopUpSection({
+// ADR 036 Phase 8 Part B Stop 3 piece 8: single-lesson purchases
+// accept quantity 1..20. The server computes the Stripe amount as
+// priceForLesson × quantity and the webhook re-verifies before any
+// credit lands on the ledger, so the browser's displayed total is
+// cosmetic — the only authoritative total is the one the API
+// produces from the trio (duration, swimmers, quantity). The
+// `active:scale-[0.97]` press feedback is the same cross-UI micro-
+// interaction the booking buttons use; the transition is scoped to
+// `transform` so hover + disabled opacity transitions don't fight it.
+
+const PRESS_BUTTON_CLASS =
+  "transition-[transform,opacity] duration-150 ease-out active:scale-[0.97] motion-reduce:transform-none";
+
+function BuyLessonsSection({
   defaultSwimmerCount,
   successReturnTo,
 }: {
@@ -361,17 +384,55 @@ function LessonTopUpSection({
 }) {
   const [duration, setDuration] = useState<LessonDurationMinutes>(30);
   const [swimmerCount, setSwimmerCount] = useState<SwimmerCount>(defaultSwimmerCount);
+  const [quantity, setQuantity] = useState<number>(1);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const price = priceForLesson(duration, swimmerCount);
 
-  function handleAdd() {
+  const perLessonCents = priceForLesson(duration, swimmerCount);
+  const totalCents = perLessonCents * quantity;
+  const totalHours = (duration * quantity) / 60;
+
+  // Package nudge: when the parent is already buying enough lessons
+  // to clear a package's threshold, surface the swap with the
+  // package's credit + price at the selected swimmer count. Copy
+  // stays accurate regardless of exact hours — "Buying 10+ hours?
+  // Cannonball gets you $X of credit for $Y." — so a parent who
+  // lands on 11 hours, 15 hours, or 50 hours all see the same
+  // factual message about the package itself. Deep End takes
+  // priority at 20+ hours; Cannonball between 10 and 20 hours.
+  // Below 10 hours no nudge — the single-lesson path still beats
+  // the package threshold.
+  const nudgeTier: PackageTier | null =
+    totalHours >= 20 ? "deep_end" : totalHours >= 10 ? "cannonball" : null;
+  const nudge = nudgeTier
+    ? (() => {
+        const { priceCents, creditCents } = packagePrice(nudgeTier, swimmerCount);
+        return {
+          tier: nudgeTier,
+          name: TIER_COPY[nudgeTier].name,
+          thresholdHours: TIER_COPY[nudgeTier].hours,
+          priceCents,
+          creditCents,
+        };
+      })()
+    : null;
+
+  function handleQuantityChange(next: number) {
+    if (!Number.isFinite(next)) return;
+    const clamped = Math.min(
+      LESSON_TOPUP_MAX_QUANTITY,
+      Math.max(LESSON_TOPUP_MIN_QUANTITY, Math.round(next)),
+    );
+    setQuantity(clamped);
+  }
+
+  function handleBuy() {
     setError(null);
     startTransition(async () => {
       const result = await startLessonTopupAction(
         duration,
         swimmerCount,
-        1,
+        quantity,
         successReturnTo,
       );
       if (result.kind === "redirect") {
@@ -387,76 +448,107 @@ function LessonTopUpSection({
   }
 
   return (
-    <section className="mb-6" aria-labelledby="topup-heading">
+    <section className="mb-6" aria-labelledby="buy-lessons-heading">
       <h2
-        id="topup-heading"
+        id="buy-lessons-heading"
         className="font-heading text-[1.5rem] tablet:text-[1.75rem] leading-tight mb-3 text-text"
       >
-        Add credit for one lesson
+        Buy single lessons
       </h2>
-      <div className="rounded-card border border-border bg-background p-5">
-        <div className="flex flex-col gap-4">
-          <div>
-            <p className="font-body text-xs font-semibold uppercase tracking-wide text-text-secondary mb-2">
-              Length
-            </p>
-            <div className="flex gap-2" role="radiogroup" aria-label="Lesson length">
-              {LESSON_DURATION_MINUTES.map((minutes) => {
-                const isSelected = minutes === duration;
-                return (
-                  <button
-                    key={minutes}
-                    type="button"
-                    role="radio"
-                    aria-checked={isSelected}
-                    onClick={() => setDuration(minutes)}
-                    className={`flex-1 min-h-[44px] rounded-full font-body font-semibold text-sm ${
-                      isSelected
-                        ? "bg-accent text-on-accent"
-                        : "border border-border text-text hover:bg-surface-soft"
-                    }`}
-                  >
-                    {minutes} min
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+      <div className="rounded-card border border-border bg-background p-5 tablet:p-6">
+        <div className="flex flex-col gap-5">
+          <RadioRow
+            label="Length"
+            ariaLabel="Lesson length"
+            options={LESSON_DURATION_MINUTES.map((minutes) => ({
+              value: minutes,
+              label: `${minutes} min`,
+            }))}
+            selected={duration}
+            onChange={setDuration}
+          />
+
+          <RadioRow
+            label="Swimmers"
+            ariaLabel="Swimmer count"
+            options={SWIMMER_COUNTS.map((count) => ({ value: count, label: String(count) }))}
+            selected={swimmerCount}
+            onChange={setSwimmerCount}
+          />
 
           <div>
-            <p className="font-body text-xs font-semibold uppercase tracking-wide text-text-secondary mb-2">
-              Swimmers
-            </p>
-            <div className="flex gap-2" role="radiogroup" aria-label="Swimmer count">
-              {SWIMMER_COUNTS.map((count) => {
-                const isSelected = count === swimmerCount;
-                return (
-                  <button
-                    key={count}
-                    type="button"
-                    role="radio"
-                    aria-checked={isSelected}
-                    onClick={() => setSwimmerCount(count)}
-                    className={`flex-1 min-h-[44px] rounded-full font-body font-semibold text-sm ${
-                      isSelected
-                        ? "bg-accent text-on-accent"
-                        : "border border-border text-text hover:bg-surface-soft"
-                    }`}
-                  >
-                    {count}
-                  </button>
-                );
-              })}
+            <label
+              htmlFor="buy-lessons-quantity"
+              className="font-body text-xs font-semibold uppercase tracking-wide text-text-secondary mb-2 block"
+            >
+              Quantity
+            </label>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                aria-label="Decrease quantity"
+                onClick={() => handleQuantityChange(quantity - 1)}
+                disabled={quantity <= LESSON_TOPUP_MIN_QUANTITY}
+                className={`min-h-[44px] min-w-[44px] rounded-full border border-border text-text font-body font-bold text-lg disabled:opacity-40 ${PRESS_BUTTON_CLASS}`}
+              >
+                −
+              </button>
+              <input
+                id="buy-lessons-quantity"
+                data-testid="buy-lessons-quantity"
+                type="number"
+                inputMode="numeric"
+                min={LESSON_TOPUP_MIN_QUANTITY}
+                max={LESSON_TOPUP_MAX_QUANTITY}
+                value={quantity}
+                onChange={(event) => handleQuantityChange(Number(event.target.value))}
+                className="flex-1 min-w-0 min-h-[44px] rounded-button border border-border bg-background text-text font-body font-semibold text-base text-center focus:outline-none focus:ring-2 focus:ring-focus-ring"
+                style={{ fontVariantNumeric: "tabular-nums" }}
+              />
+              <button
+                type="button"
+                aria-label="Increase quantity"
+                onClick={() => handleQuantityChange(quantity + 1)}
+                disabled={quantity >= LESSON_TOPUP_MAX_QUANTITY}
+                className={`min-h-[44px] min-w-[44px] rounded-full border border-border text-text font-body font-bold text-lg disabled:opacity-40 ${PRESS_BUTTON_CLASS}`}
+              >
+                +
+              </button>
             </div>
+            <p className="font-body text-xs text-text-secondary mt-2">
+              {LESSON_TOPUP_MIN_QUANTITY}–{LESSON_TOPUP_MAX_QUANTITY} lessons at a time.
+            </p>
           </div>
 
           <p
-            className="font-body text-base text-text"
+            className="font-body text-base text-text leading-snug"
+            data-testid="buy-lessons-total"
             style={{ fontVariantNumeric: "tabular-nums" }}
           >
-            One {duration}-min lesson for {swimmerCount} {swimmerCount === 1 ? "swimmer" : "swimmers"}:{" "}
-            <span className="font-bold">{formatDollars(price)}</span>
+            {quantity} × {duration}-minute {quantity === 1 ? "lesson" : "lessons"} for{" "}
+            {swimmerCount} {swimmerCount === 1 ? "swimmer" : "swimmers"} ={" "}
+            <span className="font-bold">{formatDollars(totalCents)}</span>
           </p>
+
+          {nudge !== null ? (
+            <div
+              role="status"
+              data-testid="buy-lessons-package-nudge"
+              className="rounded-card border border-accent/40 bg-surface-soft p-4"
+            >
+              <p
+                className="font-body text-sm text-text leading-snug"
+                style={{ fontVariantNumeric: "tabular-nums" }}
+              >
+                Buying {nudge.thresholdHours}+ hours?{" "}
+                <span className="font-bold text-text">{nudge.name}</span> gets you{" "}
+                <span className="font-bold text-text">{formatDollars(nudge.creditCents)}</span>{" "}
+                of credit for{" "}
+                <span className="font-bold text-accent">{formatDollars(nudge.priceCents)}</span>
+                .
+              </p>
+            </div>
+          ) : null}
 
           <p className="font-body text-xs text-text-secondary text-center">
             Payments and refunds are covered by our{" "}
@@ -465,13 +557,15 @@ function LessonTopUpSection({
             </a>
             .
           </p>
+
           <button
             type="button"
-            onClick={handleAdd}
+            onClick={handleBuy}
             disabled={pending}
-            className="w-full min-h-[52px] rounded-full bg-accent text-on-accent font-body font-bold text-base disabled:opacity-60"
+            data-testid="buy-lessons-submit"
+            className={`w-full min-h-[52px] rounded-full bg-button-primary-background text-button-primary-text font-body font-bold text-base disabled:opacity-60 ${PRESS_BUTTON_CLASS}`}
           >
-            {pending ? "Starting checkout…" : `Add ${formatDollars(price)} of credit`}
+            {pending ? "Starting checkout…" : `Pay ${formatDollars(totalCents)}`}
           </button>
           {error ? (
             <p role="alert" className="font-body text-sm text-danger">
@@ -481,6 +575,51 @@ function LessonTopUpSection({
         </div>
       </div>
     </section>
+  );
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function RadioRow<T extends number>({
+  label,
+  ariaLabel,
+  options,
+  selected,
+  onChange,
+}: {
+  label: string;
+  ariaLabel: string;
+  options: Array<{ value: T; label: string }>;
+  selected: T;
+  onChange: (value: T) => void;
+}) {
+  return (
+    <div>
+      <p className="font-body text-xs font-semibold uppercase tracking-wide text-text-secondary mb-2">
+        {label}
+      </p>
+      <div className="flex gap-2" role="radiogroup" aria-label={ariaLabel}>
+        {options.map((option) => {
+          const isSelected = option.value === selected;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              role="radio"
+              aria-checked={isSelected}
+              onClick={() => onChange(option.value)}
+              className={`flex-1 min-h-[44px] rounded-full font-body font-semibold text-sm ${PRESS_BUTTON_CLASS} ${
+                isSelected
+                  ? "bg-accent text-on-accent"
+                  : "border border-border text-text hover:bg-surface-soft"
+              }`}
+            >
+              {option.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
