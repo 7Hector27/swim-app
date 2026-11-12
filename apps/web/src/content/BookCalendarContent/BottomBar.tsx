@@ -21,6 +21,12 @@ interface Props {
   totalPriceCents?: number;
   onConfirm: () => void;
   isConfirming: boolean;
+  // ADR 036 Phase 8 Part B Stop 3 piece 4: inline "Add funds" link on
+  // the balance line. When provided, clicking it stashes the parent's
+  // current picks (via the caller-owned helper) and sends them to
+  // /account/balance so they can come back to the same picks after
+  // paying. Omit the prop to hide the link.
+  onAddFunds?: () => void;
 }
 
 export default function BottomBar({
@@ -34,6 +40,7 @@ export default function BottomBar({
   totalPriceCents = 0,
   onConfirm,
   isConfirming,
+  onAddFunds,
 }: Props) {
   const hasSelection = selectedStartsAt !== null;
   const hasSwimmers = swimmerIds.length > 0;
@@ -120,6 +127,19 @@ export default function BottomBar({
                   <span className="font-semibold">
                     Short by {formatDollars(shortfallCents)}
                   </span>
+                </>
+              )}
+              {onAddFunds !== undefined && (
+                <>
+                  {" · "}
+                  <button
+                    type="button"
+                    onClick={onAddFunds}
+                    data-testid="single-add-funds"
+                    className="underline hover:opacity-80 font-semibold"
+                  >
+                    Add funds
+                  </button>
                 </>
               )}
             </p>

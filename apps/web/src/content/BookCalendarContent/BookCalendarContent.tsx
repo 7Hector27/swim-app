@@ -1266,6 +1266,32 @@ export default function BookCalendarContent({
     window.location.href = "/account/balance?resume=book";
   }
 
+  // ADR 036 Phase 8 Part B Stop 3 piece 4: bottom-bar "Add funds" link
+  // stashes the parent's current picks so they can come back to the
+  // same picks after paying, then sends them to /account/balance. Same
+  // destination as the "Buy a package" path in the insufficient-funds
+  // modal.
+  function handleAddFundsFromBottomBar() {
+    if (bookingMode === "single") {
+      if (
+        locationId !== null &&
+        selectedStartsAt !== null &&
+        swimmerIds.length > 0
+      ) {
+        stashPendingBooking({
+          startsAt: selectedStartsAt,
+          durationMinutes,
+          locationId,
+          swimmerIds: [...swimmerIds],
+        });
+      }
+    } else {
+      const snapshot = buildBatchStashSnapshot();
+      if (snapshot !== null) stashPendingBooking(snapshot);
+    }
+    window.location.href = "/account/balance?resume=book";
+  }
+
   function handleBatchAddCredit() {
     if (addCreditUnit === null) return;
     const snapshot = buildBatchStashSnapshot();
@@ -1760,6 +1786,7 @@ export default function BookCalendarContent({
               totalPriceCents={totalPriceCents}
               onConfirm={handleConfirmSingle}
               isConfirming={isBooking}
+              onAddFunds={handleAddFundsFromBottomBar}
             />
           )}
           {bookingMode === "multiple" && (
@@ -1780,6 +1807,7 @@ export default function BookCalendarContent({
               emptyPicksNonce={emptyPicksNonce}
               balanceCents={balanceCents}
               totalPriceCents={totalPriceCents}
+              onAddFunds={handleAddFundsFromBottomBar}
             />
           )}
           {bookingMode === "recurring" && (
@@ -1813,6 +1841,7 @@ export default function BookCalendarContent({
               emptyPicksNonce={emptyPicksNonce}
               balanceCents={balanceCents}
               totalPriceCents={totalPriceCents}
+              onAddFunds={handleAddFundsFromBottomBar}
             />
           )}
         </>
@@ -2084,6 +2113,7 @@ interface MultipleBottomBarProps {
   emptyPicksNonce: number;
   balanceCents: number | null;
   totalPriceCents: number;
+  onAddFunds?: () => void;
 }
 
 function MultipleBottomBar({
@@ -2103,6 +2133,7 @@ function MultipleBottomBar({
   emptyPicksNonce,
   balanceCents,
   totalPriceCents,
+  onAddFunds,
 }: MultipleBottomBarProps) {
   const firstNameById = new Map(swimmers.map((swimmer) => [swimmer.id, swimmer.firstName]));
   const atCap = picks.length >= BATCH_LESSON_MAX;
@@ -2166,6 +2197,19 @@ function MultipleBottomBar({
                     <span className="font-semibold">
                       Short by {formatDollars(totalPriceCents - balanceCents)}
                     </span>
+                  </>
+                )}
+                {onAddFunds !== undefined && (
+                  <>
+                    {" · "}
+                    <button
+                      type="button"
+                      onClick={onAddFunds}
+                      data-testid="multiple-add-funds"
+                      className="underline hover:opacity-80 font-semibold"
+                    >
+                      Add funds
+                    </button>
                   </>
                 )}
               </p>
@@ -2315,6 +2359,7 @@ interface RecurringBottomBarProps {
   emptyPicksNonce: number;
   balanceCents: number | null;
   totalPriceCents: number;
+  onAddFunds?: () => void;
 }
 
 function RecurringBottomBar({
@@ -2339,6 +2384,7 @@ function RecurringBottomBar({
   emptyPicksNonce,
   balanceCents,
   totalPriceCents,
+  onAddFunds,
 }: RecurringBottomBarProps) {
   const firstNameById = new Map(swimmers.map((swimmer) => [swimmer.id, swimmer.firstName]));
   const hasPattern = pattern.length > 0;
@@ -2396,6 +2442,19 @@ function RecurringBottomBar({
                     <span className="font-semibold">
                       Short by {formatDollars(totalPriceCents - balanceCents)}
                     </span>
+                  </>
+                )}
+                {onAddFunds !== undefined && (
+                  <>
+                    {" · "}
+                    <button
+                      type="button"
+                      onClick={onAddFunds}
+                      data-testid="recurring-add-funds"
+                      className="underline hover:opacity-80 font-semibold"
+                    >
+                      Add funds
+                    </button>
                   </>
                 )}
               </p>
