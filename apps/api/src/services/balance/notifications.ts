@@ -90,7 +90,7 @@ export async function enqueueCashRefundNeedsManualNotification(
         // `listTitle` is the short in-app label the bell renders
         // (ADR 031). Every payload carries one so the list stays
         // pure/renderer-independent even if the push renderer grows.
-        listTitle: "Cash refund needs manual handling",
+        listTitle: "Refund needs your attention",
         kind: "cash_refund_needs_manual_handling",
         jobId: args.jobId,
         amountCents: args.amountCents,

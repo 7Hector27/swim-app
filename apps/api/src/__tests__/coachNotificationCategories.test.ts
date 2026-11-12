@@ -53,7 +53,7 @@ const EXPECTED_FALLBACK_LABELS: Record<(typeof DB_ALLOWED_CATEGORIES)[number], s
   auto_approved_summary: "Auto-approved booking",
   daily_summary: "Daily summary",
   account_deleted: "A family deleted their account",
-  cash_refund_needs_manual_handling: "Cash refund needs manual handling",
+  cash_refund_needs_manual_handling: "Refund needs your attention",
 };
 
 describe("coach notification category wiring", () => {

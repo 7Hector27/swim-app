@@ -129,7 +129,7 @@ export function renderPushBody(
         ? ` (${payload.stripePaymentIntentId})`
         : "";
       return {
-        title: "Cash refund needs manual handling",
+        title: "Refund needs your attention",
         body: `${dollars} · ${payload.reason}${tail}`,
       };
     }

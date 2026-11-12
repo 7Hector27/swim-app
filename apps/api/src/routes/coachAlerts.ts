@@ -588,7 +588,7 @@ function categoryFallbackLabel(category: string): string {
     case "account_deleted":
       return "A family deleted their account";
     case "cash_refund_needs_manual_handling":
-      return "Cash refund needs manual handling";
+      return "Refund needs your attention";
     default:
       return "Notification";
   }
