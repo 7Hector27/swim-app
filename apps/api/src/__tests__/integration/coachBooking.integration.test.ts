@@ -803,7 +803,11 @@ describe("POST /coach/lessons (integration)", () => {
       const cancelRes = await request(app)
         .delete(`/lessons/${lessonId}`)
         .set("Authorization", `Bearer ${ownerA.accessToken}`);
-      expect(cancelRes.status).toBe(204);
+      // ADR 036 Phase 8 Part B Stop 3 piece 4: DELETE /lessons/:id now
+      // returns 200 + { refundAmountCents, newBalanceCents }.
+      expect(cancelRes.status).toBe(200);
+      expect(cancelRes.body).toHaveProperty("refundAmountCents");
+      expect(cancelRes.body).toHaveProperty("newBalanceCents");
 
       const [row] = await adminDb()
         .select({ status: lessons.status, canceledBy: lessons.canceledBy })

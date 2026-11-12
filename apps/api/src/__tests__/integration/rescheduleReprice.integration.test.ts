@@ -446,7 +446,10 @@ describe("PATCH /lessons/:id — duration-change reprice (ADR 036 §2)", () => {
       const cancelRes = await request(app)
         .delete(`/lessons/${lessonId}`)
         .set("Authorization", `Bearer ${owner.accessToken}`);
-      expect(cancelRes.status).toBe(204);
+      // ADR 036 Phase 8 Part B Stop 3 piece 4: cancel returns 200 with
+      // the refund + new balance.
+      expect(cancelRes.status).toBe(200);
+      expect(cancelRes.body.refundAmountCents).toBe(newPrice);
 
       expect(await getHouseholdBalance(owner.householdId)).toBe(newPrice);
 

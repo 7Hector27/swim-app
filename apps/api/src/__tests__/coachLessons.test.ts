@@ -45,6 +45,7 @@ const {
   mockGetHouseholdBalance,
   mockApplyLedgerEntry,
   mockRefundLessonCharge,
+  mockGetLessonOutstandingChargeCents,
 } = vi.hoisted(() => ({
   mockGetUser: vi.fn(),
   mockDbSelect: vi.fn(),
@@ -60,6 +61,7 @@ const {
   // dedicated test Supabase stack.
   mockGetHouseholdBalance: vi.fn().mockResolvedValue(1_000_000_000),
   mockApplyLedgerEntry: vi.fn().mockResolvedValue("ledger-id-stub"),
+  mockGetLessonOutstandingChargeCents: vi.fn().mockResolvedValue(null),
   mockRefundLessonCharge: vi
     .fn()
     .mockResolvedValue({ refunded: false, reason: "no_charge" }),
@@ -124,6 +126,7 @@ vi.mock("../services/balance", () => ({
   getHouseholdBalance: mockGetHouseholdBalance,
   applyLedgerEntry: mockApplyLedgerEntry,
   refundLessonCharge: mockRefundLessonCharge,
+  getLessonOutstandingChargeCents: mockGetLessonOutstandingChargeCents,
 }));
 
 import { createApp } from "../app";

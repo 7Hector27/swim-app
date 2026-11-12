@@ -679,6 +679,13 @@ export const CoachLessonDetailSchema = z.object({
   anonymizedAt: z.string().datetime({ offset: true }).nullable().optional(),
   locationSnapshot: z.string().nullable().optional(),
   swimmerCount: z.number().int().nullable().optional(),
+  // ADR 036 Phase 8 Part B Stop 3 piece 4: current outstanding charge
+  // for this lesson, in positive cents. Populated on live rows; null
+  // on anonymized rows (no household balance to refund to) and on
+  // free / already-refunded lessons. The coach cancel/decline/no-show
+  // confirmation dialogs read this to show the refund amount that
+  // goes back to the family.
+  chargeAmountCents: z.number().int().nonnegative().nullable().optional(),
 });
 export type CoachLessonDetail = z.infer<typeof CoachLessonDetailSchema>;
 

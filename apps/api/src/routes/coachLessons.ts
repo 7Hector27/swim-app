@@ -77,6 +77,7 @@ import { sendLessonEmailOutboxRow } from "../services/emails/sender";
 import {
   applyLedgerEntry,
   getHouseholdBalance,
+  getLessonOutstandingChargeCents,
   refundLessonCharge,
 } from "../services/balance";
 import { computeAvailableSlots, mergeSlotWindows } from "../lib/slots";
@@ -1520,6 +1521,9 @@ coachLessonsRouter.get(
         anonymizedAt: lessonRow.anonymizedAt.toISOString(),
         locationSnapshot: lessonRow.locationSnapshot,
         swimmerCount: lessonRow.swimmerCount,
+        // Anonymized rows have no live household balance to refund to;
+        // the coach-side confirmations never render a refund line here.
+        chargeAmountCents: null,
       };
       res.json(anonymizedBody);
       return;
@@ -1529,19 +1533,25 @@ coachLessonsRouter.get(
     // detail assembly.
     const liveLesson = requireLiveLessonFields(lessonRow);
 
-    const rawSwimmerRows = await db
-      .select({
-        swimmerId: lessonSwimmers.swimmerId,
-        firstName: swimmers.firstName,
-        lastName: swimmers.lastName,
-        clubName: clubs.name,
-        otherClubName: swimmerClubs.otherClubName,
-      })
-      .from(lessonSwimmers)
-      .innerJoin(swimmers, eq(lessonSwimmers.swimmerId, swimmers.id))
-      .leftJoin(swimmerClubs, eq(swimmers.id, swimmerClubs.swimmerId))
-      .leftJoin(clubs, eq(swimmerClubs.clubId, clubs.id))
-      .where(eq(lessonSwimmers.lessonId, id));
+    const [rawSwimmerRows, chargeAmountCents] = await Promise.all([
+      db
+        .select({
+          swimmerId: lessonSwimmers.swimmerId,
+          firstName: swimmers.firstName,
+          lastName: swimmers.lastName,
+          clubName: clubs.name,
+          otherClubName: swimmerClubs.otherClubName,
+        })
+        .from(lessonSwimmers)
+        .innerJoin(swimmers, eq(lessonSwimmers.swimmerId, swimmers.id))
+        .leftJoin(swimmerClubs, eq(swimmers.id, swimmerClubs.swimmerId))
+        .leftJoin(clubs, eq(swimmerClubs.clubId, clubs.id))
+        .where(eq(lessonSwimmers.lessonId, id)),
+      // ADR 036 Phase 8 Part B Stop 3 piece 4: cancel/decline/no-show
+      // confirmations read the outstanding charge from the coach lesson
+      // detail. Null = free lesson or already-refunded.
+      getLessonOutstandingChargeCents(id),
+    ]);
 
     const swimmerMap = new Map<string, CoachLessonSwimmer>();
     for (const row of rawSwimmerRows) {
@@ -1608,6 +1618,7 @@ coachLessonsRouter.get(
       anonymizedAt: null,
       locationSnapshot: null,
       swimmerCount: null,
+      chargeAmountCents,
     };
 
     res.json(body);

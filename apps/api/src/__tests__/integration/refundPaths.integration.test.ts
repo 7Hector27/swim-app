@@ -211,7 +211,12 @@ describe("Phase 4 — refund paths", () => {
       const res = await request(app)
         .delete(`/lessons/${lessonId}`)
         .set("Authorization", `Bearer ${owner.accessToken}`);
-      expect(res.status).toBe(204);
+      // ADR 036 Phase 8 Part B Stop 3 piece 4: DELETE /lessons/:id now
+      // returns 200 + { refundAmountCents, newBalanceCents }. The
+      // refund restores the pre-booking seed, so newBalanceCents == price.
+      expect(res.status).toBe(200);
+      expect(res.body.refundAmountCents).toBe(price);
+      expect(res.body.newBalanceCents).toBe(price);
 
       const refundRows = await adminDb()
         .select({
@@ -256,7 +261,11 @@ describe("Phase 4 — refund paths", () => {
       const cancelRes = await request(app)
         .delete(`/lessons/${lessonId}`)
         .set("Authorization", `Bearer ${owner.accessToken}`);
-      expect(cancelRes.status).toBe(204);
+      // Free lesson: 200 + refundAmountCents null (no outstanding
+      // charge to refund). newBalanceCents is the live balance (still 0).
+      expect(cancelRes.status).toBe(200);
+      expect(cancelRes.body.refundAmountCents).toBeNull();
+      expect(cancelRes.body.newBalanceCents).toBe(0);
 
       // No refund_to_balance row; balance stays at 0.
       const refundRows = await adminDb()
@@ -352,7 +361,9 @@ describe("Phase 4 — refund paths", () => {
       const res = await request(app)
         .delete(`/lessons/${lessonId}`)
         .set("Authorization", `Bearer ${coach.accessToken}`);
-      expect(res.status).toBe(204);
+      // Coach cancel also returns 200 with the refund body.
+      expect(res.status).toBe(200);
+      expect(res.body.refundAmountCents).toBeGreaterThan(0);
 
       const refundRows = await adminDb()
         .select({
