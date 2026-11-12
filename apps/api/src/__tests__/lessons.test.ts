@@ -270,6 +270,26 @@ function authAs(profile: AnyProfile) {
   });
 }
 
+// ADR 036 Phase 8 Part B Stop 3 piece 3: the new
+// `requireCurrentPolicyAcceptance` middleware fires one db.select
+// between `requireHouseholdMember` and the route handler on gated
+// routes (POST /lessons + POST /lessons/batch). It queries
+// user_policy_acceptances and returns a row per policy slug the user
+// has already accepted. Default to all three current so the gate
+// passes through silently; tests that need the gate to fire can
+// queue a different mock explicitly.
+function policyAcceptancesCurrentSelect() {
+  const rows = [
+    { policySlug: "terms", version: "2026-11-11" },
+    { policySlug: "privacy", version: "2026-11-11" },
+    { policySlug: "payments_refund", version: "2026-11-11" },
+  ];
+  const limit = vi.fn().mockResolvedValue(rows);
+  const orderBy = vi.fn().mockReturnValue({ limit });
+  const where = vi.fn().mockReturnValue({ orderBy });
+  return { from: vi.fn().mockReturnValue({ where }) };
+}
+
 function requireUserSelect(profile: AnyProfile) {
   const where = vi.fn().mockResolvedValue([profile]);
   return { from: vi.fn().mockReturnValue({ where }) };
@@ -836,6 +856,7 @@ describe("POST /lessons", () => {
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(parentProfile))
       .mockReturnValueOnce(requireHouseholdMemberSelect())
+      .mockReturnValueOnce(policyAcceptancesCurrentSelect())
       .mockReturnValueOnce(limitSelect([namedLocationRow]))   // location
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([swimmerRow]) }) }) // swimmers
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([configRow]) }) }) // config
@@ -864,6 +885,7 @@ describe("POST /lessons", () => {
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(parentProfile))
       .mockReturnValueOnce(requireHouseholdMemberSelect())
+      .mockReturnValueOnce(policyAcceptancesCurrentSelect())
       .mockReturnValueOnce(limitSelect([namedLocationRow]))
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([swimmerRow]) }) })
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([configRow]) }) })
@@ -898,6 +920,7 @@ describe("POST /lessons", () => {
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(parentProfile))
       .mockReturnValueOnce(requireHouseholdMemberSelect())
+      .mockReturnValueOnce(policyAcceptancesCurrentSelect())
       .mockReturnValueOnce(limitSelect([namedLocationRow]))
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([swimmerRow]) }) })
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([configRow]) }) })
@@ -924,6 +947,7 @@ describe("POST /lessons", () => {
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(parentProfile))
       .mockReturnValueOnce(requireHouseholdMemberSelect())
+      .mockReturnValueOnce(policyAcceptancesCurrentSelect())
       .mockReturnValueOnce(limitSelect([namedLocationRow]))
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([swimmerRow]) }) })
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([configRow]) }) })
@@ -951,6 +975,7 @@ describe("POST /lessons", () => {
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(parentProfile))
       .mockReturnValueOnce(requireHouseholdMemberSelect())
+      .mockReturnValueOnce(policyAcceptancesCurrentSelect())
       .mockReturnValueOnce(limitSelect([namedLocationRow]))
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([swimmerRow]) }) })
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([configRow]) }) })
@@ -987,6 +1012,7 @@ describe("POST /lessons", () => {
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(parentProfile))
       .mockReturnValueOnce(requireHouseholdMemberSelect())
+      .mockReturnValueOnce(policyAcceptancesCurrentSelect())
       .mockReturnValueOnce(limitSelect([namedLocationRow]))
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([swimmerRow]) }) })
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([configRow]) }) })
@@ -1009,6 +1035,7 @@ describe("POST /lessons", () => {
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(parentProfile))
       .mockReturnValueOnce(requireHouseholdMemberSelect())
+      .mockReturnValueOnce(policyAcceptancesCurrentSelect())
       .mockReturnValueOnce(limitSelect([namedLocationRow]))
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([swimmerRow]) }) })
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([configRow]) }) })
@@ -1033,6 +1060,7 @@ describe("POST /lessons", () => {
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(parentProfile))
       .mockReturnValueOnce(requireHouseholdMemberSelect())
+      .mockReturnValueOnce(policyAcceptancesCurrentSelect())
       .mockReturnValueOnce(limitSelect([namedLocationRow]))
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([swimmerRow]) }) })
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([configRow]) }) })
@@ -1057,6 +1085,7 @@ describe("POST /lessons", () => {
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(parentProfile))
       .mockReturnValueOnce(requireHouseholdMemberSelect())
+      .mockReturnValueOnce(policyAcceptancesCurrentSelect())
       .mockReturnValueOnce(limitSelect([namedLocationRow]))
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([swimmerRow]) }) })
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([configRow]) }) })
@@ -1076,7 +1105,8 @@ describe("POST /lessons", () => {
     authAs(parentProfile);
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(parentProfile))
-      .mockReturnValueOnce(requireHouseholdMemberSelect());
+      .mockReturnValueOnce(requireHouseholdMemberSelect())
+      .mockReturnValueOnce(policyAcceptancesCurrentSelect());
 
     const fiveSwimmers = [
       "bbbbbbbb-0000-0000-0000-000000000001",
@@ -1100,6 +1130,7 @@ describe("POST /lessons", () => {
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(parentProfile))
       .mockReturnValueOnce(requireHouseholdMemberSelect())
+      .mockReturnValueOnce(policyAcceptancesCurrentSelect())
       .mockReturnValueOnce(limitSelect([namedLocationRow]))
       .mockReturnValueOnce({
         from: vi.fn().mockReturnValue({
@@ -1122,6 +1153,7 @@ describe("POST /lessons", () => {
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(parentProfile))
       .mockReturnValueOnce(requireHouseholdMemberSelect())
+      .mockReturnValueOnce(policyAcceptancesCurrentSelect())
       .mockReturnValueOnce(limitSelect([homeLocationBRow])); // location belongs to HOUSEHOLD_B
 
     const res = await request(app)
@@ -1139,6 +1171,7 @@ describe("POST /lessons", () => {
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(parentProfile))
       .mockReturnValueOnce(requireHouseholdMemberSelect())
+      .mockReturnValueOnce(policyAcceptancesCurrentSelect())
       .mockReturnValueOnce(limitSelect([namedLocationRow]))
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([swimmerRow]) }) })
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([configRow]) }) })
@@ -1198,6 +1231,7 @@ describe("POST /lessons", () => {
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(parentProfile))
       .mockReturnValueOnce(requireHouseholdMemberSelect())
+      .mockReturnValueOnce(policyAcceptancesCurrentSelect())
       .mockReturnValueOnce(limitSelect([namedLocationRow]))
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([swimmerRow]) }) })
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([farFutureConfig]) }) })

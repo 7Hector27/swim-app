@@ -35,6 +35,7 @@ import { db } from "../db/client";
 import { householdBalanceLedger } from "../db/schema";
 import { getEnv } from "../lib/env";
 import { asyncHandler } from "../middleware/asyncHandler";
+import { requireCurrentPolicyAcceptance } from "../middleware/requireCurrentPolicyAcceptance";
 import { requireHouseholdMember } from "../middleware/requireHouseholdMember";
 import { requireParent } from "../middleware/requireParent";
 import { requireUser } from "../middleware/requireUser";
@@ -50,6 +51,10 @@ paymentsRouter.post(
   requireUser,
   requireParent,
   requireHouseholdMember,
+  // ADR 036 Phase 8 Part B Stop 3 piece 3: both top-ups and packages
+  // ride this one route. Gated so a parent with a stale policy
+  // acceptance can't fund their balance before re-accepting.
+  requireCurrentPolicyAcceptance,
   validate({ body: CheckoutSessionBodySchema }),
   asyncHandler(async (req, res) => {
     const body = req.body as CheckoutSessionBody;

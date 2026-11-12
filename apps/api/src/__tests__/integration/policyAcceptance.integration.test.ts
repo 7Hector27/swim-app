@@ -11,6 +11,7 @@ import { and, desc, eq, sql } from "drizzle-orm";
 import { createApp } from "../../app";
 import {
   adminDb,
+  clearPolicyAcceptancesForTest,
   closeAdminDb,
   createTestUser,
   deleteSupabaseUser,
@@ -242,6 +243,7 @@ describe("GET /me/policies/missing", () => {
   it("returns empty missing[] when all three are current", async () => {
     const owner = await createTestUser("policy-missing-current");
     createdTestUsers.push(owner);
+    await clearPolicyAcceptancesForTest(owner.userId);
     // Seed three current-version acceptances.
     for (const slug of ["terms", "privacy", "payments_refund"] as const) {
       await adminDb().insert(userPolicyAcceptances).values({
@@ -266,6 +268,7 @@ describe("GET /me/policies/missing", () => {
   it("surfaces slugs whose current version is ahead of the user's latest acceptance", async () => {
     const owner = await createTestUser("policy-missing-stale");
     createdTestUsers.push(owner);
+    await clearPolicyAcceptancesForTest(owner.userId);
     // Current terms + old payments_refund; no privacy row at all.
     await adminDb().insert(userPolicyAcceptances).values({
       userId: owner.userId,
@@ -307,6 +310,7 @@ describe("POST /me/policies/accept", () => {
   it("writes one row per acceptance with source='reaccept_prompt' and audit", async () => {
     const owner = await createTestUser("policy-accept-ok");
     createdTestUsers.push(owner);
+    await clearPolicyAcceptancesForTest(owner.userId);
 
     const res = await request(app)
       .post("/me/policies/accept")
@@ -346,6 +350,7 @@ describe("POST /me/policies/accept", () => {
   it("returns 422 when no acceptances are submitted", async () => {
     const owner = await createTestUser("policy-accept-empty");
     createdTestUsers.push(owner);
+    await clearPolicyAcceptancesForTest(owner.userId);
     const res = await request(app)
       .post("/me/policies/accept")
       .set("Authorization", `Bearer ${owner.accessToken}`)
@@ -358,6 +363,7 @@ describe("user_policy_acceptances append-only trigger", () => {
   it("blocks UPDATE of non-identity columns outside the identity-nullification carve-out", async () => {
     const owner = await createTestUser("policy-trigger-update");
     createdTestUsers.push(owner);
+    await clearPolicyAcceptancesForTest(owner.userId);
     const inserted = await adminDb()
       .insert(userPolicyAcceptances)
       .values({

@@ -65,6 +65,7 @@ import {
 } from "../db/schema";
 import { requireUser } from "../middleware/requireUser";
 import { requireParent } from "../middleware/requireParent";
+import { requireCurrentPolicyAcceptance } from "../middleware/requireCurrentPolicyAcceptance";
 import { requireHouseholdMember } from "../middleware/requireHouseholdMember";
 import { requireHouseholdRole } from "../middleware/requireHouseholdRole";
 import { validate } from "../middleware/validate";
@@ -519,6 +520,12 @@ lessonsRouter.post(
   requireParent,
   requireHouseholdMember,
   requireHouseholdRole("manager"),
+  // ADR 036 Phase 8 Part B Stop 3 piece 3: 409 policy_acceptance_required
+  // when any tracked policy's version is ahead of the parent's latest
+  // acceptance. Runs after requireHouseholdRole so a non-manager inside
+  // the family still gets the correct 403 before we go to the DB for
+  // the acceptance snapshot.
+  requireCurrentPolicyAcceptance,
   bookingLimiter,
   validate({ body: CreateLessonBodySchema }),
   asyncHandler(async (req, res) => {
@@ -1142,6 +1149,9 @@ lessonsRouter.post(
   requireParent,
   requireHouseholdMember,
   requireHouseholdRole("manager"),
+  // ADR 036 Phase 8 Part B Stop 3 piece 3: same acceptance gate as
+  // single booking. Multiple + recurring batches both land here.
+  requireCurrentPolicyAcceptance,
   bookingLimiter,
   validate({ body: BatchSubmitBodySchema }),
   asyncHandler(async (req, res) => {

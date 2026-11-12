@@ -17,7 +17,13 @@ import {
   profiles,
   swimmerClubs,
   swimmers,
+  userPolicyAcceptances,
 } from "../../db/schema";
+import {
+  PAYMENTS_REFUND_VERSION,
+  PRIVACY_VERSION,
+  TERMS_VERSION,
+} from "@swim-app/shared";
 import { __settlePendingCoachAlertsForTests } from "../../lib/lessonApproval";
 
 // All env vars are validated in setup.ts before any test code runs.
@@ -151,6 +157,22 @@ export type TestUser = {
   cleanup: () => Promise<void>;
 };
 
+// Policy-acceptance test files need users with no auto-seeded
+// acceptances so they can assert on the "missing" state. Everything
+// else wants the seed because routes gated by
+// `requireCurrentPolicyAcceptance` would otherwise 409. Call this
+// right after `createTestUser(...)` from the two policy test files.
+// Uses session_replication_role=replica to bypass the append-only
+// trigger (same bypass pattern as the balance-ledger helpers).
+export async function clearPolicyAcceptancesForTest(userId: string): Promise<void> {
+  await adminDb().transaction(async (tx) => {
+    await tx.execute(sql`SET LOCAL session_replication_role = replica`);
+    await tx.execute(
+      sql`DELETE FROM user_policy_acceptances WHERE user_id = ${userId}::uuid`,
+    );
+  });
+}
+
 function uniqueEmail(prefix: string): string {
   const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   return `${prefix}-${suffix}@test.local`;
@@ -260,6 +282,18 @@ export async function createTestUser(emailPrefix: string): Promise<TestUser> {
     }
     const householdId = memberRows[0].householdId;
 
+    // ADR 036 Phase 8 Part B Stop 3 piece 3: seed current acceptances
+    // for all three tracked policies. The signup ROUTE writes these
+    // rows inside its transaction, but this helper creates users via
+    // the admin API so none exist by default. Without them every
+    // booking + add-funds route returns 409 and every test fixture
+    // that previously expected 422/200 breaks.
+    await adminDb().insert(userPolicyAcceptances).values([
+      { userId, policySlug: "terms", version: TERMS_VERSION, source: "signup" },
+      { userId, policySlug: "privacy", version: PRIVACY_VERSION, source: "signup" },
+      { userId, policySlug: "payments_refund", version: PAYMENTS_REFUND_VERSION, source: "signup" },
+    ]);
+
     const accessToken = await signIn(email, password);
 
     return {
@@ -282,6 +316,16 @@ export async function createTestUser(emailPrefix: string): Promise<TestUser> {
         // the household delete even though the FK is ON DELETE SET NULL,
         // so leftover test rows don't accumulate forever.
         await clearHouseholdBalanceForTest(householdId);
+        // Policy acceptances are append-only via the migration-0084
+        // trigger; same bypass. Must run before the profile DELETE
+        // because user_id → profiles has ON DELETE SET NULL (anonymize,
+        // not delete) and we'd leave orphaned ghost rows otherwise.
+        await adminDb().transaction(async (tx) => {
+          await tx.execute(sql`SET LOCAL session_replication_role = replica`);
+          await tx.execute(
+            sql`DELETE FROM user_policy_acceptances WHERE user_id = ${userId}::uuid`,
+          );
+        });
         // Delete remaining audit log rows (member_added etc. with no swimmer ref).
         await adminDb().delete(householdAuditLog).where(eq(householdAuditLog.householdId, householdId));
         // Delete members before household (profileId has ON DELETE RESTRICT on profiles).
@@ -345,6 +389,14 @@ export async function createTestUserInHousehold(
       role,
     });
 
+    // ADR 036 Phase 8 Part B Stop 3 piece 3: seed current acceptances
+    // (same rationale as createTestUser above).
+    await adminDb().insert(userPolicyAcceptances).values([
+      { userId, policySlug: "terms", version: TERMS_VERSION, source: "signup" },
+      { userId, policySlug: "privacy", version: PRIVACY_VERSION, source: "signup" },
+      { userId, policySlug: "payments_refund", version: PAYMENTS_REFUND_VERSION, source: "signup" },
+    ]);
+
     const accessToken = await signIn(email, password);
 
     return {
@@ -356,6 +408,14 @@ export async function createTestUserInHousehold(
         // Remove any audit log entries this user created in the target household.
         await adminDb().delete(householdAuditLog).where(eq(householdAuditLog.actorId, userId));
         await adminDb().delete(householdMembers).where(eq(householdMembers.profileId, userId));
+        // Policy acceptances: append-only trigger blocked; same bypass
+        // as the sibling helper.
+        await adminDb().transaction(async (tx) => {
+          await tx.execute(sql`SET LOCAL session_replication_role = replica`);
+          await tx.execute(
+            sql`DELETE FROM user_policy_acceptances WHERE user_id = ${userId}::uuid`,
+          );
+        });
         // ADR 034: profiles.id → auth.users.id is no longer ON DELETE CASCADE.
         await deleteSupabaseUser(userId);
         await adminDb().delete(profiles).where(eq(profiles.id, userId));

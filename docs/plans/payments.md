@@ -502,6 +502,10 @@ Also flagged for the review packet but not rendered on a page:
 - **Signup acceptance mechanics** — the three-linked-policies checkbox on `/signup`, the stored `(policy, version, timestamp, source)` record in `user_policy_acceptances`, the audit trail. Legal confirms the checkbox wording and whether all three policies belong inside one acceptance or whether the Privacy Policy stays alongside (notice vs agreement).
 - **Re-acceptance flow on policy change** — `/policy-updated` interstitial gated by the `requireCurrentPolicyAcceptance` middleware on booking + add-funds. Legal confirms affirmative-click vs passive-notice (we're implementing affirmative; if a notice suffices the interstitial drops to a banner).
 
+### Known issues
+
+- **`accountDeletionRealFlows.integration.test.ts` is flaky in the full-suite run.** The test asserts exactly one `coach_account_deleted` outbox row per deletion, scoped to the coach found via `getActiveCoachProfile`. When multiple integration test files in the same worker promote a profile to `role='coach'` for their own fixtures, that helper picks a shared "active" coach across files, and each file's deletion flow writes its own outbox row onto the same recipient — so the real-flows test sees 7 rows instead of 1. Passes cleanly in isolation (`pnpm --filter api test:integration -- src/__tests__/integration/accountDeletionRealFlows.integration.test.ts`). Fix is a cross-file-safe `getActiveCoachProfile` (scope by created-by test, or hash into a per-file coach), not in scope for this branch. Known as of Stop 3 piece 3.
+
 ---
 
 ## 9. Phases on this branch — backend before UI
