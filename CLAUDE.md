@@ -43,6 +43,13 @@ pnpm db:test:sync-catalog  # upsert skills catalog into the test stack
 
 **Integration tests run against the test stack only.** `pnpm test:integration` is guarded against the manual stack; never point `INTEGRATION_DATABASE_URL` at port 54322.
 
+## Check scope while working
+
+- **UI-only changes**: `pnpm typecheck`, `pnpm lint`, the related web tests, and `pnpm --filter web build`. No integration suite.
+- **Backend changes**: the related integration tests while working, plus the full `pnpm test:integration` once at the end of the task.
+- **Full `/check`**: runs once before opening a PR, not on every iteration.
+- Never rerun a suite just to see its output — capture it the first time.
+
 ## Workflow rules
 
 Never push with `--no-verify`. The pre-push hook is the CI for `dev`. Run `pnpm test:integration` locally before opening a PR.
