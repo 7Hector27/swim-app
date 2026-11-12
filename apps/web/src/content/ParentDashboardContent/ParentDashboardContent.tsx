@@ -159,6 +159,19 @@ export default async function ParentDashboardContent({ profile, accessToken, boo
             </div>
           </div>
 
+          {/* ADR 036 Phase 8 Part B Stop 3 piece 9: on mobile the
+              balance tile floats above the two-column layout so the
+              parent sees the dollar balance without scrolling past
+              swimmers and upcoming lessons first. On tablet+ the
+              tile lives in the sidebar at its original position, so
+              the main column (Upcoming + Swimmers) keeps the hero
+              slot the desktop layout was designed around. */}
+          {!isViewer && balanceResult !== null && (
+            <div className="tablet:hidden mb-6">
+              <BalanceCard balance={balanceResult} />
+            </div>
+          )}
+
           {/* Two-column layout */}
           <div className="flex flex-col tablet:flex-row tablet:items-start gap-6 desktop:gap-8">
             {/* Main column: full width on phone, flex-1 on tablet+ */}
@@ -189,11 +202,15 @@ export default async function ParentDashboardContent({ profile, accessToken, boo
             <div className="w-full tablet:w-[272px] desktop:w-[300px] flex-shrink-0 flex flex-col gap-4">
               {showFinishSetup && <FinishSetupCard hasPhone={hasPhone} />}
 
-              {/* ADR 036 Phase 8 Part B Stop 3 piece 4: balance tile
-                  hidden for viewers; owners and managers see the
-                  dollar balance + approximate private hours with a
-                  link to /account/balance for history and top-ups. */}
-              {!isViewer && balanceResult !== null && <BalanceCard balance={balanceResult} />}
+              {/* Tablet+ placement: the balance tile sits in the sidebar
+                  next to the rest of the account controls. Hidden below
+                  the tablet breakpoint — the mobile render above owns
+                  the tile there. */}
+              {!isViewer && balanceResult !== null && (
+                <div className="hidden tablet:block">
+                  <BalanceCard balance={balanceResult} />
+                </div>
+              )}
 
               <AccountCard />
             </div>

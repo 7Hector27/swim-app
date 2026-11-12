@@ -99,43 +99,50 @@ async function renderDashboard() {
   return render(element);
 }
 
+// ADR 036 Phase 8 Part B Stop 3 piece 9: the balance tile renders
+// twice in the DOM — once in a `tablet:hidden` block above the
+// two-column layout for mobile, and once inside the `hidden
+// tablet:block` sidebar wrapper for tablet+. Both carry the same
+// testid, so the tests assert visibility via `queryAllByTestId`
+// instead of matching a single element.
+
 describe("Parent dashboard balance tile", () => {
   it("renders dollars + approximate hours + link to /account/balance for an owner", async () => {
     mockFetchHousehold.mockResolvedValue({ ok: true, household: OWNER_HOUSEHOLD });
-    const { queryByTestId, getByText } = await renderDashboard();
-    const tile = queryByTestId("dashboard-balance-tile");
-    expect(tile).not.toBeNull();
-    expect(queryByTestId("dashboard-balance-dollars")!.textContent).toBe("$120.00");
-    expect(queryByTestId("dashboard-balance-hours")!.textContent).toBe(
-      "≈ 1 hour of private lessons",
-    );
+    const { queryAllByTestId, getAllByText } = await renderDashboard();
+    const tiles = queryAllByTestId("dashboard-balance-tile");
+    expect(tiles.length).toBeGreaterThan(0);
+    const dollars = queryAllByTestId("dashboard-balance-dollars");
+    expect(dollars[0]?.textContent).toBe("$120.00");
+    const hours = queryAllByTestId("dashboard-balance-hours");
+    expect(hours[0]?.textContent).toBe("≈ 1 hour of private lessons");
     // Link to /account/balance for history + top-ups.
-    const link = getByText("Add funds and see history");
+    const link = getAllByText("Add funds and see history")[0]!;
     expect(link.getAttribute("href")).toBe("/account/balance");
   });
 
   it("renders the tile for a manager", async () => {
     mockFetchHousehold.mockResolvedValue({ ok: true, household: MANAGER_HOUSEHOLD });
-    const { queryByTestId } = await renderDashboard();
-    expect(queryByTestId("dashboard-balance-tile")).not.toBeNull();
+    const { queryAllByTestId } = await renderDashboard();
+    expect(queryAllByTestId("dashboard-balance-tile").length).toBeGreaterThan(0);
   });
 
   it("hides the tile for a viewer", async () => {
     mockFetchHousehold.mockResolvedValue({ ok: true, household: VIEWER_HOUSEHOLD });
-    const { queryByTestId } = await renderDashboard();
-    expect(queryByTestId("dashboard-balance-tile")).toBeNull();
+    const { queryAllByTestId } = await renderDashboard();
+    expect(queryAllByTestId("dashboard-balance-tile")).toHaveLength(0);
   });
 
   it("hides the tile when the balance fetch fails (fetchBalance → null)", async () => {
     mockFetchHousehold.mockResolvedValue({ ok: true, household: OWNER_HOUSEHOLD });
     mockFetchBalance.mockResolvedValue(null);
-    const { queryByTestId } = await renderDashboard();
-    expect(queryByTestId("dashboard-balance-tile")).toBeNull();
+    const { queryAllByTestId } = await renderDashboard();
+    expect(queryAllByTestId("dashboard-balance-tile")).toHaveLength(0);
   });
 
   it("hides the tile when the household lookup fails (defense-in-depth viewer default)", async () => {
     mockFetchHousehold.mockResolvedValue({ ok: false, status: 500 });
-    const { queryByTestId } = await renderDashboard();
-    expect(queryByTestId("dashboard-balance-tile")).toBeNull();
+    const { queryAllByTestId } = await renderDashboard();
+    expect(queryAllByTestId("dashboard-balance-tile")).toHaveLength(0);
   });
 });
