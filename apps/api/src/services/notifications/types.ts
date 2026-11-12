@@ -8,7 +8,8 @@ export type CoachNotificationCategory =
   | "calendar_disconnected"
   | "auto_approved_summary"
   | "daily_summary"
-  | "account_deleted";
+  | "account_deleted"
+  | "cash_refund_needs_manual_handling";
 
 export type CoachNotificationUrgency = "standard" | "urgent";
 
@@ -125,6 +126,25 @@ export interface AccountDeletedPayload extends BasePayload {
   deletedAtUtc: string;
 }
 
+// ADR 036 Phase 8 Part B Stop 2. Written when a cash_refund_jobs row
+// lands in `status = 'needs_manual_handling'` (either because the
+// refundable residual couldn't be matched to a live card payment at
+// insert, or because the drain exhausted its retries). The payload
+// carries the Stripe payment intent id so Jason can copy-paste it into
+// the Stripe dashboard — we never snapshot a family name because a
+// household may be anonymized when this notification fires.
+export interface CashRefundNeedsManualHandlingPayload extends BasePayload {
+  kind: "cash_refund_needs_manual_handling";
+  jobId: string;
+  amountCents: number;
+  // Human-safe label produced by `reasonForBanner` in services/balance/
+  // notifications.ts. Short enough to render on the bell row and the
+  // lock-screen push body.
+  reason: string;
+  // Null for the direct-needs-manual case (unmatched residual).
+  stripePaymentIntentId: string | null;
+}
+
 export type CoachNotificationPayload =
   | BookingRequestLessonPayload
   | BookingRequestBatchPayload
@@ -134,4 +154,5 @@ export type CoachNotificationPayload =
   | AutoApprovedPayload
   | CalendarDisconnectedPayload
   | DailySummaryPayload
-  | AccountDeletedPayload;
+  | AccountDeletedPayload
+  | CashRefundNeedsManualHandlingPayload;
