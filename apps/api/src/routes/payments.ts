@@ -102,7 +102,13 @@ balanceRouter.get(
 // the server encodes (created_at, id) so a deterministic order survives
 // identical-timestamp rows that an atomic package purchase might emit.
 
-const HISTORY_PAGE_SIZE = 50;
+// 20 rows per page matches the "Load more" affordance in the balance
+// history UI — enough to see a few weeks of activity at a glance
+// without pushing the lesson-booking context off the screen on a
+// phone. The running balance stays correct across pages because the
+// server anchors the per-page sum to the ledger's temporal boundary,
+// not the cursor position (see assemble loop below).
+const HISTORY_PAGE_SIZE = 20;
 
 interface HistoryCursor {
   createdAt: string;

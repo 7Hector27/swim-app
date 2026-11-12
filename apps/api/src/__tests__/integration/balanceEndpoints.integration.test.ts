@@ -90,8 +90,10 @@ describe("GET /me/balance/history", () => {
     expect(res.body.nextCursor).toBeNull();
   });
 
-  it("paginates via opaque cursor when more than 50 rows exist", async () => {
-    // Wipe + bulk-insert 60 coach_adjustment rows.
+  it("paginates via opaque cursor when more than 20 rows exist", async () => {
+    // ADR 036 Phase 8 Part B Stop 3 piece 5: page size is 20, sized
+    // to the balance-history UI's "Load more" button. Seed 25 rows →
+    // expect 20 on page 1 + 5 on page 2.
     await adminDb().transaction(async (tx) => {
       await tx.execute(sql`SET LOCAL session_replication_role = replica`);
       await tx.execute(
@@ -99,7 +101,7 @@ describe("GET /me/balance/history", () => {
       );
     });
 
-    for (let i = 0; i < 60; i++) {
+    for (let i = 0; i < 25; i++) {
       await adminDb().insert(householdBalanceLedger).values({
         householdId: owner.householdId,
         actorId: owner.userId,
@@ -113,14 +115,14 @@ describe("GET /me/balance/history", () => {
       .get("/me/balance/history")
       .set("Authorization", `Bearer ${owner.accessToken}`);
     expect(page1.status).toBe(200);
-    expect(page1.body.entries).toHaveLength(50);
+    expect(page1.body.entries).toHaveLength(20);
     expect(page1.body.nextCursor).not.toBeNull();
 
     const page2 = await request(app)
       .get(`/me/balance/history?cursor=${encodeURIComponent(page1.body.nextCursor)}`)
       .set("Authorization", `Bearer ${owner.accessToken}`);
     expect(page2.status).toBe(200);
-    expect(page2.body.entries).toHaveLength(10);
+    expect(page2.body.entries).toHaveLength(5);
     expect(page2.body.nextCursor).toBeNull();
     // No overlap between pages — ids are distinct.
     const idsP1 = new Set(page1.body.entries.map((row: { id: string }) => row.id));
