@@ -16,6 +16,7 @@ import type {
   DayAvailability,
   DayState,
   HouseholdRole,
+  CancelLessonResponse,
   LessonResponse,
   LessonSwimmer,
   MonthAvailabilityResponse,
@@ -95,6 +96,7 @@ import { sendLessonEmailOutboxRow } from "../services/emails/sender";
 import {
   applyLedgerEntry,
   getHouseholdBalance,
+  getLessonOutstandingChargeCents,
   refundLessonCharge,
 } from "../services/balance";
 import type { BatchEmailLesson, BatchEmailPayload } from "../services/emails/batchTypes";
@@ -2052,11 +2054,17 @@ lessonsRouter.get(
     // ADR 034: parent lesson detail never renders anonymized rows; narrow.
     const lessonRow = requireLiveLocationId(rawLessonRow);
 
-    const swimmerRows = await db
-      .select({ swimmerId: lessonSwimmers.swimmerId, firstName: swimmers.firstName, lastName: swimmers.lastName })
-      .from(lessonSwimmers)
-      .innerJoin(swimmers, eq(lessonSwimmers.swimmerId, swimmers.id))
-      .where(eq(lessonSwimmers.lessonId, id));
+    const [swimmerRows, chargeAmountCents] = await Promise.all([
+      db
+        .select({ swimmerId: lessonSwimmers.swimmerId, firstName: swimmers.firstName, lastName: swimmers.lastName })
+        .from(lessonSwimmers)
+        .innerJoin(swimmers, eq(lessonSwimmers.swimmerId, swimmers.id))
+        .where(eq(lessonSwimmers.lessonId, id)),
+      // ADR 036 Phase 8 Part B: lesson detail carries the current
+      // outstanding charge so the parent cancel-confirmation can show
+      // "You'll get $X back". null = free lesson or already-refunded.
+      getLessonOutstandingChargeCents(id),
+    ]);
 
     const body: UpcomingLesson = {
       id: lessonRow.id,
@@ -2083,6 +2091,7 @@ lessonsRouter.get(
         lessonRow.batchMode === "manual" || lessonRow.batchMode === "weekly"
           ? lessonRow.batchMode
           : null,
+      chargeAmountCents,
     };
 
     res.json(body);
@@ -2181,10 +2190,27 @@ lessonsRouter.delete(
         actorIsCoach: isCoach,
       });
 
-      return { cancelOutboxId, coachNotificationId };
+      // ADR 036 Phase 8 Part B: response includes the applied refund +
+      // post-refund balance so the UI can render a "Cancelled.
+      // Refunded $X. New balance $Y." confirmation without a second
+      // /me/balance round trip. On free / already-refunded lessons the
+      // refund is null and the balance reflects the live total.
+      const responseBalanceCents = newBalanceCents
+        ?? (await getHouseholdBalance(lessonToCancel.householdId!, tx));
+
+      return {
+        cancelOutboxId,
+        coachNotificationId,
+        refundAmountCents: refund.refunded ? refund.amountCents : null,
+        newBalanceCents: responseBalanceCents,
+      };
     });
 
-    res.status(204).end();
+    const cancelResponse: CancelLessonResponse = {
+      refundAmountCents: cancelResult.refundAmountCents,
+      newBalanceCents: cancelResult.newBalanceCents,
+    };
+    res.status(200).json(cancelResponse);
     queueCoachNotificationSend(cancelResult.coachNotificationId);
     // Reconcile Google Calendar after the response. For a cancel this will
     // delete the event if one exists; a never-synced lesson is a safe no-op.
@@ -2625,11 +2651,18 @@ export async function loadLessonWithSwimmers(
   // (parent/coach GET + POST /lessons response). Narrow identity columns.
   const lesson = requireLiveLessonFields(rawLesson);
 
-  const swimmerRows = await db
-    .select({ swimmerId: lessonSwimmers.swimmerId, firstName: swimmers.firstName, lastName: swimmers.lastName })
-    .from(lessonSwimmers)
-    .innerJoin(swimmers, eq(lessonSwimmers.swimmerId, swimmers.id))
-    .where(eq(lessonSwimmers.lessonId, lessonId));
+  const [swimmerRows, chargeAmountCents] = await Promise.all([
+    db
+      .select({ swimmerId: lessonSwimmers.swimmerId, firstName: swimmers.firstName, lastName: swimmers.lastName })
+      .from(lessonSwimmers)
+      .innerJoin(swimmers, eq(lessonSwimmers.swimmerId, swimmers.id))
+      .where(eq(lessonSwimmers.lessonId, lessonId)),
+    // ADR 036 Phase 8 Part B: lesson detail/response carries the
+    // current outstanding charge so the coach and parent UIs can show
+    // the refund amount in a cancel/decline/no-show confirmation.
+    // null = free lesson or already-refunded.
+    getLessonOutstandingChargeCents(lessonId),
+  ]);
 
   return {
     id: lesson.id,
@@ -2651,6 +2684,7 @@ export async function loadLessonWithSwimmers(
     movedAt: lesson.movedAt?.toISOString() ?? null,
     previousStartsAt: lesson.previousStartsAt?.toISOString() ?? null,
     createdAt: lesson.createdAt.toISOString(),
+    chargeAmountCents,
   };
 }
 

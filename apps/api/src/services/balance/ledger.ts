@@ -263,6 +263,25 @@ export type RefundLessonChargeResult =
   | { refunded: true; amountCents: number; ledgerId: string };
 
 /**
+ * Read a lesson's current outstanding charge amount in positive cents —
+ * the dollar amount that would land back on the household's balance if
+ * the lesson were cancelled now. Safe to call outside a transaction: the
+ * value is a stable property of the ledger at read time and the UI uses
+ * it for display only (the actual refund still re-reads inside the
+ * balance lock in `refundLessonCharge`). Returns null when the lesson
+ * has no outstanding charge (free, pre-Phase-4, or already-refunded).
+ */
+export async function getLessonOutstandingChargeCents(
+  lessonId: string,
+  dbOrTx: Db = db,
+): Promise<number | null> {
+  const outstanding = await findOutstandingLessonCharge(dbOrTx, lessonId);
+  if (!outstanding) return null;
+  // Charges are stored negative; flip to the positive refund amount.
+  return -outstanding.amountCents;
+}
+
+/**
  * Find the lesson's current outstanding `lesson_charge` row — the one that
  * has not yet been offset by a `refund_to_balance`. A lesson may accumulate
  * several lesson_charge rows across its lifetime (duration-change

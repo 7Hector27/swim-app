@@ -292,8 +292,10 @@ export type {
   BulkCancelPreviewBody,
   BulkCancelPreviewLesson,
   BulkCancelPreviewResponse,
+  BulkCancelPerHouseholdRefund,
   BulkCancelConfirmBody,
   BulkCancelConfirmResponse,
+  CancelLessonResponse,
 } from "./schemas/booking";
 export {
   LessonLocationSchema,
@@ -366,8 +368,10 @@ export {
   BulkCancelPreviewBodySchema,
   BulkCancelPreviewLessonSchema,
   BulkCancelPreviewResponseSchema,
+  BulkCancelPerHouseholdRefundSchema,
   BulkCancelConfirmBodySchema,
   BulkCancelConfirmResponseSchema,
+  CancelLessonResponseSchema,
 } from "./schemas/booking";
 export type {
   SlotState,

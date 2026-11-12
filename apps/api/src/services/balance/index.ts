@@ -1,6 +1,7 @@
 export {
   applyLedgerEntry,
   getHouseholdBalance,
+  getLessonOutstandingChargeCents,
   refundLessonCharge,
   withBalanceLock,
 } from "./ledger";
