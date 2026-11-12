@@ -324,7 +324,12 @@ async function handleCheckoutCompleted(
 
 function expectedAmountCents(metadata: CheckoutMetadata): number {
   if (metadata.kind === "topup") {
-    return priceForLesson(metadata.durationMinutes, metadata.swimmerCount);
+    // ADR 036 Phase 8 Part B Stop 3 piece 8: multi-lesson top-up —
+    // recompute the same product the checkout route used
+    // (priceForLesson × quantity). If `quantity` or `amount_total`
+    // was tampered with in flight, this mismatch trips the
+    // amount-mismatch branch in processWebhook and we skip crediting.
+    return priceForLesson(metadata.durationMinutes, metadata.swimmerCount) * metadata.quantity;
   }
   return packagePrice(metadata.packageTier, metadata.swimmerCount).priceCents;
 }

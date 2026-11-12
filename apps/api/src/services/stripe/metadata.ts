@@ -13,7 +13,13 @@
 
 import { z } from "zod";
 
-import { LESSON_DURATION_MINUTES, PackageTierSchema, SwimmerCountSchema } from "@swim-app/shared";
+import {
+  LESSON_DURATION_MINUTES,
+  LESSON_TOPUP_MAX_QUANTITY,
+  LESSON_TOPUP_MIN_QUANTITY,
+  PackageTierSchema,
+  SwimmerCountSchema,
+} from "@swim-app/shared";
 
 // Stripe stores metadata values as strings; coerce back to numbers.
 const SwimmerCountStringSchema = z.preprocess(
@@ -32,12 +38,24 @@ const LessonDurationStringSchema = z.preprocess(
   ),
 );
 
+// ADR 036 Phase 8 Part B Stop 3 piece 8: topup carries a `quantity`
+// alongside duration + swimmer count. The webhook multiplies the
+// per-lesson price by this quantity when it recomputes the expected
+// total; a tampered metadata quantity (or a tampered Stripe
+// amount_total) therefore shows up as an amount-mismatch and no
+// credit is written.
+const QuantityStringSchema = z.preprocess(
+  (value) => (typeof value === "string" ? Number.parseInt(value, 10) : value),
+  z.number().int().min(LESSON_TOPUP_MIN_QUANTITY).max(LESSON_TOPUP_MAX_QUANTITY),
+);
+
 const TopupMetadataSchema = z.object({
   kind: z.literal("topup"),
   householdId: z.string().uuid(),
   actorId: z.string().uuid(),
   durationMinutes: LessonDurationStringSchema,
   swimmerCount: SwimmerCountStringSchema,
+  quantity: QuantityStringSchema,
 });
 
 const PackageMetadataSchema = z.object({

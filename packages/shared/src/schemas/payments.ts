@@ -82,11 +82,27 @@ const SuccessReturnToSchema = z
   )
   .optional();
 
+// ADR 036 Phase 8 Part B Stop 3 piece 8: single-lesson top-up now
+// accepts a quantity (1..20). The API computes the total server-side
+// as priceForLesson(duration, swimmerCount) * quantity; the webhook
+// recomputes the same product from metadata before crediting the
+// balance. 20 is a soft operational ceiling — a parent prepaying a
+// season's worth of lessons without a package — and also the point
+// where the Deep End package is obviously cheaper, so the UI nudges
+// to a package well before this limit.
+export const LESSON_TOPUP_MIN_QUANTITY = 1;
+export const LESSON_TOPUP_MAX_QUANTITY = 20;
+
 const CheckoutSessionTopupBodySchema = z.object({
   kind: z.literal("topup"),
   lessonTopup: z.object({
     durationMinutes: LessonDurationMinutesSchema,
     swimmerCount: SwimmerCountSchema,
+    quantity: z
+      .number()
+      .int()
+      .min(LESSON_TOPUP_MIN_QUANTITY)
+      .max(LESSON_TOPUP_MAX_QUANTITY),
   }).strict(),
   successReturnTo: SuccessReturnToSchema,
 }).strict();

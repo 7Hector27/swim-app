@@ -42,11 +42,12 @@ export async function startPackageCheckoutAction(
 export async function startLessonTopupAction(
   durationMinutes: LessonDurationMinutes,
   swimmerCount: SwimmerCount,
+  quantity: number,
   successReturnTo: string = "/account/balance",
 ): Promise<CheckoutStartResult> {
   return startCheckoutAction({
     kind: "topup",
-    lessonTopup: { durationMinutes, swimmerCount },
+    lessonTopup: { durationMinutes, swimmerCount, quantity },
     successReturnTo,
   });
 }
@@ -98,10 +99,12 @@ export async function startBookingShortfallTopupAction(
 ): Promise<CheckoutStartResult> {
   // Same as the balance-page top-up, but returnTo points back at the
   // booking flow so the parent lands where they started. The schema
-  // enforces returnTo is a relative path.
+  // enforces returnTo is a relative path. Shortfall is always one
+  // lesson's price — `quantity: 1` — so the parent lands back with
+  // just enough credit to cover the lesson they tried to book.
   return startCheckoutAction({
     kind: "topup",
-    lessonTopup: { durationMinutes, swimmerCount },
+    lessonTopup: { durationMinutes, swimmerCount, quantity: 1 },
     successReturnTo: returnTo,
   });
 }

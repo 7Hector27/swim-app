@@ -249,6 +249,7 @@ describe("POST /webhooks/stripe", () => {
         actorId: owner.userId,
         durationMinutes: "30",
         swimmerCount: "1",
+        quantity: "1",
       },
       payment_intent: "pi_test_badsig",
     };
@@ -288,6 +289,7 @@ describe("POST /webhooks/stripe", () => {
         actorId: owner.userId,
         durationMinutes: "30",
         swimmerCount: "1",
+        quantity: "1",
       },
       payment_intent: null,
     };
@@ -321,6 +323,7 @@ describe("POST /webhooks/stripe", () => {
         actorId: owner.userId,
         durationMinutes: "60",
         swimmerCount: "2",
+        quantity: "1",
       },
       payment_intent: "pi_test_replay",
     };
@@ -368,6 +371,7 @@ describe("POST /webhooks/stripe", () => {
         actorId: owner.userId,
         durationMinutes: "45",
         swimmerCount: "1",
+        quantity: "1",
       },
       payment_intent: "pi_test_dup_session",
     };
@@ -428,6 +432,7 @@ describe("POST /webhooks/stripe", () => {
         actorId: owner.userId,
         durationMinutes: "30",
         swimmerCount: "1",
+        quantity: "1",
       },
       payment_intent: "pi_tampered",
     };
@@ -471,6 +476,7 @@ describe("POST /webhooks/stripe", () => {
         actorId: owner.userId,
         durationMinutes: "30",
         swimmerCount: "1",
+        quantity: "1",
       },
       payment_intent: null,
     };
@@ -509,6 +515,7 @@ describe("POST /webhooks/stripe", () => {
         actorId: owner.userId,
         durationMinutes: "30",
         swimmerCount: "1",
+        quantity: "1",
       },
       payment_intent: "pi_unpaid",
       payment_status: "unpaid",
@@ -630,7 +637,7 @@ describe("POST /payments/checkout-session", () => {
       .set("Content-Type", "application/json")
       .send({
         kind: "topup",
-        lessonTopup: { durationMinutes: 60, swimmerCount: 1 },
+        lessonTopup: { durationMinutes: 60, swimmerCount: 1, quantity: 1 },
       });
 
     expect(res.status).toBe(201);
@@ -647,7 +654,7 @@ describe("POST /payments/checkout-session", () => {
       .set("Content-Type", "application/json")
       .send({
         kind: "topup",
-        lessonTopup: { durationMinutes: 30, swimmerCount: 1 },
+        lessonTopup: { durationMinutes: 30, swimmerCount: 1, quantity: 1 },
         // Browser tries to override the amount.
         amountCents: 1,
       });
@@ -662,7 +669,7 @@ describe("POST /payments/checkout-session", () => {
       .set("Content-Type", "application/json")
       .send({
         kind: "topup",
-        lessonTopup: { durationMinutes: 30, swimmerCount: 1 },
+        lessonTopup: { durationMinutes: 30, swimmerCount: 1, quantity: 1 },
         householdId: "99999999-9999-9999-9999-999999999999",
       });
 
@@ -690,10 +697,131 @@ describe("POST /payments/checkout-session", () => {
       .set("Content-Type", "application/json")
       .send({
         kind: "topup",
-        lessonTopup: { durationMinutes: 30, swimmerCount: 1 },
+        lessonTopup: { durationMinutes: 30, swimmerCount: 1, quantity: 1 },
       });
 
     expect(res.status).toBe(401);
+  });
+});
+
+// ── Multi-lesson top-up (quantity) ──────────────────────────────────────────
+// ADR 036 Phase 8 Part B Stop 3 piece 8: lesson top-up accepts a
+// quantity 1..20. The amount is computed server-side as
+// priceForLesson × quantity, and the webhook re-multiplies from the
+// metadata before crediting the ledger — so a caller that forges
+// either the Stripe amount_total or the metadata quantity ends up in
+// amount_mismatch instead of a free upgrade.
+
+describe("POST /payments/checkout-session — topup quantity", () => {
+  it("credits price × quantity on the ledger when the webhook fires for a multi-lesson top-up", async () => {
+    const sessionId = await makeSessionId("qty-happy");
+    const eventId = await makeEventId("qty-happy");
+    const quantity = 3;
+    const expected = priceForLesson(60, 1) * quantity;
+    const session: SeededSession = {
+      id: sessionId,
+      amount_total: expected,
+      metadata: {
+        kind: "topup",
+        householdId: owner.householdId,
+        actorId: owner.userId,
+        durationMinutes: "60",
+        swimmerCount: "1",
+        quantity: String(quantity),
+      },
+      payment_intent: "pi_qty_happy",
+    };
+    seedSession(session);
+    const event = completedEvent({ eventId, session });
+
+    const res = await request(app)
+      .post("/webhooks/stripe")
+      .set("Stripe-Signature", `sig:${eventId}`)
+      .set("Content-Type", "application/json")
+      .send(jsonBody(event));
+    expect(res.status).toBe(200);
+    expect(res.body.reason).toBe("processed");
+
+    const ledgerRows = await adminDb()
+      .select({ amountCents: householdBalanceLedger.amountCents })
+      .from(householdBalanceLedger)
+      .where(
+        and(
+          eq(householdBalanceLedger.stripeCheckoutSessionId, sessionId),
+          eq(householdBalanceLedger.entryType, "card_topup"),
+        ),
+      );
+    expect(ledgerRows).toHaveLength(1);
+    expect(ledgerRows[0]?.amountCents).toBe(expected);
+  });
+
+  it("rejects a tampered quantity — Stripe charged 1 lesson, metadata claims 3 → amount_mismatch, no credit", async () => {
+    const sessionId = await makeSessionId("qty-tamper");
+    const eventId = await makeEventId("qty-tamper");
+    const session: SeededSession = {
+      id: sessionId,
+      // Stripe collected the single-lesson price…
+      amount_total: priceForLesson(60, 1),
+      metadata: {
+        kind: "topup",
+        householdId: owner.householdId,
+        actorId: owner.userId,
+        durationMinutes: "60",
+        swimmerCount: "1",
+        // …but the metadata quantity is inflated. The webhook recomputes
+        // priceForLesson × 3 and the mismatch trips the amount-check.
+        quantity: "3",
+      },
+      payment_intent: "pi_qty_tamper",
+    };
+    seedSession(session);
+    const event = completedEvent({ eventId, session });
+
+    const res = await request(app)
+      .post("/webhooks/stripe")
+      .set("Stripe-Signature", `sig:${eventId}`)
+      .set("Content-Type", "application/json")
+      .send(jsonBody(event));
+    expect(res.status).toBe(200);
+    expect(res.body.reason).toBe("amount_mismatch");
+
+    const ledgerRows = await adminDb()
+      .select({ id: householdBalanceLedger.id })
+      .from(householdBalanceLedger)
+      .where(eq(householdBalanceLedger.stripeCheckoutSessionId, sessionId));
+    expect(ledgerRows).toHaveLength(0);
+  });
+
+  it("rejects quantity outside 1..20 at the request boundary with 422", async () => {
+    const tooLow = await request(app)
+      .post("/payments/checkout-session")
+      .set("Authorization", `Bearer ${owner.accessToken}`)
+      .set("Content-Type", "application/json")
+      .send({
+        kind: "topup",
+        lessonTopup: { durationMinutes: 30, swimmerCount: 1, quantity: 0 },
+      });
+    expect(tooLow.status).toBe(422);
+
+    const tooHigh = await request(app)
+      .post("/payments/checkout-session")
+      .set("Authorization", `Bearer ${owner.accessToken}`)
+      .set("Content-Type", "application/json")
+      .send({
+        kind: "topup",
+        lessonTopup: { durationMinutes: 30, swimmerCount: 1, quantity: 21 },
+      });
+    expect(tooHigh.status).toBe(422);
+
+    const notAnInt = await request(app)
+      .post("/payments/checkout-session")
+      .set("Authorization", `Bearer ${owner.accessToken}`)
+      .set("Content-Type", "application/json")
+      .send({
+        kind: "topup",
+        lessonTopup: { durationMinutes: 30, swimmerCount: 1, quantity: 1.5 },
+      });
+    expect(notAnInt.status).toBe(422);
   });
 });
 
@@ -769,6 +897,7 @@ describe("ADR 036 Phase 7: funds-added email enqueued in the same tx as the cred
         actorId: owner.userId,
         durationMinutes: "30",
         swimmerCount: "1",
+        quantity: "1",
       },
       payment_intent: "pi_funded_topup",
     };
@@ -874,6 +1003,7 @@ describe("ADR 036 Phase 7: funds-added email enqueued in the same tx as the cred
         actorId: owner.userId,
         durationMinutes: "30",
         swimmerCount: "1",
+        quantity: "1",
       },
       payment_intent: "pi_funded_replay",
     };
@@ -925,6 +1055,7 @@ describe("ADR 036 Phase 7: funds-added email ships RIGHT AFTER the webhook (regr
           actorId: owner.userId,
           durationMinutes: "30",
           swimmerCount: "1",
+          quantity: "1",
         },
         payment_intent: "pi_funded_microtask",
       };

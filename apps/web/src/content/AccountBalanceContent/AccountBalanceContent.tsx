@@ -371,6 +371,7 @@ function LessonTopUpSection({
       const result = await startLessonTopupAction(
         duration,
         swimmerCount,
+        1,
         successReturnTo,
       );
       if (result.kind === "redirect") {

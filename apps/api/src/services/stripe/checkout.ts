@@ -95,17 +95,25 @@ interface LineItem {
 
 function buildLineItem(input: CreateCheckoutSessionInput): LineItem {
   if (input.body.kind === "topup") {
-    const { durationMinutes, swimmerCount } = input.body.lessonTopup;
-    const amountCents = priceForLesson(durationMinutes, swimmerCount);
+    const { durationMinutes, swimmerCount, quantity } = input.body.lessonTopup;
+    // ADR 036 Phase 8 Part B Stop 3 piece 8: multi-lesson top-up —
+    // amount is quantity × per-lesson price. The webhook recomputes
+    // the same product from metadata before crediting the balance,
+    // so a caller that forges `quantity` or `amount_total` in flight
+    // lands in amount_mismatch and never writes to the ledger.
+    const amountCents = priceForLesson(durationMinutes, swimmerCount) * quantity;
+    const swimmerLabel = `${swimmerCount} swimmer${swimmerCount === 1 ? "" : "s"}`;
+    const quantityLabel = `${quantity} × ${durationMinutes} min`;
     return {
       amountCents,
-      description: `Lesson credit · ${durationMinutes} min × ${swimmerCount} swimmer${swimmerCount === 1 ? "" : "s"}`,
+      description: `Lesson credit · ${quantityLabel} × ${swimmerLabel}`,
       metadata: {
         kind: "topup",
         householdId: input.householdId,
         actorId: input.actorId,
         durationMinutes,
         swimmerCount,
+        quantity,
       },
     };
   }
