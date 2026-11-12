@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useActionState } from "react";
+import { useEffect, useRef, useActionState } from "react";
 import Link from "next/link";
 
 import type { LessonLocation, UpcomingLesson } from "@swim-app/shared";
@@ -8,6 +8,7 @@ import type { LessonLocation, UpcomingLesson } from "@swim-app/shared";
 import AddNoteForm from "@/components/AddNoteForm";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import BatchModeBadge from "@/components/BatchModeBadge";
+import { formatDollars } from "@/content/AccountBalanceContent/formatters";
 import {
   cancelBatchRemainingAction,
   cancelLessonAction,
@@ -31,6 +32,7 @@ export default function LessonDetailContent({
 }: Props) {
   const cancelDialogRef = useRef<HTMLDialogElement>(null);
   const cancelBatchDialogRef = useRef<HTMLDialogElement>(null);
+  const cancelSuccessDialogRef = useRef<HTMLDialogElement>(null);
 
   const [cancelState, cancelFormAction, isCanceling] = useActionState<LessonDetailState, FormData>(
     cancelLessonAction,
@@ -40,6 +42,17 @@ export default function LessonDetailContent({
     LessonDetailState,
     FormData
   >(cancelBatchRemainingAction, { status: "idle" });
+
+  // ADR 036 Phase 8 Part B Stop 3 piece 4: when the cancel succeeds,
+  // close the confirm dialog and open the refund-confirmation dialog so
+  // the parent sees "Cancelled. Refunded $X. New balance $Y." before
+  // going back to the dashboard. Free-lesson cancels still show the
+  // dialog but drop the refund line.
+  useEffect(() => {
+    if (cancelState.status !== "canceled") return;
+    cancelDialogRef.current?.close();
+    cancelSuccessDialogRef.current?.showModal();
+  }, [cancelState]);
 
   const startsAt = new Date(lesson.startsAt);
   const endsAt = new Date(startsAt.getTime() + lesson.durationMinutes * 60 * 1000);
@@ -247,7 +260,63 @@ export default function LessonDetailContent({
         isPending={isCanceling}
         {...(cancelState.status === "error" ? { errorMessage: cancelState.message } : {})}
         onCancel={() => cancelDialogRef.current?.close()}
-      />
+      >
+        {/* ADR 036 Phase 8 Part B Stop 3 piece 4: refund preview on the
+            cancel confirmation. The amount is the lesson's outstanding
+            charge from the lesson detail API (never computed in the
+            browser). Free lessons have chargeAmountCents null and the
+            refund line is suppressed. */}
+        {typeof lesson.chargeAmountCents === "number" && lesson.chargeAmountCents > 0 && (
+          <p
+            className="text-sm text-text leading-relaxed"
+            data-testid="parent-cancel-refund-preview"
+          >
+            You&apos;ll get{" "}
+            <span className="font-semibold">{formatDollars(lesson.chargeAmountCents)}</span>{" "}
+            back to your balance.
+          </p>
+        )}
+      </ConfirmDialog>
+
+      {cancelState.status === "canceled" && (
+        <ConfirmDialog
+          dialogRef={cancelSuccessDialogRef}
+          title="Lesson canceled"
+          description=""
+          formId="cancel-back-form"
+          confirmLabel="Back to dashboard"
+          cancelLabel="Stay here"
+          isPending={false}
+          onCancel={() => cancelSuccessDialogRef.current?.close()}
+        >
+          <div
+            className="flex flex-col gap-2 text-sm text-text leading-relaxed"
+            data-testid="parent-cancel-success"
+          >
+            {cancelState.refundAmountCents !== null && cancelState.refundAmountCents > 0 ? (
+              <p>
+                Refunded{" "}
+                <span className="font-semibold">
+                  {formatDollars(cancelState.refundAmountCents)}
+                </span>{" "}
+                to your balance.
+              </p>
+            ) : null}
+            <p>
+              New balance:{" "}
+              <span className="font-semibold">
+                {formatDollars(cancelState.newBalanceCents)}
+              </span>
+              .
+            </p>
+          </div>
+        </ConfirmDialog>
+      )}
+
+      {/* Navigates to /dashboard when the user clicks "Back to dashboard"
+          on the success dialog. Plain form (GET) with no server action —
+          the browser handles the navigation. */}
+      <form id="cancel-back-form" action="/dashboard" method="get" className="hidden" />
       {canCancelBatch && (
         <ConfirmDialog
           dialogRef={cancelBatchDialogRef}

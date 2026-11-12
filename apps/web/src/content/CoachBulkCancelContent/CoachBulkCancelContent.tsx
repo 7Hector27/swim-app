@@ -10,6 +10,7 @@ import type {
 } from "@swim-app/shared";
 import { BULK_CANCEL_MESSAGE_MAX_LENGTH } from "@swim-app/shared";
 import { postBulkCancelConfirm, postBulkCancelPreview } from "@/lib/api/coachBulkCancel";
+import { formatDollars } from "@/content/AccountBalanceContent/formatters";
 
 interface Props {
   accessToken: string;
@@ -418,26 +419,48 @@ function PreviewPanel({
 
       {!noLessons && (
         <ul className="flex flex-col gap-4">
-          {Array.from(grouped.entries()).map(([householdId, group]) => (
-            <li key={householdId} className="rounded-card border border-border bg-background p-4">
-              <p className="text-sm font-semibold text-heading">{group.householdName}</p>
-              <ul className="mt-2 flex flex-col gap-1">
-                {group.lessons.map((lesson) => (
-                  <li
-                    key={lesson.lessonId}
-                    className="text-sm text-text flex flex-wrap items-baseline gap-x-2"
-                  >
-                    <span className="font-semibold">{lesson.startsAtLocalDisplay}</span>
-                    <span className="text-text-secondary">
-                      {lesson.durationMinutes} min · {lesson.swimmerFirstNames.join(", ") || "swimmer"} ·{" "}
-                      {lesson.locationName}
-                    </span>
-                    <StatusChip status={lesson.status} />
-                  </li>
-                ))}
-              </ul>
-            </li>
-          ))}
+          {Array.from(grouped.entries()).map(([householdId, group]) => {
+            // ADR 036 Phase 8 Part B Stop 3 piece 4: per-family refund
+            // total from the preview response (summed server-side from
+            // the ledger — never recomputed in the browser). Suppressed
+            // when zero so free-lesson-only families don't show a
+            // misleading "$0 back" line.
+            const refund = preview.perHouseholdRefunds.find(
+              (entry) => entry.householdId === householdId,
+            );
+            const refundCents = refund?.totalRefundCents ?? 0;
+            return (
+              <li key={householdId} className="rounded-card border border-border bg-background p-4">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <p className="text-sm font-semibold text-heading">{group.householdName}</p>
+                  {refundCents > 0 && (
+                    <p
+                      className="text-sm text-text"
+                      data-testid={`bulk-cancel-refund-${householdId}`}
+                    >
+                      <span className="font-semibold">{formatDollars(refundCents)}</span>{" "}
+                      back to the family
+                    </p>
+                  )}
+                </div>
+                <ul className="mt-2 flex flex-col gap-1">
+                  {group.lessons.map((lesson) => (
+                    <li
+                      key={lesson.lessonId}
+                      className="text-sm text-text flex flex-wrap items-baseline gap-x-2"
+                    >
+                      <span className="font-semibold">{lesson.startsAtLocalDisplay}</span>
+                      <span className="text-text-secondary">
+                        {lesson.durationMinutes} min · {lesson.swimmerFirstNames.join(", ") || "swimmer"} ·{" "}
+                        {lesson.locationName}
+                      </span>
+                      <StatusChip status={lesson.status} />
+                    </li>
+                  ))}
+                </ul>
+              </li>
+            );
+          })}
         </ul>
       )}
 

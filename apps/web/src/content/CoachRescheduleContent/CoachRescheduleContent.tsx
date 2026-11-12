@@ -2,13 +2,15 @@
 
 import { useCallback, useMemo, useState, useTransition, useActionState, useEffect, useRef } from "react";
 import Link from "next/link";
-import { todayLA } from "@swim-app/shared";
+import { priceForLesson, todayLA } from "@swim-app/shared";
 import type {
   CoachLessonDetail,
   LessonLocation,
   WeekAvailabilityResponse,
   MonthAvailabilityResponse,
 } from "@swim-app/shared";
+
+import { formatDollars } from "@/content/AccountBalanceContent/formatters";
 
 import {
   fetchRangeAction,
@@ -726,7 +728,13 @@ export default function CoachRescheduleContent({ lesson, locations }: Props) {
         isPending={isRescheduling}
         {...(rescheduleState.status === "error" ? { errorMessage: rescheduleState.message } : {})}
         onCancel={() => confirmDialogRef.current?.close()}
-      />
+      >
+        <CoachReschedulePriceDiff
+          lesson={lesson}
+          newDurationMinutes={durationMinutes}
+          testid="coach-reschedule-price-diff"
+        />
+      </ConfirmDialog>
 
       {/* Cancel appointment dialog */}
       <ConfirmDialog
@@ -752,5 +760,47 @@ export default function CoachRescheduleContent({ lesson, locations }: Props) {
         isConfirming={isRescheduling}
       />
     </div>
+  );
+}
+
+// ADR 036 Phase 8 Part B Stop 3 piece 4: price-diff preview for the
+// coach reschedule confirmation. Mirrors the parent-side line (same
+// shared pricing lookup for the new charge) but phrases the diff
+// relative to the family's balance so the coach sees the impact on
+// the household they're moving the lesson for.
+function CoachReschedulePriceDiff({
+  lesson,
+  newDurationMinutes,
+  testid,
+}: {
+  lesson: CoachLessonDetail;
+  newDurationMinutes: 30 | 45 | 60;
+  testid: string;
+}) {
+  if (newDurationMinutes === lesson.durationMinutes) return null;
+  if (
+    typeof lesson.chargeAmountCents !== "number" ||
+    lesson.chargeAmountCents <= 0
+  ) {
+    return null;
+  }
+  const swimmerCount = Math.max(1, Math.min(4, lesson.swimmers.length)) as 1 | 2 | 3 | 4;
+  const newChargeCents = priceForLesson(newDurationMinutes, swimmerCount);
+  const deltaCents = newChargeCents - lesson.chargeAmountCents;
+  if (deltaCents === 0) return null;
+  return (
+    <p className="text-sm text-text leading-relaxed" data-testid={testid}>
+      {deltaCents > 0 ? (
+        <>
+          <span className="font-semibold">{formatDollars(deltaCents)}</span> more
+          will come from the family&apos;s balance.
+        </>
+      ) : (
+        <>
+          <span className="font-semibold">{formatDollars(-deltaCents)}</span> will
+          go back to the family&apos;s balance.
+        </>
+      )}
+    </p>
   );
 }
