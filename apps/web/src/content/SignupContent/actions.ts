@@ -30,6 +30,16 @@ export async function signup(
     };
   }
 
+  // ADR 036 Phase 8 Part B Stop 3: carry the three policy versions the
+  // server-rendered page actually showed. Hidden inputs on
+  // SignupContent.tsx carry the TERMS_VERSION / PRIVACY_VERSION /
+  // PAYMENTS_REFUND_VERSION constants from @swim-app/shared, so the
+  // browser cannot submit a version it did not see.
+  const termsVersion = (formData.get("termsVersion") as string | null) ?? "";
+  const privacyVersion = (formData.get("privacyVersion") as string | null) ?? "";
+  const paymentsRefundVersion =
+    (formData.get("paymentsRefundVersion") as string | null) ?? "";
+
   const raw = {
     fullName: formData.get("fullName"),
     email: formData.get("email"),
@@ -37,6 +47,11 @@ export async function signup(
     password: passwordRaw,
     birthDate: formData.get("birthDate"),
     acceptedTerms: formData.get("acceptedTerms") === "on",
+    acceptedPolicyVersions: {
+      terms: termsVersion,
+      privacy: privacyVersion,
+      payments_refund: paymentsRefundVersion,
+    },
     ...(returnTo !== undefined && { returnTo }),
   };
 

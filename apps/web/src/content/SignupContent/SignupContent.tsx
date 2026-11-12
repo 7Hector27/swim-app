@@ -14,11 +14,23 @@ import SuccessScreen from "./SuccessScreen";
 
 interface SignupContentProps {
   returnTo?: string;
+  // ADR 036 Phase 8 Part B Stop 3: the signup page's server component
+  // passes the three active policy versions as props. They land in
+  // hidden inputs so the server action submits a value the user
+  // actually saw — the browser cannot invent a version it did not.
+  termsVersion: string;
+  privacyVersion: string;
+  paymentsRefundVersion: string;
 }
 
 const initialState: SignupState = { status: "idle" };
 
-export default function SignupContent({ returnTo }: SignupContentProps) {
+export default function SignupContent({
+  returnTo,
+  termsVersion,
+  privacyVersion,
+  paymentsRefundVersion,
+}: SignupContentProps) {
   const [state, formAction, isPending] = useActionState(signup, initialState);
   const [confirmPasswordError, setConfirmPasswordError] = useState("");
   const [fullName, setFullName] = useState("");
@@ -66,6 +78,17 @@ export default function SignupContent({ returnTo }: SignupContentProps) {
             {returnTo !== undefined && (
               <input type="hidden" name="returnTo" value={returnTo} />
             )}
+            {/* ADR 036 Phase 8 Part B Stop 3: carry the policy versions
+                the user actually saw on this page. The API rejects
+                signups whose versions don't match the current server
+                constants with 422 stale_policy_versions. */}
+            <input type="hidden" name="termsVersion" value={termsVersion} />
+            <input type="hidden" name="privacyVersion" value={privacyVersion} />
+            <input
+              type="hidden"
+              name="paymentsRefundVersion"
+              value={paymentsRefundVersion}
+            />
             <p
               ref={errorRef}
               role="alert"
@@ -197,11 +220,19 @@ export default function SignupContent({ returnTo }: SignupContentProps) {
                   I agree to the{" "}
                   <a href="/terms" className="text-link underline hover:text-link-hover">
                     Terms of Service
-                  </a>{" "}
-                  and{" "}
+                  </a>
+                  ,{" "}
                   <a href="/privacy" className="text-link underline hover:text-link-hover">
                     Privacy Policy
                   </a>
+                  , and{" "}
+                  <a
+                    href="/refund-policy"
+                    className="text-link underline hover:text-link-hover"
+                  >
+                    Payments &amp; Refund Policy
+                  </a>
+                  .
                 </span>
               </label>
               <FieldError message={fieldErrors["acceptedTerms"]} />

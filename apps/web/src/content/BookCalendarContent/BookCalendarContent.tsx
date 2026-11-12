@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState, useTransition, useActionState, startTransition } from "react";
 import { useRouter } from "next/navigation";
+
+import { redirectToPolicyUpdated } from "@/lib/policyAcceptanceRedirect";
 import {
   BATCH_LESSON_MAX,
   BATCH_LESSON_MIN,
@@ -339,6 +341,15 @@ export default function BookCalendarContent({
     if (bookingState.status !== "success") return;
     router.push(`/dashboard?booked=${bookingState.lessonId}`);
   }, [bookingState, router]);
+
+  // ADR 036 Phase 8 Part B Stop 3 piece 3: if the API gated this
+  // booking on a stale policy acceptance, bounce to the re-acceptance
+  // interstitial. The parent lands back here after they accept via
+  // the `?next=` round-trip.
+  useEffect(() => {
+    if (bookingState.status !== "policy_acceptance_required") return;
+    redirectToPolicyUpdated();
+  }, [bookingState]);
 
   // Imperative state for the Phase-5 insufficient-balance modal — either
   // fed from a fresh POST /lessons 422 (bookingState.status) or from the
@@ -1156,6 +1167,8 @@ export default function BookCalendarContent({
         setSubmitError(
           "You do not have permission to book lessons. Ask the household owner for access.",
         );
+      } else if (result.kind === "policy_acceptance_required") {
+        redirectToPolicyUpdated();
       } else {
         setSubmitError(result.message);
       }
@@ -1267,6 +1280,10 @@ export default function BookCalendarContent({
       setIsAddingCredit(false);
       if (result.kind === "redirect") {
         window.location.href = result.url;
+        return;
+      }
+      if (result.kind === "policy_acceptance_required") {
+        redirectToPolicyUpdated();
         return;
       }
       setSubmitError(result.message);

@@ -5,6 +5,11 @@ import { isApiBody } from "@/lib/mapZodErrors";
 export type BookingState =
   | { status: "idle" }
   | { status: "error"; message: string }
+  // ADR 036 Phase 8 Part B Stop 3 piece 3: the API gates POST /lessons
+  // and POST /lessons/batch on current policy acceptance. The client
+  // caller redirects to /policy-updated when it sees this status —
+  // no error message is rendered.
+  | { status: "policy_acceptance_required" }
   | {
       status: "insufficient_balance";
       // Full 422 shape from the API — used by the modal to show the
@@ -305,6 +310,10 @@ export function mapBookingApiResponse(
     swimmerIds: string[];
   },
 ): Exclude<BookingState, { status: "idle" } | { status: "success"; lessonId: string; autoApproved: boolean }> {
+  if (status === 409 && isApiBody(body) && body.error === "policy_acceptance_required") {
+    return { status: "policy_acceptance_required" };
+  }
+
   if (status === 403) {
     return {
       status: "error",

@@ -222,6 +222,10 @@ export type BatchSubmitResult =
       shortfallCents: number;
     }
   | { kind: "forbidden" }
+  // ADR 036 Phase 8 Part B Stop 3 piece 3: the API gates
+  // /lessons/batch on current policy acceptance. The client
+  // caller redirects to /policy-updated — no error surfaces.
+  | { kind: "policy_acceptance_required" }
   | { kind: "error"; message: string };
 
 function readInsufficientBalanceBody(
@@ -258,6 +262,10 @@ export async function submitBatchAction(body: BatchSubmitBody): Promise<BatchSub
       body: JSON.stringify(body),
     });
     if (response.status === 403) return { kind: "forbidden" };
+    if (response.status === 409) {
+      // Policy acceptance gate: client redirects to /policy-updated.
+      return { kind: "policy_acceptance_required" };
+    }
     if (response.status === 422) {
       // Both insufficient_balance and picks_conflict ride on 422, so map by
       // the error code — not the status — to avoid mislabeling a payment

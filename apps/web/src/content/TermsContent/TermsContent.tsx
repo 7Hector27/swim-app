@@ -1,3 +1,7 @@
+import { TERMS_VERSION } from "@swim-app/shared";
+
+import PolicyMeta from "@/components/PolicyMeta";
+
 export default function TermsContent() {
   return (
     <div className="flex flex-col flex-1">
@@ -12,7 +16,7 @@ export default function TermsContent() {
             </div>
 
             <h1 className="text-heading mb-2">Terms of Service</h1>
-            <p className="text-text-secondary mb-10">[Effective date]</p>
+            <PolicyMeta version={TERMS_VERSION} />
 
             <div className="flex flex-col gap-10 text-text">
               <section>
@@ -46,9 +50,16 @@ export default function TermsContent() {
               </section>
 
               <section>
-                <h2 className="text-xl font-bold text-heading mb-3">Lessons</h2>
+                <h2 className="text-xl font-bold text-heading mb-3">Lessons, payments, and refunds</h2>
+                <p className="text-text-secondary leading-relaxed mb-3">
+                  All lessons are private one-on-one sessions with Coach Jason. Lesson scheduling, cancellation, and rescheduling are subject to Coach Jason&apos;s availability.
+                </p>
                 <p className="text-text-secondary leading-relaxed">
-                  All lessons are private one-on-one sessions with Coach Jason. Lesson scheduling, cancellation, and rescheduling are subject to Coach Jason&apos;s availability. [Cancellation policy]
+                  Payments, prepaid balance, package credit, cancellations, and refunds are covered by our{" "}
+                  <a href="/refund-policy" className="text-link underline hover:text-link-hover">
+                    Payments &amp; Refund Policy
+                  </a>
+                  , which is part of these Terms.
                 </p>
               </section>
 
@@ -69,7 +80,7 @@ export default function TermsContent() {
               <section>
                 <h2 className="text-xl font-bold text-heading mb-3">Changes to these terms</h2>
                 <p className="text-text-secondary leading-relaxed">
-                  We may update these terms from time to time. When we do, we will update the effective date above. Continued use of the site after changes are posted constitutes acceptance of the updated terms.
+                  We may update these terms, the Privacy Policy, or the Payments &amp; Refund Policy from time to time. When we do, we bump the version shown at the top of each page. The next time you book a lesson or add funds, we&apos;ll ask you to accept the updated policies before proceeding.
                 </p>
               </section>
 

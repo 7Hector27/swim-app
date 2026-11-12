@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 
+import { redirectToPolicyUpdated } from "@/lib/policyAcceptanceRedirect";
+
 import type {
   BalanceHistoryEntry,
   BalanceHistoryResponse,
@@ -259,6 +261,10 @@ function PackageCard({
         window.location.href = result.url;
         return;
       }
+      if (result.kind === "policy_acceptance_required") {
+        redirectToPolicyUpdated();
+        return;
+      }
       setError(result.message);
     });
   }
@@ -316,11 +322,18 @@ function PackageCard({
         ) : null}
       </div>
 
+      <p className="font-body text-xs text-text-secondary mt-5 mb-2 text-center">
+        Payments and refunds are covered by our{" "}
+        <a href="/refund-policy" className="text-link underline hover:text-link-hover">
+          Payments &amp; Refund Policy
+        </a>
+        .
+      </p>
       <button
         type="button"
         onClick={handleBuy}
         disabled={pending}
-        className="mt-5 w-full min-h-[52px] rounded-full bg-accent text-on-accent font-body font-bold text-base disabled:opacity-60"
+        className="w-full min-h-[52px] rounded-full bg-accent text-on-accent font-body font-bold text-base disabled:opacity-60"
       >
         {pending ? "Starting checkout…" : `Buy ${copy.name}`}
       </button>
@@ -358,6 +371,10 @@ function LessonTopUpSection({
       );
       if (result.kind === "redirect") {
         window.location.href = result.url;
+        return;
+      }
+      if (result.kind === "policy_acceptance_required") {
+        redirectToPolicyUpdated();
         return;
       }
       setError(result.message);
@@ -436,6 +453,13 @@ function LessonTopUpSection({
             <span className="font-bold">{formatDollars(price)}</span>
           </p>
 
+          <p className="font-body text-xs text-text-secondary text-center">
+            Payments and refunds are covered by our{" "}
+            <a href="/refund-policy" className="text-link underline hover:text-link-hover">
+              Payments &amp; Refund Policy
+            </a>
+            .
+          </p>
           <button
             type="button"
             onClick={handleAdd}

@@ -18,7 +18,13 @@ import {
 
 export type CheckoutStartResult =
   | { kind: "redirect"; url: string }
-  | { kind: "error"; message: string };
+  | { kind: "error"; message: string }
+  // ADR 036 Phase 8 Part B Stop 3 piece 3: the API gates
+  // /payments/checkout-session on current policy acceptance. The web
+  // caller redirects the browser to /policy-updated?next=<current path>
+  // on this kind and never surfaces an error — the parent sees the
+  // re-acceptance interstitial instead.
+  | { kind: "policy_acceptance_required" };
 
 export async function startPackageCheckoutAction(
   packageTier: PackageTier,
@@ -58,6 +64,13 @@ async function startCheckoutAction(
 
   const result = await createCheckoutSession(token, body);
   if (!result.ok) {
+    if (result.status === 409) {
+      // ADR 036 Phase 8 Part B Stop 3 piece 3: the API gates
+      // /payments/checkout-session on current policy acceptance. The
+      // client-side caller redirects to /policy-updated instead of
+      // surfacing an error.
+      return { kind: "policy_acceptance_required" };
+    }
     if (result.status === 503) {
       return { kind: "error", message: "Payments are temporarily unavailable. Try again in a moment." };
     }

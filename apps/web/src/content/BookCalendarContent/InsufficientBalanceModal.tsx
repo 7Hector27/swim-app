@@ -2,6 +2,7 @@
 
 import { useTransition } from "react";
 
+import { redirectToPolicyUpdated } from "@/lib/policyAcceptanceRedirect";
 import { startBookingShortfallTopupAction } from "@/content/AccountBalanceContent/actions";
 import { formatDollars } from "@/content/AccountBalanceContent/formatters";
 import type {
@@ -258,6 +259,10 @@ export default function InsufficientBalanceModal({
         window.location.href = result.url;
         return;
       }
+      if (result.kind === "policy_acceptance_required") {
+        redirectToPolicyUpdated();
+        return;
+      }
       // Fallback: couldn't start checkout — leave the modal open with
       // an error message visible to the parent.
       onClose();
@@ -295,7 +300,14 @@ export default function InsufficientBalanceModal({
           Credit never expires — anything extra stays on your balance.
         </p>
 
-        <div className="mt-6 flex flex-col gap-3">
+        <p className="font-body text-xs text-text-secondary mt-6 text-center">
+          Payments and refunds are covered by our{" "}
+          <a href="/refund-policy" className="text-link underline hover:text-link-hover">
+            Payments &amp; Refund Policy
+          </a>
+          .
+        </p>
+        <div className="mt-3 flex flex-col gap-3">
           <button
             type="button"
             onClick={handleAddCredit}
