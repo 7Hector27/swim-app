@@ -1,11 +1,11 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState, useTransition } from "react";
 
 import { redirectToPolicyUpdated } from "@/lib/policyAcceptanceRedirect";
 
 import type {
-  BalanceHistoryEntry,
   BalanceHistoryResponse,
   BalanceResponse,
   LessonDurationMinutes,
@@ -21,7 +21,6 @@ import {
 } from "@swim-app/shared";
 
 import {
-  fetchMoreHistoryAction,
   refreshBalanceAction,
   startLessonTopupAction,
   startPackageCheckoutAction,
@@ -29,9 +28,14 @@ import {
 import {
   formatApproxHours,
   formatDollars,
-  formatHistoryDate,
-  formatSignedDollars,
 } from "./formatters";
+import { HistoryRow } from "./HistoryRow";
+
+// ADR 036 Phase 8 Part B Stop 3 piece 7: the balance page shows a
+// preview of the 5 most recent transactions with a "View all
+// transactions" link to /account/balance/history. The dedicated
+// history page handles pagination.
+const HISTORY_PREVIEW_LIMIT = 5;
 
 interface AccountBalanceContentProps {
   balance: BalanceResponse | null;
@@ -479,27 +483,19 @@ function LessonTopUpSection({
   );
 }
 
-// ── History section ──────────────────────────────────────────────────────────
+// ── History section (preview) ────────────────────────────────────────────────
 
+// ADR 036 Phase 8 Part B Stop 3 piece 7: the balance page shows at most
+// 5 rows; anything more lives on the dedicated /account/balance/history
+// page. "View all transactions" appears whenever the household has more
+// than 5 entries — which is true either if the first fetched page
+// overflowed the preview cap, or if the first page itself already has a
+// non-null `nextCursor` (API page size is 20, so the cap is always hit
+// before the cursor runs out).
 function HistorySection({ initial }: { initial: BalanceHistoryResponse | null }) {
-  const [entries, setEntries] = useState<BalanceHistoryEntry[]>(initial?.entries ?? []);
-  const [cursor, setCursor] = useState<string | null>(initial?.nextCursor ?? null);
-  const [pending, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
-
-  function handleLoadMore() {
-    if (!cursor) return;
-    setError(null);
-    startTransition(async () => {
-      const result = await fetchMoreHistoryAction(cursor);
-      if (!result.ok) {
-        setError(result.message);
-        return;
-      }
-      setEntries((prev) => [...prev, ...result.data.entries]);
-      setCursor(result.data.nextCursor);
-    });
-  }
+  const entries = initial?.entries ?? [];
+  const preview = entries.slice(0, HISTORY_PREVIEW_LIMIT);
+  const hasMore = entries.length > HISTORY_PREVIEW_LIMIT || (initial?.nextCursor ?? null) !== null;
 
   return (
     <section aria-labelledby="history-heading">
@@ -509,63 +505,25 @@ function HistorySection({ initial }: { initial: BalanceHistoryResponse | null })
       >
         History
       </h2>
-      {entries.length === 0 ? (
+      {preview.length === 0 ? (
         <p className="font-body text-sm text-text-secondary">
           Nothing yet. Add credit above to get started.
         </p>
       ) : (
         <ul className="rounded-card border border-border bg-background divide-y divide-border">
-          {entries.map((entry) => (
-            <li
-              key={entry.id}
-              className="flex items-center justify-between gap-4 px-4 py-3 min-h-[56px]"
-            >
-              <div className="flex-1 min-w-0">
-                <p className="font-body text-sm font-semibold text-text truncate">
-                  {entry.displayType}
-                </p>
-                <p className="font-body text-xs text-text-secondary">
-                  {formatHistoryDate(entry.createdAt)}
-                </p>
-              </div>
-              <div className="text-right">
-                <p
-                  className={`font-body text-sm font-bold ${
-                    entry.amountCents > 0
-                      ? "text-success"
-                      : entry.amountCents < 0
-                        ? "text-text"
-                        : "text-text-secondary"
-                  }`}
-                  style={{ fontVariantNumeric: "tabular-nums" }}
-                >
-                  {formatSignedDollars(entry.amountCents)}
-                </p>
-                <p
-                  className="font-body text-xs text-text-secondary"
-                  style={{ fontVariantNumeric: "tabular-nums" }}
-                >
-                  {formatDollars(entry.runningBalanceCents)}
-                </p>
-              </div>
-            </li>
+          {preview.map((entry) => (
+            <HistoryRow key={entry.id} entry={entry} />
           ))}
         </ul>
       )}
-      {cursor ? (
-        <button
-          type="button"
-          onClick={handleLoadMore}
-          disabled={pending}
-          className="mt-4 w-full min-h-[44px] rounded-full border-2 border-button-outline text-button-outline font-body font-bold text-sm disabled:opacity-60"
+      {hasMore ? (
+        <Link
+          href="/account/balance/history"
+          data-testid="view-all-transactions"
+          className="mt-4 inline-flex items-center justify-center w-full min-h-[44px] rounded-full border-2 border-button-outline text-button-outline font-body font-bold text-sm transition-opacity hover:opacity-80"
         >
-          {pending ? "Loading…" : "Load more"}
-        </button>
-      ) : null}
-      {error ? (
-        <p role="alert" className="font-body text-sm text-danger mt-2">
-          {error}
-        </p>
+          View all transactions
+        </Link>
       ) : null}
     </section>
   );
