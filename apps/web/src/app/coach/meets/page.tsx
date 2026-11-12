@@ -1,22 +1,11 @@
-import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 
-import AccountInactiveScreen from "@/components/AccountInactiveScreen";
-import CoachMeetsContent from "@/content/CoachMeetsContent";
-import { requireAuth } from "@/lib/requireAuth";
-import { fetchMeets } from "@/lib/api/meets";
-
-export const metadata: Metadata = {
-  title: "Meets · Axiom Aquatics",
-};
-
-export default async function CoachMeetsPage() {
-  const auth = await requireAuth();
-  if (!auth) return <AccountInactiveScreen />;
-
-  const result = await fetchMeets(auth.accessToken);
-  if (!result.ok) {
-    throw new Error(`Failed to load meets (status ${result.status})`);
-  }
-
-  return <CoachMeetsContent meets={result.meets} />;
+// ADR 036 Phase 8 Part B Stop 3 piece 6: meets moved onto the
+// /coach/swimmers page as a tab. Old links and bookmarks keep
+// working — this permanent redirect lands callers on the Meets tab
+// with no client-side flash. The CoachMeetsContent component itself
+// stays in place so any future caller that needs the full-chrome
+// standalone view can still import it.
+export default function CoachMeetsPage() {
+  redirect("/coach/swimmers?tab=meets");
 }
