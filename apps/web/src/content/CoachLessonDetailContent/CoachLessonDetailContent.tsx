@@ -9,6 +9,7 @@ import ConfirmDialog from "@/components/ConfirmDialog";
 import InlineError from "@/components/InlineError";
 import LessonStatusBadge from "@/components/LessonStatusBadge";
 import { formatDollars } from "@/content/AccountBalanceContent/formatters";
+import ActionToast, { type ActionToastKind } from "./ActionToast";
 import {
   cancelCoachLessonAction,
   approveCoachLessonAction,
@@ -25,9 +26,17 @@ type NotesSectionResult =
 interface Props {
   lesson: CoachLessonDetail;
   notes: NotesSectionResult;
+  // ADR 036 Phase 8 Part B Stop 3 piece 12 (animation audit #3):
+  // the approve / decline / no-show server actions redirect back to
+  // the lesson detail page with ?action=<kind>. The page normalizes
+  // the value and threads it here so the one-shot toast fires once on
+  // mount and auto-dismisses after 2.6s. The key on the toast element
+  // is the action kind — if the coach chains approve → decline back
+  // to back, React remounts the toast and the transitions re-fire.
+  toastAction?: ActionToastKind;
 }
 
-export default function CoachLessonDetailContent({ lesson, notes }: Props) {
+export default function CoachLessonDetailContent({ lesson, notes, toastAction }: Props) {
   const cancelDialogRef = useRef<HTMLDialogElement>(null);
   const declineDialogRef = useRef<HTMLDialogElement>(null);
   const noShowDialogRef = useRef<HTMLDialogElement>(null);
@@ -82,6 +91,7 @@ export default function CoachLessonDetailContent({ lesson, notes }: Props) {
 
   return (
     <div className="flex flex-col flex-1 bg-background">
+      {toastAction !== undefined ? <ActionToast key={toastAction} action={toastAction} /> : null}
       <main id="main-content" className="flex-1">
         <div className="mx-auto max-w-content px-page pt-10 pb-20 tablet:pt-14 tablet:pb-32">
           <Link

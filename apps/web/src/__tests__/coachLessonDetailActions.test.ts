@@ -42,7 +42,9 @@ describe("approveCoachLessonAction", () => {
 
     await approveCoachLessonAction(idle, fd);
 
-    expect(mockRedirect).toHaveBeenCalledWith(`/coach/lessons/${LESSON_ID}`);
+    // Animation audit #3: the redirect carries ?action=approved so the
+    // lesson detail page fires its confirmation toast on landing.
+    expect(mockRedirect).toHaveBeenCalledWith(`/coach/lessons/${LESSON_ID}?action=approved`);
   });
 
   it("returns error state when the API responds with a failure", async () => {
@@ -79,7 +81,9 @@ describe("declineCoachLessonAction", () => {
 
     await declineCoachLessonAction(idle, fd);
 
-    expect(mockRedirect).toHaveBeenCalledWith(`/coach/lessons/${LESSON_ID}`);
+    // Animation audit #3: ?action=declined threads through to the
+    // confirmation toast after the page redirects back.
+    expect(mockRedirect).toHaveBeenCalledWith(`/coach/lessons/${LESSON_ID}?action=declined`);
   });
 });
 
