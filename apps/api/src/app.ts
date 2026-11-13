@@ -180,7 +180,7 @@ export function createApp(logger: Logger) {
       }
     }
     if (stale.length > 0) {
-      res.status(422).json({ error: "stale_policy_versions", missing: stale });
+      res.status(422).json({ error: "stale_policy_versions", stale });
       return;
     }
 

@@ -313,7 +313,7 @@ describe("POST /auth/signup", () => {
       });
     expect(res.status).toBe(422);
     expect(res.body.error).toBe("stale_policy_versions");
-    expect(res.body.missing).toEqual([
+    expect(res.body.stale).toEqual([
       expect.objectContaining({ policySlug: "terms", currentVersion: TERMS_VERSION }),
     ]);
     expect(mockSignUp).not.toHaveBeenCalled();
