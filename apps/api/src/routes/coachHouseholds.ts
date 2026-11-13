@@ -24,6 +24,7 @@ import { and, asc, desc, eq, inArray, lt, or, sql } from "drizzle-orm";
 
 import {
   approximatePrivateHours,
+  balanceDisplayType,
   BalanceHistoryQuerySchema,
   CashOutBreakdownSchema,
   CashOutResponseSchema,
@@ -246,30 +247,6 @@ function decodeCursor(raw: string | undefined): HistoryCursor | null {
   }
 }
 
-function displayTypeFor(row: {
-  entryType: string;
-  reason: string | null;
-}): string {
-  switch (row.entryType) {
-    case "lesson_charge":
-      return "Lesson";
-    case "refund_to_balance":
-      return "Refund";
-    case "card_topup":
-      return "Added credit";
-    case "package_purchase":
-      return "Package purchased";
-    case "package_bonus":
-      return "Package bonus credit";
-    case "coach_adjustment":
-      return row.reason ? `Jason adjusted · ${row.reason}` : "Jason adjusted";
-    case "free_lesson":
-      return "Free lesson";
-    default:
-      return row.entryType;
-  }
-}
-
 coachHouseholdsRouter.get(
   "/households/:id/balance/history",
   validate({ params: IdParamsSchema, query: BalanceHistoryQuerySchema }),
@@ -358,7 +335,7 @@ coachHouseholdsRouter.get(
       amountCents: row.amountCents,
       runningBalanceCents: runningById.get(row.id) ?? 0,
       createdAt: row.createdAt.toISOString(),
-      displayType: displayTypeFor(row),
+      displayType: balanceDisplayType(row),
     }));
     const last = pageRows[pageRows.length - 1]!;
     const response: BalanceHistoryResponse = {

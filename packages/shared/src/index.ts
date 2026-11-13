@@ -6,6 +6,7 @@ export { LeagueSchema, LeagueRegistrationParamsSchema } from "./schemas/registra
 
 export { currentSeasonStartYear, CLUB_SEASON_START_MONTH } from "./lib/currentSeasonStartYear";
 export { findActiveSeasonId } from "./lib/findActiveSeasonId";
+export { balanceDisplayType } from "./lib/balanceDisplayType";
 
 export type { PackagePriceResult } from "./lib/pricing";
 export {
