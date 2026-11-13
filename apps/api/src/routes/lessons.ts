@@ -1741,8 +1741,10 @@ lessonsRouter.get(
           }>),
       // Per-lesson outstanding charge so the cancel-remaining confirm
       // dialog can sum authoritative amounts instead of pricing from
-      // the browser. Free-lesson rows get null (no refund line).
-      loadOutstandingChargesByLessonId(lessonIds),
+      // the browser. Free-lesson rows get null (no refund line). Scoped
+      // to the requesting household so a mistargeted call can't surface
+      // a charge from another household's lesson.
+      loadOutstandingChargesByLessonId(lessonIds, householdId),
     ]);
     const swimmersByLesson = new Map<string, LessonSwimmer[]>();
     for (const row of swimmerRows) {
@@ -1783,11 +1785,12 @@ lessonsRouter.get(
 // row) and the client renders no refund line for them.
 async function loadOutstandingChargesByLessonId(
   lessonIds: string[],
+  householdId: string,
 ): Promise<Map<string, number>> {
   if (lessonIds.length === 0) return new Map();
   const entries = await Promise.all(
     lessonIds.map(async (id) =>
-      [id, await getLessonOutstandingChargeCents(id)] as const,
+      [id, await getLessonOutstandingChargeCents(id, householdId)] as const,
     ),
   );
   const map = new Map<string, number>();
@@ -2123,8 +2126,11 @@ lessonsRouter.get(
         .where(eq(lessonSwimmers.lessonId, id)),
       // ADR 036 Phase 8 Part B: lesson detail carries the current
       // outstanding charge so the parent cancel-confirmation can show
-      // "You'll get $X back". null = free lesson or already-refunded.
-      getLessonOutstandingChargeCents(id),
+      // "You'll get $X back". Scoped to the requesting household;
+      // the lesson row above is already household-scoped via
+      // requireHouseholdMember + the SELECT WHERE. null = free lesson
+      // or already-refunded.
+      getLessonOutstandingChargeCents(id, req.householdId),
     ]);
 
     const body: UpcomingLesson = {
@@ -2721,8 +2727,10 @@ export async function loadLessonWithSwimmers(
     // ADR 036 Phase 8 Part B: lesson detail/response carries the
     // current outstanding charge so the coach and parent UIs can show
     // the refund amount in a cancel/decline/no-show confirmation.
-    // null = free lesson or already-refunded.
-    getLessonOutstandingChargeCents(lessonId),
+    // Scoped to the lesson's household so a mistargeted call can't
+    // surface another household's charge. null = free lesson or
+    // already-refunded.
+    getLessonOutstandingChargeCents(lessonId, lesson.householdId),
   ]);
 
   return {

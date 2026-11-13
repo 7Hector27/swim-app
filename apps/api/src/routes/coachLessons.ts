@@ -1593,8 +1593,10 @@ coachLessonsRouter.get(
         .where(eq(lessonSwimmers.lessonId, id)),
       // ADR 036 Phase 8 Part B Stop 3 piece 4: cancel/decline/no-show
       // confirmations read the outstanding charge from the coach lesson
-      // detail. Null = free lesson or already-refunded.
-      getLessonOutstandingChargeCents(id),
+      // detail. Scoped to the lesson's household so a mistargeted call
+      // can't surface another household's charge. Null = free lesson or
+      // already-refunded.
+      getLessonOutstandingChargeCents(id, liveLesson.householdId),
     ]);
 
     const swimmerMap = new Map<string, CoachLessonSwimmer>();

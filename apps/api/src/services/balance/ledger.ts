@@ -276,12 +276,21 @@ export type RefundLessonChargeResult =
  * it for display only (the actual refund still re-reads inside the
  * balance lock in `refundLessonCharge`). Returns null when the lesson
  * has no outstanding charge (free, pre-Phase-4, or already-refunded).
+ *
+ * `householdId` is required and scopes the ledger read: the function
+ * returns null if the lesson's charge lives on a different household
+ * than the one the caller asserted it belongs to. Callers are
+ * responsible for proving the lesson belongs to `householdId` before
+ * calling (via a prior auth-scoped lesson query); passing the pair
+ * here makes the leak-proof invariant ("a caller cannot read another
+ * household's charge via a lesson id") part of this function's type.
  */
 export async function getLessonOutstandingChargeCents(
   lessonId: string,
+  householdId: string,
   dbOrTx: Db = db,
 ): Promise<number | null> {
-  const outstanding = await findOutstandingLessonCharge(dbOrTx, lessonId);
+  const outstanding = await findOutstandingLessonCharge(dbOrTx, lessonId, householdId);
   if (!outstanding) return null;
   // Charges are stored negative; flip to the positive refund amount.
   return -outstanding.amountCents;
@@ -300,6 +309,7 @@ export async function getLessonOutstandingChargeCents(
 async function findOutstandingLessonCharge(
   tx: Db,
   lessonId: string,
+  householdId: string,
 ): Promise<{ id: string; amountCents: number } | null> {
   const rows = await tx.execute<{
     id: string;
@@ -311,6 +321,7 @@ async function findOutstandingLessonCharge(
       ON refund.refund_of_ledger_id = charge.id
       AND refund.entry_type = 'refund_to_balance'
     WHERE charge.lesson_id = ${lessonId}
+      AND charge.household_id = ${householdId}
       AND charge.entry_type = 'lesson_charge'
       AND refund.id IS NULL
     ORDER BY charge.created_at DESC
@@ -343,7 +354,7 @@ export async function refundLessonCharge(
   tx: Db,
   args: { householdId: string; lessonId: string; actorId: string },
 ): Promise<RefundLessonChargeResult> {
-  const outstanding = await findOutstandingLessonCharge(tx, args.lessonId);
+  const outstanding = await findOutstandingLessonCharge(tx, args.lessonId, args.householdId);
   if (!outstanding) {
     // Either the lesson has no lesson_charge rows at all (free lesson,
     // pre-Phase-4 row) or every charge already has a matching refund.
