@@ -1,0 +1,68 @@
+/* Motion for the balance page. Scoped so the helpers stay tied to
+   this content folder. Every transition has a @media (prefers-reduced-
+   motion: reduce) override below — reduced-motion means fewer and
+   gentler, not zero. Curves + durations come from the animate skill's
+   tables; the strong ease-out is defined locally so this file doesn't
+   depend on a global token.
+*/
+
+.base {
+  --balance-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+/* Value swap — the big Total figure and the "pay $X, get $Y" pair on
+   each package card. 160ms near-imperceptible crossfade keyed on the
+   React element's `key` so it re-fires on every value change. */
+.valuePulse {
+  display: inline-block;
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    opacity 160ms var(--balance-ease-out),
+    transform 160ms var(--balance-ease-out);
+}
+
+@starting-style {
+  .valuePulse {
+    opacity: 0.35;
+    transform: translateY(2px);
+  }
+}
+
+/* Package nudge — rare state transition (threshold crossed). Slightly
+   bigger budget: 240ms. Never scale(0). */
+.nudgeEnter {
+  opacity: 1;
+  transform: scale(1) translateY(0);
+  transition:
+    opacity 240ms var(--balance-ease-out),
+    transform 240ms var(--balance-ease-out);
+  transform-origin: top left;
+}
+
+@starting-style {
+  .nudgeEnter {
+    opacity: 0;
+    transform: scale(0.97) translateY(-4px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .valuePulse {
+    transition: none;
+  }
+  .nudgeEnter {
+    transition: opacity 120ms ease;
+    transform: none;
+  }
+  @starting-style {
+    .valuePulse {
+      opacity: 1;
+      transform: none;
+    }
+    .nudgeEnter {
+      opacity: 0;
+      transform: none;
+    }
+  }
+}

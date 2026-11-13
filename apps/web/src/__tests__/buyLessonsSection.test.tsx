@@ -45,13 +45,16 @@ beforeEach(() => {
 });
 
 describe("Buy single lessons — quantity-aware form", () => {
-  it("renders the live total as 'N × D-minute lessons for S swimmer = $X'", () => {
+  it("renders the summary line 'N × D-minute lessons for S swimmer' alongside the Total figure", () => {
     renderAt(1);
-    // Default: 30-minute, 1 swimmer, quantity 1 → $60.00
-    const total = screen.getByTestId("buy-lessons-total");
-    expect(total.textContent?.replace(/\s+/g, " ").trim()).toBe(
-      "1 × 30-minute lesson for 1 swimmer = $60.00",
+    // Default: 30-minute, 1 swimmer, quantity 1 → $60.00. The redesign
+    // splits the summary narrative from the big Total figure so the
+    // two live in separate elements. Assert both.
+    const summary = screen.getByTestId("buy-lessons-total");
+    expect(summary.textContent?.replace(/\s+/g, " ").trim()).toBe(
+      "1 × 30-minute lesson for 1 swimmer",
     );
+    expect(screen.getByText("$60.00")).toBeInTheDocument();
   });
 
   it("updates the total when the parent bumps quantity and length", () => {
@@ -61,8 +64,9 @@ describe("Buy single lessons — quantity-aware form", () => {
     fireEvent.change(input, { target: { value: "4" } });
     // 4 × 45 min × 1 swimmer × $120/h = $360
     expect(screen.getByTestId("buy-lessons-total").textContent).toMatch(
-      /4 × 45-minute lessons for 1 swimmer =\s*\$360\.00/,
+      /4 × 45-minute lessons for 1 swimmer/,
     );
+    expect(screen.getByText("$360.00")).toBeInTheDocument();
   });
 
   it("clamps quantity to 1..20 via the + / − buttons", () => {
