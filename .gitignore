@@ -11,3 +11,4 @@ supabase/snippets/
 .claude/settings.local.json
 *.tsbuildinfo
 .check-output/
+scripts/seed-*.sql
