@@ -9,6 +9,12 @@
 --
 -- Safe to run against prod (SELECT only, no writes). Paste into the
 -- Supabase SQL editor for axiom-aquatics-dev / prod as-is.
+--
+-- The result set contains household-level financial data (household_id,
+-- lesson start times, outstanding charge amounts). Do not share the
+-- output outside the SQL-editor session and do not paste it into
+-- Slack, tickets, emails, chat transcripts, or screenshots. Close the
+-- editor tab when you are done.
 
 SELECT
   lesson.id                       AS lesson_id,
