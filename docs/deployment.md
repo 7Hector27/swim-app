@@ -158,8 +158,12 @@ Set under **Service → Variables**. Dev values shown.
 | `CORS_ORIGINS`             | Allow-list for CORS (comma-separated)           | `apps/api/src/app.ts:49`                          | `https://dev.axiomaquatics.io`                              |
 | `TRUST_PROXY`              | Reverse-proxy hops to trust for `req.ip`        | `apps/api/src/app.ts:44`                          | `1` (Railway = 1 proxy hop; required for rate limiter)      |
 | `CRON_SECRET`              | Secret header for `/internal/cron/tick`         | `apps/api/src/routes/internal.ts:21`              | `openssl rand -hex 32` → paste result                       |
+| `STRIPE_SECRET_KEY`        | Stripe API key (ADR 036 payments)               | `apps/api/src/services/stripe/client.ts`          | `sk_test_…` for dev, `sk_live_…` for prod. **Railway only — never on Vercel, never `NEXT_PUBLIC_*`.** |
+| `STRIPE_WEBHOOK_SECRET`    | Shared secret used to verify webhook signatures | `apps/api/src/services/stripe/webhook.ts`         | `whsec_…` from the webhook endpoint in Stripe Dashboard (see §2e). One secret per endpoint — dev and prod each have their own. |
 
 **Watch out**: `CORS_ORIGINS` has a dev-only fallback to `http://localhost:3000` (`app.ts:58-64`). In production, if the var is unset the array is empty and every cross-origin preflight fails silently. Set it explicitly.
+
+**Stripe keys never leak to the browser.** The web app uses Stripe-hosted Checkout (redirect to `checkout.stripe.com`), so no publishable key is needed on Vercel. Both Stripe env vars live on Railway only; `apps/api/src/lib/env.ts` validates them at boot.
 
 ### 2c. Custom domain
 
@@ -176,6 +180,25 @@ Railway has native cron. Under **Service → Settings → Cron**:
 The single `/internal/cron/tick` handler runs the full tick under a shared `cron_leases` lease: expires pending lessons past their deadline, auto-completes approved lessons past their end time, drains the parent-email outbox + scrub, drains the coach push outbox + scrub + release-held + daily summary, kicks off the Google Calendar light/full reconcile pass, and runs the **account-deletion retry drain** (ADR 034 Phase 3 — picks `account_deletion_jobs` with `status='pending'` and `attempts < 10` under `FOR UPDATE SKIP LOCKED`, replays `syncAnonymizedLessonToCalendar` + `auth.admin.deleteUser`, increments attempts, flips terminal `'failed'` after the budget is exhausted). All of these share the one lease, so overlapping cron fires return `{ skipped: true }` without touching the DB. **Alerting todo for prod:** wire log-based alerting on the string `event="account_deletion_cleanup_failed"` so a terminal retry failure reaches an operator (low-urgency — DB already committed).
 
 The route is defined at `apps/api/src/routes/internal.ts` and uses `timingSafeEqual` on SHA-256 digests of the header vs env. Missing or wrong secret → 401.
+
+### 2e. Stripe webhook
+
+The API's only Stripe surface is `POST /webhooks/stripe` (`apps/api/src/app.ts:99`), mounted before `express.json()` with its own raw-body middleware so signatures verify against the exact payload bytes. v1 handles **`checkout.session.completed`** only; refunds are server-initiated from the cash-out drain so no refund-webhook subscription is needed yet.
+
+**Stripe Dashboard → Developers → Webhooks → Add endpoint** per environment:
+
+| Environment | Endpoint URL                                               | Events |
+| ----------- | ---------------------------------------------------------- | ------ |
+| Dev         | `https://api-dev.axiomaquatics.io/webhooks/stripe`         | `checkout.session.completed` |
+| Prod        | `https://api.axiomaquatics.io/webhooks/stripe`             | `checkout.session.completed` |
+
+After the endpoint is created, click **Reveal** on its **Signing secret** (`whsec_…`) and paste it into Railway as `STRIPE_WEBHOOK_SECRET` on the matching service. Dev and prod have **different** secrets — don't cross them.
+
+The secret key lives alongside: generate one under **Developers → API keys** (test-mode for dev, live-mode for prod) and set it as `STRIPE_SECRET_KEY` on Railway.
+
+**Local dev** uses the Stripe CLI instead of the Dashboard endpoint — `stripe listen --forward-to http://localhost:3001/webhooks/stripe` prints a `whsec_…` secret that you paste into `apps/api/.env`. The CLI rotates the secret per session, so re-paste whenever you start a fresh listen.
+
+Idempotency is handled on our side by the `stripe_events` table (`stripe_event_id` primary key with `ON CONFLICT DO NOTHING`). If Stripe retries a delivery, the duplicate insert returns zero rows and the handler short-circuits with 200.
 
 ---
 
@@ -335,6 +358,7 @@ Run through this on dev after every full deploy. The whole flow should take unde
 - [ ] As coach, rate the swimmer on a skill — rating is saved and shows in the rubric
 - [ ] `/leaderboard` loads with no errors (empty state is fine on a fresh dev project)
 - [ ] Trigger cron manually: `curl -X POST -H "cron-secret: <SECRET>" https://api-dev.axiomaquatics.io/internal/cron/tick` → `{"expired":0,"completed":…}`
+- [ ] Buy a $20 top-up via `/account/balance` using Stripe's `4242 4242 4242 4242` test card → balance updates within ~5s of returning from Checkout. Confirm the dev webhook endpoint in the Stripe Dashboard shows the event as successful.
 
 ---
 
@@ -407,7 +431,7 @@ Prod goes through all the same steps as dev, with these changes:
 
 **Separate Supabase project**: `swim-app-prod`, same region (us-west-1), its own password, its own anon key, its own session-pooler `DATABASE_URL`. No data copied from dev.
 
-**Separate Railway service**: `api-prod`, custom domain `api.axiomaquatics.io`. Env vars identical to dev's but with prod values: `SITE_URL=https://axiomaquatics.io`, `CORS_ORIGINS=https://axiomaquatics.io,https://www.axiomaquatics.io`, prod Supabase keys (anon + service_role), a fresh `CRON_SECRET`.
+**Separate Railway service**: `api-prod`, custom domain `api.axiomaquatics.io`. Env vars identical to dev's but with prod values: `SITE_URL=https://axiomaquatics.io`, `CORS_ORIGINS=https://axiomaquatics.io,https://www.axiomaquatics.io`, prod Supabase keys (anon + service_role), a fresh `CRON_SECRET`, a **live-mode** `STRIPE_SECRET_KEY` (`sk_live_…`), and the prod webhook endpoint's own `STRIPE_WEBHOOK_SECRET`. Register the prod Stripe webhook per §2e against `https://api.axiomaquatics.io/webhooks/stripe` with its own signing secret — never share the dev endpoint's secret.
 
 **Vercel production branch**: `main`. Set the Production-scope env vars with prod values. Preview deployments on PRs still off (or paid plan if we want them on).
 
@@ -438,6 +462,7 @@ Railway is already pay-as-you-go.
 - [ ] DMARC in `p=quarantine` or `p=reject` with a monitored `rua=` mailbox
 - [ ] Prod `CRON_SECRET` is a fresh value (not reused from dev)
 - [ ] Prod `SUPABASE_SERVICE_ROLE_KEY` is set on the Railway API service only (never on Vercel, never in `NEXT_PUBLIC_*`); API refuses to boot without it under `APP_ENV=prod`
+- [ ] Prod `STRIPE_SECRET_KEY` is **live-mode** (`sk_live_…`), set on Railway only; prod `STRIPE_WEBHOOK_SECRET` matches the prod Dashboard endpoint, not dev's
 - [ ] Prod Railway cron is firing — check logs for `cron/tick` entries every 5 min
 - [ ] Smoke test ([§6](#6-smoke-test-checklist)) passes on prod
 - [ ] Someone besides the owner has recovery access to Supabase, Vercel, Railway, Resend, and the DNS zone
