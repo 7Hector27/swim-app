@@ -586,12 +586,26 @@ coachLessonsRouter.get(
           actorId: SYSTEM_ACTOR_ID,
         });
 
+        // All refunds have landed; cache the post-refund balance once
+        // per household so a batch with N lessons in the same household
+        // issues one SELECT, not N. The in-tx balance is stable here —
+        // refundLessonsForStatusChange returns after the last ledger
+        // insert and no further balance writes happen in this block.
+        const balanceByHouseholdId = new Map<string, number>();
+        async function balanceFor(householdId: string): Promise<number> {
+          const cached = balanceByHouseholdId.get(householdId);
+          if (cached !== undefined) return cached;
+          const fresh = await getHouseholdBalance(householdId, tx);
+          balanceByHouseholdId.set(householdId, fresh);
+          return fresh;
+        }
+
         const ids: string[] = [];
         for (const row of rows) {
           const refundAmountCents = refundByLessonId.get(row.id) ?? null;
           const newBalanceCents =
             refundAmountCents !== null && row.householdId !== null
-              ? await getHouseholdBalance(row.householdId, tx)
+              ? await balanceFor(row.householdId)
               : null;
           ids.push(
             await enqueueLessonEmail(tx, {

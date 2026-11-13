@@ -207,6 +207,20 @@ async function runCronTick(
       // the expiry UPDATE so an email can never be lost between commit and
       // scheduling. The sender's supersede guard will drop any stragglers
       // if the lesson's starts_at has already passed by send time.
+      //
+      // Cache the post-refund balance per household so a tick that
+      // expires several lessons in the same household issues one
+      // SELECT, not N. The balance is stable for the rest of this
+      // block (no more ledger writes happen before the email loop).
+      const balanceByHouseholdId = new Map<string, number>();
+      async function balanceFor(householdId: string): Promise<number> {
+        const cached = balanceByHouseholdId.get(householdId);
+        if (cached !== undefined) return cached;
+        const fresh = await getHouseholdBalance(householdId, tx);
+        balanceByHouseholdId.set(householdId, fresh);
+        return fresh;
+      }
+
       const emailOutboxIds: string[] = [];
       for (const row of expiredRows) {
         const refundAmountCents = refundByLessonId.get(row.id) ?? null;
@@ -216,7 +230,7 @@ async function runCronTick(
         // emit an email (anonymized rows were skipped above).
         const newBalanceCents =
           refundAmountCents !== null && row.householdId !== null
-            ? await getHouseholdBalance(row.householdId, tx)
+            ? await balanceFor(row.householdId)
             : null;
         emailOutboxIds.push(
           await enqueueLessonEmail(tx, {
