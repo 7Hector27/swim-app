@@ -15,7 +15,7 @@ import { randomUUID } from "node:crypto";
 
 import { db } from "../../db/client";
 import * as schema from "../../db/schema";
-import { cashRefundJobs } from "../../db/schema";
+import { cashRefundJobs, householdBalanceLedger } from "../../db/schema";
 import type { CashOutBreakdown } from "@swim-app/shared";
 import { getEnv } from "../../lib/env";
 import { enqueueBalanceCashedOutEmail } from "../emails/balanceCashedOutOutbox";
@@ -69,7 +69,7 @@ export async function getCashOutBreakdown(
       COALESCE(-SUM(amount_cents) FILTER (WHERE entry_type::text = 'cash_refund'), 0) AS cash_refunded,
       COALESCE(-SUM(amount_cents) FILTER (WHERE entry_type::text IN ('lesson_charge', 'refund_to_balance')), 0) AS net_lesson,
       COALESCE(SUM(amount_cents), 0) AS balance
-    FROM household_balance_ledger
+    FROM ${householdBalanceLedger}
     WHERE household_id = ${householdId}
   `);
   const row = rows[0] ?? {
@@ -133,8 +133,8 @@ async function loadRefundablePayments(
       payment.amount_cents,
       COALESCE(-SUM(refund.amount_cents), 0) AS already_refunded_cents,
       payment.created_at
-    FROM household_balance_ledger payment
-    LEFT JOIN household_balance_ledger refund
+    FROM ${householdBalanceLedger} payment
+    LEFT JOIN ${householdBalanceLedger} refund
       ON refund.refund_of_ledger_id = payment.id
       AND refund.entry_type::text = 'cash_refund'
     WHERE payment.household_id = ${householdId}
