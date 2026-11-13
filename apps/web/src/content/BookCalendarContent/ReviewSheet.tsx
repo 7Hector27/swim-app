@@ -8,7 +8,7 @@ import PendingLabel from "@/components/PendingLabel";
 import { formatDollars } from "@/lib/formatDollars";
 
 import { formatLaTime, pickReasonCopy } from "./batchHelpers";
-import { formatSlotRangeWithDate } from "./helpers";
+import { formatRecurringDateRange, formatSlotRangeWithDate } from "./helpers";
 import styles from "./ReviewSheet.module.css";
 
 type Mode = "multiple" | "recurring";
@@ -64,6 +64,7 @@ interface Props {
   onUnskip: (index: number) => void;
   onBook: () => void;
   onBackToCalendar: () => void;
+  onBackToDashboard: () => void;
   onBuyPackage: () => void;
   // "Add $N of credit" — starts a Stripe top-up for one lesson's worth
   // of credit sized to the picks currently in the batch. The caller
@@ -148,6 +149,7 @@ export default function ReviewSheet(props: Props) {
             <SuccessContent
               success={props.success}
               onBackToCalendar={props.onBackToCalendar}
+              onBackToDashboard={props.onBackToDashboard}
             />
           ) : (
             <ReviewContent
@@ -326,29 +328,45 @@ function ReviewContent({
       <div
         aria-live="polite"
         data-testid="review-summary"
-        className="rounded-card border border-border bg-surface-soft p-3 text-sm"
+        className="rounded-card border border-border bg-surface-soft p-3 text-sm flex flex-col gap-1"
       >
         {isLoading ? (
           <span className="text-text-secondary">Checking availability…</span>
         ) : previewPicks.length === 0 ? (
           <span className="text-text-secondary">Add lessons on the calendar to review.</span>
         ) : (
-          <span className="text-text">
-            <span className="font-semibold text-heading">{ready}</span> ready
-            {flagged > 0 && (
-              <>
-                , <span className="font-semibold text-danger">{flagged}</span>{" "}
-                {flagged === 1 ? "needs" : "need"} attention
-              </>
+          <>
+            {mode === "recurring" && visible.length > 0 && (
+              <span
+                className="font-semibold text-heading"
+                data-testid="review-recurring-date-range"
+              >
+                {formatRecurringDateRange(
+                  visible[0]?.startsAt,
+                  visible[visible.length - 1]?.startsAt,
+                )}
+                {" · "}
+                {visible.length} {visible.length === 1 ? "lesson" : "lessons"}
+                {skippedIndexes.size > 0 && `, ${skippedIndexes.size} skipped`}
+              </span>
             )}
-            {notOpenYet > 0 && (
-              <>
-                , <span className="font-semibold text-text-secondary">{notOpenYet}</span> past the
-                booking window
-              </>
-            )}
-            .
-          </span>
+            <span className="text-text">
+              <span className="font-semibold text-heading">{ready}</span> ready
+              {flagged > 0 && (
+                <>
+                  , <span className="font-semibold text-danger">{flagged}</span>{" "}
+                  {flagged === 1 ? "needs" : "need"} attention
+                </>
+              )}
+              {notOpenYet > 0 && (
+                <>
+                  , <span className="font-semibold text-text-secondary">{notOpenYet}</span> past the
+                  booking window
+                </>
+              )}
+              .
+            </span>
+          </>
         )}
       </div>
 
@@ -550,9 +568,11 @@ function PickRow({
 function SuccessContent({
   success,
   onBackToCalendar,
+  onBackToDashboard,
 }: {
   success: SuccessView;
   onBackToCalendar: () => void;
+  onBackToDashboard: () => void;
 }) {
   const confirmed = success.lessons.filter((lesson) => lesson.status === "approved");
   const pending = success.lessons.filter((lesson) => lesson.status === "pending");
@@ -607,13 +627,22 @@ function SuccessContent({
         </div>
       )}
 
-      <button
-        type="button"
-        onClick={onBackToCalendar}
-        className="min-h-[52px] px-5 rounded-button bg-button-primary-background text-button-primary-text font-bold text-sm transition-opacity duration-150 hover:opacity-90 active:scale-[0.97] motion-reduce:transform-none"
-      >
-        Back to calendar
-      </button>
+      <div className="flex flex-col gap-2">
+        <button
+          type="button"
+          onClick={onBackToCalendar}
+          className="min-h-[52px] px-5 rounded-button bg-button-primary-background text-button-primary-text font-bold text-sm transition-opacity duration-150 hover:opacity-90 active:scale-[0.97] motion-reduce:transform-none"
+        >
+          Back to calendar
+        </button>
+        <button
+          type="button"
+          onClick={onBackToDashboard}
+          className="min-h-[52px] px-5 rounded-button border border-border text-text font-semibold text-sm hover:bg-surface-soft transition-colors duration-150 active:scale-[0.97] motion-reduce:transform-none"
+        >
+          Back to dashboard
+        </button>
+      </div>
     </section>
   );
 }

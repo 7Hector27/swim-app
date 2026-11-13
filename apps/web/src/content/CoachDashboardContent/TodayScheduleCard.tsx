@@ -74,6 +74,13 @@ export default function TodayScheduleCard({ initialItems, today, initialResult }
 
   const label = dayLabel(viewDate, today);
 
+  // Dashboard-only filter: hide cancelled and declined lessons from the
+  // card so the coach sees a clean "what's actually happening today"
+  // view. The full /coach/schedule page keeps them visible on purpose.
+  const visibleItems = items.filter(
+    (item) => item.type !== "lesson" || (item.lesson.status !== "canceled" && item.lesson.status !== "declined"),
+  );
+
   return (
     <div className="rounded-card border border-border p-5 tablet:p-6">
       <div className="flex items-center justify-between mb-4 gap-2">
@@ -123,11 +130,11 @@ export default function TodayScheduleCard({ initialItems, today, initialResult }
             Retry
           </button>
         </div>
-      ) : items.filter((item) => item.type !== "open_slot").length === 0 ? (
+      ) : visibleItems.filter((item) => item.type !== "open_slot").length === 0 ? (
         <p className="text-sm text-text-secondary py-4">No lessons scheduled.</p>
       ) : (
         <div className="divide-y divide-border">
-          {items.map((item) => {
+          {visibleItems.map((item) => {
             if (item.type === "lesson") {
               return <DashboardLessonRow key={item.lesson.id} item={item} now={now} />;
             }

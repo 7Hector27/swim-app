@@ -201,6 +201,36 @@ export function formatSlotRangeWithDate(isoStr: string, durationMinutes: number)
   return `${dayLabel} \u00b7 ${formatRangeAndLength(start, durationMinutes)}`;
 }
 
+// Short "Nov 21 to Jan 23" range used by the recurring summary + review
+// sheet to anchor the pattern to real dates once the parent has tapped a
+// slot. Empty string if either end is missing (no picks yet). Year is
+// included only when the two ends fall in different years so the common
+// case stays compact.
+export function formatRecurringDateRange(
+  firstIso: string | undefined,
+  lastIso: string | undefined,
+): string {
+  if (firstIso === undefined || lastIso === undefined) return "";
+  const first = new Date(firstIso);
+  const last = new Date(lastIso);
+  const sameYear =
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/Los_Angeles",
+      year: "numeric",
+    }).format(first) ===
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/Los_Angeles",
+      year: "numeric",
+    }).format(last);
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Los_Angeles",
+    month: "short",
+    day: "numeric",
+    ...(sameYear ? {} : { year: "numeric" }),
+  });
+  return `${fmt.format(first)} to ${fmt.format(last)}`;
+}
+
 // Weekday-only canonical display for a recurring pattern entry (no specific
 // date). Mirrors formatSlotRangeWithDate so a pattern pair reads the same
 // as a per-date lesson, modulo the leading date vs. weekday.

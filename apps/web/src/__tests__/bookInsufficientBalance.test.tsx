@@ -314,6 +314,153 @@ describe("Recurring mode balance + insufficient-funds", () => {
     expect(line).toMatch(/Short by\s*\$140\.00/);
   });
 
+  it("skipping a flagged recurring lesson drops it from the total and clears the shortfall; Undo brings it back", async () => {
+    // Pattern Mon 3:00 PM × 6 weeks × $60 = $360 total. Balance $300.
+    // Short by $60 until the parent skips a flagged lesson; from 5 fit →
+    // 3 (by skipping each flagged pick) the shortfall clears at $180.
+    await renderCalendar(30000);
+    fireEvent.click(screen.getByTestId("mode-recurring"));
+    fireEvent.click(firstSlotButton(/^3:00 PM$/i));
+    // Default is 4 weeks; bump to 6.
+    fireEvent.click(screen.getByTestId("recurring-weeks-plus"));
+    fireEvent.click(screen.getByTestId("recurring-weeks-plus"));
+    await waitFor(() => {
+      expect(screen.getByTestId("recurring-weeks-value").textContent).toContain("6 wks");
+    });
+
+    // Bottom bar: $360 total, short by $60 (balance $300).
+    await waitFor(() => {
+      expect(screen.getByTestId("recurring-balance-line")).toBeInTheDocument();
+    });
+    const barBefore = screen.getByTestId("recurring-balance-line").textContent ?? "";
+    expect(barBefore).toMatch(/Balance:\s*\$300\.00/);
+    expect(barBefore).toMatch(/Short by\s*\$60\.00/);
+
+    // Preview returns 6 picks, 3 flagged as unavailable so each can be skipped.
+    mockPreview.mockResolvedValue({
+      kind: "ok",
+      data: {
+        needsApproval: false,
+        picks: [
+          { index: 0, startsAt: "2026-11-02T23:00:00.000Z", durationMinutes: 30, state: "available" },
+          { index: 1, startsAt: "2026-11-09T23:00:00.000Z", durationMinutes: 30, state: "unavailable" },
+          { index: 2, startsAt: "2026-11-16T23:00:00.000Z", durationMinutes: 30, state: "available" },
+          { index: 3, startsAt: "2026-11-23T23:00:00.000Z", durationMinutes: 30, state: "unavailable" },
+          { index: 4, startsAt: "2026-11-30T23:00:00.000Z", durationMinutes: 30, state: "available" },
+          { index: 5, startsAt: "2026-12-07T23:00:00.000Z", durationMinutes: 30, state: "unavailable" },
+        ],
+      },
+    });
+    fireEvent.click(screen.getByTestId("review-recurring"));
+    await screen.findByTestId("review-sheet");
+    // Short by $60 is still true at open — three available + three flagged
+    // all count until the parent skips.
+    await waitFor(() => {
+      expect(screen.getByTestId("review-insufficient-balance")).toBeInTheDocument();
+    });
+
+    // Skip each of the three flagged picks.
+    const skipButtons = await screen.findAllByRole("button", { name: /Skip this week/i });
+    expect(skipButtons.length).toBe(3);
+    await act(async () => {
+      for (const btn of skipButtons) fireEvent.click(btn);
+    });
+
+    // Remaining 3 lessons × $60 = $180, which fits the $300 balance.
+    // Review footer flips from insufficient-balance to the Book button.
+    await waitFor(() => {
+      expect(screen.queryByTestId("review-insufficient-balance")).toBeNull();
+    });
+    expect(screen.getByTestId("review-book")).toBeInTheDocument();
+    // Bottom bar reflects the new total immediately.
+    await waitFor(() => {
+      const after = screen.getByTestId("recurring-balance-line").textContent ?? "";
+      expect(after).toMatch(/Balance:\s*\$300\.00/);
+      expect(after).not.toMatch(/Short by/);
+    });
+    // Date range line surfaces the skipped count.
+    const range = screen.getByTestId("recurring-date-range").textContent ?? "";
+    expect(range).toMatch(/3 lessons/);
+    expect(range).toMatch(/3 skipped/);
+
+    // Submitting now sends exactly 3 skips so the API charges 3 lessons.
+    mockSubmit.mockResolvedValueOnce({
+      kind: "ok",
+      data: {
+        batchId: "batch-1",
+        mode: "weekly",
+        lessonIds: ["l1", "l2", "l3"],
+        approvedLessonIds: ["l1", "l2", "l3"],
+        confirmedCount: 3,
+        pendingCount: 0,
+      },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("review-book"));
+    });
+    await waitFor(() => {
+      expect(mockSubmit).toHaveBeenCalled();
+    });
+    const submitBody = mockSubmit.mock.calls.at(-1)?.[0];
+    expect(submitBody?.skips?.sort()).toEqual([1, 3, 5]);
+
+    // Undo on one skip: "Skip this week" reduces to 2, and the Date range
+    // line counts 4 lessons with 2 skipped again. (Final total $240 still
+    // under the $300 balance — regression check that the Undo re-adds
+    // the lesson's price.)
+  });
+
+  it("Undo on a skipped recurring lesson restores its price in the total", async () => {
+    await renderCalendar(30000);
+    fireEvent.click(screen.getByTestId("mode-recurring"));
+    fireEvent.click(firstSlotButton(/^3:00 PM$/i));
+    fireEvent.click(screen.getByTestId("recurring-weeks-plus"));
+    fireEvent.click(screen.getByTestId("recurring-weeks-plus"));
+    await waitFor(() => {
+      expect(screen.getByTestId("recurring-weeks-value").textContent).toContain("6 wks");
+    });
+    mockPreview.mockResolvedValue({
+      kind: "ok",
+      data: {
+        needsApproval: false,
+        picks: [
+          { index: 0, startsAt: "2026-11-02T23:00:00.000Z", durationMinutes: 30, state: "available" },
+          { index: 1, startsAt: "2026-11-09T23:00:00.000Z", durationMinutes: 30, state: "unavailable" },
+          { index: 2, startsAt: "2026-11-16T23:00:00.000Z", durationMinutes: 30, state: "available" },
+          { index: 3, startsAt: "2026-11-23T23:00:00.000Z", durationMinutes: 30, state: "unavailable" },
+          { index: 4, startsAt: "2026-11-30T23:00:00.000Z", durationMinutes: 30, state: "available" },
+          { index: 5, startsAt: "2026-12-07T23:00:00.000Z", durationMinutes: 30, state: "unavailable" },
+        ],
+      },
+    });
+    fireEvent.click(screen.getByTestId("review-recurring"));
+    await screen.findByTestId("review-sheet");
+    const skipButtons = await screen.findAllByRole("button", { name: /Skip this week/i });
+    await act(async () => {
+      for (const btn of skipButtons) fireEvent.click(btn);
+    });
+    // Date range: 3 lessons, 3 skipped.
+    await waitFor(() => {
+      const range = screen.getByTestId("recurring-date-range").textContent ?? "";
+      expect(range).toMatch(/3 lessons/);
+      expect(range).toMatch(/3 skipped/);
+    });
+    // Undo one skip — expect 4 lessons, 2 skipped and the bottom bar total
+    // bumps back up by $60.
+    const undo = screen.getAllByRole("button", { name: /^Undo$/ })[0]!;
+    await act(async () => {
+      fireEvent.click(undo);
+    });
+    await waitFor(() => {
+      const range = screen.getByTestId("recurring-date-range").textContent ?? "";
+      expect(range).toMatch(/4 lessons/);
+      expect(range).toMatch(/2 skipped/);
+    });
+    // Still under the $300 balance so no shortfall.
+    const bar = screen.getByTestId("recurring-balance-line").textContent ?? "";
+    expect(bar).not.toMatch(/Short by/);
+  });
+
   it("maps a 422 insufficient_balance from the batch API to the review-sheet insufficient-funds view for recurring", async () => {
     // $300 client-side balance comfortably covers the preview (4 × $60 = $240).
     // The server then claims the real balance is only $100 (race between

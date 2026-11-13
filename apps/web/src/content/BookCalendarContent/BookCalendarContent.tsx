@@ -24,6 +24,7 @@ import {
 
 import {
   createBookingAction,
+  fetchBalanceForBookPageAction,
   fetchMonthRangeAction,
   fetchRangeAction,
   findFirstAvailableDayAction,
@@ -35,6 +36,7 @@ import {
   clampSwimmerCount,
   formatDayLabel,
   formatPatternRangeAndLength,
+  formatRecurringDateRange,
   formatSlotRangeWithDate,
   getMondayOfWeek,
   maxBookableDateLA,
@@ -50,7 +52,6 @@ import {
   laTimeOfDay,
   maxRecurringWeeksInWindow,
   pickReasonCopy,
-  todayLaDateStr,
   wouldExceedDailyCap,
   type BookingMode,
   type MultiplePick,
@@ -133,10 +134,30 @@ export default function BookCalendarContent({
   householdFailed = false,
   initialView = "week",
   initialDate,
-  balanceCents = null,
+  balanceCents: initialBalanceCents = null,
 }: Props) {
   const router = useRouter();
   const today = todayLA();
+
+  // The server page renders this prop once; after any booking the stored
+  // value is stale. Hold it in state and refetch after each success so a
+  // second booking in the same session sees the live balance, not the
+  // one that was true at page load. Null = balance unknown (initial
+  // fetch failed, or a post-success refetch failed); the UI falls back
+  // to the server's 422 insufficient_balance.
+  const [balanceCents, setBalanceCents] = useState<number | null>(initialBalanceCents);
+
+  async function refreshBalanceAfterBooking(): Promise<void> {
+    try {
+      const fresh = await fetchBalanceForBookPageAction();
+      if (fresh !== null) setBalanceCents(fresh);
+    } catch {
+      // Network error, auth loss, or any other transient failure — keep
+      // the previous value so the UI never flashes "balance unknown"
+      // after a known-good reading. The next pre-submit guard still
+      // defers to the server's authoritative 422.
+    }
+  }
 
   const [calendarView, setCalendarView] = useState<CalendarView>(initialView);
   // Clamp any deep-link / saved initial date so a past week or month opens
@@ -177,7 +198,12 @@ export default function BookCalendarContent({
   const [multiplePicks, setMultiplePicks] = useState<MultiplePick[]>([]);
   const [pattern, setPattern] = useState<BatchPatternPair[]>([]);
   const [recurringWeeks, setRecurringWeeks] = useState<number>(DEFAULT_RECURRING_WEEKS);
-  const [recurringStartDate, setRecurringStartDate] = useState<string>(todayLaDateStr());
+  // Empty string = no pick yet. Once the parent taps a slot in recurring
+  // mode, this becomes the LA date of the earliest tapped slot. The
+  // expander keys off this, so initializing to today anchored the series
+  // one week before the viewed week whenever the parent was browsing a
+  // future week — see the "start from the picked week" fix.
+  const [recurringStartDate, setRecurringStartDate] = useState<string>("");
   const [showPickList, setShowPickList] = useState(false);
 
   // ── Review-sheet state ─────────────────────────────────────────────────────
@@ -340,6 +366,9 @@ export default function BookCalendarContent({
   // Single-mode booking success → navigate
   useEffect(() => {
     if (bookingState.status !== "success") return;
+    // Refresh on the way out: if the parent bounces back (resume, back
+    // button), the remounted page already has fresh data queued.
+    void refreshBalanceAfterBooking();
     router.push(`/dashboard?booked=${bookingState.lessonId}`);
   }, [bookingState, router]);
 
@@ -456,29 +485,43 @@ export default function BookCalendarContent({
     return expanded.filter((pick) => laDateFromIso(pick.startsAt) <= maxAdvanceDateLA);
   }, [bookingMode, pattern, recurringStartDate, recurringWeeks, maxAdvanceDateLA]);
 
+  // Recurring picks filtered to the ones that will actually submit —
+  // "Skip this week" in the review sheet drops a pick from the payload,
+  // so the money, headers, and cap check all key off this list, not the
+  // raw expansion. plannedStartsAt's window filter only trims trailing
+  // out-of-window entries, so positional index still matches the
+  // skippedIndexes keys the server would see.
+  const effectiveRecurringPicks = useMemo(
+    () => plannedStartsAt.filter((_pick, index) => !skippedIndexes.has(index)),
+    [plannedStartsAt, skippedIndexes],
+  );
+  const recurringSkippedCount = plannedStartsAt.length - effectiveRecurringPicks.length;
+
   const totalLessons =
     bookingMode === "multiple"
       ? multiplePicks.length
       : bookingMode === "recurring"
-        ? plannedStartsAt.length
+        ? effectiveRecurringPicks.length
         : 0;
 
   const overCap = totalLessons > BATCH_LESSON_MAX;
 
-  // Per-pick totals (minutes) summed across every current pick. Each pick
+  // Per-pick totals (minutes) summed across every submitted pick. Each pick
   // carries its own length so a batch can mix 30, 45, and 60-minute lessons.
   const totalPickMinutes =
     bookingMode === "multiple"
       ? multiplePicks.reduce((sum, pick) => sum + pick.durationMinutes, 0)
       : bookingMode === "recurring"
-        ? plannedStartsAt.reduce((sum, pick) => sum + pick.durationMinutes, 0)
+        ? effectiveRecurringPicks.reduce((sum, pick) => sum + pick.durationMinutes, 0)
         : 0;
 
-  // Total price in cents across every current pick, used for the balance
-  // shortfall guard on the bottom bar and review sheet. Server-side pricing
-  // is authoritative (packages/shared/lib/pricing); the browser never
-  // overrides it — this value is display-only and must match what the API
-  // would charge so the guard doesn't lie to the parent.
+  // Total price in cents across every pick that would actually submit.
+  // Server-side pricing is authoritative (packages/shared/lib/pricing); the
+  // browser never overrides it — this value is display-only and must match
+  // what the API would charge so the guard doesn't lie to the parent. In
+  // recurring mode, skipped picks are excluded here so the bottom bar's
+  // "Short by $X" check matches the API's balance check against the
+  // post-skip finalPicks total.
   const totalPriceCents = useMemo(() => {
     if (bookingMode === "single") {
       if (selectedStartsAt === null || swimmerIds.length === 0) return 0;
@@ -492,7 +535,7 @@ export default function BookCalendarContent({
       );
     }
     if (bookingMode === "recurring") {
-      return plannedStartsAt.reduce((sum, pick) => {
+      return effectiveRecurringPicks.reduce((sum, pick) => {
         const pair = pattern.find(
           (candidate) =>
             candidate.weekday === laIsoWeekday(pick.startsAt) &&
@@ -510,7 +553,7 @@ export default function BookCalendarContent({
     swimmerIds,
     durationMinutes,
     multiplePicks,
-    plannedStartsAt,
+    effectiveRecurringPicks,
     pattern,
   ]);
 
@@ -772,8 +815,10 @@ export default function BookCalendarContent({
     // Switching modes is a "start over" gesture — the resume stash
     // belonged to the picks the parent is now discarding.
     clearPendingBooking();
-    // Reset recurring start to today so a fresh pattern starts "from now."
-    if (next === "recurring") setRecurringStartDate(todayLaDateStr());
+    // The start date is derived from the first slot the parent taps in
+    // recurring mode — clear it on every mode switch so a fresh pattern
+    // never inherits the previous session's anchor.
+    if (next === "recurring") setRecurringStartDate("");
   }
 
   function cancelModeChange() {
@@ -833,12 +878,15 @@ export default function BookCalendarContent({
       if (containing !== null) {
         const containingWeekday = laIsoWeekday(containing.startsAt);
         const containingTime = laTimeOfDay(containing.startsAt);
-        setPattern((current) =>
-          current.filter(
-            (pair) =>
-              !(pair.weekday === containingWeekday && pair.timeOfDay === containingTime),
-          ),
+        const nextPattern = pattern.filter(
+          (pair) =>
+            !(pair.weekday === containingWeekday && pair.timeOfDay === containingTime),
         );
+        setPattern(nextPattern);
+        // Removing the last pair clears the anchor so a future click in
+        // a different week doesn't inherit a stale earlier startDate
+        // and extend the series backward again.
+        if (nextPattern.length === 0) setRecurringStartDate("");
         return;
       }
       if (slot.state !== "available") return;
@@ -858,15 +906,21 @@ export default function BookCalendarContent({
         return;
       }
       const entrySwimmerIds = [...swimmerIds];
-      setPattern((current) => {
-        const existingIndex = current.findIndex(
-          (pair) => `${pair.weekday}@${pair.timeOfDay}` === key,
+      const existingIndex = pattern.findIndex(
+        (pair) => `${pair.weekday}@${pair.timeOfDay}` === key,
+      );
+      if (existingIndex >= 0) {
+        const nextPattern = pattern.filter(
+          (_unused, index) => index !== existingIndex,
         );
-        if (existingIndex >= 0) {
-          return current.filter((_unused, index) => index !== existingIndex);
-        }
-        return [...current, { weekday, timeOfDay, durationMinutes, swimmerIds: entrySwimmerIds }];
-      });
+        setPattern(nextPattern);
+        if (nextPattern.length === 0) setRecurringStartDate("");
+        return;
+      }
+      setPattern([
+        ...pattern,
+        { weekday, timeOfDay, durationMinutes, swimmerIds: entrySwimmerIds },
+      ]);
     }
   }
 
@@ -1136,6 +1190,11 @@ export default function BookCalendarContent({
         // parent won't be coming back to this snapshot.
         clearPendingBooking();
         buildSuccessView(result.data);
+        // Pull the live balance so an immediate second booking off this
+        // same page reads the current value (the server page's prop was
+        // snapshotted at load and would otherwise show "enough" until a
+        // full reload / navigation).
+        void refreshBalanceAfterBooking();
       } else if (result.kind === "conflict") {
         setPreviewPicks((current) =>
           current.map((pick) => {
@@ -1336,6 +1395,10 @@ export default function BookCalendarContent({
     setReviewOpen(false);
     setSuccess(null);
     applyModeChange("single");
+  }
+
+  function handleBackToDashboard() {
+    router.push("/dashboard");
   }
 
   // ── Nav handlers ───────────────────────────────────────────────────────────
@@ -1812,10 +1875,11 @@ export default function BookCalendarContent({
               weeks={recurringWeeks}
               maxWeeks={maxRecurringWeeks}
               totalLessons={totalLessons}
+              skippedCount={recurringSkippedCount}
               totalMinutes={totalPickMinutes}
               totalPrice={
                 swimmerIds.length > 0
-                  ? plannedStartsAt.reduce(
+                  ? effectiveRecurringPicks.reduce(
                       (sum, planned) =>
                         sum + lessonPrice(planned.durationMinutes, swimmerIds.length),
                       0,
@@ -1827,6 +1891,8 @@ export default function BookCalendarContent({
               needsApproval={previewNeedsApproval || (weekData?.needsApproval ?? false)}
               flaggedCount={flaggedPickCount}
               expanded={showPickList}
+              firstPlannedIso={effectiveRecurringPicks[0]?.startsAt}
+              lastPlannedIso={effectiveRecurringPicks[effectiveRecurringPicks.length - 1]?.startsAt}
               onToggleExpanded={() => setShowPickList((prev) => !prev)}
               onChangeWeeks={changeRecurringWeeks}
               onRemovePair={removePatternPair}
@@ -1887,6 +1953,7 @@ export default function BookCalendarContent({
         onUnskip={handleUnskipIndex}
         onBook={handleBookBatch}
         onBackToCalendar={handleBackToCalendar}
+        onBackToDashboard={handleBackToDashboard}
         onBuyPackage={handleBatchBuyPackage}
         onAddCredit={handleBatchAddCredit}
         addCreditCents={addCreditCents}
@@ -2338,6 +2405,10 @@ interface RecurringBottomBarProps {
   weeks: number;
   maxWeeks: number;
   totalLessons: number;
+  // Lessons currently marked "Skip this week" in the review sheet.
+  // Rendered next to the total so the parent can tell at a glance that
+  // the drop in price is intentional ("3 lessons, 3 skipped").
+  skippedCount: number;
   totalMinutes: number;
   totalPrice: number | null;
   swimmerCount: number;
@@ -2345,6 +2416,12 @@ interface RecurringBottomBarProps {
   needsApproval: boolean;
   flaggedCount: number;
   expanded: boolean;
+  // First and last planned lesson ISO timestamps, used to render the
+  // "Nov 21 to Jan 23" anchor under the pattern label. Both undefined
+  // before the parent has tapped a slot or when weeks clamp the series
+  // to zero lessons.
+  firstPlannedIso: string | undefined;
+  lastPlannedIso: string | undefined;
   onToggleExpanded: () => void;
   onChangeWeeks: (next: number) => void;
   onRemovePair: (pair: BatchPatternPair) => void;
@@ -2363,6 +2440,7 @@ function RecurringBottomBar({
   weeks,
   maxWeeks,
   totalLessons,
+  skippedCount,
   totalMinutes,
   totalPrice,
   swimmerCount,
@@ -2370,6 +2448,8 @@ function RecurringBottomBar({
   needsApproval,
   flaggedCount,
   expanded,
+  firstPlannedIso,
+  lastPlannedIso,
   onToggleExpanded,
   onChangeWeeks,
   onRemovePair,
@@ -2387,6 +2467,7 @@ function RecurringBottomBar({
   const patternLabel = hasPattern
     ? pattern.map(formatPatternRangeAndLength).join(" + ")
     : "No pattern yet";
+  const dateRangeLabel = formatRecurringDateRange(firstPlannedIso, lastPlannedIso);
   // Review stays clickable even without a pattern so the swimmer-check
   // scroll fires from the Review tap (ADR 030 phase 2); overCap blocks it.
   const canReview = !overCap;
@@ -2415,6 +2496,15 @@ function RecurringBottomBar({
             >
               {patternLabel}
             </p>
+            {hasPattern && dateRangeLabel !== "" && (
+              <p
+                className="text-xs opacity-70 mt-0.5"
+                data-testid="recurring-date-range"
+              >
+                {dateRangeLabel} · {totalLessons} {totalLessons === 1 ? "lesson" : "lessons"}
+                {skippedCount > 0 && `, ${skippedCount} skipped`}
+              </p>
+            )}
             <p className="text-xs opacity-70 mt-0.5" data-testid="recurring-total">
               {hasPattern ? (
                 overCap

@@ -53,6 +53,32 @@ export default function LessonDetailContent({
     cancelDialogRef.current?.close();
     cancelSuccessDialogRef.current?.showModal();
   }, [cancelState]);
+  useEffect(() => {
+    if (cancelBatchState.status !== "canceled") return;
+    cancelBatchDialogRef.current?.close();
+    cancelSuccessDialogRef.current?.showModal();
+  }, [cancelBatchState]);
+
+  // State that drives the success dialog. Single cancel uses the per-
+  // lesson action state; batch cancel uses its own. Picking the newer
+  // "canceled" state keeps the dialog pointed at whichever flow just
+  // succeeded (only one is active at a time).
+  const successState =
+    cancelBatchState.status === "canceled"
+      ? cancelBatchState
+      : cancelState.status === "canceled"
+        ? cancelState
+        : null;
+
+  // Pre-confirm refund total for the batch cancel dialog — sum of each
+  // sibling's authoritative chargeAmountCents. Free-lesson rows carry
+  // null and drop out of the sum; if everything is free, totalRefund is
+  // 0 and the refund line is suppressed (same rule as the response
+  // "totalRefundAmountCents === 0" case).
+  const batchRefundPreviewCents = batchSiblings.reduce((sum, sibling) => {
+    const charge = sibling.chargeAmountCents;
+    return typeof charge === "number" ? sum + charge : sum;
+  }, 0);
 
   const startsAt = new Date(lesson.startsAt);
   const endsAt = new Date(startsAt.getTime() + lesson.durationMinutes * 60 * 1000);
@@ -278,10 +304,14 @@ export default function LessonDetailContent({
         )}
       </ConfirmDialog>
 
-      {cancelState.status === "canceled" && (
+      {successState && (
         <ConfirmDialog
           dialogRef={cancelSuccessDialogRef}
-          title="Lesson canceled"
+          title={
+            cancelBatchState.status === "canceled"
+              ? "Lessons canceled"
+              : "Lesson canceled"
+          }
           description=""
           formId="cancel-back-form"
           confirmLabel="Back to dashboard"
@@ -293,11 +323,11 @@ export default function LessonDetailContent({
             className="flex flex-col gap-2 text-sm text-text leading-relaxed"
             data-testid="parent-cancel-success"
           >
-            {cancelState.refundAmountCents !== null && cancelState.refundAmountCents > 0 ? (
+            {successState.refundAmountCents !== null && successState.refundAmountCents > 0 ? (
               <p>
                 Refunded{" "}
                 <span className="font-semibold">
-                  {formatDollars(cancelState.refundAmountCents)}
+                  {formatDollars(successState.refundAmountCents)}
                 </span>{" "}
                 to your balance.
               </p>
@@ -305,7 +335,7 @@ export default function LessonDetailContent({
             <p>
               New balance:{" "}
               <span className="font-semibold">
-                {formatDollars(cancelState.newBalanceCents)}
+                {formatDollars(successState.newBalanceCents)}
               </span>
               .
             </p>
@@ -340,6 +370,18 @@ export default function LessonDetailContent({
               </li>
             ))}
           </ul>
+          {batchRefundPreviewCents > 0 && (
+            <p
+              className="text-sm text-text leading-relaxed"
+              data-testid="parent-cancel-batch-refund-preview"
+            >
+              You&apos;ll get{" "}
+              <span className="font-semibold">
+                {formatDollars(batchRefundPreviewCents)}
+              </span>{" "}
+              back to your balance ({cancelDialogSiblings.length} lessons).
+            </p>
+          )}
         </ConfirmDialog>
       )}
     </div>

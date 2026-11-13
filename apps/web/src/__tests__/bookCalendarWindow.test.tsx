@@ -335,23 +335,23 @@ describe("Booking window — slot past window", () => {
 });
 
 describe("Booking window — recurring stepper", () => {
-  it("caps the stepper max at the number of in-window weeks for a pattern starting this week", async () => {
+  it("caps the stepper max at the number of in-window weeks from the picked week's start", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2026-10-26T17:00:00Z"));
 
     await renderCalendar(WEEK_NOV_02);
 
     fireEvent.click(screen.getByTestId("mode-recurring"));
-    // Tap Mon 3:00 PM to build a one-pair pattern starting this week.
+    // Tap Mon 3:00 PM on Nov 2 — the only Mon slot the fixture exposes.
     const slots = screen.getAllByRole("button", { name: /3:00 PM/i });
     fireEvent.click(slots[0]!);
 
-    // With bookingMaxAdvanceWeeks=3 and today 2026-10-26 (Mon of week 1),
-    // window ends Sun 2026-11-15. Pattern [Mon] from today → Mondays Oct 26,
-    // Nov 2, Nov 9 fit; Nov 16 doesn't. Default stepper is 4; the clamp caps
-    // it at 3.
+    // bookingMaxAdvanceWeeks=3 and today 2026-10-26 (Mon) → window ends
+    // Sun 2026-11-15. The series anchors to the picked slot (Mon Nov 2),
+    // never earlier, so Mondays Nov 2 and Nov 9 fit; Nov 16 is past the
+    // window. Default stepper is 4; the clamp caps it at 2.
     await waitFor(() => {
-      expect(screen.getByTestId("recurring-weeks-value").textContent).toContain("3 wks");
+      expect(screen.getByTestId("recurring-weeks-value").textContent).toContain("2 wks");
     });
 
     const plusBtn = screen.getByTestId("recurring-weeks-plus") as HTMLButtonElement;
