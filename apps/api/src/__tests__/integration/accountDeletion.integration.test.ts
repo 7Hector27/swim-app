@@ -16,7 +16,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import pino from "pino";
-import { and, eq, gte, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 
 import { createApp } from "../../app";
 import {
@@ -679,14 +679,7 @@ describe("POST /me/deletion/confirm — solo path", () => {
     const pastLessonIdB = await seedPastLesson(householdIdB, locationIdB, ownerB.userId, swimmerIdB);
     const seededB = await seedSwimmerData(swimmerIdB, coach.userId);
 
-    // Delete household A only. Snapshot the wall clock just before
-    // deletion so the `account_deleted` coachNotifications assertion
-    // below can scope to rows this test wrote — ADR 035's test stack
-    // isn't truncated between files, and the shared coach profile
-    // accumulates account_deleted rows from every deletion the suite
-    // has ever run. 10ms shaved off is defensive insurance against
-    // clock-resolution surprises on Windows CI runners.
-    const deletionStartedAt = new Date(Date.now() - 10);
+    // Delete household A only.
     const res = await confirmDeletion(owner.accessToken);
     expect(res.status).toBe(204);
 
@@ -783,22 +776,24 @@ describe("POST /me/deletion/confirm — solo path", () => {
     expect(jobRows[0]?.scope).toBe("solo");
 
     // account_deleted coach notification exists with freed-up times.
-    // Scope by createdAt >= deletionStartedAt so only rows this test's
-    // deletion wrote count; the shared coach profile picks up
-    // account_deleted rows from every integration file.
+    // Scope by the job-id tag written by the deletion service
+    // (`account-deleted:<jobId>`). The job id is unique to this test,
+    // so this ties the assertion to the row this transaction wrote —
+    // the shared coach profile across ADR 035's un-truncated test
+    // stack can't pollute it.
+    const expectedTag = `account-deleted:${jobRows[0]?.id}`;
     const summaryNotifs = await adminDb()
       .select()
       .from(coachNotifications)
       .where(
         and(
           eq(coachNotifications.category, "account_deleted"),
-          gte(coachNotifications.createdAt, deletionStartedAt),
+          eq(coachNotifications.tag, expectedTag),
         ),
       );
-    expect(summaryNotifs.length).toBeGreaterThanOrEqual(1);
-    const payloads = summaryNotifs.map((row) => row.payload as { cancelledLessonTimesUtc?: string[] });
-    const hasOurTimes = payloads.some((p) => p.cancelledLessonTimesUtc && p.cancelledLessonTimesUtc.length > 0);
-    expect(hasOurTimes).toBe(true);
+    expect(summaryNotifs).toHaveLength(1);
+    const notifPayload = summaryNotifs[0]?.payload as { cancelledLessonTimesUtc?: string[] };
+    expect(notifPayload.cancelledLessonTimesUtc?.length ?? 0).toBeGreaterThan(0);
 
     // Stale-token guard: the access token this test still holds now
     // resolves to a profile with disabled_at set. requireUser returns 401
