@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
-import { formatDollars } from "@/content/AccountBalanceContent/formatters";
+import { formatDollars } from "@/lib/formatDollars";
 
 import styles from "./AccountDeletedModal.module.css";
 

@@ -8,7 +8,7 @@ import type { LessonLocation, UpcomingLesson } from "@swim-app/shared";
 import AddNoteForm from "@/components/AddNoteForm";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import BatchModeBadge from "@/components/BatchModeBadge";
-import { formatDollars } from "@/content/AccountBalanceContent/formatters";
+import { formatDollars } from "@/lib/formatDollars";
 import {
   cancelBatchRemainingAction,
   cancelLessonAction,

@@ -7,7 +7,7 @@ import type {
   CoachHouseholdBalanceSummary,
 } from "@swim-app/shared";
 
-import { formatDollars } from "@/content/AccountBalanceContent/formatters";
+import { formatDollars } from "@/lib/formatDollars";
 import { markCashRefundHandledAction } from "./actions";
 
 // Low-balance threshold: one 30-min 1-swimmer lesson. Anything under this

@@ -10,7 +10,7 @@ import {
 } from "@swim-app/shared";
 
 import Button from "@/components/Button";
-import { formatDollars } from "@/content/AccountBalanceContent/formatters";
+import { formatDollars } from "@/lib/formatDollars";
 
 import { confirmDeletionAction } from "./deleteAccountActions";
 import {

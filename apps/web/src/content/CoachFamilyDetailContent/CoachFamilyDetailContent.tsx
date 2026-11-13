@@ -10,7 +10,7 @@ import type {
   NeedsManualRefundJob,
 } from "@swim-app/shared";
 
-import { formatDollars } from "@/content/AccountBalanceContent/formatters";
+import { formatDollars } from "@/lib/formatDollars";
 import {
   executeCashOutAction,
   fetchCashOutPreviewAction,

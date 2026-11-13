@@ -2,9 +2,9 @@ import { describe, it, expect } from "vitest";
 
 import {
   formatApproxHours,
-  formatDollars,
   formatSignedDollars,
 } from "@/content/AccountBalanceContent/formatters";
+import { formatDollars } from "@/lib/formatDollars";
 
 describe("formatDollars", () => {
   it("formats zero as $0.00", () => {

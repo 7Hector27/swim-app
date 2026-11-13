@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import type { BatchPreviewPick, BatchPickState } from "@swim-app/shared";
 
 import PendingLabel from "@/components/PendingLabel";
-import { formatDollars } from "@/content/AccountBalanceContent/formatters";
+import { formatDollars } from "@/lib/formatDollars";
 
 import { formatLaTime, pickReasonCopy } from "./batchHelpers";
 import { formatSlotRangeWithDate } from "./helpers";

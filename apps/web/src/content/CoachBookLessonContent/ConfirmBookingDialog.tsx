@@ -13,7 +13,7 @@ import {
   hasAnyWarning,
   warningCopy,
 } from "./helpers";
-import { formatDollars } from "@/content/AccountBalanceContent/formatters";
+import { formatDollars } from "@/lib/formatDollars";
 
 export interface ConfirmSummary {
   householdName: string;

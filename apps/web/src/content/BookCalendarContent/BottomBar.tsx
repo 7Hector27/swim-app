@@ -3,7 +3,7 @@
 import PendingLabel from "@/components/PendingLabel";
 import { lessonPrice } from "@/lib/pricing";
 import { formatSlotRangeWithDate } from "./helpers";
-import { formatDollars } from "@/content/AccountBalanceContent/formatters";
+import { formatDollars } from "@/lib/formatDollars";
 
 interface Props {
   selectedStartsAt: string | null;

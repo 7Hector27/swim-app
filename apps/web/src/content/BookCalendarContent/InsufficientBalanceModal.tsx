@@ -4,7 +4,7 @@ import { useTransition } from "react";
 
 import { redirectToPolicyUpdated } from "@/lib/policyAcceptanceRedirect";
 import { startBookingShortfallTopupAction } from "@/content/AccountBalanceContent/actions";
-import { formatDollars } from "@/content/AccountBalanceContent/formatters";
+import { formatDollars } from "@/lib/formatDollars";
 import type {
   BatchPatternPair,
   LessonDurationMinutes,

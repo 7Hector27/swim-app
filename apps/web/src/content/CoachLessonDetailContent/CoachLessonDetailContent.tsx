@@ -8,7 +8,7 @@ import AddNoteForm from "@/components/AddNoteForm";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import InlineError from "@/components/InlineError";
 import LessonStatusBadge from "@/components/LessonStatusBadge";
-import { formatDollars } from "@/content/AccountBalanceContent/formatters";
+import { formatDollars } from "@/lib/formatDollars";
 import ActionToast, { type ActionToastKind } from "./ActionToast";
 import {
   cancelCoachLessonAction,

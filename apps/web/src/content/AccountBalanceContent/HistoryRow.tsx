@@ -5,7 +5,8 @@
 
 import type { BalanceHistoryEntry } from "@swim-app/shared";
 
-import { formatDollars, formatHistoryDate, formatSignedDollars } from "./formatters";
+import { formatHistoryDate, formatSignedDollars } from "./formatters";
+import { formatDollars } from "@/lib/formatDollars";
 
 export function HistoryRow({ entry }: { entry: BalanceHistoryEntry }) {
   return (

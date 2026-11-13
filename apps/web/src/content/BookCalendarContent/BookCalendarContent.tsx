@@ -56,7 +56,7 @@ import {
   type PickWithDuration,
 } from "./batchHelpers";
 import { lessonPrice } from "@/lib/pricing";
-import { formatDollars } from "@/content/AccountBalanceContent/formatters";
+import { formatDollars } from "@/lib/formatDollars";
 import CalendarConfigRow from "./CalendarConfigRow";
 import WeekNav, { type WeekNavDot } from "./WeekNav";
 import { useWeekPrefetch } from "./useWeekPrefetch";

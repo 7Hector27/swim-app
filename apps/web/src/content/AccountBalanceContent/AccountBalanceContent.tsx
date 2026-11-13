@@ -27,10 +27,8 @@ import {
   startLessonTopupAction,
   startPackageCheckoutAction,
 } from "./actions";
-import {
-  formatApproxHours,
-  formatDollars,
-} from "./formatters";
+import { formatApproxHours } from "./formatters";
+import { formatDollars } from "@/lib/formatDollars";
 import { HistoryRow } from "./HistoryRow";
 import styles from "./AccountBalanceContent.module.css";
 import { useCountUp } from "./useCountUp";

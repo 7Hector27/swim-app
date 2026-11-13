@@ -10,7 +10,7 @@ import type {
 } from "@swim-app/shared";
 import { BULK_CANCEL_MESSAGE_MAX_LENGTH } from "@swim-app/shared";
 import { postBulkCancelConfirm, postBulkCancelPreview } from "@/lib/api/coachBulkCancel";
-import { formatDollars } from "@/content/AccountBalanceContent/formatters";
+import { formatDollars } from "@/lib/formatDollars";
 
 interface Props {
   accessToken: string;

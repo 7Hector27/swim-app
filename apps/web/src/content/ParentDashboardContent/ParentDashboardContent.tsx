@@ -17,10 +17,8 @@ import { fetchLesson, fetchUpcomingLessons } from "@/lib/api/lessons";
 import { fetchParentSwimmerSummaries } from "@/lib/api/parentProgress";
 import { fetchSwimmers } from "@/lib/api/swimmers";
 import InlineError from "@/components/InlineError";
-import {
-  formatApproxHours,
-  formatDollars,
-} from "@/content/AccountBalanceContent/formatters";
+import { formatApproxHours } from "@/content/AccountBalanceContent/formatters";
+import { formatDollars } from "@/lib/formatDollars";
 import { removeSwimmer } from "./actions";
 import BookingConfirmDialog from "./BookingConfirmDialog";
 import {

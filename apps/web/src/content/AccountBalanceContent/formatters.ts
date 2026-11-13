@@ -1,15 +1,8 @@
-// Pure formatters shared by the balance page and the insufficient-funds
-// modal. Lives outside the "use client" boundary so both server pages
-// and client components can import it without crossing the boundary.
+// Balance-page-only formatters. `formatDollars` is shared across the app
+// and lives at @/lib/formatDollars so other content folders don't have
+// to cross-import this one. Pure, no "use client" directive.
 
-export function formatDollars(cents: number): string {
-  const absCents = Math.abs(cents);
-  const dollars = Math.floor(absCents / 100);
-  const remainder = absCents % 100;
-  const sign = cents < 0 ? "-" : "";
-  const formattedDollars = dollars.toLocaleString("en-US");
-  return `${sign}$${formattedDollars}.${String(remainder).padStart(2, "0")}`;
-}
+import { formatDollars } from "@/lib/formatDollars";
 
 export function formatSignedDollars(cents: number): string {
   if (cents > 0) return `+${formatDollars(cents)}`;
