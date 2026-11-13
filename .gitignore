@@ -10,3 +10,4 @@ supabase/snippets/
 .claude/settings.local.json
 .claude/settings.local.json
 *.tsbuildinfo
+.check-output/
