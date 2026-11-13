@@ -1,6 +1,17 @@
 import { bookingWindowEnd } from "@swim-app/shared";
-import type { WeekDayAvailability } from "@swim-app/shared";
+import type { SwimmerCount, WeekDayAvailability } from "@swim-app/shared";
 import { isApiBody } from "@/lib/mapZodErrors";
+
+// Clamp a swimmer-count derived from a `swimmerIds` array into the 1..4
+// range the pricing module accepts. Display-only: the server recomputes
+// the authoritative price on write. Exposed here (not inline in the
+// component) so the browser's price preview and its matching unit test
+// use the exact same bounds.
+export function clampSwimmerCount(count: number): SwimmerCount {
+  if (count <= 1) return 1;
+  if (count >= 4) return 4;
+  return count as SwimmerCount;
+}
 
 export type BookingState =
   | { status: "idle" }

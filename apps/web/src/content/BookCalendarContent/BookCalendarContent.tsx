@@ -32,6 +32,7 @@ import {
 } from "./actions";
 import {
   addDaysToDateStr,
+  clampSwimmerCount,
   formatDayLabel,
   formatPatternRangeAndLength,
   formatSlotRangeWithDate,
@@ -478,11 +479,6 @@ export default function BookCalendarContent({
   // is authoritative (packages/shared/lib/pricing); the browser never
   // overrides it — this value is display-only and must match what the API
   // would charge so the guard doesn't lie to the parent.
-  function clampSwimmerCount(count: number): SwimmerCount {
-    if (count <= 1) return 1;
-    if (count >= 4) return 4;
-    return count as SwimmerCount;
-  }
   const totalPriceCents = useMemo(() => {
     if (bookingMode === "single") {
       if (selectedStartsAt === null || swimmerIds.length === 0) return 0;
