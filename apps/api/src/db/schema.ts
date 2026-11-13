@@ -1877,6 +1877,12 @@ export const accountDeletionJobs = pgTable(
 // non-null → NULL transition on user_id used by the account-deletion
 // anonymization step (same posture as household_balance_ledger per
 // migration 0079). user_id is nullable solely to carry anonymized rows.
+//
+// NOTE: intentionally no `updated_at`, even though the add-db-table skill
+// recommends one on every new table. The trigger blocks every `UPDATE`
+// outside the one-shot anonymization carve-out, so there is no second
+// write to timestamp. Adding the column would be dead state at best and
+// misleading at worst (readers would assume rows can change).
 export const userPolicyAcceptances = pgTable(
   "user_policy_acceptances",
   {
