@@ -1001,12 +1001,38 @@ describe("Phase 3 — cancel-remaining refunds charged lessons", () => {
           chargeRows.map((row) => [row.lessonId!, row.amountCents]),
         );
 
+        // Preview endpoint carries each sibling's authoritative charge so
+        // the browser never has to price a lesson itself. Every sibling
+        // was booked for a fee here, so none should be null.
+        const preview = await request(app)
+          .get(`/lessons/batch/${batchId}`)
+          .set("Authorization", `Bearer ${owner.accessToken}`);
+        expect(preview.status).toBe(200);
+        const previewRows = preview.body as Array<{
+          id: string;
+          chargeAmountCents: number | null;
+        }>;
+        for (const row of previewRows) {
+          expect(row.chargeAmountCents).toBe(-chargeByLessonId.get(row.id)!);
+        }
+
         const cancel = await request(app)
           .delete(`/lessons/batch/${batchId}/remaining`)
           .set("Authorization", `Bearer ${owner.accessToken}`)
           .send();
         expect(cancel.status).toBe(200);
         expect(cancel.body.canceledCount).toBe(lessonIds.length);
+        // Response now carries the per-call refund total + post-refund
+        // balance so the parent's confirm dialog can show both without a
+        // second /me/balance round-trip. Total == sum of the ledger
+        // charges we just refunded (charges are stored negative, so flip
+        // the sign for the client-facing positive amount).
+        const expectedTotalRefund = chargeRows.reduce(
+          (sum, row) => sum + -row.amountCents,
+          0,
+        );
+        expect(cancel.body.totalRefundAmountCents).toBe(expectedTotalRefund);
+        expect(typeof cancel.body.newBalanceCents).toBe("number");
 
         // Exactly one refund_to_balance per cancelled lesson, each the
         // inverse of its original charge.
