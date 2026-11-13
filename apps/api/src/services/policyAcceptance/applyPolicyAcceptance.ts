@@ -39,11 +39,14 @@ export interface ApplyPolicyAcceptanceArgs {
 }
 
 // Writes one user_policy_acceptances row + one paired household_audit_log
-// row. Returns the inserted acceptance's id for diagnostics.
+// row. Returns the inserted acceptance's id, or `null` if the same
+// (user, slug, version) tuple was already accepted — the unique index
+// `user_policy_acceptances_user_slug_version_uniq` makes the insert a
+// no-op and the audit log write is skipped in lockstep.
 export async function applyPolicyAcceptance(
   tx: Tx,
   args: ApplyPolicyAcceptanceArgs,
-): Promise<string> {
+): Promise<string | null> {
   const inserted = await tx
     .insert(userPolicyAcceptances)
     .values({
@@ -52,13 +55,22 @@ export async function applyPolicyAcceptance(
       version: args.version,
       source: args.source,
     })
+    .onConflictDoNothing({
+      target: [
+        userPolicyAcceptances.userId,
+        userPolicyAcceptances.policySlug,
+        userPolicyAcceptances.version,
+      ],
+    })
     .returning({ id: userPolicyAcceptances.id });
 
   const id = inserted[0]?.id;
   if (!id) {
-    // Insert returning() is deterministic; a missing row here is an
-    // environment-level failure (e.g. the test container restarted mid-tx).
-    throw new Error("user_policy_acceptances insert returned no row");
+    // No row inserted => the tuple was already accepted. A re-accept is
+    // a legitimate no-op (e.g. a double-submit on the /policy-updated
+    // interstitial, or an in-flight retry). Skip the audit log too so
+    // the two tables stay in lockstep.
+    return null;
   }
 
   await tx.insert(householdAuditLog).values({

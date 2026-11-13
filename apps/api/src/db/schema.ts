@@ -1901,6 +1901,14 @@ export const userPolicyAcceptances = pgTable(
     ),
     index("user_policy_acceptances_user_policy_accepted_at_idx")
       .on(table.userId, table.policySlug, table.acceptedAt.desc()),
+    // A given user accepts a given policy version at most once. A rapid
+    // double-submit on the /policy-updated interstitial is a no-op via
+    // the application-level onConflictDoNothing against this index.
+    // Anonymized rows carry user_id=NULL and Postgres treats NULLs as
+    // distinct in a UNIQUE, so the account-deletion anonymization path
+    // isn't affected.
+    uniqueIndex("user_policy_acceptances_user_slug_version_uniq")
+      .on(table.userId, table.policySlug, table.version),
   ],
 ).enableRLS();
 

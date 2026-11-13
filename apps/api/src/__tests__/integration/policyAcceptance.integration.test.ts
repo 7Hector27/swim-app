@@ -357,6 +357,51 @@ describe("POST /me/policies/accept", () => {
       .send({ acceptances: [] });
     expect(res.status).toBe(422);
   });
+
+  it("re-accepting the same (slug, version) a second time is a no-op — no duplicate row, no duplicate audit", async () => {
+    const owner = await createTestUser("policy-accept-idempotent");
+    createdTestUsers.push(owner);
+    await clearPolicyAcceptancesForTest(owner.userId);
+
+    const body = {
+      acceptances: [{ policySlug: "terms" as const, version: TERMS_VERSION }],
+    };
+
+    const first = await request(app)
+      .post("/me/policies/accept")
+      .set("Authorization", `Bearer ${owner.accessToken}`)
+      .send(body);
+    expect(first.status).toBe(201);
+
+    const second = await request(app)
+      .post("/me/policies/accept")
+      .set("Authorization", `Bearer ${owner.accessToken}`)
+      .send(body);
+    expect(second.status).toBe(201);
+
+    const rows = await adminDb()
+      .select()
+      .from(userPolicyAcceptances)
+      .where(
+        and(
+          eq(userPolicyAcceptances.userId, owner.userId),
+          eq(userPolicyAcceptances.policySlug, "terms"),
+          eq(userPolicyAcceptances.version, TERMS_VERSION),
+        ),
+      );
+    expect(rows).toHaveLength(1);
+
+    const auditRows = await adminDb()
+      .select()
+      .from(householdAuditLog)
+      .where(
+        and(
+          eq(householdAuditLog.householdId, owner.householdId),
+          eq(householdAuditLog.action, "policy_accepted_reprompt"),
+        ),
+      );
+    expect(auditRows).toHaveLength(1);
+  });
 });
 
 describe("user_policy_acceptances append-only trigger", () => {
