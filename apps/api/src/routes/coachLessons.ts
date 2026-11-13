@@ -572,34 +572,19 @@ coachLessonsRouter.get(
         // ADR 036 §4: expired-pending refunds in the same tx as the status
         // change. Mirrors the cron's expire-and-refund — a lazy expiry
         // triggered by a coach GET must not silently skip the refund that
-        // the cron would have written. All refunds attribute to
-        // SYSTEM_ACTOR_ID so the audit trail reads as a background-sweep
-        // refund rather than making it look like the parent (or the
-        // coach whose GET happened to kick the sweep) initiated it.
+        // the cron would have written. refundLessonsForStatusChange
+        // locks each distinct household in sorted order and short-
+        // circuits free / pre-Phase-4 rows, so one call covers the
+        // whole batch; all refunds attribute to SYSTEM_ACTOR_ID.
         const toRefund = rows.flatMap((row) =>
           row.householdId !== null
             ? [{ lessonId: row.id, householdId: row.householdId }]
             : [],
         );
-        const refundByLessonId = new Map<string, number>();
-        // Group by actor (only SYSTEM_ACTOR_ID now that automatic
-        // refunds share one actor); single-entry map until item 1 of
-        // the review collapses it into a single helper call.
-        const byActor = new Map<string, Array<{ lessonId: string; householdId: string }>>();
-        for (const row of toRefund) {
-          const list = byActor.get(SYSTEM_ACTOR_ID) ?? [];
-          list.push({ lessonId: row.lessonId, householdId: row.householdId });
-          byActor.set(SYSTEM_ACTOR_ID, list);
-        }
-        for (const [actorId, lessonsForActor] of byActor) {
-          const slice = await refundLessonsForStatusChange(tx, {
-            lessons: lessonsForActor,
-            actorId,
-          });
-          for (const [lessonId, amountCents] of slice) {
-            refundByLessonId.set(lessonId, amountCents);
-          }
-        }
+        const refundByLessonId = await refundLessonsForStatusChange(tx, {
+          lessons: toRefund,
+          actorId: SYSTEM_ACTOR_ID,
+        });
 
         const ids: string[] = [];
         for (const row of rows) {
