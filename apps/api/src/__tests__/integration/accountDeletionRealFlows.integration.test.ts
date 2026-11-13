@@ -34,7 +34,7 @@
 // flows (swimmer_added, etc.).
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, sql } from "drizzle-orm";
 import request from "supertest";
 import pino from "pino";
 
@@ -656,6 +656,15 @@ describe("POST /me/deletion/confirm — solo path, real-flow seed", () => {
     expect(coachFacingTerminals.length).toBeGreaterThan(0);
 
     // ── Delete ───────────────────────────────────────────────
+    // Snapshot the wall clock immediately before the deletion runs so
+    // the shared-table outbox query below can scope to rows this test
+    // wrote, not every coach_account_deleted row every other
+    // integration file has ever left on the shared test stack. The
+    // deletion transaction stamps lesson_email_outbox.createdAt with
+    // the post-commit time, which will land at or after this
+    // snapshot. 10ms shaved off the snapshot is defensive insurance
+    // against clock-resolution surprises on Windows CI runners.
+    const deletionStartedAt = new Date(Date.now() - 10);
     const res = await confirmDeletion(owner.accessToken);
     // ADR 036 Phase 8 Part B Stop 2: 10,000 USD seeded balance → the
     // deletion runs a cash-out in-tx and returns 200 with the
@@ -886,11 +895,17 @@ describe("POST /me/deletion/confirm — solo path, real-flow seed", () => {
     // names or addresses. "Home pool" replaces the pool name for
     // home-pool rows — identifying, so docs/accounts.md kids'-data
     // rules apply.
-    // Scope the query to this deletion's recipient — both the
-    // notification and the email resolve the coach via
-    // getActiveCoachProfile() inside the same tx, so they share the
-    // same profile id. This stays correct across parallel test files
-    // with multiple role=coach rows.
+    // Scope the query to rows this test's deletion wrote. The coach
+    // profile id alone doesn't discriminate — getActiveCoachProfile()
+    // returns the same coach for every integration file running
+    // against the shared test stack, so `coach_account_deleted` rows
+    // from unrelated files pile up with identical recipient arrays.
+    // Adding `createdAt >= deletionStartedAt` cuts off rows written
+    // before this test's deletion ran; combined with the event + the
+    // profile id, it isolates the single outbox row this transaction
+    // produced. Prior test runs can leave outbox rows that match the
+    // event + profile — ADR 035's test-stack doesn't truncate between
+    // files — which is exactly the flake this scoping fixes.
     const coachEmails = await adminDb()
       .select()
       .from(lessonEmailOutbox)
@@ -898,6 +913,7 @@ describe("POST /me/deletion/confirm — solo path, real-flow seed", () => {
         and(
           eq(lessonEmailOutbox.event, "coach_account_deleted"),
           sql`${lessonEmailOutbox.recipientProfileIds} = ARRAY[${notif.profileId}]::uuid[]`,
+          gte(lessonEmailOutbox.createdAt, deletionStartedAt),
         ),
       );
     expect(coachEmails).toHaveLength(1);
@@ -1034,6 +1050,14 @@ describe("POST /me/deletion/confirm — leave path, real-flow seed", () => {
     expect(beforeAuditRows.length).toBeGreaterThan(0);
 
     // ── Leave ────────────────────────────────────────────────
+    // Snapshot the wall clock immediately before the deletion runs so
+    // the shared-table coach-email assertion below can scope to rows
+    // this test's leave transaction wrote (should be zero), not every
+    // coach_account_deleted row every other integration file on the
+    // shared ADR 035 test stack has ever enqueued to Jason. 10ms
+    // shaved off the snapshot is defensive insurance against clock-
+    // resolution surprises on Windows CI runners.
+    const deletionStartedAt = new Date(Date.now() - 10);
     const res = await confirmDeletion(manager.accessToken);
     expect(res.status).toBe(204);
 
@@ -1128,8 +1152,13 @@ describe("POST /me/deletion/confirm — leave path, real-flow seed", () => {
     // A leave deletion must NOT enqueue a coach_account_deleted email
     // (ADR 034) — the household is still active, Jason's schedule is
     // unchanged, and the email's "freed slots" summary would be
-    // outright wrong. Filter by recipientProfileIds so a stray row
-    // from a concurrent test can't make this assertion fail.
+    // outright wrong. Scope by recipientProfileIds AND createdAt: the
+    // coach profile id alone doesn't discriminate — every integration
+    // file shares one coach, so coach_account_deleted rows other
+    // tests wrote pile up with identical recipient arrays on the
+    // shared ADR 035 stack. Clamping to `>= deletionStartedAt` cuts
+    // off those older rows and isolates the window this test's leave
+    // transaction could have written in (which should be zero rows).
     const coachEmails = await adminDb()
       .select()
       .from(lessonEmailOutbox)
@@ -1137,6 +1166,7 @@ describe("POST /me/deletion/confirm — leave path, real-flow seed", () => {
         and(
           eq(lessonEmailOutbox.event, "coach_account_deleted"),
           sql`${lessonEmailOutbox.recipientProfileIds} = ARRAY[${coach.userId}]::uuid[]`,
+          gte(lessonEmailOutbox.createdAt, deletionStartedAt),
         ),
       );
     expect(coachEmails).toHaveLength(0);

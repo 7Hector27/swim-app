@@ -12,7 +12,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import pino from "pino";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, sql } from "drizzle-orm";
 
 import { createApp } from "../../app";
 import {
@@ -229,6 +229,14 @@ describe("account deletion × cash-out confirm", () => {
     const householdIdSnapshot = owner.householdId;
     await seedCardTopupWithoutPaymentIntent(owner, 7_500);
 
+    // Snapshot the wall clock just before deletion so the shared-
+    // table coachNotifications query below can scope to rows this
+    // test's deletion wrote; ADR 035's test stack isn't truncated
+    // between files, and the shared coach profile picks up
+    // cash_refund_needs_manual_handling rows from every file that
+    // produces one. 10ms shaved off is defensive insurance against
+    // clock-resolution surprises on Windows CI runners.
+    const deletionStartedAt = new Date(Date.now() - 10);
     const confirm = await confirmDeletion(owner.accessToken);
     expect(confirm.status).toBe(200);
     expect(confirm.body.cashOut).not.toBeNull();
@@ -266,7 +274,12 @@ describe("account deletion × cash-out confirm", () => {
         payload: coachNotifications.payload,
       })
       .from(coachNotifications)
-      .where(eq(coachNotifications.category, "cash_refund_needs_manual_handling"));
+      .where(
+        and(
+          eq(coachNotifications.category, "cash_refund_needs_manual_handling"),
+          gte(coachNotifications.createdAt, deletionStartedAt),
+        ),
+      );
     expect(notifs).toHaveLength(1);
     expect(Object.keys(notifs[0]?.payload as object)).not.toContain(
       "householdNameSnapshot",
