@@ -625,8 +625,10 @@ export async function anonymizeHouseholdLedger(
   // household_id in the same statement so needs-manual-handling jobs
   // survive the deletion for Jason to resolve off platform, but no
   // longer tie back to a specific family. The coach notification
-  // written when the job was created already captured a household
-  // name snapshot in its payload.
+  // written when the job was created carries NO family name snapshot
+  // — Jason identifies the refund by the Stripe payment intent id
+  // (or the job id when there isn't one) plus the dollar amount.
+  // See services/balance/notifications.ts for the exact payload shape.
   await tx
     .update(cashRefundJobs)
     .set({ householdId: null })
