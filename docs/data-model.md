@@ -653,6 +653,127 @@ RLS is enabled. Policies TBD (open follow-up per `docs/plans/account-deletion.md
 
 ---
 
+## Payments
+
+ADR 036. Every per-household balance movement — top-ups, package purchases, lesson charges, refunds, cash-outs — lands as one or more immutable rows on `household_balance_ledger`. The balance is the SUM of `amount_cents`; there is no cached balance column. `stripe_events` dedupes webhook deliveries. `cash_refund_jobs` drives the post-commit refund drain when a cash-out hands money back to the card.
+
+### `household_balance_ledger`
+
+Append-only ledger. A per-row trigger rejects every `UPDATE` and `DELETE` (migration 0075). Migration 0079 opens a narrow exception: identity columns (`household_id`, `actor_id`) can be nulled on the account-deletion anonymization path; every other column change still throws. Writes always pair with a `household_audit_log` row inside the same `db.transaction()` — see CLAUDE.md. Added in migration 0074 (ADR 036 Phase 1).
+
+| Column | Type | Nullable | Default | Notes |
+|---|---|---|---|---|
+| `id` | `uuid` | no | `gen_random_uuid()` | Primary key |
+| `household_id` | `uuid` | yes | — | FK → `households.id`. Nullable so the solo account-deletion path can strip identity while preserving the row for tax retention. |
+| `entry_type` | `balance_entry_type` | no | — | Enum. See below. |
+| `amount_cents` | `integer` | no | — | Signed. Credits are positive (`card_topup`, `package_purchase`, `package_bonus`, `refund_to_balance`), lesson charges are negative, `free_lesson` is exactly `0`, `coach_adjustment` is anything non-zero, `cash_refund` and `balance_writeoff` (cash-out engine) are negative. Enforced by `balance_ledger_amount_sign_valid`. |
+| `lesson_id` | `uuid` | yes | — | FK → `lessons.id`. Only set when `entry_type IN ('lesson_charge', 'refund_to_balance', 'free_lesson')`. |
+| `stripe_checkout_session_id` | `text` | yes | — | Only set when `entry_type IN ('card_topup', 'package_purchase', 'package_bonus')`, and (ADR 036 Phase 8 Part B) may be set on `cash_refund` when the refund maps back to a known payment. |
+| `stripe_payment_intent_id` | `text` | yes | — | Convenience for Stripe-dashboard lookup; never the source of truth. |
+| `refund_of_ledger_id` | `uuid` | yes | — | FK → `household_balance_ledger.id`. Set on `refund_to_balance` (points at the `lesson_charge` it reverses) and on `cash_refund` (points at the `card_topup` / `package_purchase` it's refunding). Partial `UNIQUE` on `refund_to_balance` rows so a single charge can be refunded at most once; `cash_refund` rows can share a target because one payment can be partially refunded across multiple cash-outs. |
+| `actor_id` | `uuid` | yes | — | Who made the write (household member, coach, or webhook-agent system id). Nulled on anonymization. |
+| `reason` | `text` | yes | — | Human-safe free text; only set on `coach_adjustment`. No PII. |
+| `created_at` | `timestamptz` | no | `now()` | Ordering key for the history view. |
+
+Indexes:
+- `balance_ledger_household_created_idx` on `(household_id, created_at DESC, id DESC)` — paginates the history view.
+- `balance_ledger_refund_lesson_uq` — partial UNIQUE on `(lesson_id)` where `entry_type = 'refund_to_balance'`, so a lesson is refunded at most once.
+- `balance_ledger_refund_of_uq` — partial UNIQUE on `(refund_of_ledger_id)` where `entry_type = 'refund_to_balance'`, same invariant from the other side.
+
+CHECK constraints:
+- `balance_ledger_amount_sign_valid`, `balance_ledger_lesson_id_scope_valid`, `balance_ledger_stripe_session_scope_valid`, `balance_ledger_refund_of_scope_valid` — gate which columns may be set per `entry_type`.
+
+RLS is enabled. Policies TBD.
+
+### Enum: `balance_entry_type`
+
+```
+'card_topup', 'package_purchase', 'package_bonus',
+'lesson_charge', 'refund_to_balance',
+'coach_adjustment', 'free_lesson',
+'cash_refund', 'balance_writeoff'
+```
+
+`cash_refund` and `balance_writeoff` were added in migration 0082 for the cash-out refund engine (ADR 036 Phase 8 Part B Stop 2). The parent-facing `/me/balance/history` endpoint maps every variant to a human-safe label via `packages/shared/src/lib/balanceDisplayType.ts`; the switch there is exhaustive, so a new variant without a new label is a typecheck error.
+
+### `stripe_events`
+
+Idempotency ledger for Stripe webhook deliveries (ADR 036 Phase 3). The webhook handler inserts `(stripe_event_id)` with `ON CONFLICT DO NOTHING` inside the same transaction as the business write (ledger + audit). If Stripe retries, the duplicate insert returns zero rows and the handler short-circuits with 200. Added in migration 0074.
+
+| Column | Type | Nullable | Default | Notes |
+|---|---|---|---|---|
+| `stripe_event_id` | `text` | no | — | Primary key. The `evt_…` id Stripe assigns. |
+| `event_type` | `text` | no | — | `'checkout.session.completed'`, `'charge.refunded'`, etc. Stored for log correlation. |
+| `household_id` | `uuid` | yes | — | FK → `households.id`. Soft link for forensics; nulled on account deletion. |
+| `ledger_id` | `uuid` | yes | — | FK → `household_balance_ledger.id`. The row this event produced, if any. |
+| `created_at` | `timestamptz` | no | `now()` | |
+
+RLS is enabled.
+
+### `cash_refund_jobs`
+
+Drives the post-commit cash-refund drain (ADR 036 Phase 8 Part B Stop 2). When a cash-out splits a positive balance into refundable and write-off portions, each refundable slice writes one `cash_refund` ledger row **and** one `cash_refund_jobs` row inside the same transaction. The drain picks the job up after commit, calls Stripe with `idempotency_key`, and advances the row. Added in migration 0082; `needs_manual_reason`, `resolved_by`, and `resolution_note` added in migration 0083.
+
+| Column | Type | Nullable | Default | Notes |
+|---|---|---|---|---|
+| `id` | `uuid` | no | `gen_random_uuid()` | Primary key |
+| `ledger_id` | `uuid` | no | — | FK → `household_balance_ledger.id`, `UNIQUE`. The `cash_refund` ledger row this job settles. |
+| `household_id` | `uuid` | yes | — | FK → `households.id`, `ON DELETE SET NULL`. Nullable so a needs-manual job can outlive the family and still be resolved off platform. |
+| `stripe_payment_intent_id` | `text` | yes | — | The payment intent the drain refunds. Null is only valid alongside `status = 'needs_manual_handling'` (no refundable card payment to match). |
+| `idempotency_key` | `uuid` | no | — | `UNIQUE`. Passed to Stripe so a retry after a network hiccup never double-refunds. |
+| `amount_cents` | `integer` | no | — | Always positive (CHECK `amount_cents > 0`). The amount to return. |
+| `status` | `cash_refund_job_status` | no | `'pending'` | See below. |
+| `attempts` | `integer` | no | `0` | Incremented via `attempts + 1` on every real-error retry, like `account_deletion_jobs`. |
+| `claimed_until` | `timestamptz` | yes | — | Short-lived lease so concurrent cron ticks don't both claim the same row. |
+| `next_attempt_at` | `timestamptz` | no | `now()` | Exponential backoff on errors; lead time of ~2 minutes on first write so the post-commit kick wins the race. |
+| `last_error` | `text` | yes | — | Short structural summary; no raw Stripe message to avoid PII. |
+| `last_attempt_at` | `timestamptz` | yes | — | |
+| `stripe_refund_id` | `text` | yes | — | Set on `'succeeded'`. |
+| `succeeded_at` | `timestamptz` | yes | — | Set on `'succeeded'`. CHECK `succeeded_requires_timestamp` enforces this pairing. |
+| `needs_manual_reason` | `text` | yes | — | Short code (`'no_refundable_card_payment'`, `'exhausted'`). Only set when `status = 'needs_manual_handling'`. |
+| `resolved_by` | `uuid` | yes | — | FK → `profiles.id`, `ON DELETE SET NULL`. Jason's profile id when he marks a needs-manual row as settled. |
+| `resolution_note` | `text` | yes | — | Jason's free-text note; the UI placeholder nudges him not to include PII. |
+| `created_at` | `timestamptz` | no | `now()` | |
+| `updated_at` | `timestamptz` | no | `now()` | |
+
+Note: this is not append-only. The whole point of the table is that rows progress through statuses as the drain works them. See the schema file for a one-line comment pointing readers at the drain service instead of expecting an `updated_at`-is-forbidden invariant.
+
+Indexes:
+- `cash_refund_jobs_drain_idx` — partial index on `(next_attempt_at)` where `status = 'pending'`, for the claim query.
+
+RLS is enabled.
+
+### Enum: `cash_refund_job_status`
+
+```
+'pending', 'succeeded', 'needs_manual_handling'
+```
+
+Added in migration 0082.
+
+### `user_policy_acceptances`
+
+Append-only acceptance trail for the three public policies (Terms, Privacy, Payments & Refund). One row per `(user, policy, version)` acceptance — signup writes three (one per slug); a later re-accept on the `/policy-updated` interstitial writes one or more. Added in migration 0084 (ADR 036 Phase 8 Part B Stop 3). The append-only trigger allows exactly one post-insert mutation: nulling `user_id` on account deletion.
+
+| Column | Type | Nullable | Default | Notes |
+|---|---|---|---|---|
+| `id` | `uuid` | no | `gen_random_uuid()` | Primary key |
+| `user_id` | `uuid` | yes | — | FK → `profiles.id`, `ON DELETE SET NULL`. Nulled on account deletion; the row stays for audit. |
+| `policy_slug` | `text` | no | — | CHECK IN (`'terms'`, `'privacy'`, `'payments_refund'`). |
+| `version` | `text` | no | — | The version string the user accepted (matches `TERMS_VERSION` / `PRIVACY_VERSION` / `PAYMENTS_REFUND_VERSION` at acceptance time). |
+| `accepted_at` | `timestamptz` | no | `now()` | |
+| `source` | `text` | no | — | CHECK IN (`'signup'`, `'reaccept_prompt'`). |
+| `created_at` | `timestamptz` | no | `now()` | Equal to `accepted_at` at write; kept separately to match the shape every other table uses. |
+
+Indexes:
+- `user_policy_acceptances_user_policy_accepted_at_idx` on `(user_id, policy_slug, accepted_at DESC NULLS LAST)` — serves the "latest acceptance per slug" lookup the `requireCurrentPolicyAcceptance` middleware runs on gated writes.
+
+There is no `updated_at` by design: the table is append-only (except the deletion-anonymization carve-out) and the trigger would reject every write to it anyway.
+
+RLS is enabled.
+
+---
+
 ## Skills catalog
 
 Reference data for the swimmer skills rubric. Loaded via `pnpm db:sync-catalog` (idempotent upsert, never auto-runs). See `docs/reference/skill-rubric.md` for the source rubric and `apps/api/src/db/reference/skillsCatalog.ts` for the typed catalog.
