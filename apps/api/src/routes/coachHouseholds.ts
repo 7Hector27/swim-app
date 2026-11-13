@@ -85,65 +85,89 @@ coachHouseholdsRouter.get(
   "/households/balances",
   validate({}),
   asyncHandler(async (_req, res) => {
-    const householdRows = await db
-      .select({ id: households.id, name: households.name })
-      .from(households)
-      .orderBy(asc(households.name));
+    // Wrap every read in one REPEATABLE READ read-only transaction so
+    // the roster, member list, swimmer counts, and ledger sums all
+    // see the same consistent snapshot. Without this, a cash-out
+    // committing between the household query and the balance sum
+    // could show a household in the list with a non-zero balance
+    // after its row has already been removed, or vice versa.
+    const { householdRows, memberRows, swimmerCountRows, balanceRows, lastActivityRows } =
+      await db.transaction(
+        async (tx) => {
+          const householdRows = await tx
+            .select({ id: households.id, name: households.name })
+            .from(households)
+            .orderBy(asc(households.name));
+
+          if (householdRows.length === 0) {
+            return {
+              householdRows,
+              memberRows: [],
+              swimmerCountRows: [],
+              balanceRows: [],
+              lastActivityRows: [],
+            };
+          }
+          const ids = householdRows.map((row) => row.id);
+
+          const [memberRows, swimmerCountRows, balanceRows, lastActivityRows] =
+            await Promise.all([
+              // Full-name list for the UI's "who's in it" column.
+              tx
+                .select({
+                  householdId: householdMembers.householdId,
+                  fullName: profiles.fullName,
+                })
+                .from(householdMembers)
+                .innerJoin(profiles, eq(profiles.id, householdMembers.profileId))
+                .where(inArray(householdMembers.householdId, ids)),
+              // Active (non-archived) swimmers per household.
+              tx
+                .select({
+                  householdId: swimmers.householdId,
+                  count: sql<string>`COUNT(*)`,
+                })
+                .from(swimmers)
+                .where(
+                  and(
+                    inArray(swimmers.householdId, ids),
+                    sql`${swimmers.archivedAt} IS NULL`,
+                  ),
+                )
+                .groupBy(swimmers.householdId),
+              // Current balance via a single grouped SUM — mirrors the one-off
+              // `getHouseholdBalance` read but amortized across the roster.
+              tx
+                .select({
+                  householdId: householdBalanceLedger.householdId,
+                  sum: sql<string>`COALESCE(SUM(${householdBalanceLedger.amountCents}), 0)`,
+                })
+                .from(householdBalanceLedger)
+                .where(inArray(householdBalanceLedger.householdId, ids))
+                .groupBy(householdBalanceLedger.householdId),
+              // Most recent ledger createdAt per household so "last activity"
+              // is the real ledger boundary, not a swimmer edit or audit row.
+              // postgres-js returns MAX(timestamptz) as an ISO string, not a Date;
+              // keep the string here and let the response cast to ISO downstream.
+              tx
+                .select({
+                  householdId: householdBalanceLedger.householdId,
+                  lastAt: sql<string>`MAX(${householdBalanceLedger.createdAt})::text`,
+                })
+                .from(householdBalanceLedger)
+                .where(inArray(householdBalanceLedger.householdId, ids))
+                .groupBy(householdBalanceLedger.householdId),
+            ]);
+
+          return { householdRows, memberRows, swimmerCountRows, balanceRows, lastActivityRows };
+        },
+        { isolationLevel: "repeatable read", accessMode: "read only" },
+      );
 
     if (householdRows.length === 0) {
       res.json([] as CoachHouseholdBalanceListResponse);
       return;
     }
-    const ids = householdRows.map((row) => row.id);
-
-    const [memberRows, swimmerCountRows, balanceRows, lastActivityRows] =
-      await Promise.all([
-        // Full-name list for the UI's "who's in it" column.
-        db
-          .select({
-            householdId: householdMembers.householdId,
-            fullName: profiles.fullName,
-          })
-          .from(householdMembers)
-          .innerJoin(profiles, eq(profiles.id, householdMembers.profileId))
-          .where(inArray(householdMembers.householdId, ids)),
-        // Active (non-archived) swimmers per household.
-        db
-          .select({
-            householdId: swimmers.householdId,
-            count: sql<string>`COUNT(*)`,
-          })
-          .from(swimmers)
-          .where(
-            and(
-              inArray(swimmers.householdId, ids),
-              sql`${swimmers.archivedAt} IS NULL`,
-            ),
-          )
-          .groupBy(swimmers.householdId),
-        // Current balance via a single grouped SUM — mirrors the one-off
-        // `getHouseholdBalance` read but amortized across the roster.
-        db
-          .select({
-            householdId: householdBalanceLedger.householdId,
-            sum: sql<string>`COALESCE(SUM(${householdBalanceLedger.amountCents}), 0)`,
-          })
-          .from(householdBalanceLedger)
-          .where(inArray(householdBalanceLedger.householdId, ids))
-          .groupBy(householdBalanceLedger.householdId),
-        // Most recent ledger createdAt per household so "last activity"
-        // is the real ledger boundary, not a swimmer edit or audit row.
-        // postgres-js returns MAX(timestamptz) as an ISO string, not a Date;
-        // keep the string here and let the response cast to ISO downstream.
-        db
-          .select({
-            householdId: householdBalanceLedger.householdId,
-            lastAt: sql<string>`MAX(${householdBalanceLedger.createdAt})::text`,
-          })
-          .from(householdBalanceLedger)
-          .where(inArray(householdBalanceLedger.householdId, ids))
-          .groupBy(householdBalanceLedger.householdId),
-      ]);
 
     const membersByHousehold = new Map<string, string[]>();
     for (const row of memberRows) {
