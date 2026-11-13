@@ -351,8 +351,9 @@ function MarkCashRefundHandledModal({
             onChange={(event) => setNote(event.target.value)}
             rows={3}
             maxLength={500}
+            placeholder="e.g. refunded in Stripe on Nov 12. Don't include personal details."
             data-testid="families-mark-handled-note"
-            className="px-3 py-2 rounded border border-border bg-background text-text resize-none"
+            className="px-3 py-2 rounded border border-border bg-background text-text placeholder:text-text-secondary resize-none"
           />
           <span className="text-xs text-text-secondary">
             Required. Jot down the resolution (Stripe refund id, Venmo, etc).
