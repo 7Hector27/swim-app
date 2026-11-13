@@ -45,6 +45,7 @@ const {
   mockGetHouseholdBalance,
   mockApplyLedgerEntry,
   mockRefundLessonCharge,
+  mockRefundLessonsForStatusChange,
   mockGetLessonOutstandingChargeCents,
 } = vi.hoisted(() => ({
   mockGetUser: vi.fn(),
@@ -65,6 +66,7 @@ const {
   mockRefundLessonCharge: vi
     .fn()
     .mockResolvedValue({ refunded: false, reason: "no_charge" }),
+  mockRefundLessonsForStatusChange: vi.fn().mockResolvedValue(new Map()),
 }));
 
 vi.mock("../lib/supabase", () => ({
@@ -126,6 +128,7 @@ vi.mock("../services/balance", () => ({
   getHouseholdBalance: mockGetHouseholdBalance,
   applyLedgerEntry: mockApplyLedgerEntry,
   refundLessonCharge: mockRefundLessonCharge,
+  refundLessonsForStatusChange: mockRefundLessonsForStatusChange,
   getLessonOutstandingChargeCents: mockGetLessonOutstandingChargeCents,
 }));
 
@@ -263,6 +266,7 @@ beforeEach(() => {
     refunded: false,
     reason: "no_charge",
   });
+  mockRefundLessonsForStatusChange.mockResolvedValue(new Map());
 });
 
 // ── GET /coach/lessons ────────────────────────────────────────────────────────
@@ -563,12 +567,21 @@ describe("lazy expiry in GET /coach/lessons", () => {
     const expiredRow = { ...pendingLessonRow, status: "expired" as const };
 
     // Lazy-expiry update now runs inside a transaction so the outbox
-    // write for expired lessons commits atomically.
-    const updateReturning = vi.fn().mockResolvedValue([{ id: LESSON_ID }]);
+    // write for expired lessons commits atomically. The returning
+    // includes householdId + requestedBy so the lazy path can issue
+    // the same refund the cron would have.
+    const updateReturning = vi.fn().mockResolvedValue([
+      { id: LESSON_ID, householdId: HOUSEHOLD_ID, requestedBy: PARENT_PROFILE_ID },
+    ]);
     const updateWhere = vi.fn().mockReturnValue({ returning: updateReturning });
     const updateSet = vi.fn().mockReturnValue({ where: updateWhere });
     mockDbTransaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) =>
-      callback({ update: vi.fn().mockReturnValue({ set: updateSet }) }),
+      callback({
+        update: vi.fn().mockReturnValue({ set: updateSet }),
+        // refundLessonsForStatusChange takes the per-household balance
+        // advisory lock via tx.execute; no-op in the unit test.
+        execute: vi.fn().mockResolvedValue(undefined),
+      }),
     );
 
     // lessons query returns the now-expired row (left-joins batches)

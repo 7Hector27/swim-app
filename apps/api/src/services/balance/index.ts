@@ -3,6 +3,7 @@ export {
   getHouseholdBalance,
   getLessonOutstandingChargeCents,
   refundLessonCharge,
+  refundLessonsForStatusChange,
   withBalanceLock,
 } from "./ledger";
 export type { LedgerEntryInput, RefundLessonChargeResult } from "./ledger";

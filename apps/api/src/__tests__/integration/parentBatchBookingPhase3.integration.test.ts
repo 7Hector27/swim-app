@@ -14,7 +14,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import request from "supertest";
 import pino from "pino";
-import { and, eq, gte, inArray, lt } from "drizzle-orm";
+import { and, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import { createApp } from "../../app";
 import {
   adminDb,
@@ -30,6 +30,7 @@ import {
   bookingBatches,
   coachNotifications,
   householdAuditLog,
+  householdBalanceLedger,
   lessonEmailOutbox,
   lessonLocations,
   lessonSwimmers,
@@ -959,5 +960,126 @@ describe("Phase 3 — POST /lessons/batch coach notification", () => {
       );
       expect(pendingNotifications[0]!.clickUrl).not.toContain("/coach/batches/");
     });
+  });
+});
+
+// Dev-testing fix: cancelling a batch of lessons used to leave the
+// matching lesson_charge rows outstanding — no refund_to_balance row
+// landed, so the household kept paying for lessons it never took. These
+// tests pin cancel-remaining to the shared refund step and act as a
+// coverage check against any future status-change path that forgets it.
+describe("Phase 3 — cancel-remaining refunds charged lessons", () => {
+  it("writes one refund_to_balance per cancelled lesson, each equal to its lesson_charge amount", async () => {
+    await withAllDaysEnabled(async () => {
+      const trustId = await seedTrust();
+      try {
+        const startDate = futureLaDate(80);
+        const weekday = isoWeekdayFor(startDate);
+        const { batchId, lessonIds, outboxId } = await submitBatch({
+          startDate,
+          weeks: 3,
+          weekday,
+        });
+        await waitForOutboxTerminal(outboxId);
+
+        // Every lesson in the batch gets a lesson_charge (trusted
+        // household auto-approves → charge inside the booking tx).
+        const chargeRows = await adminDb()
+          .select({
+            lessonId: householdBalanceLedger.lessonId,
+            amountCents: householdBalanceLedger.amountCents,
+          })
+          .from(householdBalanceLedger)
+          .where(
+            and(
+              eq(householdBalanceLedger.entryType, "lesson_charge"),
+              inArray(householdBalanceLedger.lessonId, lessonIds),
+            ),
+          );
+        expect(chargeRows).toHaveLength(lessonIds.length);
+        const chargeByLessonId = new Map(
+          chargeRows.map((row) => [row.lessonId!, row.amountCents]),
+        );
+
+        const cancel = await request(app)
+          .delete(`/lessons/batch/${batchId}/remaining`)
+          .set("Authorization", `Bearer ${owner.accessToken}`)
+          .send();
+        expect(cancel.status).toBe(200);
+        expect(cancel.body.canceledCount).toBe(lessonIds.length);
+
+        // Exactly one refund_to_balance per cancelled lesson, each the
+        // inverse of its original charge.
+        const refundRows = await adminDb()
+          .select({
+            lessonId: householdBalanceLedger.lessonId,
+            amountCents: householdBalanceLedger.amountCents,
+          })
+          .from(householdBalanceLedger)
+          .where(
+            and(
+              eq(householdBalanceLedger.entryType, "refund_to_balance"),
+              inArray(householdBalanceLedger.lessonId, lessonIds),
+            ),
+          );
+        expect(refundRows).toHaveLength(lessonIds.length);
+        for (const row of refundRows) {
+          const charge = chargeByLessonId.get(row.lessonId!);
+          expect(charge).toBeDefined();
+          expect(row.amountCents).toBe(-charge!);
+        }
+
+        // Second cancel attempt no-ops: the endpoint returns 409 because
+        // nothing is left to cancel, and no additional refund rows land
+        // (DB partial-unique prevents double-refund even if the path
+        // tried; coverage check below pins this).
+        const second = await request(app)
+          .delete(`/lessons/batch/${batchId}/remaining`)
+          .set("Authorization", `Bearer ${owner.accessToken}`)
+          .send();
+        expect(second.status).toBe(409);
+        const afterSecond = await adminDb()
+          .select({ id: householdBalanceLedger.id })
+          .from(householdBalanceLedger)
+          .where(
+            and(
+              eq(householdBalanceLedger.entryType, "refund_to_balance"),
+              inArray(householdBalanceLedger.lessonId, lessonIds),
+            ),
+          );
+        expect(afterSecond).toHaveLength(lessonIds.length);
+      } finally {
+        await adminDb().delete(lessons).where(eq(lessons.id, trustId));
+      }
+    });
+  });
+
+  // Coverage check: at the end of every status-change integration test,
+  // this household should never have a charged lesson in a terminal
+  // non-billable status with no matching refund. Catches any new path
+  // that writes 'canceled' / 'declined' / 'expired' / 'no_show' without
+  // routing through the shared refund step. Mirrors the ad-hoc SQL check
+  // in scripts/check-missing-refunds.sql but scoped to this household so
+  // it can safely run alongside other suites.
+  it("coverage: no charged lesson in this household is cancelled/declined/expired/no_show without a refund", async () => {
+    const leaked = await adminDb().execute<{
+      lesson_id: string;
+      status: string;
+    }>(
+      sql`
+        SELECT lesson.id AS lesson_id, lesson.status
+        FROM lessons AS lesson
+        JOIN household_balance_ledger AS charge
+          ON charge.lesson_id = lesson.id
+         AND charge.entry_type = 'lesson_charge'
+        LEFT JOIN household_balance_ledger AS refund
+          ON refund.refund_of_ledger_id = charge.id
+         AND refund.entry_type = 'refund_to_balance'
+        WHERE lesson.household_id = ${owner.householdId}::uuid
+          AND lesson.status IN ('canceled', 'declined', 'expired', 'no_show')
+          AND refund.id IS NULL
+      `,
+    );
+    expect(leaked).toEqual([]);
   });
 });

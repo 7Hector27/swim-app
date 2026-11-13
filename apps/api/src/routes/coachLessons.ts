@@ -79,6 +79,7 @@ import {
   getHouseholdBalance,
   getLessonOutstandingChargeCents,
   refundLessonCharge,
+  refundLessonsForStatusChange,
 } from "../services/balance";
 import { computeAvailableSlots, mergeSlotWindows } from "../lib/slots";
 import { z } from "zod";
@@ -562,14 +563,60 @@ coachLessonsRouter.get(
           .update(lessons)
           .set({ status: "expired" })
           .where(and(eq(lessons.status, "pending"), lt(lessons.expiresAt, now)))
-          .returning({ id: lessons.id });
+          .returning({
+            id: lessons.id,
+            householdId: lessons.householdId,
+            requestedBy: lessons.requestedBy,
+          });
+
+        // ADR 036 §4: expired-pending refunds in the same tx as the status
+        // change. Mirrors the cron's expire-and-refund — a lazy expiry
+        // triggered by a coach GET must not silently skip the refund that
+        // the cron would have written. The lesson's requestedBy is the
+        // audit actor (matches internal cron path).
+        const toRefund = rows.flatMap((row) =>
+          row.householdId !== null && row.requestedBy !== null
+            ? [{
+                lessonId: row.id,
+                householdId: row.householdId,
+                requestedBy: row.requestedBy,
+              }]
+            : [],
+        );
+        const refundByLessonId = new Map<string, number>();
+        // Group by requestedBy so a single actorId covers each slice.
+        // Expired pendings all come from the parent who requested them;
+        // acquire the balance lock once per household and refund.
+        const byActor = new Map<string, Array<{ lessonId: string; householdId: string }>>();
+        for (const row of toRefund) {
+          const list = byActor.get(row.requestedBy) ?? [];
+          list.push({ lessonId: row.lessonId, householdId: row.householdId });
+          byActor.set(row.requestedBy, list);
+        }
+        for (const [actorId, lessonsForActor] of byActor) {
+          const slice = await refundLessonsForStatusChange(tx, {
+            lessons: lessonsForActor,
+            actorId,
+          });
+          for (const [lessonId, amountCents] of slice) {
+            refundByLessonId.set(lessonId, amountCents);
+          }
+        }
+
         const ids: string[] = [];
         for (const row of rows) {
+          const refundAmountCents = refundByLessonId.get(row.id) ?? null;
+          const newBalanceCents =
+            refundAmountCents !== null && row.householdId !== null
+              ? await getHouseholdBalance(row.householdId, tx)
+              : null;
           ids.push(
             await enqueueLessonEmail(tx, {
               lessonId: row.id,
               event: "request_expired",
               actorRole: "system",
+              refundAmountCents,
+              newBalanceCents,
             }),
           );
         }

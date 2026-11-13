@@ -98,6 +98,7 @@ import {
   getHouseholdBalance,
   getLessonOutstandingChargeCents,
   refundLessonCharge,
+  refundLessonsForStatusChange,
 } from "../services/balance";
 import type { BatchEmailLesson, BatchEmailPayload } from "../services/emails/batchTypes";
 import { isActiveSwimmer } from "../db/queries";
@@ -1841,6 +1842,21 @@ lessonsRouter.delete(
           calendarSequence: sql`${lessons.calendarSequence} + 1` as unknown as number,
         })
         .where(inArray(lessons.id, allIds));
+
+      // ADR 036 §4: batch cancel-remaining refunds each charged lesson's
+      // lesson_charge in the same transaction as the status flip. The
+      // shared helper takes the household's balance lock and loops
+      // refundLessonCharge — free-lesson and pre-Phase-4 rows refund $0
+      // and are absent from the returned map. Every lesson in the batch
+      // belongs to the same household (filter above), so one lock is
+      // acquired.
+      await refundLessonsForStatusChange(tx, {
+        lessons: toCancel.map((lesson) => ({
+          lessonId: lesson.id,
+          householdId,
+        })),
+        actorId: profileId,
+      });
 
       const recipientRows = await tx
         .select({ profileId: householdMembers.profileId })

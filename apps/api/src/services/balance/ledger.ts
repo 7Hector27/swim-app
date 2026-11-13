@@ -405,3 +405,53 @@ export async function refundLessonCharge(
 
   return { refunded: true, amountCents: refundAmount, ledgerId };
 }
+
+/**
+ * Shared "refund on cancel-ish status change" step. Every code path that
+ * moves a lesson to a non-billable terminal status (canceled, declined,
+ * expired, no_show) must call this inside the same transaction as the
+ * status UPDATE so the charge refund cannot be skipped.
+ *
+ * Does two things in order:
+ *   1. Acquires the per-household balance advisory lock for every
+ *      distinct household in sorted order — matches the global lock
+ *      acquisition order used elsewhere so concurrent writers never
+ *      deadlock.
+ *   2. Calls `refundLessonCharge` once per lesson. The underlying DB
+ *      partial-unique on `refund_of_ledger_id` scoped to
+ *      `entry_type='refund_to_balance'` makes a double-call safe.
+ *
+ * Returns a map of `lessonId → refundAmountCents` for every lesson
+ * that actually refunded (free lessons and already-refunded ones are
+ * absent), so callers can snapshot amounts into email payloads
+ * without re-reading the ledger.
+ */
+export async function refundLessonsForStatusChange(
+  tx: Db,
+  args: {
+    lessons: ReadonlyArray<{ lessonId: string; householdId: string }>;
+    actorId: string;
+  },
+): Promise<Map<string, number>> {
+  const householdsToLock = Array.from(
+    new Set(args.lessons.map((lesson) => lesson.householdId)),
+  ).sort();
+  for (const householdId of householdsToLock) {
+    await tx.execute(
+      sql`SELECT pg_advisory_xact_lock(hashtext(${"household-balance:" + householdId}))`,
+    );
+  }
+
+  const refundByLessonId = new Map<string, number>();
+  for (const lesson of args.lessons) {
+    const refund = await refundLessonCharge(tx, {
+      householdId: lesson.householdId,
+      lessonId: lesson.lessonId,
+      actorId: args.actorId,
+    });
+    if (refund.refunded) {
+      refundByLessonId.set(lesson.lessonId, refund.amountCents);
+    }
+  }
+  return refundByLessonId;
+}
