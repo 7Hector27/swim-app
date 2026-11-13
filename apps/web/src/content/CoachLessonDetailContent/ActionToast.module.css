@@ -1,0 +1,43 @@
+/* Bottom-anchored confirmation toast for approve / decline / no-show
+   (animate skill #3). Transitions-based (not keyframes) so rapid
+   back-to-back actions retarget mid-animation instead of restarting
+   at zero. Strong ease-out curve for the enter; snappier exit per
+   the "slow where the user is deciding, fast where the system is
+   responding" rule. */
+
+.toast {
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    opacity 220ms cubic-bezier(0.23, 1, 0.32, 1),
+    transform 220ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+@starting-style {
+  .toast {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+.toast[data-state="closed"] {
+  opacity: 0;
+  transform: translateY(8px);
+  transition:
+    opacity 180ms cubic-bezier(0.23, 1, 0.32, 1),
+    transform 180ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast,
+  .toast[data-state="closed"] {
+    transition: opacity 160ms ease;
+    transform: none;
+  }
+  @starting-style {
+    .toast {
+      opacity: 0;
+      transform: none;
+    }
+  }
+}

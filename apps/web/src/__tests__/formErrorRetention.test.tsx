@@ -130,14 +130,26 @@ describe("LoginContent — controlled email input", () => {
 
 describe("SignupContent — controlled text inputs", () => {
   it("retains typed fullName value (controlled input)", () => {
-    render(<SignupContent />);
+    render(
+      <SignupContent
+        termsVersion="2026-11-11"
+        privacyVersion="2026-11-11"
+        paymentsRefundVersion="2026-11-11"
+      />,
+    );
     const input = screen.getByLabelText("Full name");
     fireEvent.change(input, { target: { value: "Jane Doe" } });
     expect(input).toHaveValue("Jane Doe");
   });
 
   it("retains typed email value (controlled input)", () => {
-    render(<SignupContent />);
+    render(
+      <SignupContent
+        termsVersion="2026-11-11"
+        privacyVersion="2026-11-11"
+        paymentsRefundVersion="2026-11-11"
+      />,
+    );
     const input = screen.getByLabelText("Email");
     fireEvent.change(input, { target: { value: "jane@example.com" } });
     expect(input).toHaveValue("jane@example.com");
@@ -149,14 +161,26 @@ describe("SignupContent — controlled text inputs", () => {
       vi.fn(),
       false,
     ]);
-    render(<SignupContent />);
+    render(
+      <SignupContent
+        termsVersion="2026-11-11"
+        privacyVersion="2026-11-11"
+        paymentsRefundVersion="2026-11-11"
+      />,
+    );
     const errorEl = screen.getByRole("alert");
     expect(errorEl).toHaveAttribute("aria-live", "assertive");
     expect(errorEl).toHaveTextContent("Something went wrong on our end. Try again in a moment.");
   });
 
   it("fullName and email keep values when error state is present", () => {
-    render(<SignupContent />);
+    render(
+      <SignupContent
+        termsVersion="2026-11-11"
+        privacyVersion="2026-11-11"
+        paymentsRefundVersion="2026-11-11"
+      />,
+    );
     const fullNameInput = screen.getByLabelText("Full name");
     const emailInput = screen.getByLabelText("Email");
     fireEvent.change(fullNameInput, { target: { value: "Jane" } });

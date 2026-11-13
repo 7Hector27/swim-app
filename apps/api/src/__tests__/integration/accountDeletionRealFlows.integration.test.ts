@@ -83,6 +83,7 @@ import {
   closeAdminDb,
   createTestUser,
   createTestUserInHousehold,
+  seedHouseholdBalanceForTest,
   type TestUser,
 } from "./helpers";
 
@@ -487,6 +488,11 @@ describe("POST /me/deletion/confirm — solo path, real-flow seed", () => {
 
     const owner = await createTestUser("realflow-solo-owner");
     testUsers.push(owner);
+    await seedHouseholdBalanceForTest({
+      householdId: owner.householdId,
+      actorId: owner.userId,
+      amountCents: 1_000_000,
+    });
     const householdId = owner.householdId;
     const authUserId = owner.userId;
     const swimmerId = await createSwimmer(owner, "Alex");
@@ -651,7 +657,10 @@ describe("POST /me/deletion/confirm — solo path, real-flow seed", () => {
 
     // ── Delete ───────────────────────────────────────────────
     const res = await confirmDeletion(owner.accessToken);
-    expect(res.status).toBe(204);
+    // ADR 036 Phase 8 Part B Stop 2: 10,000 USD seeded balance → the
+    // deletion runs a cash-out in-tx and returns 200 with the
+    // breakdown instead of the pre-Stop-2 204-no-body.
+    expect(res.status).toBe(200);
 
     // ── Assertions ───────────────────────────────────────────
 
@@ -877,11 +886,17 @@ describe("POST /me/deletion/confirm — solo path, real-flow seed", () => {
     // names or addresses. "Home pool" replaces the pool name for
     // home-pool rows — identifying, so docs/accounts.md kids'-data
     // rules apply.
-    // Scope the query to this deletion's recipient — both the
-    // notification and the email resolve the coach via
-    // getActiveCoachProfile() inside the same tx, so they share the
-    // same profile id. This stays correct across parallel test files
-    // with multiple role=coach rows.
+    // Scope the query to this test's own deletion via the payload's
+    // deletedAtUtc — the coach notification above is already uniquely
+    // this test's (tagged with `account-deleted:${jobId}`), and both
+    // the notification and the outbox row are written inside the
+    // same deletion transaction from the same `now`, so their
+    // `deletedAtUtc` strings match exactly. Filtering by this ties
+    // the outbox row back to this test's job id without needing an
+    // FK column on the outbox. getActiveCoachProfile() returns the
+    // shared coach across every integration file, so a bare recipient
+    // filter would pick up rows from other files on the shared ADR
+    // 035 test stack.
     const coachEmails = await adminDb()
       .select()
       .from(lessonEmailOutbox)
@@ -889,6 +904,7 @@ describe("POST /me/deletion/confirm — solo path, real-flow seed", () => {
         and(
           eq(lessonEmailOutbox.event, "coach_account_deleted"),
           sql`${lessonEmailOutbox.recipientProfileIds} = ARRAY[${notif.profileId}]::uuid[]`,
+          sql`${lessonEmailOutbox.payload}->>'deletedAtUtc' = ${notifPayload.deletedAtUtc}`,
         ),
       );
     expect(coachEmails).toHaveLength(1);
@@ -971,6 +987,11 @@ describe("POST /me/deletion/confirm — leave path, real-flow seed", () => {
 
     const owner = await createTestUser("realflow-leave-owner");
     testUsers.push(owner);
+    await seedHouseholdBalanceForTest({
+      householdId: owner.householdId,
+      actorId: owner.userId,
+      amountCents: 1_000_000,
+    });
     const manager = await createTestUserInHousehold(
       "realflow-leave-manager",
       owner.householdId,
@@ -1020,6 +1041,23 @@ describe("POST /me/deletion/confirm — leave path, real-flow seed", () => {
     expect(beforeAuditRows.length).toBeGreaterThan(0);
 
     // ── Leave ────────────────────────────────────────────────
+    // Snapshot how many coach_account_deleted outbox rows exist for
+    // Jason BEFORE the leave runs; the assertion below reads the same
+    // count after and asserts it is unchanged. That is a per-test-
+    // scoped check: whatever other integration files left on the
+    // shared ADR 035 stack, this test proves its own leave transaction
+    // wrote zero new rows. getActiveCoachProfile() returns the shared
+    // coach across every integration file, so filtering by recipient
+    // alone can't distinguish this test's rows from pollution.
+    const coachEmailsBefore = await adminDb()
+      .select({ id: lessonEmailOutbox.id })
+      .from(lessonEmailOutbox)
+      .where(
+        and(
+          eq(lessonEmailOutbox.event, "coach_account_deleted"),
+          sql`${lessonEmailOutbox.recipientProfileIds} = ARRAY[${coach.userId}]::uuid[]`,
+        ),
+      );
     const res = await confirmDeletion(manager.accessToken);
     expect(res.status).toBe(204);
 
@@ -1114,10 +1152,12 @@ describe("POST /me/deletion/confirm — leave path, real-flow seed", () => {
     // A leave deletion must NOT enqueue a coach_account_deleted email
     // (ADR 034) — the household is still active, Jason's schedule is
     // unchanged, and the email's "freed slots" summary would be
-    // outright wrong. Filter by recipientProfileIds so a stray row
-    // from a concurrent test can't make this assertion fail.
-    const coachEmails = await adminDb()
-      .select()
+    // outright wrong. Compare the row count for Jason against the
+    // pre-leave snapshot: if this transaction wrote zero rows, the
+    // count is unchanged regardless of what other test files left on
+    // the shared stack.
+    const coachEmailsAfter = await adminDb()
+      .select({ id: lessonEmailOutbox.id })
       .from(lessonEmailOutbox)
       .where(
         and(
@@ -1125,7 +1165,7 @@ describe("POST /me/deletion/confirm — leave path, real-flow seed", () => {
           sql`${lessonEmailOutbox.recipientProfileIds} = ARRAY[${coach.userId}]::uuid[]`,
         ),
       );
-    expect(coachEmails).toHaveLength(0);
+    expect(coachEmailsAfter).toHaveLength(coachEmailsBefore.length);
 
     // ── Housekeeping ─────────────────────────────────────────
     // Settle any lingering sender microtasks before teardown touches

@@ -64,4 +64,11 @@ export interface BulkCancelEmailPayload {
   cancelledLessons: BulkCancelEmailCancelledLesson[];
   // Pending requests that got declined by the operation. Chronological.
   declinedRequests: BulkCancelEmailDeclinedRequest[];
+  // ADR 036 Phase 7: sum of refunds across every lesson in this family's
+  // slice of the bulk cancel (approved refunds + pending request refunds).
+  // Null → no refund landed (all free lessons / pre-Phase-4 / already
+  // refunded). When both this and newBalanceCents are set, the email
+  // renders a one-line "Refunded $X. New balance: $Y." for the family.
+  refundAmountCents: number | null;
+  newBalanceCents: number | null;
 }

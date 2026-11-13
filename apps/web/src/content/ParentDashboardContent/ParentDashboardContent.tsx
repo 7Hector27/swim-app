@@ -3,18 +3,22 @@ import Link from "next/link";
 import {
   calculateAge,
   todayLA,
+  type BalanceResponse,
   type Club,
   type MeResponse,
   type ParentSwimmer,
   type ParentSwimmerSummary,
 } from "@swim-app/shared";
 
+import { fetchBalance } from "@/lib/api/balance";
 import { fetchClubs } from "@/lib/api/clubs";
 import { fetchHousehold } from "@/lib/api/households";
 import { fetchLesson, fetchUpcomingLessons } from "@/lib/api/lessons";
 import { fetchParentSwimmerSummaries } from "@/lib/api/parentProgress";
 import { fetchSwimmers } from "@/lib/api/swimmers";
 import InlineError from "@/components/InlineError";
+import { formatApproxHours } from "@/content/AccountBalanceContent/formatters";
+import { formatDollars } from "@/lib/formatDollars";
 import { removeSwimmer } from "./actions";
 import BookingConfirmDialog from "./BookingConfirmDialog";
 import {
@@ -37,7 +41,7 @@ interface Props {
 export default async function ParentDashboardContent({ profile, accessToken, bookedLessonId, rescheduledLessonId, rescheduledFrom }: Props) {
   const firstName = profile.fullName?.trim().split(/\s+/)[0] ?? "there";
   const hasPhone = !!(profile.phone && profile.phone.length > 0);
-  const [swimmersResult, upcomingLessonsResult, householdResult, bookedLessonResult, rescheduledLessonResult, clubsResult, summariesResult] =
+  const [swimmersResult, upcomingLessonsResult, householdResult, bookedLessonResult, rescheduledLessonResult, clubsResult, summariesResult, balanceResult] =
     await Promise.all([
       fetchSwimmers(accessToken),
       fetchUpcomingLessons(accessToken, { limit: 3 }),
@@ -46,6 +50,11 @@ export default async function ParentDashboardContent({ profile, accessToken, boo
       rescheduledLessonId ? fetchLesson(accessToken, rescheduledLessonId) : Promise.resolve(null),
       fetchClubs(accessToken),
       fetchParentSwimmerSummaries(accessToken),
+      // ADR 036 Phase 8 Part B Stop 3 piece 4: balance tile for owners
+      // and managers (hidden below for viewers). Fetched in parallel
+      // with the other dashboard reads so the tile doesn't cost a
+      // round trip.
+      fetchBalance(accessToken),
     ]);
   // Dashboard is a hub — every card is secondary. If one fetch fails, the
   // page keeps rendering and the broken card shows an InlineError so a
@@ -148,6 +157,19 @@ export default async function ParentDashboardContent({ profile, accessToken, boo
             </div>
           </div>
 
+          {/* ADR 036 Phase 8 Part B Stop 3 piece 9: on mobile the
+              balance tile floats above the two-column layout so the
+              parent sees the dollar balance without scrolling past
+              swimmers and upcoming lessons first. On tablet+ the
+              tile lives in the sidebar at its original position, so
+              the main column (Upcoming + Swimmers) keeps the hero
+              slot the desktop layout was designed around. */}
+          {!isViewer && balanceResult !== null && (
+            <div className="tablet:hidden mb-6">
+              <BalanceCard balance={balanceResult} />
+            </div>
+          )}
+
           {/* Two-column layout */}
           <div className="flex flex-col tablet:flex-row tablet:items-start gap-6 desktop:gap-8">
             {/* Main column: full width on phone, flex-1 on tablet+ */}
@@ -177,6 +199,16 @@ export default async function ParentDashboardContent({ profile, accessToken, boo
             {/* Sidebar */}
             <div className="w-full tablet:w-[272px] desktop:w-[300px] flex-shrink-0 flex flex-col gap-4">
               {showFinishSetup && <FinishSetupCard hasPhone={hasPhone} />}
+
+              {/* Tablet+ placement: the balance tile sits in the sidebar
+                  next to the rest of the account controls. Hidden below
+                  the tablet breakpoint — the mobile render above owns
+                  the tile there. */}
+              {!isViewer && balanceResult !== null && (
+                <div className="hidden tablet:block">
+                  <BalanceCard balance={balanceResult} />
+                </div>
+              )}
 
               <AccountCard />
             </div>
@@ -277,6 +309,39 @@ function FinishSetupCard({ hasPhone }: { hasPhone: boolean }) {
           </p>
         </div>
       )}
+    </div>
+  );
+}
+
+interface BalanceCardProps {
+  balance: BalanceResponse;
+}
+
+function BalanceCard({ balance }: BalanceCardProps) {
+  return (
+    <div
+      data-testid="dashboard-balance-tile"
+      className="rounded-card border border-border p-5"
+    >
+      <h3 className="text-base text-heading mb-3">Balance</h3>
+      <p
+        data-testid="dashboard-balance-dollars"
+        className="text-2xl font-bold text-heading"
+      >
+        {formatDollars(balance.balanceCents)}
+      </p>
+      <p
+        data-testid="dashboard-balance-hours"
+        className="text-sm text-text-secondary mt-1"
+      >
+        {formatApproxHours(balance.approximatePrivateHours)} of private lessons
+      </p>
+      <Link
+        href="/account/balance"
+        className="mt-3 inline-block text-sm font-semibold text-link hover:text-link-hover transition-colors duration-150"
+      >
+        Add funds and see history
+      </Link>
     </div>
   );
 }

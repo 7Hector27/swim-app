@@ -57,6 +57,7 @@ import {
   adminDb,
   closeAdminDb,
   createTestUser,
+  seedHouseholdBalanceForTest,
   settleAndCleanupCoachNotificationsForHousehold,
   type TestUser,
 } from "./helpers";
@@ -283,6 +284,11 @@ async function seedLesson(opts: {
 
 beforeAll(async () => {
   owner = await createTestUser("sync-int-owner");
+  await seedHouseholdBalanceForTest({
+    householdId: owner.householdId,
+    actorId: owner.userId,
+    amountCents: 1_000_000,
+  });
   coach = await createTestUser("sync-int-coach");
   await makeCoach(coach.userId);
   await pauseOtherCoaches(coach.userId);

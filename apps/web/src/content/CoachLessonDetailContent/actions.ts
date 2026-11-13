@@ -74,7 +74,10 @@ export async function approveCoachLessonAction(
     return { status: "error", message: "Could not reach the server. Please try again." };
   }
 
-  if (ok) redirect(`/coach/lessons/${lessonId}`);
+  // ?action=<kind> is read by the lesson detail page and threaded as
+  // a prop into CoachLessonDetailContent, which fires the one-shot
+  // confirmation toast at the bottom of the screen (animate skill #3).
+  if (ok) redirect(`/coach/lessons/${lessonId}?action=approved`);
   return { status: "error", message: "Could not approve this lesson. Please try again." };
 }
 
@@ -110,7 +113,7 @@ export async function markNoShowAction(
   }
 
   if (responseStatus >= 200 && responseStatus < 300) {
-    redirect(`/coach/lessons/${lessonId}`);
+    redirect(`/coach/lessons/${lessonId}?action=no_show`);
   }
 
   const code = (responseBody as { error?: string } | null)?.error;
@@ -192,6 +195,6 @@ export async function declineCoachLessonAction(
     return { status: "error", message: "Could not reach the server. Please try again." };
   }
 
-  if (ok) redirect(`/coach/lessons/${lessonId}`);
+  if (ok) redirect(`/coach/lessons/${lessonId}?action=declined`);
   return { status: "error", message: "Could not decline this lesson. Please try again." };
 }

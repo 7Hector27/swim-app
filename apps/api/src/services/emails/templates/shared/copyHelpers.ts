@@ -11,3 +11,35 @@ export function formatSwimmerList(names: readonly string[]): string {
 export function coachDisplay(coachFirstName: string | null): string {
   return coachFirstName && coachFirstName.length > 0 ? coachFirstName : "The coach";
 }
+
+// Integer-cents → `$X,XXX.YY` for email body copy. Canonical money
+// renderer across every email that shows money — refund line, balance_
+// funded (paid / bonus / new balance), balance_adjusted (amount / new
+// balance), and the matching subject lines in sender.ts. Always two
+// decimals, always comma thousands, no locale guessing — the sign is
+// always implicit from context ("Refunded $X. New balance: $Y.",
+// "Jason removed $X from your balance."), so callers pass the absolute
+// value for positive-prefixed copy.
+export function formatMoneyCents(cents: number): string {
+  const abs = Math.abs(cents);
+  const dollars = Math.floor(abs / 100);
+  const remainder = abs % 100;
+  const sign = cents < 0 ? "-" : "";
+  return `${sign}$${dollars.toLocaleString("en-US")}.${String(remainder).padStart(2, "0")}`;
+}
+
+// Single line the refund-emitting templates render when a refund actually
+// landed in the same transaction. Both arguments are nullable — null on
+// either means no refund (free lesson, pre-Phase-4 row, or an already-
+// refunded charge). Returns null so callers can `return refundSentence(...)
+// && <Text>…</Text>` cleanly.
+export function refundSentence(
+  refundAmountCents: number | null,
+  newBalanceCents: number | null,
+): string | null {
+  if (refundAmountCents === null || newBalanceCents === null) return null;
+  if (refundAmountCents <= 0) return null;
+  return `Refunded ${formatMoneyCents(refundAmountCents)}. New balance: ${formatMoneyCents(
+    newBalanceCents,
+  )}.`;
+}

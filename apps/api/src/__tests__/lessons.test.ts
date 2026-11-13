@@ -45,6 +45,10 @@ const {
   mockComputeSlots,
   mockClassifyDaySlots,
   mockNeedsApproval,
+  mockGetHouseholdBalance,
+  mockApplyLedgerEntry,
+  mockRefundLessonCharge,
+  mockGetLessonOutstandingChargeCents,
 } = vi.hoisted(() => ({
   mockGetUser: vi.fn(),
   mockDbSelect: vi.fn(),
@@ -54,6 +58,26 @@ const {
   mockComputeSlots: vi.fn(),
   mockClassifyDaySlots: vi.fn(),
   mockNeedsApproval: vi.fn(),
+  // ADR 036 Phase 4 balance service — mocked at the module boundary so
+  // unit tests don't have to teach their mocked `tx` chains about the
+  // balance ledger's selects/inserts. Real balance behavior is covered
+  // by parentBookingCharge / coachLessonsCharge / parentBatchBookingCharge
+  // / refundPaths integration tests against the dedicated test Supabase
+  // stack.
+  //
+  // Defaults: huge balance (so the insufficient_balance gate never fires)
+  // and no-op refund. Tests can override per-test via
+  // mockGetHouseholdBalance.mockResolvedValueOnce(...).
+  mockGetHouseholdBalance: vi.fn().mockResolvedValue(1_000_000_000),
+  mockApplyLedgerEntry: vi.fn().mockResolvedValue("ledger-id-stub"),
+  mockRefundLessonCharge: vi
+    .fn()
+    .mockResolvedValue({ refunded: false, reason: "no_charge" }),
+  // ADR 036 Phase 8 Part B Stop 3 piece 4: lesson detail routes read
+  // the outstanding charge via the balance service. Default: no charge
+  // (free lesson / already-refunded) so cancel confirmations show
+  // "no refund line" by default. Per-test override via mockResolvedValueOnce.
+  mockGetLessonOutstandingChargeCents: vi.fn().mockResolvedValue(null),
 }));
 
 vi.mock("../lib/supabase", () => ({
@@ -98,6 +122,13 @@ vi.mock("../services/emails/outbox", () => ({
 
 vi.mock("../services/emails/sender", () => ({
   sendLessonEmailOutboxRow: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock("../services/balance", () => ({
+  getHouseholdBalance: mockGetHouseholdBalance,
+  applyLedgerEntry: mockApplyLedgerEntry,
+  refundLessonCharge: mockRefundLessonCharge,
+  getLessonOutstandingChargeCents: mockGetLessonOutstandingChargeCents,
 }));
 
 import { createApp } from "../app";
@@ -244,6 +275,26 @@ function authAs(profile: AnyProfile) {
     data: { user: { id: profile.id, email: "user@example.com" } },
     error: null,
   });
+}
+
+// ADR 036 Phase 8 Part B Stop 3 piece 3: the new
+// `requireCurrentPolicyAcceptance` middleware fires one db.select
+// between `requireHouseholdMember` and the route handler on gated
+// routes (POST /lessons + POST /lessons/batch). It queries
+// user_policy_acceptances and returns a row per policy slug the user
+// has already accepted. Default to all three current so the gate
+// passes through silently; tests that need the gate to fire can
+// queue a different mock explicitly.
+function policyAcceptancesCurrentSelect() {
+  const rows = [
+    { policySlug: "terms", version: "2026-11-11" },
+    { policySlug: "privacy", version: "2026-11-11" },
+    { policySlug: "payments_refund", version: "2026-11-11" },
+  ];
+  const limit = vi.fn().mockResolvedValue(rows);
+  const orderBy = vi.fn().mockReturnValue({ limit });
+  const where = vi.fn().mockReturnValue({ orderBy });
+  return { from: vi.fn().mockReturnValue({ where }) };
 }
 
 function requireUserSelect(profile: AnyProfile) {
@@ -812,6 +863,7 @@ describe("POST /lessons", () => {
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(parentProfile))
       .mockReturnValueOnce(requireHouseholdMemberSelect())
+      .mockReturnValueOnce(policyAcceptancesCurrentSelect())
       .mockReturnValueOnce(limitSelect([namedLocationRow]))   // location
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([swimmerRow]) }) }) // swimmers
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([configRow]) }) }) // config
@@ -840,6 +892,7 @@ describe("POST /lessons", () => {
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(parentProfile))
       .mockReturnValueOnce(requireHouseholdMemberSelect())
+      .mockReturnValueOnce(policyAcceptancesCurrentSelect())
       .mockReturnValueOnce(limitSelect([namedLocationRow]))
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([swimmerRow]) }) })
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([configRow]) }) })
@@ -874,6 +927,7 @@ describe("POST /lessons", () => {
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(parentProfile))
       .mockReturnValueOnce(requireHouseholdMemberSelect())
+      .mockReturnValueOnce(policyAcceptancesCurrentSelect())
       .mockReturnValueOnce(limitSelect([namedLocationRow]))
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([swimmerRow]) }) })
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([configRow]) }) })
@@ -900,6 +954,7 @@ describe("POST /lessons", () => {
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(parentProfile))
       .mockReturnValueOnce(requireHouseholdMemberSelect())
+      .mockReturnValueOnce(policyAcceptancesCurrentSelect())
       .mockReturnValueOnce(limitSelect([namedLocationRow]))
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([swimmerRow]) }) })
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([configRow]) }) })
@@ -927,6 +982,7 @@ describe("POST /lessons", () => {
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(parentProfile))
       .mockReturnValueOnce(requireHouseholdMemberSelect())
+      .mockReturnValueOnce(policyAcceptancesCurrentSelect())
       .mockReturnValueOnce(limitSelect([namedLocationRow]))
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([swimmerRow]) }) })
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([configRow]) }) })
@@ -963,6 +1019,7 @@ describe("POST /lessons", () => {
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(parentProfile))
       .mockReturnValueOnce(requireHouseholdMemberSelect())
+      .mockReturnValueOnce(policyAcceptancesCurrentSelect())
       .mockReturnValueOnce(limitSelect([namedLocationRow]))
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([swimmerRow]) }) })
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([configRow]) }) })
@@ -985,6 +1042,7 @@ describe("POST /lessons", () => {
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(parentProfile))
       .mockReturnValueOnce(requireHouseholdMemberSelect())
+      .mockReturnValueOnce(policyAcceptancesCurrentSelect())
       .mockReturnValueOnce(limitSelect([namedLocationRow]))
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([swimmerRow]) }) })
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([configRow]) }) })
@@ -1009,6 +1067,7 @@ describe("POST /lessons", () => {
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(parentProfile))
       .mockReturnValueOnce(requireHouseholdMemberSelect())
+      .mockReturnValueOnce(policyAcceptancesCurrentSelect())
       .mockReturnValueOnce(limitSelect([namedLocationRow]))
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([swimmerRow]) }) })
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([configRow]) }) })
@@ -1033,6 +1092,7 @@ describe("POST /lessons", () => {
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(parentProfile))
       .mockReturnValueOnce(requireHouseholdMemberSelect())
+      .mockReturnValueOnce(policyAcceptancesCurrentSelect())
       .mockReturnValueOnce(limitSelect([namedLocationRow]))
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([swimmerRow]) }) })
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([configRow]) }) })
@@ -1052,7 +1112,8 @@ describe("POST /lessons", () => {
     authAs(parentProfile);
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(parentProfile))
-      .mockReturnValueOnce(requireHouseholdMemberSelect());
+      .mockReturnValueOnce(requireHouseholdMemberSelect())
+      .mockReturnValueOnce(policyAcceptancesCurrentSelect());
 
     const fiveSwimmers = [
       "bbbbbbbb-0000-0000-0000-000000000001",
@@ -1076,6 +1137,7 @@ describe("POST /lessons", () => {
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(parentProfile))
       .mockReturnValueOnce(requireHouseholdMemberSelect())
+      .mockReturnValueOnce(policyAcceptancesCurrentSelect())
       .mockReturnValueOnce(limitSelect([namedLocationRow]))
       .mockReturnValueOnce({
         from: vi.fn().mockReturnValue({
@@ -1098,6 +1160,7 @@ describe("POST /lessons", () => {
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(parentProfile))
       .mockReturnValueOnce(requireHouseholdMemberSelect())
+      .mockReturnValueOnce(policyAcceptancesCurrentSelect())
       .mockReturnValueOnce(limitSelect([homeLocationBRow])); // location belongs to HOUSEHOLD_B
 
     const res = await request(app)
@@ -1115,6 +1178,7 @@ describe("POST /lessons", () => {
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(parentProfile))
       .mockReturnValueOnce(requireHouseholdMemberSelect())
+      .mockReturnValueOnce(policyAcceptancesCurrentSelect())
       .mockReturnValueOnce(limitSelect([namedLocationRow]))
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([swimmerRow]) }) })
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([configRow]) }) })
@@ -1174,6 +1238,7 @@ describe("POST /lessons", () => {
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(parentProfile))
       .mockReturnValueOnce(requireHouseholdMemberSelect())
+      .mockReturnValueOnce(policyAcceptancesCurrentSelect())
       .mockReturnValueOnce(limitSelect([namedLocationRow]))
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([swimmerRow]) }) })
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([farFutureConfig]) }) })
@@ -1203,23 +1268,40 @@ describe("POST /lessons", () => {
 
 // ── DELETE /lessons/:id ───────────────────────────────────────────────────────
 
+// ADR 036 Phase 8 Part B Stop 3 piece 4: DELETE /lessons/:id now returns
+// 200 with { refundAmountCents, newBalanceCents } instead of 204. The
+// route reads both out of the transaction's return value — the hoisted
+// `vi.fn()` mock for db.transaction would otherwise return undefined
+// and the response-shape read would 500. Real transaction behavior is
+// covered by refundPaths / rescheduleReprice integration tests.
+function mockCancelTransactionResult(refundAmountCents: number | null, newBalanceCents: number) {
+  mockDbTransaction.mockResolvedValueOnce({
+    cancelOutboxId: "outbox-id-stub",
+    coachNotificationId: null,
+    refundAmountCents,
+    newBalanceCents,
+  });
+}
+
 describe("DELETE /lessons/:id", () => {
-  it("cancels lesson and returns 204 (parent owner)", async () => {
+  it("cancels lesson and returns 200 with refund fields (parent owner)", async () => {
     authAs(parentProfile);
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(parentProfile))
       .mockReturnValueOnce(requireHouseholdMemberSelect(HOUSEHOLD_ID, "owner"))
       .mockReturnValueOnce(limitSelect([baseLessonRow]));
 
-    mockDbUpdate.mockReturnValueOnce({
-      set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) }),
-    });
+    mockCancelTransactionResult(null, 1_000_000_000);
 
     const res = await request(app)
       .delete(`/lessons/${LESSON_ID}`)
       .set("Authorization", "Bearer token");
 
-    expect(res.status).toBe(204);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      refundAmountCents: null,
+      newBalanceCents: 1_000_000_000,
+    });
   });
 
   it("returns 404 for another household's lesson", async () => {
@@ -1265,21 +1347,19 @@ describe("DELETE /lessons/:id", () => {
     expect(res.status).toBe(403);
   });
 
-  it("coach cancels any lesson and returns 204", async () => {
+  it("coach cancels any lesson and returns 200 (ADR 036 Phase 8 Part B: refund + balance in body)", async () => {
     authAs(coachProfile);
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(coachProfile))
       .mockReturnValueOnce(limitSelect([baseLessonRow]));
 
-    mockDbUpdate.mockReturnValueOnce({
-      set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) }),
-    });
+    mockCancelTransactionResult(null, 1_000_000_000);
 
     const res = await request(app)
       .delete(`/lessons/${LESSON_ID}`)
       .set("Authorization", "Bearer token");
 
-    expect(res.status).toBe(204);
+    expect(res.status).toBe(200);
   });
 
   it("returns 403 when caller role is neither parent nor coach", async () => {
@@ -1309,22 +1389,20 @@ describe("DELETE /lessons/:id", () => {
     expect(res.body.error).toBe("lesson_in_past");
   });
 
-  it("coach can still cancel a lesson that has already started (204)", async () => {
+  it("coach can still cancel a lesson that has already started (200)", async () => {
     authAs(coachProfile);
     const pastLesson = { ...baseLessonRow, status: "approved" as typeof baseLessonRow.status, startsAt: new Date(ANCHOR_NOW.getTime() - 60 * 60 * 1000) };
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(coachProfile))
       .mockReturnValueOnce(limitSelect([pastLesson]));
 
-    mockDbUpdate.mockReturnValueOnce({
-      set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) }),
-    });
+    mockCancelTransactionResult(null, 1_000_000_000);
 
     const res = await request(app)
       .delete(`/lessons/${LESSON_ID}`)
       .set("Authorization", "Bearer token");
 
-    expect(res.status).toBe(204);
+    expect(res.status).toBe(200);
   });
 });
 

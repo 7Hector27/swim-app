@@ -1,5 +1,25 @@
 "use client";
 
+// Jason taps grade buttons hundreds of times per session, often
+// one-handed at the pool. The animate skill's 100+/day tier only
+// allows near-imperceptible feedback — and that's exactly what the
+// button needs today: a 160ms press scale(0.97) so the tap registers
+// in the hand, plus a 140ms transition on the color flip so the
+// selected state reads obviously without a hard cut.
+//
+// Selected state is a filled accent pill, not just an outlined one,
+// because at pool-deck viewing angles + wet-screen contrast an outline
+// loses to an interior fill. Reduced-motion drops the transform; the
+// color transition is non-motion and stays.
+
+const GRADE_BUTTON_CLASS = [
+  "min-h-[44px] min-w-[44px] px-3 rounded border text-sm font-semibold",
+  "transition-[transform,background-color,border-color,color]",
+  "duration-150 [transition-timing-function:cubic-bezier(0.23,1,0.32,1)]",
+  "active:scale-[0.97] motion-reduce:transform-none",
+  "disabled:opacity-40 disabled:cursor-not-allowed",
+].join(" ");
+
 interface GradeSelectorProps {
   value: 1 | 2 | 3 | 4 | 5 | null;
   disabled: boolean;
@@ -28,13 +48,11 @@ export default function GradeSelector({ value, disabled, onChange, labelPrefix }
             aria-checked={selected}
             disabled={disabled}
             onClick={() => onChange(grade)}
-            className="min-h-[44px] min-w-[44px] px-3 rounded border text-sm font-semibold transition-colors"
+            className={GRADE_BUTTON_CLASS}
             style={{
               borderColor: selected ? "var(--color-accent)" : "var(--color-border)",
-              color: selected ? "var(--color-accent)" : "var(--color-text-secondary)",
-              backgroundColor: "transparent",
-              opacity: disabled ? 0.4 : 1,
-              cursor: disabled ? "not-allowed" : "pointer",
+              color: selected ? "var(--color-on-accent)" : "var(--color-text-secondary)",
+              backgroundColor: selected ? "var(--color-accent)" : "transparent",
             }}
           >
             {label}

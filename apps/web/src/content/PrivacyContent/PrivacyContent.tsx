@@ -1,3 +1,7 @@
+import { PRIVACY_VERSION } from "@swim-app/shared";
+
+import PolicyMeta from "@/components/PolicyMeta";
+
 export default function PrivacyContent() {
   return (
     <div className="flex flex-col flex-1">
@@ -12,7 +16,7 @@ export default function PrivacyContent() {
             </div>
 
             <h1 className="text-heading mb-2">Privacy Policy</h1>
-            <p className="text-text-secondary mb-10">[Effective date]</p>
+            <PolicyMeta version={PRIVACY_VERSION} />
 
             <div className="flex flex-col gap-10 text-text">
               <section>
@@ -35,7 +39,26 @@ export default function PrivacyContent() {
                   When you create an account we collect your name, email address, phone number (optional), and date of birth. We use your date of birth to verify you meet the age requirement.
                 </p>
                 <p className="text-text-secondary leading-relaxed">
-                  [Additional data collection details — e.g. lesson records, payment information, cookies — to be completed.]
+                  We also keep a record of each lesson you book, cancel, or attend, along with any notes Coach Jason writes for your swimmer. See <em>Lesson records</em> below.
+                </p>
+              </section>
+
+              <section>
+                <h2 className="text-xl font-bold text-heading mb-3">Payments and Stripe</h2>
+                <p className="text-text-secondary leading-relaxed mb-3">
+                  Card payments are processed by <strong className="text-text">Stripe</strong>. Your card number, CVV, and expiry are entered on Stripe&apos;s own pages and <strong className="text-text">never touch our servers</strong> — we don&apos;t see them, store them, or log them. Stripe is the payment processor and the party responsible for card data. Our integration is PCI SAQ A, meaning we don&apos;t handle card details at all.
+                </p>
+                <p className="text-text-secondary leading-relaxed mb-3">
+                  On our side we store, for each payment you make:
+                </p>
+                <ul className="flex flex-col gap-2 text-text-secondary list-disc list-inside leading-relaxed mb-3">
+                  <li>The amount, in cents.</li>
+                  <li>The Stripe checkout session and payment identifiers (opaque strings like <code className="text-sm">cs_…</code> and <code className="text-sm">pi_…</code>) that let us look the payment up in Stripe if we need to.</li>
+                  <li>The date and time the payment was received.</li>
+                  <li>What the payment was for: a card top-up, a specific package, or a refund.</li>
+                </ul>
+                <p className="text-text-secondary leading-relaxed">
+                  Stripe retains the full payment record — card brand, last four digits, issuer, billing address if you provided one — subject to Stripe&apos;s own privacy practices. Those details are out of our reach.
                 </p>
               </section>
 
@@ -57,9 +80,12 @@ export default function PrivacyContent() {
               </section>
 
               <section>
-                <h2 className="text-xl font-bold text-heading mb-3">Data retention</h2>
+                <h2 className="text-xl font-bold text-heading mb-3">Data retention after account deletion</h2>
+                <p className="text-text-secondary leading-relaxed mb-3">
+                  When you delete your account, we remove your profile, your household, your swimmers, and every evaluation and note tied to them. Lesson records and payment records stay in our database for tax and audit reasons, but with every identifying field stripped.
+                </p>
                 <p className="text-text-secondary leading-relaxed">
-                  [Retention policy to be completed.]
+                  Specifically, after deletion a <strong className="text-text">payment record</strong> keeps only the amount, the Stripe payment identifiers, and the date — no name, no email, no household pointer. There is no way, from our side, to tie an anonymized payment record back to your identity.
                 </p>
               </section>
 

@@ -234,6 +234,30 @@ function MeetRow({ meet }: MeetRowProps) {
   );
 }
 
+// ADR 036 Phase 8 Part B Stop 3 piece 6: meets content moved onto the
+// /coach/swimmers page as a tab. The panel (`CoachMeetsPanel`) renders
+// the create-form + list with no page chrome so it slots into a tabbed
+// layout. The default export keeps the page chrome for the legacy
+// /coach/meets route, which now redirects to /coach/swimmers?tab=meets
+// — but the standalone page is also used as a fallback for any direct
+// server-rendered redirect chain, so the full-chrome version stays.
+export function CoachMeetsPanel({ meets }: CoachMeetsContentProps) {
+  return (
+    <div className="flex flex-col gap-8">
+      <CreateMeetForm />
+      {meets.length === 0 ? (
+        <p className="text-sm text-text-secondary">No meets yet. Create one to get started.</p>
+      ) : (
+        <ul className="flex flex-col">
+          {meets.map((meet) => (
+            <MeetRow key={meet.id} meet={meet} />
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 export default function CoachMeetsContent({ meets }: CoachMeetsContentProps) {
   return (
     <div className="flex flex-col flex-1">
@@ -242,18 +266,7 @@ export default function CoachMeetsContent({ meets }: CoachMeetsContentProps) {
           <h1 className="text-heading font-heading font-semibold" style={{ fontVariationSettings: '"SOFT" 100, "WONK" 0' }}>
             Meets
           </h1>
-
-          <CreateMeetForm />
-
-          {meets.length === 0 ? (
-            <p className="text-sm text-text-secondary">No meets yet. Create one to get started.</p>
-          ) : (
-            <ul className="flex flex-col">
-              {meets.map((meet) => (
-                <MeetRow key={meet.id} meet={meet} />
-              ))}
-            </ul>
-          )}
+          <CoachMeetsPanel meets={meets} />
         </div>
       </main>
     </div>

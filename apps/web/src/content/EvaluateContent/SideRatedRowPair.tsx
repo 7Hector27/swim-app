@@ -15,6 +15,8 @@ interface SideRatedRowPairProps {
   // Previous grades keyed per side so each row shows its own history.
   prevGradeLeft?: SwimmerSkillsResponse["grades"][string];
   prevGradeRight?: SwimmerSkillsResponse["grades"][string];
+  onMastery?: (draftKey: string) => void;
+  masteredKey?: string | null;
 }
 
 export default function SideRatedRowPair({
@@ -27,6 +29,8 @@ export default function SideRatedRowPair({
   rightIssues,
   prevGradeLeft,
   prevGradeRight,
+  onMastery,
+  masteredKey,
 }: SideRatedRowPairProps) {
   const displayName = label ?? skill.name;
   // The side labels use a middle dot, not an em dash — the project style
@@ -41,6 +45,8 @@ export default function SideRatedRowPair({
         onChange={onChange}
         {...(leftIssues !== undefined && { issues: leftIssues })}
         {...(prevGradeLeft !== undefined && { prevGrade: prevGradeLeft })}
+        {...(onMastery !== undefined && { onMastery })}
+        {...(masteredKey !== undefined && { masteredKey })}
       />
       <SkillGradeRow
         skill={skill}
@@ -50,6 +56,8 @@ export default function SideRatedRowPair({
         onChange={onChange}
         {...(rightIssues !== undefined && { issues: rightIssues })}
         {...(prevGradeRight !== undefined && { prevGrade: prevGradeRight })}
+        {...(onMastery !== undefined && { onMastery })}
+        {...(masteredKey !== undefined && { masteredKey })}
       />
     </div>
   );

@@ -1,12 +1,14 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import type {
   CoachBookingWarnings,
+  CoachCreateLessonBody,
   CoachHouseholdSearchResult,
   LessonLocation,
 } from "@swim-app/shared";
+import { priceForLesson } from "@swim-app/shared";
 
 import Step1HouseholdPicker from "./Step1HouseholdPicker";
 import Step2TimePicker from "./Step2TimePicker";
@@ -14,7 +16,7 @@ import Step3Success from "./Step3Success";
 import ConfirmBookingDialog, {
   type ConfirmSummary,
 } from "./ConfirmBookingDialog";
-import { submitCoachBookingAction } from "./actions";
+import { fetchFamilyBalanceAction, submitCoachBookingAction } from "./actions";
 import { type BookingStep } from "./helpers";
 
 interface Props {
@@ -65,6 +67,39 @@ export default function CoachBookLessonContent({
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [success, setSuccess] = useState<SuccessState | null>(null);
+  // When the family can't cover the lesson, the server returns 422
+  // insufficient_balance. The dialog keeps the booking inputs and offers
+  // "Book as free lesson" — the coach's escape hatch per ADR 036 Phase 4.
+  const [balanceShortfall, setBalanceShortfall] = useState<{
+    balanceCents: number;
+    priceCents: number;
+    shortfallCents: number;
+  } | null>(null);
+  // Family balance for the chosen household. Null until the fetch
+  // resolves OR when the fetch fails — the dialog hides the balance line
+  // in that case and relies on the server's 422 fallback.
+  const [balanceCents, setBalanceCents] = useState<number | null>(null);
+  // Up-front Charge / Free toggle in the confirm dialog. Defaults to
+  // "balance" per ADR 036 Phase 6; the dialog flips to "free" automatically
+  // when the family can't cover the lesson.
+  const [chargeType, setChargeType] =
+    useState<CoachCreateLessonBody["chargeType"]>("balance");
+
+  useEffect(() => {
+    if (!household) {
+      setBalanceCents(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const result = await fetchFamilyBalanceAction(household.householdId);
+      if (cancelled) return;
+      setBalanceCents(result ? result.balanceCents : null);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [household]);
 
   function handleSelectHousehold(next: CoachHouseholdSearchResult) {
     setHousehold(next);
@@ -127,10 +162,14 @@ export default function CoachBookLessonContent({
     setSubmitError(null);
   }
 
-  async function submitBooking(acknowledgedWarnings: CoachBookingWarnings) {
+  async function submitBooking(
+    acknowledgedWarnings: CoachBookingWarnings,
+    chargeTypeOverride?: CoachCreateLessonBody["chargeType"],
+  ) {
     if (!pending) return;
     setIsSubmitting(true);
     setSubmitError(null);
+    const effectiveChargeType = chargeTypeOverride ?? chargeType;
     const result = await submitCoachBookingAction({
       householdId: pending.householdId,
       swimmerIds: pending.swimmerIds,
@@ -139,6 +178,7 @@ export default function CoachBookLessonContent({
       durationMinutes: pending.summary.durationMinutes,
       overrideWindow: pending.overrideWindow || serverWarnings !== null,
       acknowledgedWarnings,
+      chargeType: effectiveChargeType,
     });
     setIsSubmitting(false);
 
@@ -152,6 +192,7 @@ export default function CoachBookLessonContent({
         swimmerFirstNames,
       });
       setPending(null);
+      setBalanceShortfall(null);
       setStep("success");
       return;
     }
@@ -171,14 +212,53 @@ export default function CoachBookLessonContent({
       );
       return;
     }
+    if (result.kind === "insufficient_balance") {
+      // Map by error code so a payment problem never surfaces as "that
+      // time isn't available." Coach's escape hatch is "Book as free" —
+      // the dialog shows balance/price/shortfall and offers a retry.
+      setBalanceShortfall({
+        balanceCents: result.balanceCents,
+        priceCents: result.priceCents,
+        shortfallCents: result.shortfallCents,
+      });
+      return;
+    }
     setSubmitError(result.message);
+  }
+
+  function handleBookAsFree() {
+    // Family-balance gate failed; rerun the same booking inputs with
+    // chargeType='free'. The server writes a free_lesson ledger marker
+    // and no charge is made.
+    void submitBooking(
+      serverWarnings ?? ({
+        outsideHours: false,
+        maxAdvanceExceeded: false,
+        travelBufferViolated: false,
+        dailyCapExceeded: false,
+        blockedTimeOverlap: false,
+      } satisfies CoachBookingWarnings),
+      "free",
+    );
   }
 
   function handleCancelConfirm() {
     setPending(null);
     setServerWarnings(null);
     setSubmitError(null);
+    setBalanceShortfall(null);
+    setChargeType("balance");
   }
+
+  // Price the pending lesson in cents so the dialog can show
+  // balance + lesson + Charge/Free toggle. Server pricing is
+  // authoritative; this is display-only.
+  const pendingPriceCents = pending
+    ? priceForLesson(
+        pending.summary.durationMinutes,
+        Math.max(1, Math.min(4, pending.swimmerIds.length)) as 1 | 2 | 3 | 4,
+      )
+    : null;
 
   if (success !== null) {
     return <Step3Success {...success} />;
@@ -224,11 +304,17 @@ export default function CoachBookLessonContent({
           open={true}
           summary={pending.summary}
           warnings={serverWarnings}
+          balanceShortfall={balanceShortfall}
+          balanceCents={balanceCents}
+          priceCents={pendingPriceCents}
+          chargeType={chargeType}
+          onChangeChargeType={setChargeType}
           bookingMaxAdvanceWeeks={bookingMaxAdvanceWeeks}
           isSubmitting={isSubmitting}
           errorMessage={submitError}
           onCancel={handleCancelConfirm}
           onSubmit={(acknowledgedWarnings) => submitBooking(acknowledgedWarnings)}
+          onBookAsFree={handleBookAsFree}
         />
       )}
     </div>

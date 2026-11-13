@@ -32,6 +32,8 @@ function soloAlonePreview(): DeletionPreviewResponse {
     futureLessonCount: 2,
     ownerMustTransferFirst: false,
     callerRole: "owner",
+    balanceCents: 0,
+    cashOutPreview: null,
   };
 }
 
@@ -44,6 +46,8 @@ function leavePreview(): DeletionPreviewResponse {
     futureLessonCount: 0,
     ownerMustTransferFirst: false,
     callerRole: "manager",
+    balanceCents: 0,
+    cashOutPreview: null,
   };
 }
 
@@ -56,6 +60,8 @@ function ownerWithViewersPreview(): DeletionPreviewResponse {
     futureLessonCount: 1,
     ownerMustTransferFirst: false,
     callerRole: "owner",
+    balanceCents: 0,
+    cashOutPreview: null,
   };
 }
 
@@ -68,6 +74,8 @@ function blockedPreview(): DeletionPreviewResponse {
     futureLessonCount: 0,
     ownerMustTransferFirst: true,
     callerRole: "owner",
+    balanceCents: 0,
+    cashOutPreview: null,
   };
 }
 

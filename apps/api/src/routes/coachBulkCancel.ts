@@ -9,6 +9,7 @@ import { and, asc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import type {
   BulkCancelConfirmBody,
   BulkCancelConfirmResponse,
+  BulkCancelPerHouseholdRefund,
   BulkCancelPreviewBody,
   BulkCancelPreviewLesson,
   BulkCancelPreviewResponse,
@@ -50,6 +51,7 @@ import type {
 import type { LessonEmailLocation } from "../services/emails/types";
 import { sendLessonEmailOutboxRow } from "../services/emails/sender";
 import { syncLessonToGoogle } from "../services/googleCalendarSync";
+import { getHouseholdBalance, refundLessonCharge } from "../services/balance";
 
 export const coachBulkCancelRouter = Router();
 
@@ -141,6 +143,66 @@ coachBulkCancelRouter.post(
     const pendingCount = items.length - approvedCount;
     const householdCount = new Set(items.map((item) => item.householdId)).size;
 
+    // Per-family refund totals from the ledger (ADR 036 Phase 8 Part B).
+    // For each in-scope lesson, sum the household's outstanding
+    // lesson_charge rows — the charges that have no matching
+    // refund_to_balance. Free-lesson rows contribute 0. The ledger
+    // stores charges as negative cents, so negate the sum to get the
+    // positive dollar amount that would land back on each family's
+    // balance.
+    const perHouseholdRefunds: BulkCancelPerHouseholdRefund[] = [];
+    const inScopeLessonIds = items.map((item) => item.lessonId);
+    if (inScopeLessonIds.length > 0) {
+      // Postgres array binding via postgres-js rejects a bare JS array
+      // in `ANY($1::uuid[])`; expand as `IN (uuid, uuid, ...)` with
+      // `sql.join` (same pattern as cashRefundDrain.ts).
+      const refundRows = await db.execute<{
+        household_id: string;
+        household_name: string;
+        total_refund_cents: number;
+      }>(sql`
+        SELECT
+          h.id AS household_id,
+          h.name AS household_name,
+          COALESCE(SUM(-charge.amount_cents), 0)::int AS total_refund_cents
+        FROM households AS h
+        INNER JOIN household_balance_ledger AS charge
+          ON charge.household_id = h.id
+          AND charge.entry_type = 'lesson_charge'
+          AND charge.lesson_id IN (${sql.join(
+            inScopeLessonIds.map((lessonId) => sql`${lessonId}::uuid`),
+            sql`, `,
+          )})
+        LEFT JOIN household_balance_ledger AS refund
+          ON refund.refund_of_ledger_id = charge.id
+          AND refund.entry_type = 'refund_to_balance'
+        WHERE refund.id IS NULL
+        GROUP BY h.id, h.name
+      `);
+
+      const totalsByHousehold = new Map<string, { name: string; total: number }>();
+      for (const row of refundRows) {
+        totalsByHousehold.set(row.household_id, {
+          name: row.household_name,
+          total: Number(row.total_refund_cents ?? 0),
+        });
+      }
+      // Include every in-scope household so the UI can render a "no
+      // refund" line for free-lesson-only families. Households with no
+      // outstanding charge in the range fall through with 0.
+      const seenHouseholds = new Set<string>();
+      for (const item of items) {
+        if (seenHouseholds.has(item.householdId)) continue;
+        seenHouseholds.add(item.householdId);
+        const totals = totalsByHousehold.get(item.householdId);
+        perHouseholdRefunds.push({
+          householdId: item.householdId,
+          householdName: item.householdName,
+          totalRefundCents: totals?.total ?? 0,
+        });
+      }
+    }
+
     const payload: BulkCancelPreviewResponse = {
       startDate: body.startDate,
       endDate: body.endDate,
@@ -152,6 +214,7 @@ coachBulkCancelRouter.post(
       pendingCount,
       householdCount,
       lessons: items,
+      perHouseholdRefunds,
     };
     res.json(payload);
   }),
@@ -321,6 +384,48 @@ coachBulkCancelRouter.post(
           .where(inArray(lessons.id, pendingToDecline.map((lesson) => lesson.id)));
       }
 
+      // ADR 036 §4: one refund_to_balance per affected lesson, in the
+      // same tx as the status change. Acquire each household's balance
+      // lock in a stable order (sorted by householdId) to keep the
+      // global acquire order consistent — day locks first (above), then
+      // balance locks. refundLessonCharge no-ops on free lessons and
+      // pre-Phase-4 rows (nothing to invert). Decline + cancel both
+      // qualify — ADR 036 §4 "cancellations, declines, bulk-cancels …
+      // refund in full".
+      const householdsToRefund = Array.from(
+        new Set(affected.map((lesson) => lesson.householdId)),
+      ).sort();
+      for (const hid of householdsToRefund) {
+        await tx.execute(
+          sql`SELECT pg_advisory_xact_lock(hashtext(${"household-balance:" + hid}))`,
+        );
+      }
+      // Per-family refund totals + post-refund balance. Fed into the
+      // email payload below so each family sees "Refunded $X. New
+      // balance: $Y." for THEIR slice of the bulk cancel. refundLessonCharge
+      // no-ops (returns refunded:false) on free / already-refunded lessons,
+      // so the totals naturally exclude those.
+      const refundTotalByHouseholdId = new Map<string, number>();
+      for (const lesson of affected) {
+        const refund = await refundLessonCharge(tx, {
+          householdId: lesson.householdId,
+          lessonId: lesson.id,
+          actorId: coachProfileId,
+        });
+        if (refund.refunded) {
+          refundTotalByHouseholdId.set(
+            lesson.householdId,
+            (refundTotalByHouseholdId.get(lesson.householdId) ?? 0) + refund.amountCents,
+          );
+        }
+      }
+      const newBalanceByHouseholdId = new Map<string, number>();
+      for (const hid of householdsToRefund) {
+        // Read every household's balance under its held lock so the
+        // snapshot is coherent with the refunds we just wrote.
+        newBalanceByHouseholdId.set(hid, await getHouseholdBalance(hid, tx));
+      }
+
       // Block the cleared range so the slot engine refuses rebooking.
       let blockApplied = false;
       if (body.blockRange) {
@@ -481,6 +586,8 @@ coachBulkCancelRouter.post(
             location: locationById.get(lesson.locationId)!,
           }));
 
+        const householdRefundTotal =
+          refundTotalByHouseholdId.get(householdId) ?? 0;
         const payload: BulkCancelEmailPayload = {
           bulkCancellationId,
           householdId,
@@ -494,6 +601,11 @@ coachBulkCancelRouter.post(
           deepLink: buildDashboardLink(siteUrl),
           cancelledLessons,
           declinedRequests,
+          refundAmountCents: householdRefundTotal > 0 ? householdRefundTotal : null,
+          newBalanceCents:
+            householdRefundTotal > 0
+              ? newBalanceByHouseholdId.get(householdId) ?? null
+              : null,
         };
 
         const recipientProfileIds = recipientsByHousehold.get(householdId) ?? [];

@@ -21,6 +21,9 @@ const validVapidPublicKey = "B".repeat(87);
 const validVapidPrivateKey = "k".repeat(43);
 const validVapidSubject = "mailto:ops@send.axiomaquatics.io";
 
+const validStripeSecretKey = "sk_test_51abcDEFghijKL";
+const validStripeWebhookSecret = "whsec_test_abcDEFghijKLmnop";
+
 const prodDeployBase = {
   ...baseEnv,
   NODE_ENV: "production",
@@ -40,6 +43,8 @@ const prodDeployBase = {
   VAPID_PUBLIC_KEY: validVapidPublicKey,
   VAPID_PRIVATE_KEY: validVapidPrivateKey,
   VAPID_SUBJECT: validVapidSubject,
+  STRIPE_SECRET_KEY: validStripeSecretKey,
+  STRIPE_WEBHOOK_SECRET: validStripeWebhookSecret,
 };
 
 const devDeployBase = {
@@ -409,6 +414,51 @@ describe("parseEnv — VAPID (coach alerts)", () => {
     expectIssue(
       { ...prodDeployBase, VAPID_SUBJECT: "not-a-url" },
       /VAPID_SUBJECT/,
+    );
+  });
+});
+
+describe("parseEnv — Stripe (ADR 036)", () => {
+  it("local: Stripe env is undefined when the keys are unset", () => {
+    const env = parseEnv({ ...baseEnv });
+    expect(env.stripe).toBeUndefined();
+  });
+
+  it("local: parses Stripe env when both keys are set", () => {
+    const env = parseEnv({
+      ...baseEnv,
+      STRIPE_SECRET_KEY: "sk_test_abc",
+      STRIPE_WEBHOOK_SECRET: "whsec_abc",
+    });
+    expect(env.stripe).toEqual({
+      secretKey: "sk_test_abc",
+      webhookSecret: "whsec_abc",
+    });
+  });
+
+  it("dev: rejects a missing STRIPE_SECRET_KEY", () => {
+    const raw = { ...devDeployBase } as Record<string, string | undefined>;
+    delete raw.STRIPE_SECRET_KEY;
+    expectIssue(raw, /STRIPE_SECRET_KEY/);
+  });
+
+  it("dev: rejects a missing STRIPE_WEBHOOK_SECRET", () => {
+    const raw = { ...devDeployBase } as Record<string, string | undefined>;
+    delete raw.STRIPE_WEBHOOK_SECRET;
+    expectIssue(raw, /STRIPE_WEBHOOK_SECRET/);
+  });
+
+  it("prod: rejects a STRIPE_SECRET_KEY that isn't shaped like a Stripe secret key", () => {
+    expectIssue(
+      { ...prodDeployBase, STRIPE_SECRET_KEY: "pk_live_not_a_secret" },
+      /STRIPE_SECRET_KEY.*sk_/,
+    );
+  });
+
+  it("prod: rejects a STRIPE_WEBHOOK_SECRET that doesn't start with whsec_", () => {
+    expectIssue(
+      { ...prodDeployBase, STRIPE_WEBHOOK_SECRET: "signing-secret" },
+      /STRIPE_WEBHOOK_SECRET.*whsec_/,
     );
   });
 });

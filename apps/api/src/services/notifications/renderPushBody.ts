@@ -118,7 +118,30 @@ export function renderPushBody(
             : `Freed up ${times.length} lessons: ${formatAccountDeletedTimes(times)}.`;
       return { title: "A family deleted their account", body };
     }
+    case "cash_refund_needs_manual_handling": {
+      // ADR 036 Phase 8 Part B Stop 2. No family name because the
+      // household may already be anonymized; Jason recognizes the job
+      // by the Stripe payment intent id and the dollar amount. Reason
+      // is already a short human-safe label (produced by
+      // `reasonForBanner`).
+      const dollars = formatDollars(payload.amountCents);
+      const tail = payload.stripePaymentIntentId
+        ? ` (${payload.stripePaymentIntentId})`
+        : "";
+      return {
+        title: "Refund needs your attention",
+        body: `${dollars} · ${payload.reason}${tail}`,
+      };
+    }
   }
+}
+
+function formatDollars(cents: number): string {
+  const sign = cents < 0 ? "-" : "";
+  const abs = Math.abs(cents);
+  const dollars = Math.floor(abs / 100);
+  const remainder = abs % 100;
+  return `${sign}$${dollars.toLocaleString("en-US")}.${String(remainder).padStart(2, "0")}`;
 }
 
 const ACCOUNT_DELETED_MAX_INLINE_TIMES = 3;

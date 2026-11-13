@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "user_policy_acceptances_user_slug_version_uniq" ON "user_policy_acceptances" USING btree ("user_id","policy_slug","version");

@@ -38,6 +38,7 @@ import {
   runAccountDeletionCleanup,
   ROUTE_POST_COMMIT_FAILURE_BACKOFF_SECONDS,
 } from "../services/accountDeletion";
+import { kickCashRefundDrain } from "../services/balance";
 import { sendLessonEmailOutboxRow } from "../services/emails/sender";
 
 export const accountDeletionRouter = Router();
@@ -178,7 +179,22 @@ accountDeletionRouter.post(
     // calls. A terminal retry failure logs at error level (see post-commit
     // branch below); Jason can't fix a Supabase or Google outage from an
     // alert anyway, so there is no coach notification path.
-    res.status(204).end();
+    //
+    // ADR 036 Phase 8 Part B Stop 2: when a cash-out actually ran we
+    // switch to 200 JSON with the breakdown so the UI can render the
+    // refund amounts on the deletion-complete screen. Zero-balance,
+    // leave, and orphan paths keep the existing 204-no-body shape so
+    // every existing caller keeps working unchanged.
+    // `drainEligibleJobIds` is server-internal — strip it from the
+    // response body so the client contract stays `{ breakdown,
+    // refundJobCount, needsManualHandlingCents }`.
+    if (result.cashOut !== null) {
+      const { drainEligibleJobIds: _drainEligibleJobIds, ...publicCashOut } =
+        result.cashOut;
+      res.status(200).json({ cashOut: publicCashOut });
+    } else {
+      res.status(204).end();
+    }
 
     // Solo path only: coach-side "A family deleted their account" email
     // (ADR 034). The outbox row was written inside the deletion tx, so
@@ -187,6 +203,20 @@ accountDeletionRouter.post(
     if (result.coachAccountDeletedOutboxId !== null) {
       const emailOutboxId = result.coachAccountDeletedOutboxId;
       queueMicrotask(() => { void sendLessonEmailOutboxRow(emailOutboxId); });
+    }
+
+    // ADR 036 Phase 8 Part B: kick the cash-refund drain with the
+    // just-written job ids so Stripe refunds fire immediately rather
+    // than waiting for the next cron tick (the service seeds a
+    // 2-minute lead on `next_attempt_at` for cron-race safety; passing
+    // ids bypasses that filter for the kick). Needs-manual-handling
+    // residual jobs aren't in `drainEligibleJobIds`, so the kick
+    // only touches rows with a real payment intent.
+    if (
+      result.cashOut !== null
+      && result.cashOut.drainEligibleJobIds.length > 0
+    ) {
+      kickCashRefundDrain(req.log, result.cashOut.drainEligibleJobIds);
     }
 
     // Post-commit fan-out. The shared cleanup helper walks every

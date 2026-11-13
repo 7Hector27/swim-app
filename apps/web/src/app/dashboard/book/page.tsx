@@ -6,6 +6,7 @@ import { requireAuth } from "@/lib/requireAuth";
 import { fetchHousehold } from "@/lib/api/households";
 import { fetchLocations } from "@/lib/api/lessons";
 import { fetchSwimmers } from "@/lib/api/swimmers";
+import { fetchBalance } from "@/lib/api/balance";
 
 export const metadata: Metadata = { title: "Book a lesson · Axiom Aquatics" };
 
@@ -24,10 +25,15 @@ export default async function BookPage(props: {
   const { profile, accessToken } = auth;
   if (profile.role !== "parent") redirect("/dashboard");
 
-  const [householdResult, locationsResult, swimmersResult] = await Promise.all([
+  const [householdResult, locationsResult, swimmersResult, balanceResult] = await Promise.all([
     fetchHousehold(accessToken),
     fetchLocations(accessToken),
     fetchSwimmers(accessToken),
+    // Balance drives the pre-submit shortfall guard in the bottom bar +
+    // review sheet. Fetch failure is non-fatal — the UI falls back to
+    // "balance unknown" and lets the server's 422 insufficient_balance
+    // response surface the problem on Book.
+    fetchBalance(accessToken),
   ]);
 
   // Write page — the booking flow needs pools, swimmers, and household
@@ -62,6 +68,7 @@ export default async function BookPage(props: {
             isViewer={isViewer}
             householdFailed={householdFailed}
             initialView={initialView}
+            balanceCents={balanceResult !== null ? balanceResult.balanceCents : null}
             {...(initialDate !== undefined && { initialDate })}
           />
         </div>

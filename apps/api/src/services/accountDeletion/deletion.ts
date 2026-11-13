@@ -38,14 +38,27 @@ import {
   leagueRegistrations,
   coachNotes,
 } from "../../db/schema";
+import type { CashOutBreakdown } from "@swim-app/shared";
+
 import { getActiveCoachProfile } from "../../lib/coachProfile";
 import { getEnv } from "../../lib/env";
+import {
+  executeCashOutInTx,
+  getCashOutBreakdown,
+  getHouseholdBalance,
+  refundLessonCharge,
+} from "../balance";
+import { cashRefundJobs } from "../../db/schema";
 import type { AccountDeletedEmailLesson } from "../emails/accountDeletedTypes";
 import { enqueueCoachAccountDeletedEmail } from "../emails/coachAccountDeletedOutbox";
 import { formatLessonTimeDisplay } from "../emails/format";
 import { AlreadyDeletedError, OwnerMustTransferFirstError } from "./errors";
 import { ACCOUNT_DELETION_INITIAL_DELAY_SECONDS } from "./retry";
 import { buildAccountDeletedScheduleUrl } from "./scheduleUrl";
+
+// Imported so the solo-deletion path can null `household_balance_ledger`
+// identity columns inside the same transaction as the household DELETE.
+import { householdBalanceLedger, userPolicyAcceptances } from "../../db/schema";
 
 type Tx = PostgresJsDatabase<typeof schema>;
 
@@ -102,6 +115,31 @@ export interface AccountDeletionPreview {
   // leave and owner-with-only-viewers show distinct explanations. Null
   // only in the orphan "profile with no household" fallback.
   callerRole: "owner" | "manager" | "viewer" | null;
+  // ADR 036 Phase 8 Part A: pre-deletion balance snapshot in integer
+  // cents. The UI surfaces a non-blocking note when > 0 — Part B of
+  // Phase 8 (unused-balance policy) is still blocked on Jason, so
+  // deletion proceeds with the ledger anonymized either way. Null only
+  // in the orphan "profile with no household" fallback.
+  balanceCents: number | null;
+  // ADR 036 Phase 8 Part B Stop 2: pre-deletion cash-out breakdown so
+  // the parent sees "$X refunded to card, $Y forfeited (bonus credit)"
+  // on the confirmation step. Null when `balanceCents` is zero or the
+  // orphan fallback fires — nothing to refund.
+  cashOutPreview: CashOutBreakdown | null;
+}
+
+// ADR 036 Phase 8 Part B Stop 2: cash-out side effects captured inside
+// the deletion transaction. Surfaced on the confirm-endpoint response so
+// the parent's deletion confirmation UI can render the amounts without a
+// follow-up email (`executeCashOutInTx` is called with `skipEmail: true`).
+export interface CashOutExecutionSummary {
+  breakdown: CashOutBreakdown;
+  refundJobCount: number;
+  needsManualHandlingCents: number;
+  // Drain-eligible cash_refund_jobs ids the route hands to
+  // `kickCashRefundDrain` so Stripe is called immediately after
+  // commit rather than on the next cron tick (ADR 036 Phase 8 Part B).
+  drainEligibleJobIds: string[];
 }
 
 export interface RunAccountDeletionResult {
@@ -122,6 +160,10 @@ export interface RunAccountDeletionResult {
   // The route's post-commit code queues a microtask send; the drain is
   // the fallback for a failed or missed immediate send.
   coachAccountDeletedOutboxId: string | null;
+  // ADR 036 Phase 8 Part B Stop 2: cash-out side effects captured
+  // inside the solo deletion transaction. Null on the leave path and
+  // on solo paths with a zero balance (no cash-out ran).
+  cashOut: CashOutExecutionSummary | null;
 }
 
 export async function previewAccountDeletion(
@@ -147,10 +189,20 @@ export async function previewAccountDeletion(
       futureLessonCount: 0,
       ownerMustTransferFirst: false,
       callerRole: null,
+      // Orphan profile: no household → no ledger rows attributable to it.
+      balanceCents: null,
+      cashOutPreview: null,
     };
   }
 
   const householdId = membership.householdId;
+
+  // ADR 036 Phase 8 Part A: pre-deletion balance snapshot. The preview
+  // page surfaces a non-blocking note when balanceCents > 0 so the
+  // parent knows deletion won't auto-refund. Reading without the
+  // balance lock is safe: the preview is advisory, and confirm doesn't
+  // gate on this value (Part B is still blocked on Jason).
+  const balanceCents = await getHouseholdBalance(householdId, tx);
 
   const [householdRows, memberRows, swimmerRows, pastCount, futureCount] = await Promise.all([
     tx.select({ name: households.name }).from(households).where(eq(households.id, householdId)).limit(1),
@@ -200,6 +252,14 @@ export async function previewAccountDeletion(
     lastInitial: row.lastName.length > 0 ? `${row.lastName.charAt(0).toUpperCase()}.` : "",
   }));
 
+  // ADR 036 Phase 8 Part B Stop 2: pre-compute the cash-out breakdown
+  // so the parent sees the same split the confirm flow will apply.
+  // Advisory read (no balance lock) — the confirm path re-reads inside
+  // the deletion transaction while holding the lock.
+  const cashOutPreview = balanceCents > 0
+    ? await getCashOutBreakdown(householdId, tx)
+    : null;
+
   return {
     householdName,
     memberCount: memberRows.length,
@@ -208,6 +268,8 @@ export async function previewAccountDeletion(
     futureLessonCount: futureCount[0]?.count ?? 0,
     ownerMustTransferFirst,
     callerRole: membership.role,
+    balanceCents,
+    cashOutPreview,
   };
 }
 
@@ -269,6 +331,7 @@ export async function runAccountDeletion(
         scheduleUrl: buildAccountDeletedScheduleUrl(getEnv().siteUrl, null),
         now,
       }),
+      cashOut: null,
     };
   }
 
@@ -330,11 +393,36 @@ export async function runAccountDeletion(
       cancelledFutureLessonIds: [],
       anonymizedLessonIds: [],
       coachAccountDeletedOutboxId: null,
+      cashOut: null,
     };
   }
 
   // Solo path. Full teardown.
   const cancelledFutureLessonIds = await cancelFutureLessons(tx, householdId, profileId, now);
+
+  // ADR 036 Phase 8 Part B Stop 2: run cash-out INSIDE the deletion
+  // transaction so the refund + write-off rows commit or roll back
+  // with everything else. `cancelFutureLessons` already acquired the
+  // per-household balance advisory lock, so the in-tx variant reuses
+  // the same transaction without a second lock acquire (the xact lock
+  // is session-scoped; re-taking it is a no-op). Email is skipped —
+  // the parent sees the amounts on the confirm-endpoint response and
+  // the account-deleted email instead.
+  const cashOutResult = await executeCashOutInTx(tx, {
+    householdId,
+    actorId: profileId,
+    opts: { skipEmail: true },
+  });
+  const cashOut: CashOutExecutionSummary | null =
+    cashOutResult.cashRefundLedgerIds.length === 0
+      && cashOutResult.writeOffLedgerId === null
+      ? null
+      : {
+          breakdown: cashOutResult.breakdown,
+          refundJobCount: cashOutResult.cashRefundJobIds.length,
+          needsManualHandlingCents: cashOutResult.needsManualHandlingCents,
+          drainEligibleJobIds: cashOutResult.drainEligibleJobIds,
+        };
 
   // Load cancelled-lesson start times + location snapshot for the coach
   // summary notification AND the coach-side email, before the rows get
@@ -419,6 +507,21 @@ export async function runAccountDeletion(
     now,
   });
 
+  // ADR 036 Phase 8 Part A: strip household_id + actor_id from this
+  // household's balance ledger rows before the household row goes.
+  // Append-only trigger from migration 0079 permits this; the rows
+  // themselves survive for tax retention.
+  //
+  // Stripe: we don't create a Stripe customer per household today —
+  // top-ups + package purchases ride through ephemeral Checkout sessions
+  // (see apps/api/src/services/stripe/*). Nothing to delete or redact on
+  // Stripe's side. Revisit if we ever persist a customer id.
+  await anonymizeHouseholdLedger(tx, householdId);
+  // ADR 036 Phase 8 Part B Stop 3: policy-acceptance rows survive the
+  // deletion for audit (same posture as the ledger). The append-only
+  // trigger on migration 0084 permits non-null → NULL on user_id.
+  await anonymizeUserPolicyAcceptances(tx, profileId);
+
   // Batches, home pools, invites, members, household — in dependency order.
   // The household's cascade would wipe household_invites and
   // household_members too, but we delete explicitly so the order is
@@ -437,6 +540,7 @@ export async function runAccountDeletion(
     cancelledFutureLessonIds,
     anonymizedLessonIds,
     coachAccountDeletedOutboxId,
+    cashOut,
   };
 }
 
@@ -472,7 +576,82 @@ export async function cancelFutureLessons(
       ),
     )
     .returning({ id: lessons.id });
+
+  // ADR 036 Phase 8 Part A: future lessons cancelled by a deletion get
+  // the same refund-to-balance treatment as any other cancellation. The
+  // enclosing deletion transaction already acquired the per-profile
+  // advisory lock; acquire the per-household balance lock here too so
+  // the read-check-write cycle is atomic against a concurrent coach
+  // adjustment on this same household (unlikely but cheap to defend).
+  // Free-lesson and pre-Phase-4 rows refund $0 — the service no-ops
+  // and the lesson's audit entry still lands via the UPDATE above.
+  if (rows.length > 0) {
+    await tx.execute(
+      sql`SELECT pg_advisory_xact_lock(hashtext(${"household-balance:" + householdId}))`,
+    );
+    for (const row of rows) {
+      await refundLessonCharge(tx, {
+        householdId,
+        lessonId: row.id,
+        actorId: canceledBy,
+      });
+    }
+  }
+
   return rows.map((row) => row.id);
+}
+
+// ADR 036 Phase 8 Part A: on a solo deletion, keep the household's
+// ledger rows (append-only tax history) but strip identity. The trigger
+// from migration 0079 permits non-null → NULL transitions on
+// household_id, actor_id, and lesson_id; this UPDATE sets household_id
+// and actor_id to null in one statement. lesson_id stays as-is — a
+// later FK ON DELETE SET NULL on lessons would fire only if a lesson
+// row got hard-deleted, and solo deletion anonymizes lessons instead of
+// deleting them. The household's `ON DELETE SET NULL` FK would also
+// null household_id when the household row is deleted below, but we do
+// it explicitly here so a) actor_id goes with it in the same statement
+// and b) the step is auditable.
+export async function anonymizeHouseholdLedger(
+  tx: Tx,
+  householdId: string,
+): Promise<number> {
+  const result = await tx
+    .update(householdBalanceLedger)
+    .set({ householdId: null, actorId: null })
+    .where(eq(householdBalanceLedger.householdId, householdId))
+    .returning({ id: householdBalanceLedger.id });
+  // ADR 036 Phase 8 Part B Stop 2: null the cash_refund_jobs rows'
+  // household_id in the same statement so needs-manual-handling jobs
+  // survive the deletion for Jason to resolve off platform, but no
+  // longer tie back to a specific family. The coach notification
+  // written when the job was created carries NO family name snapshot
+  // — Jason identifies the refund by the Stripe payment intent id
+  // (or the job id when there isn't one) plus the dollar amount.
+  // See services/balance/notifications.ts for the exact payload shape.
+  await tx
+    .update(cashRefundJobs)
+    .set({ householdId: null })
+    .where(eq(cashRefundJobs.householdId, householdId));
+  return result.length;
+}
+
+// ADR 036 Phase 8 Part B Stop 3: policy-acceptance rows survive the
+// deletion for audit but have their user_id nulled so they no longer
+// point at the deleted profile. The append-only trigger from migration
+// 0084 allows this specific non-null → NULL transition (same pattern as
+// household_balance_ledger per migration 0079). Rejects every other
+// column change loudly.
+export async function anonymizeUserPolicyAcceptances(
+  tx: Tx,
+  profileId: string,
+): Promise<number> {
+  const result = await tx
+    .update(userPolicyAcceptances)
+    .set({ userId: null })
+    .where(eq(userPolicyAcceptances.userId, profileId))
+    .returning({ id: userPolicyAcceptances.id });
+  return result.length;
 }
 
 export async function anonymizeHouseholdLessons(

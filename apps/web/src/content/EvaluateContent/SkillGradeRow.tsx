@@ -4,6 +4,7 @@ import type { SkillForRating, SwimmerSkillsResponse } from "@swim-app/shared";
 import type { EvaluateFieldIssue, SkillDraft } from "./helpers";
 import GradeSelector from "./GradeSelector";
 import DetailsPanel from "./DetailsPanel";
+import MasteryBadge from "./MasteryBadge";
 import PrevBadge from "./PrevBadge";
 
 interface SkillGradeRowProps {
@@ -16,9 +17,16 @@ interface SkillGradeRowProps {
   // Latest saved grade for this skill (and side, for per-side skills). Fed
   // from SwimmerSkillsResponse["grades"] on the server page.
   prevGrade?: SwimmerSkillsResponse["grades"][string];
+  // ADR 036 Phase 8 Part B Stop 3 piece 12 (animation audit #2):
+  // mastered-moment hooks. `onMastery` fires the first time the row's
+  // grade crosses to 5 (from a non-5 saved grade and a non-5 draft);
+  // the parent decides whether to show the badge via `masteredKey`
+  // and auto-dismisses after ~2s.
+  onMastery?: (draftKey: string) => void;
+  masteredKey?: string | null;
 }
 
-export default function SkillGradeRow({ skill, draftKey, label, draft, onChange, issues = [], prevGrade }: SkillGradeRowProps) {
+export default function SkillGradeRow({ skill, draftKey, label, draft, onChange, issues = [], prevGrade, onMastery, masteredKey }: SkillGradeRowProps) {
   const gradeIssue = issues.find((issue) => issue.field === "grade");
   const notLegalIssue = issues.find((issue) => issue.field === "notLegal");
   const detailsPanelIssues = issues.filter(
@@ -38,6 +46,7 @@ export default function SkillGradeRow({ skill, draftKey, label, draft, onChange,
           {label}
         </span>
         <PrevBadge value={prevGrade} />
+        {masteredKey === draftKey ? <MasteryBadge /> : null}
         {draft.notLegal && (
           <span
             className="text-xs font-bold px-1.5 py-0.5 rounded"
@@ -83,7 +92,14 @@ export default function SkillGradeRow({ skill, draftKey, label, draft, onChange,
         onChange={(grade) => {
           const patch: Partial<SkillDraft> = { grade };
           if (grade === null) patch.notLegal = false;
+          // Mastery crossing: new grade is 5, the draft wasn't already
+          // at 5, and the saved value wasn't 5 either. The parent
+          // dedupes per-session so re-selecting 5 after bouncing to
+          // another grade doesn't re-fire the badge.
+          const crossedToMastery =
+            grade === 5 && draft.grade !== 5 && prevGrade !== 5;
           onChange(draftKey, patch);
+          if (crossedToMastery && onMastery) onMastery(draftKey);
         }}
         labelPrefix={label}
       />

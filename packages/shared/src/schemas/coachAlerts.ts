@@ -2,9 +2,12 @@ import { z } from "zod";
 
 // Coach alert categories (ADR 031).
 // `account_deleted` is the summary row written when a parent closes
-// their account (ADR 034); it must be listed here so the bell + full
-// notifications page parse the response. Missing categories cause the
-// whole list to 502 at the client side.
+// their account (ADR 034); `cash_refund_needs_manual_handling` is the
+// bell row written when a cash-refund drain job needs off-platform
+// handling (ADR 036 Phase 8 Part B Stop 2). Every DB-allowed category
+// must appear here — missing ones cause the whole list to 502 at the
+// client side. The `allCoachNotificationCategoriesHaveRenderers` test
+// pins this invariant against the DB CHECK constraint.
 export const CoachNotificationCategorySchema = z.enum([
   "booking_request",
   "request_expiring_soon",
@@ -13,6 +16,7 @@ export const CoachNotificationCategorySchema = z.enum([
   "auto_approved_summary",
   "daily_summary",
   "account_deleted",
+  "cash_refund_needs_manual_handling",
 ]);
 export type CoachNotificationCategory = z.infer<typeof CoachNotificationCategorySchema>;
 

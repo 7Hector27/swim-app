@@ -43,6 +43,13 @@ pnpm db:test:sync-catalog  # upsert skills catalog into the test stack
 
 **Integration tests run against the test stack only.** `pnpm test:integration` is guarded against the manual stack; never point `INTEGRATION_DATABASE_URL` at port 54322.
 
+## Check scope while working
+
+- **UI-only changes**: `pnpm typecheck`, `pnpm lint`, the related web tests, and `pnpm --filter web build`. No integration suite.
+- **Backend changes**: the related integration tests while working, plus the full `pnpm test:integration` once at the end of the task.
+- **Full `/check`**: runs once before opening a PR, not on every iteration.
+- Never rerun a suite just to see its output — capture it the first time.
+
 ## Workflow rules
 
 Never push with `--no-verify`. The pre-push hook is the CI for `dev`. Run `pnpm test:integration` locally before opening a PR.
@@ -90,6 +97,10 @@ After adding a migration, always state whether it was applied locally. Productio
 **Audit log**
 
 Audit log writes (`householdAuditLog` inserts) always go inside the same `db.transaction()` as the change they record. Never write the audit log as a separate call after the update — if the insert fails, the whole transaction rolls back and the data change is not committed.
+
+**Payments**
+
+The balance ledger (`householdBalanceLedger`) is append-only; a trigger rejects every `UPDATE` and `DELETE`. Writes always pair with an `householdAuditLog` entry in the same transaction. Amounts are always computed server-side from `packages/shared` pricing — never trust an amount sent by the browser.
 
 **Logging**
 

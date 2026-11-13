@@ -2,13 +2,15 @@
 
 import { useCallback, useMemo, useState, useTransition, useActionState, useEffect, useRef } from "react";
 import Link from "next/link";
-import { todayLA } from "@swim-app/shared";
+import { priceForLesson, todayLA } from "@swim-app/shared";
 import type {
   LessonLocation,
   UpcomingLesson,
   WeekAvailabilityResponse,
   MonthAvailabilityResponse,
 } from "@swim-app/shared";
+
+import { formatDollars } from "@/lib/formatDollars";
 
 import {
   fetchRangeAction,
@@ -726,7 +728,13 @@ export default function RescheduleContent({ lesson, locations }: Props) {
         isPending={isRescheduling}
         {...(rescheduleState.status === "error" ? { errorMessage: rescheduleState.message } : {})}
         onCancel={() => confirmDialogRef.current?.close()}
-      />
+      >
+        <ReschedulePriceDiff
+          lesson={lesson}
+          newDurationMinutes={durationMinutes}
+          testid="parent-reschedule-price-diff"
+        />
+      </ConfirmDialog>
 
       {/* Cancel appointment dialog */}
       <ConfirmDialog
@@ -752,5 +760,50 @@ export default function RescheduleContent({ lesson, locations }: Props) {
         isConfirming={isRescheduling}
       />
     </div>
+  );
+}
+
+// ADR 036 Phase 8 Part B Stop 3 piece 4: price-diff preview in the
+// confirm-reschedule dialog. Suppressed when the duration didn't
+// change (time-only reschedule leaves the charge untouched) and when
+// the lesson had no outstanding charge (free / already-refunded). The
+// new charge is looked up from the shared pricing table — the same
+// canonical function the API uses to reprice duration-change
+// reschedules — so the old side and new side come from the same
+// source of truth.
+function ReschedulePriceDiff({
+  lesson,
+  newDurationMinutes,
+  testid,
+}: {
+  lesson: UpcomingLesson;
+  newDurationMinutes: 30 | 45 | 60;
+  testid: string;
+}) {
+  if (newDurationMinutes === lesson.durationMinutes) return null;
+  if (
+    typeof lesson.chargeAmountCents !== "number" ||
+    lesson.chargeAmountCents <= 0
+  ) {
+    return null;
+  }
+  const swimmerCount = Math.max(1, Math.min(4, lesson.swimmers.length)) as 1 | 2 | 3 | 4;
+  const newChargeCents = priceForLesson(newDurationMinutes, swimmerCount);
+  const deltaCents = newChargeCents - lesson.chargeAmountCents;
+  if (deltaCents === 0) return null;
+  return (
+    <p className="text-sm text-text leading-relaxed" data-testid={testid}>
+      {deltaCents > 0 ? (
+        <>
+          <span className="font-semibold">{formatDollars(deltaCents)}</span> more
+          will come from your balance.
+        </>
+      ) : (
+        <>
+          <span className="font-semibold">{formatDollars(-deltaCents)}</span> will
+          go back to your balance.
+        </>
+      )}
+    </p>
   );
 }

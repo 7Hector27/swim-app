@@ -8,6 +8,7 @@ import {
   closeAdminDb,
   createTestUser,
   createTestUserInHousehold,
+  seedHouseholdBalanceForTest,
   settleAndCleanupCoachNotificationsForHousehold,
   type TestUser,
 } from "./helpers";
@@ -89,6 +90,11 @@ async function findFirstAvailableSlot(
 
 beforeAll(async () => {
   owner = await createTestUser("coach-lessons-int-owner");
+  await seedHouseholdBalanceForTest({
+    householdId: owner.householdId,
+    actorId: owner.userId,
+    amountCents: 1_000_000,
+  });
   coach = await createTestUser("coach-lessons-int-coach");
   await makeCoach(coach.userId);
 

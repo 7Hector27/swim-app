@@ -44,6 +44,15 @@ const SUBJECT_PREFIX: Record<LessonEmailEvent, string> = {
   // sender path with a flat subject (no "<prefix>: <when>" shape), so
   // this entry is never used. Present so the Record stays exhaustive.
   coach_account_deleted: "A family deleted their account",
+  // ADR 036 Phase 7 balance-triggered emails render through their own
+  // sender paths (no "<prefix>: <when>" shape — the subject is derived
+  // from the payload amount). Entries present so the Record stays
+  // exhaustive.
+  balance_funded: "Balance added",
+  balance_adjusted: "Balance updated",
+  // ADR 036 Phase 8 Part B cash-out email — same pattern: rendered by
+  // its own sender path, entry present to keep the Record exhaustive.
+  balance_cashed_out: "Balance cashed out",
 };
 
 type CoachBackupPayload = BookingRequestLessonPayload | BookingRequestBatchPayload;
@@ -121,6 +130,18 @@ function selectTemplate(
       // not match LessonEmailPayload.
       throw new Error(
         "coach_account_deleted rendered through sendCoachAccountDeletedInner, not renderEmail",
+      );
+    case "balance_funded":
+      throw new Error(
+        "balance_funded rendered through sendBalanceFundedInner, not renderEmail",
+      );
+    case "balance_adjusted":
+      throw new Error(
+        "balance_adjusted rendered through sendBalanceAdjustedInner, not renderEmail",
+      );
+    case "balance_cashed_out":
+      throw new Error(
+        "balance_cashed_out rendered through sendBalanceCashedOutInner, not renderEmail",
       );
   }
 }

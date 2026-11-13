@@ -8,6 +8,8 @@ import AddNoteForm from "@/components/AddNoteForm";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import InlineError from "@/components/InlineError";
 import LessonStatusBadge from "@/components/LessonStatusBadge";
+import { formatDollars } from "@/lib/formatDollars";
+import ActionToast, { type ActionToastKind } from "./ActionToast";
 import {
   cancelCoachLessonAction,
   approveCoachLessonAction,
@@ -24,9 +26,17 @@ type NotesSectionResult =
 interface Props {
   lesson: CoachLessonDetail;
   notes: NotesSectionResult;
+  // ADR 036 Phase 8 Part B Stop 3 piece 12 (animation audit #3):
+  // the approve / decline / no-show server actions redirect back to
+  // the lesson detail page with ?action=<kind>. The page normalizes
+  // the value and threads it here so the one-shot toast fires once on
+  // mount and auto-dismisses after 2.6s. The key on the toast element
+  // is the action kind — if the coach chains approve → decline back
+  // to back, React remounts the toast and the transitions re-fire.
+  toastAction?: ActionToastKind;
 }
 
-export default function CoachLessonDetailContent({ lesson, notes }: Props) {
+export default function CoachLessonDetailContent({ lesson, notes, toastAction }: Props) {
   const cancelDialogRef = useRef<HTMLDialogElement>(null);
   const declineDialogRef = useRef<HTMLDialogElement>(null);
   const noShowDialogRef = useRef<HTMLDialogElement>(null);
@@ -81,6 +91,7 @@ export default function CoachLessonDetailContent({ lesson, notes }: Props) {
 
   return (
     <div className="flex flex-col flex-1 bg-background">
+      {toastAction !== undefined ? <ActionToast key={toastAction} action={toastAction} /> : null}
       <main id="main-content" className="flex-1">
         <div className="mx-auto max-w-content px-page pt-10 pb-20 tablet:pt-14 tablet:pb-32">
           <Link
@@ -319,18 +330,24 @@ export default function CoachLessonDetailContent({ lesson, notes }: Props) {
         {...(declineState.status === "error" ? { errorMessage: declineState.message } : {})}
         onCancel={() => declineDialogRef.current?.close()}
       >
-        <label className="flex flex-col gap-1.5">
-          <span className="text-xs font-semibold text-text-secondary-on-section">
-            Reason (optional)
-          </span>
-          <textarea
-            name="reason"
-            form="decline-detail-form"
-            rows={3}
-            placeholder="e.g. scheduling conflict"
-            className="rounded-card border border-divider-section bg-card text-text-on-section text-sm px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-focus-ring placeholder:text-text-secondary-on-section"
+        <div className="flex flex-col gap-3">
+          <RefundLine
+            chargeAmountCents={lesson.chargeAmountCents}
+            testid="coach-decline-refund"
           />
-        </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs font-semibold text-text-secondary-on-section">
+              Reason (optional)
+            </span>
+            <textarea
+              name="reason"
+              form="decline-detail-form"
+              rows={3}
+              placeholder="e.g. scheduling conflict"
+              className="rounded-card border border-divider-section bg-card text-text-on-section text-sm px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-focus-ring placeholder:text-text-secondary-on-section"
+            />
+          </label>
+        </div>
       </ConfirmDialog>
 
       {/* Cancel dialog */}
@@ -345,7 +362,12 @@ export default function CoachLessonDetailContent({ lesson, notes }: Props) {
         isPending={isCanceling}
         {...(cancelState.status === "error" ? { errorMessage: cancelState.message } : {})}
         onCancel={() => cancelDialogRef.current?.close()}
-      />
+      >
+        <RefundLine
+          chargeAmountCents={lesson.chargeAmountCents}
+          testid="coach-cancel-refund"
+        />
+      </ConfirmDialog>
 
       {/* Mark no-show dialog */}
       <ConfirmDialog
@@ -357,8 +379,33 @@ export default function CoachLessonDetailContent({ lesson, notes }: Props) {
         cancelLabel="Keep it"
         isPending={isMarkingNoShow}
         onCancel={() => noShowDialogRef.current?.close()}
-      />
+      >
+        <RefundLine
+          chargeAmountCents={lesson.chargeAmountCents}
+          testid="coach-no-show-refund"
+        />
+      </ConfirmDialog>
     </div>
+  );
+}
+
+// ADR 036 Phase 8 Part B Stop 3 piece 4: shared refund-preview line
+// used by the coach cancel / decline / no-show confirmation dialogs.
+// Suppressed on free or already-refunded lessons (chargeAmountCents is
+// null) and on anonymized rows (no live household balance to refund).
+function RefundLine({
+  chargeAmountCents,
+  testid,
+}: {
+  chargeAmountCents: number | null | undefined;
+  testid: string;
+}) {
+  if (typeof chargeAmountCents !== "number" || chargeAmountCents <= 0) return null;
+  return (
+    <p className="text-sm text-text leading-relaxed" data-testid={testid}>
+      <span className="font-semibold">{formatDollars(chargeAmountCents)}</span> will
+      go back to the family&apos;s balance.
+    </p>
   );
 }
 

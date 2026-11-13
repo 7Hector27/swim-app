@@ -63,7 +63,7 @@ describe("coach/lessons/[id]/page — primary fetch error routing", () => {
     mockFetchCoachLesson.mockResolvedValue({ ok: false, status: 404 });
 
     await expect(
-      CoachLessonPage({ params: Promise.resolve({ id: LESSON_ID }) }),
+      CoachLessonPage({ params: Promise.resolve({ id: LESSON_ID }), searchParams: Promise.resolve({}) }),
     ).rejects.toThrow(/NEXT_NOT_FOUND/);
 
     expect(mockNotFound).toHaveBeenCalledTimes(1);
@@ -75,7 +75,7 @@ describe("coach/lessons/[id]/page — primary fetch error routing", () => {
     mockFetchCoachLesson.mockResolvedValue({ ok: false, status: 500 });
 
     await expect(
-      CoachLessonPage({ params: Promise.resolve({ id: LESSON_ID }) }),
+      CoachLessonPage({ params: Promise.resolve({ id: LESSON_ID }), searchParams: Promise.resolve({}) }),
     ).rejects.toThrow(/Failed to load lesson \(status 500\)/);
 
     expect(mockNotFound).not.toHaveBeenCalled();
@@ -85,7 +85,7 @@ describe("coach/lessons/[id]/page — primary fetch error routing", () => {
     mockFetchCoachLesson.mockResolvedValue({ ok: false, status: 503 });
 
     await expect(
-      CoachLessonPage({ params: Promise.resolve({ id: LESSON_ID }) }),
+      CoachLessonPage({ params: Promise.resolve({ id: LESSON_ID }), searchParams: Promise.resolve({}) }),
     ).rejects.toThrow(/Failed to load lesson \(status 503\)/);
 
     expect(mockNotFound).not.toHaveBeenCalled();
@@ -101,7 +101,7 @@ describe("coach/lessons/[id]/page — primary fetch error routing", () => {
     });
 
     await expect(
-      CoachLessonPage({ params: Promise.resolve({ id: LESSON_ID }) }),
+      CoachLessonPage({ params: Promise.resolve({ id: LESSON_ID }), searchParams: Promise.resolve({}) }),
     ).resolves.toBeDefined();
 
     expect(mockNotFound).not.toHaveBeenCalled();

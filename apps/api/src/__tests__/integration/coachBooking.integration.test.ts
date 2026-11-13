@@ -7,12 +7,13 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import request from "supertest";
 import pino from "pino";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { createApp } from "../../app";
 import {
   adminDb,
   closeAdminDb,
   createTestUser,
+  seedHouseholdBalanceForTest,
   settleAndCleanupCoachNotificationsForHousehold,
   type TestUser,
 } from "./helpers";
@@ -223,14 +224,27 @@ async function wipeHouseholdBookingArtifacts(householdId: string): Promise<void>
     await adminDb().delete(lessonSwimmers).where(inArray(lessonSwimmers.lessonId, ids));
     await adminDb().delete(lessons).where(inArray(lessons.id, ids));
   }
+  // Scrub audit rows for this household — including the
+  // balance_lesson_charged / balance_free_lesson / balance_lesson_refunded
+  // actions that applyLedgerEntry writes alongside the ledger rows.
+  // If left behind, they reference the coach's profile via actor_id
+  // (FK ON DELETE RESTRICT) and block coach.cleanup() in afterAll.
   await adminDb()
     .delete(householdAuditLog)
-    .where(
-      and(
-        eq(householdAuditLog.householdId, householdId),
-        eq(householdAuditLog.action, "lesson_booked_by_coach"),
-      ),
+    .where(eq(householdAuditLog.householdId, householdId));
+  // Lesson-scoped ledger rows only (lesson_charge | free_lesson |
+  // refund_to_balance). The coach_adjustment seed row from beforeAll
+  // is preserved so subsequent tests still have balance. The
+  // append-only trigger blocks a plain DELETE so we bypass it under
+  // session_replication_role=replica.
+  await adminDb().transaction(async (tx) => {
+    await tx.execute(sql`SET LOCAL session_replication_role = replica`);
+    await tx.execute(
+      sql`DELETE FROM household_balance_ledger
+          WHERE household_id = ${householdId}::uuid
+          AND lesson_id IS NOT NULL`,
     );
+  });
 }
 
 beforeAll(async () => {
@@ -238,6 +252,19 @@ beforeAll(async () => {
   await makeCoach(coach.userId);
   ownerA = await createTestUser("coach-booking-ownerA");
   ownerB = await createTestUser("coach-booking-ownerB");
+  // ADR 036 Phase 4: parent bookings charge the balance. These tests
+  // exercise the parent-books-after-coach trust flow, so each parent
+  // household needs a balance.
+  await seedHouseholdBalanceForTest({
+    householdId: ownerA.householdId,
+    actorId: ownerA.userId,
+    amountCents: 1_000_000,
+  });
+  await seedHouseholdBalanceForTest({
+    householdId: ownerB.householdId,
+    actorId: ownerB.userId,
+    amountCents: 1_000_000,
+  });
 
   // Named pool (public, shared across all households).
   const locs = await adminDb()
@@ -776,7 +803,11 @@ describe("POST /coach/lessons (integration)", () => {
       const cancelRes = await request(app)
         .delete(`/lessons/${lessonId}`)
         .set("Authorization", `Bearer ${ownerA.accessToken}`);
-      expect(cancelRes.status).toBe(204);
+      // ADR 036 Phase 8 Part B Stop 3 piece 4: DELETE /lessons/:id now
+      // returns 200 + { refundAmountCents, newBalanceCents }.
+      expect(cancelRes.status).toBe(200);
+      expect(cancelRes.body).toHaveProperty("refundAmountCents");
+      expect(cancelRes.body).toHaveProperty("newBalanceCents");
 
       const [row] = await adminDb()
         .select({ status: lessons.status, canceledBy: lessons.canceledBy })

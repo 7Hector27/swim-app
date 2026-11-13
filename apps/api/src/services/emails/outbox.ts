@@ -48,6 +48,13 @@ export interface EnqueueLessonEmailInput {
   // update, used to render the "Was: … / Now: …" block. The ics_sequence
   // bump happens here just like any other REQUEST.
   previousStartsAt?: Date | null;
+  // ADR 036 Phase 7: when the state change also triggered a balance
+  // refund, pass the refund amount (positive cents) and the household's
+  // balance AFTER the refund. Both omitted / null → no refund line in
+  // the rendered email (free lessons, pre-Phase-4 rows). When set they
+  // land in the frozen payload so the renderer stays pure.
+  refundAmountCents?: number | null;
+  newBalanceCents?: number | null;
   // Override which lesson state the payload describes. Used by the
   // approved→pending parent-reschedule case to emit a CANCEL row that
   // describes the OLD approved slot (status/startsAt/locationId from
@@ -231,6 +238,8 @@ export async function enqueueLessonEmail(
         : null,
     coachFirstName,
     initiatedBy: input.initiatedBy ?? null,
+    refundAmountCents: input.refundAmountCents ?? null,
+    newBalanceCents: input.newBalanceCents ?? null,
   };
 
   const insertedRows = await tx

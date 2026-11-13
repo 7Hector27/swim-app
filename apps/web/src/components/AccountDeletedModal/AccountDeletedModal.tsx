@@ -3,10 +3,21 @@
 import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
+import { formatDollars } from "@/lib/formatDollars";
+
 import styles from "./AccountDeletedModal.module.css";
 
 const PARAM_NAME = "account-deleted";
 const PARAM_VALUE = "1";
+const PARAM_REFUNDED = "refunded";
+const PARAM_FORFEITED = "forfeited";
+
+function parsePositiveCents(raw: string | null): number {
+  if (raw === null) return 0;
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return 0;
+  return parsed;
+}
 
 // Post-deletion confirmation modal. Mounts on the public landing page
 // and opens when the URL carries ?account-deleted=1 (ADR 034 handoff
@@ -41,14 +52,20 @@ export default function AccountDeletedModal() {
   function handleClose(): void {
     dialogRef.current?.close();
     setVisible(false);
-    // Strip the one-time param so a reload doesn't re-open the modal.
+    // Strip the one-time params so a reload doesn't re-open the modal.
     // Preserve other params if any — there won't be any on the landing
     // page in practice but this keeps the helper honest.
     const next = new URLSearchParams(params.toString());
     next.delete(PARAM_NAME);
+    next.delete(PARAM_REFUNDED);
+    next.delete(PARAM_FORFEITED);
     const query = next.toString();
     router.replace(query.length > 0 ? `${pathname}?${query}` : pathname);
   }
+
+  const refundedCents = parsePositiveCents(params.get(PARAM_REFUNDED));
+  const forfeitedCents = parsePositiveCents(params.get(PARAM_FORFEITED));
+  const showCashOutLine = refundedCents > 0 || forfeitedCents > 0;
 
   function handleBackdropClick(event: React.MouseEvent<HTMLDialogElement>): void {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -88,6 +105,33 @@ export default function AccountDeletedModal() {
             Coach Jason was notified. Past lessons stay on his records with no
             names attached.
           </p>
+          {showCashOutLine && (
+            <p
+              className="text-sm text-text-secondary leading-relaxed"
+              data-testid="account-deleted-cashout-line"
+            >
+              {refundedCents > 0 && (
+                <>
+                  We&apos;ve started a{" "}
+                  <strong data-testid="account-deleted-refunded">
+                    {formatDollars(refundedCents)}
+                  </strong>{" "}
+                  refund to your card.{" "}
+                </>
+              )}
+              {forfeitedCents > 0 && (
+                <>
+                  <strong data-testid="account-deleted-forfeited">
+                    {formatDollars(forfeitedCents)}
+                  </strong>{" "}
+                  of unused bonus credit was forfeited.{" "}
+                </>
+              )}
+              {refundedCents > 0 && (
+                <>Refunds typically appear in a few business days.</>
+              )}
+            </p>
+          )}
           <p className="text-sm text-text-secondary leading-relaxed">
             If you change your mind later, you can sign up again from here.
           </p>

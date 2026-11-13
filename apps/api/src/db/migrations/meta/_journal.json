@@ -533,6 +533,83 @@
       "when": 1793985814782,
       "tag": "0075_cultured_winter_soldier",
       "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1794008369121,
+      "tag": "0076_loose_sunspot",
+      "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1794009355395,
+      "tag": "0077_household_balance_ledger_append_only_trigger",
+      "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1794251241391,
+      "tag": "0078_balance_ledger_refund_idempotency",
+      "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1794259382265,
+      "tag": "0079_balance_ledger_allow_identity_nullification",
+      "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1794266831653,
+      "tag": "0080_balance_ledger_refund_per_charge",
+      "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1794349747904,
+      "tag": "0081_balance_outbox_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1794420272659,
+      "tag": "0082_cash_out_refund_engine",
+      "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1794422779126,
+      "tag": "0083_cash_refund_manual_handling",
+      "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1794435498065,
+      "tag": "0084_user_policy_acceptances",
+      "breakpoints": true
+    },
+    {
+      "idx": 85,
+      "version": "7",
+      "when": 1794539653588,
+      "tag": "0085_snapshot_baseline",
+      "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "7",
+      "when": 1794540661145,
+      "tag": "0086_user_policy_acceptances_unique",
+      "breakpoints": true
     }
   ]
 }

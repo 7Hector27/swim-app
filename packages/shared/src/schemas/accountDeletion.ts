@@ -4,6 +4,8 @@
 
 import { z } from "zod";
 
+import { CashOutBreakdownSchema } from "./payments";
+
 // The phrase a parent must type to prove they meant to click the button.
 // Mobile keyboards autocapitalize the first word — "Delete" is a
 // genuinely-intended input that would otherwise fail a strict ===. The
@@ -45,6 +47,21 @@ export const DeletionPreviewResponseSchema = z
     // only for the shouldn't-happen "profile with no household"
     // fallback — a caller that passed requireUser always has one.
     callerRole: z.enum(["owner", "manager", "viewer"]).nullable(),
+    // ADR 036 Phase 8 Part A: household's remaining balance in integer
+    // cents. The UI shows a non-blocking note when this is > 0 ("Your
+    // remaining balance of $X won't be refunded automatically. Contact
+    // Jason before deleting if you'd like it back.") — deletion still
+    // proceeds; the ledger rows survive anonymized. Zero on the leave
+    // path (that call doesn't touch the ledger). Null when the preview
+    // couldn't read the balance (fetch failure) — the UI hides the
+    // note rather than guess.
+    balanceCents: z.number().int().nullable(),
+    // ADR 036 Phase 8 Part B Stop 2: pre-deletion cash-out breakdown
+    // so the UI can render "$X will be refunded to your card. $Y of
+    // unused bonus credit will be forfeited." instead of the generic
+    // Phase-8-Part-A warning. Null when balanceCents is zero or the
+    // orphan fallback fires — nothing to refund.
+    cashOutPreview: CashOutBreakdownSchema.nullable(),
   })
   .strict();
 

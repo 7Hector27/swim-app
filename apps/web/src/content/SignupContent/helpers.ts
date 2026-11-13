@@ -19,6 +19,21 @@ export function mapApiResponse(
   if (status === 403)
     return { status: "field_errors", errors: { birthDate: AGE_ERROR } };
 
+  // ADR 036 Phase 8 Part B Stop 3: stale policy versions surface a
+  // one-line "refresh and try again" error so the user retries against
+  // the newly-rendered page carrying the current constants.
+  if (
+    status === 422 &&
+    typeof body === "object" &&
+    body !== null &&
+    (body as { error?: string }).error === "stale_policy_versions"
+  ) {
+    return {
+      status: "error",
+      message: "The policies were updated — refresh and try again.",
+    };
+  }
+
   if (isApiBody(body) && status === 422 && Array.isArray(body.issues)) {
     return { status: "field_errors", errors: mapZodErrors(body.issues) };
   }

@@ -27,6 +27,16 @@ function makeFormData(fields: Record<string, string | null>): FormData {
   return formData;
 }
 
+// ADR 036 Phase 8 Part B Stop 3: hidden version fields must be present
+// so the server action's SignUpBodySchema.safeParse clears the strict
+// `acceptedPolicyVersions` object. Server page renders these from the
+// current shared constants.
+import {
+  PAYMENTS_REFUND_VERSION,
+  PRIVACY_VERSION,
+  TERMS_VERSION,
+} from "@swim-app/shared";
+
 const validFields = {
   fullName: "Jane Doe",
   email: "jane@example.com",
@@ -35,6 +45,9 @@ const validFields = {
   confirmPassword: "securepassword123",
   birthDate: "1990-01-01",
   acceptedTerms: "on",
+  termsVersion: TERMS_VERSION,
+  privacyVersion: PRIVACY_VERSION,
+  paymentsRefundVersion: PAYMENTS_REFUND_VERSION,
 };
 
 describe("signup server action — confirm password", () => {

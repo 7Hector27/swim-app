@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import type { BatchPreviewPick, BatchPickState } from "@swim-app/shared";
 
 import PendingLabel from "@/components/PendingLabel";
+import { formatDollars } from "@/lib/formatDollars";
 
 import { formatLaTime, pickReasonCopy } from "./batchHelpers";
 import { formatSlotRangeWithDate } from "./helpers";
@@ -43,6 +44,19 @@ interface Props {
   bookingMinAdvanceHours: number | null;
   // Short copy under the Book button explaining why it is disabled.
   bookDisabledReason?: string;
+  // Authoritative household balance in cents, and the server-pricing total
+  // for the current review set. When total > balance, the footer swaps the
+  // Book button for the insufficient-funds options.
+  balanceCents: number | null;
+  totalPriceCents: number;
+  // Server-authoritative shortfall from a 422 insufficient_balance on
+  // submit — overrides the derived balance guard with the exact numbers
+  // the server used to reject the batch.
+  serverShortfall: {
+    balanceCents: number;
+    priceCents: number;
+    shortfallCents: number;
+  } | null;
   onClose: () => void;
   onApplySuggestion: (index: number, startsAt: string) => void;
   onSkip: (index: number) => void;
@@ -50,6 +64,14 @@ interface Props {
   onUnskip: (index: number) => void;
   onBook: () => void;
   onBackToCalendar: () => void;
+  onBuyPackage: () => void;
+  // "Add $N of credit" — starts a Stripe top-up for one lesson's worth
+  // of credit sized to the picks currently in the batch. The caller
+  // reports the shown price via `addCreditCents`, which also gates the
+  // button (null hides it, e.g. when no pick is available).
+  onAddCredit: () => void;
+  addCreditCents: number | null;
+  isAddingCredit: boolean;
 }
 
 const FLAGGED_STATES: BatchPickState[] = [
@@ -138,6 +160,8 @@ export default function ReviewSheet(props: Props) {
               previewError={props.previewError}
               needsApproval={props.needsApproval}
               bookingMinAdvanceHours={props.bookingMinAdvanceHours}
+              balanceCents={props.balanceCents}
+              totalPriceCents={props.totalPriceCents}
               onApplySuggestion={props.onApplySuggestion}
               onSkip={props.onSkip}
               onRemove={props.onRemove}
@@ -147,37 +171,104 @@ export default function ReviewSheet(props: Props) {
         </div>
 
         {props.success === null && (
-          <div className="px-5 py-3 border-t border-border bg-background">
-            {props.submitError !== null && (
-              <p role="alert" className="text-sm text-danger mb-2">
-                {props.submitError}
-              </p>
-            )}
-            <button
-              type="button"
-              onClick={props.onBook}
-              disabled={!props.canSubmit || props.isSubmitting}
-              data-testid="review-book"
-              className="w-full min-h-[52px] px-5 rounded-button bg-button-primary-background text-button-primary-text font-bold text-sm transition-opacity duration-150 hover:opacity-90 active:scale-[0.97] motion-reduce:transform-none disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              <PendingLabel
-                isPending={props.isSubmitting}
-                label="Book lessons"
-                pendingLabel="Booking…"
-              />
-            </button>
-            {props.bookDisabledReason !== undefined && !props.canSubmit && (
-              <p
-                className="text-xs text-text-secondary text-center mt-2"
-                data-testid="review-book-disabled-reason"
-              >
-                {props.bookDisabledReason}
-              </p>
-            )}
-          </div>
+          <ReviewFooter {...props} />
         )}
       </div>
     </dialog>
+  );
+}
+
+function ReviewFooter(props: Props) {
+  // Prefer the server's authoritative shortfall (from a 422 on submit) over
+  // the client-side derived one. If neither is present, no shortfall.
+  const serverShort = props.serverShortfall;
+  const derivedShort =
+    props.balanceCents !== null && props.totalPriceCents > props.balanceCents
+      ? {
+          balanceCents: props.balanceCents,
+          priceCents: props.totalPriceCents,
+          shortfallCents: props.totalPriceCents - props.balanceCents,
+        }
+      : null;
+  const shortfall = serverShort ?? derivedShort;
+
+  return (
+    <div className="px-5 py-3 border-t border-border bg-background">
+      {props.submitError !== null && (
+        <p role="alert" className="text-sm text-danger mb-2">
+          {props.submitError}
+        </p>
+      )}
+      {shortfall !== null ? (
+        <div
+          role="alert"
+          data-testid="review-insufficient-balance"
+          className="flex flex-col gap-3"
+        >
+          <p
+            className="text-sm text-text"
+            style={{ fontVariantNumeric: "tabular-nums" }}
+          >
+            Balance: <span className="font-semibold">{formatDollars(shortfall.balanceCents)}</span>
+            {" · "}
+            Total: <span className="font-semibold">{formatDollars(shortfall.priceCents)}</span>
+            {" · "}
+            <span className="font-semibold text-danger">
+              Short by {formatDollars(shortfall.shortfallCents)}
+            </span>
+            .
+          </p>
+          <p className="text-xs text-text-secondary">
+            Add credit before booking — credit never expires.
+          </p>
+          {props.addCreditCents !== null && (
+            <button
+              type="button"
+              onClick={props.onAddCredit}
+              disabled={props.isAddingCredit}
+              data-testid="review-add-credit"
+              className="w-full min-h-[52px] px-5 rounded-button bg-button-primary-background text-button-primary-text font-bold text-sm transition-opacity duration-150 hover:opacity-90 active:scale-[0.97] motion-reduce:transform-none disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              {props.isAddingCredit
+                ? "Starting checkout…"
+                : `Add ${formatDollars(props.addCreditCents)} of credit`}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={props.onBuyPackage}
+            data-testid="review-buy-package"
+            className="w-full min-h-[52px] px-5 rounded-button border-2 border-button-outline text-button-outline font-bold text-sm transition-opacity duration-150 hover:opacity-90 active:scale-[0.97] motion-reduce:transform-none"
+          >
+            Buy a package
+          </button>
+        </div>
+      ) : (
+        <>
+          <button
+            type="button"
+            onClick={props.onBook}
+            disabled={!props.canSubmit || props.isSubmitting}
+            data-testid="review-book"
+            className="w-full min-h-[52px] px-5 rounded-button bg-button-primary-background text-button-primary-text font-bold text-sm transition-opacity duration-150 hover:opacity-90 active:scale-[0.97] motion-reduce:transform-none disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <PendingLabel
+              isPending={props.isSubmitting}
+              label="Book lessons"
+              pendingLabel="Booking…"
+            />
+          </button>
+          {props.bookDisabledReason !== undefined && !props.canSubmit && (
+            <p
+              className="text-xs text-text-secondary text-center mt-2"
+              data-testid="review-book-disabled-reason"
+            >
+              {props.bookDisabledReason}
+            </p>
+          )}
+        </>
+      )}
+    </div>
   );
 }
 
@@ -191,6 +282,8 @@ interface ReviewContentProps {
   previewError: string | null;
   needsApproval: boolean;
   bookingMinAdvanceHours: number | null;
+  balanceCents: number | null;
+  totalPriceCents: number;
   onApplySuggestion: (index: number, startsAt: string) => void;
   onSkip: (index: number) => void;
   onRemove: (index: number) => void;
@@ -207,6 +300,8 @@ function ReviewContent({
   previewError,
   needsApproval,
   bookingMinAdvanceHours,
+  balanceCents,
+  totalPriceCents,
   onApplySuggestion,
   onSkip,
   onRemove,
@@ -256,6 +351,26 @@ function ReviewContent({
           </span>
         )}
       </div>
+
+      {balanceCents !== null && previewPicks.length > 0 && (
+        <div
+          data-testid="review-balance-summary"
+          className="rounded-card border border-border bg-surface-soft p-3 text-sm"
+          style={{ fontVariantNumeric: "tabular-nums" }}
+        >
+          Balance: <span className="font-semibold">{formatDollars(balanceCents)}</span>
+          {" · "}
+          Total: <span className="font-semibold">{formatDollars(totalPriceCents)}</span>
+          {totalPriceCents > balanceCents && (
+            <>
+              {" · "}
+              <span className="font-semibold text-danger">
+                Short by {formatDollars(totalPriceCents - balanceCents)}
+              </span>
+            </>
+          )}
+        </div>
+      )}
 
       {needsApproval && previewPicks.length > 0 && (
         <p className="text-xs text-text-secondary">

@@ -4,7 +4,20 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { apiErrorMessage } from "@/lib/apiErrorMessage";
 
-export type LessonDetailState = { status: "idle" } | { status: "error"; message: string };
+// ADR 036 Phase 8 Part B Stop 3 piece 4: the post-cancel confirmation
+// now shows the refund amount and new balance. The server action
+// returns the DELETE response body (refundAmountCents nullable,
+// newBalanceCents always present) instead of redirecting, so the UI
+// can render the confirmation before the parent heads back to the
+// dashboard.
+export type LessonDetailState =
+  | { status: "idle" }
+  | { status: "error"; message: string }
+  | {
+      status: "canceled";
+      refundAmountCents: number | null;
+      newBalanceCents: number;
+    };
 
 export async function cancelLessonAction(
   _prev: LessonDetailState,
@@ -34,7 +47,19 @@ export async function cancelLessonAction(
   }
 
   if (responseStatus >= 200 && responseStatus < 300) {
-    redirect("/dashboard");
+    // DELETE now returns 200 + { refundAmountCents, newBalanceCents }
+    // (ADR 036 Phase 8 Part B). Fall through to success state —
+    // navigation now happens from the dialog's "Back to dashboard"
+    // button so the user can read the refund/balance confirmation.
+    const body = responseBody as {
+      refundAmountCents?: unknown;
+      newBalanceCents?: unknown;
+    } | null;
+    const refundAmountCents =
+      typeof body?.refundAmountCents === "number" ? body.refundAmountCents : null;
+    const newBalanceCents =
+      typeof body?.newBalanceCents === "number" ? body.newBalanceCents : 0;
+    return { status: "canceled", refundAmountCents, newBalanceCents };
   }
 
   const code = (responseBody as { error?: string } | null)?.error;

@@ -6,6 +6,68 @@ export { LeagueSchema, LeagueRegistrationParamsSchema } from "./schemas/registra
 
 export { currentSeasonStartYear, CLUB_SEASON_START_MONTH } from "./lib/currentSeasonStartYear";
 export { findActiveSeasonId } from "./lib/findActiveSeasonId";
+export { balanceDisplayType } from "./lib/balanceDisplayType";
+
+export type { PackagePriceResult } from "./lib/pricing";
+export {
+  SWIMMER_COUNTS,
+  PACKAGE_TIERS,
+  hourlyRateCents,
+  priceForLesson,
+  packagePrice,
+  approximatePrivateHours,
+} from "./lib/pricing";
+
+export type {
+  SwimmerCount,
+  PackageTier,
+  BalanceEntryType,
+  LedgerEntry,
+  BalanceResponse,
+  BalanceHistoryEntry,
+  BalanceHistoryResponse,
+  BalanceHistoryQuery,
+  CheckoutSessionBody,
+  CheckoutSessionResponse,
+  CoachHouseholdBalanceSummary,
+  CoachHouseholdBalanceListResponse,
+  CoachAdjustBalanceBody,
+  CoachAdjustBalanceResponse,
+  CashOutBreakdown,
+  CashOutResponse,
+  NeedsManualRefundJob,
+  NeedsManualRefundListResponse,
+  MarkCashRefundHandledBody,
+  MarkCashRefundHandledResponse,
+  CashRefundNeedsAttentionEntry,
+  CashRefundNeedsAttentionResponse,
+} from "./schemas/payments";
+export {
+  SwimmerCountSchema,
+  PackageTierSchema,
+  BalanceEntryTypeSchema,
+  LedgerEntrySchema,
+  BalanceResponseSchema,
+  BalanceHistoryEntrySchema,
+  BalanceHistoryResponseSchema,
+  BalanceHistoryQuerySchema,
+  CheckoutSessionBodySchema,
+  CheckoutSessionResponseSchema,
+  CoachHouseholdBalanceSummarySchema,
+  CoachHouseholdBalanceListResponseSchema,
+  CoachAdjustBalanceBodySchema,
+  CoachAdjustBalanceResponseSchema,
+  CashOutBreakdownSchema,
+  CashOutResponseSchema,
+  NeedsManualRefundJobSchema,
+  NeedsManualRefundListResponseSchema,
+  MarkCashRefundHandledBodySchema,
+  MarkCashRefundHandledResponseSchema,
+  CashRefundNeedsAttentionEntrySchema,
+  CashRefundNeedsAttentionResponseSchema,
+  LESSON_TOPUP_MIN_QUANTITY,
+  LESSON_TOPUP_MAX_QUANTITY,
+} from "./schemas/payments";
 
 export {
   findDeepestLowFoundation,
@@ -46,6 +108,24 @@ export {
 
 export type { SignUpBody, LoginBody } from "./schemas/auth";
 export { SignUpBodySchema, LoginBodySchema } from "./schemas/auth";
+
+// Policy acceptance (ADR 036 Phase 8 Part B Stop 3)
+export type {
+  PolicySlug,
+  AcceptPoliciesBody,
+  AcceptPoliciesResponse,
+  MissingPolicyAcceptancesResponse,
+} from "./schemas/policyAcceptance";
+export {
+  PolicySlugSchema,
+  AcceptPoliciesBodySchema,
+  AcceptPoliciesResponseSchema,
+  MissingPolicyAcceptancesResponseSchema,
+  TERMS_VERSION,
+  PRIVACY_VERSION,
+  PAYMENTS_REFUND_VERSION,
+  currentVersionFor,
+} from "./schemas/policyAcceptance";
 
 export type {
   Sex,
@@ -215,8 +295,10 @@ export type {
   BulkCancelPreviewBody,
   BulkCancelPreviewLesson,
   BulkCancelPreviewResponse,
+  BulkCancelPerHouseholdRefund,
   BulkCancelConfirmBody,
   BulkCancelConfirmResponse,
+  CancelLessonResponse,
 } from "./schemas/booking";
 export {
   LessonLocationSchema,
@@ -289,8 +371,10 @@ export {
   BulkCancelPreviewBodySchema,
   BulkCancelPreviewLessonSchema,
   BulkCancelPreviewResponseSchema,
+  BulkCancelPerHouseholdRefundSchema,
   BulkCancelConfirmBodySchema,
   BulkCancelConfirmResponseSchema,
+  CancelLessonResponseSchema,
 } from "./schemas/booking";
 export type {
   SlotState,

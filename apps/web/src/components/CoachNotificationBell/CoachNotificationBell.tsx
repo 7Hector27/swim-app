@@ -241,60 +241,66 @@ export default function CoachNotificationBell({ variant = "header" }: Props) {
       {/* Both surfaces are rendered as plain divs; CSS media queries
           decide which one is visible for the current viewport width.
           No matchMedia probe means no first-render flash of the wrong
-          surface on mobile. */}
-      {open && (
-        <>
-          {/* Desktop dropdown - hidden by styles.panel until tablet+.
-              Anchored to this component's root via position:absolute, so
-              it reliably opens directly under the bell and right-aligned
-              to it. The max-width + right:0 keeps it inside the viewport
-              on narrower desktop screens too. */}
-          <div
-            ref={desktopPanelRef}
-            role="menu"
-            aria-label="Notifications"
-            className={`${styles.panel} rounded-card bg-section text-text-on-section border border-divider-section shadow-lg overflow-hidden`}
-          >
-            <PanelContents
-              showCloseButton={false}
-              items={items}
-              loading={loading}
-              listError={listError}
-              unreadCount={unreadCount}
-              markAllError={markAllError}
-              onMarkAll={handleMarkAll}
-              onItemClick={handleItemClick}
-              onClose={() => setOpen(false)}
-            />
-          </div>
+          surface on mobile.
 
-          {/* Mobile bottom sheet - hidden by styles.sheet from tablet+. */}
-          <div
-            className={styles.sheetBackdrop}
-            aria-hidden="true"
-            onClick={() => setOpen(false)}
-          />
-          <div
-            ref={sheetRef}
-            role="dialog"
-            aria-modal="true"
-            aria-label="Notifications"
-            className={styles.sheet}
-          >
-            <PanelContents
-              showCloseButton={true}
-              items={items}
-              loading={loading}
-              listError={listError}
-              unreadCount={unreadCount}
-              markAllError={markAllError}
-              onMarkAll={handleMarkAll}
-              onItemClick={handleItemClick}
-              onClose={() => setOpen(false)}
-            />
-          </div>
-        </>
-      )}
+          animate skill #10: surfaces stay mounted and `data-state`
+          toggles open/closed. CSS transitions carry both directions
+          and retarget smoothly on rapid open-close-open cycles. The
+          closed state kills pointer-events so the invisible layer
+          doesn't block clicks, and aria-hidden keeps assistive tech
+          out of it. */}
+      <div
+        ref={desktopPanelRef}
+        role="menu"
+        aria-label="Notifications"
+        aria-hidden={!open}
+        data-state={open ? "open" : "closed"}
+        className={`${styles.panel} rounded-card bg-section text-text-on-section border border-divider-section shadow-lg overflow-hidden`}
+      >
+        <PanelContents
+          showCloseButton={false}
+          items={items}
+          loading={loading}
+          listError={listError}
+          unreadCount={unreadCount}
+          markAllError={markAllError}
+          onMarkAll={handleMarkAll}
+          onItemClick={handleItemClick}
+          onClose={() => setOpen(false)}
+        />
+      </div>
+
+      {/* Mobile bottom sheet + backdrop. Always mounted so the
+          sheet's translateY(100%) exit transition has an element to
+          animate out of; pointer-events: none on the closed backdrop
+          + sheet keeps them non-interactive. */}
+      <div
+        className={styles.sheetBackdrop}
+        aria-hidden="true"
+        data-state={open ? "open" : "closed"}
+        onClick={() => setOpen(false)}
+      />
+      <div
+        ref={sheetRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Notifications"
+        aria-hidden={!open}
+        data-state={open ? "open" : "closed"}
+        className={styles.sheet}
+      >
+        <PanelContents
+          showCloseButton={true}
+          items={items}
+          loading={loading}
+          listError={listError}
+          unreadCount={unreadCount}
+          markAllError={markAllError}
+          onMarkAll={handleMarkAll}
+          onItemClick={handleItemClick}
+          onClose={() => setOpen(false)}
+        />
+      </div>
     </div>
   );
 }

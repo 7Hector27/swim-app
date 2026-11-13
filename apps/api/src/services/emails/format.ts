@@ -28,3 +28,10 @@ export function buildDeepLink(siteUrl: string, lessonId: string): string {
   const base = siteUrl.replace(/\/+$/, "");
   return `${base}/dashboard/lessons/${lessonId}`;
 }
+
+// ADR 036 Phase 7 — balance-triggered emails CTA points at the family's
+// balance page, where they can see the ledger entry the email describes.
+export function buildBalancePageLink(siteUrl: string): string {
+  const base = siteUrl.replace(/\/+$/, "");
+  return `${base}/account/balance`;
+}

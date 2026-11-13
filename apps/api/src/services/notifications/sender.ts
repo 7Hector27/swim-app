@@ -603,6 +603,12 @@ function isCategoryEnabled(
       // cancellation, so re-use the existing pref rather than adding a
       // new one the coach has to discover.
       return prefs.parentChangeEnabled;
+    case "cash_refund_needs_manual_handling":
+      // Operational alert tied to a stuck cash-refund drain job (ADR
+      // 036 Phase 8 Part B Stop 2). Never user-silenceable — if a
+      // job landed in needs_manual_handling the coach has to settle
+      // it off platform before cash balance invariants hold again.
+      return true;
   }
 }
 

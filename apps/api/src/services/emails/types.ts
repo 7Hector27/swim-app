@@ -24,7 +24,25 @@ export type LessonEmailEvent =
   // family or swimmer names, just freed-slot times + pool labels so
   // Jason knows what opened up. Row has no lesson/batch/bulk scope
   // (the family is gone); the scope CHECK carves out this event.
-  | "coach_account_deleted";
+  | "coach_account_deleted"
+  // ADR 036 Phase 7 balance-triggered family email. Enqueued inside the
+  // Stripe webhook transaction that credits the balance; payload is a
+  // `BalanceFundedEmailPayload` (see ./balanceFundedTypes.ts), carries
+  // the amount the parent paid, the package bonus (if any), and the
+  // new balance. Row is household-scoped — scope CHECK carves out.
+  | "balance_funded"
+  // ADR 036 Phase 7 coach-adjusted balance email. Enqueued inside the
+  // coach adjust-balance transaction. Payload is a
+  // `BalanceAdjustedEmailPayload`; carries signed amount, new balance,
+  // and the coach's reason (the family will see it). Household-scoped.
+  | "balance_adjusted"
+  // ADR 036 Phase 8 Part B cash-out email. Enqueued inside the
+  // executeCashOut transaction that writes the cash_refund +
+  // balance_writeoff ledger rows. Payload is a
+  // `BalanceCashedOutEmailPayload` carrying the breakdown fields the
+  // family receipt shows (paid / used / prior refunds / refunded /
+  // written off). Household-scoped.
+  | "balance_cashed_out";
 
 export type LessonEmailStatus =
   | "pending"
@@ -102,4 +120,13 @@ export interface LessonEmailPayload {
   // LessonConfirmed template branches on this to render coach-scheduled
   // copy. Null on every other event.
   initiatedBy: "parent" | "coach" | null;
+  // ADR 036 Phase 7: when a refund-emitting event (cancel / decline /
+  // expire) lands in the same tx as a `refund_to_balance` ledger row,
+  // these capture the refund amount and the household's balance AFTER
+  // the refund. Both are null when no refund happened — free lessons,
+  // pre-Phase-4 rows, or already-refunded charges. The template renders
+  // a one-line "Refunded $X. New balance: $Y." only when both are
+  // non-null.
+  refundAmountCents: number | null;
+  newBalanceCents: number | null;
 }

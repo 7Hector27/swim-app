@@ -16,6 +16,7 @@ import type {
   DayAvailability,
   DayState,
   HouseholdRole,
+  CancelLessonResponse,
   LessonResponse,
   LessonSwimmer,
   MonthAvailabilityResponse,
@@ -42,6 +43,9 @@ import {
   UpcomingLessonsQuerySchema,
   bookingWindowEnd,
   isAfterBookingWindow,
+  priceForLesson,
+  type LessonDurationMinutes,
+  type SwimmerCount,
 } from "@swim-app/shared";
 import { db } from "../db/client";
 import { requireLiveLessonFields, requireLiveLocationId } from "../db/liveLesson";
@@ -62,6 +66,7 @@ import {
 } from "../db/schema";
 import { requireUser } from "../middleware/requireUser";
 import { requireParent } from "../middleware/requireParent";
+import { requireCurrentPolicyAcceptance } from "../middleware/requireCurrentPolicyAcceptance";
 import { requireHouseholdMember } from "../middleware/requireHouseholdMember";
 import { requireHouseholdRole } from "../middleware/requireHouseholdRole";
 import { validate } from "../middleware/validate";
@@ -88,6 +93,12 @@ import {
 import { syncLessonToGoogle } from "../services/googleCalendarSync";
 import { enqueueLessonEmail } from "../services/emails/outbox";
 import { sendLessonEmailOutboxRow } from "../services/emails/sender";
+import {
+  applyLedgerEntry,
+  getHouseholdBalance,
+  getLessonOutstandingChargeCents,
+  refundLessonCharge,
+} from "../services/balance";
 import type { BatchEmailLesson, BatchEmailPayload } from "../services/emails/batchTypes";
 import { isActiveSwimmer } from "../db/queries";
 
@@ -511,6 +522,12 @@ lessonsRouter.post(
   requireParent,
   requireHouseholdMember,
   requireHouseholdRole("manager"),
+  // ADR 036 Phase 8 Part B Stop 3 piece 3: 409 policy_acceptance_required
+  // when any tracked policy's version is ahead of the parent's latest
+  // acceptance. Runs after requireHouseholdRole so a non-manager inside
+  // the family still gets the correct 403 before we go to the DB for
+  // the acceptance snapshot.
+  requireCurrentPolicyAcceptance,
   bookingLimiter,
   validate({ body: CreateLessonBodySchema }),
   asyncHandler(async (req, res) => {
@@ -600,12 +617,26 @@ lessonsRouter.post(
       return;
     }
 
+    // Authoritative price for this booking (ADR 036). swimmerIds is capped
+    // at 4 by CreateLessonBodySchema; durationMinutes is validated against
+    // LESSON_DURATION_MINUTES. The casts are safe at the schema boundary.
+    const swimmerCount = body.swimmerIds.length as SwimmerCount;
+    const durationMinutes = body.durationMinutes as LessonDurationMinutes;
+    const priceCents = priceForLesson(durationMinutes, swimmerCount);
+
     // ── Transact: advisory lock → re-validate slot → insert ──────────────────
     const newLesson = await db.transaction(async (tx) => {
       // Serialize concurrent bookings on the same calendar day (LA time).
       // pg_advisory_xact_lock takes a bigint; we hash the day string.
       await tx.execute(
         sql`SELECT pg_advisory_xact_lock(hashtext(${"lesson-day:" + laDateStr}))`,
+      );
+      // Per-household balance lock, acquired strictly after the day lock to
+      // match the global ordering (ADR 036 §1). Concurrent bookings on the
+      // same household serialize; concurrent bookings on different
+      // households do not.
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtext(${"household-balance:" + householdId}))`,
       );
 
       // Fetch fresh state inside the lock.
@@ -653,7 +684,20 @@ lessonsRouter.post(
 
       if (!slotAvailable) {
         const reason = diagnoseSlotRejection(slotParams, startsAt.getTime());
-        return { rejected: true as const, reason };
+        return { kind: "rejected" as const, reason };
+      }
+
+      // Balance gate (ADR 036 §4). Read inside the household lock so a
+      // concurrent charge/refund can't flip the number between the read
+      // and the ledger insert below. The 422 response carries the
+      // shortfall so the UI can show the exact "add $X" CTA.
+      const balanceCents = await getHouseholdBalance(householdId, tx);
+      if (balanceCents < priceCents) {
+        return {
+          kind: "insufficient_balance" as const,
+          balanceCents,
+          priceCents,
+        };
       }
 
       const approval = await needsApproval(householdId, body.locationId, tx);
@@ -683,6 +727,18 @@ lessonsRouter.post(
         body.swimmerIds.map((swimmerId) => ({ lessonId: inserted.id, swimmerId })),
       );
 
+      // Charge the balance for this lesson. applyLedgerEntry writes the
+      // matching household_audit_log row in the same tx, so a rollback
+      // unwinds the lesson insert, the swimmer links, and the charge
+      // together.
+      await applyLedgerEntry(tx, {
+        entryType: "lesson_charge",
+        householdId,
+        actorId: profileId,
+        lessonId: inserted.id,
+        amountCents: -priceCents,
+      });
+
       // Parent booking email outbox (ADR 028). Auto-approved bookings get
       // the confirmed email directly; never a request-received email on top.
       const outboxId = await enqueueLessonEmail(tx, {
@@ -705,10 +761,15 @@ lessonsRouter.post(
         inserted.status === "approved",
       );
 
-      return { lesson: inserted, outboxId, coachNotificationId };
+      return {
+        kind: "ok" as const,
+        lesson: inserted,
+        outboxId,
+        coachNotificationId,
+      };
     });
 
-    if ("rejected" in newLesson) {
+    if (newLesson.kind === "rejected") {
       req.log.warn(
         {
           event: "slot_unavailable",
@@ -721,6 +782,15 @@ lessonsRouter.post(
         "slot rejected on booking recheck",
       );
       res.status(422).json({ error: "slot_unavailable" });
+      return;
+    }
+    if (newLesson.kind === "insufficient_balance") {
+      res.status(422).json({
+        error: "insufficient_balance",
+        balanceCents: newLesson.balanceCents,
+        priceCents: newLesson.priceCents,
+        shortfallCents: newLesson.priceCents - newLesson.balanceCents,
+      });
       return;
     }
     const {
@@ -785,6 +855,20 @@ class BatchPicksConflictError extends Error {
   constructor(readonly conflicts: BatchConflictPick[]) {
     super("picks_conflict");
     this.name = "BatchPicksConflictError";
+  }
+}
+
+// ADR 036 Phase 4: batch bookings are all-or-nothing on the household
+// balance. Sum of per-lesson prices is computed under the household
+// balance lock; if balance is below the total, the whole batch rolls
+// back and the parent sees 422 insufficient_balance with the shortfall.
+class BatchInsufficientBalanceError extends Error {
+  constructor(
+    readonly balanceCents: number,
+    readonly totalPriceCents: number,
+  ) {
+    super("insufficient_balance");
+    this.name = "BatchInsufficientBalanceError";
   }
 }
 
@@ -1067,6 +1151,9 @@ lessonsRouter.post(
   requireParent,
   requireHouseholdMember,
   requireHouseholdRole("manager"),
+  // ADR 036 Phase 8 Part B Stop 3 piece 3: same acceptance gate as
+  // single booking. Multiple + recurring batches both land here.
+  requireCurrentPolicyAcceptance,
   bookingLimiter,
   validate({ body: BatchSubmitBodySchema }),
   asyncHandler(async (req, res) => {
@@ -1181,6 +1268,13 @@ lessonsRouter.post(
           sql`SELECT pg_advisory_xact_lock(hashtext(${"lesson-day:" + laDate}))`,
         );
       }
+      // Per-household balance lock, taken strictly after all the per-day
+      // locks (ADR 036 §1). This batch's day locks → balance lock is a
+      // superset of the single-lesson acquire order so there is still one
+      // consistent global ordering across all booking paths.
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtext(${"household-balance:" + householdId}))`,
+      );
 
       const [blockedRows, bufferRows, existingLessonRows] = await Promise.all([
         tx.select().from(blockedTimes),
@@ -1240,6 +1334,25 @@ lessonsRouter.post(
         throw new BatchPicksConflictError(conflicts);
       }
 
+      // ADR 036 Phase 4: all-or-nothing on the total. Sum per-lesson
+      // prices (one row per lesson, never a single row for the batch
+      // total — the ledger history keeps refunds per-lesson-scoped).
+      const totalPriceCents = picksAsc.reduce(
+        (sum, pick) =>
+          sum +
+          priceForLesson(
+            pick.durationMinutes as LessonDurationMinutes,
+            pick.swimmerIds.length as SwimmerCount,
+          ),
+        0,
+      );
+      const balanceCents = await getHouseholdBalance(householdId, tx);
+      if (balanceCents < totalPriceCents) {
+        // Same mechanic as BatchPicksConflictError — exception rolls the
+        // whole thing back, the outer catch maps to 422.
+        throw new BatchInsufficientBalanceError(balanceCents, totalPriceCents);
+      }
+
       const approvalRequired = await needsApproval(householdId, body.locationId, tx);
       const now = new Date();
       const noticeMs = config.bookingMinAdvanceHours * 60 * 60 * 1000;
@@ -1283,6 +1396,25 @@ lessonsRouter.post(
           pick.swimmerIds.map((swimmerId) => ({ lessonId: pick.id, swimmerId })),
         ),
       );
+
+      // ADR 036 §4: one lesson_charge ledger row per lesson, never a
+      // single row for the batch total. Each row's lesson_id points at
+      // exactly one lesson so a cancel of one lesson out of a batch reads
+      // that lesson's charge row and refunds exactly that amount, leaving
+      // the rest of the batch's charges untouched.
+      for (const pick of picksWithIds) {
+        const pickPrice = priceForLesson(
+          pick.durationMinutes as LessonDurationMinutes,
+          pick.swimmerIds.length as SwimmerCount,
+        );
+        await applyLedgerEntry(tx, {
+          entryType: "lesson_charge",
+          householdId,
+          actorId: profileId,
+          lessonId: pick.id,
+          amountCents: -pickPrice,
+        });
+      }
 
       // Approved lessons: snapshot calendar_sequence (0) into the payload and
       // bump to 1 for the next REQUEST, set calendar_invite_sent_at.
@@ -1469,6 +1601,24 @@ lessonsRouter.post(
           "batch rejected on recheck",
         );
         res.status(422).json({ error: "picks_conflict", conflicts: err.conflicts });
+        return;
+      }
+      if (err instanceof BatchInsufficientBalanceError) {
+        req.log.warn(
+          {
+            event: "insufficient_balance",
+            route: "POST /lessons/batch",
+            balanceCents: err.balanceCents,
+            totalPriceCents: err.totalPriceCents,
+          },
+          "batch rejected on balance check",
+        );
+        res.status(422).json({
+          error: "insufficient_balance",
+          balanceCents: err.balanceCents,
+          priceCents: err.totalPriceCents,
+          shortfallCents: err.totalPriceCents - err.balanceCents,
+        });
         return;
       }
       throw err;
@@ -1904,11 +2054,17 @@ lessonsRouter.get(
     // ADR 034: parent lesson detail never renders anonymized rows; narrow.
     const lessonRow = requireLiveLocationId(rawLessonRow);
 
-    const swimmerRows = await db
-      .select({ swimmerId: lessonSwimmers.swimmerId, firstName: swimmers.firstName, lastName: swimmers.lastName })
-      .from(lessonSwimmers)
-      .innerJoin(swimmers, eq(lessonSwimmers.swimmerId, swimmers.id))
-      .where(eq(lessonSwimmers.lessonId, id));
+    const [swimmerRows, chargeAmountCents] = await Promise.all([
+      db
+        .select({ swimmerId: lessonSwimmers.swimmerId, firstName: swimmers.firstName, lastName: swimmers.lastName })
+        .from(lessonSwimmers)
+        .innerJoin(swimmers, eq(lessonSwimmers.swimmerId, swimmers.id))
+        .where(eq(lessonSwimmers.lessonId, id)),
+      // ADR 036 Phase 8 Part B: lesson detail carries the current
+      // outstanding charge so the parent cancel-confirmation can show
+      // "You'll get $X back". null = free lesson or already-refunded.
+      getLessonOutstandingChargeCents(id),
+    ]);
 
     const body: UpcomingLesson = {
       id: lessonRow.id,
@@ -1935,6 +2091,7 @@ lessonsRouter.get(
         lessonRow.batchMode === "manual" || lessonRow.batchMode === "weekly"
           ? lessonRow.batchMode
           : null,
+      chargeAmountCents,
     };
 
     res.json(body);
@@ -1989,10 +2146,32 @@ lessonsRouter.delete(
     }
 
     const cancelResult = await db.transaction(async (tx) => {
+      // ADR 036 §4: cancel refunds to the balance in the same tx as the
+      // status change. Per-household balance lock keeps a concurrent
+      // charge or refund from racing us. Free-lesson rows have no
+      // matching lesson_charge, so refundLessonCharge no-ops; pre-Phase-4
+      // historical lessons similarly refund $0.
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtext(${"household-balance:" + lessonToCancel.householdId}))`,
+      );
+
       await tx
         .update(lessons)
         .set({ status: "canceled", canceledAt: new Date(), canceledBy: profileId })
         .where(eq(lessons.id, id));
+
+      const refund = await refundLessonCharge(tx, {
+        householdId: lessonToCancel.householdId!,
+        lessonId: id,
+        actorId: profileId,
+      });
+      // Phase 7: when the refund actually landed, snapshot the amount +
+      // post-refund balance into the email payload. `refunded: false`
+      // (free lesson or already-refunded) leaves both null, and the
+      // template suppresses the refund line.
+      const newBalanceCents = refund.refunded
+        ? await getHouseholdBalance(lessonToCancel.householdId!, tx)
+        : null;
 
       // Parent booking email outbox (ADR 028). Writes CANCEL .ics iff a
       // prior invite was issued; sends a plain-content email otherwise.
@@ -2000,6 +2179,8 @@ lessonsRouter.delete(
         lessonId: id,
         event: "lesson_canceled",
         actorRole: isCoach ? "coach" : "parent",
+        refundAmountCents: refund.refunded ? refund.amountCents : null,
+        newBalanceCents,
       });
 
       // Coach alert row (ADR 031). Inside the same tx so a rollback also
@@ -2009,10 +2190,27 @@ lessonsRouter.delete(
         actorIsCoach: isCoach,
       });
 
-      return { cancelOutboxId, coachNotificationId };
+      // ADR 036 Phase 8 Part B: response includes the applied refund +
+      // post-refund balance so the UI can render a "Cancelled.
+      // Refunded $X. New balance $Y." confirmation without a second
+      // /me/balance round trip. On free / already-refunded lessons the
+      // refund is null and the balance reflects the live total.
+      const responseBalanceCents = newBalanceCents
+        ?? (await getHouseholdBalance(lessonToCancel.householdId!, tx));
+
+      return {
+        cancelOutboxId,
+        coachNotificationId,
+        refundAmountCents: refund.refunded ? refund.amountCents : null,
+        newBalanceCents: responseBalanceCents,
+      };
     });
 
-    res.status(204).end();
+    const cancelResponse: CancelLessonResponse = {
+      refundAmountCents: cancelResult.refundAmountCents,
+      newBalanceCents: cancelResult.newBalanceCents,
+    };
+    res.status(200).json(cancelResponse);
     queueCoachNotificationSend(cancelResult.coachNotificationId);
     // Reconcile Google Calendar after the response. For a cancel this will
     // delete the event if one exists; a never-synced lesson is a safe no-op.
@@ -2080,6 +2278,10 @@ lessonsRouter.patch(
 
     const newStartsAt = body.startsAt !== undefined ? new Date(body.startsAt) : existingLesson.startsAt;
     const newDurationMinutes = (body.durationMinutes ?? existingLesson.durationMinutes) as 30 | 45 | 60;
+    // Whether the reschedule changes the price (ADR 036 §2 was revised:
+    // duration CAN change on reschedule. If it does, we refund the old
+    // charge and write a new one at the new price inside the same tx).
+    const durationChanged = newDurationMinutes !== existingLesson.durationMinutes;
     const newLocationId = body.locationId ?? existingLesson.locationId;
     const nowUtc = getNowUtc();
 
@@ -2144,6 +2346,16 @@ lessonsRouter.patch(
       await tx.execute(
         sql`SELECT pg_advisory_xact_lock(hashtext(${"lesson-day:" + laDateStr}))`,
       );
+      // ADR 036 §2 (revised): if the reschedule changes duration, we also
+      // refund the current charge and write a new one at the new price.
+      // Take the household balance lock after the day lock to preserve the
+      // global acquire order (day → balance). Time-only reschedules skip
+      // the balance work entirely.
+      if (durationChanged) {
+        await tx.execute(
+          sql`SELECT pg_advisory_xact_lock(hashtext(${"household-balance:" + existingLesson.householdId}))`,
+        );
+      }
 
       const [blockedRows, bufferRows, existingLessonRows] = await Promise.all([
         tx.select().from(blockedTimes),
@@ -2191,6 +2403,82 @@ lessonsRouter.patch(
       if (!slotAvailable) {
         const reason = diagnoseSlotRejection(slotParams, newStartsAt.getTime());
         return { rejected: true as const, reason };
+      }
+
+      // ADR 036 §2 (revised): duration-change reprice. Only kicks in when
+      // the lesson has an outstanding lesson_charge row — free_lesson
+      // markers and lessons with no ledger rows (pre-Phase-4) just change
+      // duration with no money movement, matching Jason's "free stays
+      // free" rule.
+      if (durationChanged) {
+        const swimmerCountRows = await tx
+          .select({ swimmerId: lessonSwimmers.swimmerId })
+          .from(lessonSwimmers)
+          .where(eq(lessonSwimmers.lessonId, id));
+        const swimmerCount = swimmerCountRows.length as 1 | 2 | 3 | 4;
+
+        // Find the current outstanding lesson_charge row — a lesson may
+        // accumulate several lesson_charge rows over its lifetime (prior
+        // reprice), but only one is outstanding at a time.
+        const outstandingRows = await tx.execute<{
+          id: string;
+          amount_cents: number;
+        }>(sql`
+          SELECT charge.id, charge.amount_cents
+          FROM household_balance_ledger AS charge
+          LEFT JOIN household_balance_ledger AS refund
+            ON refund.refund_of_ledger_id = charge.id
+            AND refund.entry_type = 'refund_to_balance'
+          WHERE charge.lesson_id = ${id}
+            AND charge.entry_type = 'lesson_charge'
+            AND refund.id IS NULL
+          ORDER BY charge.created_at DESC
+          LIMIT 1
+        `);
+        const outstanding = outstandingRows[0]
+          ? {
+              id: outstandingRows[0].id,
+              amountCents: outstandingRows[0].amount_cents,
+            }
+          : null;
+
+        if (outstanding) {
+          const newPriceCents = priceForLesson(newDurationMinutes, swimmerCount);
+          const currentBalance = await getHouseholdBalance(
+            existingLesson.householdId,
+            tx,
+          );
+          // Available after refund = balance + abs(outstanding). The
+          // shortfall shown to the client is the delta the household
+          // would have to top up — what matters is NEW price against
+          // the post-refund available total, not the raw current balance.
+          const availableAfterRefund =
+            currentBalance + Math.abs(outstanding.amountCents);
+          if (availableAfterRefund < newPriceCents) {
+            return {
+              kind: "insufficient_balance" as const,
+              balanceCents: availableAfterRefund,
+              priceCents: newPriceCents,
+            };
+          }
+          // Refund the old charge; write the new charge at the new price.
+          // Both ride in this same tx — rollback on any later failure
+          // unwinds both and leaves the money in its original state.
+          await refundLessonCharge(tx, {
+            householdId: existingLesson.householdId,
+            lessonId: id,
+            actorId: profileId,
+          });
+          await applyLedgerEntry(tx, {
+            entryType: "lesson_charge",
+            householdId: existingLesson.householdId,
+            actorId: profileId,
+            lessonId: id,
+            amountCents: -newPriceCents,
+          });
+        }
+        // No outstanding charge → free_lesson marker or pre-Phase-4 row.
+        // Duration changes but no money moves (Jason's "free stays free").
       }
 
       let newStatus = existingLesson!.status;
@@ -2290,23 +2578,34 @@ lessonsRouter.patch(
       return { updated, outboxIds, coachNotificationId };
     });
 
-    if (!updatedLesson || "rejected" in updatedLesson) {
-      if (updatedLesson && "rejected" in updatedLesson) {
-        req.log.warn(
-          {
-            event: "slot_unavailable",
-            route: "PATCH /lessons/:id",
-            reason: updatedLesson.reason,
-            lessonId: id,
-            role: isCoach ? "coach" : "parent",
-            startsAt: newStartsAt.toISOString(),
-            durationMinutes: newDurationMinutes,
-            locationId: newLocationId,
-          },
-          "slot rejected on reschedule recheck",
-        );
-      }
+    if (!updatedLesson) {
+      res.status(404).json({ error: "Lesson not found" });
+      return;
+    }
+    if ("rejected" in updatedLesson) {
+      req.log.warn(
+        {
+          event: "slot_unavailable",
+          route: "PATCH /lessons/:id",
+          reason: updatedLesson.reason,
+          lessonId: id,
+          role: isCoach ? "coach" : "parent",
+          startsAt: newStartsAt.toISOString(),
+          durationMinutes: newDurationMinutes,
+          locationId: newLocationId,
+        },
+        "slot rejected on reschedule recheck",
+      );
       res.status(422).json({ error: "slot_unavailable" });
+      return;
+    }
+    if ("kind" in updatedLesson && updatedLesson.kind === "insufficient_balance") {
+      res.status(422).json({
+        error: "insufficient_balance",
+        balanceCents: updatedLesson.balanceCents,
+        priceCents: updatedLesson.priceCents,
+        shortfallCents: updatedLesson.priceCents - updatedLesson.balanceCents,
+      });
       return;
     }
     const rescheduleOutboxIds = updatedLesson.outboxIds;
@@ -2352,11 +2651,18 @@ export async function loadLessonWithSwimmers(
   // (parent/coach GET + POST /lessons response). Narrow identity columns.
   const lesson = requireLiveLessonFields(rawLesson);
 
-  const swimmerRows = await db
-    .select({ swimmerId: lessonSwimmers.swimmerId, firstName: swimmers.firstName, lastName: swimmers.lastName })
-    .from(lessonSwimmers)
-    .innerJoin(swimmers, eq(lessonSwimmers.swimmerId, swimmers.id))
-    .where(eq(lessonSwimmers.lessonId, lessonId));
+  const [swimmerRows, chargeAmountCents] = await Promise.all([
+    db
+      .select({ swimmerId: lessonSwimmers.swimmerId, firstName: swimmers.firstName, lastName: swimmers.lastName })
+      .from(lessonSwimmers)
+      .innerJoin(swimmers, eq(lessonSwimmers.swimmerId, swimmers.id))
+      .where(eq(lessonSwimmers.lessonId, lessonId)),
+    // ADR 036 Phase 8 Part B: lesson detail/response carries the
+    // current outstanding charge so the coach and parent UIs can show
+    // the refund amount in a cancel/decline/no-show confirmation.
+    // null = free lesson or already-refunded.
+    getLessonOutstandingChargeCents(lessonId),
+  ]);
 
   return {
     id: lesson.id,
@@ -2378,6 +2684,7 @@ export async function loadLessonWithSwimmers(
     movedAt: lesson.movedAt?.toISOString() ?? null,
     previousStartsAt: lesson.previousStartsAt?.toISOString() ?? null,
     createdAt: lesson.createdAt.toISOString(),
+    chargeAmountCents,
   };
 }
 

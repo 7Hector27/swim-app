@@ -44,6 +44,7 @@ function emptyPreview(startDate: string, endDate: string): BulkCancelPreviewResp
     pendingCount: 0,
     householdCount: 0,
     lessons: [],
+    perHouseholdRefunds: [],
   };
 }
 

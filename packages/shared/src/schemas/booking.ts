@@ -215,8 +215,27 @@ export const LessonResponseSchema = z.object({
   anonymizedAt: z.string().datetime({ offset: true }).nullable().optional(),
   locationSnapshot: z.string().nullable().optional(),
   swimmerCount: z.number().int().nullable().optional(),
+  // ADR 036 Phase 8 Part B: current outstanding charge for this lesson, in
+  // cents. Populated only on lesson-detail endpoints (parent GET /lessons/:id
+  // and coach GET /coach/lessons/:id); omitted by list/schedule endpoints.
+  // null = free lesson or already-refunded charge (no refund if cancelled);
+  // positive integer = the dollar amount that would land back on the
+  // household's balance if the lesson is cancelled now.
+  chargeAmountCents: z.number().int().nonnegative().nullable().optional(),
 });
 export type LessonResponse = z.infer<typeof LessonResponseSchema>;
+
+// ADR 036 Phase 8 Part B: parent/coach cancel response body. DELETE
+// /lessons/:id used to return 204 No Content; now returns 200 with the
+// refund amount and the household's post-refund balance so the UI can
+// render a post-cancel confirmation without a second /me/balance round
+// trip. refundAmountCents is null when the lesson was free or
+// already-refunded.
+export const CancelLessonResponseSchema = z.object({
+  refundAmountCents: z.number().int().nonnegative().nullable(),
+  newBalanceCents: z.number().int(),
+});
+export type CancelLessonResponse = z.infer<typeof CancelLessonResponseSchema>;
 
 export const ApproveLessonBodySchema = z.object({});
 export type ApproveLessonBody = z.infer<typeof ApproveLessonBodySchema>;
@@ -225,7 +244,14 @@ export type ApproveLessonBody = z.infer<typeof ApproveLessonBodySchema>;
 // carries the intent. See apps/api/src/routes/coachLessons.ts.
 export const MarkNoShowBodySchema = z.object({});
 export type MarkNoShowBody = z.infer<typeof MarkNoShowBodySchema>;
-export const UndoNoShowBodySchema = z.object({});
+// ADR 036 Phase 4: undoing a no-show re-charges the lesson's balance by
+// default. `chargeType: 'free'` lets the coach keep the lesson as a comp
+// (useful when balance can't cover the re-charge and the coach already
+// knows they want the undo to land anyway). Defaults to 'balance' so the
+// common undo path flows money back out automatically.
+export const UndoNoShowBodySchema = z.object({
+  chargeType: z.enum(["balance", "free"]).default("balance"),
+});
 export type UndoNoShowBody = z.infer<typeof UndoNoShowBodySchema>;
 
 // Max length for a coach-entered decline reason. Enforced at the API
@@ -280,7 +306,7 @@ export const UpcomingLessonsQuerySchema = z.object({
 export type UpcomingLessonsQuery = z.infer<typeof UpcomingLessonsQuerySchema>;
 
 export const UpcomingLessonSchema = LessonResponseSchema
-  .omit({ householdId: true, locationId: true, anonymizedAt: true, locationSnapshot: true, swimmerCount: true })
+  .omit({ householdId: true, locationId: true, anonymizedAt: true, locationSnapshot: true, swimmerCount: true, chargeAmountCents: true })
   .extend({
     // Non-null on the parent side — parent routes filter by household_id,
     // so an anonymized row (whose household_id is null) never appears here.
@@ -292,6 +318,10 @@ export const UpcomingLessonSchema = LessonResponseSchema
     // label next to the lesson.
     batchId: z.string().uuid().nullable(),
     batchMode: z.enum(["manual", "weekly"]).nullable(),
+    // ADR 036 Phase 8 Part B: current outstanding charge for this lesson,
+    // in cents. Populated by parent GET /lessons/:id (lesson detail);
+    // list endpoints omit it to avoid the per-row ledger join.
+    chargeAmountCents: z.number().int().nonnegative().nullable().optional(),
   });
 export type UpcomingLesson = z.infer<typeof UpcomingLessonSchema>;
 
@@ -649,6 +679,13 @@ export const CoachLessonDetailSchema = z.object({
   anonymizedAt: z.string().datetime({ offset: true }).nullable().optional(),
   locationSnapshot: z.string().nullable().optional(),
   swimmerCount: z.number().int().nullable().optional(),
+  // ADR 036 Phase 8 Part B Stop 3 piece 4: current outstanding charge
+  // for this lesson, in positive cents. Populated on live rows; null
+  // on anonymized rows (no household balance to refund to) and on
+  // free / already-refunded lessons. The coach cancel/decline/no-show
+  // confirmation dialogs read this to show the refund amount that
+  // goes back to the family.
+  chargeAmountCents: z.number().int().nonnegative().nullable().optional(),
 });
 export type CoachLessonDetail = z.infer<typeof CoachLessonDetailSchema>;
 
@@ -744,6 +781,14 @@ export const CoachBookingWarningsSchema = z.object({
 });
 export type CoachBookingWarnings = z.infer<typeof CoachBookingWarningsSchema>;
 
+// How the coach-booked lesson is paid (ADR 036 §4). `balance` charges the
+// family's balance like a parent booking — the server refuses with
+// insufficient_balance if the household can't cover it. `free` marks the
+// lesson as a comp (no charge, no refund on cancel) and writes a
+// `free_lesson` ledger marker for audit completeness.
+export const CoachChargeTypeSchema = z.enum(["balance", "free"]);
+export type CoachChargeType = z.infer<typeof CoachChargeTypeSchema>;
+
 export const CoachCreateLessonBodySchema = z.object({
   householdId: z.string().uuid(),
   swimmerIds: z.array(z.string().uuid()).min(1).max(4),
@@ -755,6 +800,9 @@ export const CoachCreateLessonBodySchema = z.object({
   // true in acknowledgedWarnings OR the server returns 409.
   overrideWindow: z.boolean().default(false),
   acknowledgedWarnings: CoachBookingWarningsSchema.default({}),
+  // ADR 036 Phase 4. Defaults to 'balance' so a coach that forgets to
+  // pass the field doesn't accidentally give a free lesson.
+  chargeType: CoachChargeTypeSchema.default("balance"),
 });
 export type CoachCreateLessonBody = z.infer<typeof CoachCreateLessonBodySchema>;
 
@@ -1147,6 +1195,19 @@ export const BulkCancelPreviewLessonSchema = z.object({
 });
 export type BulkCancelPreviewLesson = z.infer<typeof BulkCancelPreviewLessonSchema>;
 
+// ADR 036 Phase 8 Part B: per-household refund rollup. One entry per
+// household that has at least one in-scope lesson, totalRefundCents =
+// sum of the outstanding lesson_charge ledger rows for that household's
+// in-scope lessons. Free lessons contribute 0. Shown in the bulk-cancel
+// preview as "Family → $X" so the coach sees per-family refund impact
+// before confirming.
+export const BulkCancelPerHouseholdRefundSchema = z.object({
+  householdId: z.string().uuid(),
+  householdName: z.string(),
+  totalRefundCents: z.number().int().nonnegative(),
+});
+export type BulkCancelPerHouseholdRefund = z.infer<typeof BulkCancelPerHouseholdRefundSchema>;
+
 export const BulkCancelPreviewResponseSchema = z.object({
   startDate: LaDateStringSchema,
   endDate: LaDateStringSchema,
@@ -1161,6 +1222,9 @@ export const BulkCancelPreviewResponseSchema = z.object({
   pendingCount: z.number().int().nonnegative(),
   householdCount: z.number().int().nonnegative(),
   lessons: z.array(BulkCancelPreviewLessonSchema),
+  // Per-family refund totals computed server-side from the ledger (ADR
+  // 036 Phase 8 Part B). The browser never sums charges itself.
+  perHouseholdRefunds: z.array(BulkCancelPerHouseholdRefundSchema),
 });
 export type BulkCancelPreviewResponse = z.infer<typeof BulkCancelPreviewResponseSchema>;
 

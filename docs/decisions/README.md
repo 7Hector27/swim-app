@@ -35,3 +35,4 @@
 | [033](033-coach-bulk-cancel.md) | Cancellation policy and coach bulk cancel |
 | [034](034-parent-account-deletion.md) | Parent account deletion |
 | [035](035-test-database-isolation.md) | Dedicated test Supabase stack |
+| [036](036-payments-stripe-prepaid-balance.md) | Payments and prepaid household balance via Stripe (draft) |

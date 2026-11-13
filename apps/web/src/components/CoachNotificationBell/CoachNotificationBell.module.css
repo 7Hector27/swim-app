@@ -11,6 +11,14 @@
   display: inline-flex;
 }
 
+/* ADR 036 Phase 8 Part B Stop 3 piece 12 (animation audit #10): the
+   panel + sheet + backdrop are now ALWAYS mounted, and their open /
+   closed state is driven by `data-state` on each element. CSS
+   transitions carry both directions, so a rapid open → close → open
+   retargets from wherever the current frame sits instead of restart-
+   ing from zero on every remount. Closed state kills pointer events
+   so the invisible element doesn't block interaction behind it. */
+
 /* Desktop dropdown. CSS-visible only at tablet+; the mobile-sheet rules
    below handle the narrow viewport. No JavaScript breakpoint detection,
    so there is no first-render flash of the wrong surface. */
@@ -29,6 +37,8 @@
   z-index: 50;
   flex-direction: column;
   transform-origin: top right;
+  opacity: 1;
+  transform: scale(1);
   transition:
     transform 180ms var(--ease-out-strong, cubic-bezier(0.23, 1, 0.32, 1)),
     opacity 180ms var(--ease-out-strong, cubic-bezier(0.23, 1, 0.32, 1));
@@ -40,23 +50,18 @@
   }
 }
 
-@starting-style {
-  .panel {
-    transform: scale(0.96);
-    opacity: 0;
-  }
+.panel[data-state="closed"] {
+  opacity: 0;
+  transform: scale(0.96);
+  pointer-events: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .panel {
     transition: opacity 120ms linear;
   }
-
-  @starting-style {
-    .panel {
-      transform: none;
-      opacity: 0;
-    }
+  .panel[data-state="closed"] {
+    transform: none;
   }
 }
 
@@ -70,13 +75,13 @@
   inset: 0;
   background: rgba(0, 0, 0, 0.55);
   z-index: 40;
+  opacity: 1;
   transition: opacity 240ms var(--ease-drawer, cubic-bezier(0.32, 0.72, 0, 1));
 }
 
-@starting-style {
-  .sheetBackdrop {
-    opacity: 0;
-  }
+.sheetBackdrop[data-state="closed"] {
+  opacity: 0;
+  pointer-events: none;
 }
 
 @media (min-width: 769px) {
@@ -102,17 +107,17 @@
   color: var(--color-text-on-section);
   padding: 0;
   overflow: hidden;
-
+  opacity: 1;
+  transform: translateY(0);
   transition:
     transform 240ms var(--ease-drawer, cubic-bezier(0.32, 0.72, 0, 1)),
     opacity 240ms var(--ease-drawer, cubic-bezier(0.32, 0.72, 0, 1));
 }
 
-@starting-style {
-  .sheet {
-    transform: translateY(100%);
-    opacity: 0;
-  }
+.sheet[data-state="closed"] {
+  opacity: 0;
+  transform: translateY(100%);
+  pointer-events: none;
 }
 
 @media (min-width: 769px) {
@@ -126,12 +131,8 @@
   .sheetBackdrop {
     transition: opacity 150ms;
   }
-
-  @starting-style {
-    .sheet {
-      transform: none;
-      opacity: 0;
-    }
+  .sheet[data-state="closed"] {
+    transform: none;
   }
 }
 

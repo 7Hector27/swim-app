@@ -1,0 +1,62 @@
+/* Scoped motion for the evaluate page. The animate skill's gate keeps
+   everything here on CSS transitions (not keyframes) so rapid taps
+   retarget cleanly on each interaction. Reduced-motion variants live
+   alongside each rule. */
+
+.base {
+  --evaluate-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+/* Mastery badge — a one-shot reveal when a swimmer first crosses a
+   skill into grade 5. @starting-style drives the enter so the badge
+   scales + fades in on mount; the parent unmounts the component after
+   ~2 seconds. No exit animation — the removal feels right because
+   the mastery is still visible as the grade-5 pill selection. */
+.masteryBadge {
+  opacity: 1;
+  transform: scale(1);
+  transition:
+    opacity 420ms var(--evaluate-ease-out),
+    transform 420ms var(--evaluate-ease-out);
+  transform-origin: left center;
+}
+
+@starting-style {
+  .masteryBadge {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+}
+
+/* Section tab panel — 180ms opacity crossfade keyed by the active
+   section. Transitions, not keyframes, so rapid tab taps retarget
+   mid-crossfade instead of restarting at zero. */
+.sectionPanel {
+  opacity: 1;
+  transition: opacity 180ms var(--evaluate-ease-out);
+}
+
+@starting-style {
+  .sectionPanel {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .masteryBadge {
+    transition: opacity 180ms ease;
+    transform: none;
+  }
+  .sectionPanel {
+    transition: none;
+  }
+  @starting-style {
+    .masteryBadge {
+      opacity: 0;
+      transform: none;
+    }
+    .sectionPanel {
+      opacity: 1;
+    }
+  }
+}

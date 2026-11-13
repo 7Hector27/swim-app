@@ -53,12 +53,17 @@ export default function AccountContent({
   // the component renders a short apology but the nav entry stays so
   // the user can still find it.
   const showDeleteAccount = profile.role === "parent";
+  // ADR 036 Phase 5: parents get a Balance link out to /account/balance.
+  // The link is a scrollspy anchor on this page, then the Balance card's
+  // body is a single CTA that navigates out.
+  const showBalance = profile.role === "parent";
 
   // Only list sections the role actually sees — no placeholder entries for
   // features the current role can't touch.
   const navItems: Array<{ id: string; label: string }> = [
     { id: "profile", label: "Profile" },
   ];
+  if (showBalance) navItems.push({ id: "balance", label: "Balance" });
   if (showCalendarCard) navItems.push({ id: "calendar", label: "Calendar" });
   if (showNotifications) navItems.push({ id: "notifications", label: "Notifications" });
   navItems.push({ id: "security", label: "Security" });
@@ -102,6 +107,32 @@ export default function AccountContent({
                   initialPhone={profile.phone}
                 />
               </section>
+
+              {showBalance && (
+                <section
+                  id="balance"
+                  aria-labelledby="account-balance-heading"
+                  className="flex flex-col gap-3 rounded-card border border-border p-5 scroll-mt-[calc(var(--header-height)+1rem)]"
+                >
+                  <h2
+                    id="account-balance-heading"
+                    className="font-heading text-xl text-heading"
+                  >
+                    Balance
+                  </h2>
+                  <p className="text-text-secondary">
+                    See your lesson credit, top up, or buy a package. Credit never expires.
+                  </p>
+                  <div>
+                    <a
+                      href="/account/balance"
+                      className="inline-flex items-center justify-center rounded-button font-bold text-sm min-h-[52px] px-7 bg-button-primary-background text-button-primary-text"
+                    >
+                      Open balance
+                    </a>
+                  </div>
+                </section>
+              )}
 
               {showCalendarCard && (
                 <div id="calendar" className="scroll-mt-[calc(var(--header-height)+1rem)]">

@@ -19,8 +19,13 @@ const BOTTOM_NAV_TABS = [
   { label: "Swimmers", href: "/coach/swimmers" },
 ] as const;
 
+// Meets moved onto the /coach/swimmers page as a tab — a season of
+// meets is a roster-shaped concern, so it lives next to the swimmers
+// list rather than as a top-level destination. The /coach/meets URL
+// still resolves (redirects to /coach/swimmers?tab=meets) so existing
+// links and bookmarks keep working.
 const MORE_SHEET_ITEMS = [
-  { label: "Meets", href: "/coach/meets" },
+  { label: "Families", href: "/coach/families" },
   { label: "Availability", href: "/coach/availability" },
   { label: "Account settings", href: "/account" },
 ] as const;
@@ -31,7 +36,7 @@ const DESKTOP_NAV_LINKS = [
   { label: "Schedule", href: "/coach/schedule" },
   { label: "Availability", href: "/coach/availability" },
   { label: "Swimmers", href: "/coach/swimmers" },
-  { label: "Meets", href: "/coach/meets" },
+  { label: "Families", href: "/coach/families" },
 ] as const;
 
 // ── Active-state helper ───────────────────────────────────────────────────────
@@ -111,15 +116,6 @@ function AvailabilityIcon() {
   );
 }
 
-function MeetsIcon() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-      <path d="M3 5h14M3 10h14M3 15h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-      <circle cx="16" cy="15" r="2.5" stroke="currentColor" strokeWidth="1.5" />
-    </svg>
-  );
-}
-
 function AccountIcon() {
   return (
     <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
@@ -170,7 +166,6 @@ const TAB_ICONS: Record<TabLabel, () => React.ReactElement> = {
 // nav, not a separate styling language. Account and Log out used to
 // render without one.
 const SHEET_ICONS: Record<string, () => React.ReactElement> = {
-  Meets: MeetsIcon,
   Availability: AvailabilityIcon,
   "Account settings": AccountIcon,
 };

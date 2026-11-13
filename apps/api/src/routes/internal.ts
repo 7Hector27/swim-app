@@ -24,6 +24,11 @@ import {
 } from "../services/notifications/drain";
 import { runAccountDeletionRetryDrain } from "../services/accountDeletion";
 import { safeCleanupErrSummary } from "../services/accountDeletion/cleanup";
+import {
+  getHouseholdBalance,
+  refundLessonCharge,
+  runCashRefundRetryDrain,
+} from "../services/balance";
 import type { RequestHandler } from "express";
 
 // Promote the per-tick light pass to a full pass when last_full_reconcile_at
@@ -159,7 +164,46 @@ async function runCronTick(
             lt(lessons.expiresAt, now),
           ),
         )
-        .returning({ id: lessons.id });
+        .returning({
+          id: lessons.id,
+          householdId: lessons.householdId,
+          requestedBy: lessons.requestedBy,
+        });
+
+      // ADR 036 §4: expired-pending refunds in the same tx as the
+      // status change. Take each affected household's balance lock in
+      // a stable sorted order so the cron never deadlocks against
+      // concurrent parent / coach writes. refundLessonCharge no-ops on
+      // pre-Phase-4 rows (nothing to invert). The audit row needs a
+      // non-null actor (household_audit_log.actor_id is NOT NULL) —
+      // the lesson's original requestedBy is a meaningful stand-in
+      // for the cron (same parent whose balance is affected).
+      const householdsToRefund = Array.from(
+        new Set(
+          expiredRows
+            .map((row) => row.householdId)
+            .filter((hid): hid is string => hid !== null),
+        ),
+      ).sort();
+      for (const hid of householdsToRefund) {
+        await tx.execute(
+          sql`SELECT pg_advisory_xact_lock(hashtext(${"household-balance:" + hid}))`,
+        );
+      }
+      // Keyed by lesson id so the email-enqueue loop below can snapshot
+      // the refund amount into each row's email payload without re-reading
+      // the ledger.
+      const refundByLessonId = new Map<string, number>();
+      for (const row of expiredRows) {
+        if (row.householdId === null) continue; // anonymized row — skip
+        if (row.requestedBy === null) continue; // defensive: shouldn't happen on live rows
+        const refund = await refundLessonCharge(tx, {
+          householdId: row.householdId,
+          lessonId: row.id,
+          actorId: row.requestedBy,
+        });
+        if (refund.refunded) refundByLessonId.set(row.id, refund.amountCents);
+      }
 
       // Parent booking email outbox write (ADR 028): same transaction as
       // the expiry UPDATE so an email can never be lost between commit and
@@ -167,11 +211,22 @@ async function runCronTick(
       // if the lesson's starts_at has already passed by send time.
       const emailOutboxIds: string[] = [];
       for (const row of expiredRows) {
+        const refundAmountCents = refundByLessonId.get(row.id) ?? null;
+        // Post-refund household balance snapshot — null when no refund
+        // (free lesson or already-refunded) so the template suppresses
+        // the refund line. Household id is guaranteed non-null when we
+        // emit an email (anonymized rows were skipped above).
+        const newBalanceCents =
+          refundAmountCents !== null && row.householdId !== null
+            ? await getHouseholdBalance(row.householdId, tx)
+            : null;
         emailOutboxIds.push(
           await enqueueLessonEmail(tx, {
             lessonId: row.id,
             event: "request_expired",
             actorRole: "system",
+            refundAmountCents,
+            newBalanceCents,
           }),
         );
       }
@@ -343,6 +398,27 @@ async function runCronTick(
       );
     }
 
+    // Cash-refund drain (ADR 036 Phase 8 Part B). Shares the cron tick
+    // lease and runs here too. The drain's own loop catches per-job
+    // errors into DB state; this outer catch handles a drain-level
+    // throw (e.g. the claim UPDATE failing) so one bad pass can't
+    // starve the response.
+    let cashRefundDrainResult = {
+      attempted: 0,
+      succeeded: 0,
+      paused: 0 as const,
+      failedTerminal: 0,
+      needsManualHandling: 0,
+    };
+    try {
+      cashRefundDrainResult = await runCashRefundRetryDrain(req.log);
+    } catch (err) {
+      req.log.error(
+        { err: safeCleanupErrSummary(err) },
+        "cron/tick cash-refund retry drain failed",
+      );
+    }
+
     req.log.info(
       {
         expiredCount: expired.length,
@@ -364,6 +440,10 @@ async function runCronTick(
         accountDeletionRetrySucceeded: accountDeletionRetryResult.succeeded,
         accountDeletionRetryPaused: accountDeletionRetryResult.paused,
         accountDeletionRetryFailedTerminal: accountDeletionRetryResult.failedTerminal,
+        cashRefundAttempted: cashRefundDrainResult.attempted,
+        cashRefundSucceeded: cashRefundDrainResult.succeeded,
+        cashRefundFailedTerminal: cashRefundDrainResult.failedTerminal,
+        cashRefundNeedsManualHandling: cashRefundDrainResult.needsManualHandling,
       },
       "cron/tick",
     );
@@ -388,5 +468,9 @@ async function runCronTick(
       accountDeletionRetrySucceeded: accountDeletionRetryResult.succeeded,
       accountDeletionRetryPaused: accountDeletionRetryResult.paused,
       accountDeletionRetryFailedTerminal: accountDeletionRetryResult.failedTerminal,
+      cashRefundAttempted: cashRefundDrainResult.attempted,
+      cashRefundSucceeded: cashRefundDrainResult.succeeded,
+      cashRefundFailedTerminal: cashRefundDrainResult.failedTerminal,
+      cashRefundNeedsManualHandling: cashRefundDrainResult.needsManualHandling,
     };
 }

@@ -34,6 +34,8 @@ const BASE_PAYLOAD: LessonEmailPayload = {
   expiresAtLocalDisplay: "Thu, Nov 5, 2026 at 2:00 AM",
   expiryHoursBeforeStart: null,
   initiatedBy: null,
+  refundAmountCents: null,
+  newBalanceCents: null,
 };
 
 beforeEach(() => {

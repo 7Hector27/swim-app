@@ -3,12 +3,13 @@
 // attests their age so requireUser accepts them, and returns a cleanup fn.
 
 import { createClient } from "@supabase/supabase-js";
-import { eq, inArray } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import {
   coachNotifications,
   householdAuditLog,
+  householdBalanceLedger,
   householdMembers,
   households,
   lessons,
@@ -16,7 +17,13 @@ import {
   profiles,
   swimmerClubs,
   swimmers,
+  userPolicyAcceptances,
 } from "../../db/schema";
+import {
+  PAYMENTS_REFUND_VERSION,
+  PRIVACY_VERSION,
+  TERMS_VERSION,
+} from "@swim-app/shared";
 import { __settlePendingCoachAlertsForTests } from "../../lib/lessonApproval";
 
 // All env vars are validated in setup.ts before any test code runs.
@@ -87,6 +94,49 @@ export async function settleAndCleanupCoachNotificationsForHousehold(
 }
 
 /**
+ * Credits a household's balance in one insert — writes a coach_adjustment
+ * ledger row with the given actor and a `reason` that marks it as test
+ * seed data. The balance derivation (`SUM(amount_cents)`) picks it up
+ * immediately; booking paths see the full seeded amount.
+ *
+ * Doesn't take the balance advisory lock — tests call this at setup time,
+ * before any booking activity, so no concurrent writer exists. The lock
+ * is only required when a reader is going to decide a write based on
+ * what it sees (ADR 036 §1 concurrency).
+ */
+export async function seedHouseholdBalanceForTest(
+  args: {
+    householdId: string;
+    actorId: string;
+    amountCents: number;
+    reason?: string;
+  },
+): Promise<void> {
+  await adminDb().insert(householdBalanceLedger).values({
+    householdId: args.householdId,
+    actorId: args.actorId,
+    entryType: "coach_adjustment",
+    amountCents: args.amountCents,
+    reason: args.reason ?? "integration-test-seed",
+  });
+}
+
+/**
+ * Hard-deletes the test household's ledger + audit rows at cleanup time.
+ * The append-only trigger blocks a plain DELETE, so we bypass it under
+ * session_replication_role=replica (same pattern as
+ * balanceLedger.integration.test.ts / stripeWebhook.integration.test.ts).
+ */
+export async function clearHouseholdBalanceForTest(householdId: string): Promise<void> {
+  await adminDb().transaction(async (tx) => {
+    await tx.execute(sql`SET LOCAL session_replication_role = replica`);
+    await tx.execute(
+      sql`DELETE FROM household_balance_ledger WHERE household_id = ${householdId}::uuid`,
+    );
+  });
+}
+
+/**
  * Fully removes a swimmer row and all rows that reference it with ON DELETE
  * RESTRICT foreign keys: household_audit_log.target_swimmer_id and
  * swimmer_clubs.swimmer_id.  Always use this instead of a bare swimmer delete
@@ -106,6 +156,22 @@ export type TestUser = {
   accessToken: string;
   cleanup: () => Promise<void>;
 };
+
+// Policy-acceptance test files need users with no auto-seeded
+// acceptances so they can assert on the "missing" state. Everything
+// else wants the seed because routes gated by
+// `requireCurrentPolicyAcceptance` would otherwise 409. Call this
+// right after `createTestUser(...)` from the two policy test files.
+// Uses session_replication_role=replica to bypass the append-only
+// trigger (same bypass pattern as the balance-ledger helpers).
+export async function clearPolicyAcceptancesForTest(userId: string): Promise<void> {
+  await adminDb().transaction(async (tx) => {
+    await tx.execute(sql`SET LOCAL session_replication_role = replica`);
+    await tx.execute(
+      sql`DELETE FROM user_policy_acceptances WHERE user_id = ${userId}::uuid`,
+    );
+  });
+}
 
 function uniqueEmail(prefix: string): string {
   const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -142,7 +208,7 @@ async function createSupabaseUser(
   return data.id;
 }
 
-async function deleteSupabaseUser(userId: string): Promise<void> {
+export async function deleteSupabaseUser(userId: string): Promise<void> {
   const url = `${getSupabaseUrl()}/auth/v1/admin/users/${userId}`;
   const key = getServiceRoleKey();
   const response = await fetch(url, {
@@ -188,6 +254,13 @@ async function attestAge(userId: string): Promise<void> {
  * Creates a real Supabase auth user, signs them in, and attests their age so
  * requireUser accepts them. The on_auth_user_created trigger creates the
  * household + owner membership atomically; this helper queries that record.
+ *
+ * Parent bookings charge the balance (ADR 036 Phase 4); each test that
+ * exercises POST /lessons must seed its household's balance up-front via
+ * `seedHouseholdBalanceForTest` (or helpers that wrap it). The deliberate
+ * choice not to auto-seed here: Phase 8 hasn't relaxed the append-only
+ * trigger to permit ledger nullification during account deletion, so a
+ * ledger row would break the /me/deletion/confirm path.
  */
 export async function createTestUser(emailPrefix: string): Promise<TestUser> {
   const email = uniqueEmail(emailPrefix);
@@ -209,6 +282,18 @@ export async function createTestUser(emailPrefix: string): Promise<TestUser> {
     }
     const householdId = memberRows[0].householdId;
 
+    // ADR 036 Phase 8 Part B Stop 3 piece 3: seed current acceptances
+    // for all three tracked policies. The signup ROUTE writes these
+    // rows inside its transaction, but this helper creates users via
+    // the admin API so none exist by default. Without them every
+    // booking + add-funds route returns 409 and every test fixture
+    // that previously expected 422/200 breaks.
+    await adminDb().insert(userPolicyAcceptances).values([
+      { userId, policySlug: "terms", version: TERMS_VERSION, source: "signup" },
+      { userId, policySlug: "privacy", version: PRIVACY_VERSION, source: "signup" },
+      { userId, policySlug: "payments_refund", version: PAYMENTS_REFUND_VERSION, source: "signup" },
+    ]);
+
     const accessToken = await signIn(email, password);
 
     return {
@@ -226,6 +311,21 @@ export async function createTestUser(emailPrefix: string): Promise<TestUser> {
         for (const row of swimmerRows) {
           await hardDeleteSwimmer(row.id);
         }
+        // Ledger is append-only; the trigger blocks a plain DELETE so we
+        // bypass it under session_replication_role=replica. Done before
+        // the household delete even though the FK is ON DELETE SET NULL,
+        // so leftover test rows don't accumulate forever.
+        await clearHouseholdBalanceForTest(householdId);
+        // Policy acceptances are append-only via the migration-0084
+        // trigger; same bypass. Must run before the profile DELETE
+        // because user_id → profiles has ON DELETE SET NULL (anonymize,
+        // not delete) and we'd leave orphaned ghost rows otherwise.
+        await adminDb().transaction(async (tx) => {
+          await tx.execute(sql`SET LOCAL session_replication_role = replica`);
+          await tx.execute(
+            sql`DELETE FROM user_policy_acceptances WHERE user_id = ${userId}::uuid`,
+          );
+        });
         // Delete remaining audit log rows (member_added etc. with no swimmer ref).
         await adminDb().delete(householdAuditLog).where(eq(householdAuditLog.householdId, householdId));
         // Delete members before household (profileId has ON DELETE RESTRICT on profiles).
@@ -289,6 +389,14 @@ export async function createTestUserInHousehold(
       role,
     });
 
+    // ADR 036 Phase 8 Part B Stop 3 piece 3: seed current acceptances
+    // (same rationale as createTestUser above).
+    await adminDb().insert(userPolicyAcceptances).values([
+      { userId, policySlug: "terms", version: TERMS_VERSION, source: "signup" },
+      { userId, policySlug: "privacy", version: PRIVACY_VERSION, source: "signup" },
+      { userId, policySlug: "payments_refund", version: PAYMENTS_REFUND_VERSION, source: "signup" },
+    ]);
+
     const accessToken = await signIn(email, password);
 
     return {
@@ -300,6 +408,14 @@ export async function createTestUserInHousehold(
         // Remove any audit log entries this user created in the target household.
         await adminDb().delete(householdAuditLog).where(eq(householdAuditLog.actorId, userId));
         await adminDb().delete(householdMembers).where(eq(householdMembers.profileId, userId));
+        // Policy acceptances: append-only trigger blocked; same bypass
+        // as the sibling helper.
+        await adminDb().transaction(async (tx) => {
+          await tx.execute(sql`SET LOCAL session_replication_role = replica`);
+          await tx.execute(
+            sql`DELETE FROM user_policy_acceptances WHERE user_id = ${userId}::uuid`,
+          );
+        });
         // ADR 034: profiles.id → auth.users.id is no longer ON DELETE CASCADE.
         await deleteSupabaseUser(userId);
         await adminDb().delete(profiles).where(eq(profiles.id, userId));
