@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { fetchBalance } from "@/lib/api/balance";
 import { fetchRangeAvailability, fetchAvailableSlots } from "@/lib/api/lessons";
 import {
   type AvailableSlot,
@@ -289,4 +290,19 @@ export async function submitBatchAction(body: BatchSubmitBody): Promise<BatchSub
   } catch {
     return { kind: "error", message: "Could not reach the server. Please try again." };
   }
+}
+
+// Fresh household balance for the booking page. Called after every
+// successful booking so a second booking in the same session sees the
+// current balance, not the one the server page rendered with. Returns
+// null on auth loss or network error — the caller keeps the previous
+// value so the UI never shows "balance unknown" after a known-good
+// reading.
+export async function fetchBalanceForBookPageAction(): Promise<number | null> {
+  const supabase = await createClient();
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) return null;
+  const result = await fetchBalance(token);
+  return result?.balanceCents ?? null;
 }

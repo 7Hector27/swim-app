@@ -4,8 +4,9 @@
 // lesson's charge inside the same transaction as the status change. The
 // per-household balance lock is acquired in a stable order (sorted by
 // household id) so the cron never deadlocks against a concurrent human
-// writer. Because the audit log's actor_id is NOT NULL, the cron uses
-// the lesson's original requestedBy as the actor on the refund audit.
+// writer. The refund's audit actor is SYSTEM_ACTOR_ID (seeded by
+// migration 0087), not the lesson's requestedBy, so a ledger scan can
+// distinguish a sweep refund from a parent-initiated one.
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import request from "supertest";
@@ -21,6 +22,7 @@ import {
   settleAndCleanupCoachNotificationsForHousehold,
   type TestUser,
 } from "./helpers";
+import { SYSTEM_ACTOR_ID } from "../../services/balance";
 import {
   availabilitySeasons,
   householdAuditLog,
@@ -151,7 +153,7 @@ afterAll(async () => {
 });
 
 describe("POST /internal/cron/tick — expired-pending refund (ADR 036 §4)", () => {
-  it("refunds the lesson_charge of each expired-pending lesson in the same tx as the status change; audit uses the original requestedBy as actor", async () => {
+  it("refunds the lesson_charge of each expired-pending lesson in the same tx as the status change; audit uses SYSTEM_ACTOR_ID as actor", async () => {
     await wipeArtifacts();
     await withAllDaysEnabled(async () => {
       const price = priceForLesson(30, 1);
@@ -210,9 +212,9 @@ describe("POST /internal/cron/tick — expired-pending refund (ADR 036 §4)", ()
         );
       expect(refundRows).toHaveLength(1);
       expect(refundRows[0]?.amountCents).toBe(price);
-      // Cron uses the lesson's requestedBy (the parent who booked) as the
-      // actor so the audit log's NOT NULL actor_id has a meaningful name.
-      expect(refundRows[0]?.actorId).toBe(owner.userId);
+      // Cron attributes the refund to the system actor so the audit row
+      // reads as a background sweep, not something the parent did.
+      expect(refundRows[0]?.actorId).toBe(SYSTEM_ACTOR_ID);
 
       // Balance climbed by the refund amount.
       expect(await getHouseholdBalance(owner.householdId)).toBe(
@@ -233,7 +235,7 @@ describe("POST /internal/cron/tick — expired-pending refund (ADR 036 §4)", ()
           ),
         );
       expect(auditRows.length).toBeGreaterThanOrEqual(1);
-      expect(auditRows[auditRows.length - 1]?.actorId).toBe(owner.userId);
+      expect(auditRows[auditRows.length - 1]?.actorId).toBe(SYSTEM_ACTOR_ID);
     });
   });
 });

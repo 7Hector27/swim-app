@@ -27,13 +27,19 @@ import { householdAuditLog, householdBalanceLedger } from "../../db/schema";
 
 type Db = PostgresJsDatabase<typeof schema>;
 
+// Fixed profile id that represents "the system did this." Seeded by
+// migration 0087. Used as the `actorId` for refunds triggered by a
+// background sweep (the cron's expired-pending pass and the lazy-expiry
+// safety net inside GET /coach/lessons) so the audit trail can't confuse
+// a system-driven refund with an action a real parent took.
+export const SYSTEM_ACTOR_ID = "00000000-0000-0000-0000-000000000000";
+
 // Discriminated union of every ledger entry the service accepts. Shape
 // matches the per-entry-type CHECK constraints on `household_balance_ledger`
 // so a caller that satisfies the type also satisfies the DB. `actorId` is
-// required on every write — the cron-driven expired-pending refund path
-// passes the lesson's original `requestedBy` as the actor so the audit
-// log's NOT NULL actor_id stays happy and the audit entry still names a
-// meaningful party.
+// required on every write — automatic refund paths (cron, lazy expiry)
+// use SYSTEM_ACTOR_ID so the audit trail distinguishes "a sweep did
+// this" from "a parent did this."
 export type LedgerEntryInput =
   | {
       entryType: "card_topup";
@@ -270,12 +276,21 @@ export type RefundLessonChargeResult =
  * it for display only (the actual refund still re-reads inside the
  * balance lock in `refundLessonCharge`). Returns null when the lesson
  * has no outstanding charge (free, pre-Phase-4, or already-refunded).
+ *
+ * `householdId` is required and scopes the ledger read: the function
+ * returns null if the lesson's charge lives on a different household
+ * than the one the caller asserted it belongs to. Callers are
+ * responsible for proving the lesson belongs to `householdId` before
+ * calling (via a prior auth-scoped lesson query); passing the pair
+ * here makes the leak-proof invariant ("a caller cannot read another
+ * household's charge via a lesson id") part of this function's type.
  */
 export async function getLessonOutstandingChargeCents(
   lessonId: string,
+  householdId: string,
   dbOrTx: Db = db,
 ): Promise<number | null> {
-  const outstanding = await findOutstandingLessonCharge(dbOrTx, lessonId);
+  const outstanding = await findOutstandingLessonCharge(dbOrTx, lessonId, householdId);
   if (!outstanding) return null;
   // Charges are stored negative; flip to the positive refund amount.
   return -outstanding.amountCents;
@@ -294,6 +309,7 @@ export async function getLessonOutstandingChargeCents(
 async function findOutstandingLessonCharge(
   tx: Db,
   lessonId: string,
+  householdId: string,
 ): Promise<{ id: string; amountCents: number } | null> {
   const rows = await tx.execute<{
     id: string;
@@ -305,6 +321,7 @@ async function findOutstandingLessonCharge(
       ON refund.refund_of_ledger_id = charge.id
       AND refund.entry_type = 'refund_to_balance'
     WHERE charge.lesson_id = ${lessonId}
+      AND charge.household_id = ${householdId}
       AND charge.entry_type = 'lesson_charge'
       AND refund.id IS NULL
     ORDER BY charge.created_at DESC
@@ -337,7 +354,7 @@ export async function refundLessonCharge(
   tx: Db,
   args: { householdId: string; lessonId: string; actorId: string },
 ): Promise<RefundLessonChargeResult> {
-  const outstanding = await findOutstandingLessonCharge(tx, args.lessonId);
+  const outstanding = await findOutstandingLessonCharge(tx, args.lessonId, args.householdId);
   if (!outstanding) {
     // Either the lesson has no lesson_charge rows at all (free lesson,
     // pre-Phase-4 row) or every charge already has a matching refund.
@@ -404,4 +421,54 @@ export async function refundLessonCharge(
   });
 
   return { refunded: true, amountCents: refundAmount, ledgerId };
+}
+
+/**
+ * Shared "refund on cancel-ish status change" step. Every code path that
+ * moves a lesson to a non-billable terminal status (canceled, declined,
+ * expired, no_show) must call this inside the same transaction as the
+ * status UPDATE so the charge refund cannot be skipped.
+ *
+ * Does two things in order:
+ *   1. Acquires the per-household balance advisory lock for every
+ *      distinct household in sorted order — matches the global lock
+ *      acquisition order used elsewhere so concurrent writers never
+ *      deadlock.
+ *   2. Calls `refundLessonCharge` once per lesson. The underlying DB
+ *      partial-unique on `refund_of_ledger_id` scoped to
+ *      `entry_type='refund_to_balance'` makes a double-call safe.
+ *
+ * Returns a map of `lessonId → refundAmountCents` for every lesson
+ * that actually refunded (free lessons and already-refunded ones are
+ * absent), so callers can snapshot amounts into email payloads
+ * without re-reading the ledger.
+ */
+export async function refundLessonsForStatusChange(
+  tx: Db,
+  args: {
+    lessons: ReadonlyArray<{ lessonId: string; householdId: string }>;
+    actorId: string;
+  },
+): Promise<Map<string, number>> {
+  const householdsToLock = Array.from(
+    new Set(args.lessons.map((lesson) => lesson.householdId)),
+  ).sort();
+  for (const householdId of householdsToLock) {
+    await tx.execute(
+      sql`SELECT pg_advisory_xact_lock(hashtext(${"household-balance:" + householdId}))`,
+    );
+  }
+
+  const refundByLessonId = new Map<string, number>();
+  for (const lesson of args.lessons) {
+    const refund = await refundLessonCharge(tx, {
+      householdId: lesson.householdId,
+      lessonId: lesson.lessonId,
+      actorId: args.actorId,
+    });
+    if (refund.refunded) {
+      refundByLessonId.set(lesson.lessonId, refund.amountCents);
+    }
+  }
+  return refundByLessonId;
 }

@@ -45,6 +45,7 @@ const {
   mockGetHouseholdBalance,
   mockApplyLedgerEntry,
   mockRefundLessonCharge,
+  mockRefundLessonsForStatusChange,
   mockGetLessonOutstandingChargeCents,
 } = vi.hoisted(() => ({
   mockGetUser: vi.fn(),
@@ -65,6 +66,7 @@ const {
   mockRefundLessonCharge: vi
     .fn()
     .mockResolvedValue({ refunded: false, reason: "no_charge" }),
+  mockRefundLessonsForStatusChange: vi.fn().mockResolvedValue(new Map()),
 }));
 
 vi.mock("../lib/supabase", () => ({
@@ -126,7 +128,9 @@ vi.mock("../services/balance", () => ({
   getHouseholdBalance: mockGetHouseholdBalance,
   applyLedgerEntry: mockApplyLedgerEntry,
   refundLessonCharge: mockRefundLessonCharge,
+  refundLessonsForStatusChange: mockRefundLessonsForStatusChange,
   getLessonOutstandingChargeCents: mockGetLessonOutstandingChargeCents,
+  SYSTEM_ACTOR_ID: "00000000-0000-0000-0000-000000000000",
 }));
 
 import { createApp } from "../app";
@@ -263,6 +267,7 @@ beforeEach(() => {
     refunded: false,
     reason: "no_charge",
   });
+  mockRefundLessonsForStatusChange.mockResolvedValue(new Map());
 });
 
 // ── GET /coach/lessons ────────────────────────────────────────────────────────
@@ -494,14 +499,13 @@ describe("POST /internal/cron/tick", () => {
   }
 
   it("expires pending lessons past their deadline", async () => {
-    // ADR 036 Phase 4: the expired pass now also returns householdId +
-    // requestedBy so it can issue per-household refunds. Shape the mock
-    // row accordingly; refundLessonCharge itself is mocked at the module
-    // boundary (see top of file).
+    // ADR 036 Phase 4: the expired pass returns householdId so it can
+    // issue per-household refunds. The refund actor is a fixed system
+    // profile (SYSTEM_ACTOR_ID), not the lesson's requestedBy, so the
+    // mocked row only needs the two columns the cron reads back.
     const expiredRow = {
       id: LESSON_ID,
       householdId: HOUSEHOLD_ID,
-      requestedBy: PARENT_PROFILE_ID,
     };
     mockDbTransaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) => {
       const expireReturning = vi.fn().mockResolvedValue([expiredRow]);
@@ -563,12 +567,22 @@ describe("lazy expiry in GET /coach/lessons", () => {
     const expiredRow = { ...pendingLessonRow, status: "expired" as const };
 
     // Lazy-expiry update now runs inside a transaction so the outbox
-    // write for expired lessons commits atomically.
-    const updateReturning = vi.fn().mockResolvedValue([{ id: LESSON_ID }]);
+    // write for expired lessons commits atomically. The returning
+    // includes householdId so the lazy path can issue the same refund
+    // the cron would have; the refund actor is SYSTEM_ACTOR_ID so no
+    // requestedBy column is needed.
+    const updateReturning = vi.fn().mockResolvedValue([
+      { id: LESSON_ID, householdId: HOUSEHOLD_ID },
+    ]);
     const updateWhere = vi.fn().mockReturnValue({ returning: updateReturning });
     const updateSet = vi.fn().mockReturnValue({ where: updateWhere });
     mockDbTransaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) =>
-      callback({ update: vi.fn().mockReturnValue({ set: updateSet }) }),
+      callback({
+        update: vi.fn().mockReturnValue({ set: updateSet }),
+        // refundLessonsForStatusChange takes the per-household balance
+        // advisory lock via tx.execute; no-op in the unit test.
+        execute: vi.fn().mockResolvedValue(undefined),
+      }),
     );
 
     // lessons query returns the now-expired row (left-joins batches)

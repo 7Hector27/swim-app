@@ -28,6 +28,7 @@ import {
   getHouseholdBalance,
   refundLessonCharge,
   runCashRefundRetryDrain,
+  SYSTEM_ACTOR_ID,
 } from "../services/balance";
 import type { RequestHandler } from "express";
 
@@ -167,17 +168,15 @@ async function runCronTick(
         .returning({
           id: lessons.id,
           householdId: lessons.householdId,
-          requestedBy: lessons.requestedBy,
         });
 
       // ADR 036 §4: expired-pending refunds in the same tx as the
       // status change. Take each affected household's balance lock in
       // a stable sorted order so the cron never deadlocks against
       // concurrent parent / coach writes. refundLessonCharge no-ops on
-      // pre-Phase-4 rows (nothing to invert). The audit row needs a
-      // non-null actor (household_audit_log.actor_id is NOT NULL) —
-      // the lesson's original requestedBy is a meaningful stand-in
-      // for the cron (same parent whose balance is affected).
+      // pre-Phase-4 rows (nothing to invert). The audit row uses
+      // SYSTEM_ACTOR_ID so the ledger clearly reads as a
+      // background-sweep refund, not something the parent did.
       const householdsToRefund = Array.from(
         new Set(
           expiredRows
@@ -196,11 +195,10 @@ async function runCronTick(
       const refundByLessonId = new Map<string, number>();
       for (const row of expiredRows) {
         if (row.householdId === null) continue; // anonymized row — skip
-        if (row.requestedBy === null) continue; // defensive: shouldn't happen on live rows
         const refund = await refundLessonCharge(tx, {
           householdId: row.householdId,
           lessonId: row.id,
-          actorId: row.requestedBy,
+          actorId: SYSTEM_ACTOR_ID,
         });
         if (refund.refunded) refundByLessonId.set(row.id, refund.amountCents);
       }
@@ -209,6 +207,20 @@ async function runCronTick(
       // the expiry UPDATE so an email can never be lost between commit and
       // scheduling. The sender's supersede guard will drop any stragglers
       // if the lesson's starts_at has already passed by send time.
+      //
+      // Cache the post-refund balance per household so a tick that
+      // expires several lessons in the same household issues one
+      // SELECT, not N. The balance is stable for the rest of this
+      // block (no more ledger writes happen before the email loop).
+      const balanceByHouseholdId = new Map<string, number>();
+      async function balanceFor(householdId: string): Promise<number> {
+        const cached = balanceByHouseholdId.get(householdId);
+        if (cached !== undefined) return cached;
+        const fresh = await getHouseholdBalance(householdId, tx);
+        balanceByHouseholdId.set(householdId, fresh);
+        return fresh;
+      }
+
       const emailOutboxIds: string[] = [];
       for (const row of expiredRows) {
         const refundAmountCents = refundByLessonId.get(row.id) ?? null;
@@ -218,7 +230,7 @@ async function runCronTick(
         // emit an email (anonymized rows were skipped above).
         const newBalanceCents =
           refundAmountCents !== null && row.householdId !== null
-            ? await getHouseholdBalance(row.householdId, tx)
+            ? await balanceFor(row.householdId)
             : null;
         emailOutboxIds.push(
           await enqueueLessonEmail(tx, {

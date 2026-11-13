@@ -98,6 +98,7 @@ import {
   getHouseholdBalance,
   getLessonOutstandingChargeCents,
   refundLessonCharge,
+  refundLessonsForStatusChange,
 } from "../services/balance";
 import type { BatchEmailLesson, BatchEmailPayload } from "../services/emails/batchTypes";
 import { isActiveSwimmer } from "../db/queries";
@@ -1720,9 +1721,9 @@ lessonsRouter.get(
       .map(requireLiveLocationId);
 
     const lessonIds = lessonRows.map((row) => row.id);
-    const swimmerRows =
+    const [swimmerRows, chargeByLessonId] = await Promise.all([
       lessonIds.length > 0
-        ? await db
+        ? db
             .select({
               lessonId: lessonSwimmers.lessonId,
               swimmerId: lessonSwimmers.swimmerId,
@@ -1732,7 +1733,19 @@ lessonsRouter.get(
             .from(lessonSwimmers)
             .innerJoin(swimmers, eq(lessonSwimmers.swimmerId, swimmers.id))
             .where(inArray(lessonSwimmers.lessonId, lessonIds))
-        : [];
+        : Promise.resolve([] as Array<{
+            lessonId: string;
+            swimmerId: string;
+            firstName: string;
+            lastName: string;
+          }>),
+      // Per-lesson outstanding charge so the cancel-remaining confirm
+      // dialog can sum authoritative amounts instead of pricing from
+      // the browser. Free-lesson rows get null (no refund line). Scoped
+      // to the requesting household so a mistargeted call can't surface
+      // a charge from another household's lesson.
+      loadOutstandingChargesByLessonId(lessonIds, householdId),
+    ]);
     const swimmersByLesson = new Map<string, LessonSwimmer[]>();
     for (const row of swimmerRows) {
       const list = swimmersByLesson.get(row.lessonId) ?? [];
@@ -1758,11 +1771,34 @@ lessonsRouter.get(
       createdAt: row.createdAt.toISOString(),
       batchId: row.batchId,
       batchMode: batch.mode === "manual" || batch.mode === "weekly" ? batch.mode : null,
+      chargeAmountCents: chargeByLessonId.get(row.id) ?? null,
     }));
 
     res.json(body);
   }),
 );
+
+// Per-sibling outstanding charge. Batches are capped at 20 lessons (ADR
+// 030), so a per-lesson call to the existing ledger reader beats building
+// a batched join for one extra query. Returns a map keyed by lesson id;
+// absent entries are "no outstanding charge" (free lesson or pre-Phase-4
+// row) and the client renders no refund line for them.
+async function loadOutstandingChargesByLessonId(
+  lessonIds: string[],
+  householdId: string,
+): Promise<Map<string, number>> {
+  if (lessonIds.length === 0) return new Map();
+  const entries = await Promise.all(
+    lessonIds.map(async (id) =>
+      [id, await getLessonOutstandingChargeCents(id, householdId)] as const,
+    ),
+  );
+  const map = new Map<string, number>();
+  for (const [id, amount] of entries) {
+    if (amount !== null) map.set(id, amount);
+  }
+  return map;
+}
 
 // ── DELETE /lessons/batch/:batchId/remaining ─────────────────────────────────
 // Owners / managers cancel every future-dated pending + approved lesson in the
@@ -1841,6 +1877,30 @@ lessonsRouter.delete(
           calendarSequence: sql`${lessons.calendarSequence} + 1` as unknown as number,
         })
         .where(inArray(lessons.id, allIds));
+
+      // ADR 036 §4: batch cancel-remaining refunds each charged lesson's
+      // lesson_charge in the same transaction as the status flip. The
+      // shared helper takes the household's balance lock and loops
+      // refundLessonCharge — free-lesson and pre-Phase-4 rows refund $0
+      // and are absent from the returned map. Every lesson in the batch
+      // belongs to the same household (filter above), so one lock is
+      // acquired.
+      const refundByLessonId = await refundLessonsForStatusChange(tx, {
+        lessons: toCancel.map((lesson) => ({
+          lessonId: lesson.id,
+          householdId,
+        })),
+        actorId: profileId,
+      });
+      // Helper returns refund amounts already in the positive-cents
+      // direction (sign flipped from the stored charge), so a straight
+      // sum is the dollar total that lands back on the household. A
+      // fully-free batch has no entries and sums to 0.
+      let totalRefundAmountCents = 0;
+      for (const amount of refundByLessonId.values()) {
+        totalRefundAmountCents += amount;
+      }
+      const newBalanceCents = await getHouseholdBalance(householdId, tx);
 
       const recipientRows = await tx
         .select({ profileId: householdMembers.profileId })
@@ -1983,6 +2043,8 @@ lessonsRouter.delete(
         canceledIds: allIds,
         outboxId,
         coachNotificationId,
+        totalRefundAmountCents,
+        newBalanceCents,
       };
     });
 
@@ -2004,6 +2066,8 @@ lessonsRouter.delete(
 
     const body: BatchCancelRemainingResponse = {
       batchId,
+      totalRefundAmountCents: result.totalRefundAmountCents,
+      newBalanceCents: result.newBalanceCents,
       canceledLessonIds: result.canceledIds,
       canceledCount: result.canceledIds.length,
     };
@@ -2062,8 +2126,11 @@ lessonsRouter.get(
         .where(eq(lessonSwimmers.lessonId, id)),
       // ADR 036 Phase 8 Part B: lesson detail carries the current
       // outstanding charge so the parent cancel-confirmation can show
-      // "You'll get $X back". null = free lesson or already-refunded.
-      getLessonOutstandingChargeCents(id),
+      // "You'll get $X back". Scoped to the requesting household;
+      // the lesson row above is already household-scoped via
+      // requireHouseholdMember + the SELECT WHERE. null = free lesson
+      // or already-refunded.
+      getLessonOutstandingChargeCents(id, req.householdId),
     ]);
 
     const body: UpcomingLesson = {
@@ -2660,8 +2727,10 @@ export async function loadLessonWithSwimmers(
     // ADR 036 Phase 8 Part B: lesson detail/response carries the
     // current outstanding charge so the coach and parent UIs can show
     // the refund amount in a cancel/decline/no-show confirmation.
-    // null = free lesson or already-refunded.
-    getLessonOutstandingChargeCents(lessonId),
+    // Scoped to the lesson's household so a mistargeted call can't
+    // surface another household's charge. null = free lesson or
+    // already-refunded.
+    getLessonOutstandingChargeCents(lessonId, lesson.householdId),
   ]);
 
   return {

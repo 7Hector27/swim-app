@@ -1111,6 +1111,16 @@ export const BatchCancelRemainingResponseSchema = z.object({
   batchId: z.string().uuid(),
   canceledLessonIds: z.array(z.string().uuid()),
   canceledCount: z.number().int().nonnegative(),
+  // Total positive cents refunded to the household's balance across every
+  // cancelled lesson in this call. Zero when all cancelled lessons were
+  // free (no matching lesson_charge rows). Clients summing the preview
+  // against this should expect exact equality: both come from the
+  // authoritative ledger charge amounts.
+  totalRefundAmountCents: z.number().int().nonnegative(),
+  // Household balance (cents) after the refund(s) land. Clients render
+  // this on the post-cancel confirmation so the parent doesn't have to
+  // round-trip to /me/balance to see the new total.
+  newBalanceCents: z.number().int(),
 });
 export type BatchCancelRemainingResponse = z.infer<typeof BatchCancelRemainingResponseSchema>;
 

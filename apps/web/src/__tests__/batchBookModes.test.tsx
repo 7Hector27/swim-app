@@ -430,6 +430,72 @@ describe("Recurring bottom bar", () => {
   });
 });
 
+// ── Recurring series start date (dev-testing fix) ──────────────────────────
+//
+// Before the fix the series anchored to today when the parent browsed to a
+// future week, so clicking Saturdays on the 21st built a series that
+// included the 14th. These tests pin the rule: series starts from the
+// LA date of the earliest tapped slot, never earlier.
+describe("Recurring series start date", () => {
+  it("picking in a future week starts the series from that week, not today", async () => {
+    // FROZEN_NOW = 2026-10-20 Tue PST. WEEK_DATA's first day is 2026-11-02 Mon
+    // — a future week from the frozen "now." The Mon pick must set
+    // startDate to 2026-11-02, not inherit Oct 20.
+    await renderCalendar();
+    fireEvent.click(screen.getByTestId("mode-recurring"));
+    fireEvent.click(firstSlotButton(/^3:00 PM$/i));
+    await waitFor(() => {
+      expect(mockPreview).toHaveBeenCalled();
+    });
+    const lastCall = mockPreview.mock.calls[mockPreview.mock.calls.length - 1];
+    expect(lastCall?.[0]).toMatchObject({ mode: "weekly", startDate: "2026-11-02" });
+    // The summary surfaces the real date range, not a pre-pick week.
+    expect(screen.getByTestId("recurring-date-range").textContent).toContain("Nov 2");
+    expect(screen.getByTestId("recurring-date-range").textContent).not.toContain("Oct");
+  });
+
+  it("subsequent picks in earlier weeks pull the start date earlier", async () => {
+    // Click Wed Nov 11 first (the second-week Wednesday slot), then Mon
+    // Nov 2 (the first-week Monday). Different (weekday, time) pairs so
+    // both stay in the pattern; the startDate anchors to the earliest.
+    await renderCalendar();
+    fireEvent.click(screen.getByTestId("mode-recurring"));
+    const laterWed = screen.getByRole("button", { name: /^Wednesday, November 11, 3:00 PM/i });
+    fireEvent.click(laterWed);
+    await waitFor(() => {
+      expect(mockPreview.mock.calls.at(-1)?.[0]).toMatchObject({ startDate: "2026-11-11" });
+    });
+    const earlierMon = screen.getByRole("button", { name: /^Monday, November 2, 3:00 PM/i });
+    fireEvent.click(earlierMon);
+    await waitFor(() => {
+      expect(mockPreview.mock.calls.at(-1)?.[0]).toMatchObject({ startDate: "2026-11-02" });
+    });
+  });
+
+  it("removing every pattern pair resets the start date so the next pick re-anchors", async () => {
+    await renderCalendar();
+    fireEvent.click(screen.getByTestId("mode-recurring"));
+    // Pick Mon Nov 9 first — startDate = Nov 9.
+    const monNov9 = screen.getByRole("button", { name: /^Monday, November 9, 3:00 PM/i });
+    fireEvent.click(monNov9);
+    await waitFor(() => {
+      expect(mockPreview.mock.calls.at(-1)?.[0]).toMatchObject({ startDate: "2026-11-09" });
+    });
+    // Remove that pair by clicking the same slot again — pattern becomes
+    // empty and the anchor clears.
+    fireEvent.click(monNov9);
+    expect(screen.getByTestId("recurring-pattern-label").textContent).toMatch(/No pattern/i);
+    // Now click Mon Nov 2. Without the anchor-reset fix the stale Nov 9
+    // would keep winning; with the fix Nov 2 wins because it's the new
+    // (and only) pick.
+    const monNov2 = screen.getByRole("button", { name: /^Monday, November 2, 3:00 PM/i });
+    fireEvent.click(monNov2);
+    await waitFor(() => {
+      expect(mockPreview.mock.calls.at(-1)?.[0]).toMatchObject({ startDate: "2026-11-02" });
+    });
+  });
+});
+
 // ── Review sheet (still works) ──────────────────────────────────────────────
 
 describe("Review sheet", () => {

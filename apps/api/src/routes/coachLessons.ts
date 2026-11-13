@@ -79,6 +79,8 @@ import {
   getHouseholdBalance,
   getLessonOutstandingChargeCents,
   refundLessonCharge,
+  refundLessonsForStatusChange,
+  SYSTEM_ACTOR_ID,
 } from "../services/balance";
 import { computeAvailableSlots, mergeSlotWindows } from "../lib/slots";
 import { z } from "zod";
@@ -562,14 +564,56 @@ coachLessonsRouter.get(
           .update(lessons)
           .set({ status: "expired" })
           .where(and(eq(lessons.status, "pending"), lt(lessons.expiresAt, now)))
-          .returning({ id: lessons.id });
+          .returning({
+            id: lessons.id,
+            householdId: lessons.householdId,
+          });
+
+        // ADR 036 §4: expired-pending refunds in the same tx as the status
+        // change. Mirrors the cron's expire-and-refund — a lazy expiry
+        // triggered by a coach GET must not silently skip the refund that
+        // the cron would have written. refundLessonsForStatusChange
+        // locks each distinct household in sorted order and short-
+        // circuits free / pre-Phase-4 rows, so one call covers the
+        // whole batch; all refunds attribute to SYSTEM_ACTOR_ID.
+        const toRefund = rows.flatMap((row) =>
+          row.householdId !== null
+            ? [{ lessonId: row.id, householdId: row.householdId }]
+            : [],
+        );
+        const refundByLessonId = await refundLessonsForStatusChange(tx, {
+          lessons: toRefund,
+          actorId: SYSTEM_ACTOR_ID,
+        });
+
+        // All refunds have landed; cache the post-refund balance once
+        // per household so a batch with N lessons in the same household
+        // issues one SELECT, not N. The in-tx balance is stable here —
+        // refundLessonsForStatusChange returns after the last ledger
+        // insert and no further balance writes happen in this block.
+        const balanceByHouseholdId = new Map<string, number>();
+        async function balanceFor(householdId: string): Promise<number> {
+          const cached = balanceByHouseholdId.get(householdId);
+          if (cached !== undefined) return cached;
+          const fresh = await getHouseholdBalance(householdId, tx);
+          balanceByHouseholdId.set(householdId, fresh);
+          return fresh;
+        }
+
         const ids: string[] = [];
         for (const row of rows) {
+          const refundAmountCents = refundByLessonId.get(row.id) ?? null;
+          const newBalanceCents =
+            refundAmountCents !== null && row.householdId !== null
+              ? await balanceFor(row.householdId)
+              : null;
           ids.push(
             await enqueueLessonEmail(tx, {
               lessonId: row.id,
               event: "request_expired",
               actorRole: "system",
+              refundAmountCents,
+              newBalanceCents,
             }),
           );
         }
@@ -1549,8 +1593,10 @@ coachLessonsRouter.get(
         .where(eq(lessonSwimmers.lessonId, id)),
       // ADR 036 Phase 8 Part B Stop 3 piece 4: cancel/decline/no-show
       // confirmations read the outstanding charge from the coach lesson
-      // detail. Null = free lesson or already-refunded.
-      getLessonOutstandingChargeCents(id),
+      // detail. Scoped to the lesson's household so a mistargeted call
+      // can't surface another household's charge. Null = free lesson or
+      // already-refunded.
+      getLessonOutstandingChargeCents(id, liveLesson.householdId),
     ]);
 
     const swimmerMap = new Map<string, CoachLessonSwimmer>();

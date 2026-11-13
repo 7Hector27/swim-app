@@ -48,6 +48,7 @@ const {
   mockGetHouseholdBalance,
   mockApplyLedgerEntry,
   mockRefundLessonCharge,
+  mockRefundLessonsForStatusChange,
   mockGetLessonOutstandingChargeCents,
 } = vi.hoisted(() => ({
   mockGetUser: vi.fn(),
@@ -73,6 +74,7 @@ const {
   mockRefundLessonCharge: vi
     .fn()
     .mockResolvedValue({ refunded: false, reason: "no_charge" }),
+  mockRefundLessonsForStatusChange: vi.fn().mockResolvedValue(new Map()),
   // ADR 036 Phase 8 Part B Stop 3 piece 4: lesson detail routes read
   // the outstanding charge via the balance service. Default: no charge
   // (free lesson / already-refunded) so cancel confirmations show
@@ -128,6 +130,7 @@ vi.mock("../services/balance", () => ({
   getHouseholdBalance: mockGetHouseholdBalance,
   applyLedgerEntry: mockApplyLedgerEntry,
   refundLessonCharge: mockRefundLessonCharge,
+  refundLessonsForStatusChange: mockRefundLessonsForStatusChange,
   getLessonOutstandingChargeCents: mockGetLessonOutstandingChargeCents,
 }));
 

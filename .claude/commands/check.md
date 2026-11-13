@@ -9,7 +9,9 @@ Run these checks from the repo root, in this order, one at a time:
 2. pnpm lint
 3. pnpm test
 4. pnpm test:integration
-5. pnpm --filter web build
+5. `rm -rf apps/web/.next && pnpm --filter web build` (on Windows PowerShell: `Remove-Item -Recurse -Force apps/web/.next -ErrorAction SilentlyContinue; pnpm --filter web build`)
+
+Step 5 wipes `apps/web/.next` before building because a stale incremental cache from an earlier interleaved run (integration tests before build, build after a partial run, etc.) has caused `/_not-found` and `Cannot find module './vendor-chunks/...'` prerender errors that disappear on a clean rebuild. Always start from an empty `.next` so a build failure in this step is a real failure.
 
 If $ARGUMENTS is "quick", skip step 4.
 

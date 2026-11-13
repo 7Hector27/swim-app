@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { apiErrorMessage } from "@/lib/apiErrorMessage";
+import { BatchCancelRemainingResponseSchema } from "@swim-app/shared";
 
 // ADR 036 Phase 8 Part B Stop 3 piece 4: the post-cancel confirmation
 // now shows the refund amount and new balance. The server action
@@ -100,6 +101,19 @@ export async function cancelBatchRemainingAction(
   }
 
   if (responseStatus >= 200 && responseStatus < 300) {
+    // Surface the server's refund total + new balance so the dialog
+    // can show "Refunded $X. New balance $Y." before the parent
+    // navigates back. Falls back to a pure-redirect state only if the
+    // response shape is unexpected (defensive; the server contract
+    // guarantees both fields).
+    const parsed = BatchCancelRemainingResponseSchema.safeParse(responseBody);
+    if (parsed.success) {
+      return {
+        status: "canceled",
+        refundAmountCents: parsed.data.totalRefundAmountCents,
+        newBalanceCents: parsed.data.newBalanceCents,
+      };
+    }
     redirect("/dashboard");
   }
 
