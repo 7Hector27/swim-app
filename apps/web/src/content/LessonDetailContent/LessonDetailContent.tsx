@@ -70,16 +70,6 @@ export default function LessonDetailContent({
         ? cancelState
         : null;
 
-  // Pre-confirm refund total for the batch cancel dialog — sum of each
-  // sibling's authoritative chargeAmountCents. Free-lesson rows carry
-  // null and drop out of the sum; if everything is free, totalRefund is
-  // 0 and the refund line is suppressed (same rule as the response
-  // "totalRefundAmountCents === 0" case).
-  const batchRefundPreviewCents = batchSiblings.reduce((sum, sibling) => {
-    const charge = sibling.chargeAmountCents;
-    return typeof charge === "number" ? sum + charge : sum;
-  }, 0);
-
   const startsAt = new Date(lesson.startsAt);
   const endsAt = new Date(startsAt.getTime() + lesson.durationMinutes * 60 * 1000);
   const lessonHasStarted = new Date() >= startsAt;
@@ -98,9 +88,31 @@ export default function LessonDetailContent({
     .sort((a, b) => a.startsAt.localeCompare(b.startsAt));
   const showBookingList = lesson.batchId !== null && otherFutureSiblings.length > 0;
 
-  const cancelDialogSiblings = [...batchSiblings].sort((a, b) =>
-    a.startsAt.localeCompare(b.startsAt),
-  );
+  // DELETE /lessons/batch/:batchId/remaining only touches lessons that
+  // are still pending or approved AND strictly future-dated; the
+  // server-side preview endpoint returns the same filtered set. Mirror
+  // those rules on the client so a sibling that flipped to completed /
+  // canceled / past-start between fetch and dialog open can't inflate
+  // the "Cancel N lessons?" count or the refund preview total.
+  const now = new Date();
+  const cancelDialogSiblings = [...batchSiblings]
+    .filter(
+      (sibling) =>
+        (sibling.status === "pending" || sibling.status === "approved")
+        && new Date(sibling.startsAt) > now,
+    )
+    .sort((a, b) => a.startsAt.localeCompare(b.startsAt));
+
+  // Pre-confirm refund total for the batch cancel dialog — sum of each
+  // sibling's authoritative chargeAmountCents, scoped to the lessons
+  // that would actually cancel. Free-lesson rows carry null and drop
+  // out of the sum; if everything is free, totalRefund is 0 and the
+  // refund line is suppressed (same rule as the response
+  // "totalRefundAmountCents === 0" case).
+  const batchRefundPreviewCents = cancelDialogSiblings.reduce((sum, sibling) => {
+    const charge = sibling.chargeAmountCents;
+    return typeof charge === "number" ? sum + charge : sum;
+  }, 0);
 
   const swimmerLabel =
     lesson.swimmers.map((swimmer) => `${swimmer.firstName} ${swimmer.lastName.charAt(0)}.`).join(", ") ||
