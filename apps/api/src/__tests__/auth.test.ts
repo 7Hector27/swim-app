@@ -78,11 +78,16 @@ vi.mock("../db/client", () => ({
                 reject: (err: unknown) => void,
               ) => void;
               returning: () => Promise<unknown>;
+              onConflictDoNothing: () => typeof thenable;
             } = {
               then: (resolve, reject) => {
                 Promise.resolve(auditResolver()).then(resolve, reject);
               },
               returning: () => acceptanceReturning(),
+              // applyPolicyAcceptance chains `.onConflictDoNothing(...)`
+              // between `.values()` and `.returning()` for idempotency
+              // (ADR 036 Phase 8 Part B Stop 3). Keep the chain intact.
+              onConflictDoNothing: () => thenable,
             };
             // Silence unused-table warning (schema check path).
             void table;
