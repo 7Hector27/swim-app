@@ -130,6 +130,7 @@ vi.mock("../services/balance", () => ({
   refundLessonCharge: mockRefundLessonCharge,
   refundLessonsForStatusChange: mockRefundLessonsForStatusChange,
   getLessonOutstandingChargeCents: mockGetLessonOutstandingChargeCents,
+  SYSTEM_ACTOR_ID: "00000000-0000-0000-0000-000000000000",
 }));
 
 import { createApp } from "../app";
@@ -498,14 +499,13 @@ describe("POST /internal/cron/tick", () => {
   }
 
   it("expires pending lessons past their deadline", async () => {
-    // ADR 036 Phase 4: the expired pass now also returns householdId +
-    // requestedBy so it can issue per-household refunds. Shape the mock
-    // row accordingly; refundLessonCharge itself is mocked at the module
-    // boundary (see top of file).
+    // ADR 036 Phase 4: the expired pass returns householdId so it can
+    // issue per-household refunds. The refund actor is a fixed system
+    // profile (SYSTEM_ACTOR_ID), not the lesson's requestedBy, so the
+    // mocked row only needs the two columns the cron reads back.
     const expiredRow = {
       id: LESSON_ID,
       householdId: HOUSEHOLD_ID,
-      requestedBy: PARENT_PROFILE_ID,
     };
     mockDbTransaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) => {
       const expireReturning = vi.fn().mockResolvedValue([expiredRow]);
@@ -568,10 +568,11 @@ describe("lazy expiry in GET /coach/lessons", () => {
 
     // Lazy-expiry update now runs inside a transaction so the outbox
     // write for expired lessons commits atomically. The returning
-    // includes householdId + requestedBy so the lazy path can issue
-    // the same refund the cron would have.
+    // includes householdId so the lazy path can issue the same refund
+    // the cron would have; the refund actor is SYSTEM_ACTOR_ID so no
+    // requestedBy column is needed.
     const updateReturning = vi.fn().mockResolvedValue([
-      { id: LESSON_ID, householdId: HOUSEHOLD_ID, requestedBy: PARENT_PROFILE_ID },
+      { id: LESSON_ID, householdId: HOUSEHOLD_ID },
     ]);
     const updateWhere = vi.fn().mockReturnValue({ returning: updateReturning });
     const updateSet = vi.fn().mockReturnValue({ where: updateWhere });

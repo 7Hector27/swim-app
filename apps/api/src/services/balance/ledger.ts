@@ -27,13 +27,19 @@ import { householdAuditLog, householdBalanceLedger } from "../../db/schema";
 
 type Db = PostgresJsDatabase<typeof schema>;
 
+// Fixed profile id that represents "the system did this." Seeded by
+// migration 0087. Used as the `actorId` for refunds triggered by a
+// background sweep (the cron's expired-pending pass and the lazy-expiry
+// safety net inside GET /coach/lessons) so the audit trail can't confuse
+// a system-driven refund with an action a real parent took.
+export const SYSTEM_ACTOR_ID = "00000000-0000-0000-0000-000000000000";
+
 // Discriminated union of every ledger entry the service accepts. Shape
 // matches the per-entry-type CHECK constraints on `household_balance_ledger`
 // so a caller that satisfies the type also satisfies the DB. `actorId` is
-// required on every write — the cron-driven expired-pending refund path
-// passes the lesson's original `requestedBy` as the actor so the audit
-// log's NOT NULL actor_id stays happy and the audit entry still names a
-// meaningful party.
+// required on every write — automatic refund paths (cron, lazy expiry)
+// use SYSTEM_ACTOR_ID so the audit trail distinguishes "a sweep did
+// this" from "a parent did this."
 export type LedgerEntryInput =
   | {
       entryType: "card_topup";

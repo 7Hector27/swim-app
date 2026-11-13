@@ -80,6 +80,7 @@ import {
   getLessonOutstandingChargeCents,
   refundLessonCharge,
   refundLessonsForStatusChange,
+  SYSTEM_ACTOR_ID,
 } from "../services/balance";
 import { computeAvailableSlots, mergeSlotWindows } from "../lib/slots";
 import { z } from "zod";
@@ -566,32 +567,29 @@ coachLessonsRouter.get(
           .returning({
             id: lessons.id,
             householdId: lessons.householdId,
-            requestedBy: lessons.requestedBy,
           });
 
         // ADR 036 §4: expired-pending refunds in the same tx as the status
         // change. Mirrors the cron's expire-and-refund — a lazy expiry
         // triggered by a coach GET must not silently skip the refund that
-        // the cron would have written. The lesson's requestedBy is the
-        // audit actor (matches internal cron path).
+        // the cron would have written. All refunds attribute to
+        // SYSTEM_ACTOR_ID so the audit trail reads as a background-sweep
+        // refund rather than making it look like the parent (or the
+        // coach whose GET happened to kick the sweep) initiated it.
         const toRefund = rows.flatMap((row) =>
-          row.householdId !== null && row.requestedBy !== null
-            ? [{
-                lessonId: row.id,
-                householdId: row.householdId,
-                requestedBy: row.requestedBy,
-              }]
+          row.householdId !== null
+            ? [{ lessonId: row.id, householdId: row.householdId }]
             : [],
         );
         const refundByLessonId = new Map<string, number>();
-        // Group by requestedBy so a single actorId covers each slice.
-        // Expired pendings all come from the parent who requested them;
-        // acquire the balance lock once per household and refund.
+        // Group by actor (only SYSTEM_ACTOR_ID now that automatic
+        // refunds share one actor); single-entry map until item 1 of
+        // the review collapses it into a single helper call.
         const byActor = new Map<string, Array<{ lessonId: string; householdId: string }>>();
         for (const row of toRefund) {
-          const list = byActor.get(row.requestedBy) ?? [];
+          const list = byActor.get(SYSTEM_ACTOR_ID) ?? [];
           list.push({ lessonId: row.lessonId, householdId: row.householdId });
-          byActor.set(row.requestedBy, list);
+          byActor.set(SYSTEM_ACTOR_ID, list);
         }
         for (const [actorId, lessonsForActor] of byActor) {
           const slice = await refundLessonsForStatusChange(tx, {

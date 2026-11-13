@@ -4,6 +4,7 @@ export {
   getLessonOutstandingChargeCents,
   refundLessonCharge,
   refundLessonsForStatusChange,
+  SYSTEM_ACTOR_ID,
   withBalanceLock,
 } from "./ledger";
 export type { LedgerEntryInput, RefundLessonChargeResult } from "./ledger";
