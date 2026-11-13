@@ -33,6 +33,7 @@ import SkillGradeRow from "./SkillGradeRow";
 import SideRatedRowPair from "./SideRatedRowPair";
 import CalculatedSkillRow from "./CalculatedSkillRow";
 import SectionTabs from "./SectionTabs";
+import evaluateStyles from "./EvaluateContent.module.css";
 import UndoToast from "./UndoToast";
 
 interface EvaluateContentProps {
@@ -140,6 +141,14 @@ export default function EvaluateContent({
   const [staleBanner, setStaleBanner] = useState(false);
   const [skillSearch, setSkillSearch] = useState("");
   const [activeSectionIndex, setActiveSectionIndex] = useState(0);
+  // ADR 036 Phase 8 Part B Stop 3 piece 12 (animation audit #2):
+  // mastered-moment state. `recentMasteryKey` is the draftKey that
+  // just crossed into grade 5 — rendered as an inline chip next to
+  // the row's label, cleared after ~2 seconds. A Set in a ref tracks
+  // which keys have already fired in this session so re-selecting 5
+  // after bouncing to another grade doesn't retrigger the badge.
+  const firedMasteryRef = useRef<Set<string>>(new Set());
+  const [recentMasteryKey, setRecentMasteryKey] = useState<string | null>(null);
   const [depSuggestion, setDepSuggestion] = useState<
     | { status: "idle" }
     | { status: "loading" }
@@ -571,6 +580,21 @@ export default function EvaluateContent({
     }));
   }
 
+  // Fire the mastery badge for one draft key at a time. Deduped per
+  // session so a single skill can only show the badge once — the
+  // row component already checked prevGrade + draft before calling
+  // this, so by the time we get here we know the crossing is real.
+  function handleMastery(key: string) {
+    if (firedMasteryRef.current.has(key)) return;
+    firedMasteryRef.current.add(key);
+    setRecentMasteryKey(key);
+    const timeout = window.setTimeout(() => {
+      setRecentMasteryKey((current) => (current === key ? null : current));
+    }, 2200);
+    // No cleanup — the timeout is short and the component outlives it.
+    void timeout;
+  }
+
   const selectedScreen = screens.find((screen) => screen.screenSlug === draft.screenSlug) ?? null;
 
   const slugToName = Object.fromEntries(
@@ -850,6 +874,8 @@ export default function EvaluateContent({
           leftDraft={draft.skills[`${skill.id}:left`] ?? defaultSkillDraft()}
           rightDraft={draft.skills[`${skill.id}:right`] ?? defaultSkillDraft()}
           onChange={patchSkill}
+          onMastery={handleMastery}
+          masteredKey={recentMasteryKey}
           {...(leftIssues !== undefined && { leftIssues })}
           {...(rightIssues !== undefined && { rightIssues })}
           {...(prevLeft !== undefined && { prevGradeLeft: prevLeft })}
@@ -867,6 +893,8 @@ export default function EvaluateContent({
         label={label}
         draft={draft.skills[skill.id] ?? defaultSkillDraft()}
         onChange={patchSkill}
+        onMastery={handleMastery}
+        masteredKey={recentMasteryKey}
         {...(rowIssues !== undefined && { issues: rowIssues })}
         {...(prev !== undefined && { prevGrade: prev })}
       />
@@ -1130,10 +1158,17 @@ export default function EvaluateContent({
                       activeIndex={activeSectionIndex}
                       onSelect={setActiveSectionIndex}
                     />
+                    {/* The React key on this <section> forces a remount
+                        on tab change, which re-fires the CSS module's
+                        @starting-style opacity 0→1 transition (180ms
+                        strong ease-out). Transitions, not keyframes,
+                        so rapid tab taps retarget mid-crossfade.
+                        animate skill #5. */}
                     <section
+                      key={activeSectionIndex}
                       id={DOM_IDS.ratings}
                       aria-label={`${activeSection.name} skills`}
-                      className="grid grid-cols-1 tablet:grid-cols-2 gap-4"
+                      className={`${evaluateStyles.sectionPanel} grid grid-cols-1 tablet:grid-cols-2 gap-4`}
                     >
                       {activeSection.skills.map((skill) => {
                         if (startParentIds.has(skill.id)) {
@@ -1148,6 +1183,8 @@ export default function EvaluateContent({
                                 draftSkills={draft.skills}
                                 onChange={patchSkill}
                                 prevGrades={prevGrades}
+                                onMastery={handleMastery}
+                                masteredKey={recentMasteryKey}
                               />
                             </div>
                           );

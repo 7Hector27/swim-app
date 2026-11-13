@@ -47,9 +47,11 @@ interface StartGroupSectionProps {
   draftSkills: Record<string, SkillDraft>;
   onChange: (key: string, patch: Partial<SkillDraft>) => void;
   prevGrades?: SwimmerSkillsResponse["grades"];
+  onMastery?: (draftKey: string) => void;
+  masteredKey?: string | null;
 }
 
-export default function StartGroupSection({ parent, components, draftSkills, onChange, prevGrades }: StartGroupSectionProps) {
+export default function StartGroupSection({ parent, components, draftSkills, onChange, prevGrades, onMastery, masteredKey }: StartGroupSectionProps) {
   // Build RatingRecords from current draft for the component skills
   const ratingRecords: RatingRecord[] = [];
   for (const skill of components) {
@@ -111,6 +113,8 @@ export default function StartGroupSection({ parent, components, draftSkills, onC
                 leftDraft={draftSkills[`${skill.id}:left`] ?? defaultSkillDraft()}
                 rightDraft={draftSkills[`${skill.id}:right`] ?? defaultSkillDraft()}
                 onChange={onChange}
+                {...(onMastery !== undefined && { onMastery })}
+                {...(masteredKey !== undefined && { masteredKey })}
                 {...(prevLeft !== undefined && { prevGradeLeft: prevLeft })}
                 {...(prevRight !== undefined && { prevGradeRight: prevRight })}
               />
@@ -125,6 +129,8 @@ export default function StartGroupSection({ parent, components, draftSkills, onC
               label={skill.name}
               draft={draftSkills[skill.id] ?? defaultSkillDraft()}
               onChange={onChange}
+              {...(onMastery !== undefined && { onMastery })}
+              {...(masteredKey !== undefined && { masteredKey })}
               {...(prev !== undefined && { prevGrade: prev })}
             />
           );
