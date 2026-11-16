@@ -1,5 +1,5 @@
 import { type RequestHandler, Router } from "express";
-import { and, asc, count, desc, eq, gt, inArray, max, ne, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, inArray, lt, max, ne, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import type {
   AvailableSlot,
@@ -117,6 +117,33 @@ const requireParentOrCoach: RequestHandler = (req, res, next) => {
 
 lessonsRouter.use(requireUser);
 
+// Past-lessons cursor: opaque base64url of `<iso-startsAt>|<lessonId>`.
+// Only the past filter uses it; upcoming stays on the pre-existing offset
+// contract. Matches the (startsAt desc, id desc) ordering below so a cursor
+// from the previous page lands on the next strictly-older row.
+interface PastLessonsCursor {
+  startsAt: string;
+  id: string;
+}
+
+function encodePastCursor(cursor: PastLessonsCursor): string {
+  return Buffer.from(`${cursor.startsAt}|${cursor.id}`, "utf8").toString("base64url");
+}
+
+function decodePastCursor(raw: string): PastLessonsCursor | null {
+  try {
+    const decoded = Buffer.from(raw, "base64url").toString("utf8");
+    const pipe = decoded.indexOf("|");
+    if (pipe <= 0) return null;
+    const startsAt = decoded.slice(0, pipe);
+    const id = decoded.slice(pipe + 1);
+    if (!startsAt || !id) return null;
+    return { startsAt, id };
+  } catch {
+    return null;
+  }
+}
+
 // ── GET /lessons ──────────────────────────────────────────────────────────────
 
 lessonsRouter.get(
@@ -131,6 +158,13 @@ lessonsRouter.get(
     const filter = query.filter ?? "upcoming";
     const limit = query.limit ?? 20;
     const offset = query.offset ?? 0;
+    // Past-filter cursor: `<iso-startsAt>|<lessonId>`. Only honored for
+    // filter=past so the upcoming (offset-paginated) dashboard list stays
+    // on its existing contract.
+    const pastCursor =
+      filter === "past" && typeof query.cursor === "string"
+        ? decodePastCursor(query.cursor)
+        : null;
 
     const selectShape = {
       id: lessons.id,
@@ -155,12 +189,29 @@ lessonsRouter.get(
       ? and(
           eq(lessons.householdId, householdId),
           sql`${lessons.startsAt} + ${lessons.durationMinutes} * interval '1 minute' <= ${now.toISOString()}::timestamptz`,
+          pastCursor
+            ? or(
+                lt(lessons.startsAt, new Date(pastCursor.startsAt)),
+                and(
+                  eq(lessons.startsAt, new Date(pastCursor.startsAt)),
+                  lt(lessons.id, pastCursor.id),
+                ),
+              )
+            : undefined,
         )
       : and(
           eq(lessons.householdId, householdId),
           inArray(lessons.status, ["pending", "approved"]),
           sql`${lessons.startsAt} + ${lessons.durationMinutes} * interval '1 minute' > ${now.toISOString()}::timestamptz`,
         );
+
+    // Count condition omits the cursor so `total` stays stable across pages.
+    const countCondition = filter === "past"
+      ? and(
+          eq(lessons.householdId, householdId),
+          sql`${lessons.startsAt} + ${lessons.durationMinutes} * interval '1 minute' <= ${now.toISOString()}::timestamptz`,
+        )
+      : filterCondition;
 
     const [rawLessonRows, countRows] = await Promise.all([
       filter === "past"
@@ -170,9 +221,11 @@ lessonsRouter.get(
             .innerJoin(lessonLocations, eq(lessons.locationId, lessonLocations.id))
             .leftJoin(bookingBatches, eq(lessons.batchId, bookingBatches.id))
             .where(filterCondition)
-            .orderBy(desc(lessons.startsAt))
-            .limit(limit)
-            .offset(offset)
+            .orderBy(desc(lessons.startsAt), desc(lessons.id))
+            // When a cursor is supplied we page strictly off it; the +1
+            // detects whether there is another page without a separate count.
+            .limit(pastCursor ? limit + 1 : limit)
+            .offset(pastCursor ? 0 : offset)
         : db
             .select(selectShape)
             .from(lessons)
@@ -185,11 +238,21 @@ lessonsRouter.get(
       // Count query omits the lessonLocations + bookingBatches joins because
       // filterCondition only references columns on `lessons`. If the filter
       // ever starts referencing joined columns, add the matching joins here.
-      db.select({ count: count() }).from(lessons).where(filterCondition),
+      db.select({ count: count() }).from(lessons).where(countCondition),
     ]);
+    // When paging past lessons by cursor we fetch limit+1 so we know whether
+    // another page exists without a count. Trim the sentinel before serializing.
+    const trimmedRawRows =
+      filter === "past" && pastCursor && rawLessonRows.length > limit
+        ? rawLessonRows.slice(0, limit)
+        : rawLessonRows;
+    const hasMorePastRows =
+      filter === "past" && pastCursor
+        ? rawLessonRows.length > limit
+        : false;
     // INNER JOIN on lessonLocations means locationId is non-null at runtime;
     // narrow per ADR 034.
-    const lessonRows = rawLessonRows.map(requireLiveLocationId);
+    const lessonRows = trimmedRawRows.map(requireLiveLocationId);
 
     const lessonIds = lessonRows.map((row) => row.id);
 
@@ -235,9 +298,30 @@ lessonsRouter.get(
         row.batchMode === "manual" || row.batchMode === "weekly" ? row.batchMode : null,
     }));
 
+    // Past filter emits a cursor so the dashboard list can page through
+    // older lessons without repeating the ones it already has.
+    let nextCursor: string | null | undefined;
+    if (filter === "past") {
+      if (pastCursor) {
+        const last = lessonRows[lessonRows.length - 1];
+        nextCursor = hasMorePastRows && last
+          ? encodePastCursor({ startsAt: last.startsAt.toISOString(), id: last.id })
+          : null;
+      } else {
+        // First page: emit a cursor when the page is "full" (we don't know
+        // the total cheaply enough to decide here, so trust `total`).
+        const total = Number(countRows[0]?.count ?? 0);
+        const last = lessonRows[lessonRows.length - 1];
+        nextCursor = last && total > lessonRows.length
+          ? encodePastCursor({ startsAt: last.startsAt.toISOString(), id: last.id })
+          : null;
+      }
+    }
+
     const body: UpcomingLessonsResponse = {
       items,
       total: Number(countRows[0]?.count ?? 0),
+      ...(filter === "past" && { nextCursor: nextCursor ?? null }),
     };
 
     res.json(body);

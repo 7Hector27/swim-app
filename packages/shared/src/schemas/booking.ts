@@ -301,6 +301,9 @@ export const UpcomingLessonsQuerySchema = z.object({
     .transform((value) => parseInt(value, 10))
     .pipe(z.number().int().min(0).max(10000))
     .optional(),
+  // Opaque cursor returned by the previous page response as `nextCursor`.
+  // Used by the parent past-lessons list for "Load more".
+  cursor: z.string().min(1).optional(),
   filter: z.enum(["upcoming", "past"]).optional(),
 });
 export type UpcomingLessonsQuery = z.infer<typeof UpcomingLessonsQuerySchema>;
@@ -328,6 +331,8 @@ export type UpcomingLesson = z.infer<typeof UpcomingLessonSchema>;
 export const UpcomingLessonsResponseSchema = z.object({
   items: UpcomingLessonSchema.array(),
   total: z.number().int().min(0),
+  // Only emitted by past-filter requests; null when there are no more pages.
+  nextCursor: z.string().nullable().optional(),
 });
 export type UpcomingLessonsResponse = z.infer<typeof UpcomingLessonsResponseSchema>;
 
