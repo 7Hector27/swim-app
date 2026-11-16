@@ -147,8 +147,9 @@ export default function LessonDetailContent({
                   <StatusChip status={lesson.status} />
                   {lesson.batchMode !== null && <BatchModeBadge mode={lesson.batchMode} />}
                 </div>
-                <h1 className="font-heading font-semibold text-[clamp(2rem,2vw+1.5rem,3.25rem)] leading-[1.05] text-text-on-section">
-                  {formatHeroDate(lesson.startsAt)}
+                <h1 className="font-heading font-semibold text-[clamp(2rem,2vw+1.5rem,3.25rem)] leading-[1.05] text-text-on-section whitespace-nowrap">
+                  <span className="tablet:hidden">{formatShortDate(lesson.startsAt)}</span>
+                  <span className="hidden tablet:inline">{formatHeroDate(lesson.startsAt)}</span>
                 </h1>
                 <p className="text-base tablet:text-lg text-text-secondary-on-section tabular-nums">
                   {formatTime(startsAt)} to {formatTime(endsAt)}
