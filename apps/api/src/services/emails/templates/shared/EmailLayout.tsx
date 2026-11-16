@@ -58,9 +58,14 @@ export default function EmailLayout({
             <Img
               src={logoUrl}
               alt="Axiom Aquatics"
-              width="200"
-              height="60"
-              style={{ display: "inline-block", border: 0 }}
+              width="220"
+              height="48"
+              style={{
+                display: "inline-block",
+                border: 0,
+                width: "220px",
+                height: "48px",
+              }}
             />
           </Section>
           <Section
