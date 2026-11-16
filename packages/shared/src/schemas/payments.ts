@@ -165,8 +165,8 @@ export type BalanceHistoryQuery = z.infer<typeof BalanceHistoryQuerySchema>;
 // Jason needs to glance at the full roster: name, who's in it, how many
 // active swimmers, current balance, and when the last ledger move
 // happened (so a long-silent family is visibly different from an
-// active one). Client sorts; server returns a stable name-alphabetical
-// order so consecutive renders don't jitter.
+// active one). Server filters + sorts + paginates so the UI can
+// reflect the roster scale without pulling thousands of rows up front.
 export const CoachHouseholdBalanceSummarySchema = z.object({
   householdId: z.string().uuid(),
   householdName: z.string(),
@@ -181,11 +181,56 @@ export type CoachHouseholdBalanceSummary = z.infer<
   typeof CoachHouseholdBalanceSummarySchema
 >;
 
-export const CoachHouseholdBalanceListResponseSchema = z.array(
-  CoachHouseholdBalanceSummarySchema,
-);
+export const COACH_FAMILIES_SORT_KEYS = [
+  "balance_asc",
+  "name_asc",
+  "activity_desc",
+] as const;
+export type CoachFamiliesSortKey = (typeof COACH_FAMILIES_SORT_KEYS)[number];
+
+// Query for the paged roster endpoint. `page` is 1-based; `search` is an
+// optional lowercase-insensitive substring match against household name
+// OR any member's full name. Empty / whitespace search is treated as no
+// search (the server strips it). Page size is fixed at 20 server-side.
+export const CoachFamiliesPageQuerySchema = z.object({
+  page: z
+    .string()
+    .optional()
+    .transform((value) => (value === undefined ? 1 : parseInt(value, 10)))
+    .pipe(z.number().int().min(1).max(10_000)),
+  sort: z.enum(COACH_FAMILIES_SORT_KEYS).optional().default("activity_desc"),
+  search: z
+    .string()
+    .trim()
+    .max(200)
+    .optional()
+    .transform((value) => (value === undefined || value === "" ? undefined : value)),
+});
+export type CoachFamiliesPageQuery = z.infer<typeof CoachFamiliesPageQuerySchema>;
+
+export const CoachHouseholdBalanceListResponseSchema = z.object({
+  items: z.array(CoachHouseholdBalanceSummarySchema),
+  page: z.number().int().min(1),
+  pageSize: z.number().int().min(1),
+  total: z.number().int().nonnegative(),
+  // Count of filtered households whose balance is under one 30-min lesson
+  // ($60). Scoped to the same search as `items` so the UI's low-balance
+  // callout stays consistent with what's on screen.
+  lowBalanceCount: z.number().int().nonnegative(),
+});
 export type CoachHouseholdBalanceListResponse = z.infer<
   typeof CoachHouseholdBalanceListResponseSchema
+>;
+
+export const COACH_FAMILIES_PAGE_SIZE = 20;
+
+// Single-household summary used by the family detail page — same shape
+// as a list row but served by id so the detail page doesn't need to
+// scan the paged roster to find it.
+export const CoachHouseholdBalanceSummaryResponseSchema =
+  CoachHouseholdBalanceSummarySchema;
+export type CoachHouseholdBalanceSummaryResponse = z.infer<
+  typeof CoachHouseholdBalanceSummaryResponseSchema
 >;
 
 // POST /coach/households/:householdId/balance/adjust — manual coach
