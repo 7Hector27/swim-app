@@ -303,7 +303,7 @@ export default function CoachFamilyDetailContent(props: Props) {
             data-testid="family-history-more"
             className="w-full min-h-[44px] text-sm font-semibold text-link border-t border-border hover:bg-surface-soft disabled:opacity-60"
           >
-            {loadingMore ? "Loading…" : "See more"}
+            {loadingMore ? "Loading…" : "Load more"}
           </button>
         )}
       </section>
