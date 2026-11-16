@@ -7,22 +7,32 @@ import type { UpcomingLesson } from "@swim-app/shared";
 import LessonStatusBadge from "@/components/LessonStatusBadge";
 import BatchModeBadge from "@/components/BatchModeBadge";
 
-import { loadMoreUpcomingLessons } from "./actions";
+import { loadMorePastLessons, loadMoreUpcomingLessons } from "./actions";
 import { groupLessonsByWeek, todayMondayLA } from "./weekGroups";
 import { PAGE_SIZE } from "./constants";
 
 interface Props {
   initialLessons: UpcomingLesson[];
   initialHasMore: boolean;
-  past: UpcomingLesson[];
+  initialPast: UpcomingLesson[];
+  initialPastCursor: string | null;
 }
 
-export default function ParentLessonsContent({ initialLessons, initialHasMore, past }: Props) {
+export default function ParentLessonsContent({
+  initialLessons,
+  initialHasMore,
+  initialPast,
+  initialPastCursor,
+}: Props) {
   const [lessons, setLessons] = useState(initialLessons);
   const [hasMore, setHasMore] = useState(initialHasMore);
   const [offset, setOffset] = useState(PAGE_SIZE);
   const [loadError, setLoadError] = useState(false);
   const [isPending, startTransition] = useTransition();
+  const [past, setPast] = useState<UpcomingLesson[]>(initialPast);
+  const [pastCursor, setPastCursor] = useState<string | null>(initialPastCursor);
+  const [pastError, setPastError] = useState(false);
+  const [isLoadingPast, startPastTransition] = useTransition();
   const [todayMonday] = useState(() => todayMondayLA());
 
   function handleShowMore() {
@@ -38,6 +48,21 @@ export default function ParentLessonsContent({ initialLessons, initialHasMore, p
       setLessons((prev) => [...prev, ...newLessons]);
       setHasMore(gotMore);
       setOffset((prev) => prev + PAGE_SIZE);
+    });
+  }
+
+  function handleLoadMorePast() {
+    if (!pastCursor) return;
+    setPastError(false);
+    const cursor = pastCursor;
+    startPastTransition(async () => {
+      const result = await loadMorePastLessons(cursor);
+      if (result === null) {
+        setPastError(true);
+        return;
+      }
+      setPast((prev) => [...prev, ...result.items]);
+      setPastCursor(result.nextCursor);
     });
   }
 
@@ -103,6 +128,30 @@ export default function ParentLessonsContent({ initialLessons, initialHasMore, p
                   <LessonRow key={lesson.id} lesson={lesson} />
                 ))}
               </ul>
+            )}
+
+            {pastError ? (
+              <p className="mt-6 text-sm text-danger">
+                Failed to load more lessons.{" "}
+                <button
+                  type="button"
+                  onClick={handleLoadMorePast}
+                  className="font-semibold underline hover:opacity-80"
+                >
+                  Try again
+                </button>
+              </p>
+            ) : pastCursor !== null && (
+              <div className="mt-6">
+                <button
+                  type="button"
+                  onClick={handleLoadMorePast}
+                  disabled={isLoadingPast}
+                  className="inline-flex items-center justify-center rounded-button border-2 border-button-outline text-button-outline font-bold text-sm px-5 h-11 transition-colors duration-150 hover:opacity-80 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isLoadingPast ? "Loading…" : "Load more"}
+                </button>
+              </div>
             )}
           </section>
         </div>

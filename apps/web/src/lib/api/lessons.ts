@@ -336,14 +336,26 @@ export async function fetchLesson(
   }
 }
 
+export interface PastLessonsPage {
+  items: UpcomingLesson[];
+  nextCursor: string | null;
+}
+
 export async function fetchPastLessons(
   accessToken: string,
-): Promise<LoadResult<UpcomingLesson[]>> {
+  params?: { limit?: number; cursor?: string },
+): Promise<LoadResult<PastLessonsPage>> {
   try {
-    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/lessons?filter=past`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-      cache: "no-store",
-    });
+    const searchParams = new URLSearchParams({ filter: "past" });
+    if (params?.limit !== undefined) searchParams.set("limit", String(params.limit));
+    if (params?.cursor) searchParams.set("cursor", params.cursor);
+    const response = await fetch(
+      `${process.env.NEXT_PUBLIC_API_URL}/lessons?${searchParams.toString()}`,
+      {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        cache: "no-store",
+      },
+    );
     if (!response.ok) return loadError("server");
     const body: unknown = await response.json();
     const parsed = UpcomingLessonsResponseSchema.safeParse(body);
@@ -352,7 +364,7 @@ export async function fetchPastLessons(
       console.warn(`fetchPastLessons: response shape mismatch — ${detail}`);
       return loadError("schema");
     }
-    return loadOk(parsed.data.items);
+    return loadOk({ items: parsed.data.items, nextCursor: parsed.data.nextCursor ?? null });
   } catch {
     return loadError("network");
   }
