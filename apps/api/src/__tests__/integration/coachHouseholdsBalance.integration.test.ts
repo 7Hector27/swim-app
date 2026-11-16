@@ -132,7 +132,7 @@ describe("GET /coach/households/:id/balance/history", () => {
     expect(newest.runningBalanceCents).toBe(24_000);
   });
 
-  it("paginates via opaque cursor when more than 50 rows exist", async () => {
+  it("paginates via opaque cursor when more than 10 rows exist", async () => {
     // Fresh state on family B for the pagination branch.
     await adminDb().transaction(async (tx) => {
       await tx.execute(sql`SET LOCAL session_replication_role = replica`);
@@ -140,7 +140,7 @@ describe("GET /coach/households/:id/balance/history", () => {
         sql`DELETE FROM household_balance_ledger WHERE household_id = ${familyB.householdId}::uuid`,
       );
     });
-    for (let i = 0; i < 55; i++) {
+    for (let i = 0; i < 15; i++) {
       await adminDb().insert(householdBalanceLedger).values({
         householdId: familyB.householdId,
         actorId: familyB.userId,
@@ -154,7 +154,7 @@ describe("GET /coach/households/:id/balance/history", () => {
       .get(`/coach/households/${familyB.householdId}/balance/history`)
       .set("Authorization", `Bearer ${coach.accessToken}`);
     expect(page1.status).toBe(200);
-    expect(page1.body.entries).toHaveLength(50);
+    expect(page1.body.entries).toHaveLength(10);
     expect(page1.body.nextCursor).not.toBeNull();
 
     const page2 = await request(app)

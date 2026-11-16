@@ -248,7 +248,7 @@ coachHouseholdsRouter.get(
 // on the same (createdAt, id) convention so the cursor an older /me row
 // produces parses correctly on either route.
 
-const HISTORY_PAGE_SIZE = 50;
+const HISTORY_PAGE_SIZE = 10;
 
 interface HistoryCursor {
   createdAt: string;
