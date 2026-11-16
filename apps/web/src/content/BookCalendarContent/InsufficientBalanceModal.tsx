@@ -235,7 +235,6 @@ export default function InsufficientBalanceModal({
   open,
   balanceCents,
   priceCents,
-  shortfallCents,
   attempt,
   onClose,
 }: InsufficientBalanceModalProps) {
@@ -300,14 +299,7 @@ export default function InsufficientBalanceModal({
           Credit never expires — anything extra stays on your balance.
         </p>
 
-        <p className="font-body text-xs text-text-secondary mt-6 text-center">
-          Payments and refunds are covered by our{" "}
-          <a href="/refund-policy" className="text-link underline hover:text-link-hover">
-            Payments &amp; Refund Policy
-          </a>
-          .
-        </p>
-        <div className="mt-3 flex flex-col gap-3">
+        <div className="mt-6 flex flex-col gap-3">
           <button
             type="button"
             onClick={handleAddCredit}
@@ -334,12 +326,12 @@ export default function InsufficientBalanceModal({
           </button>
         </div>
 
-        <p
-          className="font-body text-xs text-text-secondary mt-4"
-          style={{ fontVariantNumeric: "tabular-nums" }}
-        >
-          You&apos;d only need {formatDollars(shortfallCents)} more — adding a lesson&apos;s
-          worth of credit covers it with the rest staying on your balance.
+        <p className="font-body text-xs text-text-secondary mt-4 text-center">
+          Payments and refunds are covered by our{" "}
+          <a href="/refund-policy" className="text-link underline hover:text-link-hover">
+            Payments &amp; Refund Policy
+          </a>
+          .
         </p>
       </div>
     </div>
