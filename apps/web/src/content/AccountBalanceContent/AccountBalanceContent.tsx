@@ -208,7 +208,7 @@ function BalanceCard({
       <div className="flex items-start justify-between gap-6">
         <div>
           <p className="font-body text-xs font-semibold uppercase tracking-wide text-text-secondary">
-            Lesson credit · pass
+            Current balance
           </p>
           <p
             className="font-heading text-[2.5rem] tablet:text-[3.25rem] leading-none mt-2 text-heading"
@@ -314,7 +314,7 @@ function BuyLessonsSection({
         id="buy-lessons-heading"
         className="font-heading text-[1.5rem] tablet:text-[1.75rem] leading-tight mb-3 text-heading"
       >
-        Enter a heat
+        Buy lessons
       </h2>
       <div className="rounded-card border border-border bg-background p-5 tablet:p-6 flex flex-col gap-5">
         <SegmentPills
@@ -463,7 +463,7 @@ function PackagesSection({
         id="packages-heading"
         className="font-heading text-[1.5rem] tablet:text-[1.75rem] leading-tight mb-3 text-heading"
       >
-        Premium passes
+        Packages
       </h2>
       <p className="font-body text-sm text-text-secondary mb-4">
         Buy credit in bulk. Credit never expires.
