@@ -49,10 +49,12 @@ if (isProductionBuild) {
 // - `font-src 'self'`: `next/font/google` self-hosts the font files at
 //   build time, so no runtime request to fonts.googleapis.com /
 //   fonts.gstatic.com is made.
-// - `connect-src`: fetches go to our own API (api[-dev].axiomaquatics.io)
-//   and Supabase (`*.supabase.co`). Both are needed from the browser —
-//   the Supabase SDK calls `getSession`/`getUser` directly, and the web
-//   adapter hits the API for all data.
+// - `connect-src`: fetches go to our own API and to Supabase. The API
+//   host is derived from NEXT_PUBLIC_API_URL at build time so dev /
+//   staging / prod each ship with their own Railway hostname instead of
+//   a hardcoded guess (dev is api-dev-<hash>.up.railway.app, not
+//   api-dev.axiomaquatics.io). Supabase stays on the wildcard so the
+//   same bundle works across project slugs.
 // - `worker-src 'self'`: service worker at `/sw.js` for coach push alerts.
 // - `manifest-src 'self'`: PWA manifest at `/icons/site.webmanifest`.
 // - `frame-ancestors 'none'`: the app is never embedded in another site.
@@ -63,13 +65,35 @@ if (isProductionBuild) {
 //
 // Report-only means the browser logs violations but doesn't block them.
 // After watching a release's console, promote to the enforcing header.
+
+// Parse the API origin from NEXT_PUBLIC_API_URL. On production builds the
+// pre-flight check above has already asserted the var is present, so the
+// parse is expected to succeed; in local `next dev` it should be set in
+// .env.local. If the URL is malformed we skip the entry rather than
+// emitting a broken CSP — the report-only header still delivers and the
+// missing origin surfaces as a violation in the browser console.
+function deriveApiOrigin(): string | null {
+  const raw = process.env.NEXT_PUBLIC_API_URL;
+  if (!raw) return null;
+  try {
+    return new URL(raw).origin;
+  } catch {
+    return null;
+  }
+}
+
+const apiOrigin = deriveApiOrigin();
+const connectSrc = ["'self'", "https://*.supabase.co", apiOrigin]
+  .filter((entry): entry is string => entry !== null)
+  .join(" ");
+
 const CSP_REPORT_ONLY = [
   "default-src 'self'",
   "script-src 'self'",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob:",
   "font-src 'self'",
-  "connect-src 'self' https://*.supabase.co https://api.axiomaquatics.io https://api-dev.axiomaquatics.io",
+  `connect-src ${connectSrc}`,
   "worker-src 'self'",
   "manifest-src 'self'",
   "frame-ancestors 'none'",
