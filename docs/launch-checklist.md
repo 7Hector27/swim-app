@@ -61,3 +61,9 @@ Audit item 8 — login runs `supabase.auth.signInWithPassword` directly from the
 - [ ] CAPTCHA decision — recommended: Cloudflare Turnstile. Enable it in the Supabase dashboard (Auth → Attack Protection → CAPTCHA) and wire the token into `signInWithPassword({ options: { captchaToken } })` in `apps/web/src/content/LoginContent/actions.ts`. If we skip CAPTCHA, note explicitly why.
 - [ ] Supabase dashboard → Auth → Email: **Confirm email: ON**. The `requireUser` middleware already rejects unconfirmed users (audit item 10); the dashboard toggle is what prevents Supabase from issuing a session before the user clicks the link.
 - [ ] Supabase dashboard → Auth: **Secure email change: ON**, JWT expiry ≤ 1 h, refresh token rotation on with short reuse interval, OTP length ≥ 6 with expiry ≤ 15 min.
+
+---
+
+## Browser response headers
+
+- [ ] **CSP report endpoint before enforcing the policy.** `apps/web/next.config.ts` currently emits `Content-Security-Policy-Report-Only` with no `report-uri` / `report-to` directive, so violations only show up in each user's browser console and are never collected centrally. Before promoting to the enforcing `Content-Security-Policy` header, wire up a report collector — either a cheap `/api/csp-report` route on the web that forwards to our log sink, or a hosted collector (e.g. report-uri.com, Sentry's CSP endpoint) — and add it as a `report-uri` + `report-to` pair. Promoting without a collector means we have no idea what we just broke.

@@ -103,10 +103,6 @@ const CSP_REPORT_ONLY = [
 ].join("; ");
 
 const securityHeaders = [
-  // Audit item 1 — strip framework fingerprinting header set by Next.js.
-  // Separately, the config has `poweredByHeader: false` below. This entry
-  // is a belt-and-suspenders for any edge case where a proxy re-adds it.
-  { key: "X-Powered-By", value: "" },
   // Audit item 14 — defense against clickjacking. `X-Frame-Options: DENY`
   // covers older browsers; `frame-ancestors 'none'` in the CSP covers
   // modern ones. We set both.

@@ -85,8 +85,8 @@ describe("validateVapidAtStartup", () => {
   });
 
   it("throws when the private key decodes to the wrong length", () => {
-    // 33 bytes, base64url-shaped — passes the env parse's 43-char floor
-    // (33 bytes = 44 chars unpadded); exact decoded length is 32.
+    // 33 bytes decoded — passes the 43-char env floor (33 bytes = 44 chars
+    // base64url unpadded) but web-push requires exactly 32 bytes.
     setVapidEnv({
       VAPID_PUBLIC_KEY: validVapidPublicKey,
       VAPID_PRIVATE_KEY: Buffer.alloc(33, 1).toString("base64url"),
