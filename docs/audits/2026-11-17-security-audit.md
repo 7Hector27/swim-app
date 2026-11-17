@@ -143,3 +143,74 @@ Separate finding in the same item: the web app never queries Supabase directly f
 - **Why it matters here:** The balance ledger is append-only (trigger at `apps/api/src/db/migrations/0076_loose_sunspot.sql`). Audit and outbox rows co-transact with the business change they record. Together those make every money path recoverable by replay; losing a row on crash is the failure mode that these locks and transactions prevent.
 - **Fix:** None.
 - **Size:** —.
+
+---
+
+## Accounts and login
+
+Auth stack confirmed: Supabase. Signup routes through `apps/api` (`POST /auth/signup` calls `supabase.auth.signUp`); login runs `supabase.auth.signInWithPassword` directly from the Vercel server action and never hits Express. No password-reset flow exists in the codebase today — only email confirmation via magic-link `GET /auth/confirm`. Invites are token-link only (no email sent).
+
+### 8. Credential stuffing
+
+- **Status:** issue (depends on Supabase dashboard settings to mitigate).
+- **Evidence:** `apps/web/src/content/LoginContent/actions.ts:22` — `await supabase.auth.signInWithPassword(parsed.data)` runs directly from the server action. `apps/api/src/app.ts:157` mounts `authEmailLimiter` only on `POST /auth/signup`; login is never seen by Express. The per-email limiter itself is thoughtful (`apps/api/src/middleware/authEmailRateLimit.ts:43` — 5/hr, keyed on normalized email, runs before any DB lookup) and other sensitive routes have their own limiters (`accountDeletionRateLimit.ts`, `bookingRateLimit.ts`, `routes/integrationsGoogle.ts:33`, `routes/leaderboard.ts:32`).
+- **Why it matters here:** All login throttling is whatever's on in the Supabase dashboard. There is no application-level guard against a credential-stuffing bot that rotates emails, and no CAPTCHA requirement on login in the app code.
+- **Fix:** (a) In the Supabase dashboard enable sign-in / sign-up rate limits and turn on CAPTCHA (hCaptcha or Turnstile); wire the token into `signInWithPassword({ options: { captchaToken } })`. (b) Optionally move login through Express so `authEmailLimiter` covers it uniformly (M).
+- **Size:** S for the dashboard + 1 action edit; M for the Express route move.
+
+### 9. User enumeration
+
+- **Status:** safe (one minor timing side-channel in Supabase; one optional tightening on invite GET).
+- **Evidence:**
+  - Login: `apps/web/src/content/LoginContent/actions.ts:25` — returns `"Email or password is incorrect."` for every failure, including Zod rejects.
+  - Signup: `apps/api/src/app.ts:210` — `res.status(400).json({ error: "Could not create account" })` for any Supabase failure, including "user already exists."
+  - Rate limiter has an explicit enumeration-safety test at `apps/api/src/__tests__/authEmailRateLimit.test.ts:117` proving 429 is byte-identical for registered vs new email.
+  - Signup success UI (`apps/web/src/content/SignupContent/SuccessScreen.tsx`) shows "Check your email" regardless.
+  - `apps/web/src/app/auth/confirm/route.ts:13,23` — bad link and failed verifyOtp both redirect to `/login?notice=link-expired`; shape-identical.
+  - Invite accept: `apps/api/src/routes/invites.ts:40` — unauthenticated GET returns `{ householdName, status }` where `status` discriminates between `not_found` / `already_used` / `revoked` / `expired` (`:61,108,111,114`). The token itself is sha256-hashed in DB and secret, so knowing the token is required to see the status — not an email-enumeration surface.
+- **Why it matters here:** The visible surface is well-handled. The one residual is timing: Supabase's `signInWithPassword` runs bcrypt/argon2 when a user exists and returns quickly when not — a side channel we can't fix at this layer. Low practical exploitability through internet jitter.
+- **Fix:** Nothing required. Optional S fix: collapse the invite GET response to `{ valid: true | false }` for the unauthenticated view and move `already_used`/`revoked`/`expired` discrimination into the authenticated accept endpoint.
+- **Size:** — (optional S).
+
+### 10. Account pre-hijacking
+
+- **Status:** issue.
+- **Evidence:** `apps/api/src/app.ts:196` — `supabase.auth.signUp({ email, password })` creates a Supabase user; Supabase's default behavior depends on the dashboard "Confirm email" toggle. `apps/api/src/middleware/requireUser.ts:24` verifies the token via `supabase.auth.getUser(token)` and looks up `profiles`, checking `profile.disabledAt` (`:51`) and `profile.ageAttestedAt` (`:63`). It **does not** check `email_confirmed_at` (nor the mirrored `profile.emailVerifiedAt`). `apps/api/src/db/schema.ts:141` — `email_verified_at` is mirrored onto `profiles` and only used by the booking-email sender to decide deliverability (`docs/plans/parent-booking-emails.md:180`).
+- **Why it matters here:** If Supabase issues any session (e.g. "Confirm email" is off in the dashboard, or the attacker completes verification themselves), `requireUser` will let the request through. The profile + household + default policies are already created by the `on_auth_user_created` trigger regardless of verification, so an attacker pre-registering with a victim's email can: create swimmers, view household data, buy balance, book lessons. If the real owner later tries to sign up they get "email in use."
+- **Fix:** (a) In the Supabase dashboard set **"Confirm email" ON**. (b) In `apps/api/src/middleware/requireUser.ts`, after `getUser`, require `data.user.email_confirmed_at` to be non-null and return 403 with a "verify your email" code otherwise.
+- **Size:** S for the middleware change + dashboard toggle.
+
+### 11. Reset / confirmation link host
+
+- **Status:** safe.
+- **Evidence:** `apps/api/src/app.ts:190-194` builds the redirect from `env.siteUrl`: `const confirmBase = ${env.siteUrl}/auth/confirm`, then `emailRedirectTo` combines that with an `isSafeReturnTo`-validated `returnTo`. `apps/api/src/lib/env.ts:54,185` — `SITE_URL` is required, must be a valid URL, and the env validator rejects localhost in `APP_ENV=dev|prod` at boot. `apps/web/src/app/auth/confirm/route.ts:28` — the server-side consume also validates `returnTo` through `isSafeReturnTo(returnToRaw, publicEnv.siteUrl)`. Grep for `req.headers.host` / `req.protocol` in `apps/` returns zero hits.
+- **Why it matters here:** Host-header poisoning is a classic phishing escalator on password-reset flows. The app can't be tricked because no code path reads the request's host when building email redirects.
+- **Fix:** None. Sanity: confirm `SITE_URL` (Railway) and `NEXT_PUBLIC_SITE_URL` (Vercel) point at the real prod domain.
+- **Size:** —.
+
+### 12. Weak secrets
+
+- **Status:** issue (several missing min-length / shape validators).
+- **Evidence:** From `apps/api/src/lib/env.ts`:
+
+| Secret | Line | Validator | Status |
+|---|---|---|---|
+| `CRON_SECRET` | `:188` | `≥ 32 chars` on dev/prod | safe |
+| `GOOGLE_OAUTH_STATE_SECRET` | `:308,:350` | `≥ 32 chars` on dev/prod | safe |
+| `GOOGLE_TOKEN_ENCRYPTION_KEY` | `:276,:343` | base64 decoding to exactly 32 bytes | safe (strong) |
+| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | `:420,:437-443` | base64url charset only, no length | **issue** — a truncated key passes |
+| `VAPID_SUBJECT` | `:423,:446` | `mailto:` / `https:` regex | safe |
+| `STRIPE_SECRET_KEY` | `:249` | must start with `sk_`, no length check | needs manual check (Stripe keys are long by construction, low risk) |
+| `STRIPE_WEBHOOK_SECRET` | `:254` | must start with `whsec_`, no length check | needs manual check |
+| `SUPABASE_SERVICE_ROLE_KEY` | `:200` | non-empty only | **issue** — no length / JWT-shape check |
+| `SUPABASE_PUBLISHABLE_KEY` | `:47` | `.min(1)` only | low risk (it's public) |
+| `SUPABASE_URL` | `:46` | `.url()` | safe |
+| `DATABASE_URL` | `:45` | `.min(1)` | low risk (Supabase-provided) |
+| `RESEND_API_KEY` | `:398` | must start with `re_`, no length check | needs manual check |
+| `EMAIL_FROM` | `:390` | RFC 5322 + prod-domain match | safe |
+
+The API never reads `SUPABASE_JWT_SECRET` directly — token verification goes through `supabase.auth.getUser(token)` round-tripping to Supabase, so rotation/expiry are dashboard-only concerns.
+
+- **Why it matters here:** Boot succeeds with a truncated or stub paste; the failure is deferred until first use (first push send, first service-role call during account deletion). Operationally that's a lost hour debugging what should be a boot-time rejection. The service-role key is the biggest risk — a weak or pasted-partial value boots cleanly and only breaks when `apps/api/src/services/accountDeletion/deletion.ts` tries to delete the auth user.
+- **Fix:** In `apps/api/src/lib/env.ts`, add length / shape asserts: `.min(32)` or 43 / 87 char constants for VAPID keys (ECDH P-256 private key is 32 bytes = 43 chars base64url; public is 65 bytes = 87 chars); `.min(100)` or a JWT-shape regex (`^ey[A-Za-z0-9_-]+\.ey[A-Za-z0-9_-]+\..+$`) on the service-role key. Optional belt-and-suspenders `.min(32)` on Stripe and Resend keys.
+- **Size:** S (handful of lines in one file).
