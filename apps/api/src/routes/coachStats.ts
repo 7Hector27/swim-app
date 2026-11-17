@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { and, eq, gt, isNull, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import {
   CoachStatsSchema,
   type CoachStats,
@@ -17,10 +17,11 @@ export const coachStatsRouter = Router();
 //
 // Dashboard stat cards. Day/week buckets use America/Los_Angeles so a late
 // Sunday PST lesson still counts in this week. "Lessons today/this week"
-// count only lessons actually happening — canceled/declined/expired rows and
-// anonymized rows (ADR 034) are excluded; completed and no_show stay in so
-// the counts don't collapse as sessions finish. Pending requests mirror the
-// BookingRequestsCard: status=pending with a start time still in the future.
+// count booked sessions only — status in (approved, completed, no_show) and
+// not anonymized (ADR 034). Pending is deliberately excluded: those surface
+// in the Requests to review card and would otherwise double-count. Completed
+// and no_show stay so a card doesn't drop as the day progresses. Pending
+// requests mirror BookingRequestsCard: status=pending with a future start.
 
 coachStatsRouter.get(
   "/stats",
@@ -29,7 +30,7 @@ coachStatsRouter.get(
     const laDayOfStart = sql`date_trunc('day', ${lessons.startsAt} AT TIME ZONE 'America/Los_Angeles')`;
     const laToday = sql`(now() AT TIME ZONE 'America/Los_Angeles')::date`;
     const laWeekMonday = sql`date_trunc('week', (now() AT TIME ZONE 'America/Los_Angeles')::date)::date`;
-    const liveStatus = sql`${lessons.status} NOT IN ('canceled','declined','expired')`;
+    const bookedStatus = inArray(lessons.status, ["approved", "completed", "no_show"]);
 
     const [todayRows, weekRows, pendingRows, swimmerRows] = await Promise.all([
       db
@@ -38,7 +39,7 @@ coachStatsRouter.get(
         .where(
           and(
             sql`${laDayOfStart} = ${laToday}`,
-            liveStatus,
+            bookedStatus,
             isNull(lessons.anonymizedAt),
           ),
         ),
@@ -48,7 +49,7 @@ coachStatsRouter.get(
         .where(
           and(
             sql`${laDayOfStart} BETWEEN ${laWeekMonday} AND (${laWeekMonday} + 6)`,
-            liveStatus,
+            bookedStatus,
             isNull(lessons.anonymizedAt),
           ),
         ),
