@@ -9,6 +9,7 @@ dist
 supabase/snippets/
 .claude/settings.local.json
 .claude/settings.local.json
+.claude/worktrees/
 *.tsbuildinfo
 .check-output/
 scripts/seed-*.sql
