@@ -1839,6 +1839,7 @@ export default function BookCalendarContent({
               tooSoon={tooSoon}
               durationMinutes={durationMinutes}
               swimmerIds={swimmerIds}
+              swimmers={swimmers}
               needsApproval={weekData?.needsApproval ?? false}
               bookingMinAdvanceHours={bookingMinAdvanceHours}
               balanceCents={balanceCents}
