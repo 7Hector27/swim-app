@@ -28,11 +28,27 @@ const EMAIL_ADDR_RE =
 // subdomain) when APP_ENV=prod so a misconfigured From can't ship.
 const PROD_EMAIL_DOMAIN = "send.axiomaquatics.io";
 
-// JWT shape: three base64url segments separated by dots, header and payload
-// starting with `ey` (the base64 of `{`). Supabase service-role / anon /
-// publishable keys all match. The point of the check is to reject a
-// truncated or placeholder paste at boot rather than at first admin call.
+// Supabase ships two key formats and the SDK accepts either interchangeably:
+//
+//   1. Legacy service-role JWT — three base64url segments separated by dots,
+//      header + payload starting with `ey` (the base64 of `{`).
+//   2. New secret key (rolled out 2024–2025) — opaque `sb_secret_<random>`.
+//      These are NOT JWTs; they don't decode and never will.
+//
+// We accept either shape. Projects created before the format switch keep
+// their JWT; new projects and rotated keys use `sb_secret_`. Enforcing
+// only one shape would break whichever side the environment happens to be
+// on — dev is on `sb_secret_` and failed to boot, which is why this check
+// has to cover both.
+//
+// The point of either check is to reject a truncated or placeholder paste
+// at boot rather than at first admin call.
 const JWT_SHAPE_RE = /^ey[A-Za-z0-9_-]+\.ey[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
+const SB_SECRET_KEY_RE = /^sb_secret_[A-Za-z0-9_-]+$/;
+// `sb_secret_` is 10 chars; real suffixes are ~40+ chars. 30 total catches
+// a truncated paste (`sb_secret_abc`) while leaving headroom for any future
+// variation in suffix length.
+const SB_SECRET_KEY_MIN_LEN = 30;
 
 // VAPID key lengths per RFC 8292 / web-push conventions: the public key is a
 // 65-byte uncompressed EC point (87 chars base64url, unpadded) and the
@@ -224,11 +240,13 @@ export function parseEnv(raw: Record<string, string | undefined>): ApiEnv {
         "SUPABASE_SERVICE_ROLE_KEY: must be set when APP_ENV is 'dev' or 'prod' " +
           "(used for the account-deletion auth.admin.deleteUser call per ADR 034)",
       );
-    } else if (!JWT_SHAPE_RE.test(parsed.SUPABASE_SERVICE_ROLE_KEY)) {
+    } else if (!isValidSupabaseServiceRoleKey(parsed.SUPABASE_SERVICE_ROLE_KEY)) {
       issues.push(
-        "SUPABASE_SERVICE_ROLE_KEY: must be a valid JWT (three base64url segments " +
-          "separated by dots, header and payload starting with 'ey'). Reject at boot " +
-          "to catch truncated/placeholder pastes before the first admin call.",
+        "SUPABASE_SERVICE_ROLE_KEY: must be either a legacy service-role JWT " +
+          "(three base64url segments separated by dots, header + payload starting " +
+          "with 'ey') or a new-format secret key ('sb_secret_...' with at least " +
+          `${SB_SECRET_KEY_MIN_LEN} chars total). Reject at boot to catch ` +
+          "truncated/placeholder pastes before the first admin call.",
       );
     }
     issues.push(...validateGoogleOAuthForDeployed(parsed));
@@ -258,6 +276,11 @@ export function parseEnv(raw: Record<string, string | undefined>): ApiEnv {
     stripe,
     failRoutes,
   };
+}
+
+function isValidSupabaseServiceRoleKey(key: string): boolean {
+  if (JWT_SHAPE_RE.test(key)) return true;
+  return SB_SECRET_KEY_RE.test(key) && key.length >= SB_SECRET_KEY_MIN_LEN;
 }
 
 function parseStripeEnv(parsed: RawParsedEnv): StripeEnv | undefined {
