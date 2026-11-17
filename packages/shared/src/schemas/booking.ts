@@ -392,7 +392,6 @@ export const CoachStatsSchema = z.object({
   lessonsThisWeek: z.number().int(),
   pendingRequests: z.number().int(),
   activeSwimmers: z.number().int(),
-  calendarSyncFailures: z.number().int(),
 });
 export type CoachStats = z.infer<typeof CoachStatsSchema>;
 

@@ -7,9 +7,12 @@ import type {
   BalanceHistoryResponse,
   BalanceResponse,
   CashOutBreakdown,
+  CoachSwimmer,
+  League,
   NeedsManualRefundJob,
 } from "@swim-app/shared";
 
+import InlineError from "@/components/InlineError";
 import { formatDollars } from "@/lib/formatDollars";
 import {
   executeCashOutAction,
@@ -27,6 +30,9 @@ interface Props {
   householdName: string;
   memberFullNames: string[];
   activeSwimmerCount: number;
+  // Discriminated so a roster outage can render its own InlineError with
+  // retry — the card never falls back to "No swimmers yet" on failure.
+  swimmers: { ok: true; data: CoachSwimmer[] } | { ok: false };
   initialBalance: BalanceResponse;
   initialHistory: BalanceHistoryResponse;
   // ADR 036 Phase 8 Part B: pre-fetched needs-manual-handling cash-
@@ -34,6 +40,27 @@ interface Props {
   // manually" banner above the balance card. Each entry has its own
   // Mark-as-refunded action.
   initialNeedsManualJobs: NeedsManualRefundJob[];
+}
+
+const LEAGUE_LABELS: Record<League, string> = {
+  club: "Club",
+  summer_league: "Summer League",
+};
+
+function swimmerClubLabel(clubs: CoachSwimmer["clubs"]): string {
+  return clubs
+    .map((club) => club.clubName ?? club.otherClubName)
+    .filter((name): name is string => name !== null)
+    .join(", ");
+}
+
+function formatLastLessonDate(iso: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Los_Angeles",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(new Date(iso));
 }
 
 function formatHistoryDate(iso: string): string {
@@ -243,6 +270,71 @@ export default function CoachFamilyDetailContent(props: Props) {
             </button>
           )}
         </div>
+      </section>
+
+      <section
+        aria-label="Swimmers"
+        data-testid="family-swimmers-card"
+        className="rounded-card border border-border bg-background overflow-hidden"
+      >
+        <header className="px-4 py-3 border-b border-border">
+          <p className="text-[11px] font-bold uppercase tracking-wider text-text-secondary">
+            Swimmers
+          </p>
+        </header>
+        {!props.swimmers.ok ? (
+          <div className="p-4" data-testid="family-swimmers-error">
+            <InlineError message="Couldn't load swimmers." reloadOnRetry />
+          </div>
+        ) : props.swimmers.data.length === 0 ? (
+          <p className="px-4 py-6 text-sm text-text-secondary text-center">
+            No swimmers yet.
+          </p>
+        ) : (
+          <ul className="divide-y divide-border" data-testid="family-swimmers-list">
+            {props.swimmers.data.map((swimmer) => {
+              const clubLabel = swimmerClubLabel(swimmer.clubs);
+              const leagueLabel = swimmer.currentLeagues
+                .map((league) => LEAGUE_LABELS[league])
+                .join(", ");
+              const metaParts = [clubLabel, leagueLabel].filter(
+                (part) => part.length > 0,
+              );
+              return (
+                <li key={swimmer.id}>
+                  <Link
+                    href={`/coach/swimmers/${swimmer.id}`}
+                    className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-surface-soft transition-colors duration-100"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold text-text truncate">
+                        {swimmer.firstName} {swimmer.lastName}
+                        <span className="ml-2 text-text-secondary font-normal tabular-nums">
+                          {swimmer.age}
+                        </span>
+                      </p>
+                      {metaParts.length > 0 && (
+                        <p className="text-xs text-text-secondary truncate">
+                          {metaParts.join(" · ")}
+                        </p>
+                      )}
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className="text-[11px] font-bold uppercase tracking-wider text-text-secondary">
+                        Last lesson
+                      </p>
+                      <p className="text-sm text-text tabular-nums">
+                        {swimmer.lastLesson
+                          ? formatLastLessonDate(swimmer.lastLesson.startsAt)
+                          : "No lessons yet"}
+                      </p>
+                    </div>
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </section>
 
       {pageError !== null && (

@@ -70,6 +70,7 @@ import {
   profiles,
   swimmers,
 } from "../db/schema";
+import { loadCoachSwimmerList } from "../lib/coachSwimmerList";
 import { getEnv } from "../lib/env";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { validate } from "../middleware/validate";
@@ -416,6 +417,37 @@ coachHouseholdsRouter.get(
       lastActivityAt,
     };
     res.json(response);
+  }),
+);
+
+// ── GET /coach/households/:householdId/swimmers ────────────────────────────
+//
+// Active swimmers in the household, same CoachSwimmer shape as the roster
+// list. Archived swimmers are excluded; a household with none returns [].
+// 404 only when the household row is missing — an empty roster is a valid
+// state (newly created family).
+
+coachHouseholdsRouter.get(
+  "/households/:id/swimmers",
+  validate({ params: IdParamsSchema }),
+  asyncHandler(async (req, res) => {
+    const { id } = req.params as unknown as IdParams;
+    // 404 only when the household row itself is gone (hard-deleted via the
+    // ADR 034 solo teardown after its swimmers were archived). A household
+    // that still exists but whose swimmers were all archived surfaces as
+    // [] from loadCoachSwimmerList, which the UI renders as "No swimmers
+    // yet." — never as a missing-page.
+    const householdRows = await db
+      .select({ id: households.id })
+      .from(households)
+      .where(eq(households.id, id))
+      .limit(1);
+    if (householdRows.length === 0) {
+      res.status(404).json({ error: "household_not_found" });
+      return;
+    }
+    const result = await loadCoachSwimmerList(eq(swimmers.householdId, id));
+    res.json(result);
   }),
 );
 

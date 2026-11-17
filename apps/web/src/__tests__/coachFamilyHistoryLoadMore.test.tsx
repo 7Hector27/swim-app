@@ -70,6 +70,7 @@ function renderWithFirstPage(initialHistory: BalanceHistoryResponse) {
       householdName="Smith household"
       memberFullNames={["Jane Smith"]}
       activeSwimmerCount={2}
+      swimmers={{ ok: true, data: [] }}
       initialBalance={BASE_BALANCE}
       initialHistory={initialHistory}
       initialNeedsManualJobs={[]}

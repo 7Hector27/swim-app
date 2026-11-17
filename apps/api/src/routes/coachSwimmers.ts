@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { and, asc, desc, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import type { IdParams } from "@swim-app/shared";
 import { db } from "../db/client";
 import {
@@ -10,7 +10,6 @@ import {
   leagueRegistrations,
   lessonLocations,
   lessonSwimmers,
-  lessons,
   meetSwims,
   meets,
   profiles,
@@ -19,6 +18,13 @@ import {
   swimmerClubs,
 } from "../db/schema";
 import { nowUtc } from "../lib/clock";
+import {
+  activeRegsWhere,
+  fetchLastLessonsForSwimmers,
+  loadCoachSwimmerList,
+  mapClub,
+  swimmerColumns,
+} from "../lib/coachSwimmerList";
 import { validate } from "../middleware/validate";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { isActiveSwimmer } from "../db/queries";
@@ -32,9 +38,7 @@ import {
   PatchMeetSwimBodySchema,
   PatchCoachSwimmerBodySchema,
   calculateAge,
-  currentSeasonStartYear,
   todayLA,
-  type CoachSwimmer,
   type CoachSwimmerDetail,
   type CoachVisibilityBody,
   type CreateCoachNoteBody,
@@ -62,184 +66,13 @@ function toISO(date: Date): string {
   return date.toISOString();
 }
 
-const swimmerColumns = {
-  id: swimmers.id,
-  firstName: swimmers.firstName,
-  lastName: swimmers.lastName,
-  birthDate: swimmers.birthDate,
-  sex: swimmers.sex,
-  isPublic: swimmers.isPublic,
-  householdId: swimmers.householdId,
-  createdAt: swimmers.createdAt,
-  updatedAt: swimmers.updatedAt,
-} as const;
-
-type SwimmerClubRow = {
-  id: string;
-  swimmerId: string;
-  clubId: string | null;
-  clubName: string | null;
-  otherClubName: string | null;
-  createdAt: Date;
-  updatedAt: Date;
-};
-
-function mapClub(club: SwimmerClubRow): CoachSwimmer["clubs"][number] {
-  return {
-    id: club.id,
-    swimmerId: club.swimmerId,
-    clubId: club.clubId,
-    clubName: club.clubName,
-    otherClubName: club.otherClubName,
-    createdAt: toISO(club.createdAt),
-    updatedAt: toISO(club.updatedAt),
-  };
-}
-
-// Per-swimmer most recent lesson that has already started and wasn't
-// cancelled or marked a no-show. One SQL round-trip via DISTINCT ON —
-// never a loop of per-row queries. Returns a map so callers can zip it
-// into the per-swimmer response without a second scan.
-async function fetchLastLessonsForSwimmers(
-  swimmerIds: string[],
-  now: Date,
-): Promise<Map<string, { id: string; startsAt: Date }>> {
-  const out = new Map<string, { id: string; startsAt: Date }>();
-  if (swimmerIds.length === 0) return out;
-  const rows = await db.execute<{
-    swimmer_id: string;
-    lesson_id: string;
-    starts_at: Date;
-  }>(sql`
-    SELECT DISTINCT ON (${lessonSwimmers.swimmerId})
-      ${lessonSwimmers.swimmerId} AS swimmer_id,
-      ${lessons.id} AS lesson_id,
-      ${lessons.startsAt} AS starts_at
-    FROM ${lessonSwimmers}
-    INNER JOIN ${lessons} ON ${lessons.id} = ${lessonSwimmers.lessonId}
-    WHERE ${lessonSwimmers.swimmerId} IN (${sql.join(
-      swimmerIds.map((id) => sql`${id}::uuid`),
-      sql`, `,
-    )})
-      AND ${lessons.startsAt} <= ${now.toISOString()}::timestamptz
-      AND ${lessons.status} NOT IN ('canceled', 'no_show')
-    ORDER BY ${lessonSwimmers.swimmerId}, ${lessons.startsAt} DESC
-  `);
-  for (const row of rows) {
-    out.set(row.swimmer_id, {
-      id: row.lesson_id,
-      startsAt: row.starts_at instanceof Date ? row.starts_at : new Date(row.starts_at),
-    });
-  }
-  return out;
-}
-
-function activeRegsWhere(swimmerIds: string[]) {
-  const today = todayLA();
-  const clubYear = currentSeasonStartYear("club", today);
-  const summerYear = currentSeasonStartYear("summer_league", today);
-  return and(
-    inArray(leagueRegistrations.swimmerId, swimmerIds),
-    isNull(leagueRegistrations.withdrawnAt),
-    or(
-      and(
-        eq(leagueRegistrations.league, "club"),
-        eq(leagueRegistrations.seasonStartYear, clubYear),
-      ),
-      and(
-        eq(leagueRegistrations.league, "summer_league"),
-        eq(leagueRegistrations.seasonStartYear, summerYear),
-      ),
-    ),
-  );
-}
-
 // ── Routes ────────────────────────────────────────────────────────────────────
 
 coachSwimmersRouter.get(
   "/",
   validate({}),
   asyncHandler(async (_req, res) => {
-    const swimmerRows = await db
-      .select(swimmerColumns)
-      .from(swimmers)
-      .where(isActiveSwimmer)
-      .orderBy(asc(swimmers.lastName), asc(swimmers.firstName));
-
-    if (swimmerRows.length === 0) {
-      res.json([]);
-      return;
-    }
-
-    const swimmerIds = swimmerRows.map((row) => row.id);
-    const householdIds = [...new Set(swimmerRows.map((row) => row.householdId))];
-
-    const [clubRows, regRows, memberRows, lastLessonBySwimmer] = await Promise.all([
-      db
-        .select({
-          id: swimmerClubs.id,
-          swimmerId: swimmerClubs.swimmerId,
-          clubId: swimmerClubs.clubId,
-          clubName: clubs.name,
-          otherClubName: swimmerClubs.otherClubName,
-          createdAt: swimmerClubs.createdAt,
-          updatedAt: swimmerClubs.updatedAt,
-        })
-        .from(swimmerClubs)
-        .leftJoin(clubs, eq(swimmerClubs.clubId, clubs.id))
-        .where(inArray(swimmerClubs.swimmerId, swimmerIds)),
-      db
-        .select({ swimmerId: leagueRegistrations.swimmerId, league: leagueRegistrations.league })
-        .from(leagueRegistrations)
-        .where(activeRegsWhere(swimmerIds)),
-      db
-        .select({ householdId: householdMembers.householdId, fullName: profiles.fullName })
-        .from(householdMembers)
-        .innerJoin(profiles, eq(profiles.id, householdMembers.profileId))
-        .where(inArray(householdMembers.householdId, householdIds)),
-      fetchLastLessonsForSwimmers(swimmerIds, nowUtc()),
-    ]);
-
-    const clubsBySwimmer = new Map<string, SwimmerClubRow[]>();
-    for (const club of clubRows) {
-      const existing = clubsBySwimmer.get(club.swimmerId) ?? [];
-      existing.push(club);
-      clubsBySwimmer.set(club.swimmerId, existing);
-    }
-
-    const leaguesBySwimmer = new Map<string, Array<"club" | "summer_league">>();
-    for (const reg of regRows) {
-      const existing = leaguesBySwimmer.get(reg.swimmerId) ?? [];
-      existing.push(reg.league);
-      leaguesBySwimmer.set(reg.swimmerId, existing);
-    }
-
-    const memberNamesByHousehold = new Map<string, string[]>();
-    for (const row of memberRows) {
-      const names = memberNamesByHousehold.get(row.householdId) ?? [];
-      if (row.fullName !== null) names.push(row.fullName);
-      memberNamesByHousehold.set(row.householdId, names);
-    }
-
-    const today = todayLA();
-    const result: CoachSwimmer[] = swimmerRows.map((swimmer) => {
-      const last = lastLessonBySwimmer.get(swimmer.id);
-      return {
-        id: swimmer.id,
-        firstName: swimmer.firstName,
-        lastName: swimmer.lastName,
-        age: calculateAge(swimmer.birthDate, today),
-        sex: swimmer.sex,
-        isPublic: swimmer.isPublic,
-        createdAt: toISO(swimmer.createdAt),
-        updatedAt: toISO(swimmer.updatedAt),
-        clubs: (clubsBySwimmer.get(swimmer.id) ?? []).map(mapClub),
-        currentLeagues: leaguesBySwimmer.get(swimmer.id) ?? [],
-        memberNames: memberNamesByHousehold.get(swimmer.householdId) ?? [],
-        lastLesson: last ? { id: last.id, startsAt: toISO(last.startsAt) } : null,
-      };
-    });
-
+    const result = await loadCoachSwimmerList();
     res.json(result);
   }),
 );
