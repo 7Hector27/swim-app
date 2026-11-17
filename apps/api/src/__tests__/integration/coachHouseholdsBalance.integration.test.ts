@@ -13,7 +13,7 @@ import {
   seedHouseholdBalanceForTest,
   type TestUser,
 } from "./helpers";
-import { householdBalanceLedger, profiles } from "../../db/schema";
+import { households, householdBalanceLedger, profiles } from "../../db/schema";
 
 const app = createApp(pino({ level: "silent" }));
 
@@ -22,6 +22,18 @@ let familyA: TestUser;
 let familyB: TestUser;
 let familyC: TestUser;
 
+// Per-run unique token so we can search-narrow the paged roster endpoint
+// down to just this suite's three test households. The test DB lives
+// across runs and across test files — without a unique key the three
+// seeded households sit somewhere inside hundreds of leftover rows,
+// and relying on page order is a flake magnet. Using Date.now plus a
+// random tail keeps collisions effectively impossible even when the
+// vitest watcher restarts the suite mid-second.
+const UNIQUE_SUITE_TOKEN = `cHB-${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`;
+const householdNameA = `${UNIQUE_SUITE_TOKEN}-A`;
+const householdNameB = `${UNIQUE_SUITE_TOKEN}-B`;
+const householdNameC = `${UNIQUE_SUITE_TOKEN}-C`;
+
 beforeAll(async () => {
   coach = await createTestUser("coach-hb-coach");
   familyA = await createTestUser("coach-hb-fam-a");
@@ -29,6 +41,22 @@ beforeAll(async () => {
   familyC = await createTestUser("coach-hb-fam-c");
 
   await adminDb().update(profiles).set({ role: "coach" }).where(eq(profiles.id, coach.userId));
+
+  // Rename each household so the roster endpoint's name search returns
+  // exactly these three rows — regardless of how many other households
+  // the shared test DB carries.
+  await adminDb()
+    .update(households)
+    .set({ name: householdNameA })
+    .where(eq(households.id, familyA.householdId));
+  await adminDb()
+    .update(households)
+    .set({ name: householdNameB })
+    .where(eq(households.id, familyB.householdId));
+  await adminDb()
+    .update(households)
+    .set({ name: householdNameC })
+    .where(eq(households.id, familyC.householdId));
 
   // Seed distinct balances so the list response is testable.
   await seedHouseholdBalanceForTest({
@@ -59,62 +87,59 @@ afterAll(async () => {
 
 describe("GET /coach/households/balances", () => {
   it("returns a paged roster with { items, page, pageSize, total, lowBalanceCount } and populated per-household fields", async () => {
-    // Page 1 proves the envelope shape; the three seeded households may
-    // sit on any page because other test files share the DB, so we walk
-    // the pages after that to locate each by id.
-    const firstRes = await request(app)
-      .get("/coach/households/balances")
+    // Search by the per-suite unique token so the response reflects
+    // only the three seeded households, regardless of leftover rows in
+    // the shared test DB. total + lowBalanceCount are scoped to the
+    // same filter now (the summary query shares the search WHERE with
+    // the paged select), so we can assert them exactly.
+    const res = await request(app)
+      .get(
+        `/coach/households/balances?search=${encodeURIComponent(UNIQUE_SUITE_TOKEN)}`,
+      )
       .set("Authorization", `Bearer ${coach.accessToken}`);
-    expect(firstRes.status).toBe(200);
-    expect(firstRes.body).toEqual(
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual(
       expect.objectContaining({
-        items: expect.any(Array),
         page: 1,
         pageSize: 20,
-        total: expect.any(Number),
-        lowBalanceCount: expect.any(Number),
+        // Exactly the three seeded households match the token.
+        total: 3,
+        // familyB ($1) and familyC ($0) fall under the one-lesson
+        // threshold; familyA ($240) does not.
+        lowBalanceCount: 2,
       }),
     );
-    expect(Array.isArray(firstRes.body.items)).toBe(true);
-    expect(firstRes.body.total).toBeGreaterThanOrEqual(3);
-    expect(firstRes.body.lowBalanceCount).toBeGreaterThanOrEqual(2);
+    expect(Array.isArray(res.body.items)).toBe(true);
+    expect(res.body.items).toHaveLength(3);
 
-    const total = firstRes.body.total as number;
-    const pageSize = firstRes.body.pageSize as number;
-    const totalPages = Math.max(1, Math.ceil(total / pageSize));
     type Row = {
       householdId: string;
+      householdName: string;
       balanceCents: number;
       lastActivityAt: string | null;
       activeSwimmerCount: number;
       memberFullNames: string[];
     };
-    const rows: Row[] = [...firstRes.body.items];
-    for (let page = 2; page <= totalPages; page += 1) {
-      const nextRes = await request(app)
-        .get(`/coach/households/balances?page=${page}`)
-        .set("Authorization", `Bearer ${coach.accessToken}`);
-      expect(nextRes.status).toBe(200);
-      expect(nextRes.body.page).toBe(page);
-      rows.push(...(nextRes.body.items as Row[]));
-    }
-
+    const rows = res.body.items as Row[];
     const rowA = rows.find((row) => row.householdId === familyA.householdId);
     const rowB = rows.find((row) => row.householdId === familyB.householdId);
     const rowC = rows.find((row) => row.householdId === familyC.householdId);
 
     expect(rowA).toBeDefined();
+    expect(rowA!.householdName).toBe(householdNameA);
     expect(rowA!.balanceCents).toBe(24_000);
     expect(typeof rowA!.lastActivityAt).toBe("string");
     expect(rowA!.activeSwimmerCount).toBe(0);
     expect(Array.isArray(rowA!.memberFullNames)).toBe(true);
 
     expect(rowB).toBeDefined();
+    expect(rowB!.householdName).toBe(householdNameB);
     expect(rowB!.balanceCents).toBe(100);
     expect(typeof rowB!.lastActivityAt).toBe("string");
 
     // Family C has no ledger rows → balance 0, lastActivityAt null.
     expect(rowC).toBeDefined();
+    expect(rowC!.householdName).toBe(householdNameC);
     expect(rowC!.balanceCents).toBe(0);
     expect(rowC!.lastActivityAt).toBeNull();
   });
