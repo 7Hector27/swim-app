@@ -39,6 +39,20 @@ export async function requireUser(
     return;
   }
 
+  // Audit item 10 — pre-hijacking guard. The on_auth_user_created trigger
+  // creates the profile + household + default policy acceptances the
+  // moment Supabase issues the auth.users row, so an attacker who signed
+  // up with a victim's email has data in our tables before the victim
+  // ever clicks a confirmation link. Refuse to serve any protected route
+  // until the Supabase user has confirmed the email address. The web app
+  // maps this specific code to a "Confirm your email" screen with a
+  // resend button; see apps/web/src/app/auth/confirm-pending.
+  if (!data.user.email_confirmed_at) {
+    req.log.warn({ userId: sub, reason: "email_not_confirmed" }, "access denied");
+    res.status(403).json({ error: "email_not_confirmed" });
+    return;
+  }
+
   const rows = await db.select().from(profiles).where(eq(profiles.id, sub));
   const profile = rows[0];
 

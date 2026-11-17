@@ -228,7 +228,7 @@ type AnyProfile = { id: string; role: string; [key: string]: unknown };
 
 function authAs(profile: AnyProfile) {
   mockGetUser.mockResolvedValue({
-    data: { user: { id: profile.id, email: "user@example.com" } },
+    data: { user: { id: profile.id, email: "user@example.com", email_confirmed_at: "2026-10-26T17:00:00.000Z" } },
     error: null,
   });
 }

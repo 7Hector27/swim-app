@@ -112,7 +112,7 @@ const app = createApp(testLogger);
 
 function authAsOwner(): void {
   mockGetUser.mockResolvedValue({
-    data: { user: { id: PROFILE_ID, email: "jane@example.com" } },
+    data: { user: { id: PROFILE_ID, email: "jane@example.com", email_confirmed_at: "2026-10-26T17:00:00.000Z" } },
     error: null,
   });
   mockDbSelect.mockImplementation(() => ({
@@ -139,7 +139,7 @@ describe("POST /me/deletion/confirm (unit)", () => {
     authAsOwner();
     // Re-auth succeeds — but with a DIFFERENT user id than the profile.
     mockReauthSignIn.mockResolvedValue({
-      data: { user: { id: OTHER_AUTH_USER_ID, email: "jane@example.com" } },
+      data: { user: { id: OTHER_AUTH_USER_ID, email: "jane@example.com", email_confirmed_at: "2026-10-26T17:00:00.000Z" } },
       error: null,
     });
 
@@ -215,7 +215,7 @@ describe("POST /me/deletion/confirm (unit)", () => {
     // scope argument on any of the sign-out code paths.
     authAsOwner();
     mockReauthSignIn.mockResolvedValue({
-      data: { user: { id: PROFILE_ID, email: "jane@example.com" } },
+      data: { user: { id: PROFILE_ID, email: "jane@example.com", email_confirmed_at: "2026-10-26T17:00:00.000Z" } },
       error: null,
     });
     // Short-circuit the deletion tx to an internal error so the test
