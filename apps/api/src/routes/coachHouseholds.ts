@@ -168,7 +168,7 @@ coachHouseholdsRouter.get(
             ),
           );
 
-    const { rosterRows, totalCount, lowBalanceCount, pagedRows, memberRows, swimmerCountRows } =
+    const { totalCount, lowBalanceCount, pagedRows, memberRows, swimmerCountRows } =
       await db.transaction(
         async (tx) => {
           const whereCondition = searchFilter;
@@ -189,7 +189,6 @@ coachHouseholdsRouter.get(
 
           if (totalCount === 0) {
             return {
-              rosterRows: [],
               totalCount,
               lowBalanceCount,
               pagedRows: [],
@@ -239,7 +238,6 @@ coachHouseholdsRouter.get(
 
           if (pagedRowsRaw.length === 0) {
             return {
-              rosterRows: [],
               totalCount,
               lowBalanceCount,
               pagedRows: [],
@@ -274,7 +272,6 @@ coachHouseholdsRouter.get(
           ]);
 
           return {
-            rosterRows: pagedRowsRaw,
             totalCount,
             lowBalanceCount,
             pagedRows: pagedRowsRaw,
@@ -284,8 +281,6 @@ coachHouseholdsRouter.get(
         },
         { isolationLevel: "repeatable read", accessMode: "read only" },
       );
-
-    void rosterRows;
 
     const membersByHousehold = new Map<string, string[]>();
     for (const row of memberRows) {
