@@ -438,8 +438,7 @@ function ReviewContent({
       {hasPicks && balanceCents !== null && visible.length > 0 && (
         <div
           data-testid="review-summary"
-          className="rounded-card border border-border bg-surface-soft p-4 flex flex-col gap-2"
-          style={{ fontVariantNumeric: "tabular-nums" }}
+          className="rounded-card border border-border bg-surface-soft p-4 flex flex-col gap-2 tabular-nums"
         >
           <div className="flex items-center justify-between text-sm">
             <span className="text-text-secondary">Total</span>
@@ -574,10 +573,7 @@ function PickRow({
           <p className="text-base font-semibold text-text">
             {formatRowDate(pick.startsAt)}
           </p>
-          <p
-            className="text-sm text-text-secondary mt-0.5"
-            style={{ fontVariantNumeric: "tabular-nums" }}
-          >
+          <p className="text-sm text-text-secondary mt-0.5 tabular-nums">
             {formatRowTimeRange(pick.startsAt, pick.durationMinutes)}
           </p>
           {!isAvailable && (
@@ -587,10 +583,7 @@ function PickRow({
           )}
         </div>
         <div className="flex flex-col items-end gap-1 shrink-0">
-          <p
-            className="text-base font-semibold text-text"
-            style={{ fontVariantNumeric: "tabular-nums" }}
-          >
+          <p className="text-base font-semibold text-text tabular-nums">
             ${priceDollars}
           </p>
           {rowAction !== null && (

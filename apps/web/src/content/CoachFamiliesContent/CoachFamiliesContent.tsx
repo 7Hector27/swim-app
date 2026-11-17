@@ -169,10 +169,7 @@ export default function CoachFamiliesContent({
                       </span>
                     )}
                   </p>
-                  <p
-                    className="text-xs text-text-secondary"
-                    style={{ fontVariantNumeric: "tabular-nums" }}
-                  >
+                  <p className="text-xs text-text-secondary tabular-nums">
                     {formatDollars(entry.amountCents)} · {entry.reason} ·{" "}
                     {formatAttentionDate(entry.createdAt)}
                   </p>
@@ -305,10 +302,7 @@ export default function CoachFamiliesContent({
                     </p>
                   </div>
                   <div className="text-right shrink-0">
-                    <p
-                      className="font-semibold text-text"
-                      style={{ fontVariantNumeric: "tabular-nums" }}
-                    >
+                    <p className="font-semibold text-text tabular-nums">
                       {formatDollars(family.balanceCents)}
                     </p>
                     <p className="text-xs text-text-secondary">
@@ -403,12 +397,11 @@ function Pager({ currentPage, totalPages, onJump }: PagerProps) {
                     : `families-pager-page-${entry}`
                 }
                 className={[
-                  "min-h-[36px] min-w-[36px] px-2 rounded-full text-sm font-semibold transition-colors duration-150 motion-reduce:transition-none active:scale-[0.97] motion-reduce:transform-none",
+                  "min-h-[36px] min-w-[36px] px-2 rounded-full text-sm font-semibold tabular-nums transition-colors duration-150 motion-reduce:transition-none active:scale-[0.97] motion-reduce:transform-none",
                   entry === currentPage
                     ? "bg-heading text-background"
                     : "border border-border text-text hover:bg-surface-soft",
                 ].join(" ")}
-                style={{ fontVariantNumeric: "tabular-nums" }}
               >
                 {entry}
               </button>
