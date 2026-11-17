@@ -1552,10 +1552,57 @@ export default function BookCalendarContent({
   const selectedPhoneDayData =
     weekData?.days.find((day) => day.date === selectedPhoneDay) ?? null;
 
-  const VIEW_TOGGLE_BASE =
-    "min-h-[36px] px-4 rounded-full border text-sm font-semibold transition-colors duration-150 motion-reduce:transition-none";
-  const VIEW_TOGGLE_ACTIVE = "bg-heading text-background border-heading";
-  const VIEW_TOGGLE_INACTIVE = "border-border text-text hover:bg-surface-soft";
+  // Compact Week/Month toggle. Lives inside the calendar's navigation
+  // row (right next to the Prev/Next arrows) so the page title has its
+  // own full-width line and never wraps on narrow phones. Smaller padding
+  // and a segmented-pill look keep the control narrow enough to sit next
+  // to the chevron buttons on a 320px iPhone SE.
+  const viewToggle = (
+    <div
+      role="radiogroup"
+      aria-label="Calendar view"
+      className="inline-flex rounded-full border border-border overflow-hidden"
+    >
+      <button
+        type="button"
+        role="radio"
+        aria-checked={calendarView === "week"}
+        onClick={() => {
+          setCalendarView("week");
+          setFetchSpec((prev) => ({ mode: "search", key: prev.key + 1 }));
+        }}
+        className={[
+          "min-h-[36px] px-3 text-xs font-bold uppercase tracking-wider transition-colors duration-150 motion-reduce:transition-none",
+          calendarView === "week"
+            ? "bg-heading text-background"
+            : "text-text hover:bg-surface-soft",
+        ].join(" ")}
+      >
+        Week
+      </button>
+      <button
+        type="button"
+        role="radio"
+        aria-checked={calendarView === "month"}
+        onClick={() => {
+          setCalendarView("month");
+          setFetchSpec((prev) => ({
+            mode: "month",
+            monthStr: getMonthStr(currentDate),
+            key: prev.key + 1,
+          }));
+        }}
+        className={[
+          "min-h-[36px] px-3 text-xs font-bold uppercase tracking-wider border-l border-border transition-colors duration-150 motion-reduce:transition-none",
+          calendarView === "month"
+            ? "bg-heading text-background"
+            : "text-text hover:bg-surface-soft",
+        ].join(" ")}
+      >
+        Month
+      </button>
+    </div>
+  );
 
   // ── Early returns ──────────────────────────────────────────────────────────
 
@@ -1621,38 +1668,12 @@ export default function BookCalendarContent({
           setShortfall(state);
         }}
       />
-      {/* Heading + view toggle */}
-      <div className="flex items-center gap-4 flex-wrap">
-        <h1 className="font-heading text-3xl tablet:text-4xl text-heading flex-1">
-          Book a lesson
-        </h1>
-        <div className="flex gap-1">
-          <button
-            type="button"
-            onClick={() => {
-              setCalendarView("week");
-              setFetchSpec((prev) => ({ mode: "search", key: prev.key + 1 }));
-            }}
-            className={`${VIEW_TOGGLE_BASE} ${calendarView === "week" ? VIEW_TOGGLE_ACTIVE : VIEW_TOGGLE_INACTIVE}`}
-          >
-            Week
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setCalendarView("month");
-              setFetchSpec((prev) => ({
-                mode: "month",
-                monthStr: getMonthStr(currentDate),
-                key: prev.key + 1,
-              }));
-            }}
-            className={`${VIEW_TOGGLE_BASE} ${calendarView === "month" ? VIEW_TOGGLE_ACTIVE : VIEW_TOGGLE_INACTIVE}`}
-          >
-            Month
-          </button>
-        </div>
-      </div>
+      {/* Title now takes the whole row so it stays on one line on a
+          narrow phone. The Week/Month toggle has moved into the
+          calendar's navigation row below (next to the Prev/Next arrows). */}
+      <h1 className="font-heading text-3xl tablet:text-4xl text-heading">
+        Book a lesson
+      </h1>
 
       {swimmers.length === 0 && (
         <p className="text-sm text-text-secondary">
@@ -1691,6 +1712,7 @@ export default function BookCalendarContent({
           disablePrev={disablePrevWeek}
           disableNext={disableNextWeek}
           dots={{ weeks: weekDots, onJump: jumpToMonday }}
+          rightSlot={viewToggle}
         />
       ) : (
         <div className="flex items-center gap-2 flex-wrap">
@@ -1712,16 +1734,17 @@ export default function BookCalendarContent({
           >
             &rsaquo;
           </button>
-          <span className="text-sm font-semibold text-heading flex-1 text-center tablet:text-left">
+          <span className="text-sm font-semibold text-heading flex-1 min-w-0 truncate text-center tablet:text-left">
             {formatMonthLabel(currentDate)}
           </span>
           <button
             type="button"
             onClick={goToday}
-            className="min-h-[44px] px-4 rounded-button border border-border text-sm text-text hover:bg-surface-soft transition-colors duration-150"
+            className="min-h-[44px] px-3 tablet:px-4 rounded-button border border-border text-sm text-text hover:bg-surface-soft transition-colors duration-150"
           >
             Today
           </button>
+          <div className="flex-shrink-0">{viewToggle}</div>
         </div>
       )}
 

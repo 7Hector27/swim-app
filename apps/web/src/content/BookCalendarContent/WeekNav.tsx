@@ -50,6 +50,11 @@ interface Props {
     weeks: WeekNavDot[];
     onJump: (monday: string) => void;
   };
+  // Optional widget pinned to the right of the Prev/Next row — used by
+  // the parent calendar to drop the Week/Month view toggle into the nav
+  // row instead of the page header, so the page title stays on one line
+  // on a narrow phone.
+  rightSlot?: React.ReactNode;
 }
 
 // Pointer-distance (CSS px) and velocity (px/ms) thresholds. Match
@@ -91,6 +96,7 @@ export default function WeekNav({
   disablePrev,
   disableNext = false,
   dots,
+  rightSlot,
 }: Props) {
   const todayMonday = getMondayOfWeek(todayStr);
   const defaultDisablePrev = mondayStr === todayMonday;
@@ -249,6 +255,10 @@ export default function WeekNav({
           <span className="hidden tablet:inline">Next week</span>
           <ChevronRightIcon />
         </button>
+
+        {rightSlot !== undefined && (
+          <div className="flex-shrink-0">{rightSlot}</div>
+        )}
       </div>
 
       <div className="flex items-center justify-between gap-3 text-xs text-text-secondary">
