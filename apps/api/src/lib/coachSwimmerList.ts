@@ -9,7 +9,6 @@
 
 import { and, asc, eq, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
 import {
-  calculateAge,
   currentSeasonStartYear,
   todayLA,
   type CoachSwimmer,
@@ -29,11 +28,33 @@ import {
 } from "../db/schema";
 import { nowUtc } from "./clock";
 
+// Detail-column set — includes `birthDate`, which the per-swimmer detail
+// endpoint (/coach/swimmers/:id) returns in its CoachSwimmerDetail shape.
+// The list endpoints never surface birthDate (they return `age`), so they
+// use `swimmerListColumns` below instead and never select it in the first
+// place.
 export const swimmerColumns = {
   id: swimmers.id,
   firstName: swimmers.firstName,
   lastName: swimmers.lastName,
   birthDate: swimmers.birthDate,
+  sex: swimmers.sex,
+  isPublic: swimmers.isPublic,
+  householdId: swimmers.householdId,
+  createdAt: swimmers.createdAt,
+  updatedAt: swimmers.updatedAt,
+} as const;
+
+// List-column set — age is computed in SQL against LA today, so a raw
+// birth_date value never crosses the wire from this file. Keeping this
+// local (non-exported) makes the invariant explicit for any future caller
+// building a list response: use this helper, don't hand-roll one that
+// might accidentally forward the birthDate column.
+const swimmerListColumns = {
+  id: swimmers.id,
+  firstName: swimmers.firstName,
+  lastName: swimmers.lastName,
+  age: sql<number>`EXTRACT(YEAR FROM AGE((now() AT TIME ZONE 'America/Los_Angeles')::date, ${swimmers.birthDate}))::int`.as("age"),
   sex: swimmers.sex,
   isPublic: swimmers.isPublic,
   householdId: swimmers.householdId,
@@ -69,6 +90,13 @@ export function mapClub(club: SwimmerClubRow): CoachSwimmer["clubs"][number] {
 
 // Per-swimmer most recent lesson that has already started and wasn't
 // cancelled or marked a no-show. One SQL round-trip via DISTINCT ON.
+//
+// Why `no_show` is excluded here while the dashboard's `/coach/stats`
+// counts it: "last lesson" is the last actual coach-swimmer interaction,
+// so a scheduled slot the swimmer didn't show up for should not reset the
+// clock. The stats cards, by contrast, count booked sessions on the
+// calendar — a no-show is still a session the coach planned around. Both
+// are intentional; keep them in sync if the product definition shifts.
 export async function fetchLastLessonsForSwimmers(
   swimmerIds: string[],
   now: Date,
@@ -132,7 +160,7 @@ export async function loadCoachSwimmerList(
   const whereClause = extraWhere ? and(isActiveSwimmer, extraWhere) : isActiveSwimmer;
 
   const swimmerRows = await db
-    .select(swimmerColumns)
+    .select(swimmerListColumns)
     .from(swimmers)
     .where(whereClause)
     .orderBy(asc(swimmers.lastName), asc(swimmers.firstName));
@@ -189,14 +217,13 @@ export async function loadCoachSwimmerList(
     memberNamesByHousehold.set(row.householdId, names);
   }
 
-  const today = todayLA();
   return swimmerRows.map((swimmer) => {
     const last = lastLessonBySwimmer.get(swimmer.id);
     return {
       id: swimmer.id,
       firstName: swimmer.firstName,
       lastName: swimmer.lastName,
-      age: calculateAge(swimmer.birthDate, today),
+      age: Number(swimmer.age),
       sex: swimmer.sex,
       isPublic: swimmer.isPublic,
       createdAt: toISO(swimmer.createdAt),

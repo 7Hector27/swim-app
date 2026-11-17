@@ -432,6 +432,11 @@ coachHouseholdsRouter.get(
   validate({ params: IdParamsSchema }),
   asyncHandler(async (req, res) => {
     const { id } = req.params as unknown as IdParams;
+    // 404 only when the household row itself is gone (hard-deleted via the
+    // ADR 034 solo teardown after its swimmers were archived). A household
+    // that still exists but whose swimmers were all archived surfaces as
+    // [] from loadCoachSwimmerList, which the UI renders as "No swimmers
+    // yet." — never as a missing-page.
     const householdRows = await db
       .select({ id: households.id })
       .from(households)
