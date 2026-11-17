@@ -113,8 +113,15 @@ export {
   RetryAllFailedResponseSchema,
 } from "./schemas/googleCalendar";
 
-export type { SignUpBody, LoginBody } from "./schemas/auth";
-export { SignUpBodySchema, LoginBodySchema } from "./schemas/auth";
+export type { SignUpBody, LoginBody, ForgotPasswordBody, ChangePasswordBody } from "./schemas/auth";
+export {
+  SignUpBodySchema,
+  LoginBodySchema,
+  ForgotPasswordBodySchema,
+  ChangePasswordBodySchema,
+  PasswordSchema,
+  PASSWORD_MIN_LENGTH,
+} from "./schemas/auth";
 
 // Policy acceptance (ADR 036 Phase 8 Part B Stop 3)
 export type {
