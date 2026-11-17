@@ -19,6 +19,8 @@ interface Props {
 
 export default function CoachBookingRequest({ payload, siteUrl, replyToEmail }: Props) {
   const swimmers = joinSwimmerNames(payload.swimmerFirstNamesWithInitial);
+  const swimmerBe =
+    payload.swimmerFirstNamesWithInitial.length >= 2 ? "are" : "is";
   const previewText = `New booking request from ${swimmers} on ${payload.startsAtLocalDisplay}.`;
   const deepLink = `${siteUrl.replace(/\/+$/, "")}/coach/lessons/${payload.lessonId}`;
   return (
@@ -30,7 +32,7 @@ export default function CoachBookingRequest({ payload, siteUrl, replyToEmail }: 
     >
       <Heading style={headingStyle}>New booking request.</Heading>
       <Text style={bodyStyle}>
-        {swimmers} is requesting a lesson on <strong>{payload.startsAtLocalDisplay}</strong>{" "}
+        {swimmers} {swimmerBe} requesting a lesson on <strong>{payload.startsAtLocalDisplay}</strong>{" "}
         at <strong>{payload.locationName}</strong>. This email landed because push
         notifications are not currently enabled on any of your devices.
       </Text>

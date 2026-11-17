@@ -55,6 +55,9 @@ export default function CoachBulkCancel({ payload, siteUrl, replyToEmail }: Prop
       {cancelledCount > 0 && (
         <Section style={groupSectionStyle}>
           <Text style={groupHeadingStyle}>Canceled lessons</Text>
+          <Text style={tzHintStyle}>
+            All times {LESSON_TIME_ZONE_LABEL === "Pacific Time" ? "Pacific" : LESSON_TIME_ZONE_LABEL}
+          </Text>
           {payload.cancelledLessons.map((lesson) => (
             <LessonLine
               key={lesson.lessonId}
@@ -69,6 +72,9 @@ export default function CoachBulkCancel({ payload, siteUrl, replyToEmail }: Prop
       {declinedCount > 0 && (
         <Section style={groupSectionStyle}>
           <Text style={groupHeadingStyle}>Requests that couldn't be confirmed</Text>
+          <Text style={tzHintStyle}>
+            All times {LESSON_TIME_ZONE_LABEL === "Pacific Time" ? "Pacific" : LESSON_TIME_ZONE_LABEL}
+          </Text>
           {payload.declinedRequests.map((request) => (
             <LessonLine
               key={request.lessonId}
@@ -81,8 +87,7 @@ export default function CoachBulkCancel({ payload, siteUrl, replyToEmail }: Prop
         </Section>
       )}
       <Text style={bodyStyle}>
-        Times shown are {LESSON_TIME_ZONE_LABEL}. If any of these should still happen,
-        please rebook from the dashboard.
+        If any of these should still happen, please rebook from the dashboard.
       </Text>
       {(() => {
         const refundLine = refundSentence(
@@ -187,7 +192,16 @@ const groupHeadingStyle = {
   fontSize: "16px",
   lineHeight: "22px",
   color: emailTheme.color.heading,
-  margin: "0 0 8px",
+  margin: "0 0 4px",
+};
+
+// Quiet "All times Pacific" line under each group heading — replaces
+// the per-row "(Pacific Time)" suffix that used to run on every line.
+const tzHintStyle = {
+  fontSize: "12px",
+  lineHeight: "16px",
+  color: emailTheme.color.textSecondary,
+  margin: "0 0 10px",
 };
 
 const lineStyle = {
