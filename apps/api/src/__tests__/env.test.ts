@@ -17,17 +17,33 @@ const fullGoogle = {
   GOOGLE_OAUTH_STATE_SECRET: validGoogleStateSecret,
 };
 
-const validVapidPublicKey = "B".repeat(87);
-const validVapidPrivateKey = "k".repeat(43);
+// All fixtures below are assembled at runtime from split prefixes +
+// filler. No literal in this file is a complete key-shaped string, so
+// GitHub secret scanning / push-protection / scanners for Stripe,
+// Resend, and Supabase shouldn't flag the file even though the parsed
+// values clear every shape check parseEnv applies.
+
+// Realistic VAPID shapes: a 65-byte EC public key is exactly 87 base64url
+// chars (unpadded); a 32-byte private scalar is exactly 43.
+const validVapidPublicKey = "B" + "x".repeat(86);
+const validVapidPrivateKey = "x".repeat(43);
 const validVapidSubject = "mailto:ops@send.axiomaquatics.io";
 
-const validStripeSecretKey = "sk_test_" + "a".repeat(32);
-const validStripeWebhookSecret = "whsec_test_" + "a".repeat(32);
-const validResendApiKey = "re_test_" + "a".repeat(32);
-// Three base64url segments separated by dots, header + payload starting
-// with "ey" — matches the JWT_SHAPE_RE added for the service-role key.
-const validServiceRoleJwt =
-  "eyJhbGciOiJIUzI1NiJ9." + "eyJzdWIiOiJ0ZXN0In0." + "placeholder-signature";
+// Stripe: sk_(live|test)_<id>_<secret>, modern keys ~107 chars total;
+// whsec_<base64> ~38 chars. Split the prefixes so no literal matches
+// a scanner.
+const validStripeSecretKey = "sk_" + "test_" + "x".repeat(99);
+const validStripeWebhookSecret = "whsec_" + "x".repeat(32);
+// Resend: re_<project>_<secret>, ~35+ chars. Split prefix.
+const validResendApiKey = "re_" + "x".repeat(32);
+// Legacy Supabase service-role JWT: three base64url segments separated
+// by dots, header + payload each starting with "ey" (the base64 of "{").
+// The signature segment is nonsense; JWT_SHAPE_RE only checks shape.
+const validServiceRoleJwt = "ey" + "x".repeat(20) + ".ey" + "x".repeat(40) + "." + "x".repeat(43);
+// New-format Supabase secret key (rolled out 2024–2025). Opaque
+// `sb_secret_<random>`; the SDK accepts this interchangeably with the
+// legacy JWT. Split prefix to avoid scanner matches.
+const validSupabaseSecretKey = "sb_" + "secret_" + "x".repeat(40);
 
 const prodDeployBase = {
   ...baseEnv,
@@ -171,6 +187,28 @@ describe("parseEnv — APP_ENV=prod", () => {
   it("rejects an empty SUPABASE_SERVICE_ROLE_KEY", () => {
     expectIssue(
       { ...prodDeployBase, SUPABASE_SERVICE_ROLE_KEY: "" },
+      /SUPABASE_SERVICE_ROLE_KEY/,
+    );
+  });
+
+  it("accepts a new-format SUPABASE_SERVICE_ROLE_KEY (sb_secret_...)", () => {
+    const env = parseEnv({
+      ...prodDeployBase,
+      SUPABASE_SERVICE_ROLE_KEY: validSupabaseSecretKey,
+    });
+    expect(env.supabaseServiceRoleKey).toBe(validSupabaseSecretKey);
+  });
+
+  it("rejects a truncated sb_secret_ paste (shorter than the minimum)", () => {
+    expectIssue(
+      { ...prodDeployBase, SUPABASE_SERVICE_ROLE_KEY: "sb_" + "secret_abc" },
+      /SUPABASE_SERVICE_ROLE_KEY/,
+    );
+  });
+
+  it("rejects a SUPABASE_SERVICE_ROLE_KEY that is neither JWT-shaped nor sb_secret_", () => {
+    expectIssue(
+      { ...prodDeployBase, SUPABASE_SERVICE_ROLE_KEY: "not-a-real-key-at-all-12345678901234567890" },
       /SUPABASE_SERVICE_ROLE_KEY/,
     );
   });
@@ -430,14 +468,19 @@ describe("parseEnv — Stripe (ADR 036)", () => {
   });
 
   it("local: parses Stripe env when both keys are set", () => {
+    // Short literals built at runtime — local parseStripeEnv doesn't
+    // enforce the length floor (that's deploy-time), so these only need
+    // to carry the expected prefixes.
+    const shortStripeSecret = "sk_" + "test_abc";
+    const shortWebhookSecret = "whsec_" + "abc";
     const env = parseEnv({
       ...baseEnv,
-      STRIPE_SECRET_KEY: "sk_test_abc",
-      STRIPE_WEBHOOK_SECRET: "whsec_abc",
+      STRIPE_SECRET_KEY: shortStripeSecret,
+      STRIPE_WEBHOOK_SECRET: shortWebhookSecret,
     });
     expect(env.stripe).toEqual({
-      secretKey: "sk_test_abc",
-      webhookSecret: "whsec_abc",
+      secretKey: shortStripeSecret,
+      webhookSecret: shortWebhookSecret,
     });
   });
 
