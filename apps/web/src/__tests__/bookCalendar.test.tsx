@@ -1,5 +1,5 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
-import { render, screen, fireEvent, act } from "@testing-library/react";
+import { render, screen, fireEvent, act, within } from "@testing-library/react";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn() }),
@@ -504,7 +504,22 @@ const SWIMMERS = [
 ];
 
 describe("CalendarConfigRow", () => {
-  it("renders all location names when multiple locations", () => {
+  // jsdom doesn't ship HTMLDialogElement.{showModal,close} — the pool
+  // picker inside CalendarConfigRow uses the native <dialog> element, so
+  // stub the two methods to the open/close-attribute behavior the
+  // component relies on. Scoped to this describe so the rest of the
+  // file isn't affected.
+  beforeEach(() => {
+    HTMLDialogElement.prototype.showModal = function (this: HTMLDialogElement) {
+      this.setAttribute("open", "");
+    };
+    HTMLDialogElement.prototype.close = function (this: HTMLDialogElement) {
+      this.removeAttribute("open");
+    };
+  });
+
+  it("lists every pool inside the Change ↦ picker and marks the current one selected", () => {
+    const onLocationChange = vi.fn();
     render(
       <CalendarConfigRow
         locations={LOCATIONS}
@@ -514,13 +529,32 @@ describe("CalendarConfigRow", () => {
         swimmerIds={[]}
         isLoading={false}
         swimmerErrorNonce={0}
-        onLocationChange={() => {}}
+        onLocationChange={onLocationChange}
         onDurationChange={() => {}}
         onSwimmersChange={() => {}}
       />,
     );
-    expect(screen.getByText("Sunset Pool")).toBeInTheDocument();
-    expect(screen.getByText("Oak Park Pool")).toBeInTheDocument();
+    // Collapsed row shows only the currently selected pool — matches
+    // the one-line summary the new design leads with.
+    expect(screen.getByTestId("pool-row-selected").textContent).toMatch(
+      /^Sunset Pool$/,
+    );
+    expect(screen.queryByText("Oak Park Pool")).toBeNull();
+
+    // Open the picker via the "Change" link.
+    fireEvent.click(screen.getByTestId("pool-row-change"));
+
+    // Picker dialog now shows every location, each as a selectable
+    // button; the currently-selected one is marked aria-pressed=true.
+    const dialog = screen.getByTestId("pool-picker-dialog");
+    const sunsetBtn = within(dialog).getByRole("button", { name: /Sunset Pool/ });
+    const oakBtn = within(dialog).getByRole("button", { name: /Oak Park Pool/ });
+    expect(sunsetBtn).toHaveAttribute("aria-pressed", "true");
+    expect(oakBtn).toHaveAttribute("aria-pressed", "false");
+
+    // Tapping another pool fires onLocationChange with its id.
+    fireEvent.click(oakBtn);
+    expect(onLocationChange).toHaveBeenCalledWith("loc-2");
   });
 
   it("renders all swimmer names", () => {

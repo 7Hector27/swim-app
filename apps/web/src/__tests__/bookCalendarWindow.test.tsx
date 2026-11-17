@@ -305,8 +305,10 @@ describe("Previous-week arrow", () => {
     await screen.findByLabelText(/Previous week/i);
 
     // Even though initialDate pointed at a past week, the week nav shows
-    // the current (today's) week range.
-    expect(screen.getByText(/Nov 2 \u2013 8, 2026/)).toBeInTheDocument();
+    // the current (today's) week range. Match the desktop span's
+    // year-bearing variant so the assertion still pins both the week and
+    // the year on the rendered label.
+    expect(screen.getByText(/Nov 2 to 8, 2026/)).toBeInTheDocument();
     const prevBtn = screen.getByLabelText(/Previous week/i) as HTMLButtonElement;
     expect(prevBtn.disabled).toBe(true);
   });

@@ -58,20 +58,36 @@ afterAll(async () => {
 });
 
 describe("GET /coach/households/balances", () => {
-  it("returns every household with its balance, members, swimmer count, and last activity", async () => {
+  it("returns a paged roster with { items, page, pageSize, total, lowBalanceCount } and populated per-household fields", async () => {
     const res = await request(app)
       .get("/coach/households/balances")
       .set("Authorization", `Bearer ${coach.accessToken}`);
     expect(res.status).toBe(200);
-    expect(Array.isArray(res.body)).toBe(true);
 
-    const rowA = res.body.find(
+    // Envelope — the response is an object with the paging metadata
+    // alongside the items array, not a bare list.
+    expect(res.body).toEqual(
+      expect.objectContaining({
+        items: expect.any(Array),
+        page: 1,
+        pageSize: 20,
+        total: expect.any(Number),
+        lowBalanceCount: expect.any(Number),
+      }),
+    );
+    expect(Array.isArray(res.body.items)).toBe(true);
+    // The three seeded households fit on page 1 (pageSize is 20), so the
+    // total covers at least them. Other households seeded by earlier
+    // suites may inflate the count, which is fine.
+    expect(res.body.total).toBeGreaterThanOrEqual(3);
+
+    const rowA = res.body.items.find(
       (row: { householdId: string }) => row.householdId === familyA.householdId,
     );
-    const rowB = res.body.find(
+    const rowB = res.body.items.find(
       (row: { householdId: string }) => row.householdId === familyB.householdId,
     );
-    const rowC = res.body.find(
+    const rowC = res.body.items.find(
       (row: { householdId: string }) => row.householdId === familyC.householdId,
     );
 
@@ -89,6 +105,11 @@ describe("GET /coach/households/balances", () => {
     expect(rowC).toBeDefined();
     expect(rowC.balanceCents).toBe(0);
     expect(rowC.lastActivityAt).toBeNull();
+
+    // lowBalanceCount is scoped to the same filter as items. familyB
+    // ($1) and familyC ($0) are both below the one-lesson threshold
+    // ($60); other seeded households may inflate the count too.
+    expect(res.body.lowBalanceCount).toBeGreaterThanOrEqual(2);
   });
 
   it("returns 403 to a non-coach parent caller", async () => {

@@ -7,8 +7,9 @@ import type {
   CoachHouseholdBalanceSummary,
 } from "@swim-app/shared";
 
-const { mockMarkHandled } = vi.hoisted(() => ({
+const { mockMarkHandled, mockRouterPush } = vi.hoisted(() => ({
   mockMarkHandled: vi.fn(),
+  mockRouterPush: vi.fn(),
 }));
 
 vi.mock("../content/CoachFamiliesContent/actions", () => ({
@@ -17,9 +18,10 @@ vi.mock("../content/CoachFamiliesContent/actions", () => ({
 }));
 
 // Server-driven paging reads / writes the URL through next/navigation.
-// Stub the hooks so the render tests don't drag a real router in.
+// The hoisted mockRouterPush captures every push so tests can assert the
+// URL the content component built (sort / search / page query string).
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+  useRouter: () => ({ push: mockRouterPush, replace: vi.fn() }),
   usePathname: () => "/coach/families",
   useSearchParams: () => new URLSearchParams(),
 }));
@@ -81,15 +83,13 @@ const FAMILIES: CoachHouseholdBalanceSummary[] = [
   },
 ];
 
-function rowNames(): string[] {
-  const rows = screen.getAllByTestId("families-row");
-  return rows.map((row) => {
-    const title = row.querySelector("p.font-semibold");
-    return title?.textContent?.trim() ?? "";
-  });
-}
-
 describe("CoachFamiliesContent", () => {
+  // mockRouterPush is captured across tests; clear it so each URL-push
+  // assertion sees only its own navigation.
+  beforeEach(() => {
+    mockRouterPush.mockClear();
+  });
+
   it("shows a 'running low' callout when at least one family is under a lesson's balance", () => {
     render(
       <CoachFamiliesContent
@@ -136,32 +136,16 @@ describe("CoachFamiliesContent", () => {
     expect(within(garciaRow).queryByText(/^low$/i)).toBeNull();
   });
 
-  // Sort + search now round-trip through the URL (server renders the
-  // ordered page), so the following cases depend on the next/navigation
-  // stubs triggering a fresh server render. That belongs in an
-  // integration test — skipping here and leaving them as prompts.
-  it.skip("defaults to sort by last activity (newest first), treating a null lastActivityAt as the oldest", () => {
-    render(
-      <CoachFamiliesContent
-        page={makePage(FAMILIES)}
-        sort="activity_desc"
-        search=""
-        initialNeedsAttention={[]}
-      />,
-    );
-    // Garcia Nov 3 → Nguyen Nov 2 → Smith Nov 1 → Okafor (null, treated as 0)
-    expect(rowNames()).toEqual([
-      "Garcia household",
-      "Nguyen household",
-      "Smith household",
-      "Okafor household",
-    ]);
-  });
+  // Sort + search now round-trip through the URL — the server re-renders
+  // the paged list. The content component's job here is to translate UI
+  // input (sort dropdown, search form) into the right URL push, and to
+  // render the server-returned rows / empty-state. Each test below
+  // asserts one piece of that contract.
 
-  it.skip("re-sorts by family name when the Sort dropdown changes", () => {
+  it("pushes ?sort=name_asc when the Sort dropdown switches to family name (and resets page)", () => {
     render(
       <CoachFamiliesContent
-        page={makePage(FAMILIES)}
+        page={{ ...makePage(FAMILIES), page: 3 }}
         sort="activity_desc"
         search=""
         initialNeedsAttention={[]}
@@ -170,15 +154,15 @@ describe("CoachFamiliesContent", () => {
     fireEvent.change(screen.getByLabelText(/sort by/i), {
       target: { value: "name_asc" },
     });
-    expect(rowNames()).toEqual([
-      "Garcia household",
-      "Nguyen household",
-      "Okafor household",
-      "Smith household",
-    ]);
+    // Push contains sort=name_asc; page is dropped (page=1 is the default
+    // and stays off the URL so refresh lands on the first page).
+    expect(mockRouterPush).toHaveBeenCalled();
+    const href = mockRouterPush.mock.calls.at(-1)?.[0] as string;
+    expect(href).toMatch(/\?.*sort=name_asc/);
+    expect(href).not.toMatch(/page=/);
   });
 
-  it.skip("re-sorts by balance ascending so low families bubble up when picked", () => {
+  it("pushes ?sort=balance_asc when the Sort dropdown switches to balance ascending", () => {
     render(
       <CoachFamiliesContent
         page={makePage(FAMILIES)}
@@ -190,62 +174,47 @@ describe("CoachFamiliesContent", () => {
     fireEvent.change(screen.getByLabelText(/sort by/i), {
       target: { value: "balance_asc" },
     });
-    expect(rowNames()).toEqual([
-      "Okafor household", // $0
-      "Smith household", // $20
-      "Garcia household", // $150
-      "Nguyen household", // $1,080
-    ]);
+    const href = mockRouterPush.mock.calls.at(-1)?.[0] as string;
+    expect(href).toMatch(/\?.*sort=balance_asc/);
   });
 
-  it.skip("filters by family name via the search box", () => {
+  it("pushes ?search=<term> when the search form is submitted (and resets page)", () => {
     render(
       <CoachFamiliesContent
-        page={makePage(FAMILIES)}
+        page={{ ...makePage(FAMILIES), page: 2 }}
         sort="activity_desc"
         search=""
         initialNeedsAttention={[]}
       />,
     );
-    const search = screen.getByPlaceholderText(
-      /search by family or member name/i,
-    );
-    fireEvent.change(search, { target: { value: "garcia" } });
-    expect(rowNames()).toEqual(["Garcia household"]);
+    const input = screen.getByTestId("families-search-input");
+    fireEvent.change(input, { target: { value: "garcia" } });
+    // The input is inside a <form>; submitting fires the push.
+    fireEvent.submit(input.closest("form")!);
+    const href = mockRouterPush.mock.calls.at(-1)?.[0] as string;
+    expect(href).toMatch(/\?.*search=garcia/);
+    expect(href).not.toMatch(/page=/);
   });
 
-  it.skip("also filters by member name — useful when the family name doesn't match", () => {
+  it("renders the 'No families match that search' empty-state when the server returns zero items for a search", () => {
     render(
       <CoachFamiliesContent
-        page={makePage(FAMILIES)}
+        page={{
+          items: [],
+          page: 1,
+          pageSize: 20,
+          total: 0,
+          lowBalanceCount: 0,
+        }}
         sort="activity_desc"
-        search=""
+        search="noone"
         initialNeedsAttention={[]}
       />,
-    );
-    const search = screen.getByPlaceholderText(
-      /search by family or member name/i,
-    );
-    fireEvent.change(search, { target: { value: "dana" } });
-    // Dana is a member of Smith household — the row should still appear.
-    expect(rowNames()).toEqual(["Smith household"]);
-  });
-
-  it.skip("shows an empty-state when the search matches nothing", () => {
-    render(
-      <CoachFamiliesContent
-        page={makePage(FAMILIES)}
-        sort="activity_desc"
-        search=""
-        initialNeedsAttention={[]}
-      />,
-    );
-    fireEvent.change(
-      screen.getByPlaceholderText(/search by family or member name/i),
-      { target: { value: "noone" } },
     );
     expect(screen.queryAllByTestId("families-row")).toHaveLength(0);
-    expect(screen.getByText(/no families match that search/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/no families match that search/i),
+    ).toBeInTheDocument();
   });
 
   it("each row links to /coach/families/[id]", () => {
