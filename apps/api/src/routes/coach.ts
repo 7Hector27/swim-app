@@ -9,6 +9,7 @@ import { coachBulkCancelRouter } from "./coachBulkCancel";
 import { coachCalendarRouter } from "./coachCalendar";
 import { coachHouseholdsRouter } from "./coachHouseholds";
 import { coachLessonsRouter } from "./coachLessons";
+import { coachStatsRouter } from "./coachStats";
 import { coachSwimmersRouter } from "./coachSwimmers";
 import { evaluationsRouter, ratingsRouter, coachCategoriesRouter, coachScreensRouter, sessionsRouter } from "./evaluations";
 import { coachDraftsRouter, draftsRouter } from "./drafts";
@@ -38,6 +39,7 @@ coachRouter.use(coachBulkCancelRouter);
 // /coach/households search) so the specific /balances suffix matches first.
 coachRouter.use(coachHouseholdsRouter);
 coachRouter.use(coachLessonsRouter);
+coachRouter.use(coachStatsRouter);
 coachRouter.use(coachCategoriesRouter);
 coachRouter.use(coachScreensRouter);
 // meetsRouter and coachLeaderboardRouter have no inline auth guards; they rely on the requireCoach applied above.
