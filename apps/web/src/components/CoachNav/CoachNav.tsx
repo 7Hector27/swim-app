@@ -107,6 +107,27 @@ function MoreIcon() {
   );
 }
 
+function FamiliesIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <circle cx="6" cy="6" r="2.25" stroke="currentColor" strokeWidth="1.5" />
+      <circle cx="14" cy="6" r="2.25" stroke="currentColor" strokeWidth="1.5" />
+      <path
+        d="M2 16c0-2.485 1.79-4.5 4-4.5s4 2.015 4 4.5"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+      <path
+        d="M10 16c0-2.485 1.79-4.5 4-4.5s4 2.015 4 4.5"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
 function AvailabilityIcon() {
   return (
     <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
@@ -166,6 +187,7 @@ const TAB_ICONS: Record<TabLabel, () => React.ReactElement> = {
 // nav, not a separate styling language. Account and Log out used to
 // render without one.
 const SHEET_ICONS: Record<string, () => React.ReactElement> = {
+  Families: FamiliesIcon,
   Availability: AvailabilityIcon,
   "Account settings": AccountIcon,
 };

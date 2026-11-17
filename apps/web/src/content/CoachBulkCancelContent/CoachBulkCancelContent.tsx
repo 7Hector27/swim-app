@@ -185,7 +185,7 @@ export default function CoachBulkCancelContent({
 
       <section
         aria-label="Cancellation form"
-        className="rounded-card border border-border bg-section text-text-on-section p-5 tablet:p-6 flex flex-col gap-5"
+        className="rounded-card border border-border bg-background text-text p-5 tablet:p-6 flex flex-col gap-5"
       >
         <div className="grid gap-4 tablet:grid-cols-2">
           <Field label="Start date">
@@ -251,7 +251,7 @@ export default function CoachBulkCancelContent({
                   setStartTime(event.target.value);
                   onFormChange();
                 }}
-                className={inputClass}
+                className={timeInputClass}
               />
               <span className="text-xs text-text-secondary shrink-0">to</span>
               <input
@@ -263,7 +263,7 @@ export default function CoachBulkCancelContent({
                   setEndTime(event.target.value);
                   onFormChange();
                 }}
-                className={inputClass}
+                className={timeInputClass}
               />
             </div>
             <p className="mt-1 text-xs text-text-secondary">
@@ -280,7 +280,7 @@ export default function CoachBulkCancelContent({
                 onFormChange();
               }}
               placeholder="e.g. Pool is closed for maintenance this week. Rebook anytime."
-              className={`${inputClass} resize-y`}
+              className={messageInputClass}
             />
             <p className="mt-1 text-xs text-text-secondary">
               {message.length} / {BULK_CANCEL_MESSAGE_MAX_LENGTH}
@@ -344,7 +344,7 @@ export default function CoachBulkCancelContent({
       {errorMessage !== null && (
         <div
           role="alert"
-          className="rounded-card border border-border bg-section text-text-on-section p-4 text-sm text-danger"
+          className="rounded-card border border-border bg-background text-text p-4 text-sm text-danger"
         >
           {errorMessage}
         </div>
@@ -366,6 +366,14 @@ export default function CoachBulkCancelContent({
 
 const inputClass =
   "w-full h-11 px-3 rounded-button border border-border bg-background text-text text-sm focus:outline focus:outline-2 focus:outline-focus-ring";
+
+// Time + message inputs sit side-by-side on mobile and felt cramped; roomier
+// vertical padding on narrow screens drops back to the default at tablet+.
+const timeInputClass =
+  "w-full h-12 tablet:h-11 px-4 tablet:px-3 rounded-button border border-border bg-background text-text text-sm focus:outline focus:outline-2 focus:outline-focus-ring";
+
+const messageInputClass =
+  "w-full px-4 py-3 tablet:px-3 tablet:py-2 rounded-button border border-border bg-background text-text text-sm focus:outline focus:outline-2 focus:outline-focus-ring resize-y";
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -398,7 +406,7 @@ function PreviewPanel({
   return (
     <section
       aria-label="Preview"
-      className="rounded-card border border-border bg-section text-text-on-section p-5 tablet:p-6 flex flex-col gap-5"
+      className="rounded-card border border-border bg-background text-text p-5 tablet:p-6 flex flex-col gap-5"
     >
       <header className="flex flex-col gap-1">
         <h2 className="text-xl text-heading">Preview</h2>

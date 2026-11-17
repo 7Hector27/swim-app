@@ -5,6 +5,7 @@ import { useTransition } from "react";
 import { redirectToPolicyUpdated } from "@/lib/policyAcceptanceRedirect";
 import { startBookingShortfallTopupAction } from "@/content/AccountBalanceContent/actions";
 import { formatDollars } from "@/lib/formatDollars";
+import InsufficientFundsActions from "./InsufficientFundsActions";
 import type {
   BatchPatternPair,
   LessonDurationMinutes,
@@ -235,7 +236,6 @@ export default function InsufficientBalanceModal({
   open,
   balanceCents,
   priceCents,
-  shortfallCents,
   attempt,
   onClose,
 }: InsufficientBalanceModalProps) {
@@ -300,47 +300,15 @@ export default function InsufficientBalanceModal({
           Credit never expires — anything extra stays on your balance.
         </p>
 
-        <p className="font-body text-xs text-text-secondary mt-6 text-center">
-          Payments and refunds are covered by our{" "}
-          <a href="/refund-policy" className="text-link underline hover:text-link-hover">
-            Payments &amp; Refund Policy
-          </a>
-          .
-        </p>
-        <div className="mt-3 flex flex-col gap-3">
-          <button
-            type="button"
-            onClick={handleAddCredit}
-            disabled={pending}
-            className="w-full min-h-[52px] rounded-full bg-accent text-on-accent font-body font-bold text-base disabled:opacity-60"
-          >
-            {pending
-              ? "Starting checkout…"
-              : `Add ${formatDollars(priceCents)} of credit`}
-          </button>
-          <button
-            type="button"
-            onClick={handleBuyPackage}
-            className="w-full min-h-[52px] rounded-full border-2 border-button-outline text-button-outline font-body font-bold text-base"
-          >
-            Buy a package
-          </button>
-          <button
-            type="button"
-            onClick={onClose}
-            className="w-full min-h-[44px] font-body text-sm text-text-secondary"
-          >
-            Not now
-          </button>
+        <div className="mt-6">
+          <InsufficientFundsActions
+            addCreditCents={priceCents}
+            isAddingCredit={pending}
+            onAddCredit={handleAddCredit}
+            onBuyPackage={handleBuyPackage}
+            onNotNow={onClose}
+          />
         </div>
-
-        <p
-          className="font-body text-xs text-text-secondary mt-4"
-          style={{ fontVariantNumeric: "tabular-nums" }}
-        >
-          You&apos;d only need {formatDollars(shortfallCents)} more — adding a lesson&apos;s
-          worth of credit covers it with the rest staying on your balance.
-        </p>
       </div>
     </div>
   );

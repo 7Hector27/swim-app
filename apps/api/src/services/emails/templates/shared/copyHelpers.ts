@@ -8,6 +8,15 @@ export function formatSwimmerList(names: readonly string[]): string {
   return `${names.slice(0, -1).join(", ")}, and ${names[names.length - 1]}`;
 }
 
+// Picks "is" / "are" to agree with the subject built by formatSwimmerList.
+// Singular when there's one named swimmer (or the zero-name "your swimmer"
+// fallback) — plural once two or more names join into an "A and B" or
+// Oxford-list phrase. Lets templates write `${names} ${beVerb} set for…`
+// without each one re-inventing the agreement rule.
+export function swimmerBeVerb(names: readonly string[]): "is" | "are" {
+  return names.length >= 2 ? "are" : "is";
+}
+
 export function coachDisplay(coachFirstName: string | null): string {
   return coachFirstName && coachFirstName.length > 0 ? coachFirstName : "The coach";
 }

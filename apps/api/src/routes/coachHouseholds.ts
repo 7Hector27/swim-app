@@ -20,7 +20,19 @@
 // routing ambiguity between them.
 
 import { Router } from "express";
-import { and, asc, desc, eq, inArray, lt, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  exists,
+  ilike,
+  inArray,
+  lt,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 
 import {
   approximatePrivateHours,
@@ -29,6 +41,8 @@ import {
   CashOutBreakdownSchema,
   CashOutResponseSchema,
   CoachAdjustBalanceBodySchema,
+  CoachFamiliesPageQuerySchema,
+  COACH_FAMILIES_PAGE_SIZE,
   IdParamsSchema,
   type BalanceHistoryEntry,
   type BalanceHistoryQuery,
@@ -38,8 +52,10 @@ import {
   type CashOutResponse,
   type CoachAdjustBalanceBody,
   type CoachAdjustBalanceResponse,
+  type CoachFamiliesPageQuery,
   type CoachHouseholdBalanceListResponse,
   type CoachHouseholdBalanceSummary,
+  type CoachHouseholdBalanceSummaryResponse,
   type IdParams,
   type NeedsManualRefundJob,
   type NeedsManualRefundListResponse,
@@ -73,101 +89,198 @@ export const coachHouseholdsRouter = Router();
 
 // ── GET /coach/households/balances ──────────────────────────────────────────
 //
-// One row per household so Jason can scan the full roster and spot low-balance
-// families. Totals come from a single `SUM GROUP BY household_id` over the
-// ledger — same append-only read path `getHouseholdBalance` uses, in bulk.
-// Members and swimmer counts are a pair of additional cheap queries filtered
-// by `inArray`. Returns name-alphabetical so the UI can apply its own sort
-// (by balance ascending for low-first) without the server flipping the list
-// on every request.
+// Paged roster: 20 households per page, with server-side search + sort.
+// `search` is a case-insensitive substring match against household name
+// OR any member's full name. `sort` picks between balance-asc, name-asc,
+// and last-activity-desc. Response carries `items` plus pagination
+// metadata and `lowBalanceCount` (families under one lesson's price,
+// scoped to the same search) so the UI can render the top-of-page
+// callouts without a second roundtrip.
+//
+// Everything runs in one REPEATABLE READ read-only transaction so the
+// roster, aggregates, and the low-balance count see the same snapshot;
+// without this a concurrent cash-out could skew the count relative to
+// the rows on screen.
+
+// $60 — one 30-min 1-swimmer lesson. Shared with the UI callout threshold.
+const LOW_BALANCE_THRESHOLD_CENTS = 6_000;
+
+// Build the per-household balance + last-activity aggregates joined
+// to the roster. Same ledger-sum path that powers `getHouseholdBalance`,
+// in bulk. A LEFT JOIN keeps households with zero ledger rows in the
+// result (balance = 0, last activity = null). Takes the optional search
+// filter so the summary count and the paged select share one source of
+// truth — without this the UI's pager / low-balance callout drifted
+// away from the items array whenever a search was active.
+function buildRosterQuery(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  whereCondition?: SQL<unknown> | undefined,
+) {
+  const base = tx
+    .select({
+      id: households.id,
+      name: households.name,
+      balanceCents: sql<string>`COALESCE(SUM(${householdBalanceLedger.amountCents}), 0)`.as(
+        "balance_cents",
+      ),
+      lastAt: sql<string | null>`MAX(${householdBalanceLedger.createdAt})::text`.as(
+        "last_at",
+      ),
+    })
+    .from(households)
+    .leftJoin(
+      householdBalanceLedger,
+      eq(householdBalanceLedger.householdId, households.id),
+    );
+  const filtered = whereCondition !== undefined ? base.where(whereCondition) : base;
+  return filtered.groupBy(households.id, households.name);
+}
 
 coachHouseholdsRouter.get(
   "/households/balances",
-  validate({}),
-  asyncHandler(async (_req, res) => {
-    // Wrap every read in one REPEATABLE READ read-only transaction so
-    // the roster, member list, swimmer counts, and ledger sums all
-    // see the same consistent snapshot. Without this, a cash-out
-    // committing between the household query and the balance sum
-    // could show a household in the list with a non-zero balance
-    // after its row has already been removed, or vice versa.
-    const { householdRows, memberRows, swimmerCountRows, balanceRows, lastActivityRows } =
-      await db.transaction(
-        async (tx) => {
-          const householdRows = await tx
-            .select({ id: households.id, name: households.name })
-            .from(households)
-            .orderBy(asc(households.name));
+  validate({ query: CoachFamiliesPageQuerySchema }),
+  asyncHandler(async (req, res) => {
+    const query = req.query as unknown as CoachFamiliesPageQuery;
+    const page = query.page;
+    const sort = query.sort;
+    const search = query.search;
 
-          if (householdRows.length === 0) {
-            return {
-              householdRows,
-              memberRows: [],
-              swimmerCountRows: [],
-              balanceRows: [],
-              lastActivityRows: [],
-            };
-          }
-          const ids = householdRows.map((row) => row.id);
-
-          const [memberRows, swimmerCountRows, balanceRows, lastActivityRows] =
-            await Promise.all([
-              // Full-name list for the UI's "who's in it" column.
-              tx
-                .select({
-                  householdId: householdMembers.householdId,
-                  fullName: profiles.fullName,
-                })
+    // Search filter: name OR any member's full name (ILIKE). The EXISTS
+    // subquery keeps the main household row set deduped — joining
+    // household_members directly would multiply rows.
+    const searchPattern = search ? `%${search}%` : null;
+    const searchFilter =
+      searchPattern === null
+        ? undefined
+        : or(
+            ilike(households.name, searchPattern),
+            exists(
+              db
+                .select({ one: sql`1` })
                 .from(householdMembers)
                 .innerJoin(profiles, eq(profiles.id, householdMembers.profileId))
-                .where(inArray(householdMembers.householdId, ids)),
-              // Active (non-archived) swimmers per household.
-              tx
-                .select({
-                  householdId: swimmers.householdId,
-                  count: sql<string>`COUNT(*)`,
-                })
-                .from(swimmers)
                 .where(
                   and(
-                    inArray(swimmers.householdId, ids),
-                    sql`${swimmers.archivedAt} IS NULL`,
+                    eq(householdMembers.householdId, households.id),
+                    ilike(profiles.fullName, searchPattern),
                   ),
-                )
-                .groupBy(swimmers.householdId),
-              // Current balance via a single grouped SUM — mirrors the one-off
-              // `getHouseholdBalance` read but amortized across the roster.
-              tx
-                .select({
-                  householdId: householdBalanceLedger.householdId,
-                  sum: sql<string>`COALESCE(SUM(${householdBalanceLedger.amountCents}), 0)`,
-                })
-                .from(householdBalanceLedger)
-                .where(inArray(householdBalanceLedger.householdId, ids))
-                .groupBy(householdBalanceLedger.householdId),
-              // Most recent ledger createdAt per household so "last activity"
-              // is the real ledger boundary, not a swimmer edit or audit row.
-              // postgres-js returns MAX(timestamptz) as an ISO string, not a Date;
-              // keep the string here and let the response cast to ISO downstream.
-              tx
-                .select({
-                  householdId: householdBalanceLedger.householdId,
-                  lastAt: sql<string>`MAX(${householdBalanceLedger.createdAt})::text`,
-                })
-                .from(householdBalanceLedger)
-                .where(inArray(householdBalanceLedger.householdId, ids))
-                .groupBy(householdBalanceLedger.householdId),
-            ]);
+                ),
+            ),
+          );
 
-          return { householdRows, memberRows, swimmerCountRows, balanceRows, lastActivityRows };
+    const { totalCount, lowBalanceCount, pagedRows, memberRows, swimmerCountRows } =
+      await db.transaction(
+        async (tx) => {
+          const whereCondition = searchFilter;
+          const base = buildRosterQuery(tx, whereCondition).as("roster");
+
+          // Count + low-balance tally in a single pass. The subquery is
+          // already filtered inside buildRosterQuery, so total and
+          // lowBalanceCount reflect the same set that the paged select
+          // below returns in items.
+          const summary = await tx
+            .select({
+              total: sql<string>`COUNT(*)`,
+              lowCount: sql<string>`COUNT(*) FILTER (WHERE ${base.balanceCents}::bigint < ${LOW_BALANCE_THRESHOLD_CENTS})`,
+            })
+            .from(base);
+          const totalCount = Number(summary[0]?.total ?? 0);
+          const lowBalanceCount = Number(summary[0]?.lowCount ?? 0);
+
+          if (totalCount === 0) {
+            return {
+              totalCount,
+              lowBalanceCount,
+              pagedRows: [],
+              memberRows: [],
+              swimmerCountRows: [],
+            };
+          }
+
+          // Page selection: same aggregate shape, with the chosen sort.
+          // Sort order maps to the three UI dropdown values.
+          const sortClause =
+            sort === "balance_asc"
+              ? [asc(sql`balance_cents`), asc(sql`name`)]
+              : sort === "name_asc"
+                ? [asc(sql`name`)]
+                : // activity_desc — nulls last so brand-new households
+                  // (no ledger rows yet) don't float to the top of the
+                  // "most recently active" list.
+                  [sql`last_at DESC NULLS LAST`, asc(sql`name`)];
+
+          const offset = (page - 1) * COACH_FAMILIES_PAGE_SIZE;
+
+          // Re-declare the roster CTE with the same filter so the page
+          // slice matches the count. Using a CTE lets us apply both the
+          // search WHERE and the ORDER BY over the same derived columns.
+          const pagedRowsRaw = await tx
+            .select({
+              id: households.id,
+              name: households.name,
+              balanceCents: sql<string>`COALESCE(SUM(${householdBalanceLedger.amountCents}), 0)`.as(
+                "balance_cents",
+              ),
+              lastAt: sql<string | null>`MAX(${householdBalanceLedger.createdAt})::text`.as(
+                "last_at",
+              ),
+            })
+            .from(households)
+            .leftJoin(
+              householdBalanceLedger,
+              eq(householdBalanceLedger.householdId, households.id),
+            )
+            .where(whereCondition)
+            .groupBy(households.id, households.name)
+            .orderBy(...sortClause)
+            .limit(COACH_FAMILIES_PAGE_SIZE)
+            .offset(offset);
+
+          if (pagedRowsRaw.length === 0) {
+            return {
+              totalCount,
+              lowBalanceCount,
+              pagedRows: [],
+              memberRows: [],
+              swimmerCountRows: [],
+            };
+          }
+
+          const pageIds = pagedRowsRaw.map((row) => row.id);
+          const [memberRows, swimmerCountRows] = await Promise.all([
+            tx
+              .select({
+                householdId: householdMembers.householdId,
+                fullName: profiles.fullName,
+              })
+              .from(householdMembers)
+              .innerJoin(profiles, eq(profiles.id, householdMembers.profileId))
+              .where(inArray(householdMembers.householdId, pageIds)),
+            tx
+              .select({
+                householdId: swimmers.householdId,
+                count: sql<string>`COUNT(*)`,
+              })
+              .from(swimmers)
+              .where(
+                and(
+                  inArray(swimmers.householdId, pageIds),
+                  sql`${swimmers.archivedAt} IS NULL`,
+                ),
+              )
+              .groupBy(swimmers.householdId),
+          ]);
+
+          return {
+            totalCount,
+            lowBalanceCount,
+            pagedRows: pagedRowsRaw,
+            memberRows,
+            swimmerCountRows,
+          };
         },
         { isolationLevel: "repeatable read", accessMode: "read only" },
       );
-
-    if (householdRows.length === 0) {
-      res.json([] as CoachHouseholdBalanceListResponse);
-      return;
-    }
 
     const membersByHousehold = new Map<string, string[]>();
     for (const row of memberRows) {
@@ -179,37 +292,130 @@ coachHouseholdsRouter.get(
     for (const row of swimmerCountRows) {
       countsByHousehold.set(row.householdId, Number(row.count));
     }
-    // Ledger rows may carry a null household_id after a Phase-8 account
-    // deletion anonymizes them — those rows aren't tied to any household
-    // the coach can see, so drop them from both aggregates.
-    const balanceByHousehold = new Map<string, number>();
-    for (const row of balanceRows) {
-      if (row.householdId === null) continue;
-      balanceByHousehold.set(row.householdId, Number(row.sum));
-    }
-    const lastActivityByHousehold = new Map<string, string>();
-    for (const row of lastActivityRows) {
-      if (row.householdId === null) continue;
-      if (row.lastAt) lastActivityByHousehold.set(row.householdId, row.lastAt);
-    }
 
-    const results: CoachHouseholdBalanceSummary[] = householdRows.map((row) => {
-      const lastAt = lastActivityByHousehold.get(row.id);
-      // postgres-js returns the aggregate as a raw PG timestamp string
-      // (e.g. "2024-10-30 17:05:00+00"), which isn't valid ISO for the
-      // client. Round-trip through Date to normalize.
-      const lastActivityAt = lastAt ? new Date(lastAt).toISOString() : null;
+    const items: CoachHouseholdBalanceSummary[] = pagedRows.map((row) => {
+      const lastActivityAt = row.lastAt ? new Date(row.lastAt).toISOString() : null;
       return {
         householdId: row.id,
         householdName: row.name,
         memberFullNames: membersByHousehold.get(row.id) ?? [],
         activeSwimmerCount: countsByHousehold.get(row.id) ?? 0,
-        balanceCents: balanceByHousehold.get(row.id) ?? 0,
+        balanceCents: Number(row.balanceCents),
         lastActivityAt,
       };
     });
 
-    res.json(results satisfies CoachHouseholdBalanceListResponse);
+    const response: CoachHouseholdBalanceListResponse = {
+      items,
+      page,
+      pageSize: COACH_FAMILIES_PAGE_SIZE,
+      total: totalCount,
+      lowBalanceCount,
+    };
+    res.json(response);
+  }),
+);
+
+// ── GET /coach/households/:householdId/summary ─────────────────────────────
+//
+// Single-household summary, same shape as a row from the paged list.
+// Detail-page server component reads household name + members + swimmer
+// count from here now that the roster list is paged (the detail page
+// can't assume a given id is on page 1 any more).
+
+coachHouseholdsRouter.get(
+  "/households/:id/summary",
+  validate({ params: IdParamsSchema }),
+  asyncHandler(async (req, res) => {
+    const { id } = req.params as unknown as IdParams;
+    const { householdRow, memberRows, swimmerCountRows, balanceSumRow, lastActivityRow } =
+      await db.transaction(
+        async (tx) => {
+          const householdRows = await tx
+            .select({ id: households.id, name: households.name })
+            .from(households)
+            .where(eq(households.id, id))
+            .limit(1);
+          const householdRow = householdRows[0] ?? null;
+          if (!householdRow) {
+            return {
+              householdRow: null,
+              memberRows: [],
+              swimmerCountRows: [],
+              balanceSumRow: null,
+              lastActivityRow: null,
+            };
+          }
+          const [memberRows, swimmerCountRows, balanceSumRows, lastActivityRows] =
+            await Promise.all([
+              tx
+                .select({
+                  householdId: householdMembers.householdId,
+                  fullName: profiles.fullName,
+                })
+                .from(householdMembers)
+                .innerJoin(profiles, eq(profiles.id, householdMembers.profileId))
+                .where(eq(householdMembers.householdId, id)),
+              tx
+                .select({
+                  householdId: swimmers.householdId,
+                  count: sql<string>`COUNT(*)`,
+                })
+                .from(swimmers)
+                .where(
+                  and(
+                    eq(swimmers.householdId, id),
+                    sql`${swimmers.archivedAt} IS NULL`,
+                  ),
+                )
+                .groupBy(swimmers.householdId),
+              tx
+                .select({
+                  sum: sql<string>`COALESCE(SUM(${householdBalanceLedger.amountCents}), 0)`,
+                })
+                .from(householdBalanceLedger)
+                .where(eq(householdBalanceLedger.householdId, id)),
+              tx
+                .select({
+                  lastAt: sql<string | null>`MAX(${householdBalanceLedger.createdAt})::text`,
+                })
+                .from(householdBalanceLedger)
+                .where(eq(householdBalanceLedger.householdId, id)),
+            ]);
+          return {
+            householdRow,
+            memberRows,
+            swimmerCountRows,
+            balanceSumRow: balanceSumRows[0] ?? null,
+            lastActivityRow: lastActivityRows[0] ?? null,
+          };
+        },
+        { isolationLevel: "repeatable read", accessMode: "read only" },
+      );
+
+    if (householdRow === null) {
+      res.status(404).json({ error: "household_not_found" });
+      return;
+    }
+
+    const memberFullNames = memberRows
+      .map((row) => row.fullName)
+      .filter((name): name is string => typeof name === "string" && name.length > 0);
+    const activeSwimmerCount = Number(swimmerCountRows[0]?.count ?? 0);
+    const balanceCents = Number(balanceSumRow?.sum ?? 0);
+    const lastActivityAt = lastActivityRow?.lastAt
+      ? new Date(lastActivityRow.lastAt).toISOString()
+      : null;
+
+    const response: CoachHouseholdBalanceSummaryResponse = {
+      householdId: householdRow.id,
+      householdName: householdRow.name,
+      memberFullNames,
+      activeSwimmerCount,
+      balanceCents,
+      lastActivityAt,
+    };
+    res.json(response);
   }),
 );
 
@@ -248,7 +454,7 @@ coachHouseholdsRouter.get(
 // on the same (createdAt, id) convention so the cursor an older /me row
 // produces parses correctly on either route.
 
-const HISTORY_PAGE_SIZE = 50;
+const HISTORY_PAGE_SIZE = 10;
 
 interface HistoryCursor {
   createdAt: string;

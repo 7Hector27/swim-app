@@ -6,10 +6,75 @@ import type { BatchPreviewPick, BatchPickState } from "@swim-app/shared";
 
 import PendingLabel from "@/components/PendingLabel";
 import { formatDollars } from "@/lib/formatDollars";
+import { lessonPrice } from "@/lib/pricing";
 
 import { formatLaTime, pickReasonCopy } from "./batchHelpers";
-import { formatRecurringDateRange, formatSlotRangeWithDate } from "./helpers";
+import { formatSlotRangeWithDate } from "./helpers";
+import InsufficientFundsActions, {
+  PolicyQuietLine,
+} from "./InsufficientFundsActions";
 import styles from "./ReviewSheet.module.css";
+
+const LA_TZ = "America/Los_Angeles";
+
+// "Tue, Nov 17" — the bold first-line date on each pick row.
+function formatRowDate(iso: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: LA_TZ,
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  }).format(new Date(iso));
+}
+
+// "10:45 to 11:15 AM · 30 min" — the secondary line. Drops the start
+// meridiem when both ends share one so the range reads as a span, not
+// two timestamps.
+function formatRowTimeRange(iso: string, durationMinutes: number): string {
+  const start = new Date(iso);
+  const end = new Date(start.getTime() + durationMinutes * 60_000);
+  const fmt = (date: Date) =>
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: LA_TZ,
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    }).format(date);
+  const startStr = fmt(start);
+  const endStr = fmt(end);
+  const startMeridiem = startStr.slice(-2);
+  const endMeridiem = endStr.slice(-2);
+  const range =
+    startMeridiem === endMeridiem
+      ? `${startStr.slice(0, -3)} to ${endStr}`
+      : `${startStr} to ${endStr}`;
+  return `${range} \u00b7 ${durationMinutes} min`;
+}
+
+// Oxford-style join of distinct first names across the visible picks
+// for the header subline: "Lily" / "Lily & Timmy" / "Lily, Timmy & Jack".
+function joinFirstNames(
+  visible: BatchPreviewPick[],
+  swimmers: readonly { id: string; firstName: string }[],
+): string {
+  const firstNameById = new Map(swimmers.map((swimmer) => [swimmer.id, swimmer.firstName]));
+  const seen = new Set<string>();
+  const names: string[] = [];
+  for (const pick of visible) {
+    for (const id of pick.swimmerIds ?? []) {
+      if (seen.has(id)) continue;
+      seen.add(id);
+      const name = firstNameById.get(id);
+      if (name) names.push(name);
+    }
+  }
+  if (names.length === 0) return "";
+  if (names.length === 1) return names[0]!;
+  if (names.length === 2) return `${names[0]} & ${names[1]}`;
+  const head = names.slice(0, -1).join(", ");
+  const tail = names[names.length - 1]!;
+  return `${head} & ${tail}`;
+}
 
 type Mode = "multiple" | "recurring";
 
@@ -87,6 +152,14 @@ const FLAGGED_STATES: BatchPickState[] = [
 
 export default function ReviewSheet(props: Props) {
   const dialogRef = useRef<HTMLDialogElement>(null);
+  // Header subline — lesson count and who's swimming. Derived here so
+  // both the header and any future reuse share the same string.
+  const visible = props.previewPicks.filter(
+    (pick) =>
+      !props.skippedIndexes.has(pick.index) && !props.removedIndexes.has(pick.index),
+  );
+  const sublineCount = visible.length;
+  const sublineNames = joinFirstNames(visible, props.swimmers);
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -116,14 +189,32 @@ export default function ReviewSheet(props: Props) {
       data-testid="review-sheet"
     >
       <div className="flex flex-col max-h-[90vh] tablet:max-h-screen tablet:h-full">
-        <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-border">
-          <h2
-            id="review-sheet-heading"
+        <div className="flex items-start justify-between px-5 pt-4 pb-3 border-b border-border gap-3">
+          <div
             key={props.success !== null ? "heading-success" : "heading-review"}
-            className={`${styles.fade} font-heading text-xl text-heading`}
+            className={`${styles.fade} min-w-0 flex-1`}
           >
-            {props.success !== null ? "You're set" : "Review your lessons"}
-          </h2>
+            <h2
+              id="review-sheet-heading"
+              className="font-heading text-xl text-heading"
+            >
+              {props.success !== null ? "You're set" : "Review your lessons"}
+            </h2>
+            {props.success === null && sublineCount > 0 && (
+              <p
+                className="text-sm text-text-secondary mt-0.5"
+                data-testid="review-sheet-subline"
+              >
+                {sublineCount} {sublineCount === 1 ? "lesson" : "lessons"}
+                {sublineNames !== "" && (
+                  <>
+                    {" \u00b7 "}
+                    {sublineNames}
+                  </>
+                )}
+              </p>
+            )}
+          </div>
           <button
             type="button"
             onClick={props.onClose}
@@ -155,7 +246,6 @@ export default function ReviewSheet(props: Props) {
             <ReviewContent
               mode={props.mode}
               previewPicks={props.previewPicks}
-              swimmers={props.swimmers}
               skippedIndexes={props.skippedIndexes}
               removedIndexes={props.removedIndexes}
               isLoading={props.isLoading}
@@ -205,45 +295,20 @@ function ReviewFooter(props: Props) {
         <div
           role="alert"
           data-testid="review-insufficient-balance"
-          className="flex flex-col gap-3"
+          className="flex flex-col"
         >
-          <p
-            className="text-sm text-text"
-            style={{ fontVariantNumeric: "tabular-nums" }}
-          >
-            Balance: <span className="font-semibold">{formatDollars(shortfall.balanceCents)}</span>
-            {" · "}
-            Total: <span className="font-semibold">{formatDollars(shortfall.priceCents)}</span>
-            {" · "}
-            <span className="font-semibold text-danger">
-              Short by {formatDollars(shortfall.shortfallCents)}
-            </span>
-            .
-          </p>
-          <p className="text-xs text-text-secondary">
-            Add credit before booking — credit never expires.
-          </p>
-          {props.addCreditCents !== null && (
-            <button
-              type="button"
-              onClick={props.onAddCredit}
-              disabled={props.isAddingCredit}
-              data-testid="review-add-credit"
-              className="w-full min-h-[52px] px-5 rounded-button bg-button-primary-background text-button-primary-text font-bold text-sm transition-opacity duration-150 hover:opacity-90 active:scale-[0.97] motion-reduce:transform-none disabled:opacity-60 disabled:cursor-not-allowed"
-            >
-              {props.isAddingCredit
-                ? "Starting checkout…"
-                : `Add ${formatDollars(props.addCreditCents)} of credit`}
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={props.onBuyPackage}
-            data-testid="review-buy-package"
-            className="w-full min-h-[52px] px-5 rounded-button border-2 border-button-outline text-button-outline font-bold text-sm transition-opacity duration-150 hover:opacity-90 active:scale-[0.97] motion-reduce:transform-none"
-          >
-            Buy a package
-          </button>
+          {/* The Total / Your balance / "You need $X more" line is now
+              shown once in the summary block above; the footer is the
+              action stack plus the shared quiet policy line. */}
+          <InsufficientFundsActions
+            addCreditCents={props.addCreditCents ?? 0}
+            showAddCredit={props.addCreditCents !== null}
+            isAddingCredit={props.isAddingCredit}
+            onAddCredit={props.onAddCredit}
+            onBuyPackage={props.onBuyPackage}
+            onNotNow={props.onClose}
+            testIdPrefix="review"
+          />
         </div>
       ) : (
         <>
@@ -268,6 +333,7 @@ function ReviewFooter(props: Props) {
               {props.bookDisabledReason}
             </p>
           )}
+          <PolicyQuietLine />
         </>
       )}
     </div>
@@ -277,7 +343,6 @@ function ReviewFooter(props: Props) {
 interface ReviewContentProps {
   mode: Mode;
   previewPicks: BatchPreviewPick[];
-  swimmers: readonly { id: string; firstName: string }[];
   skippedIndexes: Set<number>;
   removedIndexes: Set<number>;
   isLoading: boolean;
@@ -295,7 +360,6 @@ interface ReviewContentProps {
 function ReviewContent({
   mode,
   previewPicks,
-  swimmers,
   skippedIndexes,
   removedIndexes,
   isLoading,
@@ -309,13 +373,15 @@ function ReviewContent({
   onRemove,
   onUnskip,
 }: ReviewContentProps) {
-  const firstNameById = new Map(swimmers.map((swimmer) => [swimmer.id, swimmer.firstName]));
+  const hasPicks = previewPicks.length > 0;
   const visible = previewPicks.filter(
     (pick) => !skippedIndexes.has(pick.index) && !removedIndexes.has(pick.index),
   );
-  const notOpenYet = visible.filter((pick) => pick.state === "not_open_yet").length;
-  const flagged = visible.filter((pick) => FLAGGED_STATES.includes(pick.state)).length;
-  const ready = visible.filter((pick) => pick.state === "available").length;
+  const shortfallCents =
+    balanceCents !== null && totalPriceCents > balanceCents
+      ? totalPriceCents - balanceCents
+      : 0;
+  const isShort = shortfallCents > 0;
 
   return (
     <section aria-label="Review" className="flex flex-col gap-4">
@@ -325,90 +391,33 @@ function ReviewContent({
         </p>
       )}
 
-      <div
-        aria-live="polite"
-        data-testid="review-summary"
-        className="rounded-card border border-border bg-surface-soft p-3 text-sm flex flex-col gap-1"
-      >
-        {isLoading ? (
-          <span className="text-text-secondary">Checking availability…</span>
-        ) : previewPicks.length === 0 ? (
-          <span className="text-text-secondary">Add lessons on the calendar to review.</span>
-        ) : (
-          <>
-            {mode === "recurring" && visible.length > 0 && (
-              <span
-                className="font-semibold text-heading"
-                data-testid="review-recurring-date-range"
-              >
-                {formatRecurringDateRange(
-                  visible[0]?.startsAt,
-                  visible[visible.length - 1]?.startsAt,
-                )}
-                {" · "}
-                {visible.length} {visible.length === 1 ? "lesson" : "lessons"}
-                {skippedIndexes.size > 0 && `, ${skippedIndexes.size} skipped`}
-              </span>
-            )}
-            <span className="text-text">
-              <span className="font-semibold text-heading">{ready}</span> ready
-              {flagged > 0 && (
-                <>
-                  , <span className="font-semibold text-danger">{flagged}</span>{" "}
-                  {flagged === 1 ? "needs" : "need"} attention
-                </>
-              )}
-              {notOpenYet > 0 && (
-                <>
-                  , <span className="font-semibold text-text-secondary">{notOpenYet}</span> past the
-                  booking window
-                </>
-              )}
-              .
-            </span>
-          </>
-        )}
-      </div>
-
-      {balanceCents !== null && previewPicks.length > 0 && (
-        <div
-          data-testid="review-balance-summary"
-          className="rounded-card border border-border bg-surface-soft p-3 text-sm"
-          style={{ fontVariantNumeric: "tabular-nums" }}
-        >
-          Balance: <span className="font-semibold">{formatDollars(balanceCents)}</span>
-          {" · "}
-          Total: <span className="font-semibold">{formatDollars(totalPriceCents)}</span>
-          {totalPriceCents > balanceCents && (
-            <>
-              {" · "}
-              <span className="font-semibold text-danger">
-                Short by {formatDollars(totalPriceCents - balanceCents)}
-              </span>
-            </>
-          )}
-        </div>
+      {isLoading && (
+        <p className="text-sm text-text-secondary" data-testid="review-loading">
+          Checking availability…
+        </p>
       )}
 
-      {needsApproval && previewPicks.length > 0 && (
+      {!isLoading && !hasPicks && (
+        <p className="text-sm text-text-secondary">
+          Add lessons on the calendar to review.
+        </p>
+      )}
+
+      {needsApproval && hasPicks && (
         <p className="text-xs text-text-secondary">
           Jason will confirm each lesson before it is final.
         </p>
       )}
 
-      <ul className="flex flex-col gap-2">
-        {previewPicks.map((pick) => {
-          // swimmerIds is always present in the real server response (ADR
-          // 030 phase 2 Zod schema), but defensive against test mocks that
-          // skip the field — treat missing as "no first names to show."
-          const pickSwimmerNames = (pick.swimmerIds ?? [])
-            .map((id) => firstNameById.get(id))
-            .filter((name): name is string => name !== undefined);
-          return (
+      {hasPicks && (
+        <ul
+          className="flex flex-col divide-y divide-border"
+          data-testid="review-pick-list"
+        >
+          {previewPicks.map((pick) => (
             <PickRow
               key={pick.index}
               pick={pick}
-              swimmerFirstNames={pickSwimmerNames}
               mode={mode}
               isSkipped={skippedIndexes.has(pick.index)}
               isRemoved={removedIndexes.has(pick.index)}
@@ -418,16 +427,55 @@ function ReviewContent({
               onRemove={() => onRemove(pick.index)}
               onUnskip={() => onUnskip(pick.index)}
             />
-          );
-        })}
-      </ul>
+          ))}
+        </ul>
+      )}
+
+      {/* Single summary block: Total, Your balance, and — only when
+          short — the "You need $X more" danger line. Replaces the
+          "N ready." pill and the top-of-sheet balance summary so the
+          review surface has exactly one place to look for money. */}
+      {hasPicks && balanceCents !== null && visible.length > 0 && (
+        <div
+          data-testid="review-summary"
+          className="rounded-card border border-border bg-surface-soft p-4 flex flex-col gap-2 tabular-nums"
+        >
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-text-secondary">Total</span>
+            <span
+              className="font-semibold text-text"
+              data-testid="review-summary-total"
+            >
+              {formatDollars(totalPriceCents)}
+            </span>
+          </div>
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-text-secondary">Your balance</span>
+            <span
+              className="font-semibold text-text"
+              data-testid="review-summary-balance"
+            >
+              {formatDollars(balanceCents)}
+            </span>
+          </div>
+          {isShort && (
+            <div className="flex items-center justify-between text-sm pt-2 border-t border-border">
+              <span
+                className="font-semibold text-danger"
+                data-testid="review-summary-shortfall"
+              >
+                You need {formatDollars(shortfallCents)} more
+              </span>
+            </div>
+          )}
+        </div>
+      )}
     </section>
   );
 }
 
 interface PickRowProps {
   pick: BatchPreviewPick;
-  swimmerFirstNames: string[];
   mode: Mode;
   isSkipped: boolean;
   isRemoved: boolean;
@@ -446,7 +494,6 @@ const PICK_ROW_EXIT_MS = 180;
 
 function PickRow({
   pick,
-  swimmerFirstNames,
   mode,
   isSkipped,
   isRemoved,
@@ -471,12 +518,19 @@ function PickRow({
 
   const isAvailable = pick.state === "available";
   const isFlagged = FLAGGED_STATES.includes(pick.state) || pick.state === "not_open_yet";
+  const priceDollars = lessonPrice(
+    pick.durationMinutes,
+    (pick.swimmerIds ?? []).length,
+  );
 
+  // Skipped recurring picks keep the pre-existing struck-through card so
+  // the "I know this week is off, bring it back with Undo" affordance
+  // doesn't move from where the parent learned it.
   if (isSkipped) {
     return (
       <li
         data-exiting={isRemoved ? "true" : undefined}
-        className={`${styles.pickRow} rounded-card border border-dashed border-border bg-background p-3 flex items-center justify-between gap-3`}
+        className={`${styles.pickRow} py-3 flex items-center justify-between gap-3`}
       >
         <span className="text-sm text-text-secondary line-through">
           {formatSlotRangeWithDate(pick.startsAt, pick.durationMinutes)}
@@ -492,6 +546,17 @@ function PickRow({
     );
   }
 
+  // Active rows: date (bold) on line 1, time/length on line 2, price
+  // top-right with a plain-text Remove / Skip link underneath. Flagged
+  // picks keep a left-edge tint and a reason line so the parent sees at
+  // a glance that this one needs attention.
+  const rowAction =
+    mode === "recurring"
+      ? isFlagged
+        ? { label: "Skip this week", onClick: onSkip }
+        : null
+      : { label: "Remove", onClick: onRemove };
+
   return (
     <li
       role={isFlagged ? "alert" : undefined}
@@ -499,48 +564,38 @@ function PickRow({
       data-exiting={isRemoved ? "true" : undefined}
       className={[
         styles.pickRow,
-        "rounded-card border p-3 flex flex-col gap-2",
-        isFlagged ? "border-danger/50 bg-danger/5" : "border-border bg-background",
+        "py-3 flex flex-col gap-2",
+        isFlagged ? "border-l-2 border-danger pl-3 -ml-3" : "",
       ].join(" ")}
     >
-      <div className="flex items-start justify-between gap-3 flex-wrap">
+      <div className="flex items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-heading">
-            {formatSlotRangeWithDate(pick.startsAt, pick.durationMinutes)}
+          <p className="text-base font-semibold text-text">
+            {formatRowDate(pick.startsAt)}
           </p>
-          {swimmerFirstNames.length > 0 && (
-            <p
-              className="text-xs text-text-secondary mt-0.5"
-              data-testid={`pick-row-swimmers-${pick.index}`}
-            >
-              {swimmerFirstNames.join(", ")}
-            </p>
-          )}
+          <p className="text-sm text-text-secondary mt-0.5 tabular-nums">
+            {formatRowTimeRange(pick.startsAt, pick.durationMinutes)}
+          </p>
           {!isAvailable && (
-            <p className="text-xs text-text-secondary mt-0.5">
+            <p className="text-xs text-danger mt-1">
               {pickReasonCopy(pick.state, bookingMinAdvanceHours) || "Not available"}
             </p>
           )}
         </div>
-        {mode === "recurring" ? (
-          isFlagged && (
+        <div className="flex flex-col items-end gap-1 shrink-0">
+          <p className="text-base font-semibold text-text tabular-nums">
+            ${priceDollars}
+          </p>
+          {rowAction !== null && (
             <button
               type="button"
-              onClick={onSkip}
-              className="min-h-[36px] px-3 rounded-button border border-border text-xs font-semibold text-text hover:bg-surface-soft active:scale-[0.97] motion-reduce:transform-none transition-colors duration-150"
+              onClick={rowAction.onClick}
+              className="text-xs font-semibold text-link hover:text-link-hover"
             >
-              Skip this week
+              {rowAction.label}
             </button>
-          )
-        ) : (
-          <button
-            type="button"
-            onClick={onRemove}
-            className="min-h-[36px] px-3 rounded-button border border-border text-xs font-semibold text-text hover:bg-surface-soft active:scale-[0.97] motion-reduce:transform-none transition-colors duration-150"
-          >
-            Remove
-          </button>
-        )}
+          )}
+        </div>
       </div>
 
       {isFlagged && pick.suggestions && pick.suggestions.length > 0 && (

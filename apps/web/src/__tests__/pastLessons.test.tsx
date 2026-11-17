@@ -85,12 +85,13 @@ describe("fetchPastLessons — parses the merged { items, total } response", () 
 
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.data).toHaveLength(1);
-      expect(result.data[0]?.id).toBe(PAST_LESSON_ID);
+      expect(result.data.items).toHaveLength(1);
+      expect(result.data.items[0]?.id).toBe(PAST_LESSON_ID);
+      expect(result.data.nextCursor).toBeNull();
     }
     // Confirms the fetcher really hit the filter=past branch of the merged endpoint.
     const [calledUrl] = mockFetch.mock.calls[0] ?? [];
-    expect(String(calledUrl)).toContain("/lessons?filter=past");
+    expect(String(calledUrl)).toContain("filter=past");
   });
 
   it("returns a schema error when the server emits the legacy array shape (regression guard)", async () => {
@@ -126,7 +127,8 @@ describe("Past lessons render on the parent lessons page", () => {
       <ParentLessonsContent
         initialLessons={[]}
         initialHasMore={false}
-        past={[pastLesson]}
+        initialPast={[pastLesson]}
+        initialPastCursor={null}
       />,
     );
     expect(screen.getByRole("heading", { name: /^past$/i })).toBeInTheDocument();

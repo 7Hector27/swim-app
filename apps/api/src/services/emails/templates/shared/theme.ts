@@ -17,6 +17,10 @@ export const emailTheme = {
     buttonText: "#FFFFFF",
     link: "#1440F0",
     divider: "#DDE3EC",
+    // Brand-navy header band behind the logo. Fixed-color background so
+    // the dark-text lockup reads identically in light and dark mode
+    // clients that don't honor prefers-color-scheme.
+    headerBand: "#141A2E",
   },
   font: {
     body: '-apple-system, BlinkMacSystemFont, "Segoe UI", "Figtree", Helvetica, Arial, sans-serif',

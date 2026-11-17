@@ -65,8 +65,11 @@ import {
   swimmers,
 } from "../../db/schema";
 import { __resetEnvCacheForTests } from "../../lib/env";
-import { __setClockForTests } from "../../lib/clock";
 import { __settlePendingCoachAlertsForTests } from "../../lib/lessonApproval";
+import {
+  getOrCreateCoachNotificationPreferences,
+  updateCoachNotificationPreferences,
+} from "../../services/notifications/preferences";
 import { drainLessonEmailOutbox } from "../../services/emails/drain";
 import {
   __resetSenderTransportForTests,
@@ -91,10 +94,22 @@ __resetEnvCacheForTests();
 const logger = pino({ level: "silent" });
 const app = createApp(logger);
 
-// Pinned clock so every booking math (min advance, max advance,
-// expansion of weekly patterns) is deterministic. Mon 2035-11-05
-// 10:00 LA. teachOnAllDays below keeps every weekday bookable.
-const PINNED_NOW = new Date("2035-11-05T18:00:00.000Z");
+// Reference "now" captured at module load. The booking endpoint reads
+// real DB time for slot/window checks, so pinning the clock to a
+// far-future date (which the sender's quiet-hours gate also reads from
+// `new Date()`) breaks bookings. Keep it live and compute all booking
+// dates relative to this moment. teachOnAllDays below keeps every
+// weekday bookable.
+const TEST_NOW = new Date();
+
+// Per-run random day offset so the two tests in this file don't trip
+// over lessons left behind by earlier runs on the shared ADR 035 test
+// DB. The app has one coach (`getActiveCoachProfile`), so coach-wide
+// slot checks collide across runs if the anchor stays fixed.
+// bookingMaxAdvanceWeeks is forced to 52 in beforeAll (~364 days), so
+// an offset up to ~200 days still fits the window with room for
+// manual-batch and weekly-expansion picks on top.
+const RANDOM_DAY_OFFSET = Math.floor(Math.random() * 180);
 
 const TEST_PASSWORD = "integration-test-password-1";
 const DELETION_PHRASE = "delete";
@@ -162,10 +177,25 @@ async function openAllTeachingDays(): Promise<() => Promise<void>> {
 let restoreTeachingDays: (() => Promise<void>) | null = null;
 
 beforeAll(async () => {
-  __setClockForTests(PINNED_NOW);
   transport = new CaptureTransport();
   __setSenderTransportForTests(transport);
   restoreTeachingDays = await openAllTeachingDays();
+
+  // Disable quiet hours on every active coach in the shared test DB.
+  // The sender reads `new Date()` (real time) for the quiet-hours gate,
+  // so after 21:00 LA every coach_booking_request would be held and
+  // the terminal-row assertions would fail. getActiveCoachProfile() picks
+  // an arbitrary active coach, so narrowing to just the test's coach is
+  // not enough — the shared test DB accumulates coach profiles across
+  // runs.
+  const activeCoaches = await adminDb()
+    .select({ id: profiles.id })
+    .from(profiles)
+    .where(and(eq(profiles.role, "coach"), sql`disabled_at IS NULL`));
+  for (const row of activeCoaches) {
+    await getOrCreateCoachNotificationPreferences(row.id);
+    await updateCoachNotificationPreferences(row.id, { quietHoursEnabled: false });
+  }
 
   // Push the booking window out so all the picks in this file comfortably fit.
   const configRows = await adminDb().select().from(availabilityConfig).limit(1);
@@ -195,7 +225,6 @@ afterAll(async () => {
         .where(eq(availabilityConfig.id, config.id));
     }
   }
-  __setClockForTests(null);
   await closeAdminDb();
 });
 
@@ -300,6 +329,10 @@ async function createSwimmer(user: TestUser, firstName: string): Promise<string>
 
 async function makeCoach(userId: string): Promise<void> {
   await adminDb().update(profiles).set({ role: "coach" }).where(eq(profiles.id, userId));
+  // Disable quiet hours for this coach too — beforeAll covers the shared
+  // test DB's pre-existing coaches, but this coach is created after that.
+  await getOrCreateCoachNotificationPreferences(userId);
+  await updateCoachNotificationPreferences(userId, { quietHoursEnabled: false });
 }
 
 async function bookSingle(opts: {
@@ -403,7 +436,7 @@ async function recordEvaluation(opts: {
     .set("Authorization", `Bearer ${opts.coach.accessToken}`)
     .send({
       screenSlug: "water-confidence",
-      sessionDate: toLaDate(PINNED_NOW),
+      sessionDate: toLaDate(TEST_NOW),
       context: "practice",
       coachingPriority: "Focus on breath control",
       breathingPattern: null,
@@ -420,7 +453,7 @@ async function recordEvaluation(opts: {
           measurementUnit: null,
           note: null,
           faultTags: [],
-          ratedAt: PINNED_NOW.toISOString(),
+          ratedAt: TEST_NOW.toISOString(),
           golfScoreCategory: null,
         },
       ],
@@ -452,7 +485,7 @@ async function recordMeetSwim(opts: { coach: TestUser; swimmerId: string }): Pro
       eventStroke: "free",
       course: "scy",
       timeString: "35.12",
-      swumOn: toLaDate(PINNED_NOW),
+      swumOn: toLaDate(TEST_NOW),
     });
   expect(res.status).toBe(201);
   return res.body.id as string;
@@ -500,7 +533,7 @@ describe("POST /me/deletion/confirm — solo path, real-flow seed", () => {
 
     // Pick safe LA dates: start 20 days out so bookingMinAdvanceHours is
     // satisfied and the weekly expansion has room to walk forward.
-    const anchorLaDate = addDays(toLaDate(PINNED_NOW), 20);
+    const anchorLaDate = addDays(toLaDate(TEST_NOW), 20 + RANDOM_DAY_OFFSET);
     const singleStartsAtUtc = laDateTimeToUtc(addDays(anchorLaDate, 0), "16:00");
     const manual1Utc = laDateTimeToUtc(addDays(anchorLaDate, 1), "16:30");
     const manual2Utc = laDateTimeToUtc(addDays(anchorLaDate, 2), "16:30");
@@ -573,14 +606,14 @@ describe("POST /me/deletion/confirm — solo path, real-flow seed", () => {
       .values({
         householdId,
         locationId,
-        startsAt: new Date(PINNED_NOW.getTime() - 7 * 24 * 60 * 60 * 1000),
+        startsAt: new Date(TEST_NOW.getTime() - 7 * 24 * 60 * 60 * 1000),
         durationMinutes: 30,
         type: "private",
         status: "completed",
         requestedBy: owner.userId,
-        approvedAt: new Date(PINNED_NOW.getTime() - 8 * 24 * 60 * 60 * 1000),
+        approvedAt: new Date(TEST_NOW.getTime() - 8 * 24 * 60 * 60 * 1000),
         approvedBy: owner.userId,
-        completedAt: new Date(PINNED_NOW.getTime() - 7 * 24 * 60 * 60 * 1000 + 30 * 60 * 1000),
+        completedAt: new Date(TEST_NOW.getTime() - 7 * 24 * 60 * 60 * 1000 + 30 * 60 * 1000),
       })
       .returning({ id: lessons.id });
     const pastLessonId = pastLessonRows[0]!.id;
@@ -604,9 +637,9 @@ describe("POST /me/deletion/confirm — solo path, real-flow seed", () => {
         type: "private",
         status: "completed",
         requestedBy: owner.userId,
-        approvedAt: new Date(PINNED_NOW.getTime() - 60 * 1000),
+        approvedAt: new Date(TEST_NOW.getTime() - 60 * 1000),
         approvedBy: owner.userId,
-        completedAt: new Date(PINNED_NOW.getTime() - 30 * 1000),
+        completedAt: new Date(TEST_NOW.getTime() - 30 * 1000),
       })
       .returning({ id: lessons.id });
     const futureQuirkLessonId = futureQuirkRows[0]!.id;
@@ -1014,7 +1047,7 @@ describe("POST /me/deletion/confirm — leave path, real-flow seed", () => {
     // the audit log). The leave path must scrub the manager-authored
     // audit-log payloads but leave the batch + outbox rows intact for the
     // household to continue using.
-    const anchorLaDate = addDays(toLaDate(PINNED_NOW), 15);
+    const anchorLaDate = addDays(toLaDate(TEST_NOW), 15 + RANDOM_DAY_OFFSET);
     const b1 = laDateTimeToUtc(addDays(anchorLaDate, 0), "16:30");
     const b2 = laDateTimeToUtc(addDays(anchorLaDate, 1), "16:30");
     const manualBatch = await bookManualBatch({

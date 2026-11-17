@@ -3,10 +3,10 @@ import { notFound } from "next/navigation";
 
 import CoachFamilyDetailContent from "@/content/CoachFamilyDetailContent";
 import {
-  fetchCoachFamilies,
   fetchCoachFamilyBalance,
   fetchCoachFamilyBalanceHistory,
   fetchCoachFamilyNeedsManualRefund,
+  fetchCoachFamilySummary,
 } from "@/lib/api/coachHouseholds";
 import { requireAuth } from "@/lib/requireAuth";
 
@@ -23,31 +23,33 @@ export default async function CoachFamilyDetailPage(props: {
   const { id } = await props.params;
   if (!/^[0-9a-f-]{36}$/i.test(id)) notFound();
 
-  // We pull household name + members + swimmer count from the roster-wide
-  // list endpoint rather than adding a per-id metadata endpoint — one
-  // round-trip serves both this page and the back-navigation summary.
-  const [familiesResult, balanceResult, historyResult, needsManualResult] = await Promise.all([
-    fetchCoachFamilies(auth.accessToken),
+  // Per-id summary + balance + history + needs-manual banner in parallel.
+  // The roster list is now paged, so the detail page can't assume a given
+  // id lives on page 1 — the summary endpoint serves this lookup directly.
+  const [summaryResult, balanceResult, historyResult, needsManualResult] = await Promise.all([
+    fetchCoachFamilySummary(auth.accessToken, id),
     fetchCoachFamilyBalance(auth.accessToken, id),
     fetchCoachFamilyBalanceHistory(auth.accessToken, id),
     fetchCoachFamilyNeedsManualRefund(auth.accessToken, id),
   ]);
 
+  if ("kind" in summaryResult && summaryResult.kind === "not_found") notFound();
   if ("kind" in balanceResult && balanceResult.kind === "not_found") notFound();
+  if (!("ok" in summaryResult) || !summaryResult.ok) {
+    throw new Error(
+      `Failed to load family summary (${"reason" in summaryResult ? summaryResult.reason : "unknown"})`,
+    );
+  }
   if (!("ok" in balanceResult) || !balanceResult.ok) {
     throw new Error(
       `Failed to load family balance (${"reason" in balanceResult ? balanceResult.reason : "unknown"})`,
     );
   }
-  if (!familiesResult.ok) {
-    throw new Error(`Failed to load families (${familiesResult.reason})`);
-  }
   if (!historyResult.ok) {
     throw new Error(`Failed to load family history (${historyResult.reason})`);
   }
 
-  const family = familiesResult.data.find((row) => row.householdId === id);
-  if (!family) notFound();
+  const family = summaryResult.data;
 
   // Needs-manual-handling list is non-critical: if the GET fails the page
   // renders without the banner rather than hard-erroring. The attention

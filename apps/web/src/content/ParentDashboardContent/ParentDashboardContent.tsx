@@ -17,6 +17,7 @@ import { fetchLesson, fetchUpcomingLessons } from "@/lib/api/lessons";
 import { fetchParentSwimmerSummaries } from "@/lib/api/parentProgress";
 import { fetchSwimmers } from "@/lib/api/swimmers";
 import InlineError from "@/components/InlineError";
+import { BookLink } from "@/components/BookGate";
 import { formatApproxHours } from "@/content/AccountBalanceContent/formatters";
 import { formatDollars } from "@/lib/formatDollars";
 import { removeSwimmer } from "./actions";
@@ -147,12 +148,12 @@ export default async function ParentDashboardContent({ profile, accessToken, boo
                   Book a lesson
                 </span>
               ) : (
-                <Link
+                <BookLink
                   href="/dashboard/book"
                   className="inline-flex items-center justify-center rounded-button bg-button-primary-background text-button-primary-text font-bold text-sm px-5 h-11 transition-opacity hover:opacity-90"
                 >
                   Book a lesson
-                </Link>
+                </BookLink>
               )}
             </div>
           </div>

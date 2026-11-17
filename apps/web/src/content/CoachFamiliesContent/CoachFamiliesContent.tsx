@@ -1,10 +1,12 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type {
   CashRefundNeedsAttentionEntry,
-  CoachHouseholdBalanceSummary,
+  CoachFamiliesSortKey,
+  CoachHouseholdBalanceListResponse,
 } from "@swim-app/shared";
 
 import { formatDollars } from "@/lib/formatDollars";
@@ -12,12 +14,17 @@ import { markCashRefundHandledAction } from "./actions";
 
 // Low-balance threshold: one 30-min 1-swimmer lesson. Anything under this
 // means the next parent booking will trip the insufficient-funds flow.
+// Matches the server-side threshold used to compute `lowBalanceCount`.
 const LOW_BALANCE_THRESHOLD_CENTS = 6_000;
 
-type SortKey = "balance_asc" | "name_asc" | "activity_desc";
-
 interface Props {
-  families: CoachHouseholdBalanceSummary[];
+  // Current page from the server. `page.items` is at most pageSize (20)
+  // rows; `page.total` is the full filtered roster size; `page.lowBalanceCount`
+  // is the under-$60 tally across the same filter so the callout stays
+  // consistent as the parent pages or searches.
+  page: CoachHouseholdBalanceListResponse;
+  sort: CoachFamiliesSortKey;
+  search: string;
   // ADR 036 Phase 8 Part B: pre-fetched global needs-attention list.
   // Rendered as a section at the top of the page when non-empty. Hidden
   // entirely when empty — no "all clear" empty state.
@@ -46,15 +53,25 @@ function formatAttentionDate(iso: string): string {
 }
 
 export default function CoachFamiliesContent({
-  families,
+  page,
+  sort,
+  search,
   initialNeedsAttention,
 }: Props) {
-  // Default to last-activity descending: the roster reads like a timeline
-  // ("who did I hear from most recently?"). The Low-balance callout at
-  // the top still answers "who's running low?" at a glance, so the sort
-  // doesn't have to lead with balance.
-  const [sortKey, setSortKey] = useState<SortKey>("activity_desc");
-  const [query, setQuery] = useState("");
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const [, startNavTransition] = useTransition();
+
+  // Local mirror of the search input so typing stays responsive without
+  // round-tripping through the URL on every keystroke. The committed
+  // value lives in `search` (from the server); we only push to the URL
+  // when the parent presses Enter, submits the form, or clears the box.
+  const [queryDraft, setQueryDraft] = useState(search);
+  useEffect(() => {
+    setQueryDraft(search);
+  }, [search]);
+
   const [needsAttention, setNeedsAttention] = useState(initialNeedsAttention);
   const [markHandledForJobId, setMarkHandledForJobId] = useState<string | null>(null);
 
@@ -63,41 +80,50 @@ export default function CoachFamiliesContent({
     setMarkHandledForJobId(null);
   }
 
-  const filtered = useMemo(() => {
-    const trimmed = query.trim().toLowerCase();
-    if (trimmed === "") return families;
-    return families.filter((family) => {
-      if (family.householdName.toLowerCase().includes(trimmed)) return true;
-      return family.memberFullNames.some((name) =>
-        name.toLowerCase().includes(trimmed),
-      );
-    });
-  }, [families, query]);
-
-  const sorted = useMemo(() => {
-    const list = [...filtered];
-    switch (sortKey) {
-      case "balance_asc":
-        list.sort((a, b) => a.balanceCents - b.balanceCents);
-        break;
-      case "name_asc":
-        list.sort((a, b) => a.householdName.localeCompare(b.householdName));
-        break;
-      case "activity_desc":
-        list.sort((a, b) => {
-          const aAt = a.lastActivityAt ? Date.parse(a.lastActivityAt) : 0;
-          const bAt = b.lastActivityAt ? Date.parse(b.lastActivityAt) : 0;
-          return bAt - aAt;
-        });
-        break;
+  // Build an updated search-params string and push to the URL. Omitting a
+  // value removes the key (e.g. page=1 is the default and stays off the
+  // URL). The hook returns a ReadonlyURLSearchParams so we clone it.
+  function pushParams(updates: Record<string, string | null>): void {
+    const next = new URLSearchParams(searchParams?.toString() ?? "");
+    for (const [key, value] of Object.entries(updates)) {
+      if (value === null) next.delete(key);
+      else next.set(key, value);
     }
-    return list;
-  }, [filtered, sortKey]);
+    const query = next.toString();
+    const href = query === "" ? pathname : `${pathname}?${query}`;
+    startNavTransition(() => {
+      router.push(href);
+    });
+  }
 
-  const lowCount = useMemo(
-    () => families.filter((family) => family.balanceCents < LOW_BALANCE_THRESHOLD_CENTS).length,
-    [families],
-  );
+  function handleSortChange(nextSort: CoachFamiliesSortKey): void {
+    // Changing sort goes back to page 1 so the parent doesn't land past
+    // the last page after re-ordering.
+    pushParams({
+      sort: nextSort === "activity_desc" ? null : nextSort,
+      page: null,
+    });
+  }
+
+  function handleSearchSubmit(): void {
+    const trimmed = queryDraft.trim();
+    pushParams({
+      search: trimmed === "" ? null : trimmed,
+      page: null,
+    });
+  }
+
+  function handleClearSearch(): void {
+    setQueryDraft("");
+    pushParams({ search: null, page: null });
+  }
+
+  function goToPage(nextPage: number): void {
+    pushParams({ page: nextPage === 1 ? null : String(nextPage) });
+  }
+
+  const totalPages = Math.max(1, Math.ceil(page.total / page.pageSize));
+  const currentPage = Math.min(Math.max(1, page.page), totalPages);
 
   return (
     <div className="flex flex-col gap-5">
@@ -143,10 +169,7 @@ export default function CoachFamiliesContent({
                       </span>
                     )}
                   </p>
-                  <p
-                    className="text-xs text-text-secondary"
-                    style={{ fontVariantNumeric: "tabular-nums" }}
-                  >
+                  <p className="text-xs text-text-secondary tabular-nums">
                     {formatDollars(entry.amountCents)} · {entry.reason} ·{" "}
                     {formatAttentionDate(entry.createdAt)}
                   </p>
@@ -176,36 +199,56 @@ export default function CoachFamiliesContent({
         </section>
       )}
 
-      {lowCount > 0 && (
+      {page.lowBalanceCount > 0 && (
         <div
           role="status"
           data-testid="families-low-callout"
           className="rounded-card border border-danger/40 bg-danger/5 p-3 text-sm text-text flex items-center justify-between gap-3 flex-wrap"
         >
           <span>
-            <span className="font-semibold text-danger">{lowCount}</span>{" "}
-            {lowCount === 1 ? "family is" : "families are"} running low — less than
+            <span className="font-semibold text-danger">{page.lowBalanceCount}</span>{" "}
+            {page.lowBalanceCount === 1 ? "family is" : "families are"} running low — less than
             one lesson in balance.
           </span>
         </div>
       )}
 
-      <div className="flex gap-2 flex-wrap">
-        <label className="flex-1 min-w-[12rem]">
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          handleSearchSubmit();
+        }}
+        className="flex gap-2 flex-wrap"
+      >
+        <label className="flex-1 min-w-[12rem] relative">
           <span className="sr-only">Search families</span>
           <input
             type="search"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            value={queryDraft}
+            onChange={(event) => setQueryDraft(event.target.value)}
             placeholder="Search by family or member name"
-            className="w-full min-h-[44px] px-3 rounded-full border border-border bg-background text-text placeholder:text-text-secondary"
+            data-testid="families-search-input"
+            className="w-full min-h-[44px] px-3 pr-20 rounded-full border border-border bg-background text-text placeholder:text-text-secondary"
           />
+          {search !== "" && (
+            <button
+              type="button"
+              onClick={handleClearSearch}
+              data-testid="families-search-clear"
+              className="absolute right-2 top-1/2 -translate-y-1/2 min-h-[32px] px-2 text-xs font-semibold text-text-secondary hover:text-text"
+            >
+              Clear
+            </button>
+          )}
         </label>
         <label className="flex items-center gap-2 text-sm text-text-secondary">
           Sort by
           <select
-            value={sortKey}
-            onChange={(event) => setSortKey(event.target.value as SortKey)}
+            value={sort}
+            onChange={(event) =>
+              handleSortChange(event.target.value as CoachFamiliesSortKey)
+            }
+            data-testid="families-sort-select"
             className="min-h-[44px] px-3 rounded-full border border-border bg-background text-text"
           >
             <option value="balance_asc">Balance (low → high)</option>
@@ -213,18 +256,25 @@ export default function CoachFamiliesContent({
             <option value="activity_desc">Last activity (newest)</option>
           </select>
         </label>
-      </div>
+        {/* Search commits on Enter / Submit (keyboard a11y). The visible
+            Clear button handles the opposite direction. */}
+        <button type="submit" className="sr-only">
+          Search
+        </button>
+      </form>
 
-      {sorted.length === 0 ? (
+      {page.items.length === 0 ? (
         <p className="text-sm text-text-secondary py-8 text-center">
-          No families match that search.
+          {search === ""
+            ? "No families on the roster yet."
+            : "No families match that search."}
         </p>
       ) : (
         <ul
           className="flex flex-col divide-y divide-border rounded-card border border-border overflow-hidden bg-background"
           data-testid="families-list"
         >
-          {sorted.map((family) => {
+          {page.items.map((family) => {
             const isLow = family.balanceCents < LOW_BALANCE_THRESHOLD_CENTS;
             return (
               <li key={family.householdId}>
@@ -252,10 +302,7 @@ export default function CoachFamiliesContent({
                     </p>
                   </div>
                   <div className="text-right shrink-0">
-                    <p
-                      className="font-semibold text-text"
-                      style={{ fontVariantNumeric: "tabular-nums" }}
-                    >
+                    <p className="font-semibold text-text tabular-nums">
                       {formatDollars(family.balanceCents)}
                     </p>
                     <p className="text-xs text-text-secondary">
@@ -275,6 +322,16 @@ export default function CoachFamiliesContent({
         </ul>
       )}
 
+      {/* Pager hides when there's only one page, including when the
+          filtered set is empty. */}
+      {totalPages > 1 && (
+        <Pager
+          currentPage={currentPage}
+          totalPages={totalPages}
+          onJump={goToPage}
+        />
+      )}
+
       {markHandledForJobId !== null && (
         <MarkCashRefundHandledModal
           jobId={markHandledForJobId}
@@ -284,6 +341,108 @@ export default function CoachFamiliesContent({
       )}
     </div>
   );
+}
+
+// ── Pager ──────────────────────────────────────────────────────────────
+//
+// Previous · [page numbers with ellipses on long rosters] · Next.
+// Mobile-first: at <= 6 total pages we render the full list; at 7+ we
+// elide the middle so the control stays on one line on a narrow phone.
+// Hidden by the parent when totalPages === 1.
+
+interface PagerProps {
+  currentPage: number;
+  totalPages: number;
+  onJump: (page: number) => void;
+}
+
+function Pager({ currentPage, totalPages, onJump }: PagerProps) {
+  const pages = buildPageList(currentPage, totalPages);
+
+  return (
+    <nav
+      aria-label="Families pagination"
+      data-testid="families-pager"
+      className="flex items-center justify-between gap-2 flex-wrap"
+    >
+      <button
+        type="button"
+        onClick={() => onJump(currentPage - 1)}
+        disabled={currentPage <= 1}
+        data-testid="families-pager-prev"
+        className="min-h-[44px] px-4 rounded-full border border-border text-sm font-semibold text-text hover:bg-surface-soft transition-colors duration-150 motion-reduce:transition-none active:scale-[0.97] motion-reduce:transform-none disabled:opacity-40 disabled:cursor-default"
+      >
+        Previous
+      </button>
+
+      <ol className="flex items-center gap-1" aria-label="Pages">
+        {pages.map((entry, index) =>
+          entry === "ellipsis" ? (
+            <li
+              key={`gap-${index}`}
+              aria-hidden="true"
+              className="px-1 text-sm text-text-secondary select-none"
+            >
+              …
+            </li>
+          ) : (
+            <li key={entry}>
+              <button
+                type="button"
+                onClick={() => onJump(entry)}
+                aria-current={entry === currentPage ? "page" : undefined}
+                data-testid={
+                  entry === currentPage
+                    ? "families-pager-current"
+                    : `families-pager-page-${entry}`
+                }
+                className={[
+                  "min-h-[36px] min-w-[36px] px-2 rounded-full text-sm font-semibold tabular-nums transition-colors duration-150 motion-reduce:transition-none active:scale-[0.97] motion-reduce:transform-none",
+                  entry === currentPage
+                    ? "bg-heading text-background"
+                    : "border border-border text-text hover:bg-surface-soft",
+                ].join(" ")}
+              >
+                {entry}
+              </button>
+            </li>
+          ),
+        )}
+      </ol>
+
+      <button
+        type="button"
+        onClick={() => onJump(currentPage + 1)}
+        disabled={currentPage >= totalPages}
+        data-testid="families-pager-next"
+        className="min-h-[44px] px-4 rounded-full border border-border text-sm font-semibold text-text hover:bg-surface-soft transition-colors duration-150 motion-reduce:transition-none active:scale-[0.97] motion-reduce:transform-none disabled:opacity-40 disabled:cursor-default"
+      >
+        Next
+      </button>
+    </nav>
+  );
+}
+
+// Build a compact page list with first/last always shown and a window
+// around the current page. Example at current=7, total=20:
+// [1, "ellipsis", 6, 7, 8, "ellipsis", 20]
+function buildPageList(
+  currentPage: number,
+  totalPages: number,
+): Array<number | "ellipsis"> {
+  if (totalPages <= 7) {
+    return Array.from({ length: totalPages }, (_unused, index) => index + 1);
+  }
+  const pages: Array<number | "ellipsis"> = [1];
+  const windowStart = Math.max(2, currentPage - 1);
+  const windowEnd = Math.min(totalPages - 1, currentPage + 1);
+  if (windowStart > 2) pages.push("ellipsis");
+  for (let page = windowStart; page <= windowEnd; page += 1) {
+    pages.push(page);
+  }
+  if (windowEnd < totalPages - 1) pages.push("ellipsis");
+  pages.push(totalPages);
+  return pages;
 }
 
 // ── Mark-cash-refund-handled modal (shared with per-family banner) ─────

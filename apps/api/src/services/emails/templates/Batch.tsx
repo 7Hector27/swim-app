@@ -9,7 +9,7 @@ import type { BatchEmailEvent, BatchEmailLesson, BatchEmailPayload } from "../ba
 import EmailLayout from "./shared/EmailLayout";
 import CtaButton from "./shared/CtaButton";
 import { emailTheme } from "./shared/theme";
-import { coachDisplay, formatSwimmerList } from "./shared/copyHelpers";
+import { coachDisplay, formatSwimmerList, swimmerBeVerb } from "./shared/copyHelpers";
 
 const LESSON_TIME_ZONE_LABEL =
   LESSON_TIME_ZONE === "America/Los_Angeles" ? "Pacific Time" : LESSON_TIME_ZONE;
@@ -39,6 +39,7 @@ export default function Batch({
 }: BatchTemplateProps) {
   const coach = coachDisplay(coachFirstName);
   const swimmers = formatSwimmerList(payload.swimmerFirstNames);
+  const swimmerBe = swimmerBeVerb(payload.swimmerFirstNames);
   const changedSet = new Set(changedLessonIds);
   const visibleLessons = payload.lessons.filter((lesson) => !changedSet.has(lesson.lessonId));
 
@@ -49,6 +50,7 @@ export default function Batch({
   const { heading, intro, previewText, deepLinkPath } = buildCopy(event, {
     coach,
     swimmers,
+    swimmerBe,
     payload,
     approvedCount: approvedLessons.length,
     pendingCount: pendingLessons.length,
@@ -127,6 +129,9 @@ function LessonList({ label, lessons, payload, secondary = false }: LessonListPr
       }}
     >
       <Text style={listLabelStyle(secondary)}>{label}</Text>
+      <Text style={listTzHintStyle}>
+        All times {LESSON_TIME_ZONE_LABEL === "Pacific Time" ? "Pacific" : LESSON_TIME_ZONE_LABEL}
+      </Text>
       {lessons.map((lesson) => (
         <Text key={lesson.lessonId} style={listRowStyle}>
           <span style={{ color: emailTheme.color.text }}>
@@ -149,6 +154,9 @@ function LessonList({ label, lessons, payload, secondary = false }: LessonListPr
 interface CopyInput {
   coach: string;
   swimmers: string;
+  // "is" / "are" picked to agree with `swimmers` so the copy below
+  // reads correctly whether the batch is for one swimmer or several.
+  swimmerBe: "is" | "are";
   payload: BatchEmailPayload;
   approvedCount: number;
   pendingCount: number;
@@ -159,7 +167,7 @@ function buildCopy(
   event: BatchEmailEvent,
   input: CopyInput,
 ): { heading: string; intro: string; previewText: string; deepLinkPath: string } {
-  const { coach, swimmers, payload, approvedCount, pendingCount, canceledCount } = input;
+  const { coach, swimmers, swimmerBe, payload, approvedCount, pendingCount, canceledCount } = input;
   const poolName = payload.location.name;
   const modeWord = payload.mode === "weekly" ? "weekly " : "";
   const total = approvedCount + pendingCount + canceledCount;
@@ -167,7 +175,7 @@ function buildCopy(
     if (pendingCount === 0) {
       return {
         heading: `Your ${modeWord}lessons at ${poolName} are booked.`,
-        intro: `${swimmers} are set for ${approvedCount} ${modeWord}${
+        intro: `${swimmers} ${swimmerBe} set for ${approvedCount} ${modeWord}${
           approvedCount === 1 ? "lesson" : "lessons"
         } at ${poolName}. The calendar invite is attached.`,
         previewText: `${approvedCount} ${modeWord}${
@@ -206,7 +214,7 @@ function buildCopy(
       heading: `${coach} confirmed ${approvedCount} ${
         approvedCount === 1 ? "lesson" : "more lessons"
       } at ${poolName}.`,
-      intro: `${swimmers} are set. ${
+      intro: `${swimmers} ${swimmerBe} set. ${
         approvedCount === 1 ? "A calendar invite is" : "Calendar invites are"
       } attached.`,
       previewText: `${coach} confirmed ${approvedCount} ${
@@ -248,7 +256,9 @@ function formatLocalDisplay(startsAtUtc: string): string {
     minute: "2-digit",
     hour12: true,
   }).format(date);
-  return `${datePart} at ${timePart} (${LESSON_TIME_ZONE_LABEL})`;
+  // Timezone is pinned to the list header ("All times Pacific") above
+  // each LessonList, so we don't repeat it on every row.
+  return `${datePart} at ${timePart}`;
 }
 
 const headingStyle = {
@@ -290,4 +300,13 @@ const listRowStyle = {
   fontSize: "15px",
   lineHeight: "22px",
   margin: "4px 0",
+};
+
+// Quiet "All times Pacific" line that sits under each list label so the
+// rows below can drop their per-line "(Pacific Time)" suffix.
+const listTzHintStyle = {
+  fontSize: "12px",
+  lineHeight: "16px",
+  color: emailTheme.color.textSecondary,
+  margin: "0 0 10px",
 };

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
 import BookCalendarContent from "@/content/BookCalendarContent";
+import { BookPageAutoGate } from "@/components/BookGate";
 import { requireAuth } from "@/lib/requireAuth";
 import { fetchHousehold } from "@/lib/api/households";
 import { fetchLocations } from "@/lib/api/lessons";
@@ -59,6 +60,10 @@ export default async function BookPage(props: {
 
   return (
     <div className="flex flex-col flex-1 bg-background">
+      {/* Belt-and-suspenders gate: if a parent types /dashboard/book
+          directly with no swimmers, surface the same modal the Book
+          links trigger so the dead-end state can't be reached. */}
+      <BookPageAutoGate />
       <main id="main-content" className="flex-1">
         <div className="mx-auto max-w-content px-page pt-10 pb-tab-safe tablet:pt-14 tablet:pb-32">
           <BookCalendarContent

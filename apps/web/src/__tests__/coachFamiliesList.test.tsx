@@ -3,11 +3,13 @@ import { render, screen, fireEvent, within, act, waitFor } from "@testing-librar
 
 import type {
   CashRefundNeedsAttentionEntry,
+  CoachHouseholdBalanceListResponse,
   CoachHouseholdBalanceSummary,
 } from "@swim-app/shared";
 
-const { mockMarkHandled } = vi.hoisted(() => ({
+const { mockMarkHandled, mockRouterPush } = vi.hoisted(() => ({
   mockMarkHandled: vi.fn(),
+  mockRouterPush: vi.fn(),
 }));
 
 vi.mock("../content/CoachFamiliesContent/actions", () => ({
@@ -15,7 +17,33 @@ vi.mock("../content/CoachFamiliesContent/actions", () => ({
     mockMarkHandled(...args),
 }));
 
+// Server-driven paging reads / writes the URL through next/navigation.
+// The hoisted mockRouterPush captures every push so tests can assert the
+// URL the content component built (sort / search / page query string).
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: mockRouterPush, replace: vi.fn() }),
+  usePathname: () => "/coach/families",
+  useSearchParams: () => new URLSearchParams(),
+}));
+
 import CoachFamiliesContent from "../content/CoachFamiliesContent/CoachFamiliesContent";
+
+// Wrap a bare row list in the new paged-response shape. Low-balance
+// callout count is passed explicitly so tests can set it independently
+// of the fixture (the server computes it over the whole filtered set,
+// not just the page).
+function makePage(
+  items: CoachHouseholdBalanceSummary[],
+  lowBalanceCount = items.filter((row) => row.balanceCents < 6_000).length,
+): CoachHouseholdBalanceListResponse {
+  return {
+    items,
+    page: 1,
+    pageSize: 20,
+    total: items.length,
+    lowBalanceCount,
+  };
+}
 
 // Three families with distinct balances so sort-by-balance has a definite
 // order, plus one zero-ledger family (lastActivityAt null) so the "—"
@@ -55,17 +83,22 @@ const FAMILIES: CoachHouseholdBalanceSummary[] = [
   },
 ];
 
-function rowNames(): string[] {
-  const rows = screen.getAllByTestId("families-row");
-  return rows.map((row) => {
-    const title = row.querySelector("p.font-semibold");
-    return title?.textContent?.trim() ?? "";
-  });
-}
-
 describe("CoachFamiliesContent", () => {
+  // mockRouterPush is captured across tests; clear it so each URL-push
+  // assertion sees only its own navigation.
+  beforeEach(() => {
+    mockRouterPush.mockClear();
+  });
+
   it("shows a 'running low' callout when at least one family is under a lesson's balance", () => {
-    render(<CoachFamiliesContent families={FAMILIES} initialNeedsAttention={[]} />);
+    render(
+      <CoachFamiliesContent
+        page={makePage(FAMILIES)}
+        sort="activity_desc"
+        search=""
+        initialNeedsAttention={[]}
+      />,
+    );
     const callout = screen.getByTestId("families-low-callout");
     // Smith ($20) + Okafor ($0) are both below the threshold.
     expect(callout.textContent).toMatch(/^\s*2\s+families are running low/i);
@@ -74,11 +107,9 @@ describe("CoachFamiliesContent", () => {
   it("hides the low callout when nobody is low", () => {
     render(
       <CoachFamiliesContent
-        families={[
-          {
-            ...FAMILIES[1]!,
-          },
-        ]}
+        page={makePage([FAMILIES[1]!])}
+        sort="activity_desc"
+        search=""
         initialNeedsAttention={[]}
       />,
     );
@@ -86,7 +117,14 @@ describe("CoachFamiliesContent", () => {
   });
 
   it("badges low-balance rows with the 'Low' pill (and skips it for non-low rows)", () => {
-    render(<CoachFamiliesContent families={FAMILIES} initialNeedsAttention={[]} />);
+    render(
+      <CoachFamiliesContent
+        page={makePage(FAMILIES)}
+        sort="activity_desc"
+        search=""
+        initialNeedsAttention={[]}
+      />,
+    );
     const rows = screen.getAllByTestId("families-row");
     const smithRow = rows.find((row) =>
       row.textContent?.includes("Smith household"),
@@ -98,74 +136,96 @@ describe("CoachFamiliesContent", () => {
     expect(within(garciaRow).queryByText(/^low$/i)).toBeNull();
   });
 
-  it("defaults to sort by last activity (newest first), treating a null lastActivityAt as the oldest", () => {
-    render(<CoachFamiliesContent families={FAMILIES} initialNeedsAttention={[]} />);
-    // Garcia Nov 3 → Nguyen Nov 2 → Smith Nov 1 → Okafor (null, treated as 0)
-    expect(rowNames()).toEqual([
-      "Garcia household",
-      "Nguyen household",
-      "Smith household",
-      "Okafor household",
-    ]);
-  });
+  // Sort + search now round-trip through the URL — the server re-renders
+  // the paged list. The content component's job here is to translate UI
+  // input (sort dropdown, search form) into the right URL push, and to
+  // render the server-returned rows / empty-state. Each test below
+  // asserts one piece of that contract.
 
-  it("re-sorts by family name when the Sort dropdown changes", () => {
-    render(<CoachFamiliesContent families={FAMILIES} initialNeedsAttention={[]} />);
+  it("pushes ?sort=name_asc when the Sort dropdown switches to family name (and resets page)", () => {
+    render(
+      <CoachFamiliesContent
+        page={{ ...makePage(FAMILIES), page: 3 }}
+        sort="activity_desc"
+        search=""
+        initialNeedsAttention={[]}
+      />,
+    );
     fireEvent.change(screen.getByLabelText(/sort by/i), {
       target: { value: "name_asc" },
     });
-    expect(rowNames()).toEqual([
-      "Garcia household",
-      "Nguyen household",
-      "Okafor household",
-      "Smith household",
-    ]);
+    // Push contains sort=name_asc; page is dropped (page=1 is the default
+    // and stays off the URL so refresh lands on the first page).
+    expect(mockRouterPush).toHaveBeenCalled();
+    const href = mockRouterPush.mock.calls.at(-1)?.[0] as string;
+    expect(href).toMatch(/\?.*sort=name_asc/);
+    expect(href).not.toMatch(/page=/);
   });
 
-  it("re-sorts by balance ascending so low families bubble up when picked", () => {
-    render(<CoachFamiliesContent families={FAMILIES} initialNeedsAttention={[]} />);
+  it("pushes ?sort=balance_asc when the Sort dropdown switches to balance ascending", () => {
+    render(
+      <CoachFamiliesContent
+        page={makePage(FAMILIES)}
+        sort="activity_desc"
+        search=""
+        initialNeedsAttention={[]}
+      />,
+    );
     fireEvent.change(screen.getByLabelText(/sort by/i), {
       target: { value: "balance_asc" },
     });
-    expect(rowNames()).toEqual([
-      "Okafor household", // $0
-      "Smith household", // $20
-      "Garcia household", // $150
-      "Nguyen household", // $1,080
-    ]);
+    const href = mockRouterPush.mock.calls.at(-1)?.[0] as string;
+    expect(href).toMatch(/\?.*sort=balance_asc/);
   });
 
-  it("filters by family name via the search box", () => {
-    render(<CoachFamiliesContent families={FAMILIES} initialNeedsAttention={[]} />);
-    const search = screen.getByPlaceholderText(
-      /search by family or member name/i,
+  it("pushes ?search=<term> when the search form is submitted (and resets page)", () => {
+    render(
+      <CoachFamiliesContent
+        page={{ ...makePage(FAMILIES), page: 2 }}
+        sort="activity_desc"
+        search=""
+        initialNeedsAttention={[]}
+      />,
     );
-    fireEvent.change(search, { target: { value: "garcia" } });
-    expect(rowNames()).toEqual(["Garcia household"]);
+    const input = screen.getByTestId("families-search-input");
+    fireEvent.change(input, { target: { value: "garcia" } });
+    // The input is inside a <form>; submitting fires the push.
+    fireEvent.submit(input.closest("form")!);
+    const href = mockRouterPush.mock.calls.at(-1)?.[0] as string;
+    expect(href).toMatch(/\?.*search=garcia/);
+    expect(href).not.toMatch(/page=/);
   });
 
-  it("also filters by member name — useful when the family name doesn't match", () => {
-    render(<CoachFamiliesContent families={FAMILIES} initialNeedsAttention={[]} />);
-    const search = screen.getByPlaceholderText(
-      /search by family or member name/i,
-    );
-    fireEvent.change(search, { target: { value: "dana" } });
-    // Dana is a member of Smith household — the row should still appear.
-    expect(rowNames()).toEqual(["Smith household"]);
-  });
-
-  it("shows an empty-state when the search matches nothing", () => {
-    render(<CoachFamiliesContent families={FAMILIES} initialNeedsAttention={[]} />);
-    fireEvent.change(
-      screen.getByPlaceholderText(/search by family or member name/i),
-      { target: { value: "noone" } },
+  it("renders the 'No families match that search' empty-state when the server returns zero items for a search", () => {
+    render(
+      <CoachFamiliesContent
+        page={{
+          items: [],
+          page: 1,
+          pageSize: 20,
+          total: 0,
+          lowBalanceCount: 0,
+        }}
+        sort="activity_desc"
+        search="noone"
+        initialNeedsAttention={[]}
+      />,
     );
     expect(screen.queryAllByTestId("families-row")).toHaveLength(0);
-    expect(screen.getByText(/no families match that search/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/no families match that search/i),
+    ).toBeInTheDocument();
   });
 
   it("each row links to /coach/families/[id]", () => {
-    render(<CoachFamiliesContent families={FAMILIES} initialNeedsAttention={[]} />);
+    render(
+      <CoachFamiliesContent
+        page={makePage(FAMILIES)}
+        sort="activity_desc"
+        search=""
+        initialNeedsAttention={[]}
+      />,
+    );
     const smithRow = screen
       .getAllByTestId("families-row")
       .find((row) => row.textContent?.includes("Smith household"))!;
@@ -204,14 +264,23 @@ describe("CoachFamiliesContent — Refunds needing attention section", () => {
   });
 
   it("hides the whole section when initialNeedsAttention is empty", () => {
-    render(<CoachFamiliesContent families={FAMILIES} initialNeedsAttention={[]} />);
+    render(
+      <CoachFamiliesContent
+        page={makePage(FAMILIES)}
+        sort="activity_desc"
+        search=""
+        initialNeedsAttention={[]}
+      />,
+    );
     expect(screen.queryByTestId("families-needs-attention")).toBeNull();
   });
 
   it("renders a row per entry, showing family name for live and 'Deleted family' for anonymized", () => {
     render(
       <CoachFamiliesContent
-        families={FAMILIES}
+        page={makePage(FAMILIES)}
+        sort="activity_desc"
+        search=""
         initialNeedsAttention={[LIVE_ENTRY, DELETED_ENTRY]}
       />,
     );
@@ -238,7 +307,9 @@ describe("CoachFamiliesContent — Refunds needing attention section", () => {
     mockMarkHandled.mockResolvedValue({ kind: "ok" });
     render(
       <CoachFamiliesContent
-        families={FAMILIES}
+        page={makePage(FAMILIES)}
+        sort="activity_desc"
+        search=""
         initialNeedsAttention={[LIVE_ENTRY]}
       />,
     );

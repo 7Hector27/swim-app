@@ -607,7 +607,11 @@ describe("Changing settings keeps the current week", () => {
       fireEvent.click(nextWeek);
     });
     await waitFor(() => {
-      expect(screen.getByText(/Nov 23 \u2013 29, 2026/)).toBeInTheDocument();
+      // WeekNav renders both mobile ("Nov 23 to 29") and desktop
+      // ("Nov 23 to 29, 2026") spans with responsive visibility. Match
+      // the year-bearing desktop variant so the assertion also pins the
+      // year on the rendered label.
+      expect(screen.getByText(/Nov 23 to 29, 2026/)).toBeInTheDocument();
     });
 
     // Clear call history so the next assertion only sees the chip-change
@@ -634,8 +638,8 @@ describe("Changing settings keeps the current week", () => {
       }),
     );
     // The visible week label still shows Nov 23, not Nov 2.
-    expect(screen.getByText(/Nov 23 \u2013 29, 2026/)).toBeInTheDocument();
-    expect(screen.queryByText(/Nov 2 \u2013 8, 2026/)).toBeNull();
+    expect(screen.getByText(/Nov 23 to 29, 2026/)).toBeInTheDocument();
+    expect(screen.queryByText(/Nov 2 to 8, 2026/)).toBeNull();
     // "Find first available" was not re-invoked for the chip change.
     expect(mockFirstAvail).toHaveBeenCalledTimes(1);
   });

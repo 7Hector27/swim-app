@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import type { UpcomingLesson } from "@swim-app/shared";
+import { BookLink } from "@/components/BookGate";
 import LessonStatusBadge from "@/components/LessonStatusBadge";
 import BatchModeBadge from "@/components/BatchModeBadge";
 
@@ -16,12 +17,12 @@ export default function UpcomingLessonsCard({ lessons, total }: Props) {
         <h2 className="text-xl text-heading mb-4">Upcoming lessons</h2>
         <div className="flex flex-col items-center gap-4 py-8 text-center">
           <p className="text-sm text-text-secondary">No upcoming lessons booked yet.</p>
-          <a
+          <BookLink
             href="/dashboard/book"
             className="inline-flex items-center justify-center rounded-button bg-button-primary-background text-button-primary-text font-bold text-sm px-5 h-11 transition-opacity hover:opacity-90"
           >
             Book a lesson
-          </a>
+          </BookLink>
         </div>
       </div>
     );

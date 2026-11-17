@@ -9,9 +9,12 @@
 //    scrolls the page normally and never flips the week. Momentum-based
 //    like Sonner's dismiss: a quick flick commits even if the finger
 //    doesn't travel far.
-// 3. A dot row that marks every bookable week; tapping a dot jumps to
-//    that week. Dots can carry per-week badges (open-slots, parent's
-//    picks) when the caller passes them.
+// 3. (Optional) a dot row that marks every bookable week; tapping a dot
+//    jumps to that week. Dots can carry per-week badges (open-slots,
+//    parent's picks) when the caller passes them. /dashboard/book no
+//    longer passes `dots` — the two-row calendar card header replaced
+//    them — but the coach reschedule, coach booking, and parent
+//    reschedule flows still rely on the old dot strip.
 //
 // When focus lands anywhere inside the group, left and right arrow keys
 // move the week. The current week range is announced to screen readers
@@ -30,7 +33,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 
-import { addDaysToDateStr, formatWeekLabel, getMondayOfWeek } from "./helpers";
+import { addDaysToDateStr, getMondayOfWeek } from "./helpers";
 
 export interface WeekNavDot {
   mondayStr: string;
@@ -42,14 +45,23 @@ interface Props {
   mondayStr: string;
   onPrev: () => void;
   onNext: () => void;
-  onToday: () => void;
   todayStr: string;
   disablePrev?: boolean;
   disableNext?: boolean;
+  // Optional — /dashboard/book's calendar card renders Today in its
+  // own top-row header, so it leaves this undefined. Other callers
+  // (reschedule, coach booking) still want the inline link.
+  onToday?: () => void;
+  // Optional dot strip + jump handler, for flows that want to show
+  // every bookable week inline.
   dots?: {
     weeks: WeekNavDot[];
     onJump: (monday: string) => void;
   };
+  // Optional widget pinned to the right of the Prev/Next row — used by
+  // /dashboard/book to tuck the Week/Month toggle into the nav row
+  // instead of the page header, so the page title stays on one line.
+  rightSlot?: React.ReactNode;
 }
 
 // Pointer-distance (CSS px) and velocity (px/ms) thresholds. Match
@@ -69,6 +81,30 @@ const HORIZONTAL_ANGLE_RATIO = 1.5;
 function formatShortDate(dateStr: string): string {
   const date = new Date(`${dateStr}T12:00:00`);
   return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(date);
+}
+
+// "Nov 16 to 22" — mobile date range (no year, no month repeat when the
+// two ends share one). Falls back to "Oct 30 to Nov 5" across a
+// month boundary.
+function formatWeekRangeMobile(mondayStr: string): string {
+  const sundayStr = addDaysToDateStr(mondayStr, 6);
+  const monday = new Date(`${mondayStr}T12:00:00`);
+  const sunday = new Date(`${sundayStr}T12:00:00`);
+  const monthFmt = new Intl.DateTimeFormat("en-US", { month: "short" });
+  const startMonth = monthFmt.format(monday);
+  const endMonth = monthFmt.format(sunday);
+  if (startMonth === endMonth) {
+    return `${startMonth} ${monday.getDate()} to ${sunday.getDate()}`;
+  }
+  return `${startMonth} ${monday.getDate()} to ${endMonth} ${sunday.getDate()}`;
+}
+
+// "Nov 16 to 22, 2026" — tablet / desktop variant keeps the year for
+// context on wider screens.
+function formatWeekRangeDesktop(mondayStr: string): string {
+  const sundayStr = addDaysToDateStr(mondayStr, 6);
+  const sunday = new Date(`${sundayStr}T12:00:00`);
+  return `${formatWeekRangeMobile(mondayStr)}, ${sunday.getFullYear()}`;
 }
 
 function relativeWeekLabel(mondayStr: string, todayMonday: string): string {
@@ -91,6 +127,7 @@ export default function WeekNav({
   disablePrev,
   disableNext = false,
   dots,
+  rightSlot,
 }: Props) {
   const todayMonday = getMondayOfWeek(todayStr);
   const defaultDisablePrev = mondayStr === todayMonday;
@@ -187,6 +224,9 @@ export default function WeekNav({
   }
 
   const dragging = dragDelta !== 0;
+  // Compact labeled chevron (old-school): keeps "Last week" / "Next
+  // week" labels on tablet+ for callers that still use it. /dashboard/book
+  // passes rightSlot and gets its toggle pinned at the end of this row.
   const buttonBase =
     "inline-flex items-center justify-center gap-1.5 min-h-[48px] px-3 rounded-button border border-border text-text text-sm font-semibold transition-colors duration-150 motion-reduce:transition-none hover:bg-surface-soft active:scale-[0.97] motion-reduce:transform-none disabled:opacity-40 disabled:cursor-default disabled:hover:bg-transparent";
 
@@ -231,7 +271,8 @@ export default function WeekNav({
             }
           >
             <p className="text-base tablet:text-lg font-bold text-heading text-center truncate tabular-nums">
-              {formatWeekLabel(mondayStr)}
+              <span className="tablet:hidden">{formatWeekRangeMobile(mondayStr)}</span>
+              <span className="hidden tablet:inline">{formatWeekRangeDesktop(mondayStr)}</span>
             </p>
             <p className="text-xs text-text-secondary mt-0.5">
               {relativeWeekLabel(mondayStr, todayMonday)}
@@ -249,18 +290,22 @@ export default function WeekNav({
           <span className="hidden tablet:inline">Next week</span>
           <ChevronRightIcon />
         </button>
+
+        {rightSlot !== undefined && (
+          <div className="flex-shrink-0">{rightSlot}</div>
+        )}
       </div>
 
-      <div className="flex items-center justify-between gap-3 text-xs text-text-secondary">
-        <span className="flex-1 min-w-0 truncate" aria-hidden="true">
-          {!prevDisabled ? (
-            <span className="opacity-70">&larr; {formatShortDate(prevMondayStr)}</span>
-          ) : (
-            "\u00a0"
-          )}
-        </span>
+      {dots !== undefined && (
+        <div className="flex items-center justify-between gap-3 text-xs text-text-secondary">
+          <span className="flex-1 min-w-0 truncate" aria-hidden="true">
+            {!prevDisabled ? (
+              <span className="opacity-70">&larr; {formatShortDate(prevMondayStr)}</span>
+            ) : (
+              "\u00a0"
+            )}
+          </span>
 
-        {dots ? (
           <div
             className="flex items-center gap-1.5 flex-shrink-0"
             role="group"
@@ -292,18 +337,18 @@ export default function WeekNav({
               );
             })}
           </div>
-        ) : null}
 
-        <span className="flex-1 min-w-0 truncate text-right" aria-hidden="true">
-          {!nextDisabled ? (
-            <span className="opacity-70">{formatShortDate(nextMondayStr)} &rarr;</span>
-          ) : (
-            "\u00a0"
-          )}
-        </span>
-      </div>
+          <span className="flex-1 min-w-0 truncate text-right" aria-hidden="true">
+            {!nextDisabled ? (
+              <span className="opacity-70">{formatShortDate(nextMondayStr)} &rarr;</span>
+            ) : (
+              "\u00a0"
+            )}
+          </span>
+        </div>
+      )}
 
-      {!isCurrentWeek && (
+      {onToday !== undefined && !isCurrentWeek && (
         <button
           type="button"
           onClick={onToday}

@@ -15,7 +15,7 @@ export default async function ParentLessonsPage() {
 
   const [upcomingResult, pastResult] = await Promise.all([
     fetchUpcomingLessons(auth.accessToken, { limit: PAGE_SIZE + 1 }),
-    fetchPastLessons(auth.accessToken),
+    fetchPastLessons(auth.accessToken, { limit: PAGE_SIZE }),
   ]);
 
   // Primary — the lessons page is the lessons list. If either load fails,
@@ -31,5 +31,12 @@ export default async function ParentLessonsPage() {
   const initialHasMore = upcomingItems.length > PAGE_SIZE;
   const initialLessons = initialHasMore ? upcomingItems.slice(0, PAGE_SIZE) : upcomingItems;
 
-  return <ParentLessonsContent initialLessons={initialLessons} initialHasMore={initialHasMore} past={pastResult.data} />;
+  return (
+    <ParentLessonsContent
+      initialLessons={initialLessons}
+      initialHasMore={initialHasMore}
+      initialPast={pastResult.data.items}
+      initialPastCursor={pastResult.data.nextCursor}
+    />
+  );
 }

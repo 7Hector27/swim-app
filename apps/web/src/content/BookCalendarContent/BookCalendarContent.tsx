@@ -60,7 +60,7 @@ import {
 import { lessonPrice } from "@/lib/pricing";
 import { formatDollars } from "@/lib/formatDollars";
 import CalendarConfigRow from "./CalendarConfigRow";
-import WeekNav, { type WeekNavDot } from "./WeekNav";
+import WeekNav from "./WeekNav";
 import { useWeekPrefetch } from "./useWeekPrefetch";
 import Legend from "./Legend";
 import WeekGrid from "./WeekGrid";
@@ -259,18 +259,6 @@ export default function BookCalendarContent({
   const prevMondayStr = addDaysToDateStr(mondayStr, -7);
   const disableNextWeek = nextMondayStr > maxAdvanceDateLA;
   const disablePrevWeek = prevMondayStr < todayMondayStr;
-
-  // Every bookable Monday in the window, from today's Monday to the last
-  // Monday whose week has at least one in-window day. Feeds the WeekNav dots.
-  const weekMondays = useMemo(() => {
-    const list: string[] = [];
-    let monday = todayMondayStr;
-    while (monday <= maxAdvanceDateLA) {
-      list.push(monday);
-      monday = addDaysToDateStr(monday, 7);
-    }
-    return list;
-  }, [todayMondayStr, maxAdvanceDateLA]);
 
   const weekPrefetch = useWeekPrefetch({
     windowStart: todayMondayStr,
@@ -582,29 +570,6 @@ export default function BookCalendarContent({
   }, [bookingMode, plannedStartsAt]);
 
   const maxDailyLessonMinutes = weekData?.maxDailyLessonMinutes ?? 240;
-
-  // Per-week pick count across the booking window. Feeds the WeekNav dots so
-  // parents can see at a glance which weeks already have their picks.
-  const pickCountByMonday = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const pick of pickList) {
-      const monday = getMondayOfWeek(laDateFromIso(pick.startsAt));
-      map.set(monday, (map.get(monday) ?? 0) + 1);
-    }
-    return map;
-  }, [pickList]);
-
-  const weekDots = useMemo<WeekNavDot[]>(() => {
-    return weekMondays.map((weekMonday) => {
-      const hasOpenValue = weekPrefetch.hasOpenByMonday.get(weekMonday);
-      const pickCount = pickCountByMonday.get(weekMonday) ?? 0;
-      return {
-        mondayStr: weekMonday,
-        ...(hasOpenValue !== undefined && { hasOpen: hasOpenValue }),
-        pickCount,
-      };
-    });
-  }, [weekMondays, weekPrefetch.hasOpenByMonday, pickCountByMonday]);
 
   // Pre-compute the within-span and taken-by-picks sets for every slot in
   // the currently-visible week. Running once per week-fetch avoids repeating
@@ -1212,12 +1177,17 @@ export default function BookCalendarContent({
       } else if (result.kind === "insufficient_balance") {
         // Race between preview and submit — the server is authoritative, so
         // snap the review sheet into its insufficient-funds view with the
-        // numbers the server returned.
+        // numbers the server returned. Also pull the local balance back
+        // to the server's value so the review-summary block ("Total",
+        // "Your balance", "You need $X more") reflects reality — without
+        // this the summary keeps showing the stale, higher pre-submit
+        // balance and the parent sees inconsistent numbers.
         setBatchShortfall({
           balanceCents: result.balanceCents,
           priceCents: result.priceCents,
           shortfallCents: result.shortfallCents,
         });
+        setBalanceCents(result.balanceCents);
       } else if (result.kind === "forbidden") {
         setSubmitError(
           "You do not have permission to book lessons. Ask the household owner for access.",
@@ -1487,14 +1457,6 @@ export default function BookCalendarContent({
     setFetchSpec((prev) => ({ mode: "search", key: prev.key + 1 }));
   }
 
-  function jumpToMonday(monday: string) {
-    if (monday === mondayStr) return;
-    setCurrentDate(monday);
-    setSelectedStartsAt(null);
-    setTooSoon(false);
-    setFetchSpec((prev) => ({ mode: "week", monday, key: prev.key + 1 }));
-  }
-
   function handleMonthDayClick(date: string) {
     setCurrentDate(date);
     setCalendarView("week");
@@ -1552,10 +1514,57 @@ export default function BookCalendarContent({
   const selectedPhoneDayData =
     weekData?.days.find((day) => day.date === selectedPhoneDay) ?? null;
 
-  const VIEW_TOGGLE_BASE =
-    "min-h-[36px] px-4 rounded-full border text-sm font-semibold transition-colors duration-150 motion-reduce:transition-none";
-  const VIEW_TOGGLE_ACTIVE = "bg-heading text-background border-heading";
-  const VIEW_TOGGLE_INACTIVE = "border-border text-text hover:bg-surface-soft";
+  // Compact Week/Month toggle. Lives inside the calendar's navigation
+  // row (right next to the Prev/Next arrows) so the page title has its
+  // own full-width line and never wraps on narrow phones. Smaller padding
+  // and a segmented-pill look keep the control narrow enough to sit next
+  // to the chevron buttons on a 320px iPhone SE.
+  const viewToggle = (
+    <div
+      role="radiogroup"
+      aria-label="Calendar view"
+      className="inline-flex rounded-full border border-border overflow-hidden"
+    >
+      <button
+        type="button"
+        role="radio"
+        aria-checked={calendarView === "week"}
+        onClick={() => {
+          setCalendarView("week");
+          setFetchSpec((prev) => ({ mode: "search", key: prev.key + 1 }));
+        }}
+        className={[
+          "min-h-[36px] px-3 text-xs font-bold uppercase tracking-wider transition-colors duration-150 motion-reduce:transition-none",
+          calendarView === "week"
+            ? "bg-heading text-background"
+            : "text-text hover:bg-surface-soft",
+        ].join(" ")}
+      >
+        Week
+      </button>
+      <button
+        type="button"
+        role="radio"
+        aria-checked={calendarView === "month"}
+        onClick={() => {
+          setCalendarView("month");
+          setFetchSpec((prev) => ({
+            mode: "month",
+            monthStr: getMonthStr(currentDate),
+            key: prev.key + 1,
+          }));
+        }}
+        className={[
+          "min-h-[36px] px-3 text-xs font-bold uppercase tracking-wider border-l border-border transition-colors duration-150 motion-reduce:transition-none",
+          calendarView === "month"
+            ? "bg-heading text-background"
+            : "text-text hover:bg-surface-soft",
+        ].join(" ")}
+      >
+        Month
+      </button>
+    </div>
+  );
 
   // ── Early returns ──────────────────────────────────────────────────────────
 
@@ -1621,38 +1630,12 @@ export default function BookCalendarContent({
           setShortfall(state);
         }}
       />
-      {/* Heading + view toggle */}
-      <div className="flex items-center gap-4 flex-wrap">
-        <h1 className="font-heading text-3xl tablet:text-4xl text-heading flex-1">
-          Book a lesson
-        </h1>
-        <div className="flex gap-1">
-          <button
-            type="button"
-            onClick={() => {
-              setCalendarView("week");
-              setFetchSpec((prev) => ({ mode: "search", key: prev.key + 1 }));
-            }}
-            className={`${VIEW_TOGGLE_BASE} ${calendarView === "week" ? VIEW_TOGGLE_ACTIVE : VIEW_TOGGLE_INACTIVE}`}
-          >
-            Week
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setCalendarView("month");
-              setFetchSpec((prev) => ({
-                mode: "month",
-                monthStr: getMonthStr(currentDate),
-                key: prev.key + 1,
-              }));
-            }}
-            className={`${VIEW_TOGGLE_BASE} ${calendarView === "month" ? VIEW_TOGGLE_ACTIVE : VIEW_TOGGLE_INACTIVE}`}
-          >
-            Month
-          </button>
-        </div>
-      </div>
+      {/* Title now takes the whole row so it stays on one line on a
+          narrow phone. The Week/Month toggle has moved into the
+          calendar's navigation row below (next to the Prev/Next arrows). */}
+      <h1 className="font-heading text-3xl tablet:text-4xl text-heading">
+        Book a lesson
+      </h1>
 
       {swimmers.length === 0 && (
         <p className="text-sm text-text-secondary">
@@ -1681,150 +1664,165 @@ export default function BookCalendarContent({
         onSwimmersChange={handleSwimmersChange}
       />
 
-      {calendarView === "week" ? (
-        <WeekNav
-          mondayStr={mondayStr}
-          onPrev={prevWeek}
-          onNext={nextWeek}
-          onToday={goToday}
-          todayStr={today}
-          disablePrev={disablePrevWeek}
-          disableNext={disableNextWeek}
-          dots={{ weeks: weekDots, onJump: jumpToMonday }}
-        />
-      ) : (
-        <div className="flex items-center gap-2 flex-wrap">
-          <button
-            type="button"
-            onClick={prevMonth}
-            aria-label="Previous month"
-            disabled={disablePrevMonth}
-            className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-button border border-border text-text hover:bg-surface-soft transition-colors duration-150 disabled:opacity-40 disabled:cursor-default disabled:hover:bg-transparent"
-          >
-            &lsaquo;
-          </button>
-          <button
-            type="button"
-            onClick={nextMonth}
-            aria-label="Next month"
-            disabled={disableNextMonth}
-            className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-button border border-border text-text hover:bg-surface-soft transition-colors duration-150 disabled:opacity-40 disabled:cursor-default disabled:hover:bg-transparent"
-          >
-            &rsaquo;
-          </button>
-          <span className="text-sm font-semibold text-heading flex-1 text-center tablet:text-left">
-            {formatMonthLabel(currentDate)}
-          </span>
+      {/* Calendar card. Top-row header (toggle + Today), second nav
+          row (WeekNav for week view; a compact prev/label/next row for
+          month view), then availability state + the grid + a quiet one-
+          liner legend. */}
+      <section
+        aria-label="Calendar"
+        data-testid="calendar-card"
+        className="rounded-card border border-border bg-background p-4 tablet:p-5 flex flex-col gap-4"
+      >
+        <div className="flex items-center justify-between gap-3">
+          {viewToggle}
           <button
             type="button"
             onClick={goToday}
-            className="min-h-[44px] px-4 rounded-button border border-border text-sm text-text hover:bg-surface-soft transition-colors duration-150"
+            className="min-h-[36px] px-2 text-sm font-semibold text-link hover:text-link-hover transition-colors duration-150 motion-reduce:transition-none"
+            data-testid="calendar-today-link"
           >
             Today
           </button>
         </div>
-      )}
 
-      {calendarView === "week" && <Legend />}
+        {calendarView === "week" ? (
+          <WeekNav
+            mondayStr={mondayStr}
+            onPrev={prevWeek}
+            onNext={nextWeek}
+            todayStr={today}
+            disablePrev={disablePrevWeek}
+            disableNext={disableNextWeek}
+          />
+        ) : (
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={prevMonth}
+              aria-label="Previous month"
+              disabled={disablePrevMonth}
+              className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-button border border-border text-text hover:bg-surface-soft transition-colors duration-150 disabled:opacity-40 disabled:cursor-default disabled:hover:bg-transparent"
+            >
+              &lsaquo;
+            </button>
+            <span className="text-base font-bold text-heading flex-1 min-w-0 text-center tabular-nums truncate">
+              {formatMonthLabel(currentDate)}
+            </span>
+            <button
+              type="button"
+              onClick={nextMonth}
+              aria-label="Next month"
+              disabled={disableNextMonth}
+              className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-button border border-border text-text hover:bg-surface-soft transition-colors duration-150 disabled:opacity-40 disabled:cursor-default disabled:hover:bg-transparent"
+            >
+              &rsaquo;
+            </button>
+          </div>
+        )}
 
-      {isFetching && (
-        <div className="flex items-center gap-3 text-text-secondary py-8 justify-center">
-          <svg
-            className="animate-spin"
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            aria-hidden="true"
-          >
-            <path d="M21 12a9 9 0 1 1-6.219-8.56" />
-          </svg>
-          <span className="text-sm">Loading availability…</span>
-        </div>
-      )}
+        {isFetching && (
+          <div className="flex items-center gap-3 text-text-secondary py-8 justify-center">
+            <svg
+              className="animate-spin"
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              aria-hidden="true"
+            >
+              <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+            </svg>
+            <span className="text-sm">Loading availability…</span>
+          </div>
+        )}
 
-      {!isFetching && fetchError !== null && (
-        <div className="rounded-card border border-border p-6 flex flex-col items-center gap-4">
-          {calendarView === "week" && (
-            <div className="hidden tablet:grid grid-cols-7 gap-1 w-full">
-              {Array.from({ length: 7 }, (_, index) => (
-                <div key={index} className="text-center text-xs text-text-secondary py-2">
-                  {formatDayLabel(addDaysToDateStr(mondayStr, index))}
-                </div>
-              ))}
+        {!isFetching && fetchError !== null && (
+          <div className="rounded-card border border-border p-6 flex flex-col items-center gap-4">
+            {calendarView === "week" && (
+              <div className="hidden tablet:grid grid-cols-7 gap-1 w-full">
+                {Array.from({ length: 7 }, (_, index) => (
+                  <div key={index} className="text-center text-xs text-text-secondary py-2">
+                    {formatDayLabel(addDaysToDateStr(mondayStr, index))}
+                  </div>
+                ))}
+              </div>
+            )}
+            <p className="text-sm text-text-secondary">{fetchError}</p>
+            <button
+              type="button"
+              onClick={() => setFetchSpec((spec) => ({ ...spec, key: spec.key + 1 }))}
+              className="min-h-[44px] px-5 rounded-button border-2 border-button-outline text-button-outline text-sm font-semibold transition-opacity hover:opacity-70 active:scale-[0.97]"
+            >
+              Retry
+            </button>
+          </div>
+        )}
+
+        {!isFetching && noAvailability && calendarView === "week" && (
+          <p className="text-sm text-text-secondary py-4 text-center">
+            No open times in the next 10 weeks. Check back later or contact Jason directly.
+          </p>
+        )}
+
+        {calendarView === "month" && !isFetching && fetchError === null && monthData !== null && (
+          <MonthGrid
+            monthStr={monthStr}
+            days={monthData.days.map((day) => ({
+              date: day.date,
+              dayState: day.dayState,
+              openCount: day.openCount,
+              totalCount: day.totalCount,
+            }))}
+            todayStr={today}
+            onDayClick={handleMonthDayClick}
+          />
+        )}
+
+        {calendarView === "week" && !isFetching && fetchError === null && weekData !== null && !noAvailability && (
+          <>
+            <div className="hidden tablet:block">
+              <WeekGrid
+                days={weekData.days}
+                durationMinutes={durationMinutes}
+                selectedStartsAt={bookingMode === "single" ? selectedStartsAt : null}
+                pickStartsSet={pickStartsSet}
+                pickSpanSet={pickSpanSet}
+                plannedStartsAtSet={plannedSet}
+                flagReasonByStart={flagReasonByStart}
+                takenByPicksSet={takenByPicksSet}
+                todayStr={today}
+                onSlotClick={handleSlotClick}
+              />
             </div>
-          )}
-          <p className="text-sm text-text-secondary">{fetchError}</p>
-          <button
-            type="button"
-            onClick={() => setFetchSpec((spec) => ({ ...spec, key: spec.key + 1 }))}
-            className="min-h-[44px] px-5 rounded-button border-2 border-button-outline text-button-outline text-sm font-semibold transition-opacity hover:opacity-70 active:scale-[0.97]"
-          >
-            Retry
-          </button>
-        </div>
-      )}
 
-      {!isFetching && noAvailability && calendarView === "week" && (
-        <p className="text-sm text-text-secondary py-4 text-center">
-          No open times in the next 10 weeks. Check back later or contact Jason directly.
-        </p>
-      )}
+            <div className="tablet:hidden flex flex-col gap-4">
+              <PhoneDayStrip
+                days={weekData.days}
+                selectedDayDate={selectedPhoneDay}
+                todayStr={today}
+                onDaySelect={setSelectedPhoneDay}
+              />
+              <PhoneTimeList
+                day={selectedPhoneDayData}
+                durationMinutes={durationMinutes}
+                selectedStartsAt={bookingMode === "single" ? selectedStartsAt : null}
+                pickStartsSet={pickStartsSet}
+                pickSpanSet={pickSpanSet}
+                plannedStartsAtSet={plannedSet}
+                flagReasonByStart={flagReasonByStart}
+                takenByPicksSet={takenByPicksSet}
+                onSlotClick={handleSlotClick}
+              />
+            </div>
+          </>
+        )}
 
-      {calendarView === "month" && !isFetching && fetchError === null && monthData !== null && (
-        <MonthGrid
-          monthStr={monthStr}
-          days={monthData.days.map((day) => ({
-            date: day.date,
-            dayState: day.dayState,
-            openCount: day.openCount,
-            totalCount: day.totalCount,
-          }))}
-          todayStr={today}
-          onDayClick={handleMonthDayClick}
-        />
-      )}
-
-      {calendarView === "week" && !isFetching && fetchError === null && weekData !== null && !noAvailability && (
-        <>
-          <div className="hidden tablet:block">
-            <WeekGrid
-              days={weekData.days}
-              durationMinutes={durationMinutes}
-              selectedStartsAt={bookingMode === "single" ? selectedStartsAt : null}
-              pickStartsSet={pickStartsSet}
-              pickSpanSet={pickSpanSet}
-              plannedStartsAtSet={plannedSet}
-              flagReasonByStart={flagReasonByStart}
-              takenByPicksSet={takenByPicksSet}
-              todayStr={today}
-              onSlotClick={handleSlotClick}
-            />
-          </div>
-
-          <div className="tablet:hidden flex flex-col gap-4">
-            <PhoneDayStrip
-              days={weekData.days}
-              selectedDayDate={selectedPhoneDay}
-              todayStr={today}
-              onDaySelect={setSelectedPhoneDay}
-            />
-            <PhoneTimeList
-              day={selectedPhoneDayData}
-              durationMinutes={durationMinutes}
-              selectedStartsAt={bookingMode === "single" ? selectedStartsAt : null}
-              pickStartsSet={pickStartsSet}
-              pickSpanSet={pickSpanSet}
-              plannedStartsAtSet={plannedSet}
-              flagReasonByStart={flagReasonByStart}
-              takenByPicksSet={takenByPicksSet}
-              onSlotClick={handleSlotClick}
-            />
-          </div>
-        </>
-      )}
+        {calendarView === "week" && !isFetching && fetchError === null && (
+          <Legend />
+        )}
+      </section>
 
       {calendarView === "week" && (
         <>
@@ -1839,6 +1837,7 @@ export default function BookCalendarContent({
               tooSoon={tooSoon}
               durationMinutes={durationMinutes}
               swimmerIds={swimmerIds}
+              swimmers={swimmers}
               needsApproval={weekData?.needsApproval ?? false}
               bookingMinAdvanceHours={bookingMinAdvanceHours}
               balanceCents={balanceCents}

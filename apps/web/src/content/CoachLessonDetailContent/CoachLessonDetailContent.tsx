@@ -117,7 +117,12 @@ export default function CoachLessonDetailContent({ lesson, notes, toastAction }:
             <div className="rounded-card border border-border p-5 tablet:p-6">
               <h2 className="text-xl text-heading mb-4">Summary</h2>
               <dl className="flex flex-col gap-3">
-                <Row label="Date">{formatDateLabel(lesson.startsAt)}</Row>
+                <Row label="Date">
+                  <span className="whitespace-nowrap">
+                    <span className="tablet:hidden">{formatShortDateLabel(lesson.startsAt)}</span>
+                    <span className="hidden tablet:inline">{formatDateLabel(lesson.startsAt)}</span>
+                  </span>
+                </Row>
                 <Row label="Time">{`${formatTime(startsAt)} to ${formatTime(endsAt)}`}</Row>
                 <Row label="Pool">{lesson.locationName}</Row>
                 {poolAddress !== null && <Row label="Address">{poolAddress}</Row>}
@@ -423,6 +428,15 @@ function formatDateLabel(startsAt: string): string {
     timeZone: "America/Los_Angeles",
     weekday: "long",
     month: "long",
+    day: "numeric",
+  }).format(new Date(startsAt));
+}
+
+function formatShortDateLabel(startsAt: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Los_Angeles",
+    weekday: "short",
+    month: "short",
     day: "numeric",
   }).format(new Date(startsAt));
 }
