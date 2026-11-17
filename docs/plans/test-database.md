@@ -281,6 +281,7 @@ Refuse to run integration tests unless:
 ## Known issues (pre-existing, flagged for later)
 
 - `apps/api/src/db/migrations/0027_third_killer_shrike.sql` is orphaned on disk — not referenced by `meta/_journal.json`, which only tracks `0027_chunky_monster_badoon`. Drizzle applies 76 migrations, matching the journal. The orphan file does not run and does not break `db:test:migrate`, but it will trip up anyone reading the migrations folder expecting a contiguous sequence. Not touched in this branch.
+- `coachBulkCancelRefund.integration.test.ts` is flaky under `pnpm test:integration`. Observed on 2026-11-17: the suite failed once in setup/teardown and passed on an immediate rerun. Error: `PostgresError: update or delete on table "bulk_cancellations" violates foreign key constraint "lesson_email_outbox_bulk_cancellation_id_bulk_cancellations_id_" on table "lesson_email_outbox"`. Suspected cause: a lesson-email-outbox row still references a `bulk_cancellations` row that the suite's cleanup tries to delete before the outbox row is cleared. Fix later by either ordering the test teardown (outbox rows first) or switching the FK to `ON DELETE SET NULL` / cascade if ADR 033 allows. Not a product bug; only trips the test when the suite is run in a dirty state.
 
 ## Verified test seed requirements
 
