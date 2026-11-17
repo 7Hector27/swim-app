@@ -59,14 +59,14 @@ afterAll(async () => {
 
 describe("GET /coach/households/balances", () => {
   it("returns a paged roster with { items, page, pageSize, total, lowBalanceCount } and populated per-household fields", async () => {
-    const res = await request(app)
+    // Page 1 proves the envelope shape; the three seeded households may
+    // sit on any page because other test files share the DB, so we walk
+    // the pages after that to locate each by id.
+    const firstRes = await request(app)
       .get("/coach/households/balances")
       .set("Authorization", `Bearer ${coach.accessToken}`);
-    expect(res.status).toBe(200);
-
-    // Envelope — the response is an object with the paging metadata
-    // alongside the items array, not a bare list.
-    expect(res.body).toEqual(
+    expect(firstRes.status).toBe(200);
+    expect(firstRes.body).toEqual(
       expect.objectContaining({
         items: expect.any(Array),
         page: 1,
@@ -75,41 +75,48 @@ describe("GET /coach/households/balances", () => {
         lowBalanceCount: expect.any(Number),
       }),
     );
-    expect(Array.isArray(res.body.items)).toBe(true);
-    // The three seeded households fit on page 1 (pageSize is 20), so the
-    // total covers at least them. Other households seeded by earlier
-    // suites may inflate the count, which is fine.
-    expect(res.body.total).toBeGreaterThanOrEqual(3);
+    expect(Array.isArray(firstRes.body.items)).toBe(true);
+    expect(firstRes.body.total).toBeGreaterThanOrEqual(3);
+    expect(firstRes.body.lowBalanceCount).toBeGreaterThanOrEqual(2);
 
-    const rowA = res.body.items.find(
-      (row: { householdId: string }) => row.householdId === familyA.householdId,
-    );
-    const rowB = res.body.items.find(
-      (row: { householdId: string }) => row.householdId === familyB.householdId,
-    );
-    const rowC = res.body.items.find(
-      (row: { householdId: string }) => row.householdId === familyC.householdId,
-    );
+    const total = firstRes.body.total as number;
+    const pageSize = firstRes.body.pageSize as number;
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+    type Row = {
+      householdId: string;
+      balanceCents: number;
+      lastActivityAt: string | null;
+      activeSwimmerCount: number;
+      memberFullNames: string[];
+    };
+    const rows: Row[] = [...firstRes.body.items];
+    for (let page = 2; page <= totalPages; page += 1) {
+      const nextRes = await request(app)
+        .get(`/coach/households/balances?page=${page}`)
+        .set("Authorization", `Bearer ${coach.accessToken}`);
+      expect(nextRes.status).toBe(200);
+      expect(nextRes.body.page).toBe(page);
+      rows.push(...(nextRes.body.items as Row[]));
+    }
+
+    const rowA = rows.find((row) => row.householdId === familyA.householdId);
+    const rowB = rows.find((row) => row.householdId === familyB.householdId);
+    const rowC = rows.find((row) => row.householdId === familyC.householdId);
 
     expect(rowA).toBeDefined();
-    expect(rowA.balanceCents).toBe(24_000);
-    expect(typeof rowA.lastActivityAt).toBe("string");
-    expect(rowA.activeSwimmerCount).toBe(0);
-    expect(Array.isArray(rowA.memberFullNames)).toBe(true);
+    expect(rowA!.balanceCents).toBe(24_000);
+    expect(typeof rowA!.lastActivityAt).toBe("string");
+    expect(rowA!.activeSwimmerCount).toBe(0);
+    expect(Array.isArray(rowA!.memberFullNames)).toBe(true);
 
     expect(rowB).toBeDefined();
-    expect(rowB.balanceCents).toBe(100);
-    expect(typeof rowB.lastActivityAt).toBe("string");
+    expect(rowB!.balanceCents).toBe(100);
+    expect(typeof rowB!.lastActivityAt).toBe("string");
 
     // Family C has no ledger rows → balance 0, lastActivityAt null.
     expect(rowC).toBeDefined();
-    expect(rowC.balanceCents).toBe(0);
-    expect(rowC.lastActivityAt).toBeNull();
-
-    // lowBalanceCount is scoped to the same filter as items. familyB
-    // ($1) and familyC ($0) are both below the one-lesson threshold
-    // ($60); other seeded households may inflate the count too.
-    expect(res.body.lowBalanceCount).toBeGreaterThanOrEqual(2);
+    expect(rowC!.balanceCents).toBe(0);
+    expect(rowC!.lastActivityAt).toBeNull();
   });
 
   it("returns 403 to a non-coach parent caller", async () => {
