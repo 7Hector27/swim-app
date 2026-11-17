@@ -214,3 +214,95 @@ The API never reads `SUPABASE_JWT_SECRET` directly — token verification goes t
 - **Why it matters here:** Boot succeeds with a truncated or stub paste; the failure is deferred until first use (first push send, first service-role call during account deletion). Operationally that's a lost hour debugging what should be a boot-time rejection. The service-role key is the biggest risk — a weak or pasted-partial value boots cleanly and only breaks when `apps/api/src/services/accountDeletion/deletion.ts` tries to delete the auth user.
 - **Fix:** In `apps/api/src/lib/env.ts`, add length / shape asserts: `.min(32)` or 43 / 87 char constants for VAPID keys (ECDH P-256 private key is 32 bytes = 43 chars base64url; public is 65 bytes = 87 chars); `.min(100)` or a JWT-shape regex (`^ey[A-Za-z0-9_-]+\.ey[A-Za-z0-9_-]+\..+$`) on the service-role key. Optional belt-and-suspenders `.min(32)` on Stripe and Resend keys.
 - **Size:** S (handful of lines in one file).
+
+---
+
+## Requests and redirects
+
+### 13. Open redirect
+
+- **Status:** safe.
+- **Evidence:** A single validator — `packages/shared/src/lib/isSafeReturnTo.ts:9-25` — rejects protocol-relative (`//`), backslash variants, `%5C`, control chars, newline injection, null-byte, and anything whose parsed `origin !== siteOrigin`. It has its own test suite at `packages/shared/src/__tests__/isSafeReturnTo.test.ts:16-36`. Every user-supplied redirect target is gated through it:
+  - `apps/web/src/app/auth/confirm/route.ts:27`
+  - `apps/web/src/content/SignupContent/actions.ts:15`
+  - `apps/web/src/content/LoginContent/actions.ts:29`
+  - `apps/web/src/content/PolicyUpdatedContent/PolicyUpdatedContent.tsx:43` (`safeNext = isSafeReturnTo(next, siteUrl) ? next : "/dashboard"`)
+  - `apps/web/src/app/coach/swimmers/[id]/evaluate/page.tsx:91`
+  - `apps/web/src/content/EvaluateContent/actions.ts:199`
+  - `apps/api/src/app.ts:192` (`emailRedirectTo`)
+  Stripe `success_url` / `cancel_url` at `apps/api/src/services/stripe/checkout.ts:47-48` are built from `input.siteUrl` + `body.successReturnTo`, where the Zod schema forbids schemes/hosts. `window.location.href = result.url` assignments in `BookCalendarContent:1333`, `AccountBalanceContent:300,505`, `InsufficientBalanceModal:259` consume the Stripe-returned Checkout session URL (originates from Stripe server-side, not from the browser).
+- **Why it matters here:** Open redirects enable phishing landing-page swaps on the auth flow and OAuth token theft. The universal gate makes the failure mode visible — a future redirect that forgets `isSafeReturnTo` would stand out in review.
+- **Fix:** None.
+- **Size:** —.
+
+### 14. Clickjacking / frame-ancestors
+
+- **Status:** issue (web); safe (api).
+- **Evidence:** `apps/api/src/app.ts:58` — `app.use(helmet())`; Helmet's defaults send `X-Frame-Options: SAMEORIGIN` and a CSP with `frame-ancestors 'self'` on API responses (but the API is JSON-only, so this mostly doesn't matter in practice). `apps/web/next.config.ts` has no `headers()`, no CSP, no `X-Frame-Options`. Grep for `Content-Security-Policy|frame-ancestors|X-Frame-Options` across `apps/web` returned zero matches. No `middleware.ts` injects security headers.
+- **Why it matters here:** Without frame-ancestors, any attacker-controlled page can `<iframe>` `axiomaquatics.io` for UI-redress on authenticated pages — particularly dangerous on `/dashboard/book`, `/me/deletion`, and `/dashboard/balance` where a mis-click moves money or deletes an account.
+- **Fix:** Add a `headers()` block in `next.config.ts` emitting at minimum `Content-Security-Policy: frame-ancestors 'none'` (or `'self'`) and `X-Frame-Options: DENY`. Co-land with the item 18 CSP for a single header configuration.
+- **Size:** S (headers only) / M (full CSP — see item 18).
+
+### 15. SSRF
+
+- **Status:** safe.
+- **Evidence:** `grep "fetch(" apps/api/src/routes` returns no matches. `apps/api/src/services/` only has gaxios / `google-auth-library` references at `googleCalendarClient.ts:169,353` and `googleCalendarSync.ts:62,483` — no raw user-URL `fetch`. `apps/api/src/routes/integrationsGoogle.ts:62` — `googleClient.getAuthorizeUrl(env.googleOAuth, state)` builds the URL from server env; the callback at `:72-77` reads `code` / `state` from a Zod-validated schema and redirects to a fixed `/account`. Stripe, Resend, Google Calendar outbound calls use their official SDK clients whose URLs are not user-controlled.
+- **Why it matters here:** SSRF could reach Supabase admin, Stripe, or Railway metadata. None of that risk is present.
+- **Fix:** None.
+- **Size:** —.
+
+### 16. Path traversal
+
+- **Status:** safe.
+- **Evidence:** Grep across `apps/` for `path.join|path.resolve|fs.readFile|fs.writeFile|fs.createReadStream`: all `path.join` / `path.resolve` calls are build/boot constants rooted at `__dirname` (`apps/web/next.config.ts:34`, `apps/web/vitest.config.ts:10,14`, `apps/api/src/db/migrate.ts:15`, `apps/api/src/db/predev.ts:42`). Every other `issue.path.join(".")` match is a Zod `issue.path` array join, not filesystem. No route handler reads a file whose path originates from `req.query`, `req.params`, or `req.body`.
+- **Why it matters here:** Classic path-traversal requires user input flowing into `fs`. Absent.
+- **Fix:** None.
+- **Size:** —.
+
+### 17. Subdomain takeover
+
+- **Status:** needs manual check.
+- **Evidence:** Domain inventory extracted from `docs/deployment.md:7-34,70` and `apps/api/src/__tests__/env.test.ts:31-55`. Hand this to DNS:
+
+  - [ ] `axiomaquatics.io` (apex) — Vercel (prod web). Confirm A/ALIAS still points to Vercel.
+  - [ ] `www.axiomaquatics.io` — Vercel (prod web).
+  - [ ] `api.axiomaquatics.io` — Railway (prod API). Verify CNAME resolves to Railway and the TLS cert is live.
+  - [ ] `dev.axiomaquatics.io` — Vercel (dev web).
+  - [ ] `api-dev.axiomaquatics.io` — Railway (dev API).
+  - [ ] `send.axiomaquatics.io` — Resend sender domain (SPF/DKIM/DMARC). **Highest-value target**: if the Resend domain is ever deleted without deleting the DNS records, an attacker can reclaim it and send DKIM-aligned mail as the business.
+  - [ ] Apex MX — Google Workspace per `docs/deployment.md:7`. Keep intact.
+  - [ ] No references to `axiomaquatics.com`, `axiom-aquatics.*`, or `*.vercel.app` / `*.up.railway.app` preview subdomains in code.
+  - [ ] Supabase project domain (`<project>.supabase.co`) — Supabase-owned, no action.
+
+- **Why it matters here:** A CNAME pointing at a no-longer-claimed Vercel / Railway / Resend tenant is the classic takeover vector. `send.axiomaquatics.io` is the highest-risk subdomain because mail from a reclaimed tenant is DKIM-aligned and trivially phishes staff + families.
+- **Fix:** DNS audit by Hector; no code change.
+- **Size:** S (walking the checklist).
+
+### 18. Third-party scripts / CSP
+
+- **Status:** issue (no CSP; small external surface makes adding one easy).
+- **Evidence:**
+  - `apps/web/src/app/layout.tsx:3` — `import { Fraunces, Figtree } from "next/font/google";`. `next/font/google` self-hosts the font files at build time (downloads into the `.next` bundle, serves same-origin). No runtime request to Google.
+  - No `next/script` usage — only the `next/font/google` hit.
+  - No Stripe.js in `apps/web/package.json`; checkout happens via a full-page navigation (`window.location.href = result.url` → `checkout.stripe.com`), not an embedded SDK.
+  - `@supabase/supabase-js` calls `NEXT_PUBLIC_SUPABASE_URL` (`<project>.supabase.co`) directly from the browser.
+  - External `https://…` references in `apps/web/src`: `instagram.com/swimcoach_jason` (`siteLinks.ts:10`), `venmo.com/u/Jason-Guzman-18` (`siteLinks.ts:16`), `www.google.com/maps/search/` (`LessonDetailContent.tsx:487`). All are plain navigation links. Every `target="_blank"` carries `rel="noopener noreferrer"` or `rel="noreferrer"` (e.g. `LessonDetailContent.tsx:171`).
+  - No `dangerouslySetInnerHTML` outside tests.
+  - No CSP: `grep "Content-Security-Policy"` across `apps/web` returned zero matches. The API's Helmet default CSP only covers JSON responses.
+- **Why it matters here:** The browser's only runtime cross-origin destinations are `<project>.supabase.co`, `api(-dev)?.axiomaquatics.io`, and `checkout.stripe.com` (navigation only). A tight CSP would therefore be short and low-risk. Without it, any future dependency compromise that lands an inline exfil script runs to completion.
+- **Fix:** Add a `headers()` block in `next.config.ts` with the CSP below plus `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy: camera=(), microphone=(), geolocation=()`. Start in `Content-Security-Policy-Report-Only` for one deploy, promote after dev doesn't trip violations.
+
+  ```
+  default-src 'self';
+  script-src 'self';
+  style-src 'self' 'unsafe-inline';          /* Tailwind v4 injects runtime styles */
+  img-src 'self' data: blob:;
+  font-src 'self';
+  connect-src 'self' https://*.supabase.co https://api.axiomaquatics.io https://api-dev.axiomaquatics.io;
+  frame-ancestors 'none';
+  form-action 'self' https://checkout.stripe.com;
+  base-uri 'self';
+  object-src 'none';
+  ```
+
+- **Size:** M.
