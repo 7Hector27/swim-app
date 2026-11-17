@@ -10,6 +10,7 @@ export const metadata: Metadata = {
 
 const NOTICE_MESSAGES: Record<string, string> = {
   "link-expired": "That link expired or was already used.",
+  "password-updated": "Password updated. Log in with your new password.",
 };
 
 export default async function LoginPage({
