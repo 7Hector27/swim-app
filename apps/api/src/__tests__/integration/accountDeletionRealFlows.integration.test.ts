@@ -67,6 +67,10 @@ import {
 import { __resetEnvCacheForTests } from "../../lib/env";
 import { __setClockForTests } from "../../lib/clock";
 import { __settlePendingCoachAlertsForTests } from "../../lib/lessonApproval";
+import {
+  getOrCreateCoachNotificationPreferences,
+  updateCoachNotificationPreferences,
+} from "../../services/notifications/preferences";
 import { drainLessonEmailOutbox } from "../../services/emails/drain";
 import {
   __resetSenderTransportForTests,
@@ -300,6 +304,11 @@ async function createSwimmer(user: TestUser, firstName: string): Promise<string>
 
 async function makeCoach(userId: string): Promise<void> {
   await adminDb().update(profiles).set({ role: "coach" }).where(eq(profiles.id, userId));
+  // Disable quiet hours so sendCoachNotification emits terminal rows
+  // regardless of wall-clock time. The sender reads `new Date()` directly
+  // for the quiet-hours gate, so __setClockForTests does not affect it.
+  await getOrCreateCoachNotificationPreferences(userId);
+  await updateCoachNotificationPreferences(userId, { quietHoursEnabled: false });
 }
 
 async function bookSingle(opts: {
