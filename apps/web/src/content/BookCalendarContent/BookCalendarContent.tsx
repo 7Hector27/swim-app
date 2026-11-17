@@ -1177,12 +1177,17 @@ export default function BookCalendarContent({
       } else if (result.kind === "insufficient_balance") {
         // Race between preview and submit — the server is authoritative, so
         // snap the review sheet into its insufficient-funds view with the
-        // numbers the server returned.
+        // numbers the server returned. Also pull the local balance back
+        // to the server's value so the review-summary block ("Total",
+        // "Your balance", "You need $X more") reflects reality — without
+        // this the summary keeps showing the stale, higher pre-submit
+        // balance and the parent sees inconsistent numbers.
         setBatchShortfall({
           balanceCents: result.balanceCents,
           priceCents: result.priceCents,
           shortfallCents: result.shortfallCents,
         });
+        setBalanceCents(result.balanceCents);
       } else if (result.kind === "forbidden") {
         setSubmitError(
           "You do not have permission to book lessons. Ask the household owner for access.",

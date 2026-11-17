@@ -245,14 +245,27 @@ describe("Multiple mode balance + insufficient-funds", () => {
     await screen.findByTestId("review-sheet");
 
     await waitFor(() => {
+      // Footer swaps the Book button for the add-funds stack when the
+      // review set exceeds balance.
       expect(screen.getByTestId("review-insufficient-balance")).toBeInTheDocument();
     });
     expect(screen.queryByTestId("review-book")).toBeNull();
     expect(screen.getByTestId("review-buy-package")).toBeInTheDocument();
-    const summary = screen.getByTestId("review-insufficient-balance").textContent ?? "";
-    expect(summary).toMatch(/Balance.*\$50\.00/);
-    expect(summary).toMatch(/Total.*\$120\.00/);
-    expect(summary).toMatch(/Short by.*\$70\.00/);
+    // Dollar amounts now live in the dedicated summary block above the
+    // button stack (Total, Your balance, and the "You need $X more"
+    // danger line only when short). Wait for the debounced preview to
+    // resolve so previewPicks is non-empty and the summary block renders.
+    await waitFor(() => {
+      expect(screen.getByTestId("review-summary-balance").textContent).toContain(
+        "$50.00",
+      );
+    });
+    expect(screen.getByTestId("review-summary-total").textContent).toContain(
+      "$120.00",
+    );
+    expect(
+      screen.getByTestId("review-summary-shortfall").textContent,
+    ).toMatch(/You need\s*\$70\.00\s*more/);
   });
 
   it("maps a 422 insufficient_balance from the batch API to the review-sheet insufficient-funds view — not to 'Some lessons are no longer available'", async () => {
@@ -287,10 +300,22 @@ describe("Multiple mode balance + insufficient-funds", () => {
       fireEvent.click(bookBtn);
     });
     await waitFor(() => {
+      // The 422 insufficient_balance response must swap the Book button
+      // for the add-funds stack, not fall through to the generic
+      // "Some lessons are no longer available" banner.
       expect(screen.getByTestId("review-insufficient-balance")).toBeInTheDocument();
     });
-    const summary = screen.getByTestId("review-insufficient-balance").textContent ?? "";
-    expect(summary).toMatch(/Short by.*\$70\.00/);
+    // The server's balance snaps into the local state on 422, so the
+    // summary block reflects the authoritative numbers (previously
+    // showed the stale pre-submit balance).
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("review-summary-shortfall").textContent,
+      ).toMatch(/You need\s*\$70\.00\s*more/);
+    });
+    expect(screen.getByTestId("review-summary-balance").textContent).toContain(
+      "$50.00",
+    );
     // Should NOT fall through to the availability copy.
     expect(screen.queryByText(/no longer available/i)).toBeNull();
     // And Book is no longer rendered — only the insufficient-funds view.
@@ -496,10 +521,17 @@ describe("Recurring mode balance + insufficient-funds", () => {
       fireEvent.click(bookBtn);
     });
     await waitFor(() => {
+      // Same mapping on recurring: server's 422 flips the footer to the
+      // insufficient-funds stack and snaps the local balance to the
+      // server's number so the summary shortfall reads correctly.
       expect(screen.getByTestId("review-insufficient-balance")).toBeInTheDocument();
     });
     expect(screen.queryByText(/no longer available/i)).toBeNull();
-    const summary = screen.getByTestId("review-insufficient-balance").textContent ?? "";
-    expect(summary).toMatch(/Short by.*\$140\.00/);
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("review-summary-shortfall").textContent,
+      ).toMatch(/You need\s*\$140\.00\s*more/);
+    });
+    expect(screen.queryByTestId("review-book")).toBeNull();
   });
 });
