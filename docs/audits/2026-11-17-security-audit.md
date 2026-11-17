@@ -306,3 +306,23 @@ The API never reads `SUPABASE_JWT_SECRET` directly — token verification goes t
   ```
 
 - **Size:** M.
+
+---
+
+## Confirmed not applicable
+
+### 19. SMS pumping
+
+- **Status:** not applicable.
+- **Evidence:** `grep -i "twilio|\\bsms\\b|short.?code"` across `apps/` and `packages/` returns zero matches. No SMS sender dependency in `package.json`.
+- **Why it matters here:** SMS pumping relies on an attacker-triggerable SMS send. Nothing in the app sends SMS, so the class of attack doesn't apply.
+- **Fix:** —.
+- **Size:** —.
+
+### 20. Prompt injection / LLM features
+
+- **Status:** not applicable.
+- **Evidence:** `grep -i "openai|anthropic|claude-|gpt-|langchain|\\bllm\\b|\\bembedding\\b"` across `apps/` and `packages/` returns zero matches. No AI SDK in `package.json`.
+- **Why it matters here:** Prompt injection requires LLM calls. Nothing in the app makes any.
+- **Fix:** —.
+- **Size:** —.
