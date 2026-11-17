@@ -77,3 +77,69 @@ Deployment context: `apps/web` is Next.js 15 on Vercel; `apps/api` is Express on
 - **Why it matters here:** Shipped maps would expose server action names, Zod schemas, and auth flow internals.
 - **Fix:** None. Keep `productionBrowserSourceMaps` unset.
 - **Size:** —.
+
+---
+
+## Data access
+
+### 4. RLS on every table
+
+- **Status:** issue.
+- **Evidence:** Every `pgTable` in `apps/api/src/db/schema.ts` has a matching `ENABLE ROW LEVEL SECURITY` migration, with one exception: `household_invites`. `apps/api/src/db/migrations/0008_add_household_invites.sql:11` creates the table without any RLS enable, and no subsequent migration adds one. Schema definition at `apps/api/src/db/schema.ts:285`.
+- **Why it matters here:** All data access goes through `apps/api` using the service role key (which bypasses RLS), so there is no production exploit path *today*. But every other table is RLS-enabled, so this breaks the invariant that a future direct-from-web query path, a leaked anon key, or a Supabase Advisor sweep would depend on. `household_invites` holds `token_hash` and household/profile pointers — exactly the rows you don't want browsable with a leaked key.
+- **Fix:** `pnpm db:generate --custom --name=enable_rls_household_invites`, then write `ALTER TABLE "household_invites" ENABLE ROW LEVEL SECURITY;` into the generated SQL. No policies are needed; RLS-on-with-no-policy is "deny all to non-service-role," which is the intended posture.
+- **Size:** S.
+
+Separate finding in the same item: the web app never queries Supabase directly for data (`grep "supabase.from(" apps/web/src` returns zero). All `createClient` sites import from `@/lib/supabase/server.ts` and only call `supabase.auth.getUser()` / `getSession()` / `signOut()`. `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` is used server-side only by `src/lib/supabase/server.ts:8` and `src/lib/supabase/updateSession.ts:9` for session management. Safe.
+
+### 5. Supabase storage
+
+- **Status:** not applicable.
+- **Evidence:** Grep across the entire repo for `.storage`, `supabase.storage.from(`, `storage/v1/object/public/` returns no matches.
+- **Why it matters here:** Nothing to audit; no buckets exist.
+- **Fix:** —.
+- **Size:** —.
+
+### 6. Price from the browser
+
+- **Status:** safe.
+- **Evidence:** Every money-moving endpoint computes amounts server-side from `packages/shared` pricing or from stored ledger / household state. Nothing trusts an inbound `amountCents`:
+  - Parent booking `POST /lessons`: `apps/api/src/routes/lessons.ts:710` — `const priceCents = priceForLesson(durationMinutes, swimmerCount);`.
+  - Reschedule reprice: `apps/api/src/routes/lessons.ts:2597`.
+  - Batch booking: `apps/api/src/routes/lessons.ts:1428,1491` compute per-pick inside the batch tx.
+  - Coach booking: `apps/api/src/routes/coachLessons.ts:1884`.
+  - Coach reschedule reprice: `apps/api/src/routes/coachLessons.ts:1377`.
+  - Stripe checkout session: `apps/api/src/services/stripe/checkout.ts:104` — `priceForLesson(...) * quantity`.
+  - Stripe webhook credit: `apps/api/src/services/stripe/webhook.ts:332` — recomputes from metadata before crediting.
+  - Checkout body schemas in `packages/shared/src/schemas/payments.ts:96-120` are `.strict()` and carry only `durationMinutes`, `swimmerCount`, `quantity`, `packageTier` — no `amountCents`.
+  - Cash-out execution (`apps/api/src/services/balance/cashOut.ts:204`) is invoked with no body amount; refund figures are derived entirely from the ledger.
+  - Coach-adjust balance (`apps/api/src/routes/coachHouseholds.ts:628`) is the one endpoint that accepts an inbound `amountCents` via `CoachAdjustBalanceBodySchema`. This is expected — coach-initiated signed adjustment — and the task spec excludes it.
+  - Other `amountCents` appearances in shared schemas (`payments.ts:47,141,298,330`) are all on response / outbound types (`LedgerEntrySchema`, `BalanceHistoryEntrySchema`, `NeedsManualRefundJobSchema`, `CashRefundNeedsAttentionEntrySchema`), never on inbound bodies.
+- **Why it matters here:** This is the whole premise of the balance ledger — if any money route trusted a client amount, a parent could book a lesson for one cent. The ledger would reconcile out of sync and the audit log would record the correct actor. Server-side pricing closes that loop.
+- **Fix:** None.
+- **Size:** —.
+
+### 7. Race conditions on read-then-write paths
+
+- **Status:** safe on every path audited. Every money-move / stateful write runs inside `db.transaction()`, with either `pg_advisory_xact_lock(...)` serialization, row-level `SELECT … FOR UPDATE`, or a unique constraint.
+
+| Path | Protection | Evidence |
+|---|---|---|
+| Parent booking (`POST /lessons`) | `db.transaction()` + `lesson-day:<laDateStr>` advisory lock + `household-balance:<householdId>` advisory lock; slots re-validated inside the lock | `apps/api/src/routes/lessons.ts:713-725` |
+| Batch booking | `db.transaction()`, locks future-dated pending/approved rows, throws `BatchPicksConflictError` on conflict | `apps/api/src/routes/lessons.ts:1311,1915` |
+| Balance debit on booking | Household advisory lock inside the same tx as the lesson insert | `apps/api/src/services/balance/ledger.ts:259-261,458` |
+| Balance refund on cancel | `db.transaction()` + per-household balance lock (ADR 036 §4) | `apps/api/src/routes/lessons.ts:2299-2302` |
+| Balance refund on decline | `db.transaction()` + row `FOR UPDATE` + balance lock | `apps/api/src/routes/coachLessons.ts:1063,1186,1328,1366` |
+| Balance refund on expire (cron) | `db.transaction()` + `FOR UPDATE` + outbox-under-same-tx | `apps/api/src/routes/coachLessons.ts:561` |
+| Cash-out execution | Caller-owned tx; cash-refund-jobs rows have `uniqueIndex idempotency_key` and `ledger_id .unique()`; drain uses `FOR UPDATE SKIP LOCKED` | `apps/api/src/services/balance/cashOut.ts:204-222`, `cashRefundDrain.ts:164,239`, `schema.ts:1759,1770` |
+| Coach balance adjustment | Household advisory lock via `applyLedgerEntry` | `apps/api/src/routes/coachHouseholds.ts:660` |
+| Household invite accept | `db.transaction()` + `household_invites.token_hash` UNIQUE + check constraint preventing revoked+accepted | `apps/api/src/routes/invites.ts:96`, `migrations/0008_add_household_invites.sql:14` |
+| Policy acceptance | `db.transaction()` + `user_policy_acceptances_user_slug_version_uniq` | `apps/api/src/routes/policies.ts:78`, `schema.ts:1916` |
+| Account deletion (ADR 034 solo teardown) | `db.transaction()` + `account-deletion:<profileId>` advisory lock + `FOR UPDATE` on household + balance advisory lock | `apps/api/src/routes/accountDeletion.ts:60,164`, `services/accountDeletion/deletion.ts:286,340,590` |
+| Lesson approve (coach) | `db.transaction()` + `FOR UPDATE` on the lesson row | `apps/api/src/routes/coachLessons.ts:746` |
+| Lesson decline (coach) | `db.transaction()` + `SELECT ... FOR UPDATE` on live pending lessons | `apps/api/src/routes/coachLessons.ts:854-862` |
+| Stripe webhook credit | `db.transaction()` + balance advisory lock + `balance_ledger_stripe_session_uq` unique index (webhook-idempotent per session) | `apps/api/src/services/stripe/webhook.ts:135,251`, `schema.ts:1706` |
+
+- **Why it matters here:** The balance ledger is append-only (trigger at `apps/api/src/db/migrations/0076_loose_sunspot.sql`). Audit and outbox rows co-transact with the business change they record. Together those make every money path recoverable by replay; losing a row on crash is the failure mode that these locks and transactions prevent.
+- **Fix:** None.
+- **Size:** —.
