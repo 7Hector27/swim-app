@@ -65,10 +65,11 @@ describe("validateVapidAtStartup", () => {
   });
 
   it("throws VapidStartupError when the public key is base64url but the wrong decoded length", () => {
-    // 32 bytes, base64url-shaped — passes our env regex but web-push
-    // wants 65 bytes.
+    // 66 bytes, base64url-shaped — long enough to pass the env parse's
+    // 87-char floor (66 bytes = 88 chars unpadded) but web-push wants
+    // exactly 65 bytes.
     setVapidEnv({
-      VAPID_PUBLIC_KEY: Buffer.alloc(32, 1).toString("base64url"),
+      VAPID_PUBLIC_KEY: Buffer.alloc(66, 1).toString("base64url"),
       VAPID_PRIVATE_KEY: validVapidPrivateKey,
       VAPID_SUBJECT: "mailto:ops@send.axiomaquatics.io",
     });
@@ -84,9 +85,11 @@ describe("validateVapidAtStartup", () => {
   });
 
   it("throws when the private key decodes to the wrong length", () => {
+    // 33 bytes decoded — passes the 43-char env floor (33 bytes = 44 chars
+    // base64url unpadded) but web-push requires exactly 32 bytes.
     setVapidEnv({
       VAPID_PUBLIC_KEY: validVapidPublicKey,
-      VAPID_PRIVATE_KEY: Buffer.alloc(16, 1).toString("base64url"),
+      VAPID_PRIVATE_KEY: Buffer.alloc(33, 1).toString("base64url"),
       VAPID_SUBJECT: "mailto:ops@send.axiomaquatics.io",
     });
     expect(() => validateVapidAtStartup()).toThrow(VapidStartupError);

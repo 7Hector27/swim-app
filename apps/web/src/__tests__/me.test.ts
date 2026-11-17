@@ -20,8 +20,29 @@ describe("mapMeStatus", () => {
     expect(mapMeStatus(401, null)).toEqual({ ok: false, status: 401 });
   });
 
-  it("403 → not ok with status 403", () => {
-    expect(mapMeStatus(403, { error: "Forbidden" })).toEqual({ ok: false, status: 403 });
+  it("403 with { error: 'Forbidden' } → not ok with status 403 and errorCode 'Forbidden'", () => {
+    expect(mapMeStatus(403, { error: "Forbidden" })).toEqual({
+      ok: false,
+      status: 403,
+      errorCode: "Forbidden",
+    });
+  });
+
+  it("403 with { error: 'email_not_confirmed' } → errorCode 'email_not_confirmed'", () => {
+    // The requireUser gate added for audit item 10. requireAuth reads
+    // errorCode to route to /auth/confirm-pending instead of the
+    // generic null-return.
+    expect(mapMeStatus(403, { error: "email_not_confirmed" })).toEqual({
+      ok: false,
+      status: 403,
+      errorCode: "email_not_confirmed",
+    });
+  });
+
+  it("403 with no body → status 403, no errorCode", () => {
+    // Fallback when the API responds 403 without the JSON shape (proxy
+    // error page, empty body on a disabled-account race, etc.).
+    expect(mapMeStatus(403, null)).toEqual({ ok: false, status: 403 });
   });
 
   it("500 → not ok with status 500", () => {

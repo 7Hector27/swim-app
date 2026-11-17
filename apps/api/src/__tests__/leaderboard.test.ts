@@ -44,7 +44,7 @@ const profileCoach = {
 
 function authAs(profile: { id: string; role: string; [key: string]: unknown }) {
   mockGetUser.mockResolvedValue({
-    data: { user: { id: profile.id, email: "coach@example.com" } },
+    data: { user: { id: profile.id, email: "coach@example.com", email_confirmed_at: "2026-10-26T17:00:00.000Z" } },
     error: null,
   });
 }

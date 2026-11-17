@@ -49,3 +49,21 @@ Items that require human sign-off before the app goes live. Engineering items go
 
 - [ ] Public leaderboard routes are covered in the lawyer review before launch.
 - [ ] Confirm that only swimmers with `is_public = true` appear in all leaderboard queries; spot-check the API and any cached/rendered output.
+
+---
+
+## Login protection
+
+Audit item 8 — login runs `supabase.auth.signInWithPassword` directly from the Vercel server action, so the Express `authEmailLimiter` never sees it. These dashboard-side controls are the only credential-stuffing defense; decide and configure before launch.
+
+- [ ] Supabase dashboard → Auth → Rate Limits: cap sign-in attempts per hour and per IP. Current defaults are forgiving enough that a bot could rotate through a breach list at speed. Pick a value (e.g. 10/hr per IP + 5/hr per email).
+- [ ] Supabase dashboard → Auth → Rate Limits: also set sensible caps on sign-up, OTP verifies, and token refreshes.
+- [ ] CAPTCHA decision — recommended: Cloudflare Turnstile. Enable it in the Supabase dashboard (Auth → Attack Protection → CAPTCHA) and wire the token into `signInWithPassword({ options: { captchaToken } })` in `apps/web/src/content/LoginContent/actions.ts`. If we skip CAPTCHA, note explicitly why.
+- [ ] Supabase dashboard → Auth → Email: **Confirm email: ON**. The `requireUser` middleware already rejects unconfirmed users (audit item 10); the dashboard toggle is what prevents Supabase from issuing a session before the user clicks the link.
+- [ ] Supabase dashboard → Auth: **Secure email change: ON**, JWT expiry ≤ 1 h, refresh token rotation on with short reuse interval, OTP length ≥ 6 with expiry ≤ 15 min.
+
+---
+
+## Browser response headers
+
+- [ ] **CSP report endpoint before enforcing the policy.** `apps/web/next.config.ts` currently emits `Content-Security-Policy-Report-Only` with no `report-uri` / `report-to` directive, so violations only show up in each user's browser console and are never collected centrally. Before promoting to the enforcing `Content-Security-Policy` header, wire up a report collector — either a cheap `/api/csp-report` route on the web that forwards to our log sink, or a hosted collector (e.g. report-uri.com, Sentry's CSP endpoint) — and add it as a `report-uri` + `report-to` pair. Promoting without a collector means we have no idea what we just broke.

@@ -118,7 +118,7 @@ const baseProfile = {
 };
 
 const validUser = {
-  data: { user: { id: baseProfile.id, email: "test@example.com" } },
+  data: { user: { id: baseProfile.id, email: "test@example.com", email_confirmed_at: "2026-10-26T17:00:00.000Z" } },
   error: null,
 };
 

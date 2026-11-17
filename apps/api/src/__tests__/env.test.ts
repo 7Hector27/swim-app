@@ -21,8 +21,13 @@ const validVapidPublicKey = "B".repeat(87);
 const validVapidPrivateKey = "k".repeat(43);
 const validVapidSubject = "mailto:ops@send.axiomaquatics.io";
 
-const validStripeSecretKey = "sk_test_51abcDEFghijKL";
-const validStripeWebhookSecret = "whsec_test_abcDEFghijKLmnop";
+const validStripeSecretKey = "sk_test_" + "a".repeat(32);
+const validStripeWebhookSecret = "whsec_test_" + "a".repeat(32);
+const validResendApiKey = "re_test_" + "a".repeat(32);
+// Three base64url segments separated by dots, header + payload starting
+// with "ey" — matches the JWT_SHAPE_RE added for the service-role key.
+const validServiceRoleJwt =
+  "eyJhbGciOiJIUzI1NiJ9." + "eyJzdWIiOiJ0ZXN0In0." + "placeholder-signature";
 
 const prodDeployBase = {
   ...baseEnv,
@@ -31,7 +36,7 @@ const prodDeployBase = {
   SITE_URL: "https://app.axiomaquatics.io",
   CORS_ORIGINS: "https://app.axiomaquatics.io",
   CRON_SECRET: "a".repeat(32),
-  SUPABASE_SERVICE_ROLE_KEY: "service-role-key",
+  SUPABASE_SERVICE_ROLE_KEY: validServiceRoleJwt,
   GOOGLE_OAUTH_CLIENT_ID: "client-id",
   GOOGLE_OAUTH_CLIENT_SECRET: "client-secret",
   GOOGLE_OAUTH_REDIRECT_URI: "https://api.axiomaquatics.io/integrations/google/callback",
@@ -39,7 +44,7 @@ const prodDeployBase = {
   GOOGLE_OAUTH_STATE_SECRET: validGoogleStateSecret,
   EMAIL_TRANSPORT: "resend",
   EMAIL_FROM: "Axiom Aquatics <lessons@send.axiomaquatics.io>",
-  RESEND_API_KEY: "re_test_key",
+  RESEND_API_KEY: validResendApiKey,
   VAPID_PUBLIC_KEY: validVapidPublicKey,
   VAPID_PRIVATE_KEY: validVapidPrivateKey,
   VAPID_SUBJECT: validVapidSubject,
@@ -127,7 +132,7 @@ describe("parseEnv — APP_ENV=prod", () => {
     expect(env.appEnv).toBe("prod");
     expect(env.corsOrigins).toEqual(["https://app.axiomaquatics.io"]);
     expect(env.cronSecret).toBe("a".repeat(32));
-    expect(env.supabaseServiceRoleKey).toBe("service-role-key");
+    expect(env.supabaseServiceRoleKey).toBe(validServiceRoleJwt);
     expect(env.email).toBeDefined();
     expect(env.email?.transport).toBe("resend");
   });

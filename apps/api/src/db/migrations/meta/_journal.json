@@ -617,6 +617,13 @@
       "when": 1794608736009,
       "tag": "0087_system_actor_seed",
       "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1794943970444,
+      "tag": "0088_enable_rls_household_invites",
+      "breakpoints": true
     }
   ]
 }

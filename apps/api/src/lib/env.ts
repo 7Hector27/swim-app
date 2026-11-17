@@ -28,6 +28,28 @@ const EMAIL_ADDR_RE =
 // subdomain) when APP_ENV=prod so a misconfigured From can't ship.
 const PROD_EMAIL_DOMAIN = "send.axiomaquatics.io";
 
+// JWT shape: three base64url segments separated by dots, header and payload
+// starting with `ey` (the base64 of `{`). Supabase service-role / anon /
+// publishable keys all match. The point of the check is to reject a
+// truncated or placeholder paste at boot rather than at first admin call.
+const JWT_SHAPE_RE = /^ey[A-Za-z0-9_-]+\.ey[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
+
+// VAPID key lengths per RFC 8292 / web-push conventions: the public key is a
+// 65-byte uncompressed EC point (87 chars base64url, unpadded) and the
+// private key is a 32-byte scalar (43 chars base64url, unpadded). Browsers
+// and the web-push library both reject anything shorter at send time, but
+// boot-time rejection surfaces the problem in the deploy log instead.
+const VAPID_PUBLIC_KEY_MIN_LEN = 87;
+const VAPID_PRIVATE_KEY_MIN_LEN = 43;
+
+// Minimums chosen to catch truncated / placeholder pastes. Real keys are
+// much longer; the number is a floor, not a target.
+const STRIPE_SECRET_KEY_MIN_LEN = 32;
+const STRIPE_WEBHOOK_SECRET_MIN_LEN = 32;
+const RESEND_API_KEY_MIN_LEN = 32;
+const CRON_SECRET_MIN_LEN = 32;
+const GOOGLE_OAUTH_STATE_SECRET_MIN_LEN = 32;
+
 const DbEnvSchema = z.object({
   DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
 });
@@ -185,9 +207,9 @@ export function parseEnv(raw: Record<string, string | undefined>): ApiEnv {
     if (LOCALHOST_RE.test(parsed.SITE_URL)) {
       issues.push("SITE_URL: must not point to localhost when APP_ENV is 'dev' or 'prod'");
     }
-    if (!parsed.CRON_SECRET || parsed.CRON_SECRET.length < 32) {
+    if (!parsed.CRON_SECRET || parsed.CRON_SECRET.length < CRON_SECRET_MIN_LEN) {
       issues.push(
-        "CRON_SECRET: must be set and at least 32 characters when APP_ENV is 'dev' or 'prod'",
+        `CRON_SECRET: must be set and at least ${CRON_SECRET_MIN_LEN} characters when APP_ENV is 'dev' or 'prod'`,
       );
     }
     // ADR 034 added auth.admin.deleteUser as part of the account-deletion
@@ -197,10 +219,16 @@ export function parseEnv(raw: Record<string, string | undefined>): ApiEnv {
     // the deploy log, not a user-facing error. Required on Railway (API
     // service) only — Vercel (web) must NEVER carry this key, and it
     // must NEVER appear in a NEXT_PUBLIC_* variable.
-    if (!parsed.SUPABASE_SERVICE_ROLE_KEY || parsed.SUPABASE_SERVICE_ROLE_KEY.length === 0) {
+    if (!parsed.SUPABASE_SERVICE_ROLE_KEY) {
       issues.push(
         "SUPABASE_SERVICE_ROLE_KEY: must be set when APP_ENV is 'dev' or 'prod' " +
           "(used for the account-deletion auth.admin.deleteUser call per ADR 034)",
+      );
+    } else if (!JWT_SHAPE_RE.test(parsed.SUPABASE_SERVICE_ROLE_KEY)) {
+      issues.push(
+        "SUPABASE_SERVICE_ROLE_KEY: must be a valid JWT (three base64url segments " +
+          "separated by dots, header and payload starting with 'ey'). Reject at boot " +
+          "to catch truncated/placeholder pastes before the first admin call.",
       );
     }
     issues.push(...validateGoogleOAuthForDeployed(parsed));
@@ -248,11 +276,20 @@ function validateStripeForDeployed(parsed: RawParsedEnv): string[] {
     issues.push("STRIPE_SECRET_KEY: required when APP_ENV is 'dev' or 'prod'");
   } else if (!STRIPE_SECRET_KEY.startsWith("sk_")) {
     issues.push("STRIPE_SECRET_KEY: must start with 'sk_' (secret keys are sk_test_... or sk_live_...)");
+  } else if (STRIPE_SECRET_KEY.length < STRIPE_SECRET_KEY_MIN_LEN) {
+    issues.push(
+      `STRIPE_SECRET_KEY: must be at least ${STRIPE_SECRET_KEY_MIN_LEN} characters ` +
+        "(real Stripe keys are much longer; the floor catches truncated pastes)",
+    );
   }
   if (!STRIPE_WEBHOOK_SECRET) {
     issues.push("STRIPE_WEBHOOK_SECRET: required when APP_ENV is 'dev' or 'prod'");
   } else if (!STRIPE_WEBHOOK_SECRET.startsWith("whsec_")) {
     issues.push("STRIPE_WEBHOOK_SECRET: must start with 'whsec_'");
+  } else if (STRIPE_WEBHOOK_SECRET.length < STRIPE_WEBHOOK_SECRET_MIN_LEN) {
+    issues.push(
+      `STRIPE_WEBHOOK_SECRET: must be at least ${STRIPE_WEBHOOK_SECRET_MIN_LEN} characters`,
+    );
   }
   return issues;
 }
@@ -305,7 +342,7 @@ function parseGoogleOAuthEnv(parsed: RawParsedEnv): GoogleOAuthEnv | undefined {
   }
   const key = tryDecodeEncryptionKey(GOOGLE_TOKEN_ENCRYPTION_KEY);
   if (!key) return undefined;
-  if (GOOGLE_OAUTH_STATE_SECRET.length < 32) return undefined;
+  if (GOOGLE_OAUTH_STATE_SECRET.length < GOOGLE_OAUTH_STATE_SECRET_MIN_LEN) return undefined;
   return {
     clientId: GOOGLE_OAUTH_CLIENT_ID,
     clientSecret: GOOGLE_OAUTH_CLIENT_SECRET,
@@ -347,9 +384,9 @@ function validateGoogleOAuthForDeployed(parsed: RawParsedEnv): string[] {
   }
   if (!GOOGLE_OAUTH_STATE_SECRET) {
     issues.push("GOOGLE_OAUTH_STATE_SECRET: required when APP_ENV is 'dev' or 'prod'");
-  } else if (GOOGLE_OAUTH_STATE_SECRET.length < 32) {
+  } else if (GOOGLE_OAUTH_STATE_SECRET.length < GOOGLE_OAUTH_STATE_SECRET_MIN_LEN) {
     issues.push(
-      "GOOGLE_OAUTH_STATE_SECRET: must be at least 32 characters when APP_ENV is 'dev' or 'prod'",
+      `GOOGLE_OAUTH_STATE_SECRET: must be at least ${GOOGLE_OAUTH_STATE_SECRET_MIN_LEN} characters when APP_ENV is 'dev' or 'prod'`,
     );
   }
   return issues;
@@ -395,8 +432,15 @@ function validateEmailForDeployed(parsed: RawParsedEnv): string[] {
     );
   }
   if (parsed.EMAIL_TRANSPORT === "resend") {
-    if (!parsed.RESEND_API_KEY || !parsed.RESEND_API_KEY.startsWith("re_")) {
-      issues.push("RESEND_API_KEY: required and must start with 're_' when APP_ENV is 'dev' or 'prod'");
+    if (!parsed.RESEND_API_KEY) {
+      issues.push("RESEND_API_KEY: required when APP_ENV is 'dev' or 'prod' and EMAIL_TRANSPORT=resend");
+    } else if (!parsed.RESEND_API_KEY.startsWith("re_")) {
+      issues.push("RESEND_API_KEY: must start with 're_' when APP_ENV is 'dev' or 'prod'");
+    } else if (parsed.RESEND_API_KEY.length < RESEND_API_KEY_MIN_LEN) {
+      issues.push(
+        `RESEND_API_KEY: must be at least ${RESEND_API_KEY_MIN_LEN} characters ` +
+          "(real Resend keys are longer; the floor catches truncated pastes)",
+      );
     }
   }
   return issues;
@@ -420,6 +464,12 @@ function parseVapidEnv(parsed: RawParsedEnv): VapidEnv | undefined {
   if (!BASE64URL_RE.test(VAPID_PUBLIC_KEY) || !BASE64URL_RE.test(VAPID_PRIVATE_KEY)) {
     return undefined;
   }
+  if (
+    VAPID_PUBLIC_KEY.length < VAPID_PUBLIC_KEY_MIN_LEN ||
+    VAPID_PRIVATE_KEY.length < VAPID_PRIVATE_KEY_MIN_LEN
+  ) {
+    return undefined;
+  }
   if (!VAPID_SUBJECT_RE.test(VAPID_SUBJECT)) return undefined;
   return {
     publicKey: VAPID_PUBLIC_KEY,
@@ -435,11 +485,19 @@ function validateVapidForDeployed(parsed: RawParsedEnv): string[] {
     issues.push("VAPID_PUBLIC_KEY: required when APP_ENV is 'dev' or 'prod'");
   } else if (!BASE64URL_RE.test(VAPID_PUBLIC_KEY)) {
     issues.push("VAPID_PUBLIC_KEY: must be base64url (chars [A-Za-z0-9_-], no padding)");
+  } else if (VAPID_PUBLIC_KEY.length < VAPID_PUBLIC_KEY_MIN_LEN) {
+    issues.push(
+      `VAPID_PUBLIC_KEY: must be at least ${VAPID_PUBLIC_KEY_MIN_LEN} chars (65-byte uncompressed EC point, base64url unpadded)`,
+    );
   }
   if (!VAPID_PRIVATE_KEY) {
     issues.push("VAPID_PRIVATE_KEY: required when APP_ENV is 'dev' or 'prod'");
   } else if (!BASE64URL_RE.test(VAPID_PRIVATE_KEY)) {
     issues.push("VAPID_PRIVATE_KEY: must be base64url (chars [A-Za-z0-9_-], no padding)");
+  } else if (VAPID_PRIVATE_KEY.length < VAPID_PRIVATE_KEY_MIN_LEN) {
+    issues.push(
+      `VAPID_PRIVATE_KEY: must be at least ${VAPID_PRIVATE_KEY_MIN_LEN} chars (32-byte scalar, base64url unpadded)`,
+    );
   }
   if (!VAPID_SUBJECT) {
     issues.push("VAPID_SUBJECT: required when APP_ENV is 'dev' or 'prod'");
