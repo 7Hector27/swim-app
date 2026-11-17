@@ -6,6 +6,7 @@ import {
   CashRefundNeedsAttentionResponseSchema,
   CoachAdjustBalanceResponseSchema,
   CoachHouseholdBalanceListResponseSchema,
+  CoachHouseholdBalanceSummaryResponseSchema,
   NeedsManualRefundListResponseSchema,
   type BalanceHistoryResponse,
   type BalanceResponse,
@@ -14,19 +15,35 @@ import {
   type CashRefundNeedsAttentionResponse,
   type CoachAdjustBalanceBody,
   type CoachAdjustBalanceResponse,
+  type CoachFamiliesSortKey,
   type CoachHouseholdBalanceListResponse,
+  type CoachHouseholdBalanceSummaryResponse,
   type MarkCashRefundHandledBody,
   type NeedsManualRefundListResponse,
 } from "@swim-app/shared";
 
 import { loadError, loadOk, type LoadResult } from "@/lib/loadResult";
 
+export interface FetchCoachFamiliesParams {
+  page?: number;
+  sort?: CoachFamiliesSortKey;
+  search?: string;
+}
+
 export async function fetchCoachFamilies(
   accessToken: string,
+  params: FetchCoachFamiliesParams = {},
 ): Promise<LoadResult<CoachHouseholdBalanceListResponse>> {
   try {
+    const searchParams = new URLSearchParams();
+    if (params.page !== undefined) searchParams.set("page", String(params.page));
+    if (params.sort !== undefined) searchParams.set("sort", params.sort);
+    if (params.search !== undefined && params.search !== "") {
+      searchParams.set("search", params.search);
+    }
+    const query = searchParams.size > 0 ? `?${searchParams.toString()}` : "";
     const response = await fetch(
-      `${process.env.NEXT_PUBLIC_API_URL}/coach/households/balances`,
+      `${process.env.NEXT_PUBLIC_API_URL}/coach/households/balances${query}`,
       {
         headers: { Authorization: `Bearer ${accessToken}` },
         cache: "no-store",
@@ -41,6 +58,31 @@ export async function fetchCoachFamilies(
       );
       return loadError("schema");
     }
+    return loadOk(parsed.data);
+  } catch {
+    return loadError("network");
+  }
+}
+
+// GET /coach/households/:id/summary — same shape as a list row, served
+// by id so the detail-page server component can resolve its header
+// without scanning the paged roster.
+export async function fetchCoachFamilySummary(
+  accessToken: string,
+  householdId: string,
+): Promise<
+  LoadResult<CoachHouseholdBalanceSummaryResponse> | { kind: "not_found" }
+> {
+  try {
+    const response = await fetch(
+      `${process.env.NEXT_PUBLIC_API_URL}/coach/households/${householdId}/summary`,
+      { headers: { Authorization: `Bearer ${accessToken}` }, cache: "no-store" },
+    );
+    if (response.status === 404) return { kind: "not_found" };
+    if (!response.ok) return loadError("server");
+    const body: unknown = await response.json();
+    const parsed = CoachHouseholdBalanceSummaryResponseSchema.safeParse(body);
+    if (!parsed.success) return loadError("schema");
     return loadOk(parsed.data);
   } catch {
     return loadError("network");
