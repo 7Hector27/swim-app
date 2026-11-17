@@ -1,6 +1,5 @@
-import Link from "next/link";
-
 import type { UpcomingLesson } from "@swim-app/shared";
+import { BookLink } from "@/components/BookGate";
 
 import {
   formatLessonDate,
@@ -44,12 +43,12 @@ export default function NextLessonSection({
           No upcoming lessons booked yet.
         </p>
         {canBook && (
-          <Link
+          <BookLink
             href="/dashboard/book"
             className="rounded-button bg-accent-on-section text-on-accent font-bold text-sm h-11 flex items-center justify-center self-start px-5 transition-transform duration-150 active:scale-[0.97]"
           >
             Book a lesson
-          </Link>
+          </BookLink>
         )}
       </section>
     );

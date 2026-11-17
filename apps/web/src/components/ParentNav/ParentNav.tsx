@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { useSession } from "@/components/Providers";
+import { BookLink } from "@/components/BookGate";
 import ProfileMenu from "@/components/ProfileMenu";
 import ThemeLogo from "@/components/ThemeLogo";
 import ThemeToggle from "@/components/ThemeToggle";
@@ -126,16 +127,24 @@ export default function ParentNav() {
           <nav className="hidden tablet:flex items-center gap-1" aria-label="Parent navigation">
             {visibleLinks.map((link) => {
               const active = isLinkActive(link.href, pathname);
+              const className = `inline-flex items-center justify-center h-11 px-4 text-sm font-semibold rounded-button transition-colors duration-150 ${
+                active
+                  ? "text-accent-on-section"
+                  : "text-text-secondary-on-section hover:text-text-on-section"
+              }`;
+              if (link.href === "/dashboard/book") {
+                return (
+                  <BookLink key={link.href} href={link.href} className={className}>
+                    {link.label}
+                  </BookLink>
+                );
+              }
               return (
                 <Link
                   key={link.href}
                   href={link.href}
                   aria-current={active ? "page" : undefined}
-                  className={`inline-flex items-center justify-center h-11 px-4 text-sm font-semibold rounded-button transition-colors duration-150 ${
-                    active
-                      ? "text-accent-on-section"
-                      : "text-text-secondary-on-section hover:text-text-on-section"
-                  }`}
+                  className={className}
                 >
                   {link.label}
                 </Link>
@@ -158,14 +167,23 @@ export default function ParentNav() {
         {visibleLinks.map((link) => {
           const active = isLinkActive(link.href, pathname);
           const Icon = ICONS[link.label];
+          const className = `${styles.tabItem} flex flex-col items-center justify-center gap-1 flex-1 text-xs font-semibold transition-colors duration-150 ${
+            active ? "text-accent-on-section" : "text-text-secondary-on-section"
+          }`;
+          if (link.href === "/dashboard/book") {
+            return (
+              <BookLink key={link.href} href={link.href} className={className}>
+                <Icon />
+                <span>{link.label}</span>
+              </BookLink>
+            );
+          }
           return (
             <Link
               key={link.href}
               href={link.href}
               aria-current={active ? "page" : undefined}
-              className={`${styles.tabItem} flex flex-col items-center justify-center gap-1 flex-1 text-xs font-semibold transition-colors duration-150 ${
-                active ? "text-accent-on-section" : "text-text-secondary-on-section"
-              }`}
+              className={className}
             >
               <Icon />
               <span>{link.label}</span>

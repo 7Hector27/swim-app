@@ -5,9 +5,12 @@ import { Fraunces, Figtree } from "next/font/google";
 import Providers from "@/components/Providers";
 import NavController from "@/components/NavController";
 import SiteFooter from "@/components/SiteFooter";
+import { BookGateProvider } from "@/components/BookGate";
 import { publicEnv } from "@/lib/env";
 import { fetchMe } from "@/lib/api/me";
 import { fetchHousehold } from "@/lib/api/households";
+import { fetchSwimmers } from "@/lib/api/swimmers";
+import { fetchBalance } from "@/lib/api/balance";
 
 const fraunces = Fraunces({
   subsets: ["latin"],
@@ -63,6 +66,8 @@ export default async function RootLayout({
   const role = meResult.ok ? meResult.profile.role : null;
 
   let isViewer = false;
+  let gateSwimmerCount = 0;
+  let gateBalanceCents: number | null = null;
   if (meResult.ok && meResult.profile.role === "parent") {
     const householdResult = await fetchHousehold(meResult.accessToken);
     // Nav uses isViewer to hide the Book link. Treat any state we can't
@@ -76,20 +81,49 @@ export default async function RootLayout({
       (householdResult.household.myRole === "owner" ||
         householdResult.household.myRole === "manager")
     );
+    // BookGate inputs: non-viewer parents. We skip the two fetches when
+    // the parent is a viewer since the gate ignores them anyway, and
+    // when no household exists since the viewer check already caught it.
+    if (!isViewer) {
+      const [swimmersResult, balanceResult] = await Promise.all([
+        fetchSwimmers(meResult.accessToken),
+        fetchBalance(meResult.accessToken),
+      ]);
+      gateSwimmerCount = swimmersResult.ok ? swimmersResult.data.length : 0;
+      gateBalanceCents = balanceResult !== null ? balanceResult.balanceCents : null;
+    }
   }
 
   const showsTabBar = isSignedIn && (role === "parent" || role === "coach");
+  const needsBookGate = isSignedIn && role === "parent";
 
   return (
     <html lang="en" className={`${fraunces.variable} ${figtree.variable}`} suppressHydrationWarning data-scroll-behavior="smooth">
       <body className="min-h-screen flex flex-col bg-background text-text antialiased">
         <Providers isSignedIn={isSignedIn} userName={userName} role={role} isViewer={isViewer}>
-          <NavController />
-          <div className="flex-1 flex flex-col">
-            {children}
-          </div>
-          <SiteFooter />
-          {showsTabBar && <div className="pb-tab-safe tablet:hidden" aria-hidden="true" />}
+          {needsBookGate ? (
+            <BookGateProvider
+              swimmerCount={gateSwimmerCount}
+              balanceCents={gateBalanceCents}
+              isViewer={isViewer}
+            >
+              <NavController />
+              <div className="flex-1 flex flex-col">
+                {children}
+              </div>
+              <SiteFooter />
+              {showsTabBar && <div className="pb-tab-safe tablet:hidden" aria-hidden="true" />}
+            </BookGateProvider>
+          ) : (
+            <>
+              <NavController />
+              <div className="flex-1 flex flex-col">
+                {children}
+              </div>
+              <SiteFooter />
+              {showsTabBar && <div className="pb-tab-safe tablet:hidden" aria-hidden="true" />}
+            </>
+          )}
         </Providers>
       </body>
     </html>

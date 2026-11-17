@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import type { ParentSwimmer } from "@swim-app/shared";
+import { BookLink } from "@/components/BookGate";
 
 interface ProfileHeaderProps {
   swimmer: ParentSwimmer;
@@ -79,7 +80,7 @@ export default function ProfileHeader({
           "
         >
           {canBook && (
-            <Link
+            <BookLink
               href="/dashboard/book"
               className="
                 flex-1 rounded-button bg-button-primary-background text-button-primary-text
@@ -89,7 +90,7 @@ export default function ProfileHeader({
               "
             >
               Book a lesson
-            </Link>
+            </BookLink>
           )}
           {canEdit && (
             <Link
