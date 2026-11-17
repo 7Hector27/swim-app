@@ -42,7 +42,13 @@ export type LessonEmailEvent =
   // `BalanceCashedOutEmailPayload` carrying the breakdown fields the
   // family receipt shows (paid / used / prior refunds / refunded /
   // written off). Household-scoped.
-  | "balance_cashed_out";
+  | "balance_cashed_out"
+  // Direct-to-user security alert fired after a successful password
+  // reset (`/auth/reset-password`) or change (`/account` change flow).
+  // Payload is a `PasswordChangedEmailPayload`; recipient is the auth
+  // user's own profile. No household / lesson / batch / bulk scope —
+  // the exactly-one CHECK carves out this event.
+  | "password_changed";
 
 export type LessonEmailStatus =
   | "pending"

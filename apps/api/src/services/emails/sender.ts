@@ -37,6 +37,7 @@ import type { AccountDeletedEmailPayload } from "./accountDeletedTypes";
 import type { BalanceAdjustedEmailPayload } from "./balanceAdjustedTypes";
 import type { BalanceCashedOutEmailPayload } from "./balanceCashedOutTypes";
 import type { BalanceFundedEmailPayload } from "./balanceFundedTypes";
+import type { PasswordChangedEmailPayload } from "./passwordChangedTypes";
 import { formatMoneyCents } from "./templates/shared/copyHelpers";
 import Batch from "./templates/Batch";
 import BalanceAdjusted from "./templates/BalanceAdjusted";
@@ -44,6 +45,7 @@ import BalanceCashedOut from "./templates/BalanceCashedOut";
 import BalanceFunded from "./templates/BalanceFunded";
 import CoachAccountDeleted from "./templates/CoachAccountDeleted";
 import CoachBulkCancel from "./templates/CoachBulkCancel";
+import PasswordChanged from "./templates/PasswordChanged";
 import { createTransport, type EmailTransport, type IcsAttachment, type TransportError } from "./transport";
 import type { IcsMethod, LessonEmailEvent, LessonEmailPayload } from "./types";
 
@@ -141,6 +143,8 @@ export async function sendLessonEmailOutboxRow(outboxId: string): Promise<void> 
       await sendBalanceAdjustedInner(outboxId);
     } else if (row.event === "balance_cashed_out") {
       await sendBalanceCashedOutInner(outboxId);
+    } else if (row.event === "password_changed") {
+      await sendPasswordChangedInner(outboxId);
     } else if (row.lessonId !== null) {
       await sendInner(outboxId);
     } else if (row.batchId !== null) {
@@ -1719,6 +1723,135 @@ async function sendBalanceCashedOutInner(outboxId: string): Promise<void> {
       errorKind: result.error?.kind,
     },
     "balance_cashed_out email send failed",
+  );
+}
+
+// ── password_changed sender ────────────────────────────────────────────────
+//
+// Direct-to-user security alert. Enqueued inside the transaction that
+// records the password change; one recipient, no household. Claim +
+// deliverable resolution mirror sendCoachAccountDeletedInner; render
+// path is dedicated.
+
+interface ClaimedPasswordChangedRow {
+  id: string;
+  recipientProfileIds: string[];
+  payload: PasswordChangedEmailPayload;
+  attempts: number;
+}
+
+async function claimPasswordChangedRow(
+  outboxId: string,
+): Promise<ClaimedPasswordChangedRow | null> {
+  const nowAtClaim = new Date();
+  return await db.transaction(async (tx) => {
+    const rows = await tx
+      .select({
+        id: lessonEmailOutbox.id,
+        recipientProfileIds: lessonEmailOutbox.recipientProfileIds,
+        payload: lessonEmailOutbox.payload,
+        attempts: lessonEmailOutbox.attempts,
+      })
+      .from(lessonEmailOutbox)
+      .where(
+        and(
+          eq(lessonEmailOutbox.id, outboxId),
+          eq(lessonEmailOutbox.event, "password_changed"),
+          or(
+            inArray(lessonEmailOutbox.status, ["pending", "failed"]),
+            and(
+              eq(lessonEmailOutbox.status, "sending"),
+              lt(lessonEmailOutbox.claimedUntil, nowAtClaim),
+            ),
+          ),
+        ),
+      )
+      .for("update", { skipLocked: true })
+      .limit(1);
+    const row = rows[0];
+    if (!row) return null;
+    const leaseUntil = new Date(Date.now() + CLAIM_LEASE_MS);
+    await tx
+      .update(lessonEmailOutbox)
+      .set({
+        status: "sending",
+        claimedUntil: leaseUntil,
+        lastAttemptAt: new Date(),
+      })
+      .where(eq(lessonEmailOutbox.id, outboxId));
+    return {
+      id: row.id,
+      recipientProfileIds: row.recipientProfileIds,
+      payload: row.payload as PasswordChangedEmailPayload,
+      attempts: row.attempts,
+    };
+  });
+}
+
+async function sendPasswordChangedInner(outboxId: string): Promise<void> {
+  const transport = getTransport();
+  if (!transport) {
+    await finalizeSkipped(outboxId, "transport_not_configured");
+    return;
+  }
+  const claimed = await claimPasswordChangedRow(outboxId);
+  if (!claimed) return;
+
+  const deliverable = await resolveRecipients(claimed.recipientProfileIds);
+  if (deliverable.length === 0) {
+    await finalizeSkipped(outboxId, "no_deliverable_recipients");
+    log.info({ outboxId }, "password_changed email skipped (no deliverable recipients)");
+    return;
+  }
+
+  const siteUrl = getEnv().siteUrl;
+  const replyToEmail = getEnv().email?.replyTo ?? null;
+  const coachFirstName = (await getActiveCoachProfile())?.firstName ?? null;
+  const element = PasswordChanged({
+    payload: claimed.payload,
+    siteUrl,
+    replyToEmail,
+    coachFirstName,
+  });
+  const [html, text] = await Promise.all([
+    renderReactEmail(element),
+    renderReactEmail(element, { plainText: true }),
+  ]);
+  const subject = "Your Axiom Aquatics password was changed";
+
+  const emailEnv = getEnv().email!;
+  const result = await transport.send({
+    from: emailEnv.from,
+    replyTo: emailEnv.replyTo,
+    to: deliverable,
+    subject,
+    text,
+    ...(html && { html }),
+    idempotencyKey: outboxId,
+  });
+
+  if (result.ok) {
+    await finalizeSent(outboxId, result.providerMessageId);
+    log.info(
+      {
+        outboxId,
+        attempts: claimed.attempts + 1,
+        transport: emailEnv.transport,
+        source: claimed.payload.source,
+      },
+      "password_changed email sent",
+    );
+    return;
+  }
+  await finalizeFailed(outboxId, result.error?.kind ?? "unexpected", result.errorMessage);
+  log.warn(
+    {
+      outboxId,
+      transport: emailEnv.transport,
+      attempts: claimed.attempts + 1,
+      errorKind: result.error?.kind,
+    },
+    "password_changed email send failed",
   );
 }
 

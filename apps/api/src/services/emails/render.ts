@@ -53,6 +53,10 @@ const SUBJECT_PREFIX: Record<LessonEmailEvent, string> = {
   // ADR 036 Phase 8 Part B cash-out email — same pattern: rendered by
   // its own sender path, entry present to keep the Record exhaustive.
   balance_cashed_out: "Balance cashed out",
+  // Direct-to-user security alert — rendered by sendPasswordChangedInner,
+  // not through this dispatcher. Entry present to keep the Record
+  // exhaustive.
+  password_changed: "Your password was changed",
 };
 
 type CoachBackupPayload = BookingRequestLessonPayload | BookingRequestBatchPayload;
@@ -142,6 +146,10 @@ function selectTemplate(
     case "balance_cashed_out":
       throw new Error(
         "balance_cashed_out rendered through sendBalanceCashedOutInner, not renderEmail",
+      );
+    case "password_changed":
+      throw new Error(
+        "password_changed rendered through sendPasswordChangedInner, not renderEmail",
       );
   }
 }
