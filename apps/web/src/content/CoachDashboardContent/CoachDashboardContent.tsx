@@ -2,7 +2,6 @@ import type { CoachSwimmer } from "@swim-app/shared";
 import { todayLA } from "@swim-app/shared";
 
 import InlineError from "@/components/InlineError";
-import Placeholder from "@/components/Placeholder";
 import { fetchCoachSwimmers } from "@/lib/api/coachSwimmers";
 import { coachGetPendingLessons, fetchCoachSchedule, fetchCoachStats } from "@/lib/api/lessons";
 import BookingRequestsCard from "./BookingRequestsCard";
@@ -30,6 +29,7 @@ export default async function CoachDashboardContent({ accessToken }: Props) {
   const pendingLessons = pendingLessonsResult.ok ? pendingLessonsResult.data : [];
   const scheduleItems = scheduleItemsResult.ok ? scheduleItemsResult.data : [];
   const stats = statsResult.ok ? statsResult.data : null;
+  const statsFailed = !statsResult.ok;
   const pendingLessonsSection = pendingLessonsResult.ok
     ? { ok: true as const, data: pendingLessonsResult.data }
     : { ok: false as const };
@@ -52,20 +52,27 @@ export default async function CoachDashboardContent({ accessToken }: Props) {
           {/* Page header */}
           <div className="mb-8">
             <h1 className="text-3xl tablet:text-4xl text-heading">{dateLabel}</h1>
-            <p className="mt-2 text-sm text-text-secondary">
-              {(stats?.lessonsToday ?? 0) === 0
-                ? "No lessons today."
-                : `${stats?.lessonsToday} lesson${(stats?.lessonsToday ?? 0) !== 1 ? "s" : ""} today.`}
-            </p>
+            {stats !== null ? (
+              <p className="mt-2 text-sm text-text-secondary">
+                {stats.lessonsToday === 0
+                  ? "No lessons today."
+                  : `${stats.lessonsToday} lesson${stats.lessonsToday !== 1 ? "s" : ""} today.`}
+              </p>
+            ) : null}
           </div>
 
           {/* Stat cards */}
           <div className="grid grid-cols-2 tablet:grid-cols-4 gap-4 mb-8">
-            <StatCard label="Lessons today" value={String(stats?.lessonsToday ?? 0)} />
-            <StatCard label="Requests to review" value={String(stats?.pendingRequests ?? 0)} accent />
-            <StatCard label="Active swimmers" value={String(stats?.activeSwimmers ?? swimmers.length)} />
-            <StatCard label="Lessons this week" value={String(stats?.lessonsThisWeek ?? 0)} />
+            <StatCard label="Lessons today" value={formatStat(stats?.lessonsToday)} />
+            <StatCard label="Requests to review" value={formatStat(stats?.pendingRequests)} accent />
+            <StatCard label="Active swimmers" value={formatStat(stats?.activeSwimmers)} />
+            <StatCard label="Lessons this week" value={formatStat(stats?.lessonsThisWeek)} />
           </div>
+          {statsFailed ? (
+            <div className="mb-8" data-testid="coach-dashboard-stats-error">
+              <InlineError message="Couldn't load dashboard stats." reloadOnRetry />
+            </div>
+          ) : null}
 
           {/* Two-column layout */}
           <div className="flex flex-col tablet:flex-row gap-6 desktop:gap-8 tablet:items-start">
@@ -93,18 +100,16 @@ export default async function CoachDashboardContent({ accessToken }: Props) {
             {/* Sidebar */}
             <div className="w-full tablet:w-[272px] desktop:w-[300px] flex-shrink-0 flex flex-col gap-4">
               <BookingRequestsCard initialLessons={pendingLessons} initialResult={pendingLessonsSection} />
-              <Placeholder block>
-                <NeedsAttentionCard />
-              </Placeholder>
-              <Placeholder block>
-                <SetupCard />
-              </Placeholder>
             </div>
           </div>
         </div>
       </main>
     </div>
   );
+}
+
+function formatStat(value: number | undefined): string {
+  return value === undefined ? "—" : String(value);
 }
 
 // ── Sub-components ─────────────────────────────────────────────────────────────
@@ -151,64 +156,3 @@ function SwimmersSection({ swimmers }: { swimmers: CoachSwimmer[] }) {
   );
 }
 
-function NeedsAttentionCard() {
-  const items = [
-    {
-      label: "Log times from last meet",
-      detail: "[#] swimmers have no time since [date].",
-    },
-    {
-      label: "Review draft connections",
-      detail: "Possible swimmers not yet linked.",
-    },
-    {
-      label: "Flag a problematic account",
-      detail: "[#] new requests pending review.",
-    },
-  ];
-
-  return (
-    <div className="rounded-card border border-border p-5">
-      <h3 className="text-base text-heading mb-3">Needs attention</h3>
-      <div className="flex flex-col gap-3">
-        {items.map((item) => (
-          <div key={item.label}>
-            <a
-              href="#"
-              className="text-sm font-semibold text-link hover:text-link-hover transition-colors duration-150"
-            >
-              {item.label}
-            </a>
-            <p className="text-xs text-text-secondary mt-0.5">{item.detail}</p>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function SetupCard() {
-  const items = [
-    "Add salary and drive values",
-    "Locations and distances from travel",
-    "Travel buffer rules",
-    "Public profile page",
-  ];
-
-  return (
-    <div className="rounded-card border border-border p-5">
-      <h3 className="text-base text-heading mb-3">Setup</h3>
-      <div className="flex flex-col gap-2.5">
-        {items.map((item) => (
-          <a
-            key={item}
-            href="#"
-            className="text-sm font-semibold text-link hover:text-link-hover transition-colors duration-150"
-          >
-            {item}
-          </a>
-        ))}
-      </div>
-    </div>
-  );
-}

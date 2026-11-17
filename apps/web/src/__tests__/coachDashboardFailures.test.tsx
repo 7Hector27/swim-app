@@ -35,10 +35,6 @@ vi.mock("@/content/CoachDashboardContent/SwimmersTable", () => ({
   default: () => <div data-testid="swimmers-table" />,
 }));
 
-vi.mock("@/components/Placeholder", () => ({
-  default: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-}));
-
 import CoachDashboardContent from "../content/CoachDashboardContent/CoachDashboardContent";
 
 beforeEach(() => {
