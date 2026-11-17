@@ -20,7 +20,19 @@
 // routing ambiguity between them.
 
 import { Router } from "express";
-import { and, asc, desc, eq, exists, ilike, inArray, lt, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  exists,
+  ilike,
+  inArray,
+  lt,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 
 import {
   approximatePrivateHours,
@@ -96,9 +108,15 @@ const LOW_BALANCE_THRESHOLD_CENTS = 6_000;
 // Build the per-household balance + last-activity aggregates joined
 // to the roster. Same ledger-sum path that powers `getHouseholdBalance`,
 // in bulk. A LEFT JOIN keeps households with zero ledger rows in the
-// result (balance = 0, last activity = null).
-function buildRosterQuery(tx: Parameters<Parameters<typeof db.transaction>[0]>[0]) {
-  return tx
+// result (balance = 0, last activity = null). Takes the optional search
+// filter so the summary count and the paged select share one source of
+// truth — without this the UI's pager / low-balance callout drifted
+// away from the items array whenever a search was active.
+function buildRosterQuery(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  whereCondition?: SQL<unknown> | undefined,
+) {
+  const base = tx
     .select({
       id: households.id,
       name: households.name,
@@ -113,8 +131,9 @@ function buildRosterQuery(tx: Parameters<Parameters<typeof db.transaction>[0]>[0
     .leftJoin(
       householdBalanceLedger,
       eq(householdBalanceLedger.householdId, households.id),
-    )
-    .groupBy(households.id, households.name);
+    );
+  const filtered = whereCondition !== undefined ? base.where(whereCondition) : base;
+  return filtered.groupBy(households.id, households.name);
 }
 
 coachHouseholdsRouter.get(
@@ -152,12 +171,13 @@ coachHouseholdsRouter.get(
     const { rosterRows, totalCount, lowBalanceCount, pagedRows, memberRows, swimmerCountRows } =
       await db.transaction(
         async (tx) => {
-          const base = buildRosterQuery(tx).as("roster");
           const whereCondition = searchFilter;
+          const base = buildRosterQuery(tx, whereCondition).as("roster");
 
-          // Count + low-balance tally in a single pass. We re-run
-          // the roster query as a subquery so counts are consistent
-          // with the paged select below.
+          // Count + low-balance tally in a single pass. The subquery is
+          // already filtered inside buildRosterQuery, so total and
+          // lowBalanceCount reflect the same set that the paged select
+          // below returns in items.
           const summary = await tx
             .select({
               total: sql<string>`COUNT(*)`,
