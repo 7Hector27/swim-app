@@ -29,7 +29,7 @@
                   <tr>
                     <td>
                       <a
-                        href="{{ .RedirectTo }}&token_hash={{ .TokenHash }}&type=recovery"
+                        href="{{ .SiteURL }}/auth/reset-password?token_hash={{ .TokenHash }}&type=recovery"
                         style="display: inline-block; background-color: #082c4f; color: #ffffff; font-family: sans-serif; font-size: 15px; font-weight: 700; text-decoration: none; padding: 12px 28px; border-radius: 999px;"
                       >
                         Reset password
@@ -39,7 +39,7 @@
                 </table>
                 <p style="margin: 20px 0 0; font-family: sans-serif; font-size: 13px; color: #64748b;">
                   If the button doesn't work, copy and paste this link:<br />
-                  <a href="{{ .RedirectTo }}&token_hash={{ .TokenHash }}&type=recovery" style="color: #082c4f; word-break: break-all;">{{ .RedirectTo }}&token_hash={{ .TokenHash }}&type=recovery</a>
+                  <a href="{{ .SiteURL }}/auth/reset-password?token_hash={{ .TokenHash }}&type=recovery" style="color: #082c4f; word-break: break-all;">{{ .SiteURL }}/auth/reset-password?token_hash={{ .TokenHash }}&type=recovery</a>
                 </p>
               </td>
             </tr>
