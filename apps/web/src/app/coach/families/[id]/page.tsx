@@ -7,6 +7,7 @@ import {
   fetchCoachFamilyBalanceHistory,
   fetchCoachFamilyNeedsManualRefund,
   fetchCoachFamilySummary,
+  fetchCoachFamilySwimmers,
 } from "@/lib/api/coachHouseholds";
 import { requireAuth } from "@/lib/requireAuth";
 
@@ -23,18 +24,22 @@ export default async function CoachFamilyDetailPage(props: {
   const { id } = await props.params;
   if (!/^[0-9a-f-]{36}$/i.test(id)) notFound();
 
-  // Per-id summary + balance + history + needs-manual banner in parallel.
-  // The roster list is now paged, so the detail page can't assume a given
-  // id lives on page 1 — the summary endpoint serves this lookup directly.
-  const [summaryResult, balanceResult, historyResult, needsManualResult] = await Promise.all([
-    fetchCoachFamilySummary(auth.accessToken, id),
-    fetchCoachFamilyBalance(auth.accessToken, id),
-    fetchCoachFamilyBalanceHistory(auth.accessToken, id),
-    fetchCoachFamilyNeedsManualRefund(auth.accessToken, id),
-  ]);
+  // Per-id summary + balance + history + swimmers + needs-manual banner
+  // in parallel. The roster list is now paged, so the detail page can't
+  // assume a given id lives on page 1 — the summary endpoint serves this
+  // lookup directly.
+  const [summaryResult, balanceResult, historyResult, swimmersResult, needsManualResult] =
+    await Promise.all([
+      fetchCoachFamilySummary(auth.accessToken, id),
+      fetchCoachFamilyBalance(auth.accessToken, id),
+      fetchCoachFamilyBalanceHistory(auth.accessToken, id),
+      fetchCoachFamilySwimmers(auth.accessToken, id),
+      fetchCoachFamilyNeedsManualRefund(auth.accessToken, id),
+    ]);
 
   if ("kind" in summaryResult && summaryResult.kind === "not_found") notFound();
   if ("kind" in balanceResult && balanceResult.kind === "not_found") notFound();
+  if ("kind" in swimmersResult && swimmersResult.kind === "not_found") notFound();
   if (!("ok" in summaryResult) || !summaryResult.ok) {
     throw new Error(
       `Failed to load family summary (${"reason" in summaryResult ? summaryResult.reason : "unknown"})`,
@@ -50,6 +55,15 @@ export default async function CoachFamilyDetailPage(props: {
   }
 
   const family = summaryResult.data;
+
+  // Swimmers card is non-critical to the balance/history above it. A roster
+  // outage must not take the whole page down — the card renders its own
+  // InlineError with retry instead. "No swimmers yet" is reserved for the
+  // confirmed-empty success state.
+  const swimmersSection =
+    "ok" in swimmersResult && swimmersResult.ok
+      ? { ok: true as const, data: swimmersResult.data }
+      : { ok: false as const };
 
   // Needs-manual-handling list is non-critical: if the GET fails the page
   // renders without the banner rather than hard-erroring. The attention
@@ -67,6 +81,7 @@ export default async function CoachFamilyDetailPage(props: {
             householdName={family.householdName}
             memberFullNames={family.memberFullNames}
             activeSwimmerCount={family.activeSwimmerCount}
+            swimmers={swimmersSection}
             initialBalance={balanceResult.data}
             initialHistory={historyResult.data}
             initialNeedsManualJobs={initialNeedsManualJobs}

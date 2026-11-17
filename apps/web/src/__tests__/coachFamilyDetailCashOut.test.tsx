@@ -63,6 +63,7 @@ function renderDetail(args: {
       householdName="Smith household"
       memberFullNames={["Jane Smith"]}
       activeSwimmerCount={1}
+      swimmers={{ ok: true, data: [] }}
       initialBalance={{
         ...BASE_BALANCE,
         balanceCents: args.balanceCents ?? BASE_BALANCE.balanceCents,

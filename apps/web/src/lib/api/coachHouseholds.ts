@@ -7,6 +7,7 @@ import {
   CoachAdjustBalanceResponseSchema,
   CoachHouseholdBalanceListResponseSchema,
   CoachHouseholdBalanceSummaryResponseSchema,
+  CoachSwimmerSchema,
   NeedsManualRefundListResponseSchema,
   type BalanceHistoryResponse,
   type BalanceResponse,
@@ -18,6 +19,7 @@ import {
   type CoachFamiliesSortKey,
   type CoachHouseholdBalanceListResponse,
   type CoachHouseholdBalanceSummaryResponse,
+  type CoachSwimmer,
   type MarkCashRefundHandledBody,
   type NeedsManualRefundListResponse,
 } from "@swim-app/shared";
@@ -82,6 +84,26 @@ export async function fetchCoachFamilySummary(
     if (!response.ok) return loadError("server");
     const body: unknown = await response.json();
     const parsed = CoachHouseholdBalanceSummaryResponseSchema.safeParse(body);
+    if (!parsed.success) return loadError("schema");
+    return loadOk(parsed.data);
+  } catch {
+    return loadError("network");
+  }
+}
+
+export async function fetchCoachFamilySwimmers(
+  accessToken: string,
+  householdId: string,
+): Promise<LoadResult<CoachSwimmer[]> | { kind: "not_found" }> {
+  try {
+    const response = await fetch(
+      `${process.env.NEXT_PUBLIC_API_URL}/coach/households/${householdId}/swimmers`,
+      { headers: { Authorization: `Bearer ${accessToken}` }, cache: "no-store" },
+    );
+    if (response.status === 404) return { kind: "not_found" };
+    if (!response.ok) return loadError("server");
+    const body: unknown = await response.json();
+    const parsed = CoachSwimmerSchema.array().safeParse(body);
     if (!parsed.success) return loadError("schema");
     return loadOk(parsed.data);
   } catch {

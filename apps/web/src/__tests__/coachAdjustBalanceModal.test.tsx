@@ -54,6 +54,7 @@ function renderDetail(initialBalance: BalanceResponse = BASE_BALANCE) {
       householdName="Smith household"
       memberFullNames={["Jane Smith"]}
       activeSwimmerCount={1}
+      swimmers={{ ok: true, data: [] }}
       initialBalance={initialBalance}
       initialHistory={BASE_HISTORY}
       initialNeedsManualJobs={[]}
