@@ -369,6 +369,23 @@ export function createApp(logger: Logger) {
         return;
       }
 
+      // Defense in depth — same guard /me/deletion/confirm uses per
+      // ADR 034. Supabase's trigger mirrors auth.users.id into
+      // profiles.id so these should always match; if they ever diverge
+      // (a profile row with a repointed id, a test env that bypasses
+      // the trigger), passing the wrong id to the Admin API would
+      // silently change the WRONG user's password. Abort before any
+      // mutation; log the pair of UUIDs only (no PII).
+      const authUserId = authData.user.id;
+      if (authUserId !== req.profile.id) {
+        req.log.error(
+          { event: "change_password_id_mismatch", profileId: req.profile.id, authUserId },
+          "change-password aborted: auth user id does not match profile id",
+        );
+        res.status(500).json({ error: "change_password_id_mismatch" });
+        return;
+      }
+
       const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(
         req.profile.id,
         { password: body.newPassword },
