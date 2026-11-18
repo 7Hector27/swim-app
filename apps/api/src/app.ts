@@ -5,7 +5,7 @@ import pinoHttp from "pino-http";
 import type { Logger } from "pino";
 import { sql, eq } from "drizzle-orm";
 import { db } from "./db/client";
-import { householdMembers, profiles } from "./db/schema";
+import { householdMembers, passwordChangeEvents, profiles } from "./db/schema";
 import { buildHealthResponse } from "./health";
 import { getEnv } from "./lib/env";
 import { requestId } from "./middleware/requestId";
@@ -403,14 +403,19 @@ export function createApp(logger: Logger) {
       const resetPasswordUrl = `${env.siteUrl}/forgot-password`;
       let outboxId: string | null = null;
       try {
-        outboxId = await db.transaction(async (tx) =>
-          enqueuePasswordChangedEmail(tx, {
+        outboxId = await db.transaction(async (tx) => {
+          await tx.insert(passwordChangeEvents).values({
+            profileId: req.profile.id,
+            method: "change",
+            createdAt: now,
+          });
+          return enqueuePasswordChangedEmail(tx, {
             profileId: req.profile.id,
             source: "change",
             now,
             resetPasswordUrl,
-          }),
-        );
+          });
+        });
       } catch (err) {
         // docs/accounts.md forbids email/name/etc in log fields. Postgres
         // driver errors (and the Supabase admin SDK's thrown errors) can
@@ -454,14 +459,19 @@ export function createApp(logger: Logger) {
       const resetPasswordUrl = `${env.siteUrl}/forgot-password`;
       let outboxId: string | null = null;
       try {
-        outboxId = await db.transaction(async (tx) =>
-          enqueuePasswordChangedEmail(tx, {
+        outboxId = await db.transaction(async (tx) => {
+          await tx.insert(passwordChangeEvents).values({
+            profileId: req.profile.id,
+            method: "reset",
+            createdAt: now,
+          });
+          return enqueuePasswordChangedEmail(tx, {
             profileId: req.profile.id,
             source: "reset",
             now,
             resetPasswordUrl,
-          }),
-        );
+          });
+        });
       } catch (err) {
         // See the comment on change-password's enqueue catch — err.message
         // can carry PII from upstream errors. Log the class name only.

@@ -631,6 +631,13 @@
       "when": 1794955350905,
       "tag": "0089_password_changed_email_event",
       "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1794960431944,
+      "tag": "0090_password_change_events",
+      "breakpoints": true
     }
   ]
 }
