@@ -22,7 +22,7 @@ import {
 } from "./middleware/passwordRateLimit";
 import { supabase } from "./lib/supabase";
 import { supabaseAdmin } from "./lib/supabaseAdmin";
-import { createClient } from "@supabase/supabase-js";
+import { createNonPersistingAuthClient } from "./lib/supabaseAuthClient";
 import { enqueuePasswordChangedEmail } from "./services/emails/passwordChangedOutbox";
 import { sendLessonEmailOutboxRow } from "./services/emails/sender";
 import { clubsRouter } from "./routes/clubs";
@@ -345,9 +345,7 @@ export function createApp(logger: Logger) {
     asyncHandler(async (req, res) => {
       const body = req.body as ChangePasswordBody;
 
-      const authCheckClient = createClient(env.supabaseUrl, env.supabasePublishableKey, {
-        auth: { persistSession: false, autoRefreshToken: false },
-      });
+      const authCheckClient = createNonPersistingAuthClient();
       const { data: authData, error: authError } = await authCheckClient.auth.signInWithPassword({
         email: req.userEmail,
         password: body.currentPassword,

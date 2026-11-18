@@ -10,7 +10,6 @@
 // the retry state if any external call fails.
 
 import { Router } from "express";
-import { createClient } from "@supabase/supabase-js";
 import { eq, sql } from "drizzle-orm";
 
 import {
@@ -22,7 +21,7 @@ import {
 
 import { db } from "../db/client";
 import { accountDeletionJobs } from "../db/schema";
-import { getEnv } from "../lib/env";
+import { createNonPersistingAuthClient } from "../lib/supabaseAuthClient";
 import { nowUtc as getNowUtc } from "../lib/clock";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { requireParent } from "../middleware/requireParent";
@@ -92,10 +91,7 @@ accountDeletionRouter.post(
     // Re-auth against Supabase using a non-persisting client — no session
     // is kept after the check, so the audit user doesn't end up with a
     // second active refresh token lying around. ADR 034 addition 3.
-    const env = getEnv();
-    const authCheckClient = createClient(env.supabaseUrl, env.supabasePublishableKey, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
+    const authCheckClient = createNonPersistingAuthClient();
     const { data: authData, error: authError } = await authCheckClient.auth.signInWithPassword({
       email: req.userEmail,
       password: body.password,
