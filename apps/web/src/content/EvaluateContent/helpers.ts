@@ -339,6 +339,42 @@ export function buildSectionGroups(
   return result;
 }
 
+// URL-safe slug for a section name — used to scope DOM ids when the same
+// skill renders in more than one section on the same screen (push-off and
+// streamline-in-motion on stroke screens). Pass 2a addition.
+export function slugifySectionName(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+// UI label for a skill, with a stroke suffix when more than one distinct
+// skill in `scope` shares the same display name. Different rows that render
+// the SAME skillId (push-off in Start + The wall) aren't ambiguous and never
+// get a suffix. Pass 2a addition for the Oct 14 screen rule "Every repeated
+// skill label includes its stroke."
+const STROKE_FULL_NAME: Record<"free" | "back" | "breast" | "fly", string> = {
+  free: "freestyle",
+  back: "backstroke",
+  breast: "breaststroke",
+  fly: "butterfly",
+};
+
+export function getDisambiguatedLabel(
+  skill: import("@swim-app/shared").SkillForRating,
+  scope: ReadonlyArray<import("@swim-app/shared").SkillForRating>,
+): string {
+  const sameName = scope.filter(
+    (other) => other.name === skill.name && other.id !== skill.id,
+  );
+  if (sameName.length === 0) return skill.name;
+  if (skill.stroke !== null && skill.stroke in STROKE_FULL_NAME) {
+    return `${skill.name} (${STROKE_FULL_NAME[skill.stroke as keyof typeof STROKE_FULL_NAME]})`;
+  }
+  return skill.name;
+}
+
 // Returns the draftKey for each entry in `buildRatingsArray` (same order).
 // Lets the UI translate server/safeParse `ratings[i]` issue paths back to
 // the specific skill row.

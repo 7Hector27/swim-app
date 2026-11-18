@@ -1,3 +1,16 @@
+// Section layout per screen. Stroke screens follow race order
+// (Start → Underwaters → Breakout → The swim → The wall → Finish → Numbers)
+// per docs/reference/decisions-screens-skills-2026-10-14.md.
+//
+// A single skill slug may appear in more than one section on the same screen
+// (push-off and streamline-in-motion show up in both "Start" and "The wall").
+// buildSectionGroups renders the row in each section it's listed under; the
+// draft state is keyed by skillId, so one grade flows through all appearances.
+//
+// Composite start skills (`track-start`, `relay-start`, `back-start`) are
+// listed by the PARENT slug only — StartGroupSection renders their
+// components. Listing the component slugs here as well would double-render.
+
 export const SCREEN_SECTIONS: Record<string, Array<{ name: string; slugs: string[] }>> = {
   fundamentals: [
     { name: "Fundamentals", slugs: ["buoyancy-balance","head-position-overall","core-stability","static-streamline","finger-spacing","sculling","exhalation","breath-control"] },
@@ -6,32 +19,40 @@ export const SCREEN_SECTIONS: Record<string, Array<{ name: string; slugs: string
     { name: "Water Confidence", slugs: ["water-submerging","water-front-float","water-back-float","water-treading","water-wall"] },
   ],
   freestyle: [
-    { name: "The swim", slugs: ["free-head-position","free-horizontal-alignment","free-hip-position","free-rotation","free-reach-before-entry","free-catch","free-pull","free-recovery","free-kick","free-stroke-timing"] },
-    { name: "Numbers", slugs: ["free-kick-rate","free-tempo","free-stroke-count","free-golf-score","free-finishing"] },
-    { name: "Breathing", slugs: ["breathing-timing-free","stroke-breath-coordination-free","free-rhythmic-breathing","free-bilateral-breathing"] },
-    { name: "Push-off & turns", slugs: ["push-off","streamline-in-motion","udk-free","breakout-free","wall-approach","freestyle-flip-turn"] },
-    { name: "Starts", slugs: ["track-start","track-start-reaction","track-start-acceleration","track-start-height","track-start-distance","track-start-head-arm-hand","track-start-leg-feet","relay-start","relay-start-reaction","relay-start-acceleration","relay-start-height","relay-start-distance","relay-start-head-arm-hand","relay-start-leg-feet"] },
+    { name: "Start", slugs: ["track-start","push-off","streamline-in-motion"] },
+    { name: "Underwaters", slugs: ["udk-free"] },
+    { name: "Breakout", slugs: ["breakout-free"] },
+    { name: "The swim", slugs: ["free-head-position","free-horizontal-alignment","free-hip-position","free-rotation","free-reach-before-entry","free-catch","free-pull","free-recovery","free-kick","breathing-timing-free","stroke-breath-coordination-free","free-rhythmic-breathing","free-stroke-timing","free-bilateral-breathing"] },
+    { name: "The wall", slugs: ["wall-approach","freestyle-flip-turn","push-off","streamline-in-motion"] },
+    { name: "Finish", slugs: ["free-finishing"] },
+    { name: "Numbers", slugs: ["free-kick-rate","free-tempo","free-stroke-count","free-golf-score"] },
   ],
   backstroke: [
-    { name: "The swim", slugs: ["back-head-position-stability","back-body-alignment","back-hip-position","back-rotation","back-reach-before-entry","back-catch","back-pull","back-arm-recovery","back-kick","back-swimming-straight","back-stroke-timing"] },
-    { name: "Numbers", slugs: ["back-kick-rate","back-tempo","back-stroke-count","back-golf-score","back-finishing"] },
-    { name: "Breathing", slugs: ["back-rhythmic-breathing"] },
-    { name: "Push-off & turns", slugs: ["push-off","streamline-in-motion","udk-back","breakout-back","wall-approach","backstroke-flip-turn"] },
-    { name: "Starts", slugs: ["back-start","back-start-reaction","back-start-push","back-start-arch","back-start-distance","back-start-entry-alignment"] },
+    { name: "Start", slugs: ["back-start","streamline-in-motion"] },
+    { name: "Underwaters", slugs: ["udk-back"] },
+    { name: "Breakout", slugs: ["breakout-back"] },
+    { name: "The swim", slugs: ["back-head-position-stability","back-body-alignment","back-hip-position","back-rotation","back-reach-before-entry","back-catch","back-pull","back-arm-recovery","back-kick","back-swimming-straight","back-rhythmic-breathing","back-stroke-timing"] },
+    { name: "The wall", slugs: ["wall-approach","backstroke-flip-turn","push-off","streamline-in-motion"] },
+    { name: "Finish", slugs: ["back-finishing"] },
+    { name: "Numbers", slugs: ["back-kick-rate","back-tempo","back-stroke-count","back-golf-score"] },
   ],
   breaststroke: [
-    { name: "The swim", slugs: ["breast-head-position","breast-horizontal-alignment","breast-hip-position","breast-kick-mechanics","breast-arm-pull","breast-timing","breast-glide","breast-streamline-recovery"] },
-    { name: "Numbers", slugs: ["breast-tempo","breast-stroke-count","breast-propulsion-efficiency","breast-finishing"] },
-    { name: "Breathing", slugs: ["breathing-timing-breast","stroke-breath-coordination-breast"] },
-    { name: "Push-off & turns", slugs: ["push-off","streamline-in-motion","pullout","breakout-breast","wall-approach","breaststroke-open-turn"] },
-    { name: "Starts", slugs: ["track-start","track-start-reaction","track-start-acceleration","track-start-height","track-start-distance","track-start-head-arm-hand","track-start-leg-feet","relay-start","relay-start-reaction","relay-start-acceleration","relay-start-height","relay-start-distance","relay-start-head-arm-hand","relay-start-leg-feet"] },
+    { name: "Start", slugs: ["track-start","push-off","streamline-in-motion"] },
+    { name: "Underwaters", slugs: ["pullout"] },
+    { name: "Breakout", slugs: ["breakout-breast"] },
+    { name: "The swim", slugs: ["breast-head-position","breast-horizontal-alignment","breast-hip-position","breast-kick-mechanics","breast-arm-pull","breathing-timing-breast","stroke-breath-coordination-breast","breast-timing","breast-glide","breast-streamline-recovery"] },
+    { name: "The wall", slugs: ["wall-approach","breaststroke-open-turn"] },
+    { name: "Finish", slugs: ["breast-finishing"] },
+    { name: "Numbers", slugs: ["breast-tempo","breast-stroke-count","breast-propulsion-efficiency"] },
   ],
   butterfly: [
-    { name: "The swim", slugs: ["fly-head-position","fly-horizontal-alignment","fly-hip-position","fly-body-undulation","fly-dolphin-kick","fly-reach-before-entry","fly-catch","fly-pull","fly-arm-recovery","fly-two-kick-rhythm"] },
-    { name: "Numbers", slugs: ["fly-kick-rate","fly-tempo","fly-stroke-count","fly-golf-score","fly-finishing"] },
-    { name: "Breathing", slugs: ["breathing-timing-fly","stroke-breath-coordination-fly","fly-rhythmic-breathing"] },
-    { name: "Push-off & turns", slugs: ["push-off","streamline-in-motion","udk-fly","breakout-fly","wall-approach","butterfly-open-turn"] },
-    { name: "Starts", slugs: ["track-start","track-start-reaction","track-start-acceleration","track-start-height","track-start-distance","track-start-head-arm-hand","track-start-leg-feet","relay-start","relay-start-reaction","relay-start-acceleration","relay-start-height","relay-start-distance","relay-start-head-arm-hand","relay-start-leg-feet"] },
+    { name: "Start", slugs: ["track-start","push-off","streamline-in-motion"] },
+    { name: "Underwaters", slugs: ["udk-fly"] },
+    { name: "Breakout", slugs: ["breakout-fly"] },
+    { name: "The swim", slugs: ["fly-head-position","fly-horizontal-alignment","fly-hip-position","fly-body-undulation","fly-dolphin-kick","fly-reach-before-entry","fly-catch","fly-pull","fly-arm-recovery","breathing-timing-fly","stroke-breath-coordination-fly","fly-rhythmic-breathing","fly-two-kick-rhythm"] },
+    { name: "The wall", slugs: ["wall-approach","butterfly-open-turn","push-off","streamline-in-motion"] },
+    { name: "Finish", slugs: ["fly-finishing"] },
+    { name: "Numbers", slugs: ["fly-kick-rate","fly-tempo","fly-stroke-count","fly-golf-score"] },
   ],
   starts: [
     { name: "Underwaters", slugs: ["udk-free","udk-fly","udk-back","pullout"] },

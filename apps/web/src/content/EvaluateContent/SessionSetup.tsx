@@ -4,15 +4,6 @@ import type { ScreensResponse } from "@swim-app/shared";
 import type { EvaluateFieldIssue, SessionDraft } from "./helpers";
 import { DOM_IDS, todayLA } from "./helpers";
 
-const BREATHING_OPTIONS = [
-  { value: "every_1", label: "Every stroke" },
-  { value: "every_2", label: "Every 2" },
-  { value: "every_3", label: "Every 3" },
-  { value: "every_4", label: "Every 4" },
-  { value: "every_5", label: "Every 5" },
-  { value: "other", label: "Other" },
-] as const;
-
 interface SessionSetupProps {
   draft: SessionDraft;
   screens: ScreensResponse;
@@ -24,6 +15,10 @@ interface SessionSetupProps {
   screenLockedName?: string;
 }
 
+// Note: Pass 2a moved the breathing-pattern picker out of SessionSetup. It
+// renders inside "The swim" section on freestyle and butterfly screens
+// (BreathingPatternField). Storage stays on `draft.breathingPattern`.
+
 export default function SessionSetup({
   draft,
   screens,
@@ -32,9 +27,7 @@ export default function SessionSetup({
   issues = [],
   screenLockedName,
 }: SessionSetupProps) {
-  const needsBreathing = draft.screenSlug === "freestyle" || draft.screenSlug === "butterfly";
   const screenIssue = issues.find((issue) => issue.field === "screenSlug");
-  const breathingIssue = issues.find((issue) => issue.field === "breathingPattern");
   const sessionDateIssue = issues.find((issue) => issue.field === "sessionDate");
   const contextIssue = issues.find((issue) => issue.field === "context");
 
@@ -84,46 +77,6 @@ export default function SessionSetup({
           </>
         )}
       </fieldset>
-
-      {/* Breathing pattern (freestyle, butterfly) */}
-      {needsBreathing && (
-        <fieldset id={DOM_IDS.breathingPattern} className="flex flex-col gap-2">
-          <legend className="font-bold text-sm" style={{ color: "var(--color-text)" }}>
-            Breathing pattern
-          </legend>
-          <div
-            className="flex gap-2 flex-wrap"
-            role="group"
-            aria-invalid={breathingIssue !== undefined || undefined}
-            aria-describedby={breathingIssue ? `${DOM_IDS.breathingPattern}-error` : undefined}
-          >
-            {BREATHING_OPTIONS.map(({ value, label }) => (
-              <button
-                key={value}
-                type="button"
-                onClick={() => onChange({ breathingPattern: value })}
-                className="min-h-[44px] px-4 rounded border text-sm font-semibold transition-colors"
-                style={{
-                  borderColor: draft.breathingPattern === value
-                    ? "var(--color-accent)"
-                    : breathingIssue
-                      ? "var(--color-danger)"
-                      : "var(--color-border)",
-                  color: draft.breathingPattern === value ? "var(--color-accent)" : "var(--color-text-secondary)",
-                  backgroundColor: "transparent",
-                }}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          {breathingIssue && (
-            <p id={`${DOM_IDS.breathingPattern}-error`} className="text-xs" style={{ color: "var(--color-danger)" }}>
-              {breathingIssue.message}
-            </p>
-          )}
-        </fieldset>
-      )}
 
       {/* Session date */}
       <fieldset id={DOM_IDS.sessionDate} className="flex flex-col gap-2">

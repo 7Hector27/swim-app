@@ -49,9 +49,12 @@ interface StartGroupSectionProps {
   prevGrades?: SwimmerSkillsResponse["grades"];
   onMastery?: (draftKey: string) => void;
   masteredKey?: string | null;
+  // Overrides the default `skill-<parent.id>` DOM anchor so a shared parent
+  // rendered in two sections can use a unique id on the second occurrence.
+  anchorId?: string;
 }
 
-export default function StartGroupSection({ parent, components, draftSkills, onChange, prevGrades, onMastery, masteredKey }: StartGroupSectionProps) {
+export default function StartGroupSection({ parent, components, draftSkills, onChange, prevGrades, onMastery, masteredKey, anchorId }: StartGroupSectionProps) {
   // Build RatingRecords from current draft for the component skills
   const ratingRecords: RatingRecord[] = [];
   for (const skill of components) {
@@ -94,7 +97,7 @@ export default function StartGroupSection({ parent, components, draftSkills, onC
   const startResult = calculateStartGrade(componentSlugs, ratingRecords);
 
   return (
-    <div id={`skill-${parent.id}`} className="flex flex-col gap-3">
+    <div id={anchorId ?? `skill-${parent.id}`} className="flex flex-col gap-3">
       <div className="flex items-center gap-2">
         <h3 className="font-semibold text-sm" style={{ color: "var(--color-text)" }}>
           {parent.name}
