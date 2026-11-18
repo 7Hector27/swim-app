@@ -18,6 +18,7 @@ import { authEmailLimiter } from "./middleware/authEmailRateLimit";
 import {
   changePasswordLimiter,
   forgotPasswordIpLimiter,
+  notifyPasswordChangedLimiter,
 } from "./middleware/passwordRateLimit";
 import { supabase } from "./lib/supabase";
 import { supabaseAdmin } from "./lib/supabaseAdmin";
@@ -453,6 +454,7 @@ export function createApp(logger: Logger) {
   app.post(
     "/auth/notify-password-changed",
     requireUser,
+    notifyPasswordChangedLimiter,
     validate({}),
     asyncHandler(async (req, res) => {
       const now = new Date();

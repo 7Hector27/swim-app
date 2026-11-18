@@ -14,6 +14,12 @@
 //    signInWithPassword; without a bucket a stolen access token could
 //    brute-force the password. 5/hour per profile matches the account-
 //    deletion confirm limiter.
+//
+// 3) `notifyPasswordChangedLimiter`: per-profile cap on POST /auth/
+//    notify-password-changed. Without a cap, a stolen access token could
+//    spam the recipient's inbox with "Your password was changed" alerts.
+//    Same 5/hour-per-profile shape as changePasswordLimiter — the
+//    legitimate path hits this endpoint exactly once per reset.
 
 import rateLimit from "express-rate-limit";
 import type { Request } from "express";
@@ -42,6 +48,22 @@ export const changePasswordLimiter = rateLimit({
     const id = readProfileId(req);
     if (id === null) {
       throw new Error("changePasswordLimiter: keyGenerator reached without profile id");
+    }
+    return id;
+  },
+});
+
+export const notifyPasswordChangedLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  limit: 5,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: { error: "Too many requests, please try again later" },
+  skip: (req: Request) => readProfileId(req) === null,
+  keyGenerator: (req: Request) => {
+    const id = readProfileId(req);
+    if (id === null) {
+      throw new Error("notifyPasswordChangedLimiter: keyGenerator reached without profile id");
     }
     return id;
   },
