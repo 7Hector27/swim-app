@@ -5,6 +5,7 @@ import type { EvaluateFieldIssue, SkillDraft } from "./helpers";
 import GradeSelector from "./GradeSelector";
 import DetailsPanel from "./DetailsPanel";
 import MasteryBadge from "./MasteryBadge";
+import MeasurementInput from "./MeasurementInput";
 import PrevBadge from "./PrevBadge";
 
 interface SkillGradeRowProps {
@@ -33,10 +34,13 @@ interface SkillGradeRowProps {
 export default function SkillGradeRow({ skill, draftKey, label, draft, onChange, issues = [], prevGrade, onMastery, masteredKey, anchorId }: SkillGradeRowProps) {
   const gradeIssue = issues.find((issue) => issue.field === "grade");
   const notLegalIssue = issues.find((issue) => issue.field === "notLegal");
-  const detailsPanelIssues = issues.filter(
-    (issue) => issue.field === "measurementValue" || issue.field === "capacityValue",
-  );
+  const measurementIssue = issues.find((issue) => issue.field === "measurementValue");
+  // Pass 2b: the measurement number box now lives on the row, so it's no
+  // longer a reason to open the details panel. Only capacity errors route
+  // there.
+  const detailsPanelIssues = issues.filter((issue) => issue.field === "capacityValue");
   const hasDetailsIssue = detailsPanelIssues.length > 0;
+  const hasMeasurementSlot = skill.type === "measured" || skill.type === "score";
   return (
     <fieldset
       id={anchorId ?? `skill-${draftKey}`}
@@ -131,6 +135,16 @@ export default function SkillGradeRow({ skill, draftKey, label, draft, onChange,
           </p>
         ) : null;
       })()}
+
+      {hasMeasurementSlot && (
+        <MeasurementInput
+          skill={skill}
+          draft={draft}
+          draftKey={draftKey}
+          onChange={onChange}
+          {...(measurementIssue !== undefined && { issue: measurementIssue })}
+        />
+      )}
 
       <div className="flex gap-2 flex-wrap">
         <button

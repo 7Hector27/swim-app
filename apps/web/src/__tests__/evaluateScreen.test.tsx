@@ -28,6 +28,7 @@ import CalculatedSkillRow from "../content/EvaluateContent/CalculatedSkillRow";
 import StartGroupSection from "../content/EvaluateContent/StartGroupSection";
 import UndoToast from "../content/EvaluateContent/UndoToast";
 import CollapsibleSection from "../content/EvaluateContent/CollapsibleSection";
+import AutosaveStatus from "../content/EvaluateContent/AutosaveStatus";
 import EvaluateContent from "../content/EvaluateContent/EvaluateContent";
 import { buildRatingsArray, defaultSkillDraft } from "../content/EvaluateContent/helpers";
 import { submitEvaluation } from "../content/EvaluateContent/actions";
@@ -142,23 +143,56 @@ describe("buildRatingsArray", () => {
 // ── Component tests ───────────────────────────────────────────────────────────
 
 describe("GradeSelector", () => {
-  it("renders N/A button", () => {
-    const onChange = vi.fn();
-    render(<GradeSelector value={null} disabled={false} onChange={onChange} labelPrefix="Kick" />);
-    expect(screen.getByRole("radio", { name: /n\/a/i })).toBeInTheDocument();
+  // Pass 2b: the N/A pill is gone — an untouched row has nothing selected.
+  // Tapping the already-selected grade clears it to null. Arrow keys move
+  // between the five grade pills; a polite live region announces the
+  // cleared state.
+
+  it("renders only the 1-5 grade buttons (no N/A pill)", () => {
+    render(<GradeSelector value={null} disabled={false} onChange={vi.fn()} labelPrefix="Kick" />);
+    for (const grade of ["1", "2", "3", "4", "5"]) {
+      expect(screen.getByRole("radio", { name: grade })).toBeInTheDocument();
+    }
+    expect(screen.queryByRole("radio", { name: /n\/a/i })).toBeNull();
   });
 
-  it("N/A is selected by default when value is null", () => {
-    const onChange = vi.fn();
-    render(<GradeSelector value={null} disabled={false} onChange={onChange} labelPrefix="Kick" />);
-    expect(screen.getByRole("radio", { name: /n\/a/i })).toHaveAttribute("aria-checked", "true");
+  it("nothing is selected when value is null (untouched row)", () => {
+    render(<GradeSelector value={null} disabled={false} onChange={vi.fn()} labelPrefix="Kick" />);
+    for (const grade of ["1", "2", "3", "4", "5"]) {
+      expect(screen.getByRole("radio", { name: grade })).toHaveAttribute("aria-checked", "false");
+    }
   });
 
-  it("calls onChange with the grade when a grade button is clicked", () => {
+  it("calls onChange with the grade when a grade pill is tapped", () => {
     const onChange = vi.fn();
     render(<GradeSelector value={null} disabled={false} onChange={onChange} labelPrefix="Kick" />);
     fireEvent.click(screen.getByRole("radio", { name: "3" }));
     expect(onChange).toHaveBeenCalledWith(3);
+  });
+
+  it("calls onChange(null) when the already-selected grade is tapped (toggle to cleared)", () => {
+    const onChange = vi.fn();
+    render(<GradeSelector value={4} disabled={false} onChange={onChange} labelPrefix="Kick" />);
+    fireEvent.click(screen.getByRole("radio", { name: "4" }));
+    expect(onChange).toHaveBeenCalledWith(null);
+  });
+
+  it("announces the cleared state via a polite live region", () => {
+    const { rerender } = render(
+      <GradeSelector value={3} disabled={false} onChange={vi.fn()} labelPrefix="Freestyle kick" />,
+    );
+    expect(screen.getByRole("status").textContent).toMatch(/grade 3/i);
+    rerender(<GradeSelector value={null} disabled={false} onChange={vi.fn()} labelPrefix="Freestyle kick" />);
+    expect(screen.getByRole("status").textContent).toMatch(/no grade selected/i);
+  });
+
+  it("arrow keys cycle onChange through adjacent grades", () => {
+    const onChange = vi.fn();
+    render(<GradeSelector value={3} disabled={false} onChange={onChange} labelPrefix="Kick" />);
+    fireEvent.keyDown(screen.getByRole("radio", { name: "3" }), { key: "ArrowRight" });
+    expect(onChange).toHaveBeenLastCalledWith(4);
+    fireEvent.keyDown(screen.getByRole("radio", { name: "3" }), { key: "ArrowLeft" });
+    expect(onChange).toHaveBeenLastCalledWith(2);
   });
 });
 
@@ -240,6 +274,122 @@ describe("SkillGradeRow — previous rating badge", () => {
       />,
     );
     expect(screen.getByLabelText(/no previous rating/i)).toBeInTheDocument();
+  });
+});
+
+describe("SkillGradeRow — measurement on row (Pass 2b)", () => {
+  // The number box moved from DetailsPanel onto the row. The details panel
+  // now only holds fault tags, capacity, and the free-text note.
+  const MEASURED_SKILL: SkillForRating = {
+    ...SKILL,
+    id: "measured-skill",
+    slug: "free-tempo",
+    name: "Tempo",
+    type: "measured",
+    unit: "cycles/min",
+    notLegalAllowed: false,
+  };
+
+  it("shows the measurement number input on the row with the unit label", () => {
+    render(
+      <SkillGradeRow
+        skill={MEASURED_SKILL}
+        draftKey={MEASURED_SKILL.id}
+        label="Tempo"
+        draft={defaultSkillDraft()}
+        onChange={vi.fn()}
+      />,
+    );
+    // Row-level input exists and is visible without expanding anything.
+    expect(screen.getByRole("spinbutton", { name: /Measurement/i })).toBeInTheDocument();
+    expect(screen.getByText("cycles/min")).toBeInTheDocument();
+    // No "Hide details" / "Add details" expansion needed to see it.
+    expect(screen.queryByRole("button", { name: /Hide details/i })).toBeNull();
+  });
+
+  it("writes the typed value to measurementValue through onChange", () => {
+    const onChange = vi.fn();
+    render(
+      <SkillGradeRow
+        skill={MEASURED_SKILL}
+        draftKey={MEASURED_SKILL.id}
+        label="Tempo"
+        draft={defaultSkillDraft()}
+        onChange={onChange}
+      />,
+    );
+    fireEvent.change(screen.getByRole("spinbutton", { name: /Measurement/i }), { target: { value: "62" } });
+    expect(onChange).toHaveBeenCalledWith(MEASURED_SKILL.id, { measurementValue: "62" });
+  });
+
+  it("details panel no longer renders the measurement input (it lives on the row)", () => {
+    const onChange = vi.fn();
+    render(
+      <SkillGradeRow
+        skill={MEASURED_SKILL}
+        draftKey={MEASURED_SKILL.id}
+        label="Tempo"
+        draft={{ ...defaultSkillDraft(), detailsOpen: true }}
+        onChange={onChange}
+      />,
+    );
+    // Exactly one measurement spinbutton on the whole row (the one on the
+    // header level), and the details panel shows capacity + note instead.
+    expect(screen.getAllByRole("spinbutton", { name: /Measurement/i })).toHaveLength(1);
+    expect(screen.getByLabelText(/Capacity/i)).toBeInTheDocument();
+  });
+
+  it("for a golf-score skill, keeps the test-category pills and renders the unmapped-unit note (today's shape)", () => {
+    // Catalog unit "time_s + stroke_count" is intentionally unmapped (see
+    // packages/shared/src/lib/measurementUnit.ts); golf-score skills carry
+    // their numbers through golfScoreCategory, not a plain measurementValue.
+    // Pass 2b keeps today's behavior: the category pills stay on the row
+    // and the measurement slot shows the fallback note.
+    const scoreSkill: SkillForRating = {
+      ...SKILL,
+      id: "golf-score",
+      slug: "free-golf-score",
+      name: "Golf score",
+      type: "score",
+      unit: "time_s + stroke_count",
+      notLegalAllowed: false,
+    };
+    render(
+      <SkillGradeRow
+        skill={scoreSkill}
+        draftKey={scoreSkill.id}
+        label="Golf score"
+        draft={defaultSkillDraft()}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("button", { name: /Push-off in water/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Deck dive/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Block dive/i })).toBeInTheDocument();
+    expect(screen.getByText(/can't be saved yet/i)).toBeInTheDocument();
+  });
+
+  it("for a measured skill whose unit has no enum mapping (kicks/min), shows the fallback note", () => {
+    const kickRate: SkillForRating = {
+      ...SKILL,
+      id: "kick-rate",
+      slug: "free-kick-rate",
+      name: "Kick rate",
+      type: "measured",
+      unit: "kicks/min",
+      notLegalAllowed: false,
+    };
+    render(
+      <SkillGradeRow
+        skill={kickRate}
+        draftKey={kickRate.id}
+        label="Kick rate"
+        draft={defaultSkillDraft()}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole("spinbutton", { name: /Measurement/i })).toBeNull();
+    expect(screen.getByText(/can't be saved yet/i)).toBeInTheDocument();
   });
 });
 
@@ -753,6 +903,33 @@ describe("CollapsibleSection", () => {
 });
 
 // ── Pre-save client validation ────────────────────────────────────────────────
+
+describe("AutosaveStatus", () => {
+  it("renders nothing when idle", () => {
+    const { container } = render(<AutosaveStatus state="idle" lastSavedAt={null} />);
+    expect(container.firstChild).toBeNull();
+  });
+
+  it("shows 'Saving...' while the draft is in flight", () => {
+    render(<AutosaveStatus state="saving" lastSavedAt={null} />);
+    expect(screen.getByTestId("autosave-status").textContent).toBe("Saving...");
+  });
+
+  it("shows 'Saved' with the local time after a successful save", () => {
+    // Fixed instant — 10:23 America/Los_Angeles.
+    const ts = new Date("2026-11-18T18:23:00Z").getTime();
+    render(<AutosaveStatus state="saved" lastSavedAt={ts} />);
+    expect(screen.getByTestId("autosave-status").textContent).toMatch(/^Saved/);
+    expect(screen.getByTestId("autosave-status").textContent).toMatch(/10:23/);
+  });
+
+  it("surfaces an error with role=alert when the save fails", () => {
+    render(<AutosaveStatus state="error" lastSavedAt={null} />);
+    const status = screen.getByTestId("autosave-status");
+    expect(status.textContent).toBe("Couldn't save. Try again.");
+    expect(status).toHaveAttribute("role", "alert");
+  });
+});
 
 describe("EvaluateContent — pre-save validation", () => {
   const VALIDATION_SCREENS: ScreensResponse = [
