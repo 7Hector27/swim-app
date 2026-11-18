@@ -466,6 +466,96 @@ describe("validateSubmission", () => {
     );
     expect(measurementIssue).toBeDefined();
   });
+
+  // Pass 2c follow-up: half-filled golf and golf-without-category are
+  // caught client-side so the save button never hits the server with a
+  // row the DB check would reject anyway.
+
+  it("surfaces a timeSeconds issue when time is filled but stroke count is blank", () => {
+    const golfSkill: SkillForRating = {
+      ...SKILL,
+      id: "00000000-0000-0000-eeee-000000000001",
+      slug: "free-golf-score",
+      type: "score",
+      unit: "time_s + stroke_count",
+    };
+    const draft = {
+      ...filledDraft(),
+      skills: {
+        [golfSkill.id]: {
+          ...defaultSkillDraft(),
+          grade: 3 as const,
+          timeSeconds: "14.25",
+          strokeCountValue: "",
+          golfScoreCategory: "push_off_in_water" as const,
+        },
+      },
+    };
+    const ratings = buildRatingsArray([golfSkill], draft.skills);
+    const issues = validateSubmission(draft, ratings);
+    const pairIssue = issues.find(
+      (issue) => issue.ratingIndex === 0 && issue.field === "timeSeconds",
+    );
+    expect(pairIssue).toBeDefined();
+    expect(pairIssue?.message).toMatch(/both time and stroke count/i);
+  });
+
+  it("surfaces a timeSeconds issue when stroke count is filled but time is blank", () => {
+    const golfSkill: SkillForRating = {
+      ...SKILL,
+      id: "00000000-0000-0000-eeee-000000000002",
+      slug: "free-golf-score",
+      type: "score",
+      unit: "time_s + stroke_count",
+    };
+    const draft = {
+      ...filledDraft(),
+      skills: {
+        [golfSkill.id]: {
+          ...defaultSkillDraft(),
+          grade: 3 as const,
+          timeSeconds: "",
+          strokeCountValue: "18",
+          golfScoreCategory: "push_off_in_water" as const,
+        },
+      },
+    };
+    const ratings = buildRatingsArray([golfSkill], draft.skills);
+    const issues = validateSubmission(draft, ratings);
+    const pairIssue = issues.find(
+      (issue) => issue.ratingIndex === 0 && issue.field === "timeSeconds",
+    );
+    expect(pairIssue).toBeDefined();
+  });
+
+  it("surfaces a golfScoreCategory issue when time + stroke count are filled but no category is picked", () => {
+    const golfSkill: SkillForRating = {
+      ...SKILL,
+      id: "00000000-0000-0000-eeee-000000000003",
+      slug: "free-golf-score",
+      type: "score",
+      unit: "time_s + stroke_count",
+    };
+    const draft = {
+      ...filledDraft(),
+      skills: {
+        [golfSkill.id]: {
+          ...defaultSkillDraft(),
+          grade: 3 as const,
+          timeSeconds: "14.25",
+          strokeCountValue: "18",
+          golfScoreCategory: null,
+        },
+      },
+    };
+    const ratings = buildRatingsArray([golfSkill], draft.skills);
+    const issues = validateSubmission(draft, ratings);
+    const categoryIssue = issues.find(
+      (issue) => issue.ratingIndex === 0 && issue.field === "golfScoreCategory",
+    );
+    expect(categoryIssue).toBeDefined();
+    expect(categoryIssue?.message).toMatch(/pick a test category/i);
+  });
 });
 
 // ── sortIssuesForScroll + anchorIdForIssue ────────────────────────────────────

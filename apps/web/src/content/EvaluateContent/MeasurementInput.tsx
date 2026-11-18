@@ -15,10 +15,14 @@ interface MeasurementInputProps {
   draft: SkillDraft;
   draftKey: string;
   onChange: (key: string, patch: Partial<SkillDraft>) => void;
+  // Error for the single-number measurement (non-score skills).
   issue?: EvaluateFieldIssue;
+  // Error for the golf-score paired fields (timeSeconds / strokeCountValue
+  // mismatch). Rendered below both inputs because it applies to the pair.
+  pairIssue?: EvaluateFieldIssue;
 }
 
-export default function MeasurementInput({ skill, draft, draftKey, onChange, issue }: MeasurementInputProps) {
+export default function MeasurementInput({ skill, draft, draftKey, onChange, issue, pairIssue }: MeasurementInputProps) {
   // Golf-score path — two paired numeric inputs. Time has hundredths-of-a-
   // second precision (numeric(6,2) at the DB layer). Stroke count is a
   // non-negative integer. The derived golf score shows below when both are
@@ -34,6 +38,13 @@ export default function MeasurementInput({ skill, draft, draftKey, onChange, iss
       !Number.isNaN(strokesParsed)
         ? timeParsed + strokesParsed
         : null;
+    // Pass 2c follow-up: the paired-fields error lights up *the empty side*
+    // so the coach's eye lands on the field they need to fill. If both are
+    // empty we don't highlight either (nothing to point at).
+    const timeMissing = pairIssue !== undefined && draft.timeSeconds === "" && draft.strokeCountValue !== "";
+    const strokesMissing = pairIssue !== undefined && draft.strokeCountValue === "" && draft.timeSeconds !== "";
+    const timeBorder = timeMissing ? "var(--color-danger)" : "var(--color-border)";
+    const strokesBorder = strokesMissing ? "var(--color-danger)" : "var(--color-border)";
     return (
       <div className="flex flex-col gap-1">
         <span className="text-xs font-semibold" style={{ color: "var(--color-text-secondary)" }}>
@@ -50,10 +61,11 @@ export default function MeasurementInput({ skill, draft, draftKey, onChange, iss
               value={draft.timeSeconds}
               onChange={(event) => onChange(draftKey, { timeSeconds: event.target.value })}
               placeholder="14.25"
-              aria-invalid={issue !== undefined || undefined}
+              aria-invalid={timeMissing || undefined}
+              aria-describedby={pairIssue ? `${draftKey}-golf-pair-error` : undefined}
               className="border rounded px-3 py-2 text-sm min-h-[44px] w-24"
               style={{
-                borderColor: issue ? "var(--color-danger)" : "var(--color-border)",
+                borderColor: timeBorder,
                 color: "var(--color-text)",
                 backgroundColor: "transparent",
               }}
@@ -69,10 +81,11 @@ export default function MeasurementInput({ skill, draft, draftKey, onChange, iss
               value={draft.strokeCountValue}
               onChange={(event) => onChange(draftKey, { strokeCountValue: event.target.value })}
               placeholder="18"
-              aria-invalid={issue !== undefined || undefined}
+              aria-invalid={strokesMissing || undefined}
+              aria-describedby={pairIssue ? `${draftKey}-golf-pair-error` : undefined}
               className="border rounded px-3 py-2 text-sm min-h-[44px] w-24"
               style={{
-                borderColor: issue ? "var(--color-danger)" : "var(--color-border)",
+                borderColor: strokesBorder,
                 color: "var(--color-text)",
                 backgroundColor: "transparent",
               }}
@@ -84,9 +97,13 @@ export default function MeasurementInput({ skill, draft, draftKey, onChange, iss
             Golf score: <span className="font-semibold text-text">{derived.toFixed(1)}</span> ({timeParsed!.toFixed(2)}s + {strokesParsed} strokes, lower is better)
           </p>
         )}
-        {issue && (
-          <p className="text-xs" style={{ color: "var(--color-danger)" }}>
-            {issue.message}
+        {pairIssue && (
+          <p
+            id={`${draftKey}-golf-pair-error`}
+            className="text-xs"
+            style={{ color: "var(--color-danger)" }}
+          >
+            {pairIssue.message}
           </p>
         )}
       </div>

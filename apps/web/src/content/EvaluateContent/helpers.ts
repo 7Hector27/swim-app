@@ -30,6 +30,12 @@ const FIELD_MESSAGE_OVERRIDES: Record<string, string> = {
     "Pick a 1 to 5 grade, or toggle 'No concept'.",
   notLegal:
     "'Not legal' needs a 1 to 5 grade.",
+  // Pass 2c follow-up: paired golf-score inputs. Partial pair → this
+  // message surfaces next to both fields via MeasurementInput.pairIssue.
+  timeSeconds: "Enter both time and stroke count.",
+  // Golf pair + no category picked. Zod reports on this field when
+  // timeSeconds is set but golfScoreCategory is null.
+  golfScoreCategory: "Pick a test category before saving a golf score.",
   coachingPriority: "Enter a coaching priority.",
   sessionDate: "Pick a session date.",
   context: "Pick a context.",
@@ -444,22 +450,20 @@ export function buildRatingsArray(
         ? null
         : (displayUnitToMeasurementEnum(skill.unit) ?? d.measurementUnit);
       // Pass 2c: parse the two golf-score free-text inputs. Only emit them
-      // on score skills (API rejects them on non-score); non-numeric or
-      // empty → null. Both must be set together for the API's paired-fields
-      // rule — if only one is numeric, drop both.
+      // on score skills (API rejects them on non-score). Empty string → null.
+      // A partial pair (one filled, one empty) is passed through so the
+      // Zod paired-fields rule fires in validateSubmission — the coach sees
+      // "Enter both time and stroke count" instead of a silent drop.
       let timeSeconds: number | null = null;
       let strokeCountValue: number | null = null;
       if (skill.type === "score") {
-        const parsedTime = d.timeSeconds === "" ? null : parseFloat(d.timeSeconds);
-        const parsedStrokes = d.strokeCountValue === "" ? null : parseInt(d.strokeCountValue, 10);
-        if (
-          parsedTime !== null &&
-          parsedStrokes !== null &&
-          !Number.isNaN(parsedTime) &&
-          !Number.isNaN(parsedStrokes)
-        ) {
-          timeSeconds = parsedTime;
-          strokeCountValue = parsedStrokes;
+        if (d.timeSeconds !== "") {
+          const parsedTime = parseFloat(d.timeSeconds);
+          if (!Number.isNaN(parsedTime)) timeSeconds = parsedTime;
+        }
+        if (d.strokeCountValue !== "") {
+          const parsedStrokes = parseInt(d.strokeCountValue, 10);
+          if (!Number.isNaN(parsedStrokes)) strokeCountValue = parsedStrokes;
         }
       }
       ratings.push({
