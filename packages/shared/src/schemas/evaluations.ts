@@ -242,6 +242,13 @@ export type ScreenWithSkills = z.infer<typeof ScreenWithSkillsSchema>;
 export const ScreensResponseSchema = z.array(ScreenWithSkillsSchema);
 export type ScreensResponse = z.infer<typeof ScreensResponseSchema>;
 
+// Chain entry shape matches the API's `ChainEntry` type (see
+// packages/shared/src/lib/dependencyMap.ts). An earlier revision of this
+// schema expected `grade` + `sortOrder`, which the handler never emitted;
+// the mismatch only surfaced once a swimmer had a rating that produced a
+// non-empty chain (empty arrays always parsed clean). Hitting the evaluate
+// page for a swimmer with any prior rating returned 500 "Failed to load
+// prior skills" because the client parser rewrote the mismatch to 500.
 export const SwimmerSkillsResponseSchema = z.object({
   grades: z.record(
     z.union([z.number().int().min(1).max(5), z.literal("not_legal"), z.literal("no_concept")]),
@@ -250,7 +257,7 @@ export const SwimmerSkillsResponseSchema = z.object({
   coachingPriorities: z.array(
     z.object({
       targetSlug: z.string(),
-      chain: z.array(z.object({ slug: z.string(), grade: z.unknown(), sortOrder: z.number().int() })),
+      chain: z.array(z.object({ slug: z.string(), notAssessed: z.boolean() })),
     }),
   ),
 });
