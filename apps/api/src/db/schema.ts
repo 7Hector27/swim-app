@@ -149,6 +149,45 @@ export const profiles = pgTable(
   },
 ).enableRLS();
 
+// ── Account security events ─────────────────────────────────────────────────
+//
+// One row per password-change event — "reset" for the recovery-link flow
+// on /auth/reset-password, "change" for the authed /account form.
+// Written inside the same transaction as the lesson_email_outbox enqueue
+// for the corresponding `password_changed` email so the audit record and
+// the confirmation email either both commit or both roll back.
+//
+// Intentionally not reusing household_audit_log: that table requires a
+// household_id, and a coach profile may have no household membership at
+// all. This table is strictly user-scoped — only ids, method, timestamp.
+
+export const passwordChangeMethodEnum = pgEnum("password_change_method", [
+  "reset",
+  "change",
+]);
+
+export const passwordChangeEvents = pgTable(
+  "password_change_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // Mirrors auth.users.id via the profile row. Cascade on delete so an
+    // account-deletion scrub takes this row with it.
+    profileId: uuid("profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    method: passwordChangeMethodEnum("method").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("password_change_events_profile_created_idx").on(
+      table.profileId,
+      table.createdAt.desc(),
+    ),
+  ],
+).enableRLS();
+
 // ── Households ────────────────────────────────────────────────────────────────
 
 export const households = pgTable("households", {

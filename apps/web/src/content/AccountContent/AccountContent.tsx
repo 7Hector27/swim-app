@@ -8,6 +8,7 @@ import Button from "@/components/Button";
 import { capitalizeFirst } from "@/lib/capitalizeFirst";
 
 import AccountSectionNav from "./AccountSectionNav";
+import ChangePasswordForm from "./ChangePasswordForm";
 import DeleteAccountSection from "./DeleteAccountSection";
 import EditProfileForm from "./EditProfileForm";
 import GoogleCalendarCard from "./GoogleCalendarCard";
@@ -162,14 +163,22 @@ export default function AccountContent({
                 >
                   Security
                 </h2>
-                <p className="text-sm text-text-secondary">
-                  Sign out of this device. You can sign back in anytime.
-                </p>
-                <form action={logout}>
-                  <Button type="submit" variant="outline">
-                    Log out
-                  </Button>
-                </form>
+                <div className="flex flex-col gap-3">
+                  <h3 className="font-heading text-lg text-heading">Change password</h3>
+                  <ChangePasswordForm />
+                </div>
+
+                <div className="flex flex-col gap-3 border-t border-border pt-5">
+                  <h3 className="font-heading text-lg text-heading">Log out</h3>
+                  <p className="text-sm text-text-secondary">
+                    Sign out of this device. You can sign back in anytime.
+                  </p>
+                  <form action={logout}>
+                    <Button type="submit" variant="outline">
+                      Log out
+                    </Button>
+                  </form>
+                </div>
               </section>
 
               {showDeleteAccount && (

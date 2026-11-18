@@ -1,12 +1,17 @@
 import { z } from "zod";
 import { todayLA } from "../lib/todayLA";
 
+// Password rules shared by signup, reset, and change flows. Keep the rule
+// surface here so a tightening (length, complexity) lands in one place.
+export const PASSWORD_MIN_LENGTH = 8;
+export const PasswordSchema = z.string().min(PASSWORD_MIN_LENGTH);
+
 export const SignUpBodySchema = z
   .object({
     fullName: z.string().trim().min(1).max(100),
     email: z.string().email(),
     phone: z.string().max(30).nullable().optional(),
-    password: z.string().min(8),
+    password: PasswordSchema,
     birthDate: z
       .string()
       .date()
@@ -39,3 +44,20 @@ export const LoginBodySchema = z
   .strict();
 
 export type LoginBody = z.infer<typeof LoginBodySchema>;
+
+export const ForgotPasswordBodySchema = z
+  .object({
+    email: z.string().email(),
+  })
+  .strict();
+
+export type ForgotPasswordBody = z.infer<typeof ForgotPasswordBodySchema>;
+
+export const ChangePasswordBodySchema = z
+  .object({
+    currentPassword: z.string().min(1),
+    newPassword: PasswordSchema,
+  })
+  .strict();
+
+export type ChangePasswordBody = z.infer<typeof ChangePasswordBodySchema>;

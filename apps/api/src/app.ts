@@ -5,7 +5,7 @@ import pinoHttp from "pino-http";
 import type { Logger } from "pino";
 import { sql, eq } from "drizzle-orm";
 import { db } from "./db/client";
-import { householdMembers, profiles } from "./db/schema";
+import { householdMembers, passwordChangeEvents, profiles } from "./db/schema";
 import { buildHealthResponse } from "./health";
 import { getEnv } from "./lib/env";
 import { requestId } from "./middleware/requestId";
@@ -15,7 +15,16 @@ import { errorHandler } from "./middleware/errorHandler";
 import { failRoutes } from "./middleware/failRoutes";
 import { requireUser } from "./middleware/requireUser";
 import { authEmailLimiter } from "./middleware/authEmailRateLimit";
+import {
+  changePasswordLimiter,
+  forgotPasswordIpLimiter,
+  notifyPasswordChangedLimiter,
+} from "./middleware/passwordRateLimit";
 import { supabase } from "./lib/supabase";
+import { supabaseAdmin } from "./lib/supabaseAdmin";
+import { createNonPersistingAuthClient } from "./lib/supabaseAuthClient";
+import { enqueuePasswordChangedEmail } from "./services/emails/passwordChangedOutbox";
+import { sendLessonEmailOutboxRow } from "./services/emails/sender";
 import { clubsRouter } from "./routes/clubs";
 import { swimmersRouter } from "./routes/swimmers";
 import { householdsRouter } from "./routes/households";
@@ -34,7 +43,11 @@ import { applyPolicyAcceptance } from "./services/policyAcceptance";
 import { processWebhook } from "./services/stripe";
 import {
   calculateAge,
+  ChangePasswordBodySchema,
+  type ChangePasswordBody,
   currentVersionFor,
+  type ForgotPasswordBody,
+  ForgotPasswordBodySchema,
   HealthQuerySchema,
   isSafeReturnTo,
   type MeResponse,
@@ -274,6 +287,214 @@ export function createApp(logger: Logger) {
 
     res.status(201).end();
   }));
+
+  // POST /auth/forgot-password — enumeration-safe reset request.
+  //
+  // Always returns 200 with the same generic body regardless of whether
+  // the email corresponds to an account. The per-email limiter runs AFTER
+  // validate() so it keys on the parsed body.email, and before the
+  // Supabase call so an attacker probing an email gets a 429 identical to
+  // the signup 429. A per-IP limiter is stacked on top with a generous
+  // cap to catch direct-from-curl abuse without throttling legitimate
+  // traffic coming through Vercel's shared egress pool.
+  //
+  // The redirect URL is ALWAYS built from env.siteUrl — never from a
+  // request header. Trusting Host / Origin here would let an attacker
+  // redirect the reset to a site they control.
+  app.post(
+    "/auth/forgot-password",
+    validate({ body: ForgotPasswordBodySchema }),
+    authEmailLimiter,
+    forgotPasswordIpLimiter,
+    asyncHandler(async (req, res) => {
+      const body = req.body as ForgotPasswordBody;
+      const redirectTo = `${env.siteUrl}/auth/reset-password`;
+      // Fire-and-log: Supabase returns `error` for unknown emails too,
+      // but we must not surface that to the caller. Any failure is
+      // logged (no email in the log line — logs must stay PII-free) and
+      // the client still gets the same generic response.
+      const { error } = await supabase.auth.resetPasswordForEmail(body.email, {
+        redirectTo,
+      });
+      if (error) {
+        req.log.warn(
+          { code: (error as { code?: string } | null)?.code, status: (error as { status?: number } | null)?.status },
+          "resetPasswordForEmail call returned error",
+        );
+      }
+      res.status(200).json({
+        ok: true,
+        message: "If there's an account for that email, we've sent a reset link.",
+      });
+    }),
+  );
+
+  // POST /auth/change-password — authed change flow from /account.
+  //
+  // Re-authenticates with the current password via a non-persisting
+  // Supabase client (same pattern as /me/deletion/confirm per ADR 034),
+  // then updates via the admin client so the response doesn't depend on
+  // whether the user is signed in through this request's token. Enqueues
+  // the password_changed email inside a transaction and kicks a sender
+  // microtask after commit.
+  app.post(
+    "/auth/change-password",
+    requireUser,
+    changePasswordLimiter,
+    validate({ body: ChangePasswordBodySchema }),
+    asyncHandler(async (req, res) => {
+      const body = req.body as ChangePasswordBody;
+
+      const authCheckClient = createNonPersistingAuthClient();
+      const { data: authData, error: authError } = await authCheckClient.auth.signInWithPassword({
+        email: req.userEmail,
+        password: body.currentPassword,
+      });
+      // Scope "local" — see accountDeletion.ts: default "global" would
+      // revoke every refresh token for this user, signing the parent out
+      // of their live browser. The re-auth client only owns the session
+      // it just minted; end only that one.
+      try {
+        await authCheckClient.auth.signOut({ scope: "local" });
+      } catch {
+        /* best-effort */
+      }
+      if (authError || !authData?.user) {
+        req.log.warn(
+          { profileId: req.profile.id, reason: "invalid_password" },
+          "change-password re-auth failed",
+        );
+        res.status(403).json({ error: "invalid_password" });
+        return;
+      }
+
+      // Defense in depth — same guard /me/deletion/confirm uses per
+      // ADR 034. Supabase's trigger mirrors auth.users.id into
+      // profiles.id so these should always match; if they ever diverge
+      // (a profile row with a repointed id, a test env that bypasses
+      // the trigger), passing the wrong id to the Admin API would
+      // silently change the WRONG user's password. Abort before any
+      // mutation; log the pair of UUIDs only (no PII).
+      const authUserId = authData.user.id;
+      if (authUserId !== req.profile.id) {
+        req.log.error(
+          { event: "change_password_id_mismatch", profileId: req.profile.id, authUserId },
+          "change-password aborted: auth user id does not match profile id",
+        );
+        res.status(500).json({ error: "change_password_id_mismatch" });
+        return;
+      }
+
+      const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(
+        req.profile.id,
+        { password: body.newPassword },
+      );
+      if (updateError) {
+        req.log.error(
+          { profileId: req.profile.id, code: (updateError as { code?: string } | null)?.code },
+          "change-password admin update failed",
+        );
+        res.status(500).json({ error: "Could not change password" });
+        return;
+      }
+
+      const now = new Date();
+      const resetPasswordUrl = `${env.siteUrl}/forgot-password`;
+      let outboxId: string | null = null;
+      try {
+        outboxId = await db.transaction(async (tx) => {
+          await tx.insert(passwordChangeEvents).values({
+            profileId: req.profile.id,
+            method: "change",
+            createdAt: now,
+          });
+          return enqueuePasswordChangedEmail(tx, {
+            profileId: req.profile.id,
+            source: "change",
+            now,
+            resetPasswordUrl,
+          });
+        });
+      } catch (err) {
+        // docs/accounts.md forbids email/name/etc in log fields. Postgres
+        // driver errors (and the Supabase admin SDK's thrown errors) can
+        // embed the value that triggered them — so log only the error
+        // class name and a stable event tag, never the message.
+        req.log.error(
+          {
+            profileId: req.profile.id,
+            event: "change_password_enqueue_failed",
+            errName: err instanceof Error ? err.name : "unknown",
+          },
+          "change-password email enqueue failed",
+        );
+        // Deliberately don't fail the request — the password change
+        // succeeded; the confirmation email is best-effort.
+      }
+
+      res.status(204).end();
+
+      if (outboxId !== null) {
+        const emailOutboxId = outboxId;
+        queueMicrotask(() => {
+          void sendLessonEmailOutboxRow(emailOutboxId);
+        });
+      }
+    }),
+  );
+
+  // POST /auth/notify-password-changed — enqueue the confirmation email
+  // after a successful reset. The /auth/reset-password page completes
+  // the Supabase recovery flow client-side (verifyOtp → updateUser →
+  // signOut others), and then calls this endpoint so the backend can
+  // record the event in the outbox. The authed session is the just-
+  // established recovery session, so requireUser is sufficient.
+  app.post(
+    "/auth/notify-password-changed",
+    requireUser,
+    notifyPasswordChangedLimiter,
+    validate({}),
+    asyncHandler(async (req, res) => {
+      const now = new Date();
+      const resetPasswordUrl = `${env.siteUrl}/forgot-password`;
+      let outboxId: string | null = null;
+      try {
+        outboxId = await db.transaction(async (tx) => {
+          await tx.insert(passwordChangeEvents).values({
+            profileId: req.profile.id,
+            method: "reset",
+            createdAt: now,
+          });
+          return enqueuePasswordChangedEmail(tx, {
+            profileId: req.profile.id,
+            source: "reset",
+            now,
+            resetPasswordUrl,
+          });
+        });
+      } catch (err) {
+        // See the comment on change-password's enqueue catch — err.message
+        // can carry PII from upstream errors. Log the class name only.
+        req.log.error(
+          {
+            profileId: req.profile.id,
+            event: "notify_password_changed_enqueue_failed",
+            errName: err instanceof Error ? err.name : "unknown",
+          },
+          "notify-password-changed enqueue failed",
+        );
+      }
+
+      res.status(204).end();
+
+      if (outboxId !== null) {
+        const emailOutboxId = outboxId;
+        queueMicrotask(() => {
+          void sendLessonEmailOutboxRow(emailOutboxId);
+        });
+      }
+    }),
+  );
 
   app.get("/me", requireUser, validate({}), (req, res) => {
     const body: MeResponse = {

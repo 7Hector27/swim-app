@@ -23,6 +23,20 @@ export default function LoginContent({ notice, returnTo }: LoginContentProps) {
     }
   }, [state.error]);
 
+  // One-time flash after the reset flow. Strip ?notice=password-updated from
+  // the URL on mount so a browser refresh re-requests /login without the
+  // param and the banner disappears. Other notices (e.g. link-expired) are
+  // left in the URL on purpose — this strip is scoped to the password-reset
+  // confirmation only.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const current = new URL(window.location.href);
+    if (current.searchParams.get("notice") !== "password-updated") return;
+    current.searchParams.delete("notice");
+    const cleaned = current.pathname + (current.search ? current.search : "") + current.hash;
+    window.history.replaceState(null, "", cleaned);
+  }, []);
+
   return (
     <div className="flex flex-col flex-1">
       <main className="flex-1 flex items-center justify-center px-page py-16">
@@ -64,22 +78,36 @@ export default function LoginContent({ notice, returnTo }: LoginContentProps) {
                 autoComplete="current-password"
                 required
               />
+              <div className="flex justify-end">
+                <a
+                  href="/forgot-password"
+                  className="inline-flex items-center min-h-11 px-1 text-sm font-medium text-accent no-underline hover:underline focus-visible:underline"
+                >
+                  Forgot your password?
+                </a>
+              </div>
             </div>
 
-            <p
-              ref={errorRef}
-              role="alert"
-              aria-live="assertive"
-              tabIndex={-1}
-              style={{ outline: "none" }}
-              className="text-danger text-sm min-h-5"
-            >
-              {state.error ?? ""}
-            </p>
+            {/* Error line and submit button grouped so the empty-state
+                min-h-5 reservation doesn't compound with the outer gap-5,
+                keeping the vertical rhythm even between the password
+                block and the Sign in button. */}
+            <div className="flex flex-col gap-1">
+              <p
+                ref={errorRef}
+                role="alert"
+                aria-live="assertive"
+                tabIndex={-1}
+                style={{ outline: "none" }}
+                className="text-danger text-sm min-h-5"
+              >
+                {state.error ?? ""}
+              </p>
 
-            <Button type="submit" disabled={isPending} className="w-full">
-              {isPending ? "Signing in\u2026" : "Sign in"}
-            </Button>
+              <Button type="submit" disabled={isPending} className="w-full">
+                {isPending ? "Signing in\u2026" : "Sign in"}
+              </Button>
+            </div>
           </form>
 
           <p className="text-center text-sm text-text-secondary mt-6">
