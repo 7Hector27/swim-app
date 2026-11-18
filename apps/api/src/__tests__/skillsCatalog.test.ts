@@ -265,7 +265,7 @@ describe("SKILLS_CATALOG", () => {
     const breastEfficiency = allSkills.find(
       (skillItem) => skillItem.slug === "breast-propulsion-efficiency",
     );
-    expect(breastEfficiency?.name).toBe("Golf score");
+    expect(breastEfficiency?.name).toBe("Golf score (breaststroke)");
     expect(breastEfficiency?.type).toBe("score");
   });
 
