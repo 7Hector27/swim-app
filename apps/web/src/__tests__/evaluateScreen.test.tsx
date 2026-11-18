@@ -27,7 +27,7 @@ import SkillGradeRow from "../content/EvaluateContent/SkillGradeRow";
 import CalculatedSkillRow from "../content/EvaluateContent/CalculatedSkillRow";
 import StartGroupSection from "../content/EvaluateContent/StartGroupSection";
 import UndoToast from "../content/EvaluateContent/UndoToast";
-import SectionTabs from "../content/EvaluateContent/SectionTabs";
+import CollapsibleSection from "../content/EvaluateContent/CollapsibleSection";
 import EvaluateContent from "../content/EvaluateContent/EvaluateContent";
 import { buildRatingsArray, defaultSkillDraft } from "../content/EvaluateContent/helpers";
 import { submitEvaluation } from "../content/EvaluateContent/actions";
@@ -582,7 +582,11 @@ describe("EvaluateContent — breathing pattern selector", () => {
       screenSlug: "butterfly",
       name: "Butterfly",
       skills: [{
-        id: "skill-fp-2", slug: "fly-kick", name: "Kick",
+        // fly-dolphin-kick lives in butterfly's "The swim" section — Pass 2a
+        // renders the breathing-pattern picker at the end of that section on
+        // freestyle/butterfly, so the fixture needs at least one slug that
+        // places the swim section in the rendered output.
+        id: "skill-fp-2", slug: "fly-dolphin-kick", name: "Dolphin kick",
         type: "rubric", unit: null, stroke: "fly" as const, ratedPerSide: false,
         notLegalAllowed: false, parentSkillId: null, sortOrder: 1, faultTags: [], descriptors: [],
       }],
@@ -671,73 +675,80 @@ describe("UndoToast", () => {
   });
 });
 
-// ── SectionTabs ───────────────────────────────────────────────────────────────
+// ── CollapsibleSection ────────────────────────────────────────────────────────
 
-describe("SectionTabs", () => {
-  const TEST_SECTIONS = [
-    { name: "Start", count: 2, completed: 0 },
-    { name: "Underwaters", count: 2, completed: 1 },
-    { name: "Breakout", count: 1, completed: 0 },
-  ];
-
-  it("scrolls the active tab into view when activeIndex changes, but not on first mount", () => {
-    const spy = vi.fn();
-    const original = Element.prototype.scrollIntoView;
-    Element.prototype.scrollIntoView = spy;
-
-    try {
-      const { rerender } = render(
-        <SectionTabs sections={TEST_SECTIONS} activeIndex={0} onSelect={() => {}} />,
-      );
-      // First mount: no scroll (don't jiggle the strip on page load).
-      expect(spy).not.toHaveBeenCalled();
-
-      rerender(
-        <SectionTabs sections={TEST_SECTIONS} activeIndex={2} onSelect={() => {}} />,
-      );
-      // Switching to a different tab (as validation-jump does): scroll it in.
-      expect(spy).toHaveBeenCalledTimes(1);
-      expect(spy).toHaveBeenCalledWith(
-        expect.objectContaining({ inline: "nearest", block: "nearest" }),
-      );
-    } finally {
-      Element.prototype.scrollIntoView = original;
-    }
+describe("CollapsibleSection", () => {
+  it("renders the section name and the completed/count badge", () => {
+    render(
+      <CollapsibleSection
+        name="The swim"
+        count={10}
+        completed={3}
+        open={true}
+        onToggle={() => {}}
+        anchorId="section-swim"
+      >
+        <div>body</div>
+      </CollapsibleSection>,
+    );
+    expect(screen.getByText("The swim")).toBeInTheDocument();
+    expect(screen.getByText("3/10")).toBeInTheDocument();
   });
 
-  it("hides the scrollbar via the reusable utility class", () => {
-    render(<SectionTabs sections={TEST_SECTIONS} activeIndex={0} onSelect={() => {}} />);
-    const nav = screen.getByRole("navigation", { name: /evaluation sections/i });
-    expect(nav.className).toMatch(/\bscrollbar-none\b/);
+  it("exposes aria-expanded + an anchorable section wrapper", () => {
+    const { rerender } = render(
+      <CollapsibleSection
+        name="Underwaters"
+        count={2}
+        completed={0}
+        open={false}
+        onToggle={() => {}}
+        anchorId="section-underwaters"
+      >
+        <div>body</div>
+      </CollapsibleSection>,
+    );
+    const toggle = screen.getByRole("button", { name: /Underwaters/ });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(document.getElementById("section-underwaters")).not.toBeNull();
+    // Body is hidden when the section is closed.
+    expect(screen.queryByText("body")).toBeNull();
+
+    rerender(
+      <CollapsibleSection
+        name="Underwaters"
+        count={2}
+        completed={0}
+        open={true}
+        onToggle={() => {}}
+        anchorId="section-underwaters"
+      >
+        <div>body</div>
+      </CollapsibleSection>,
+    );
+    expect(screen.getByRole("button", { name: /Underwaters/ })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    expect(screen.getByText("body")).toBeInTheDocument();
   });
 
-  it("honors prefers-reduced-motion when scrolling into view", () => {
-    const spy = vi.fn();
-    const originalScroll = Element.prototype.scrollIntoView;
-    Element.prototype.scrollIntoView = spy;
-    const matchMediaSpy = vi.spyOn(window, "matchMedia").mockImplementation((query) => ({
-      matches: query === "(prefers-reduced-motion: reduce)",
-      media: query,
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-      addListener: vi.fn(),
-      removeListener: vi.fn(),
-      onchange: null,
-      dispatchEvent: vi.fn(() => true),
-    }));
-
-    try {
-      const { rerender } = render(
-        <SectionTabs sections={TEST_SECTIONS} activeIndex={0} onSelect={() => {}} />,
-      );
-      rerender(
-        <SectionTabs sections={TEST_SECTIONS} activeIndex={1} onSelect={() => {}} />,
-      );
-      expect(spy).toHaveBeenCalledWith(expect.objectContaining({ behavior: "auto" }));
-    } finally {
-      Element.prototype.scrollIntoView = originalScroll;
-      matchMediaSpy.mockRestore();
-    }
+  it("calls onToggle when the header is clicked", () => {
+    const toggle = vi.fn();
+    render(
+      <CollapsibleSection
+        name="Breakout"
+        count={1}
+        completed={0}
+        open={false}
+        onToggle={toggle}
+        anchorId="section-breakout"
+      >
+        <div>body</div>
+      </CollapsibleSection>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Breakout/ }));
+    expect(toggle).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -24,9 +24,13 @@ interface SkillGradeRowProps {
   // and auto-dismisses after ~2s.
   onMastery?: (draftKey: string) => void;
   masteredKey?: string | null;
+  // Overrides the default `skill-<draftKey>` DOM id so a shared skill
+  // rendered in two sections on the same screen (push-off,
+  // streamline-in-motion) keeps unique ids across occurrences.
+  anchorId?: string;
 }
 
-export default function SkillGradeRow({ skill, draftKey, label, draft, onChange, issues = [], prevGrade, onMastery, masteredKey }: SkillGradeRowProps) {
+export default function SkillGradeRow({ skill, draftKey, label, draft, onChange, issues = [], prevGrade, onMastery, masteredKey, anchorId }: SkillGradeRowProps) {
   const gradeIssue = issues.find((issue) => issue.field === "grade");
   const notLegalIssue = issues.find((issue) => issue.field === "notLegal");
   const detailsPanelIssues = issues.filter(
@@ -35,7 +39,7 @@ export default function SkillGradeRow({ skill, draftKey, label, draft, onChange,
   const hasDetailsIssue = detailsPanelIssues.length > 0;
   return (
     <fieldset
-      id={`skill-${draftKey}`}
+      id={anchorId ?? `skill-${draftKey}`}
       className={`flex flex-col gap-3 p-4 rounded-lg border ${draft.notLegal ? "border-l-[3px]" : ""}`}
       style={{
         borderColor: draft.notLegal ? "var(--color-danger)" : "var(--color-border)",
