@@ -63,7 +63,7 @@ async function nextSequenceForProfile(tx: Tx, profileId: string): Promise<number
     .where(
       and(
         eq(lessonEmailOutbox.event, "password_changed"),
-        sql`${lessonEmailOutbox.recipientProfileIds} = ARRAY[${profileId}]::uuid[]`,
+        eq(lessonEmailOutbox.recipientProfileIds, [profileId]),
       ),
     );
   return (rows[0]?.max ?? 0) + 1;
