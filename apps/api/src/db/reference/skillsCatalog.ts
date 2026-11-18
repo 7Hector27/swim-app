@@ -193,7 +193,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
       },
       // rhythmic-breathing (free+fly, shared) archived — replaced by per-stroke below.
       // bilateral-breathing (shared) archived — replaced by free-bilateral-breathing below.
-      // Per-stroke instances of Breathing timing
+      // Per-stroke instances of Breath timing
       {
         slug: "breathing-timing-free",
         name: "Breath timing",
@@ -246,7 +246,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
           { level: 5, text: "correct timing on every breath through the full race distance, including under fatigue." },
         ],
       },
-      // Per-stroke instances of Stroke-breath coordination
+      // Per-stroke instances of Stroke integrity on breath
       {
         slug: "stroke-breath-coordination-free",
         name: "Stroke integrity on breath",
@@ -729,7 +729,7 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
       // breast-stroke-rate archived (duplicate of breast-tempo below).
       {
         slug: "breast-propulsion-efficiency",
-        name: "Golf score",
+        name: "Golf score (breaststroke)",
         type: "score",
         unit: "time_s + stroke_count",
         stroke: "breast",
@@ -1295,13 +1295,23 @@ export const SKILLS_CATALOG: CatalogCategory[] = [
         notLegalAllowed: true,
         archived: true,
       },
+      // Shared Streamline (one grade across all four strokes; shown after every
+      // start and every push-off). Descriptors drafted by the Pass 1 catalog work
+      // — mark as DRAFT and have Jason review before publishing.
       {
         slug: "streamline-in-motion",
-        name: "Streamline (in motion)",
+        name: "Streamline",
         type: "rubric",
         appliesTo: ["free", "back", "breast", "fly"],
         sortOrder: 40,
         builtOnSlugs: ["static-streamline"],
+        descriptors: [
+          { level: 1, text: "[DRAFT] arms separate or head lifts off the push and off every start; legs drift apart; the line breaks within a few yards." },
+          { level: 2, text: "[DRAFT] arms and head stay locked when cued, but open before the first kick on most push-offs; occasional slip off starts." },
+          { level: 3, text: "[DRAFT] hands stacked, head between the arms and the body line held through the first few kicks at practice pace; occasional break under fatigue." },
+          { level: 4, text: "[DRAFT] line holds at race pace off starts and push-offs; same shape every wall." },
+          { level: 5, text: "[DRAFT] streamline holds through every push-off and start in the full race distance, even under fatigue." },
+        ],
       },
     ],
   },
