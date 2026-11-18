@@ -23,6 +23,7 @@ export const MeasurementUnitSchema = z.enum([
   "stroke_count",
   "seconds",
   "feet",
+  "kicks_per_minute",
 ]);
 export type MeasurementUnit = z.infer<typeof MeasurementUnitSchema>;
 
