@@ -89,11 +89,23 @@ export function validateRatingAgainstSkill(
     };
   }
 
-  if (skill.type === "score" && payload.golfScoreCategory === null && !payload.noConcept) {
-    return {
-      field: "golfScoreCategory",
-      message: "Golf score category is required for score skills",
-    };
+  // Score (golf) skills: if the coach set a 1-5 grade, the row must also
+  // carry a category + time + stroke count. "No concept" opts out —
+  // numbers aren't expected when the swimmer can't do it. Other measured
+  // skills (tempo, kick rate, stroke count) still save with just a grade.
+  if (skill.type === "score" && payload.grade !== null && !payload.noConcept) {
+    if (payload.golfScoreCategory === null) {
+      return {
+        field: "golfScoreCategory",
+        message: "Pick a test category before saving a golf score.",
+      };
+    }
+    if (payload.timeSeconds === null || payload.strokeCountValue === null) {
+      return {
+        field: "timeSeconds",
+        message: "Enter the time and stroke count for this golf score.",
+      };
+    }
   }
   if (skill.type !== "score" && payload.golfScoreCategory !== null) {
     return {

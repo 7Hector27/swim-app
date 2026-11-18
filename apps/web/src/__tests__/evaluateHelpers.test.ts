@@ -497,7 +497,7 @@ describe("validateSubmission", () => {
       (issue) => issue.ratingIndex === 0 && issue.field === "timeSeconds",
     );
     expect(pairIssue).toBeDefined();
-    expect(pairIssue?.message).toMatch(/both time and stroke count/i);
+    expect(pairIssue?.message).toMatch(/enter the time and stroke count/i);
   });
 
   it("surfaces a timeSeconds issue when stroke count is filled but time is blank", () => {
@@ -549,12 +549,119 @@ describe("validateSubmission", () => {
       },
     };
     const ratings = buildRatingsArray([golfSkill], draft.skills);
-    const issues = validateSubmission(draft, ratings);
+    // Catalog validation needs screenSkills to run.
+    const issues = validateSubmission(draft, ratings, [golfSkill]);
     const categoryIssue = issues.find(
       (issue) => issue.ratingIndex === 0 && issue.field === "golfScoreCategory",
     );
     expect(categoryIssue).toBeDefined();
     expect(categoryIssue?.message).toMatch(/pick a test category/i);
+  });
+
+  // Golf-grade-requires-pair rule: a 1-5 golf grade with empty time/strokes
+  // is blocked client-side with a clear message, even when there's no
+  // partial-pair state for the Zod rule to catch.
+  it("blocks save when a graded golf rating has no time or stroke count", () => {
+    const golfSkill: SkillForRating = {
+      ...SKILL,
+      id: "00000000-0000-0000-eeee-000000000004",
+      slug: "free-golf-score",
+      type: "score",
+      unit: "time_s + stroke_count",
+    };
+    const draft = {
+      ...filledDraft(),
+      skills: {
+        [golfSkill.id]: {
+          ...defaultSkillDraft(),
+          grade: 3 as const,
+          timeSeconds: "",
+          strokeCountValue: "",
+          golfScoreCategory: "push_off_in_water" as const,
+        },
+      },
+    };
+    const ratings = buildRatingsArray([golfSkill], draft.skills);
+    const issues = validateSubmission(draft, ratings, [golfSkill]);
+    const pairIssue = issues.find(
+      (issue) => issue.ratingIndex === 0 && issue.field === "timeSeconds",
+    );
+    expect(pairIssue).toBeDefined();
+    expect(pairIssue?.message).toMatch(/enter the time and stroke count/i);
+  });
+
+  it("does NOT block save when a measured (non-score) skill has a grade and no number", () => {
+    const tempoSkill: SkillForRating = {
+      ...SKILL,
+      id: "00000000-0000-0000-eeee-000000000005",
+      slug: "free-tempo",
+      type: "measured",
+      unit: "cycles/min",
+    };
+    const draft = {
+      ...filledDraft(),
+      skills: {
+        [tempoSkill.id]: {
+          ...defaultSkillDraft(),
+          grade: 3 as const,
+          measurementValue: "",
+        },
+      },
+    };
+    const ratings = buildRatingsArray([tempoSkill], draft.skills);
+    const issues = validateSubmission(draft, ratings, [tempoSkill]);
+    expect(issues).toEqual([]);
+  });
+
+  it("accepts a graded golf rating that carries category + time + strokes (end-to-end valid)", () => {
+    const golfSkill: SkillForRating = {
+      ...SKILL,
+      id: "00000000-0000-0000-eeee-000000000006",
+      slug: "free-golf-score",
+      type: "score",
+      unit: "time_s + stroke_count",
+    };
+    const draft = {
+      ...filledDraft(),
+      skills: {
+        [golfSkill.id]: {
+          ...defaultSkillDraft(),
+          grade: 4 as const,
+          timeSeconds: "14.25",
+          strokeCountValue: "18",
+          golfScoreCategory: "block_dive" as const,
+        },
+      },
+    };
+    const ratings = buildRatingsArray([golfSkill], draft.skills);
+    const issues = validateSubmission(draft, ratings, [golfSkill]);
+    expect(issues).toEqual([]);
+  });
+
+  it("accepts noConcept on a score skill with no numbers (rule skips when noConcept is true)", () => {
+    const golfSkill: SkillForRating = {
+      ...SKILL,
+      id: "00000000-0000-0000-eeee-000000000007",
+      slug: "free-golf-score",
+      type: "score",
+      unit: "time_s + stroke_count",
+    };
+    const draft = {
+      ...filledDraft(),
+      skills: {
+        [golfSkill.id]: {
+          ...defaultSkillDraft(),
+          grade: null,
+          noConcept: true,
+          timeSeconds: "",
+          strokeCountValue: "",
+          golfScoreCategory: null,
+        },
+      },
+    };
+    const ratings = buildRatingsArray([golfSkill], draft.skills);
+    const issues = validateSubmission(draft, ratings, [golfSkill]);
+    expect(issues).toEqual([]);
   });
 });
 

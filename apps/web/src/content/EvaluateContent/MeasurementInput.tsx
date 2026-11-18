@@ -38,11 +38,12 @@ export default function MeasurementInput({ skill, draft, draftKey, onChange, iss
       !Number.isNaN(strokesParsed)
         ? timeParsed + strokesParsed
         : null;
-    // Pass 2c follow-up: the paired-fields error lights up *the empty side*
-    // so the coach's eye lands on the field they need to fill. If both are
-    // empty we don't highlight either (nothing to point at).
-    const timeMissing = pairIssue !== undefined && draft.timeSeconds === "" && draft.strokeCountValue !== "";
-    const strokesMissing = pairIssue !== undefined && draft.strokeCountValue === "" && draft.timeSeconds !== "";
+    // Pass 2c follow-up: the paired-fields error lights up every empty
+    // side of the pair. Both empty (grade set but no numbers at all) →
+    // both go red; one empty → only that one. The filled side never
+    // goes red because the coach has already handled it.
+    const timeMissing = pairIssue !== undefined && draft.timeSeconds === "";
+    const strokesMissing = pairIssue !== undefined && draft.strokeCountValue === "";
     const timeBorder = timeMissing ? "var(--color-danger)" : "var(--color-border)";
     const strokesBorder = strokesMissing ? "var(--color-danger)" : "var(--color-border)";
     return (

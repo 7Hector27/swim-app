@@ -811,7 +811,7 @@ export default function EvaluateContent({
   function handleFormSubmit(event: React.FormEvent<HTMLFormElement>) {
     savedScreenSlugRef.current = draft.screenSlug;
     setTapNonce((prev) => prev + 1);
-    const issues = validateSubmission(draft, ratingsArray);
+    const issues = validateSubmission(draft, ratingsArray, selectedScreen?.skills);
     if (issues.length > 0) {
       event.preventDefault();
       setClientIssues(issues);
