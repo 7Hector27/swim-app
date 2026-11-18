@@ -1,10 +1,18 @@
 "use client";
 
 import { useId, useState } from "react";
-import type { GolfScoreTrend } from "@swim-app/shared";
+import type { GolfScoreTrend, GolfScoreTrendPoint } from "@swim-app/shared";
 import { formatMonthDay, formatSessionDate } from "@/lib/progressCharts";
 import { evaluationEditHref, type EvaluationEditContext } from "@/lib/evaluationEditHref";
 import { realDateXFor, stepLinePath } from "@/lib/stepChart";
+
+// Pass 2c: golf score is time_seconds + stroke_count_value, lower is better.
+// The server sends both; the chart plots the sum. Any point missing either
+// input (legacy rows with no data) resolves to null and is skipped.
+function golfScoreOf(point: GolfScoreTrendPoint): number | null {
+  if (point.timeSeconds === null || point.strokeCountValue === null) return null;
+  return point.timeSeconds + point.strokeCountValue;
+}
 
 interface GolfScoreCardProps {
   trend: GolfScoreTrend;
@@ -59,8 +67,8 @@ function GolfCategory({
   const plotHeight = height - padTop - padBottom;
 
   const measurementValues = categoryTrend.points
-    .map((pointItem) => Number(pointItem.measurementValue))
-    .filter((value) => Number.isFinite(value));
+    .map((pointItem) => golfScoreOf(pointItem))
+    .filter((value): value is number => value !== null && Number.isFinite(value));
   const bandValues = [categoryTrend.ageBands?.p25, categoryTrend.ageBands?.p50, categoryTrend.ageBands?.p75]
     .filter((value): value is number => value !== null && value !== undefined);
   const allValues = [...measurementValues, ...bandValues];
@@ -90,15 +98,15 @@ function GolfCategory({
 
   const stepPathPoints = categoryTrend.points
     .map((pointItem) => {
-      const numericValue = Number(pointItem.measurementValue);
-      if (!Number.isFinite(numericValue)) return null;
+      const numericValue = golfScoreOf(pointItem);
+      if (numericValue === null || !Number.isFinite(numericValue)) return null;
       return { x: xForDate(pointItem.sessionDate), y: yFor(numericValue) };
     })
     .filter((pointCoord): pointCoord is { x: number; y: number } => pointCoord !== null);
   const stepPath = stepLinePath(stepPathPoints);
 
   const latest = categoryTrend.points[categoryTrend.points.length - 1];
-  const latestValue = latest ? Number(latest.measurementValue) : null;
+  const latestValue = latest ? golfScoreOf(latest) : null;
 
   const selected = selectedIndex !== null ? categoryTrend.points[selectedIndex] : null;
 
@@ -130,7 +138,7 @@ function GolfCategory({
         </div>
         {latestValue !== null && Number.isFinite(latestValue) && (
           <span className="text-lg font-heading tabular-nums" style={{ color: "var(--color-accent)" }}>
-            {latestValue.toFixed(1)}s
+            {latestValue.toFixed(1)}
           </span>
         )}
       </div>
@@ -205,12 +213,12 @@ function GolfCategory({
             />
           )}
           {categoryTrend.points.map((pointItem, index) => {
-            const numericValue = Number(pointItem.measurementValue);
-            if (!Number.isFinite(numericValue)) return null;
+            const numericValue = golfScoreOf(pointItem);
+            if (numericValue === null || !Number.isFinite(numericValue)) return null;
             const isSelected = index === selectedIndex;
             return (
               <g key={pointItem.sessionDate + pointItem.ratedAt}>
-                <title>{`${formatSessionDate(pointItem.sessionDate)} · ${numericValue.toFixed(1)}s`}</title>
+                <title>{`${formatSessionDate(pointItem.sessionDate)} · ${numericValue.toFixed(1)}`}</title>
                 <circle
                   cx={xFor(index)}
                   cy={yFor(numericValue)}
@@ -233,16 +241,16 @@ function GolfCategory({
                   }}
                   onFocus={() => setSelectedIndex(index)}
                   style={{ cursor: "pointer" }}
-                  aria-label={`${formatSessionDate(pointItem.sessionDate)}, ${numericValue.toFixed(1)} seconds`}
+                  aria-label={`${formatSessionDate(pointItem.sessionDate)}, golf score ${numericValue.toFixed(1)}`}
                 />
               </g>
             );
           })}
           <text x={padLeft - 6} y={padTop + 4} textAnchor="end" fontSize={11} fill="var(--color-text-secondary)" className="tabular-nums">
-            {yMax.toFixed(1)}s
+            {yMax.toFixed(1)}
           </text>
           <text x={padLeft - 6} y={padTop + plotHeight + 2} textAnchor="end" fontSize={11} fill="var(--color-text-secondary)" className="tabular-nums">
-            {yMin.toFixed(1)}s
+            {yMin.toFixed(1)}
           </text>
           {firstDate && (
             <text x={padLeft} y={height - 12} fontSize={11} fill="var(--color-text-secondary)">
@@ -256,23 +264,30 @@ function GolfCategory({
           )}
         </svg>
       </div>
-      {selected && (
-        <p className="text-xs text-text-secondary tabular-nums flex items-center flex-wrap gap-x-3 gap-y-1">
-          <span>
-            {formatSessionDate(selected.sessionDate)} · {Number(selected.measurementValue).toFixed(1)}s
-            {selected.grade !== null ? ` · grade ${selected.grade}` : ""}
-          </span>
-          {editContext && selected.sessionId && (
-            <a
-              href={evaluationEditHref(editContext, selected.sessionId)}
-              className="text-link hover:text-link-hover font-semibold"
-              data-testid="golf-score-edit-link"
-            >
-              Edit this evaluation →
-            </a>
-          )}
-        </p>
-      )}
+      {selected && (() => {
+        const selectedScore = golfScoreOf(selected);
+        return (
+          <p className="text-xs text-text-secondary tabular-nums flex items-center flex-wrap gap-x-3 gap-y-1">
+            <span>
+              {formatSessionDate(selected.sessionDate)}
+              {selectedScore !== null ? ` · score ${selectedScore.toFixed(1)}` : ""}
+              {selected.timeSeconds !== null && selected.strokeCountValue !== null
+                ? ` (${selected.timeSeconds.toFixed(2)}s + ${selected.strokeCountValue} strokes)`
+                : ""}
+              {selected.grade !== null ? ` · grade ${selected.grade}` : ""}
+            </span>
+            {editContext && selected.sessionId && (
+              <a
+                href={evaluationEditHref(editContext, selected.sessionId)}
+                className="text-link hover:text-link-hover font-semibold"
+                data-testid="golf-score-edit-link"
+              >
+                Edit this evaluation →
+              </a>
+            )}
+          </p>
+        );
+      })()}
     </div>
   );
 }

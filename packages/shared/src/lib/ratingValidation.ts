@@ -49,6 +49,10 @@ export interface RatingPayload {
   measurementValue: string | null;
   measurementUnit: MeasurementUnit | null;
   golfScoreCategory: GolfScoreCategory | null;
+  // Pass 2c: golf-score inputs — hundredths-of-a-second time and the
+  // paired stroke count. Only allowed on `score` skills.
+  timeSeconds: number | null;
+  strokeCountValue: number | null;
   faultTags: readonly string[];
 }
 
@@ -63,7 +67,9 @@ export interface RatingValidationIssue {
     | "notLegal"
     | "faultTags"
     | "measurementValue"
-    | "measurementUnit";
+    | "measurementUnit"
+    | "timeSeconds"
+    | "strokeCountValue";
   message: string;
 }
 
@@ -131,6 +137,20 @@ export function validateRatingAgainstSkill(
         message: `Measurement unit must be ${skill.unit}`,
       };
     }
+  }
+
+  // Golf-score inputs (Pass 2c): only allowed on score skills, and the two
+  // numeric fields pair with each other. The category requirement and
+  // paired-fields invariant are also enforced by Zod + DB check constraints;
+  // the type gate is only enforceable here because it needs catalog context.
+  if (
+    (payload.timeSeconds !== null || payload.strokeCountValue !== null) &&
+    skill.type !== "score"
+  ) {
+    return {
+      field: "timeSeconds",
+      message: "Golf-score time and stroke count only allowed on score skills",
+    };
   }
 
   return null;

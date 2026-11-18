@@ -127,6 +127,8 @@ function makeEditSession(overrides: Partial<GetSessionResponse> = {}): GetSessio
         measurementValue: null,
         measurementUnit: null,
         golfScoreCategory: null,
+        timeSeconds: null,
+        strokeCountValue: null,
         note: null,
         faultTags: [],
         ratedAt: "2026-10-14T18:00:00.000Z",

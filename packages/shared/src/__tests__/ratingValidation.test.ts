@@ -27,6 +27,8 @@ function makePayload(overrides: Partial<RatingPayload> = {}): RatingPayload {
     measurementValue: null,
     measurementUnit: null,
     golfScoreCategory: null,
+    timeSeconds: null,
+    strokeCountValue: null,
     faultTags: [],
     ...overrides,
   };

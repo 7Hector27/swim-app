@@ -494,6 +494,10 @@ export default function EvaluateContent({
         measurementValue: skillDraft.measurementValue,
         measurementUnit: skillDraft.measurementUnit,
         golfScoreCategory: skillDraft.golfScoreCategory,
+        // Pass 2c: SkillDraft extensions for the row-level golf-score
+        // inputs land in commit 3; the schema allows blank strings here.
+        timeSeconds: "",
+        strokeCountValue: "",
         note: skillDraft.note,
       };
     }

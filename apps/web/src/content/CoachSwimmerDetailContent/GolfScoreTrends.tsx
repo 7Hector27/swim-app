@@ -50,17 +50,28 @@ export default function GolfScoreTrends({ trends }: GolfScoreTrendsProps) {
                 <p className="text-xs text-text-secondary italic">Your trend only</p>
               )}
               <ul className="flex flex-col gap-0">
-                {catTrend.points.slice().reverse().map((point) => (
-                  <li key={point.sessionDate + point.ratedAt} className="flex gap-3 text-xs py-1 border-b border-border items-center">
-                    <span className="text-text-secondary w-24 shrink-0">{formatDate(point.sessionDate)}</span>
-                    {point.measurementValue !== null && (
-                      <span className="font-semibold text-text">{point.measurementValue}</span>
-                    )}
-                    {point.grade !== null && (
-                      <span className="text-text-secondary">Grade {point.grade}</span>
-                    )}
-                  </li>
-                ))}
+                {catTrend.points.slice().reverse().map((point) => {
+                  const golfScore =
+                    point.timeSeconds !== null && point.strokeCountValue !== null
+                      ? point.timeSeconds + point.strokeCountValue
+                      : null;
+                  return (
+                    <li key={point.sessionDate + point.ratedAt} className="flex gap-3 text-xs py-1 border-b border-border items-center">
+                      <span className="text-text-secondary w-24 shrink-0">{formatDate(point.sessionDate)}</span>
+                      {golfScore !== null && (
+                        <span className="font-semibold text-text tabular-nums">
+                          {golfScore.toFixed(1)}
+                          <span className="text-text-secondary font-normal ml-1">
+                            ({point.timeSeconds!.toFixed(2)}s + {point.strokeCountValue} strokes)
+                          </span>
+                        </span>
+                      )}
+                      {point.grade !== null && (
+                        <span className="text-text-secondary">Grade {point.grade}</span>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
             </div>
           ))}
