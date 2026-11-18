@@ -395,8 +395,16 @@ export function createApp(logger: Logger) {
           }),
         );
       } catch (err) {
+        // docs/accounts.md forbids email/name/etc in log fields. Postgres
+        // driver errors (and the Supabase admin SDK's thrown errors) can
+        // embed the value that triggered them — so log only the error
+        // class name and a stable event tag, never the message.
         req.log.error(
-          { profileId: req.profile.id, err: err instanceof Error ? err.message : String(err) },
+          {
+            profileId: req.profile.id,
+            event: "change_password_enqueue_failed",
+            errName: err instanceof Error ? err.name : "unknown",
+          },
           "change-password email enqueue failed",
         );
         // Deliberately don't fail the request — the password change
@@ -438,8 +446,14 @@ export function createApp(logger: Logger) {
           }),
         );
       } catch (err) {
+        // See the comment on change-password's enqueue catch — err.message
+        // can carry PII from upstream errors. Log the class name only.
         req.log.error(
-          { profileId: req.profile.id, err: err instanceof Error ? err.message : String(err) },
+          {
+            profileId: req.profile.id,
+            event: "notify_password_changed_enqueue_failed",
+            errName: err instanceof Error ? err.name : "unknown",
+          },
           "notify-password-changed enqueue failed",
         );
       }
