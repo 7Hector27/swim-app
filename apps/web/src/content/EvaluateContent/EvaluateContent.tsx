@@ -91,6 +91,10 @@ export default function EvaluateContent({
           faultTags: rating.faultTags,
           detailsOpen: false,
           golfScoreCategory: rating.golfScoreCategory,
+          // Pass 2c: pre-fill golf-score inputs from the stored pair so
+          // edit mode shows the coach exactly what was saved.
+          timeSeconds: rating.timeSeconds === null ? "" : String(rating.timeSeconds),
+          strokeCountValue: rating.strokeCountValue === null ? "" : String(rating.strokeCountValue),
         };
       }
       return {
@@ -117,6 +121,8 @@ export default function EvaluateContent({
           faultTags: entry.faultTags,
           detailsOpen: false,
           golfScoreCategory: entry.golfScoreCategory,
+          timeSeconds: entry.timeSeconds ?? "",
+          strokeCountValue: entry.strokeCountValue ?? "",
         };
       }
       return {
@@ -494,10 +500,8 @@ export default function EvaluateContent({
         measurementValue: skillDraft.measurementValue,
         measurementUnit: skillDraft.measurementUnit,
         golfScoreCategory: skillDraft.golfScoreCategory,
-        // Pass 2c: SkillDraft extensions for the row-level golf-score
-        // inputs land in commit 3; the schema allows blank strings here.
-        timeSeconds: "",
-        strokeCountValue: "",
+        timeSeconds: skillDraft.timeSeconds,
+        strokeCountValue: skillDraft.strokeCountValue,
         note: skillDraft.note,
       };
     }
@@ -558,6 +562,8 @@ export default function EvaluateContent({
         faultTags: entry.faultTags,
         detailsOpen: false,
         golfScoreCategory: entry.golfScoreCategory,
+        timeSeconds: entry.timeSeconds ?? "",
+        strokeCountValue: entry.strokeCountValue ?? "",
       };
     }
     setDraft({
@@ -843,6 +849,8 @@ export default function EvaluateContent({
               measurementValue: rating.measurementValue,
               measurementUnit: rating.measurementUnit,
               golfScoreCategory: rating.golfScoreCategory,
+              timeSeconds: rating.timeSeconds,
+              strokeCountValue: rating.strokeCountValue,
               note: rating.note,
               faultTags: rating.faultTags,
             },

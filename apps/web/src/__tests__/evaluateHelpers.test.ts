@@ -233,6 +233,8 @@ describe("buildRatingsArray — measured skill with catalog unit", () => {
       faultTags: [],
       detailsOpen: false,
       golfScoreCategory: null,
+      timeSeconds: "",
+      strokeCountValue: "",
     };
   }
 
@@ -270,12 +272,13 @@ describe("buildRatingsArray — measured skill with catalog unit", () => {
   });
 
   it("still rejects (and reports the right field) when the catalog unit has no enum map", () => {
-    // "kicks/min" has no enum equivalent — the UI hides the measurement input
-    // for this case, so coaches can't reach the failing state. But if a stale
-    // draft or an older client ever submits `measurementValue` for such a
-    // skill, the schema's rejection surfaces the per-row field path.
-    const kickSkill: SkillForRating = { ...measuredSkill, slug: "freestyle-kick-rate", unit: "kicks/min" };
-    const ratings = buildRatingsArray([kickSkill], {
+    // Pass 2c: `kicks/min` now maps to `kicks_per_minute`, so this defensive
+    // check uses the one remaining intentionally-unmapped catalog unit
+    // (`time_s + stroke_count`, golf score). If a stale draft or older
+    // client submits a raw `measurementValue` for such a skill, the
+    // schema's rejection surfaces the per-row field path.
+    const unmapped: SkillForRating = { ...measuredSkill, slug: "free-golf-score", unit: "time_s + stroke_count" };
+    const ratings = buildRatingsArray([unmapped], {
       [SKILL_ID]: { ...baseSkillDraft(), measurementValue: "30" },
     });
     const parsed = CreateSessionBodySchema.safeParse({
@@ -438,20 +441,25 @@ describe("validateSubmission", () => {
   });
 
   it("still surfaces per-rating issues (measurement without a unit) via the schema", () => {
-    const kickSkill: SkillForRating = {
+    // Pass 2c: `kicks/min` now maps to `kicks_per_minute`, so the
+    // "no enum mapping" branch is exercised with the one remaining
+    // intentionally-unmapped catalog unit (golf score's
+    // `time_s + stroke_count`). The invariant under test is still
+    // "measurementValue without measurementUnit → per-rating error."
+    const unmappedUnitSkill: SkillForRating = {
       ...SKILL,
       id: "00000000-0000-0000-cccc-000000000002",
-      slug: "free-kick-rate",
+      slug: "free-golf-score",
       type: "measured",
-      unit: "kicks/min", // no enum mapping; triggers the "both or neither" check
+      unit: "time_s + stroke_count", // intentionally unmapped
     };
     const draft = {
       ...filledDraft(),
       skills: {
-        [kickSkill.id]: { ...defaultSkillDraft(), grade: 3 as const, measurementValue: "30" },
+        [unmappedUnitSkill.id]: { ...defaultSkillDraft(), grade: 3 as const, measurementValue: "30" },
       },
     };
-    const ratings = buildRatingsArray([kickSkill], draft.skills);
+    const ratings = buildRatingsArray([unmappedUnitSkill], draft.skills);
     const issues = validateSubmission(draft, ratings);
     const measurementIssue = issues.find(
       (issue) => issue.ratingIndex === 0 && issue.field === "measurementValue",

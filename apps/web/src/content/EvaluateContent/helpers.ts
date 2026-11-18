@@ -240,6 +240,11 @@ export type SkillDraft = {
   faultTags: string[];
   detailsOpen: boolean;
   golfScoreCategory: "push_off_in_water" | "deck_dive" | "block_dive" | null;
+  // Pass 2c: golf-score inputs — free text while typing, parsed to
+  // number at submit time. buildRatingsArray converts "12.5" → 12.5
+  // and "" → null.
+  timeSeconds: string;
+  strokeCountValue: string;
 };
 
 export type SessionDraft = {
@@ -270,6 +275,8 @@ export function defaultSkillDraft(): SkillDraft {
     faultTags: [],
     detailsOpen: false,
     golfScoreCategory: null,
+    timeSeconds: "",
+    strokeCountValue: "",
   };
 }
 
@@ -413,6 +420,8 @@ export function buildRatingsArray(
   faultTags: string[];
   ratedAt: string;
   golfScoreCategory: "push_off_in_water" | "deck_dive" | "block_dive" | null;
+  timeSeconds: number | null;
+  strokeCountValue: number | null;
 }> {
   const ratings = [];
   const now = new Date().toISOString();
@@ -434,6 +443,25 @@ export function buildRatingsArray(
       const measurementUnit = measurementValue === null
         ? null
         : (displayUnitToMeasurementEnum(skill.unit) ?? d.measurementUnit);
+      // Pass 2c: parse the two golf-score free-text inputs. Only emit them
+      // on score skills (API rejects them on non-score); non-numeric or
+      // empty → null. Both must be set together for the API's paired-fields
+      // rule — if only one is numeric, drop both.
+      let timeSeconds: number | null = null;
+      let strokeCountValue: number | null = null;
+      if (skill.type === "score") {
+        const parsedTime = d.timeSeconds === "" ? null : parseFloat(d.timeSeconds);
+        const parsedStrokes = d.strokeCountValue === "" ? null : parseInt(d.strokeCountValue, 10);
+        if (
+          parsedTime !== null &&
+          parsedStrokes !== null &&
+          !Number.isNaN(parsedTime) &&
+          !Number.isNaN(parsedStrokes)
+        ) {
+          timeSeconds = parsedTime;
+          strokeCountValue = parsedStrokes;
+        }
+      }
       ratings.push({
         skillId: skill.id,
         grade: d.grade,
@@ -448,6 +476,8 @@ export function buildRatingsArray(
         faultTags: d.faultTags,
         ratedAt: now,
         golfScoreCategory: d.golfScoreCategory,
+        timeSeconds,
+        strokeCountValue,
       });
     }
   }

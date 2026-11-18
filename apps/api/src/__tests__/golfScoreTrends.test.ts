@@ -316,4 +316,59 @@ describe("GET /coach/swimmers/:id/golf-score-trends", () => {
     expect(res.body.trends).toHaveLength(1);
     expect(res.body.trends[0].byCategory[0].ageBands).toBeNull();
   });
+
+  it("returns separate byCategory entries per category (push_off_in_water, deck_dive, block_dive never mix)", async () => {
+    authAs(profileCoach);
+
+    const ratingRows = [
+      {
+        grade: 3, timeSeconds: "25.50", strokeCountValue: 17,
+        golfScoreCategory: "push_off_in_water",
+        ratedAt: new Date("2025-05-01T10:00:00.000Z"),
+        sessionDate: "2025-05-01",
+        skillId: SKILL_ID, slug: "free-golf-score", name: "Freestyle Golf Score",
+      },
+      {
+        grade: 4, timeSeconds: "22.00", strokeCountValue: 16,
+        golfScoreCategory: "deck_dive",
+        ratedAt: new Date("2025-05-02T10:00:00.000Z"),
+        sessionDate: "2025-05-02",
+        skillId: SKILL_ID, slug: "free-golf-score", name: "Freestyle Golf Score",
+      },
+      {
+        grade: 5, timeSeconds: "20.00", strokeCountValue: 14,
+        golfScoreCategory: "block_dive",
+        ratedAt: new Date("2025-05-03T10:00:00.000Z"),
+        sessionDate: "2025-05-03",
+        skillId: SKILL_ID, slug: "free-golf-score", name: "Freestyle Golf Score",
+      },
+    ];
+
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(profileCoach))
+      .mockReturnValueOnce(swimmerSelect(activeSwimmerRow))
+      .mockReturnValueOnce(ratingRowsSelect(ratingRows))
+      .mockReturnValueOnce(swimmerBirthDateSelect("2015-03-10"))
+      .mockReturnValueOnce(cohortSwimmersSelect([]));
+
+    const res = await request(app)
+      .get(`/coach/swimmers/${SWIMMER_ID}/golf-score-trends`)
+      .set("Authorization", "Bearer token");
+    expect(res.status).toBe(200);
+    expect(res.body.trends).toHaveLength(1);
+    const byCategory = res.body.trends[0].byCategory as Array<{
+      category: string;
+      points: Array<{ timeSeconds: number; strokeCountValue: number }>;
+    }>;
+    const bucketed: Record<string, Array<{ timeSeconds: number; strokeCountValue: number }>> = {};
+    for (const entry of byCategory) {
+      bucketed[entry.category] = entry.points;
+    }
+    expect(bucketed["push_off_in_water"]).toHaveLength(1);
+    expect(bucketed["deck_dive"]).toHaveLength(1);
+    expect(bucketed["block_dive"]).toHaveLength(1);
+    expect(bucketed["push_off_in_water"]![0]!.timeSeconds).toBe(25.50);
+    expect(bucketed["deck_dive"]![0]!.timeSeconds).toBe(22.00);
+    expect(bucketed["block_dive"]![0]!.timeSeconds).toBe(20.00);
+  });
 });

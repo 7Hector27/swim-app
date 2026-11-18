@@ -339,13 +339,20 @@ describe("SkillGradeRow — measurement on row (Pass 2b)", () => {
     expect(screen.getByLabelText(/Capacity/i)).toBeInTheDocument();
   });
 
-  it("for a golf-score skill, keeps the test-category pills and renders the unmapped-unit note (today's shape)", () => {
-    // Catalog unit "time_s + stroke_count" is intentionally unmapped (see
-    // packages/shared/src/lib/measurementUnit.ts); golf-score skills carry
-    // their numbers through golfScoreCategory, not a plain measurementValue.
-    // Pass 2b keeps today's behavior: the category pills stay on the row
-    // and the measurement slot shows the fallback note.
-    const scoreSkill: SkillForRating = {
+  // Pass 2c: golf score + kick rate stop using the fallback note.
+  // Golf score renders the two-input mode (see "SkillGradeRow — Pass 2c
+  // golf + kick rate" below). Kick rate becomes a normal single-input
+  // measured row once "kicks/min" maps to kicks_per_minute.
+});
+
+describe("SkillGradeRow — Pass 2c golf + kick rate", () => {
+  // Pass 2c: golf-score skills render two number inputs (Time + Stroke
+  // count) and a derived golf score. Kick rate (previously blocked by
+  // the unmapped-unit fallback) now renders as a normal single-input
+  // measured row because "kicks/min" maps to kicks_per_minute.
+
+  it("golf skill shows Time and Stroke count inputs and the derived score", () => {
+    const golf: SkillForRating = {
       ...SKILL,
       id: "golf-score",
       slug: "free-golf-score",
@@ -354,22 +361,53 @@ describe("SkillGradeRow — measurement on row (Pass 2b)", () => {
       unit: "time_s + stroke_count",
       notLegalAllowed: false,
     };
+    const onChange = vi.fn();
     render(
       <SkillGradeRow
-        skill={scoreSkill}
-        draftKey={scoreSkill.id}
+        skill={golf}
+        draftKey={golf.id}
         label="Golf score"
-        draft={defaultSkillDraft()}
-        onChange={vi.fn()}
+        draft={{ ...defaultSkillDraft(), timeSeconds: "14.25", strokeCountValue: "18" }}
+        onChange={onChange}
       />,
     );
+    expect(screen.getByLabelText(/Time/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Stroke count/i)).toBeInTheDocument();
+    // Category pills still on the row for golf.
     expect(screen.getByRole("button", { name: /Push-off in water/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Deck dive/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Block dive/i })).toBeInTheDocument();
-    expect(screen.getByText(/can't be saved yet/i)).toBeInTheDocument();
+    // Derived score = 14.25 + 18 = 32.25 → "32.3" rounded to 1 decimal.
+    // The number only appears in the derived readout paragraph, so matching
+    // by the numeric text is safe (the label "Golf score" has no colon).
+    expect(screen.getByText(/32\.3/)).toBeInTheDocument();
   });
 
-  it("for a measured skill whose unit has no enum mapping (kicks/min), shows the fallback note", () => {
+  it("golf skill writes timeSeconds / strokeCountValue through onChange", () => {
+    const golf: SkillForRating = {
+      ...SKILL,
+      id: "golf-score",
+      slug: "free-golf-score",
+      name: "Golf score",
+      type: "score",
+      unit: "time_s + stroke_count",
+      notLegalAllowed: false,
+    };
+    const onChange = vi.fn();
+    render(
+      <SkillGradeRow
+        skill={golf}
+        draftKey={golf.id}
+        label="Golf score"
+        draft={defaultSkillDraft()}
+        onChange={onChange}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText(/Time/i), { target: { value: "14.25" } });
+    expect(onChange).toHaveBeenCalledWith(golf.id, { timeSeconds: "14.25" });
+    fireEvent.change(screen.getByLabelText(/Stroke count/i), { target: { value: "18" } });
+    expect(onChange).toHaveBeenCalledWith(golf.id, { strokeCountValue: "18" });
+  });
+
+  it("kick-rate skill now renders a single-number row (was the 'can't be saved yet' fallback)", () => {
     const kickRate: SkillForRating = {
       ...SKILL,
       id: "kick-rate",
@@ -388,8 +426,57 @@ describe("SkillGradeRow — measurement on row (Pass 2b)", () => {
         onChange={vi.fn()}
       />,
     );
-    expect(screen.queryByRole("spinbutton", { name: /Measurement/i })).toBeNull();
-    expect(screen.getByText(/can't be saved yet/i)).toBeInTheDocument();
+    expect(screen.getByRole("spinbutton", { name: /Measurement/i })).toBeInTheDocument();
+    expect(screen.getByText("kicks/min")).toBeInTheDocument();
+    expect(screen.queryByText(/can't be saved yet/i)).toBeNull();
+  });
+
+  it("buildRatingsArray emits timeSeconds + strokeCountValue for score skills", () => {
+    const golf: SkillForRating = {
+      ...SKILL,
+      id: "golf-score",
+      slug: "free-golf-score",
+      name: "Golf score",
+      type: "score",
+      unit: "time_s + stroke_count",
+      notLegalAllowed: false,
+    };
+    const ratings = buildRatingsArray([golf], {
+      [golf.id]: {
+        ...defaultSkillDraft(),
+        grade: 3,
+        timeSeconds: "14.25",
+        strokeCountValue: "18",
+        golfScoreCategory: "push_off_in_water",
+      },
+    });
+    expect(ratings).toHaveLength(1);
+    expect(ratings[0]!.timeSeconds).toBe(14.25);
+    expect(ratings[0]!.strokeCountValue).toBe(18);
+    expect(ratings[0]!.golfScoreCategory).toBe("push_off_in_water");
+  });
+
+  it("buildRatingsArray drops time/strokes when the companion is blank (paired-fields invariant)", () => {
+    const golf: SkillForRating = {
+      ...SKILL,
+      id: "golf-score",
+      slug: "free-golf-score",
+      name: "Golf score",
+      type: "score",
+      unit: "time_s + stroke_count",
+      notLegalAllowed: false,
+    };
+    const ratings = buildRatingsArray([golf], {
+      [golf.id]: {
+        ...defaultSkillDraft(),
+        grade: 3,
+        timeSeconds: "14.25",
+        strokeCountValue: "",
+        golfScoreCategory: "push_off_in_water",
+      },
+    });
+    expect(ratings[0]!.timeSeconds).toBeNull();
+    expect(ratings[0]!.strokeCountValue).toBeNull();
   });
 });
 
