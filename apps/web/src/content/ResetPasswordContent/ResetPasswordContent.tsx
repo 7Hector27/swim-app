@@ -35,12 +35,7 @@ export default function ResetPasswordContent({ tokenHash, type }: Props) {
           Reset links expire after a short time and can only be used once.
           Request a new one.
         </p>
-        <a
-          href="/forgot-password"
-          className="inline-flex h-12 px-7 items-center justify-center rounded-lg font-bold bg-primary text-primary-contrast hover:bg-primary-hover"
-        >
-          Request a new link
-        </a>
+        <Button href="/forgot-password">Request a new link</Button>
       </PageShell>
     );
   }
