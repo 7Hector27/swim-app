@@ -303,8 +303,8 @@ export function createApp(logger: Logger) {
   app.post(
     "/auth/forgot-password",
     validate({ body: ForgotPasswordBodySchema }),
-    forgotPasswordIpLimiter,
     authEmailLimiter,
+    forgotPasswordIpLimiter,
     asyncHandler(async (req, res) => {
       const body = req.body as ForgotPasswordBody;
       const redirectTo = `${env.siteUrl}/auth/reset-password`;
