@@ -6,14 +6,13 @@ import type {
   StartGradeResult,
 } from "@swim-app/shared";
 import CategoryTrendsGrid from "@/components/CategoryTrendsGrid";
-import CollapsibleCategory from "@/components/CollapsibleCategory";
 import InlineError from "@/components/InlineError";
 import StartProgression from "@/components/StartProgression";
 import {
-  categoryTrendSeries,
+  screenGroupTrendSeries,
   startSeries,
 } from "@/lib/progressCharts";
-import ParentSkillProgressRow from "./ParentSkillProgressRow";
+import ParentStrokeGroupsPanel from "./ParentStrokeGroupsPanel";
 import {
   formatProgressSessionDate,
   formatStartGradeDisplay,
@@ -59,7 +58,8 @@ export default function ParentSwimmerProgressContent({
   scoreHistory = EMPTY_SCORE_HISTORY,
   sectionFailures = {},
 }: ParentSwimmerProgressContentProps) {
-  const categoryTrends = categoryTrendSeries(scoreHistory);
+  // Pass 3: trend grid buckets by evaluate-screen groups now.
+  const categoryTrends = screenGroupTrendSeries(scoreHistory);
   const startTrends = startSeries(scoreHistory);
   const totalPoints = scoreHistory.points.length;
   const hasEnoughForTrend = totalPoints >= 2;
@@ -90,32 +90,12 @@ export default function ParentSwimmerProgressContent({
     (skill) => !startParentSlugs.has(skill.slug) && !startComponentSlugs.has(skill.slug),
   );
 
-  const categoryOrder = categories.map((category) => category.id);
-  const skillsByCategory = new Map<string, { categoryName: string; skills: typeof displaySkills }>();
-
-  for (const skill of displaySkills) {
-    const existing = skillsByCategory.get(skill.categoryId);
-    if (existing) {
-      existing.skills.push(skill);
-    } else {
-      skillsByCategory.set(skill.categoryId, { categoryName: skill.categoryName, skills: [skill] });
-    }
-  }
-
-  for (const cat of categories) {
-    if (!skillsByCategory.has(cat.id) && cat.skills.length > 0) {
-      skillsByCategory.set(cat.id, { categoryName: cat.name, skills: [] });
-    }
-  }
-
-  const orderedCategories = [
-    ...categoryOrder
-      .filter((id) => skillsByCategory.has(id))
-      .map((id) => ({ id, ...skillsByCategory.get(id)! })),
-    ...[...skillsByCategory.entries()]
-      .filter(([id]) => !categoryOrder.includes(id))
-      .map(([id, data]) => ({ id, ...data })),
-  ];
+  // Pass 3: switcher-driven groups instead of per-category collapsibles.
+  // Latest session's rollups drive the switcher badges + the header count.
+  const latestScreenGroupRollups =
+    scoreHistory.points[scoreHistory.points.length - 1]?.screenGroupRollups ?? [];
+  // Server-rendered now; pin to ISO so recency text matches during hydration.
+  const nowIso = new Date().toISOString();
 
   const hasAnyData =
     progress.skills.length > 0 ||
@@ -281,63 +261,15 @@ export default function ParentSwimmerProgressContent({
             </section>
           )}
 
-          {/* Category skill cards. Collapsed by default; a #skill-<slug>
-              hash on page load opens the matching category and scrolls to
-              the row. */}
-          {orderedCategories.map(({ id, categoryName, skills: catSkills }) => {
-            const assessedIds = new Set(catSkills.map((skill) => skill.skillId));
-            const catFromCategories = categories.find((category) => category.id === id);
-
-            const notAssessedSkills = catFromCategories
-              ? catFromCategories.skills.filter(
-                  (skill) =>
-                    !assessedIds.has(skill.id) &&
-                    !startParentSlugs.has(skill.slug) &&
-                    !startComponentSlugs.has(skill.slug),
-                )
-              : [];
-
-            const categorySlugs = [
-              ...catSkills.map((skill) => skill.slug),
-              ...notAssessedSkills.map((skill) => skill.slug),
-            ];
-
-            return (
-              <CollapsibleCategory
-                key={id}
-                className="group flex flex-col gap-2"
-                categorySlugs={categorySlugs}
-                summaryClassName="font-bold text-sm text-text cursor-pointer list-none flex items-center gap-2 min-h-[44px]"
-                summary={(
-                  <>
-                    <span aria-hidden="true" className="transition-transform duration-200 group-open:rotate-90">
-                      ›
-                    </span>
-                    <span>{categoryName}</span>
-                    <span className="text-xs font-normal text-text-secondary ml-auto">
-                      {catSkills.length} assessed
-                    </span>
-                  </>
-                )}
-              >
-                <ul className="flex flex-col gap-0">
-                  {catSkills.map((skill) => (
-                    <ParentSkillProgressRow key={skill.skillId} skill={skill} />
-                  ))}
-                  {notAssessedSkills.map((skill) => (
-                    <li
-                      key={skill.id}
-                      id={`skill-${skill.slug}`}
-                      className="flex items-center justify-between border-b border-border py-2 text-sm min-h-[44px] scroll-mt-24"
-                    >
-                      <span className="text-text">{skill.name}</span>
-                      <span className="text-xs text-text-secondary">Not assessed</span>
-                    </li>
-                  ))}
-                </ul>
-              </CollapsibleCategory>
-            );
-          })}
+          {/* Pass 3: screen-group switcher replaces per-category
+              collapsibles. One group visible at a time. Rows show
+              "Not rated yet" and the 6-week stale grey-out in
+              ParentSkillProgressRow. */}
+          <ParentStrokeGroupsPanel
+            skills={displaySkills}
+            nowIso={nowIso}
+            rollups={latestScreenGroupRollups}
+          />
         </div>
       </main>
     </div>

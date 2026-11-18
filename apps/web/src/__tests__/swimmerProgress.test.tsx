@@ -69,6 +69,7 @@ function makeScorePoint(overrides: {
   sessionId: string;
   headPositionOverall: number | null;
   categoryRollups?: ScoreHistoryResponse["points"][number]["categoryRollups"];
+  screenGroupRollups?: ScoreHistoryResponse["points"][number]["screenGroupRollups"];
   starts?: ScoreHistoryResponse["points"][number]["starts"];
   counts?: ScoreHistoryResponse["points"][number]["counts"];
   totalLevelsGained?: number;
@@ -80,6 +81,7 @@ function makeScorePoint(overrides: {
     sessionId: overrides.sessionId,
     headPositionOverall: overrides.headPositionOverall,
     categoryRollups: overrides.categoryRollups ?? [],
+    screenGroupRollups: overrides.screenGroupRollups ?? [],
     starts: overrides.starts ?? [],
     counts: overrides.counts ?? { ...EMPTY_LEVEL_COUNTS },
     totalLevelsGained: overrides.totalLevelsGained ?? 0,
@@ -445,21 +447,27 @@ describe("SwimmerProgressContent — sections", () => {
     expect(normalizeIds(secondContainer.innerHTML)).toBe(firstHtml);
   });
 
-  it("groups skills under their category in the Skills column", () => {
-    renderPage({
-      progress,
-      scoreHistory,
-      golfScore,
-      categories: [
-        { id: FREE_CAT_ID, slug: "freestyle", name: "Freestyle", sortOrder: 3, skills: [] },
-        { id: BREATH_CAT_ID, slug: "breathing", name: "Breathing", sortOrder: 2, skills: [] },
-      ],
-    });
-    // Both categories appear as disclosure headers in the Skills column
+  it("renders the screen-group switcher in the Skills column with every group", () => {
+    // Pass 3 replaced the per-category collapsibles with a single switcher
+    // that lists all nine evaluate-screen groups. Catalog category names
+    // (e.g. "Breathing") no longer appear as headings in this column.
+    renderPage({ progress, scoreHistory, golfScore });
     const skillsHeading = screen.getByRole("heading", { name: /^skills$/i });
     const skillsSection = skillsHeading.parentElement as HTMLElement;
-    expect(within(skillsSection).getByText("Freestyle")).toBeInTheDocument();
-    expect(within(skillsSection).getByText("Breathing")).toBeInTheDocument();
+    const switcher = within(skillsSection).getByRole("radiogroup", { name: /progress group/i });
+    for (const label of [
+      "Fundamentals",
+      "Water confidence",
+      "Freestyle",
+      "Backstroke",
+      "Breaststroke",
+      "Butterfly",
+      "Starts and turns",
+      "IM turns",
+      "Racing",
+    ]) {
+      expect(within(switcher).getByText(label)).toBeInTheDocument();
+    }
   });
 });
 

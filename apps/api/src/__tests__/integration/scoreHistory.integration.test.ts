@@ -263,6 +263,45 @@ describe("GET /coach/swimmers/:id/score-history", () => {
     }
   });
 
+  it("screenGroupRollups exposes the nine evaluate-screen groups with latest-effective averages", async () => {
+    const swimmerId = await createTestSwimmer();
+    try {
+      // Rate one freestyle skill. We expect screenGroupRollups to include
+      // every one of the nine evaluate screens (even empty ones) and the
+      // freestyle group to average the single rating.
+      await postSession(coach, swimmerId, "freestyle", "2026-10-01", [
+        freshRating(freeKickSkillId, 4, "2026-10-01T10:00:00.000Z"),
+      ]);
+
+      const history = await getScoreHistory(coach, swimmerId);
+      const point = history.points[0]!;
+      const slugs = point.screenGroupRollups.map((rollup) => rollup.screenSlug);
+      expect(slugs).toEqual([
+        "fundamentals",
+        "water-confidence",
+        "freestyle",
+        "backstroke",
+        "breaststroke",
+        "butterfly",
+        "starts",
+        "im-turns",
+        "racing",
+      ]);
+      const freestyle = point.screenGroupRollups.find((rollup) => rollup.screenSlug === "freestyle")!;
+      expect(freestyle.assessedCount).toBe(1);
+      expect(freestyle.average).toBe(4);
+      // Empty groups carry average=null + assessedCount=0 but a non-zero
+      // totalCount (every screen has skills).
+      const im = point.screenGroupRollups.find((rollup) => rollup.screenSlug === "im-turns")!;
+      expect(im.average).toBeNull();
+      expect(im.assessedCount).toBe(0);
+      expect(im.totalCount).toBeGreaterThan(0);
+    } finally {
+      await cleanSwimmerData(swimmerId);
+      await hardDeleteSwimmer(swimmerId);
+    }
+  });
+
   it("a voided session changes the history", async () => {
     const swimmerId = await createTestSwimmer();
     try {

@@ -16,12 +16,16 @@ import {
   latestEffectiveRatings,
   weakerSideGrade,
   MASTERY_LEVEL,
+  PROGRESS_GROUP_LABELS,
+  SCREEN_SLUGS,
+  uniqueScreenSkillSlugs,
   type GradeMap,
   type PerStrokeGrades,
   type RatingRecord,
   type ScoreHistoryResponse,
   type ScoreHistoryPoint,
   type ScoreHistoryCategoryRollup,
+  type ScoreHistoryScreenGroupRollup,
   type ScoreHistoryStart,
   type ScoreHistoryLevelCounts,
   type ScoreHistoryMilestone,
@@ -344,6 +348,31 @@ export async function computeScoreHistory(
       if (numeric !== null) skillsLearned += 1;
     }
 
+    // Pass 3: per-screen-group rollups. Same latest-effective-grade logic
+    // as categoryRollups (no_concept excluded, not_legal counts as 0), but
+    // bucketed by SCREEN_SECTIONS instead of catalog category. A skill in
+    // more than one section/screen contributes once per group it belongs
+    // to with the same effective grade.
+    const screenGroupRollups: ScoreHistoryScreenGroupRollup[] = SCREEN_SLUGS.map((screenSlug) => {
+      const slugs = uniqueScreenSkillSlugs(screenSlug);
+      let sum = 0;
+      let assessedCount = 0;
+      for (const slug of slugs) {
+        const grade = collapsed[slug];
+        if (grade === undefined || grade === null) continue;
+        if (grade === "no_concept") continue;
+        sum += grade === "not_legal" ? 0 : grade;
+        assessedCount += 1;
+      }
+      return {
+        screenSlug,
+        name: PROGRESS_GROUP_LABELS[screenSlug],
+        average: assessedCount > 0 ? sum / assessedCount : null,
+        assessedCount,
+        totalCount: slugs.length,
+      };
+    });
+
     // Every date in sortedDates came from a non-voided rating, so the
     // session row must exist. Fall back to the empty string if a race ever
     // drops it — the chart's deep link will 404 on the server rather than
@@ -354,6 +383,7 @@ export async function computeScoreHistory(
       sessionId: primary?.id ?? "",
       headPositionOverall: headPosOverall,
       categoryRollups,
+      screenGroupRollups,
       starts: startEntries,
       counts,
       totalLevelsGained,

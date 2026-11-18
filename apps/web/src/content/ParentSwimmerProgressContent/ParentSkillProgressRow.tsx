@@ -5,6 +5,11 @@ import type { ParentSkillProgress } from "@swim-app/shared";
 import TrendLine from "@/components/TrendLine";
 import SkillChart from "@/components/SkillChart";
 import {
+  formatRecency,
+  isStaleBySessionDate,
+  MIN_RATINGS_FOR_TREND,
+} from "@/lib/progressRow";
+import {
   currentLevelDisplay,
   currentLevelIsDanger,
   LEVEL_DESCRIPTIONS,
@@ -13,14 +18,24 @@ import {
 
 interface ParentSkillProgressRowProps {
   skill: ParentSkillProgress;
+  // ISO string captured server-side so recency text matches between SSR
+  // and the client.
+  nowIso?: string;
 }
 
-export default function ParentSkillProgressRow({ skill }: ParentSkillProgressRowProps) {
+export default function ParentSkillProgressRow({ skill, nowIso }: ParentSkillProgressRowProps) {
   const [open, setOpen] = useState(false);
 
   const notAssessed = skill.ratedPerSide
     ? skill.currentLeft === null && skill.currentRight === null
     : skill.current === null;
+
+  const now = nowIso !== undefined ? new Date(nowIso) : new Date();
+  const latestPoint = skill.history[0];
+  const recencyLabel = formatRecency(latestPoint?.sessionDate, now);
+  const stale = isStaleBySessionDate(latestPoint?.sessionDate, now);
+  // Only draw a trend line when there are enough effective ratings.
+  const canShowTrend = skill.history.length >= MIN_RATINGS_FOR_TREND;
 
   function levelDescription(grade: number | null, notLegal: boolean, noConcept: boolean): string {
     if (notLegal) return SPECIAL_DESCRIPTIONS.dq;
@@ -30,18 +45,29 @@ export default function ParentSkillProgressRow({ skill }: ParentSkillProgressRow
   }
 
   return (
-    <li id={`skill-${skill.slug}`} className="border-b border-border scroll-mt-24">
+    <li
+      id={`skill-${skill.slug}`}
+      className="border-b border-border scroll-mt-24"
+      style={{ opacity: stale ? 0.65 : 1 }}
+      data-stale={stale ? "true" : undefined}
+    >
       <button
         type="button"
         onClick={() => setOpen((prev) => !prev)}
-        className="w-full flex items-center justify-between py-2 text-sm text-left min-h-[44px] text-text"
+        className="w-full flex items-start justify-between py-2 text-sm text-left min-h-[44px] text-text"
         aria-expanded={open}
+        disabled={notAssessed}
       >
-        <span className="flex-1">{skill.name}</span>
-        <span className="flex items-center gap-2 shrink-0">
+        <span className="flex-1 flex flex-col gap-0.5">
+          <span>{skill.name}</span>
           {notAssessed ? (
-            <span className="text-xs text-text-secondary">Not assessed</span>
-          ) : skill.ratedPerSide ? (
+            <span className="text-xs text-text-secondary">Not rated yet</span>
+          ) : recencyLabel ? (
+            <span className="text-xs text-text-secondary">{recencyLabel}</span>
+          ) : null}
+        </span>
+        <span className="flex items-center gap-2 shrink-0">
+          {notAssessed ? null : skill.ratedPerSide ? (
             <>
               {skill.currentLeft !== null && (
                 <span
@@ -89,7 +115,7 @@ export default function ParentSkillProgressRow({ skill }: ParentSkillProgressRow
               {currentLevelDisplay(skill.current)}
             </span>
           ) : null}
-          {skill.history.length >= 2 && !open && (
+          {canShowTrend && !open && (
             <TrendLine history={skill.history} />
           )}
           <span aria-hidden="true">{open ? "▲" : "▼"}</span>

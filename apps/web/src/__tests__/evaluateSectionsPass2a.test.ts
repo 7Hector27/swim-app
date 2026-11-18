@@ -4,7 +4,7 @@
 
 import { describe, it, expect } from "vitest";
 import type { SkillForRating } from "@swim-app/shared";
-import { SCREEN_SECTIONS } from "../content/EvaluateContent/screenSections";
+import { SCREEN_SECTIONS } from "@swim-app/shared";
 import {
   buildRatingsArray,
   buildSectionGroups,

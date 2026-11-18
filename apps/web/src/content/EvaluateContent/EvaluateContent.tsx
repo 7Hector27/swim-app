@@ -27,7 +27,13 @@ import {
   anchorIdForIssue,
   DOM_IDS,
 } from "./helpers";
-import { SCREEN_SECTIONS } from "./screenSections";
+import { SCREEN_SECTIONS, SCREEN_SLUGS, type ScreenSlug } from "@swim-app/shared";
+
+// Narrower key type. `screenSlug` comes off the server as a plain string
+// but at this call site it's always one of the nine evaluate screens.
+function asScreenSlug(slug: string): ScreenSlug | null {
+  return (SCREEN_SLUGS as readonly string[]).includes(slug) ? (slug as ScreenSlug) : null;
+}
 import SessionSetup from "./SessionSetup";
 import AutosaveStatus from "./AutosaveStatus";
 import BreathingPatternField from "./BreathingPatternField";
@@ -256,7 +262,8 @@ export default function EvaluateContent({
     const currentScreen = screens.find((screen) => screen.screenSlug === draft.screenSlug);
     const currentSkill = currentScreen?.skills.find((skill) => skill.slug === slug) ?? null;
     if (currentSkill !== null && currentScreen !== undefined) {
-      const sections = SCREEN_SECTIONS[currentScreen.screenSlug] ?? [];
+      const screenSlug = asScreenSlug(currentScreen.screenSlug);
+      const sections = screenSlug !== null ? SCREEN_SECTIONS[screenSlug] : [];
       const sectionMatch = sections.find((section) => section.slugs.includes(slug));
       if (sectionMatch) {
         setOpenSections((prev) => ({ ...prev, [sectionMatch.name]: true }));
@@ -674,9 +681,11 @@ export default function EvaluateContent({
   );
   const ratingsIssue = sessionLevelIssues.find((issue) => issue.field === "ratings");
 
-  const screenSections = selectedScreen !== null
-    ? (SCREEN_SECTIONS[selectedScreen.screenSlug] ?? null)
-    : null;
+  const screenSections = (() => {
+    if (selectedScreen === null) return null;
+    const slug = asScreenSlug(selectedScreen.screenSlug);
+    return slug !== null ? SCREEN_SECTIONS[slug] : null;
+  })();
 
   const sectionGroups = selectedScreen !== null && screenSections !== null
     ? buildSectionGroups(selectedScreen, screenSections)

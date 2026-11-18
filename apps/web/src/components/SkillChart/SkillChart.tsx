@@ -10,6 +10,34 @@ const CONTEXT_COLORS: Record<string, string> = {
   race: "var(--color-danger)",
 };
 
+// Pass 3: point shape per context. Color already distinguishes the three
+// (drill grey, practice accent, race danger), but shape helps when the
+// three colors are hard to tell apart — pool deck, direct sun, color
+// blindness. All three use a 3-unit visual radius so the trend-line
+// alignment stays identical across shapes.
+type ContextShape = "circle" | "triangle" | "diamond";
+const CONTEXT_SHAPE: Record<string, ContextShape> = {
+  drill: "triangle",
+  practice: "circle",
+  race: "diamond",
+};
+
+function shapePath(shape: ContextShape, cx: number, cy: number): string {
+  const size = 3.5;
+  if (shape === "triangle") {
+    // Equilateral-ish: tip up, base below. Height ≈ size, base ≈ size*2.
+    const top = cy - size;
+    const baseY = cy + size * 0.7;
+    const baseHalf = size * 1.05;
+    return `M${cx},${top} L${cx - baseHalf},${baseY} L${cx + baseHalf},${baseY} Z`;
+  }
+  if (shape === "diamond") {
+    return `M${cx},${cy - size} L${cx + size},${cy} L${cx},${cy + size} L${cx - size},${cy} Z`;
+  }
+  // Circle rendered via <circle>, see the switch in the point map.
+  return "";
+}
+
 type ChartPoint = {
   id: string;
   grade: number | null;
@@ -99,9 +127,9 @@ export default function SkillChart({ history, skillName, editContext }: SkillCha
   return (
     <div className="flex flex-col gap-3">
       <div className="flex gap-3 text-xs text-text-secondary flex-wrap">
-        <span style={{ color: CONTEXT_COLORS["drill"] }}>● Drill</span>
-        <span style={{ color: CONTEXT_COLORS["practice"] }}>● Practice</span>
-        <span style={{ color: CONTEXT_COLORS["race"] }}>● Race</span>
+        <span style={{ color: CONTEXT_COLORS["drill"] }} aria-label="Drill (triangle)">▲ Drill</span>
+        <span style={{ color: CONTEXT_COLORS["practice"] }} aria-label="Practice (circle)">● Practice</span>
+        <span style={{ color: CONTEXT_COLORS["race"] }} aria-label="Race (diamond)">◆ Race</span>
       </div>
 
       <svg
@@ -165,6 +193,7 @@ export default function SkillChart({ history, skillName, editContext }: SkillCha
                 fontSize={7}
                 fill="var(--color-danger)"
               >
+                <title>{`${formatSessionDate(point.sessionDate)} · ${point.context} · Not legal`}</title>
                 DQ
               </text>
             );
@@ -172,20 +201,44 @@ export default function SkillChart({ history, skillName, editContext }: SkillCha
           if (numericGrade === null) return null;
           const cy = yFor(numericGrade);
           const color = CONTEXT_COLORS[point.context] ?? "var(--color-accent)";
-          // Edited corrections render as a hollow ring: the surface-soft fill
-          // shows through, with the context color as the stroke. Non-edited
-          // points stay solid.
+          const shape = CONTEXT_SHAPE[point.context] ?? "circle";
+          // Edited corrections render hollow: the surface-soft fill shows
+          // through, with the context color as the stroke. Non-edited points
+          // render solid. Shape encodes context (drill triangle / practice
+          // circle / race diamond) on top of the color so the three stay
+          // distinguishable without relying on color alone.
+          const fill = point.edited ? "var(--color-surface-soft)" : color;
+          const stroke = point.edited ? color : "var(--color-surface-soft)";
+          const strokeWidth = point.edited ? 1.5 : 1;
+          const title = `${formatSessionDate(point.sessionDate)} · ${point.context} · grade ${numericGrade}`;
+          const testId = point.edited ? "skill-chart-edited-point" : undefined;
+          if (shape === "circle") {
+            return (
+              <circle
+                key={point.id}
+                cx={cx}
+                cy={cy}
+                r={3}
+                fill={fill}
+                stroke={stroke}
+                strokeWidth={strokeWidth}
+                data-testid={testId}
+              >
+                <title>{title}</title>
+              </circle>
+            );
+          }
           return (
-            <circle
+            <path
               key={point.id}
-              cx={cx}
-              cy={cy}
-              r={3}
-              fill={point.edited ? "var(--color-surface-soft)" : color}
-              stroke={point.edited ? color : "var(--color-surface-soft)"}
-              strokeWidth={point.edited ? 1.5 : 1}
-              data-testid={point.edited ? "skill-chart-edited-point" : undefined}
-            />
+              d={shapePath(shape, cx, cy)}
+              fill={fill}
+              stroke={stroke}
+              strokeWidth={strokeWidth}
+              data-testid={testId}
+            >
+              <title>{title}</title>
+            </path>
           );
         })}
       </svg>

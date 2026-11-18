@@ -6,19 +6,18 @@ import type {
   SwimmerProgressResponse,
 } from "@swim-app/shared";
 import CategoryTrendsGrid from "@/components/CategoryTrendsGrid";
-import CollapsibleCategory from "@/components/CollapsibleCategory";
 import InlineError from "@/components/InlineError";
 import StartProgression from "@/components/StartProgression";
 import {
-  categoryTrendSeries,
-  latestCategorySnapshot,
+  latestScreenGroupSnapshot,
+  screenGroupTrendSeries,
   startSeries,
 } from "@/lib/progressCharts";
 import CategoryRadar from "./charts/CategoryRadar";
 import GolfScoreCard from "./charts/GolfScoreCard";
 import FaultTagBars from "./charts/FaultTagBars";
 import SessionCadence from "./charts/SessionCadence";
-import SkillRow from "./SkillRow";
+import StrokeGroupsPanel from "./StrokeGroupsPanel";
 import WhatToWorkOn from "./WhatToWorkOn";
 import {
   faultTagFrequency,
@@ -58,15 +57,20 @@ interface SwimmerProgressContentProps {
 export default function SwimmerProgressContent({
   swimmer,
   progress,
-  categories,
+  // `categories` is accepted for API compatibility with the server page but
+  // no longer used — Pass 3 groups by evaluate-screen groups, not catalog
+  // categories.
+  categories: _categories,
   scoreHistory,
   golfScore,
   nowIso,
   sectionFailures = {},
 }: SwimmerProgressContentProps) {
   const now = nowIso !== undefined ? new Date(nowIso) : new Date();
-  const categorySnapshot = latestCategorySnapshot(scoreHistory);
-  const categoryTrends = categoryTrendSeries(scoreHistory);
+  // Pass 3: radar + trend grid now bucket by evaluate-screen groups
+  // instead of catalog categories.
+  const categorySnapshot = latestScreenGroupSnapshot(scoreHistory);
+  const categoryTrends = screenGroupTrendSeries(scoreHistory);
   const starts = startSeries(scoreHistory);
   const faultTags = faultTagFrequency(progress);
   const cadence = sessionCadence(progress, now);
@@ -96,7 +100,19 @@ export default function SwimmerProgressContent({
     return <EmptyState swimmer={swimmer} />;
   }
 
-  const skillsByCategory = groupSkillsByCategory(progress, categories);
+  // Pass 3: nine evaluate-screen groups instead of catalog categories.
+  // Hide start parents + their components from the generic list — starts
+  // have their own StartProgression section above.
+  const startParentSlugs = new Set(progress.startProgress.map((start) => start.slug));
+  const startComponentSlugs = new Set(
+    progress.startProgress.flatMap((start) => start.components.map((component) => component.slug)),
+  );
+  const groupableSkills = progress.skills.filter(
+    (skill) => !startParentSlugs.has(skill.slug) && !startComponentSlugs.has(skill.slug),
+  );
+  // Latest session's rollups drive the switcher badges + the header count.
+  const latestScreenGroupRollups =
+    scoreHistory.points[scoreHistory.points.length - 1]?.screenGroupRollups ?? [];
 
   const failedSections: string[] = [];
   if (sectionFailures.categories) failedSections.push("skill categories");
@@ -196,41 +212,13 @@ export default function SwimmerProgressContent({
               <h2 className="text-lg font-heading text-text" style={{ fontVariationSettings: "\"SOFT\" 100, \"WONK\" 0" }}>
                 Skills
               </h2>
-              {skillsByCategory.map((bucket) => {
-                const bucketSlugs = bucket.skills.map((skill) => skill.slug);
-                return (
-                  <CollapsibleCategory
-                    key={bucket.id}
-                    className="group"
-                    categorySlugs={bucketSlugs}
-                    summaryClassName="text-sm font-semibold cursor-pointer list-none flex items-center gap-2 py-2 min-h-[44px] border-b"
-                    summaryStyle={{ color: "var(--color-text)", borderColor: "var(--color-border)" }}
-                    summary={(
-                      <>
-                        <span aria-hidden="true" className="transition-transform duration-200 group-open:rotate-90">
-                          ›
-                        </span>
-                        <span>{bucket.name}</span>
-                        <span className="text-xs text-text-secondary ml-auto">
-                          {bucket.skills.length} rated
-                        </span>
-                      </>
-                    )}
-                  >
-                    <ul className="flex flex-col">
-                      {bucket.skills.map((skill) => (
-                        <SkillRow
-                          key={skill.skillId}
-                          skill={skill}
-                          swimmerId={swimmer.id}
-                          nowIso={now.toISOString()}
-                          editContext={editContext}
-                        />
-                      ))}
-                    </ul>
-                  </CollapsibleCategory>
-                );
-              })}
+              <StrokeGroupsPanel
+                skills={groupableSkills}
+                swimmerId={swimmer.id}
+                nowIso={now.toISOString()}
+                editContext={editContext}
+                rollups={latestScreenGroupRollups}
+              />
             </div>
           </div>
         </div>
@@ -313,35 +301,5 @@ function EmptyState({ swimmer }: { swimmer: CoachSwimmerDetail }) {
   );
 }
 
-function groupSkillsByCategory(
-  progress: SwimmerProgressResponse,
-  categories: CategoriesResponse,
-): Array<{ id: string; name: string; skills: SwimmerProgressResponse["skills"] }> {
-  const startParentSlugs = new Set(progress.startProgress.map((start) => start.slug));
-  const startComponentSlugs = new Set(
-    progress.startProgress.flatMap((start) => start.components.map((component) => component.slug)),
-  );
-
-  const buckets = new Map<string, { name: string; skills: SwimmerProgressResponse["skills"] }>();
-  for (const skill of progress.skills) {
-    if (startParentSlugs.has(skill.slug)) continue;
-    if (startComponentSlugs.has(skill.slug)) continue;
-    const existing = buckets.get(skill.categoryId);
-    if (existing) {
-      existing.skills.push(skill);
-    } else {
-      buckets.set(skill.categoryId, { name: skill.categoryName, skills: [skill] });
-    }
-  }
-
-  const ordered: Array<{ id: string; name: string; skills: SwimmerProgressResponse["skills"] }> = [];
-  for (const category of categories) {
-    const bucket = buckets.get(category.id);
-    if (bucket) ordered.push({ id: category.id, ...bucket });
-  }
-  for (const [id, bucket] of buckets.entries()) {
-    if (ordered.find((entry) => entry.id === id)) continue;
-    ordered.push({ id, ...bucket });
-  }
-  return ordered;
-}
+// groupSkillsByCategory removed in Pass 3. The page now groups skills by
+// evaluate-screen groups via buildScreenGroups in @/lib/screenGroups.

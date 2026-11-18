@@ -1,17 +1,24 @@
-// Section layout per screen. Stroke screens follow race order
+// Section layout per evaluation screen. Stroke screens follow race order
 // (Start → Underwaters → Breakout → The swim → The wall → Finish → Numbers)
 // per docs/reference/decisions-screens-skills-2026-10-14.md.
 //
-// A single skill slug may appear in more than one section on the same screen
-// (push-off and streamline-in-motion show up in both "Start" and "The wall").
-// buildSectionGroups renders the row in each section it's listed under; the
-// draft state is keyed by skillId, so one grade flows through all appearances.
+// A single skill slug may appear in more than one section on the same
+// screen (push-off and streamline-in-motion show up in both "Start" and
+// "The wall"). Callers render the row in each section it's listed under;
+// draft state and the server-side `screenGroupRollups` key by skillId so
+// one grade flows through every appearance.
 //
 // Composite start skills (`track-start`, `relay-start`, `back-start`) are
-// listed by the PARENT slug only — StartGroupSection renders their
-// components. Listing the component slugs here as well would double-render.
+// listed by the PARENT slug only. The row component renders their
+// components; listing the component slugs here as well would double-render.
+//
+// Pass 3 moved this map from apps/web to packages/shared so the API's
+// per-screen rollup (ScoreHistoryPoint.screenGroupRollups) and the
+// evaluate + progress UIs all read a single source.
 
-export const SCREEN_SECTIONS: Record<string, Array<{ name: string; slugs: string[] }>> = {
+import type { ScreenSlug } from "./screenSkills";
+
+export const SCREEN_SECTIONS: Record<ScreenSlug, Array<{ name: string; slugs: string[] }>> = {
   fundamentals: [
     { name: "Fundamentals", slugs: ["buoyancy-balance","head-position-overall","core-stability","static-streamline","finger-spacing","sculling","exhalation","breath-control"] },
   ],
@@ -68,3 +75,38 @@ export const SCREEN_SECTIONS: Record<string, Array<{ name: string; slugs: string
     { name: "Racing", slugs: ["pacing","speed-endurance","race-strategy","race-awareness","adaptability"] },
   ],
 };
+
+// Display label for a screen group on the swimmer progress page. These
+// differ from `SCREEN_NAMES` in two places:
+// - `starts` → "Starts and turns" (the progress page bundles the whole
+//   screen under one coach-friendly label).
+// - `water-confidence` → "Water confidence" (lower-case "confidence" to
+//   match the Oct 14 doc's prose).
+export const PROGRESS_GROUP_LABELS: Record<ScreenSlug, string> = {
+  fundamentals: "Fundamentals",
+  "water-confidence": "Water confidence",
+  freestyle: "Freestyle",
+  backstroke: "Backstroke",
+  breaststroke: "Breaststroke",
+  butterfly: "Butterfly",
+  starts: "Starts and turns",
+  "im-turns": "IM turns",
+  racing: "Racing",
+};
+
+// Unique list of every skill slug that appears anywhere in `SCREEN_SECTIONS`
+// for a given screen. Preserves first-appearance order so UI renders match
+// the evaluate screens. Shared skills (push-off, streamline, wall approach,
+// etc.) appear once per screen even when they're in multiple sections.
+export function uniqueScreenSkillSlugs(screen: ScreenSlug): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const section of SCREEN_SECTIONS[screen]) {
+    for (const slug of section.slugs) {
+      if (seen.has(slug)) continue;
+      seen.add(slug);
+      result.push(slug);
+    }
+  }
+  return result;
+}
