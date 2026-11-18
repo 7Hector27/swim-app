@@ -29,6 +29,7 @@ import {
 } from "./helpers";
 import { SCREEN_SECTIONS } from "./screenSections";
 import SessionSetup from "./SessionSetup";
+import AutosaveStatus from "./AutosaveStatus";
 import BreathingPatternField from "./BreathingPatternField";
 import CoachingPriorityField from "./CoachingPriorityField";
 import StartGroupSection from "./StartGroupSection";
@@ -166,6 +167,9 @@ export default function EvaluateContent({
   const savedScreenSlugRef = useRef<string>("");
   const [serverDraftId, setServerDraftId] = useState<string | null>(resumeDraft?.id ?? null);
   const [draftSaveState, setDraftSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  // Pass 2b: timestamp of the last successful draft save, surfaced via
+  // AutosaveStatus. Null until the first save lands.
+  const [lastDraftSavedAt, setLastDraftSavedAt] = useState<number | null>(null);
 
   // Server draft detection
   const [serverDraftsBySlug, setServerDraftsBySlug] = useState<Map<string, import("@swim-app/shared").EvaluationDraft>>(new Map());
@@ -503,6 +507,7 @@ export default function EvaluateContent({
     if (result.status === "saved") {
       setServerDraftId(result.id);
       setDraftSaveState("saved");
+      setLastDraftSavedAt(Date.now());
       draftChangedRef.current = false;
     } else {
       setDraftSaveState("error");
@@ -1370,8 +1375,11 @@ export default function EvaluateContent({
                   disabled={draft.screenSlug === "" || draftSaveState === "saving"}
                   className="inline-flex items-center justify-center px-5 min-h-[48px] font-semibold text-sm rounded-[var(--radius-button)] border border-border text-text"
                 >
-                  {draftSaveState === "saving" ? "Saving..." : draftSaveState === "saved" ? "Draft saved" : draftSaveState === "error" ? "Save failed" : "Save as draft"}
+                  Save as draft
                 </button>
+              )}
+              {!isEditMode && (
+                <AutosaveStatus state={draftSaveState} lastSavedAt={lastDraftSavedAt} />
               )}
             </div>
           </form>
