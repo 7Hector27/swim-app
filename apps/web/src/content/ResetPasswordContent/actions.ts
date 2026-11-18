@@ -90,6 +90,11 @@ export async function completeReset(
             Authorization: `Bearer ${accessToken}`,
           },
           cache: "no-store",
+          // Bound the wait — a hung API would otherwise hold this Server
+          // Action open to Node's default fetch timeout. The outer
+          // try/catch swallows the resulting AbortError; the password
+          // change itself has already committed.
+          signal: AbortSignal.timeout(5000),
         },
       );
     }
