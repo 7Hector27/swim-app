@@ -4,6 +4,8 @@ Source: Jason (Axiom Aquatics), Oct 9, 2026. Sections 1 to 9 are Jason's content
 
 The Oct 14 decisions doc is the source of truth when any of the three docs disagree. Section 12 at the end summarizes the open points still waiting on Jason.
 
+**Rule for this file:** never delete or paraphrase the coach's wording. If a coach-authored line is superseded, keep it verbatim and mark it superseded next to it — don't rewrite it and don't drop it.
+
 Every skill is rated on its own, 1 to 5, across nine categories, and each rating feeds a dependency map that shows what's limiting a swimmer and what to teach next.
 
 ## Rating scale
@@ -173,6 +175,8 @@ Graded against the event length being trained, so one swimmer can be a 5 at 25 y
 | Finishing                  | Rubric           |              | Wall approach, Timing                 |
 | Golf score (breaststroke)  | Score            | time (s) + stroke count, lower is better | Kick mechanics, Glide, Timing |
 
+Golf-score grade bands are set per age group from the scores recorded over the first few weeks.
+
 Breaststroke "Breathing" is removed — covered by breaststroke breath timing in section 2.
 
 ### Descriptors: Kick mechanics
@@ -250,9 +254,18 @@ Same descriptors for all three strokes; the backstroke expected distance sits sl
 
 Track start, relay start and backstroke start are separate skills. Track and relay are rated on six components each; backstroke is rated on five. The start's rating is the average of the components, rounded down. If any component is Not legal, the whole start shows Not legal.
 
-Track and relay components: Reaction (measured, s), Acceleration / force, Height, Distance (measured, ft), Head-arm-hand alignment on entry, Leg and feet position on entry.
+Track and relay components (Jason's "What a 5 looks like" from the Oct 9 rubric):
 
-Backstroke components: Reaction (measured, s), Push and drive, Arch and entry angle, Distance (measured, ft), Head-arm-hand alignment on entry.
+| Component                        | What a 5 looks like                                                | Type             | Unit |
+| -------------------------------- | ------------------------------------------------------------------ | ---------------- | ---- |
+| Reaction                         | Leaves on the signal (track) or on a safe, tight exchange (relay)  | Measured + grade | s    |
+| Acceleration / force             | Explosive drive off the block, both legs contributing              | Rubric           |      |
+| Height                           | Clears the water on a shallow arc; no belly flop or pike-and-drop  | Rubric           |      |
+| Distance                         | Enters well out from the wall for size and age                     | Measured + grade | ft   |
+| Head-arm-hand alignment on entry | Head tucked between arms, hands stacked, entering through one hole | Rubric           |      |
+| Leg and feet position on entry   | Legs together, toes pointed, following through the same hole       | Rubric           |      |
+
+Backstroke components: Reaction (measured, s), Push and drive, Arch and entry angle, Distance (measured, ft), Head-arm-hand alignment on entry. "What a 5 looks like" wording for these five is still to be written.
 
 The shared Streamline skill is shown after every start, so streamline off the start is graded once and flows through all three.
 
@@ -260,7 +273,9 @@ Open: Block setup / stance as a 7th component for track and relay starts (undeci
 
 ### Turns
 
-Legality first: a Not-legal flag applies to any turn; fault tags and the 1–5 grade still record.
+Legality first: an illegal turn caps at 2. Then speed into and out of the wall.
+
+Note (superseded in catalog, needs coach decision — see section 12): the catalog currently flags Not-legal turns with a phantom 1–5 and counts them as 0 in averages instead of capping at 2. Jason's "caps at 2" rule is kept here verbatim until this is resolved.
 
 | Turn                          | Used in     | What a 5 looks like                                                            |
 | ----------------------------- | ----------- | ------------------------------------------------------------------------------ |
@@ -278,6 +293,8 @@ Legality first: a Not-legal flag applies to any turn; fault tags and the 1–5 g
 ---
 
 ## 8. Racing & Performance
+
+These are rated mainly in Race context, or in race-pace practice sets.
 
 | Skill           | Type                             | Builds on                     |
 | --------------- | -------------------------------- | ----------------------------- |
@@ -371,6 +388,7 @@ Catalog state reflects both `skills-rubric-answers-2026-10.md` and `decisions-sc
 - "Stroke-breath coordination" rename: the Phase 1 answers doc calls it "Stroke hold on breath"; the Oct 14 decisions doc calls it "Stroke integrity on breath." The catalog currently stores "Stroke integrity on breath" (applied before the two docs were reconciled). Confirm with Jason which term wins.
 - Shared Streamline descriptors are drafted by the catalog build; Jason to review and either accept or revise.
 - Block setup / stance as a 7th start component is still undecided.
+- Illegal turns: Jason's rubric says "an illegal turn caps at 2." The catalog/app scores Not legal as 0 (and keeps a phantom 1–5 grade for development tracking). These disagree — needs the coach's decision.
 
 **Skills archived (removed from catalog; sync sets archivedAt automatically):**
 
