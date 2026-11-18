@@ -233,6 +233,8 @@ describe("buildRatingsArray — measured skill with catalog unit", () => {
       faultTags: [],
       detailsOpen: false,
       golfScoreCategory: null,
+      timeSeconds: "",
+      strokeCountValue: "",
     };
   }
 
@@ -270,12 +272,13 @@ describe("buildRatingsArray — measured skill with catalog unit", () => {
   });
 
   it("still rejects (and reports the right field) when the catalog unit has no enum map", () => {
-    // "kicks/min" has no enum equivalent — the UI hides the measurement input
-    // for this case, so coaches can't reach the failing state. But if a stale
-    // draft or an older client ever submits `measurementValue` for such a
-    // skill, the schema's rejection surfaces the per-row field path.
-    const kickSkill: SkillForRating = { ...measuredSkill, slug: "freestyle-kick-rate", unit: "kicks/min" };
-    const ratings = buildRatingsArray([kickSkill], {
+    // Pass 2c: `kicks/min` now maps to `kicks_per_minute`, so this defensive
+    // check uses the one remaining intentionally-unmapped catalog unit
+    // (`time_s + stroke_count`, golf score). If a stale draft or older
+    // client submits a raw `measurementValue` for such a skill, the
+    // schema's rejection surfaces the per-row field path.
+    const unmapped: SkillForRating = { ...measuredSkill, slug: "free-golf-score", unit: "time_s + stroke_count" };
+    const ratings = buildRatingsArray([unmapped], {
       [SKILL_ID]: { ...baseSkillDraft(), measurementValue: "30" },
     });
     const parsed = CreateSessionBodySchema.safeParse({
@@ -438,25 +441,227 @@ describe("validateSubmission", () => {
   });
 
   it("still surfaces per-rating issues (measurement without a unit) via the schema", () => {
-    const kickSkill: SkillForRating = {
+    // Pass 2c: `kicks/min` now maps to `kicks_per_minute`, so the
+    // "no enum mapping" branch is exercised with the one remaining
+    // intentionally-unmapped catalog unit (golf score's
+    // `time_s + stroke_count`). The invariant under test is still
+    // "measurementValue without measurementUnit → per-rating error."
+    const unmappedUnitSkill: SkillForRating = {
       ...SKILL,
       id: "00000000-0000-0000-cccc-000000000002",
-      slug: "free-kick-rate",
+      slug: "free-golf-score",
       type: "measured",
-      unit: "kicks/min", // no enum mapping; triggers the "both or neither" check
+      unit: "time_s + stroke_count", // intentionally unmapped
     };
     const draft = {
       ...filledDraft(),
       skills: {
-        [kickSkill.id]: { ...defaultSkillDraft(), grade: 3 as const, measurementValue: "30" },
+        [unmappedUnitSkill.id]: { ...defaultSkillDraft(), grade: 3 as const, measurementValue: "30" },
       },
     };
-    const ratings = buildRatingsArray([kickSkill], draft.skills);
+    const ratings = buildRatingsArray([unmappedUnitSkill], draft.skills);
     const issues = validateSubmission(draft, ratings);
     const measurementIssue = issues.find(
       (issue) => issue.ratingIndex === 0 && issue.field === "measurementValue",
     );
     expect(measurementIssue).toBeDefined();
+  });
+
+  // Pass 2c follow-up: half-filled golf and golf-without-category are
+  // caught client-side so the save button never hits the server with a
+  // row the DB check would reject anyway.
+
+  it("surfaces a timeSeconds issue when time is filled but stroke count is blank", () => {
+    const golfSkill: SkillForRating = {
+      ...SKILL,
+      id: "00000000-0000-0000-eeee-000000000001",
+      slug: "free-golf-score",
+      type: "score",
+      unit: "time_s + stroke_count",
+    };
+    const draft = {
+      ...filledDraft(),
+      skills: {
+        [golfSkill.id]: {
+          ...defaultSkillDraft(),
+          grade: 3 as const,
+          timeSeconds: "14.25",
+          strokeCountValue: "",
+          golfScoreCategory: "push_off_in_water" as const,
+        },
+      },
+    };
+    const ratings = buildRatingsArray([golfSkill], draft.skills);
+    const issues = validateSubmission(draft, ratings);
+    const pairIssue = issues.find(
+      (issue) => issue.ratingIndex === 0 && issue.field === "timeSeconds",
+    );
+    expect(pairIssue).toBeDefined();
+    expect(pairIssue?.message).toMatch(/enter the time and stroke count/i);
+  });
+
+  it("surfaces a timeSeconds issue when stroke count is filled but time is blank", () => {
+    const golfSkill: SkillForRating = {
+      ...SKILL,
+      id: "00000000-0000-0000-eeee-000000000002",
+      slug: "free-golf-score",
+      type: "score",
+      unit: "time_s + stroke_count",
+    };
+    const draft = {
+      ...filledDraft(),
+      skills: {
+        [golfSkill.id]: {
+          ...defaultSkillDraft(),
+          grade: 3 as const,
+          timeSeconds: "",
+          strokeCountValue: "18",
+          golfScoreCategory: "push_off_in_water" as const,
+        },
+      },
+    };
+    const ratings = buildRatingsArray([golfSkill], draft.skills);
+    const issues = validateSubmission(draft, ratings);
+    const pairIssue = issues.find(
+      (issue) => issue.ratingIndex === 0 && issue.field === "timeSeconds",
+    );
+    expect(pairIssue).toBeDefined();
+  });
+
+  it("surfaces a golfScoreCategory issue when time + stroke count are filled but no category is picked", () => {
+    const golfSkill: SkillForRating = {
+      ...SKILL,
+      id: "00000000-0000-0000-eeee-000000000003",
+      slug: "free-golf-score",
+      type: "score",
+      unit: "time_s + stroke_count",
+    };
+    const draft = {
+      ...filledDraft(),
+      skills: {
+        [golfSkill.id]: {
+          ...defaultSkillDraft(),
+          grade: 3 as const,
+          timeSeconds: "14.25",
+          strokeCountValue: "18",
+          golfScoreCategory: null,
+        },
+      },
+    };
+    const ratings = buildRatingsArray([golfSkill], draft.skills);
+    // Catalog validation needs screenSkills to run.
+    const issues = validateSubmission(draft, ratings, [golfSkill]);
+    const categoryIssue = issues.find(
+      (issue) => issue.ratingIndex === 0 && issue.field === "golfScoreCategory",
+    );
+    expect(categoryIssue).toBeDefined();
+    expect(categoryIssue?.message).toMatch(/pick a test category/i);
+  });
+
+  // Golf-grade-requires-pair rule: a 1-5 golf grade with empty time/strokes
+  // is blocked client-side with a clear message, even when there's no
+  // partial-pair state for the Zod rule to catch.
+  it("blocks save when a graded golf rating has no time or stroke count", () => {
+    const golfSkill: SkillForRating = {
+      ...SKILL,
+      id: "00000000-0000-0000-eeee-000000000004",
+      slug: "free-golf-score",
+      type: "score",
+      unit: "time_s + stroke_count",
+    };
+    const draft = {
+      ...filledDraft(),
+      skills: {
+        [golfSkill.id]: {
+          ...defaultSkillDraft(),
+          grade: 3 as const,
+          timeSeconds: "",
+          strokeCountValue: "",
+          golfScoreCategory: "push_off_in_water" as const,
+        },
+      },
+    };
+    const ratings = buildRatingsArray([golfSkill], draft.skills);
+    const issues = validateSubmission(draft, ratings, [golfSkill]);
+    const pairIssue = issues.find(
+      (issue) => issue.ratingIndex === 0 && issue.field === "timeSeconds",
+    );
+    expect(pairIssue).toBeDefined();
+    expect(pairIssue?.message).toMatch(/enter the time and stroke count/i);
+  });
+
+  it("does NOT block save when a measured (non-score) skill has a grade and no number", () => {
+    const tempoSkill: SkillForRating = {
+      ...SKILL,
+      id: "00000000-0000-0000-eeee-000000000005",
+      slug: "free-tempo",
+      type: "measured",
+      unit: "cycles/min",
+    };
+    const draft = {
+      ...filledDraft(),
+      skills: {
+        [tempoSkill.id]: {
+          ...defaultSkillDraft(),
+          grade: 3 as const,
+          measurementValue: "",
+        },
+      },
+    };
+    const ratings = buildRatingsArray([tempoSkill], draft.skills);
+    const issues = validateSubmission(draft, ratings, [tempoSkill]);
+    expect(issues).toEqual([]);
+  });
+
+  it("accepts a graded golf rating that carries category + time + strokes (end-to-end valid)", () => {
+    const golfSkill: SkillForRating = {
+      ...SKILL,
+      id: "00000000-0000-0000-eeee-000000000006",
+      slug: "free-golf-score",
+      type: "score",
+      unit: "time_s + stroke_count",
+    };
+    const draft = {
+      ...filledDraft(),
+      skills: {
+        [golfSkill.id]: {
+          ...defaultSkillDraft(),
+          grade: 4 as const,
+          timeSeconds: "14.25",
+          strokeCountValue: "18",
+          golfScoreCategory: "block_dive" as const,
+        },
+      },
+    };
+    const ratings = buildRatingsArray([golfSkill], draft.skills);
+    const issues = validateSubmission(draft, ratings, [golfSkill]);
+    expect(issues).toEqual([]);
+  });
+
+  it("accepts noConcept on a score skill with no numbers (rule skips when noConcept is true)", () => {
+    const golfSkill: SkillForRating = {
+      ...SKILL,
+      id: "00000000-0000-0000-eeee-000000000007",
+      slug: "free-golf-score",
+      type: "score",
+      unit: "time_s + stroke_count",
+    };
+    const draft = {
+      ...filledDraft(),
+      skills: {
+        [golfSkill.id]: {
+          ...defaultSkillDraft(),
+          grade: null,
+          noConcept: true,
+          timeSeconds: "",
+          strokeCountValue: "",
+          golfScoreCategory: null,
+        },
+      },
+    };
+    const ratings = buildRatingsArray([golfSkill], draft.skills);
+    const issues = validateSubmission(draft, ratings, [golfSkill]);
+    expect(issues).toEqual([]);
   });
 });
 

@@ -1,4 +1,11 @@
-import { CreateSessionBodySchema, displayUnitToMeasurementEnum } from "@swim-app/shared";
+import {
+  CreateSessionBodySchema,
+  displayUnitToMeasurementEnum,
+  validateRatingAgainstSkill,
+  type RatingPayload,
+  type RatingSkillDef,
+} from "@swim-app/shared";
+import type { SkillForRating } from "@swim-app/shared";
 
 // A single validation issue, keyed by rating index when the problem is on a
 // specific skill row (so the UI can scroll to and annotate the right field).
@@ -30,6 +37,14 @@ const FIELD_MESSAGE_OVERRIDES: Record<string, string> = {
     "Pick a 1 to 5 grade, or toggle 'No concept'.",
   notLegal:
     "'Not legal' needs a 1 to 5 grade.",
+  // Pass 2c follow-up: golf-score numbers. Shown for any time/stroke
+  // problem (partial pair caught by Zod, or grade-without-pair caught by
+  // the catalog validator). Matches the catalog's canonical message so
+  // the coach sees the same copy in both situations.
+  timeSeconds: "Enter the time and stroke count for this golf score.",
+  // Golf pair + no category picked. Zod reports on this field when
+  // timeSeconds is set but golfScoreCategory is null.
+  golfScoreCategory: "Pick a test category before saving a golf score.",
   coachingPriority: "Enter a coaching priority.",
   sessionDate: "Pick a session date.",
   context: "Pick a context.",
@@ -155,13 +170,20 @@ export function sortIssuesForScroll(
 }
 
 // Checks everything the API requires on the client, so a tap on Save with a
-// missing field never fires a request. Combines (a) explicit per-field
-// checks for the session-level fields the form hosts, and (b) the shared
-// Zod schema for everything inside the ratings array (per-skill rules like
-// "measurementValue needs a unit"). Returns issues ready to render.
+// missing field never fires a request. Combines three layers:
+//   1. Explicit per-field checks for the session-level fields the form hosts.
+//   2. Catalog-aware per-rating checks (validateRatingAgainstSkill) for
+//      rules that need skill context — notably "golf grade requires
+//      time + strokes + category." Requires screenSkills.
+//   3. The shared Zod schema for structural rules (paired fields, grade
+//      vs noConcept, etc.). Zod runs last so catalog messages take
+//      precedence on overlapping fields.
+// Returns issues ready to render. When screenSkills is omitted (legacy
+// call sites + some tests), layer 2 is skipped.
 export function validateSubmission(
   draft: SessionDraft,
   ratingsArray: ReturnType<typeof buildRatingsArray>,
+  screenSkills?: ReadonlyArray<SkillForRating>,
 ): EvaluateFieldIssue[] {
   const issues: EvaluateFieldIssue[] = [];
 
@@ -184,8 +206,38 @@ export function validateSubmission(
     issues.push({ field: "ratings", message: FIELD_MESSAGE_OVERRIDES.ratings ?? "" });
   }
 
-  // Full schema parse catches per-rating problems the row-level UI doesn't
-  // enforce directly (measurement/capacity pairing, grade/noConcept pairing).
+  // Layer 2 — catalog-aware per-rating checks. The shared validator is
+  // the single source of truth; the server runs the same function on
+  // CREATE and PATCH, so any divergence surfaces immediately.
+  if (screenSkills !== undefined) {
+    const skillById = new Map(screenSkills.map((skill) => [skill.id, skill]));
+    for (let ratingIndex = 0; ratingIndex < ratingsArray.length; ratingIndex++) {
+      const rating = ratingsArray[ratingIndex]!;
+      const skill = skillById.get(rating.skillId);
+      if (!skill) continue;
+      const skillDef: RatingSkillDef = {
+        type: skill.type,
+        ratedPerSide: skill.ratedPerSide,
+        notLegalAllowed: skill.notLegalAllowed,
+        unit: skill.unit,
+        allowedFaultTags: skill.faultTags,
+      };
+      // buildRatingsArray returns `measurementUnit: string | null` so the
+      // dropdown's string value can flow through unchanged for skills
+      // without a catalog unit; the catalog validator rejects mismatches.
+      // RatingPayload narrows the type to the MeasurementUnit enum, so
+      // cast at this boundary.
+      const issue = validateRatingAgainstSkill(skillDef, rating as unknown as RatingPayload);
+      if (issue) {
+        issues.push({ ratingIndex, field: issue.field, message: issue.message });
+      }
+    }
+  }
+
+  // Layer 3 — Zod. Catches structural issues the catalog pass can't see
+  // (measurement/capacity pairing, grade/noConcept pairing). Runs after
+  // the catalog layer so when both fire on the same field+index, the
+  // catalog's user-facing copy wins the dedupe.
   if (ratingsArray.length > 0 && draft.screenSlug !== "") {
     const trimmedPriority = draft.coachingPriority.trim();
     const body = {
@@ -199,9 +251,20 @@ export function validateSubmission(
     const parsed = CreateSessionBodySchema.safeParse(body);
     if (!parsed.success) {
       for (const issue of mapZodIssuesToFieldIssues(parsed.error.issues)) {
-        // Skip issues we already reported from the explicit per-field pass
-        // (session-level checks are more specific than Zod's generic ones).
+        // Session-level checks are more specific than Zod's generic ones.
         if (issue.ratingIndex === undefined && issues.some((existing) => existing.field === issue.field)) {
+          continue;
+        }
+        // Per-rating dedupe against the catalog layer: if we already
+        // emitted an issue for this (ratingIndex, field), the catalog
+        // message wins.
+        if (
+          issue.ratingIndex !== undefined &&
+          issues.some(
+            (existing) =>
+              existing.ratingIndex === issue.ratingIndex && existing.field === issue.field,
+          )
+        ) {
           continue;
         }
         issues.push(issue);
@@ -240,6 +303,11 @@ export type SkillDraft = {
   faultTags: string[];
   detailsOpen: boolean;
   golfScoreCategory: "push_off_in_water" | "deck_dive" | "block_dive" | null;
+  // Pass 2c: golf-score inputs — free text while typing, parsed to
+  // number at submit time. buildRatingsArray converts "12.5" → 12.5
+  // and "" → null.
+  timeSeconds: string;
+  strokeCountValue: string;
 };
 
 export type SessionDraft = {
@@ -270,6 +338,8 @@ export function defaultSkillDraft(): SkillDraft {
     faultTags: [],
     detailsOpen: false,
     golfScoreCategory: null,
+    timeSeconds: "",
+    strokeCountValue: "",
   };
 }
 
@@ -413,6 +483,8 @@ export function buildRatingsArray(
   faultTags: string[];
   ratedAt: string;
   golfScoreCategory: "push_off_in_water" | "deck_dive" | "block_dive" | null;
+  timeSeconds: number | null;
+  strokeCountValue: number | null;
 }> {
   const ratings = [];
   const now = new Date().toISOString();
@@ -434,6 +506,23 @@ export function buildRatingsArray(
       const measurementUnit = measurementValue === null
         ? null
         : (displayUnitToMeasurementEnum(skill.unit) ?? d.measurementUnit);
+      // Pass 2c: parse the two golf-score free-text inputs. Only emit them
+      // on score skills (API rejects them on non-score). Empty string → null.
+      // A partial pair (one filled, one empty) is passed through so the
+      // Zod paired-fields rule fires in validateSubmission — the coach sees
+      // "Enter both time and stroke count" instead of a silent drop.
+      let timeSeconds: number | null = null;
+      let strokeCountValue: number | null = null;
+      if (skill.type === "score") {
+        if (d.timeSeconds !== "") {
+          const parsedTime = parseFloat(d.timeSeconds);
+          if (!Number.isNaN(parsedTime)) timeSeconds = parsedTime;
+        }
+        if (d.strokeCountValue !== "") {
+          const parsedStrokes = parseInt(d.strokeCountValue, 10);
+          if (!Number.isNaN(parsedStrokes)) strokeCountValue = parsedStrokes;
+        }
+      }
       ratings.push({
         skillId: skill.id,
         grade: d.grade,
@@ -448,6 +537,8 @@ export function buildRatingsArray(
         faultTags: d.faultTags,
         ratedAt: now,
         golfScoreCategory: d.golfScoreCategory,
+        timeSeconds,
+        strokeCountValue,
       });
     }
   }

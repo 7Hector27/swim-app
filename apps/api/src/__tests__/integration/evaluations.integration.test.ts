@@ -320,6 +320,163 @@ describe("skill_ratings CHECK constraints", () => {
   });
 });
 
+// ── Pass 2c: golf-score column constraints + kick-rate round trip ───────────
+
+describe("skill_ratings — Pass 2c golf + kick_rate", () => {
+  let golfSkillId: string;
+  let kickRateSkillId: string;
+  beforeAll(async () => {
+    const golfRows = await adminDb()
+      .select({ id: skills.id })
+      .from(skills)
+      .where(eq(skills.slug, "free-golf-score"))
+      .limit(1);
+    if (!golfRows[0]) throw new Error("Catalog skill free-golf-score not found");
+    golfSkillId = golfRows[0].id;
+
+    const kickRateRows = await adminDb()
+      .select({ id: skills.id })
+      .from(skills)
+      .where(eq(skills.slug, "free-kick-rate"))
+      .limit(1);
+    if (!kickRateRows[0]) throw new Error("Catalog skill free-kick-rate not found");
+    kickRateSkillId = kickRateRows[0].id;
+  });
+
+  it("rejects timeSeconds without strokeCountValue (golf_fields_together)", async () => {
+    await expect(
+      adminDb().insert(skillRatings).values({
+        ...validRatingValues(),
+        skillId: golfSkillId,
+        timeSeconds: "14.25",
+        golfScoreCategory: "push_off_in_water",
+      }),
+    ).rejects.toMatchObject({ message: expect.stringContaining("golf_fields_together") });
+  });
+
+  it("rejects strokeCountValue without timeSeconds (golf_fields_together)", async () => {
+    await expect(
+      adminDb().insert(skillRatings).values({
+        ...validRatingValues(),
+        skillId: golfSkillId,
+        strokeCountValue: 18,
+        golfScoreCategory: "push_off_in_water",
+      }),
+    ).rejects.toMatchObject({ message: expect.stringContaining("golf_fields_together") });
+  });
+
+  it("rejects timeSeconds + strokeCountValue without a category (golf_fields_require_category)", async () => {
+    await expect(
+      adminDb().insert(skillRatings).values({
+        ...validRatingValues(),
+        skillId: golfSkillId,
+        timeSeconds: "14.25",
+        strokeCountValue: 18,
+      }),
+    ).rejects.toMatchObject({ message: expect.stringContaining("golf_fields_require_category") });
+  });
+
+  it("rejects a negative timeSeconds (golf_fields_non_negative)", async () => {
+    await expect(
+      adminDb().insert(skillRatings).values({
+        ...validRatingValues(),
+        skillId: golfSkillId,
+        timeSeconds: "-1.00",
+        strokeCountValue: 18,
+        golfScoreCategory: "push_off_in_water",
+      }),
+    ).rejects.toMatchObject({ message: expect.stringContaining("golf_fields_non_negative") });
+  });
+
+  it("rejects a negative strokeCountValue (golf_fields_non_negative)", async () => {
+    await expect(
+      adminDb().insert(skillRatings).values({
+        ...validRatingValues(),
+        skillId: golfSkillId,
+        timeSeconds: "14.25",
+        strokeCountValue: -1,
+        golfScoreCategory: "push_off_in_water",
+      }),
+    ).rejects.toMatchObject({ message: expect.stringContaining("golf_fields_non_negative") });
+  });
+
+  it("accepts a full golf-score row (time + strokes + category)", async () => {
+    const rows = await adminDb()
+      .insert(skillRatings)
+      .values({
+        ...validRatingValues(),
+        skillId: golfSkillId,
+        timeSeconds: "14.25",
+        strokeCountValue: 18,
+        golfScoreCategory: "deck_dive",
+      })
+      .returning({ id: skillRatings.id });
+    expect(rows[0]!.id).toBeTruthy();
+    await adminDb().delete(skillRatings).where(eq(skillRatings.id, rows[0]!.id));
+  });
+
+  it("append-only trigger rejects UPDATE of time_seconds on an existing row", async () => {
+    const rows = await adminDb()
+      .insert(skillRatings)
+      .values({
+        ...validRatingValues(),
+        skillId: golfSkillId,
+        timeSeconds: "14.25",
+        strokeCountValue: 18,
+        golfScoreCategory: "deck_dive",
+      })
+      .returning({ id: skillRatings.id });
+    const id = rows[0]!.id;
+    try {
+      await expect(
+        adminDb().update(skillRatings).set({ timeSeconds: "15.00" }).where(eq(skillRatings.id, id)),
+      ).rejects.toMatchObject({ message: expect.stringContaining("append-only") });
+    } finally {
+      await adminDb().delete(skillRatings).where(eq(skillRatings.id, id));
+    }
+  });
+
+  it("append-only trigger rejects UPDATE of stroke_count_value on an existing row", async () => {
+    const rows = await adminDb()
+      .insert(skillRatings)
+      .values({
+        ...validRatingValues(),
+        skillId: golfSkillId,
+        timeSeconds: "14.25",
+        strokeCountValue: 18,
+        golfScoreCategory: "deck_dive",
+      })
+      .returning({ id: skillRatings.id });
+    const id = rows[0]!.id;
+    try {
+      await expect(
+        adminDb().update(skillRatings).set({ strokeCountValue: 19 }).where(eq(skillRatings.id, id)),
+      ).rejects.toMatchObject({ message: expect.stringContaining("append-only") });
+    } finally {
+      await adminDb().delete(skillRatings).where(eq(skillRatings.id, id));
+    }
+  });
+
+  it("kick-rate rating round-trips with measurementUnit=kicks_per_minute", async () => {
+    const rows = await adminDb()
+      .insert(skillRatings)
+      .values({
+        ...validRatingValues(),
+        skillId: kickRateSkillId,
+        measurementValue: "45",
+        measurementUnit: "kicks_per_minute",
+      })
+      .returning({
+        id: skillRatings.id,
+        measurementValue: skillRatings.measurementValue,
+        measurementUnit: skillRatings.measurementUnit,
+      });
+    expect(rows[0]!.measurementValue).toBe("45");
+    expect(rows[0]!.measurementUnit).toBe("kicks_per_minute");
+    await adminDb().delete(skillRatings).where(eq(skillRatings.id, rows[0]!.id));
+  });
+});
+
 // ── skill_ratings append-only trigger ────────────────────────────────────────
 
 async function withFreshRating(fn: (id: string) => Promise<void>): Promise<void> {

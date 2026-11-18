@@ -33,14 +33,16 @@ import {
 } from "@swim-app/shared";
 
 // Direction mapping per measurement unit. stroke_count and seconds reward
-// lower values (less drag, faster swim); stroke_cycles_per_minute and feet
-// reward higher values (tempo, distance). Centralized here so a UI chart can
-// read the direction off the response rather than hardcoding its own table.
+// lower values (less drag, faster swim); stroke_cycles_per_minute, feet, and
+// kicks_per_minute reward higher values (tempo, distance). Centralized here
+// so a UI chart can read the direction off the response rather than
+// hardcoding its own table.
 const MEASUREMENT_DIRECTION: Record<MeasurementUnit, "higher_better" | "lower_better"> = {
   stroke_cycles_per_minute: "higher_better",
   stroke_count: "lower_better",
   seconds: "lower_better",
   feet: "higher_better",
+  kicks_per_minute: "higher_better",
 };
 
 export type ComputeScoreHistoryOptions = {

@@ -35,6 +35,11 @@ export default function SkillGradeRow({ skill, draftKey, label, draft, onChange,
   const gradeIssue = issues.find((issue) => issue.field === "grade");
   const notLegalIssue = issues.find((issue) => issue.field === "notLegal");
   const measurementIssue = issues.find((issue) => issue.field === "measurementValue");
+  // Pass 2c follow-up: golf-score pair + category errors route to the row.
+  // timeSeconds is the Zod field for the paired-fields rule (time XOR
+  // strokes); golfScoreCategory is the "pair without category" rule.
+  const timePairIssue = issues.find((issue) => issue.field === "timeSeconds");
+  const categoryIssue = issues.find((issue) => issue.field === "golfScoreCategory");
   // Pass 2b: the measurement number box now lives on the row, so it's no
   // longer a reason to open the details panel. Only capacity errors route
   // there.
@@ -70,27 +75,49 @@ export default function SkillGradeRow({ skill, draftKey, label, draft, onChange,
           <span className="text-xs font-semibold" style={{ color: "var(--color-text-secondary)" }}>
             Test category
           </span>
-          <div className="flex gap-2 flex-wrap">
+          <div
+            className="flex gap-2 flex-wrap"
+            role="group"
+            aria-invalid={categoryIssue !== undefined || undefined}
+            aria-describedby={categoryIssue ? `${draftKey}-category-error` : undefined}
+          >
             {([
               { value: "push_off_in_water", label: "Push-off in water" },
               { value: "deck_dive", label: "Deck dive" },
               { value: "block_dive", label: "Block dive" },
-            ] as const).map(({ value, label: catLabel }) => (
-              <button
-                key={value}
-                type="button"
-                onClick={() => onChange(draftKey, { golfScoreCategory: value })}
-                className="min-h-[44px] px-3 rounded border text-xs font-semibold transition-colors"
-                style={{
-                  borderColor: draft.golfScoreCategory === value ? "var(--color-accent)" : "var(--color-border)",
-                  color: draft.golfScoreCategory === value ? "var(--color-accent)" : "var(--color-text-secondary)",
-                  backgroundColor: "transparent",
-                }}
-              >
-                {catLabel}
-              </button>
-            ))}
+            ] as const).map(({ value, label: catLabel }) => {
+              const selected = draft.golfScoreCategory === value;
+              const borderColor = selected
+                ? "var(--color-accent)"
+                : categoryIssue
+                  ? "var(--color-danger)"
+                  : "var(--color-border)";
+              return (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => onChange(draftKey, { golfScoreCategory: value })}
+                  className="min-h-[44px] px-3 rounded border text-xs font-semibold transition-colors"
+                  style={{
+                    borderColor,
+                    color: selected ? "var(--color-accent)" : "var(--color-text-secondary)",
+                    backgroundColor: "transparent",
+                  }}
+                >
+                  {catLabel}
+                </button>
+              );
+            })}
           </div>
+          {categoryIssue && (
+            <p
+              id={`${draftKey}-category-error`}
+              className="text-xs"
+              style={{ color: "var(--color-danger)" }}
+            >
+              {categoryIssue.message}
+            </p>
+          )}
         </div>
       )}
 
@@ -143,6 +170,7 @@ export default function SkillGradeRow({ skill, draftKey, label, draft, onChange,
           draftKey={draftKey}
           onChange={onChange}
           {...(measurementIssue !== undefined && { issue: measurementIssue })}
+          {...(timePairIssue !== undefined && { pairIssue: timePairIssue })}
         />
       )}
 

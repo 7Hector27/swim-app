@@ -162,7 +162,8 @@ describe("GET /coach/swimmers/:id/golf-score-trends", () => {
     const ratingRows = [
       {
         grade: 3,
-        measurementValue: "42",
+        timeSeconds: "25.50",
+        strokeCountValue: 17,
         golfScoreCategory: "push_off_in_water",
         ratedAt: new Date("2025-05-01T10:00:00.000Z"),
         sessionDate: "2025-05-01",
@@ -188,7 +189,9 @@ describe("GET /coach/swimmers/:id/golf-score-trends", () => {
     expect(res.body.trends[0].byCategory).toHaveLength(1);
     expect(res.body.trends[0].byCategory[0].category).toBe("push_off_in_water");
     expect(res.body.trends[0].byCategory[0].points).toHaveLength(1);
-    expect(res.body.trends[0].byCategory[0].points[0].measurementValue).toBe("42");
+    // Pass 2c: points carry the raw pair; derived golf score = time + strokes.
+    expect(res.body.trends[0].byCategory[0].points[0].timeSeconds).toBe(25.50);
+    expect(res.body.trends[0].byCategory[0].points[0].strokeCountValue).toBe(17);
   });
 
   it("logs a warn and drops the category when the DB has a GolfScoreCategory key the Zod enum doesn't know", async () => {
@@ -197,7 +200,8 @@ describe("GET /coach/swimmers/:id/golf-score-trends", () => {
     const ratingRows = [
       {
         grade: 3,
-        measurementValue: "42",
+        timeSeconds: "25.50",
+        strokeCountValue: 17,
         golfScoreCategory: "mystery_catalog_drift_category",
         ratedAt: new Date("2025-05-01T10:00:00.000Z"),
         sessionDate: "2025-05-01",
@@ -207,7 +211,8 @@ describe("GET /coach/swimmers/:id/golf-score-trends", () => {
       },
       {
         grade: 3,
-        measurementValue: "42",
+        timeSeconds: "25.50",
+        strokeCountValue: 17,
         golfScoreCategory: "push_off_in_water",
         ratedAt: new Date("2025-05-01T10:00:00.000Z"),
         sessionDate: "2025-05-01",
@@ -266,7 +271,8 @@ describe("GET /coach/swimmers/:id/golf-score-trends", () => {
     const ratingRows = [
       {
         grade: 4,
-        measurementValue: "38",
+        timeSeconds: "22.00",
+        strokeCountValue: 16,
         golfScoreCategory: "deck_dive",
         ratedAt: new Date("2025-05-10T10:00:00.000Z"),
         sessionDate: "2025-05-10",
@@ -283,9 +289,9 @@ describe("GET /coach/swimmers/:id/golf-score-trends", () => {
     ];
 
     const cohortRatingRows = [
-      { swimmerId: "swimmer-001", measurementValue: "45", ratedAt: new Date("2025-04-01T00:00:00.000Z") },
-      { swimmerId: "swimmer-002", measurementValue: "40", ratedAt: new Date("2025-04-01T00:00:00.000Z") },
-      { swimmerId: "swimmer-003", measurementValue: "50", ratedAt: new Date("2025-04-01T00:00:00.000Z") },
+      { swimmerId: "swimmer-001", timeSeconds: "28.00", strokeCountValue: 17, ratedAt: new Date("2025-04-01T00:00:00.000Z") },
+      { swimmerId: "swimmer-002", timeSeconds: "23.00", strokeCountValue: 17, ratedAt: new Date("2025-04-01T00:00:00.000Z") },
+      { swimmerId: "swimmer-003", timeSeconds: "33.00", strokeCountValue: 17, ratedAt: new Date("2025-04-01T00:00:00.000Z") },
     ];
 
     function cohortRatingsSelect(rows: unknown[]) {
@@ -309,5 +315,60 @@ describe("GET /coach/swimmers/:id/golf-score-trends", () => {
     expect(res.status).toBe(200);
     expect(res.body.trends).toHaveLength(1);
     expect(res.body.trends[0].byCategory[0].ageBands).toBeNull();
+  });
+
+  it("returns separate byCategory entries per category (push_off_in_water, deck_dive, block_dive never mix)", async () => {
+    authAs(profileCoach);
+
+    const ratingRows = [
+      {
+        grade: 3, timeSeconds: "25.50", strokeCountValue: 17,
+        golfScoreCategory: "push_off_in_water",
+        ratedAt: new Date("2025-05-01T10:00:00.000Z"),
+        sessionDate: "2025-05-01",
+        skillId: SKILL_ID, slug: "free-golf-score", name: "Freestyle Golf Score",
+      },
+      {
+        grade: 4, timeSeconds: "22.00", strokeCountValue: 16,
+        golfScoreCategory: "deck_dive",
+        ratedAt: new Date("2025-05-02T10:00:00.000Z"),
+        sessionDate: "2025-05-02",
+        skillId: SKILL_ID, slug: "free-golf-score", name: "Freestyle Golf Score",
+      },
+      {
+        grade: 5, timeSeconds: "20.00", strokeCountValue: 14,
+        golfScoreCategory: "block_dive",
+        ratedAt: new Date("2025-05-03T10:00:00.000Z"),
+        sessionDate: "2025-05-03",
+        skillId: SKILL_ID, slug: "free-golf-score", name: "Freestyle Golf Score",
+      },
+    ];
+
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(profileCoach))
+      .mockReturnValueOnce(swimmerSelect(activeSwimmerRow))
+      .mockReturnValueOnce(ratingRowsSelect(ratingRows))
+      .mockReturnValueOnce(swimmerBirthDateSelect("2015-03-10"))
+      .mockReturnValueOnce(cohortSwimmersSelect([]));
+
+    const res = await request(app)
+      .get(`/coach/swimmers/${SWIMMER_ID}/golf-score-trends`)
+      .set("Authorization", "Bearer token");
+    expect(res.status).toBe(200);
+    expect(res.body.trends).toHaveLength(1);
+    const byCategory = res.body.trends[0].byCategory as Array<{
+      category: string;
+      points: Array<{ timeSeconds: number; strokeCountValue: number }>;
+    }>;
+    const bucketed: Record<string, Array<{ timeSeconds: number; strokeCountValue: number }>> = {};
+    for (const entry of byCategory) {
+      bucketed[entry.category] = entry.points;
+    }
+    expect(bucketed["push_off_in_water"]).toHaveLength(1);
+    expect(bucketed["deck_dive"]).toHaveLength(1);
+    expect(bucketed["block_dive"]).toHaveLength(1);
+    expect(bucketed["push_off_in_water"]![0]!.timeSeconds).toBe(25.50);
+    expect(bucketed["deck_dive"]![0]!.timeSeconds).toBe(22.00);
+    expect(bucketed["block_dive"]![0]!.timeSeconds).toBe(20.00);
   });
 });

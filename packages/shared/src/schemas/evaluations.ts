@@ -23,6 +23,7 @@ export const MeasurementUnitSchema = z.enum([
   "stroke_count",
   "seconds",
   "feet",
+  "kicks_per_minute",
 ]);
 export type MeasurementUnit = z.infer<typeof MeasurementUnitSchema>;
 
@@ -57,6 +58,12 @@ export const SkillRatingBaseSchema = z.object({
   capacityUnit: CapacityUnitSchema.nullable(),
   measurementValue: z.string().nullable(),
   measurementUnit: MeasurementUnitSchema.nullable(),
+  // Golf-score inputs, read-side. The computed score = timeSeconds +
+  // strokeCountValue; always returned as the pair so clients can show
+  // both and chart the sum. Null on non-golf rows and on golf rows that
+  // predate the two-input entry UI.
+  timeSeconds: z.number().nonnegative().nullable(),
+  strokeCountValue: z.number().int().nonnegative().nullable(),
   voidedAt: z.string().datetime({ offset: true }).nullable(),
   ratedAt: z.string().datetime({ offset: true }),
   createdAt: z.string().datetime({ offset: true }),
@@ -133,6 +140,12 @@ const RatingInputSchema = z
     faultTags: z.array(z.string()),
     ratedAt: z.string().datetime({ offset: true }),
     golfScoreCategory: GolfScoreCategorySchema.nullable().optional().default(null),
+    // Golf-score inputs: hundredths-of-a-second time across 25 + the
+    // paired stroke count. The API's ratingValidation enforces "only on
+    // score skills" using catalog context; the Zod layer just ensures
+    // they're a matched pair and come with a category.
+    timeSeconds: z.number().nonnegative().nullable().optional().default(null),
+    strokeCountValue: z.number().int().nonnegative().nullable().optional().default(null),
   })
   .superRefine((val, ctx) => {
     const gradeValid =
@@ -168,6 +181,23 @@ const RatingInputSchema = z
         code: z.ZodIssueCode.custom,
         message: "measurementValue and measurementUnit must both be present or both be absent",
         path: ["measurementValue"],
+      });
+    }
+    // Golf-score: paired fields must both be present or both absent.
+    if ((val.timeSeconds === null) !== (val.strokeCountValue === null)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "timeSeconds and strokeCountValue must both be present or both be absent",
+        path: ["timeSeconds"],
+      });
+    }
+    // A time/stroke reading needs a category so trends can compare within
+    // push-off / deck dive / block dive.
+    if (val.timeSeconds !== null && val.golfScoreCategory === null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "golfScoreCategory is required when timeSeconds is present",
+        path: ["golfScoreCategory"],
       });
     }
   });
@@ -369,6 +399,11 @@ export const DraftSkillPayloadSchema = z.object({
   measurementValue: z.string(),
   measurementUnit: z.string().nullable(),
   golfScoreCategory: GolfScoreCategorySchema.nullable(),
+  // Pass 2c: strings in draft payloads (free-text in the UI) so a
+  // mid-typing value like "14." round-trips cleanly. Parsed to numbers
+  // when the evaluation is submitted.
+  timeSeconds: z.string().optional().default(""),
+  strokeCountValue: z.string().optional().default(""),
   note: z.string(),
 });
 export type DraftSkillPayload = z.infer<typeof DraftSkillPayloadSchema>;
@@ -410,7 +445,13 @@ export const GolfScoreTrendPointSchema = z.object({
   // deep-link into the Evaluate page in edit mode.
   sessionId: z.string().uuid(),
   grade: z.number().int().min(1).max(5).nullable(),
-  measurementValue: z.string().nullable(),
+  // Pass 2c: the chart plots the derived golf score
+  // (timeSeconds + strokeCountValue). The raw pair is sent so the row-
+  // level trend list can show both and the chart can label points with
+  // the time if useful. Both are nullable for rows that predate the
+  // two-input UI (today there are none).
+  timeSeconds: z.number().nonnegative().nullable(),
+  strokeCountValue: z.number().int().nonnegative().nullable(),
 });
 export type GolfScoreTrendPoint = z.infer<typeof GolfScoreTrendPointSchema>;
 
@@ -746,6 +787,11 @@ const PatchSessionRatingBodySchemaBase = z.object({
   measurementValue: z.string().nullable(),
   measurementUnit: MeasurementUnitSchema.nullable(),
   golfScoreCategory: GolfScoreCategorySchema.nullable().optional().default(null),
+  // Pass 2c: a changed time or stroke count is a changed rating and must
+  // write a supersede row, same as a changed grade (server checks this
+  // against the predecessor).
+  timeSeconds: z.number().nonnegative().nullable().optional().default(null),
+  strokeCountValue: z.number().int().nonnegative().nullable().optional().default(null),
   note: z.string().nullable(),
   faultTags: z.array(z.string()),
 });
@@ -818,6 +864,9 @@ export const GetSessionRatingSchema = z.object({
   measurementValue: z.string().nullable(),
   measurementUnit: MeasurementUnitSchema.nullable(),
   golfScoreCategory: GolfScoreCategorySchema.nullable(),
+  // Pass 2c: returned so edit-mode can pre-fill the two golf-score inputs.
+  timeSeconds: z.number().nonnegative().nullable(),
+  strokeCountValue: z.number().int().nonnegative().nullable(),
   note: z.string().nullable(),
   faultTags: z.array(z.string()),
   // Preserved observation time; equals the original rated_at even on

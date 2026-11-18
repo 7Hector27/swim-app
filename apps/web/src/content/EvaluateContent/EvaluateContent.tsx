@@ -91,6 +91,10 @@ export default function EvaluateContent({
           faultTags: rating.faultTags,
           detailsOpen: false,
           golfScoreCategory: rating.golfScoreCategory,
+          // Pass 2c: pre-fill golf-score inputs from the stored pair so
+          // edit mode shows the coach exactly what was saved.
+          timeSeconds: rating.timeSeconds === null ? "" : String(rating.timeSeconds),
+          strokeCountValue: rating.strokeCountValue === null ? "" : String(rating.strokeCountValue),
         };
       }
       return {
@@ -117,6 +121,8 @@ export default function EvaluateContent({
           faultTags: entry.faultTags,
           detailsOpen: false,
           golfScoreCategory: entry.golfScoreCategory,
+          timeSeconds: entry.timeSeconds ?? "",
+          strokeCountValue: entry.strokeCountValue ?? "",
         };
       }
       return {
@@ -494,6 +500,8 @@ export default function EvaluateContent({
         measurementValue: skillDraft.measurementValue,
         measurementUnit: skillDraft.measurementUnit,
         golfScoreCategory: skillDraft.golfScoreCategory,
+        timeSeconds: skillDraft.timeSeconds,
+        strokeCountValue: skillDraft.strokeCountValue,
         note: skillDraft.note,
       };
     }
@@ -554,6 +562,8 @@ export default function EvaluateContent({
         faultTags: entry.faultTags,
         detailsOpen: false,
         golfScoreCategory: entry.golfScoreCategory,
+        timeSeconds: entry.timeSeconds ?? "",
+        strokeCountValue: entry.strokeCountValue ?? "",
       };
     }
     setDraft({
@@ -801,7 +811,7 @@ export default function EvaluateContent({
   function handleFormSubmit(event: React.FormEvent<HTMLFormElement>) {
     savedScreenSlugRef.current = draft.screenSlug;
     setTapNonce((prev) => prev + 1);
-    const issues = validateSubmission(draft, ratingsArray);
+    const issues = validateSubmission(draft, ratingsArray, selectedScreen?.skills);
     if (issues.length > 0) {
       event.preventDefault();
       setClientIssues(issues);
@@ -839,6 +849,8 @@ export default function EvaluateContent({
               measurementValue: rating.measurementValue,
               measurementUnit: rating.measurementUnit,
               golfScoreCategory: rating.golfScoreCategory,
+              timeSeconds: rating.timeSeconds,
+              strokeCountValue: rating.strokeCountValue,
               note: rating.note,
               faultTags: rating.faultTags,
             },

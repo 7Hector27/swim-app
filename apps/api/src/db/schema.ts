@@ -693,6 +693,7 @@ export const measurementUnitEnum = pgEnum("measurement_unit", [
   "stroke_count",
   "seconds",
   "feet",
+  "kicks_per_minute",
 ]);
 
 // One session = one coach observing one swimmer in one sitting.
@@ -755,6 +756,13 @@ export const skillRatings = pgTable(
     measurementValue: numeric("measurement_value"),
     measurementUnit: measurementUnitEnum("measurement_unit"),
     golfScoreCategory: text("golf_score_category"),
+    // Golf-score inputs: numeric time across 25 (hundredths of a second)
+    // and the paired stroke count. Both must be set together, must appear
+    // only with a golfScoreCategory, and apply only to score skills (API
+    // enforces the last one — see ratingValidation.ts). The derived golf
+    // score is time_seconds + stroke_count_value, lower is better.
+    timeSeconds: numeric("time_seconds", { precision: 6, scale: 2 }),
+    strokeCountValue: integer("stroke_count_value"),
     note: text("note"),
     // Void fields: all three are set atomically or all are null.
     voidedAt: timestamp("voided_at", { withTimezone: true }),
@@ -808,6 +816,24 @@ export const skillRatings = pgTable(
       "supersede_fields_consistent",
       sql`(${table.supersededAt} IS NULL AND ${table.supersededBy} IS NULL AND ${table.supersededByRatingId} IS NULL)
           OR (${table.supersededAt} IS NOT NULL AND ${table.supersededBy} IS NOT NULL AND ${table.supersededByRatingId} IS NOT NULL)`,
+    ),
+    // Golf-score fields (time_seconds + stroke_count_value) are both set
+    // or both null. API validation adds the "only on score skills" rule.
+    check(
+      "golf_fields_together",
+      sql`(${table.timeSeconds} IS NULL) = (${table.strokeCountValue} IS NULL)`,
+    ),
+    // A golf-score reading needs a category so trends can compare within
+    // push-off / deck dive / block dive without mixing modalities.
+    check(
+      "golf_fields_require_category",
+      sql`${table.timeSeconds} IS NULL OR ${table.golfScoreCategory} IS NOT NULL`,
+    ),
+    // Time across 25 and stroke counts are never negative.
+    check(
+      "golf_fields_non_negative",
+      sql`(${table.timeSeconds} IS NULL OR ${table.timeSeconds} >= 0)
+          AND (${table.strokeCountValue} IS NULL OR ${table.strokeCountValue} >= 0)`,
     ),
   ],
 ).enableRLS();

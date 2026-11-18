@@ -339,8 +339,8 @@ describe("SwimmerProgressContent — sections", () => {
           {
             category: "push_off_in_water",
             points: [
-              { ratedAt: "2026-10-25T18:00:00.000Z", sessionDate: "2026-10-25", sessionId: "ssss0000-0000-0000-0000-000000000025", grade: 3, measurementValue: "29.5" },
-              { ratedAt: "2026-10-11T18:00:00.000Z", sessionDate: "2026-10-11", sessionId: "ssss0000-0000-0000-0000-000000000011", grade: 3, measurementValue: "30.4" },
+              { ratedAt: "2026-10-25T18:00:00.000Z", sessionDate: "2026-10-25", sessionId: "ssss0000-0000-0000-0000-000000000025", grade: 3, timeSeconds: 12.50, strokeCountValue: 17 },
+              { ratedAt: "2026-10-11T18:00:00.000Z", sessionDate: "2026-10-11", sessionId: "ssss0000-0000-0000-0000-000000000011", grade: 3, timeSeconds: 13.40, strokeCountValue: 17 },
             ],
             ageBands: { bandCount: 12, p25: 25.0, p50: 28.0, p75: 32.0 },
           },

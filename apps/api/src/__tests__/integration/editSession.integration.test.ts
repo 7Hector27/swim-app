@@ -189,7 +189,7 @@ describe("GET /coach/sessions/:id", () => {
       .set("Authorization", `Bearer ${coach.accessToken}`)
       .send(
         basePatchBody({
-          ratings: [{ ratingId: originalId, grade: 4, notLegal: false, noConcept: false, side: null, capacityValue: null, capacityUnit: null, measurementValue: null, measurementUnit: null, golfScoreCategory: null, note: null, faultTags: [] }],
+          ratings: [{ ratingId: originalId, grade: 4, notLegal: false, noConcept: false, side: null, capacityValue: null, capacityUnit: null, measurementValue: null, measurementUnit: null, golfScoreCategory: null, timeSeconds: null, strokeCountValue: null, note: null, faultTags: [] }],
         }),
       );
     expect(first.status).toBe(200);
@@ -206,7 +206,7 @@ describe("GET /coach/sessions/:id", () => {
       .set("Authorization", `Bearer ${coach.accessToken}`)
       .send(
         basePatchBody({
-          ratings: [{ ratingId: firstLeafId, grade: 5, notLegal: false, noConcept: false, side: null, capacityValue: null, capacityUnit: null, measurementValue: null, measurementUnit: null, golfScoreCategory: null, note: null, faultTags: [] }],
+          ratings: [{ ratingId: firstLeafId, grade: 5, notLegal: false, noConcept: false, side: null, capacityValue: null, capacityUnit: null, measurementValue: null, measurementUnit: null, golfScoreCategory: null, timeSeconds: null, strokeCountValue: null, note: null, faultTags: [] }],
         }),
       );
     expect(second.status).toBe(200);
@@ -240,7 +240,7 @@ describe("PATCH /coach/sessions/:id — no-op", () => {
       .set("Authorization", `Bearer ${coach.accessToken}`)
       .send(
         basePatchBody({
-          ratings: [{ ratingId: session.ratingIds[0]!, grade: 3, notLegal: false, noConcept: false, side: null, capacityValue: null, capacityUnit: null, measurementValue: null, measurementUnit: null, golfScoreCategory: null, note: null, faultTags: [] }],
+          ratings: [{ ratingId: session.ratingIds[0]!, grade: 3, notLegal: false, noConcept: false, side: null, capacityValue: null, capacityUnit: null, measurementValue: null, measurementUnit: null, golfScoreCategory: null, timeSeconds: null, strokeCountValue: null, note: null, faultTags: [] }],
         }),
       );
     expect(res.status).toBe(200);
@@ -274,7 +274,7 @@ describe("PATCH /coach/sessions/:id — rating edits", () => {
       .set("Authorization", `Bearer ${coach.accessToken}`)
       .send(
         basePatchBody({
-          ratings: [{ ratingId: oldRatingId, grade: 5, notLegal: false, noConcept: false, side: null, capacityValue: null, capacityUnit: null, measurementValue: null, measurementUnit: null, golfScoreCategory: null, note: null, faultTags: [] }],
+          ratings: [{ ratingId: oldRatingId, grade: 5, notLegal: false, noConcept: false, side: null, capacityValue: null, capacityUnit: null, measurementValue: null, measurementUnit: null, golfScoreCategory: null, timeSeconds: null, strokeCountValue: null, note: null, faultTags: [] }],
         }),
       );
     expect(res.status).toBe(200);
@@ -335,7 +335,7 @@ describe("PATCH /coach/sessions/:id — rating edits", () => {
       .set("Authorization", `Bearer ${coach.accessToken}`)
       .send(
         basePatchBody({
-          ratings: [{ ratingId: oldRatingId, grade: 3, notLegal: false, noConcept: false, side: "right", capacityValue: null, capacityUnit: null, measurementValue: null, measurementUnit: null, golfScoreCategory: null, note: null, faultTags: [] }],
+          ratings: [{ ratingId: oldRatingId, grade: 3, notLegal: false, noConcept: false, side: "right", capacityValue: null, capacityUnit: null, measurementValue: null, measurementUnit: null, golfScoreCategory: null, timeSeconds: null, strokeCountValue: null, note: null, faultTags: [] }],
         }),
       );
     expect(res.status).toBe(200);
@@ -363,7 +363,7 @@ describe("PATCH /coach/sessions/:id — rating edits", () => {
       .set("Authorization", `Bearer ${coach.accessToken}`)
       .send(
         basePatchBody({
-          ratings: [{ ratingId: oldRatingId, grade: 3, notLegal: false, noConcept: false, side: null, capacityValue: null, capacityUnit: null, measurementValue: null, measurementUnit: null, golfScoreCategory: null, note: null, faultTags: [] }],
+          ratings: [{ ratingId: oldRatingId, grade: 3, notLegal: false, noConcept: false, side: null, capacityValue: null, capacityUnit: null, measurementValue: null, measurementUnit: null, golfScoreCategory: null, timeSeconds: null, strokeCountValue: null, note: null, faultTags: [] }],
         }),
       );
     expect(res.status).toBe(200);
@@ -401,7 +401,7 @@ describe("PATCH /coach/sessions/:id — rating edits", () => {
       .set("Authorization", `Bearer ${coach.accessToken}`)
       .send(
         basePatchBody({
-          ratings: [{ ratingId: oldRatingId, grade: 4, notLegal: false, noConcept: false, side: null, capacityValue: null, capacityUnit: null, measurementValue: null, measurementUnit: null, golfScoreCategory: null, note: null, faultTags: [] }],
+          ratings: [{ ratingId: oldRatingId, grade: 4, notLegal: false, noConcept: false, side: null, capacityValue: null, capacityUnit: null, measurementValue: null, measurementUnit: null, golfScoreCategory: null, timeSeconds: null, strokeCountValue: null, note: null, faultTags: [] }],
         }),
       );
     expect(first.status).toBe(200);
@@ -412,7 +412,7 @@ describe("PATCH /coach/sessions/:id — rating edits", () => {
       .set("Authorization", `Bearer ${coach.accessToken}`)
       .send(
         basePatchBody({
-          ratings: [{ ratingId: oldRatingId, grade: 2, notLegal: false, noConcept: false, side: null, capacityValue: null, capacityUnit: null, measurementValue: null, measurementUnit: null, golfScoreCategory: null, note: null, faultTags: [] }],
+          ratings: [{ ratingId: oldRatingId, grade: 2, notLegal: false, noConcept: false, side: null, capacityValue: null, capacityUnit: null, measurementValue: null, measurementUnit: null, golfScoreCategory: null, timeSeconds: null, strokeCountValue: null, note: null, faultTags: [] }],
         }),
       );
     expect(second.status).toBe(409);
@@ -431,7 +431,7 @@ describe("PATCH /coach/sessions/:id — rating edits", () => {
       .set("Authorization", `Bearer ${coach.accessToken}`)
       .send(
         basePatchBody({
-          ratings: [{ ratingId: originalId, grade: 4, notLegal: false, noConcept: false, side: null, capacityValue: null, capacityUnit: null, measurementValue: null, measurementUnit: null, golfScoreCategory: null, note: null, faultTags: [] }],
+          ratings: [{ ratingId: originalId, grade: 4, notLegal: false, noConcept: false, side: null, capacityValue: null, capacityUnit: null, measurementValue: null, measurementUnit: null, golfScoreCategory: null, timeSeconds: null, strokeCountValue: null, note: null, faultTags: [] }],
         }),
       );
     expect(first.status).toBe(200);
@@ -449,7 +449,7 @@ describe("PATCH /coach/sessions/:id — rating edits", () => {
       .set("Authorization", `Bearer ${coach.accessToken}`)
       .send(
         basePatchBody({
-          ratings: [{ ratingId: firstLeafId, grade: 5, notLegal: false, noConcept: false, side: null, capacityValue: null, capacityUnit: null, measurementValue: null, measurementUnit: null, golfScoreCategory: null, note: null, faultTags: [] }],
+          ratings: [{ ratingId: firstLeafId, grade: 5, notLegal: false, noConcept: false, side: null, capacityValue: null, capacityUnit: null, measurementValue: null, measurementUnit: null, golfScoreCategory: null, timeSeconds: null, strokeCountValue: null, note: null, faultTags: [] }],
         }),
       );
     expect(second.status).toBe(200);
@@ -487,7 +487,7 @@ describe("PATCH /coach/sessions/:id — session metadata", () => {
       .send(
         basePatchBody({
           sessionDate: "2026-10-15",
-          ratings: [{ ratingId: session.ratingIds[0]!, grade: 3, notLegal: false, noConcept: false, side: null, capacityValue: null, capacityUnit: null, measurementValue: null, measurementUnit: null, golfScoreCategory: null, note: null, faultTags: [] }],
+          ratings: [{ ratingId: session.ratingIds[0]!, grade: 3, notLegal: false, noConcept: false, side: null, capacityValue: null, capacityUnit: null, measurementValue: null, measurementUnit: null, golfScoreCategory: null, timeSeconds: null, strokeCountValue: null, note: null, faultTags: [] }],
         }),
       );
     expect(res.status).toBe(200);
@@ -532,7 +532,7 @@ describe("PATCH /coach/sessions/:id — session metadata", () => {
       .send(
         basePatchBody({
           context: "drill",
-          ratings: [{ ratingId: session.ratingIds[0]!, grade: 3, notLegal: false, noConcept: false, side: null, capacityValue: null, capacityUnit: null, measurementValue: null, measurementUnit: null, golfScoreCategory: null, note: null, faultTags: [] }],
+          ratings: [{ ratingId: session.ratingIds[0]!, grade: 3, notLegal: false, noConcept: false, side: null, capacityValue: null, capacityUnit: null, measurementValue: null, measurementUnit: null, golfScoreCategory: null, timeSeconds: null, strokeCountValue: null, note: null, faultTags: [] }],
         }),
       );
     expect(res.status).toBe(200);
@@ -557,7 +557,7 @@ describe("PATCH /coach/sessions/:id — session metadata", () => {
       .send(
         basePatchBody({
           coachingPriority: "Catch",
-          ratings: [{ ratingId: session.ratingIds[0]!, grade: 3, notLegal: false, noConcept: false, side: null, capacityValue: null, capacityUnit: null, measurementValue: null, measurementUnit: null, golfScoreCategory: null, note: null, faultTags: [] }],
+          ratings: [{ ratingId: session.ratingIds[0]!, grade: 3, notLegal: false, noConcept: false, side: null, capacityValue: null, capacityUnit: null, measurementValue: null, measurementUnit: null, golfScoreCategory: null, timeSeconds: null, strokeCountValue: null, note: null, faultTags: [] }],
         }),
       );
     expect(res.status).toBe(200);
@@ -586,7 +586,7 @@ describe("PATCH /coach/sessions/:id — session metadata", () => {
       .send(
         basePatchBody({
           sessionDate: "2026-10-20",
-          ratings: [{ ratingId: session.ratingIds[0]!, grade: 5, notLegal: false, noConcept: false, side: null, capacityValue: null, capacityUnit: null, measurementValue: null, measurementUnit: null, golfScoreCategory: null, note: null, faultTags: [] }],
+          ratings: [{ ratingId: session.ratingIds[0]!, grade: 5, notLegal: false, noConcept: false, side: null, capacityValue: null, capacityUnit: null, measurementValue: null, measurementUnit: null, golfScoreCategory: null, timeSeconds: null, strokeCountValue: null, note: null, faultTags: [] }],
         }),
       );
     expect(res.status).toBe(200);
@@ -618,7 +618,7 @@ describe("PATCH /coach/sessions/:id — authorization", () => {
       .set("Authorization", `Bearer ${otherCoach.accessToken}`)
       .send(
         basePatchBody({
-          ratings: [{ ratingId: session.ratingIds[0]!, grade: 5, notLegal: false, noConcept: false, side: null, capacityValue: null, capacityUnit: null, measurementValue: null, measurementUnit: null, golfScoreCategory: null, note: null, faultTags: [] }],
+          ratings: [{ ratingId: session.ratingIds[0]!, grade: 5, notLegal: false, noConcept: false, side: null, capacityValue: null, capacityUnit: null, measurementValue: null, measurementUnit: null, golfScoreCategory: null, timeSeconds: null, strokeCountValue: null, note: null, faultTags: [] }],
         }),
       );
     expect(res.status).toBe(404);
@@ -639,7 +639,7 @@ describe("DELETE /coach/sessions/:id after corrections", () => {
       .set("Authorization", `Bearer ${coach.accessToken}`)
       .send(
         basePatchBody({
-          ratings: [{ ratingId: oldRatingId, grade: 4, notLegal: false, noConcept: false, side: null, capacityValue: null, capacityUnit: null, measurementValue: null, measurementUnit: null, golfScoreCategory: null, note: null, faultTags: [] }],
+          ratings: [{ ratingId: oldRatingId, grade: 4, notLegal: false, noConcept: false, side: null, capacityValue: null, capacityUnit: null, measurementValue: null, measurementUnit: null, golfScoreCategory: null, timeSeconds: null, strokeCountValue: null, note: null, faultTags: [] }],
         }),
       );
     expect(edit.status).toBe(200);
@@ -703,7 +703,7 @@ describe("per-rating validation is shared between CREATE and PATCH", () => {
       .set("Authorization", `Bearer ${coach.accessToken}`)
       .send(
         basePatchBody({
-          ratings: [{ ratingId: session.ratingIds[0]!, grade: 3, notLegal: true, noConcept: false, side: null, capacityValue: null, capacityUnit: null, measurementValue: null, measurementUnit: null, golfScoreCategory: null, note: null, faultTags: [] }],
+          ratings: [{ ratingId: session.ratingIds[0]!, grade: 3, notLegal: true, noConcept: false, side: null, capacityValue: null, capacityUnit: null, measurementValue: null, measurementUnit: null, golfScoreCategory: null, timeSeconds: null, strokeCountValue: null, note: null, faultTags: [] }],
         }),
       );
     expect(patchRes.status).toBe(422);
@@ -752,7 +752,7 @@ describe("per-rating validation is shared between CREATE and PATCH", () => {
       .set("Authorization", `Bearer ${coach.accessToken}`)
       .send(
         basePatchBody({
-          ratings: [{ ratingId: session.ratingIds[0]!, grade: 3, notLegal: false, noConcept: false, side: null, capacityValue: null, capacityUnit: null, measurementValue: null, measurementUnit: null, golfScoreCategory: null, note: null, faultTags: [] }],
+          ratings: [{ ratingId: session.ratingIds[0]!, grade: 3, notLegal: false, noConcept: false, side: null, capacityValue: null, capacityUnit: null, measurementValue: null, measurementUnit: null, golfScoreCategory: null, timeSeconds: null, strokeCountValue: null, note: null, faultTags: [] }],
         }),
       );
     expect(patchRes.status).toBe(422);
@@ -800,7 +800,7 @@ describe("per-rating validation is shared between CREATE and PATCH", () => {
       .set("Authorization", `Bearer ${coach.accessToken}`)
       .send(
         basePatchBody({
-          ratings: [{ ratingId: session.ratingIds[0]!, grade: 3, notLegal: false, noConcept: false, side: null, capacityValue: null, capacityUnit: null, measurementValue: null, measurementUnit: null, golfScoreCategory: null, note: null, faultTags: [] }],
+          ratings: [{ ratingId: session.ratingIds[0]!, grade: 3, notLegal: false, noConcept: false, side: null, capacityValue: null, capacityUnit: null, measurementValue: null, measurementUnit: null, golfScoreCategory: null, timeSeconds: null, strokeCountValue: null, note: null, faultTags: [] }],
         }),
       );
     expect(patchRes.status).toBe(422);

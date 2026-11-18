@@ -638,6 +638,20 @@
       "when": 1794960431944,
       "tag": "0090_password_change_events",
       "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "7",
+      "when": 1795036343434,
+      "tag": "0091_serious_stryfe",
+      "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1795036363152,
+      "tag": "0092_skill_ratings_append_only_golf_fields",
+      "breakpoints": true
     }
   ]
 }
