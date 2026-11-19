@@ -41,7 +41,7 @@ export default function StartDiveCard({ start, swimmerSkills }: StartDiveCardPro
     return (
       <div
         className="p-4 rounded border"
-        style={{ borderColor: "var(--color-border)", backgroundColor: "var(--color-card)" }}
+        style={{ borderColor: "var(--color-border)", backgroundColor: "var(--color-surface-soft)" }}
         data-testid={`start-dive-card-empty-${start.slug}`}
       >
         <p className="text-sm text-text">
@@ -74,7 +74,7 @@ export default function StartDiveCard({ start, swimmerSkills }: StartDiveCardPro
   return (
     <div
       className="p-4 rounded border flex flex-col gap-5"
-      style={{ borderColor: "var(--color-border)", backgroundColor: "var(--color-card)" }}
+      style={{ borderColor: "var(--color-border)", backgroundColor: "var(--color-surface-soft)" }}
       data-testid={`start-dive-card-${start.slug}`}
     >
       <div className="grid gap-5 desktop:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] items-start">
@@ -301,11 +301,17 @@ function ArcDotMark({ dot, dotIndex: _dotIndex }: { dot: ArcDot; dotIndex: numbe
       <text
         x={dot.x}
         y={labelY}
-        fontSize={11}
-        fill="var(--color-text-secondary)"
+        // CSS px (not SVG units) so the label stays legible when the
+        // SVG scales down at 375px. textAnchor="middle" keeps the label
+        // centred on the dot; alternation (labelAbove/below set in the
+        // plot helper) prevents vertical overlap between neighbours.
+        style={{ fontSize: "11px", fill: "var(--color-text-secondary)" }}
         textAnchor="middle"
+        data-testid="dive-arc-label"
+        data-component={dot.slug}
+        data-label-side={dot.labelAbove ? "above" : "below"}
       >
-        {dot.name}
+        {dot.shortName}
       </text>
     </g>
   );
@@ -332,11 +338,15 @@ function StatTiles({ reactionHistory, distanceHistory, stillToGrade }: StatTiles
       key: "reaction",
       label: "Reaction time",
       value: `${reactionLatest.measurementValue} ${shortUnit(reactionLatest.measurementUnit)}`.trim(),
+      // When firstMeasurement and latestMeasurement return the same rating
+      // (only one measurement in the history), there's no delta to
+      // report — the change text collapses to "First measurement".
       change: measurementChangeText(
         reactionFirst?.measurementValue ?? null,
         reactionFirst?.measurementUnit ?? null,
         reactionLatest.measurementValue,
         reactionLatest.measurementUnit,
+        { isFirstOnly: reactionFirst !== null && reactionFirst.id === reactionLatest.id },
       ),
     });
   }
@@ -351,6 +361,7 @@ function StatTiles({ reactionHistory, distanceHistory, stillToGrade }: StatTiles
         distanceFirst?.measurementUnit ?? null,
         distanceLatest.measurementValue,
         distanceLatest.measurementUnit,
+        { isFirstOnly: distanceFirst !== null && distanceFirst.id === distanceLatest.id },
       ),
     });
   }
@@ -376,7 +387,11 @@ function StatTiles({ reactionHistory, distanceHistory, stillToGrade }: StatTiles
         <div
           key={tile.key}
           className="rounded border p-3 flex flex-col gap-0.5"
-          style={{ borderColor: "var(--color-border)", backgroundColor: "var(--color-surface-soft)" }}
+          // Tiles sit INSIDE the surface-soft card, so they use the page
+          // background so the elevation reads. Both tokens are light in
+          // light mode and dark in dark mode, so the stacking reads in
+          // both themes.
+          style={{ borderColor: "var(--color-border)", backgroundColor: "var(--color-background)" }}
           data-testid={`start-stat-tile-${tile.key}`}
         >
           <span className="text-xs text-text-secondary">{tile.label}</span>

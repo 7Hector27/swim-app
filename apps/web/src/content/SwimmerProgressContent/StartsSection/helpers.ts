@@ -102,12 +102,35 @@ export function isDistanceComponent(slug: string): boolean {
 export interface ArcDot {
   slug: string;
   name: string;
+  // Short version of `name` used as the arc label so it doesn't collide with
+  // its neighbour at 375px. The session grid and the SVG's sr-only
+  // description keep the full name. See shortArcLabel() below.
+  shortName: string;
   x: number;
   y: number;
   level: 1 | 2 | 3 | 4 | 5 | null;    // null → not graded yet (dashed empty circle)
   notLegal: boolean;
   noConcept: boolean;
   labelAbove: boolean;                 // place the name label above the dot
+}
+
+// Short arc label by component-slug suffix. The brief lists the exact
+// vocabulary — Reaction / Acceleration / Height / Entry / Legs / Distance
+// for block starts, Reaction / Push / Arch / Entry for backstroke — so the
+// mapping is encoded here rather than derived from the full name.
+export function shortArcLabel(slug: string): string {
+  if (slug.endsWith("-reaction")) return "Reaction";
+  if (slug.endsWith("-acceleration")) return "Acceleration";
+  if (slug.endsWith("-height")) return "Height";
+  if (slug.endsWith("-leg-feet")) return "Legs";
+  if (slug.endsWith("-head-arm-hand")) return "Entry";
+  if (slug.endsWith("-entry-alignment")) return "Entry";
+  if (slug.endsWith("-push")) return "Push";
+  if (slug.endsWith("-arch")) return "Arch";
+  if (slug.endsWith("-streamline")) return "Streamline";
+  if (slug.endsWith("-distance")) return "Distance";
+  // Fallback: use the first space-separated word of the display name.
+  return slug;
 }
 
 export interface DistanceDrawing {
@@ -153,6 +176,7 @@ export function buildDiveArcPlot(start: StartProgress): DiveArcPlot {
     return {
       slug: component.slug,
       name: component.name,
+      shortName: shortArcLabel(component.slug),
       x: point.x,
       y: point.y,
       level: componentLevel(component.current),
@@ -223,17 +247,26 @@ export const DISTANCE_LINE_START_X = DISTANCE_LINE_X_START;
 // ── Measurement change text ──────────────────────────────────────────────
 
 // "0.06 s faster than her first" | "1 ft farther than her first" |
-// "0.42 s, first measurement" when there's only one data point.
+// "First measurement" when there's only one data point.
 // Returns null when the component has no measurement history.
+//
+// `isFirstOnly` lets the caller flag that the first-measurement and
+// latest-measurement point to the same rating in history — otherwise a
+// single-measurement row would hit the delta=0 branch and read "Same as
+// her first N", which falsely implies a comparison across two sessions.
 export function measurementChangeText(
   firstValue: string | null,
   firstUnit: MeasurementUnit | null,
   latestValue: string | null,
   latestUnit: MeasurementUnit | null,
+  options: { isFirstOnly?: boolean } = {},
 ): string | null {
   if (latestValue === null || latestUnit === null) return null;
+  if (options.isFirstOnly) {
+    return "First measurement";
+  }
   if (firstValue === null || firstUnit === null) {
-    return `${latestValue} ${shortUnit(latestUnit)}, first measurement`.trim();
+    return "First measurement";
   }
   if (firstUnit !== latestUnit) {
     // Units drifted between the first and latest ratings — refuse to compare

@@ -40,8 +40,12 @@ export default function StartsSection({ startProgress, swimmerSkills }: StartsSe
               aria-selected={isActive}
               aria-controls={`starts-panel-${start.slug}`}
               className="text-sm font-semibold px-4 rounded-full border transition-colors min-h-[44px] flex items-center"
+              // Unselected tabs mirror the Skills switcher group buttons:
+              // page background with text-text and a border, readable in
+              // both themes. Selected flips to the accent fill with
+              // on-accent text so the active state remains obvious.
               style={{
-                backgroundColor: isActive ? "var(--color-accent)" : "var(--color-card)",
+                backgroundColor: isActive ? "var(--color-accent)" : "var(--color-background)",
                 color: isActive ? "var(--color-on-accent)" : "var(--color-text)",
                 borderColor: isActive ? "var(--color-accent)" : "var(--color-border)",
               }}

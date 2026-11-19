@@ -25,9 +25,11 @@ import {
   firstMeasurement,
   isDistanceComponent,
   latestMeasurement,
+  levelRampColor,
   measurementChangeText,
   pickInitialStartSlug,
   recentSessionDatesForStart,
+  shortArcLabel,
   shortUnit,
   startComponentHistoryMap,
   tabStatusLabel,
@@ -394,9 +396,17 @@ describe("StartsSection helpers — measurementChangeText", () => {
     );
   });
 
-  it("first-value only: no first measurement yet falls back to '<val>, first measurement'", () => {
+  it("single measurement: isFirstOnly collapses the copy to 'First measurement'", () => {
+    // The caller passes isFirstOnly when first and latest resolve to the
+    // same rating in history — one data point, no delta to report.
+    expect(
+      measurementChangeText("0.82", "seconds", "0.82", "seconds", { isFirstOnly: true }),
+    ).toBe("First measurement");
+  });
+
+  it("no prior data point: falls back to 'First measurement'", () => {
     expect(measurementChangeText(null, null, "0.82", "seconds")).toBe(
-      "0.82 s, first measurement",
+      "First measurement",
     );
   });
 
@@ -682,5 +692,221 @@ describe("StartsSection helpers — shortUnit", () => {
     expect(shortUnit("stroke_cycles_per_minute")).toBe("spm");
     expect(shortUnit("kicks_per_minute")).toBe("kpm");
     expect(shortUnit(null)).toBe("");
+  });
+});
+
+// ── Short arc labels ─────────────────────────────────────────────────────
+
+describe("StartsSection helpers — shortArcLabel", () => {
+  it("maps block-start slugs to the brief's short vocabulary", () => {
+    expect(shortArcLabel("track-start-reaction")).toBe("Reaction");
+    expect(shortArcLabel("track-start-acceleration")).toBe("Acceleration");
+    expect(shortArcLabel("track-start-height")).toBe("Height");
+    expect(shortArcLabel("track-start-head-arm-hand")).toBe("Entry");
+    expect(shortArcLabel("track-start-leg-feet")).toBe("Legs");
+    expect(shortArcLabel("track-start-distance")).toBe("Distance");
+  });
+
+  it("maps back-start slugs to the four-word backstroke set", () => {
+    expect(shortArcLabel("back-start-reaction")).toBe("Reaction");
+    expect(shortArcLabel("back-start-push")).toBe("Push");
+    expect(shortArcLabel("back-start-arch")).toBe("Arch");
+    expect(shortArcLabel("back-start-entry-alignment")).toBe("Entry");
+  });
+});
+
+describe("StartDiveCard — arc labels", () => {
+  // Session grid only renders when at least one component carries
+  // history — provide a minimal history so the grid branch is reached.
+  const trackHistory = [
+    {
+      slug: "track-start-reaction",
+      history: [point({ id: "r1", sessionDate: "2026-10-25", grade: 3, measurementValue: "0.82", measurementUnit: "seconds" })],
+    },
+  ];
+
+  it("uses short labels on the SVG and keeps full names in the session grid", () => {
+    const start = trackStart({ grade: { status: "graded", grade: 3 }, components: trackComponents });
+    render(<StartDiveCard start={start} swimmerSkills={trackHistory} />);
+    const labels = screen.getAllByTestId("dive-arc-label");
+    const texts = labels.map((label) => label.textContent);
+    // Short vocabulary only — no "Head, arms, hands" or "Legs and feet"
+    // on the arc.
+    expect(texts).toContain("Reaction");
+    expect(texts).toContain("Entry");
+    expect(texts).toContain("Legs");
+    expect(texts.every((text) => text !== null && !text.includes(","))).toBe(true);
+    // Full names still appear in the session grid.
+    const grid = screen.getByTestId("start-session-grid");
+    expect(within(grid).getByText("Head, arms, hands")).toBeInTheDocument();
+    expect(within(grid).getByText("Legs and feet")).toBeInTheDocument();
+  });
+
+  it("alternates label side per neighbour so labels never collide", () => {
+    const start = trackStart({ grade: { status: "graded", grade: 3 }, components: trackComponents });
+    render(<StartDiveCard start={start} swimmerSkills={[]} />);
+    const labels = screen.getAllByTestId("dive-arc-label");
+    // Adjacent labels are on opposite sides. With CSS-px font size and
+    // this alternation, labels at 375px wide can't vertically overlap
+    // their neighbours.
+    for (let index = 1; index < labels.length; index += 1) {
+      const prev = labels[index - 1]!.getAttribute("data-label-side");
+      const current = labels[index]!.getAttribute("data-label-side");
+      expect(prev).not.toBe(current);
+    }
+  });
+
+  it("uses CSS px font size (not SVG units) so labels stay readable at 375px", () => {
+    const start = trackStart({ grade: { status: "graded", grade: 3 }, components: trackComponents });
+    render(<StartDiveCard start={start} swimmerSkills={[]} />);
+    for (const label of screen.getAllByTestId("dive-arc-label")) {
+      expect(label.getAttribute("style") ?? "").toMatch(/font-size:\s*\d+px/);
+    }
+  });
+});
+
+// ── Level-ramp contrast ──────────────────────────────────────────────────
+
+describe("StartsSection helpers — levelRampColor contrast", () => {
+  // Levels 1-2 use a very light accent wash — text must stay in the dark
+  // text-token so it reads on the light background. Levels 4-5 are
+  // saturated accent — text flips to on-accent so it reads against a
+  // dark fill in both themes.
+  it("uses --color-text for levels 1 and 2 (light wash), on-accent for 4 and 5 (saturated)", () => {
+    expect(levelRampColor(1).color).toContain("--color-text");
+    expect(levelRampColor(2).color).toContain("--color-text");
+    expect(levelRampColor(4).color).toContain("--color-on-accent");
+    expect(levelRampColor(5).color).toContain("--color-on-accent");
+  });
+
+  it("level 3 sits mid-ramp and keeps dark text (the mix is still light enough)", () => {
+    const three = levelRampColor(3);
+    expect(three.background).toMatch(/var\(--color-accent\)|color-mix/);
+    // 55% accent + 45% surface-soft is still light enough for dark text
+    // in light mode, and the accent variable flips in dark mode so the
+    // mix flips with it — --color-text stays readable in both themes.
+    expect(three.color).toContain("--color-text");
+    expect(three.color).not.toContain("--color-on-accent");
+  });
+
+  it("null (not graded): transparent background with secondary text, so the dashed outline carries the state", () => {
+    expect(levelRampColor(null).background).toBe("transparent");
+    expect(levelRampColor(null).color).toContain("--color-text-secondary");
+  });
+});
+
+// ── Surface-token contrast ───────────────────────────────────────────────
+
+// Parses `style="background-color: var(--color-X)"` out of a rendered
+// element's style attribute. JSDOM preserves CSS var() references verbatim
+// (it can't resolve custom-property values), which is actually convenient
+// here — we assert the token name, not a resolved hex.
+//
+// The leading `(?:^|;\\s*)` anchor matters: searching for "color" without
+// it would also match "background-color" (it ends in "-color"), so a
+// background-color token would leak into assertions about the `color`
+// property.
+function readStyleToken(element: Element, cssProp: string): string | null {
+  const style = element.getAttribute("style") ?? "";
+  const regex = new RegExp(`(?:^|;\\s*)${cssProp}:\\s*var\\((--color-[\\w-]+)\\)`);
+  const match = style.match(regex);
+  return match?.[1] ?? null;
+}
+
+const LIGHT_SURFACE_TOKENS = new Set(["--color-background", "--color-surface-soft"]);
+const DARK_SURFACE_TOKENS = new Set(["--color-card", "--color-section", "--color-ink"]);
+const LIGHT_SAFE_TEXT_TOKENS = new Set([
+  "--color-text",
+  "--color-text-secondary",
+  "--color-heading",
+  "--color-on-accent",     // fine on accent backgrounds
+  "--color-on-danger",     // fine on danger backgrounds
+]);
+
+describe("StartsSection — never pairs dark surfaces with dark text", () => {
+  // Rendered twice through the same assertion block — in jsdom, token
+  // names in a style attribute don't change between themes (both themes
+  // reference the same variable names; only the resolved values differ).
+  // So the "token pair" invariant holds across both themes automatically.
+  // We still call setAttribute so a reader can see the intended theme
+  // split, and so any future code path that reads data-theme sees it
+  // correctly.
+  it("tabs use a light surface and a light-safe text color", () => {
+    const start = trackStart({ grade: { status: "graded", grade: 3 }, components: trackComponents });
+    document.documentElement.setAttribute("data-theme", "light");
+    const { rerender } = render(<StartsSection startProgress={[start]} swimmerSkills={[]} />);
+    assertTabsSafe();
+
+    document.documentElement.setAttribute("data-theme", "dark");
+    rerender(<StartsSection startProgress={[start]} swimmerSkills={[]} />);
+    assertTabsSafe();
+
+    document.documentElement.removeAttribute("data-theme");
+
+    function assertTabsSafe() {
+      for (const tab of screen.getAllByRole("tab")) {
+        const bg = readStyleToken(tab, "background-color");
+        const text = readStyleToken(tab, "color");
+        // The active tab uses --color-accent as the surface, which is
+        // allowed because text is forced to --color-on-accent.
+        const bgAllowed = bg === "--color-accent" || (bg !== null && LIGHT_SURFACE_TOKENS.has(bg));
+        expect(bgAllowed, `tab backgroundColor was ${bg}`).toBe(true);
+        expect(bg && DARK_SURFACE_TOKENS.has(bg), `tab uses dark surface token ${bg}`).toBe(false);
+        if (bg === "--color-accent") {
+          expect(text).toBe("--color-on-accent");
+        } else {
+          expect(text, `tab text token ${text} not light-safe`).not.toBeNull();
+          expect(LIGHT_SAFE_TEXT_TOKENS.has(text ?? "")).toBe(true);
+        }
+      }
+    }
+  });
+
+  it("dive card + stat tiles use light surfaces, never --color-card", () => {
+    const start = trackStart({ grade: { status: "graded", grade: 3 }, components: trackComponents });
+    render(<StartDiveCard start={start} swimmerSkills={[]} />);
+
+    const card = screen.getByTestId("start-dive-card-track-start");
+    const cardBg = readStyleToken(card, "background-color");
+    expect(cardBg && DARK_SURFACE_TOKENS.has(cardBg), `dive card uses dark surface token ${cardBg}`).toBe(false);
+    expect(cardBg !== null && LIGHT_SURFACE_TOKENS.has(cardBg)).toBe(true);
+
+    for (const tile of screen.getAllByTestId(/start-stat-tile-/)) {
+      const tileBg = readStyleToken(tile, "background-color");
+      expect(tileBg && DARK_SURFACE_TOKENS.has(tileBg), `stat tile uses dark surface token ${tileBg}`).toBe(false);
+      expect(tileBg !== null && LIGHT_SURFACE_TOKENS.has(tileBg)).toBe(true);
+    }
+  });
+
+  it("session-grid row labels declare a light-safe text token", () => {
+    const start = trackStart({ grade: { status: "graded", grade: 3 }, components: trackComponents });
+    const minimalHistory = [
+      {
+        slug: "track-start-reaction",
+        history: [point({ id: "r1", sessionDate: "2026-10-25", grade: 3 })],
+      },
+    ];
+    render(<StartDiveCard start={start} swimmerSkills={minimalHistory} />);
+    const grid = screen.getByTestId("start-session-grid");
+    // Each component name span sits as a grid child — it's the element
+    // whose style declares the color. We find it by text and read the
+    // style off it directly.
+    for (const component of trackComponents) {
+      const label = within(grid).getByText(component.name);
+      const color = readStyleToken(label, "color");
+      expect(color, `grid row ${component.name} color token missing`).not.toBeNull();
+      expect(LIGHT_SAFE_TEXT_TOKENS.has(color ?? "")).toBe(true);
+    }
+  });
+
+  it("arc labels declare a light-safe text token via their style attribute", () => {
+    const start = trackStart({ grade: { status: "graded", grade: 3 }, components: trackComponents });
+    render(<StartDiveCard start={start} swimmerSkills={[]} />);
+    for (const label of screen.getAllByTestId("dive-arc-label")) {
+      // Inline style uses `fill` (not `color`) for SVG text.
+      const fill = readStyleToken(label, "fill");
+      expect(fill, `arc label fill token missing`).not.toBeNull();
+      expect(LIGHT_SAFE_TEXT_TOKENS.has(fill ?? "")).toBe(true);
+    }
   });
 });
