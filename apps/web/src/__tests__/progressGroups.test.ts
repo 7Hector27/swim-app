@@ -56,12 +56,31 @@ describe("buildScreenGroups", () => {
     expect(theStart.skills[0]).toBe(pushOff);
   });
 
-  it("drops a section when none of its slugs are rated so the row list stays tight", () => {
-    // Freestyle "The swim" has many slugs; rate exactly one.
+  it("returns every section in SCREEN_SECTIONS regardless of which slugs are rated — the row renderer handles unrated placeholders", () => {
+    // Freestyle has seven sections (Start, Underwaters, Breakout, The
+    // swim, The wall, Finish, Numbers). Rate one skill in just "The
+    // swim" and all seven are still present; the row renderer in
+    // StrokeGroupsPanel decides which rows to draw. Keeping empty
+    // sections in the shape mirrors activeGroupSectionSlugs so the two
+    // helpers can't drift.
     const groups = buildScreenGroups([skill("free-catch", "Catch")]);
     const freestyle = groups.find((group) => group.screenSlug === "freestyle")!;
-    expect(freestyle.sections.map((section) => section.name)).toEqual(["The swim"]);
-    expect(freestyle.sections[0]!.skills.map((item) => item.slug)).toEqual(["free-catch"]);
+    expect(freestyle.sections.map((section) => section.name)).toEqual([
+      "Start",
+      "Underwaters",
+      "Breakout",
+      "The swim",
+      "The wall",
+      "Finish",
+      "Numbers",
+    ]);
+    const theSwim = freestyle.sections.find((section) => section.name === "The swim")!;
+    expect(theSwim.skills.map((item) => item.slug)).toEqual(["free-catch"]);
+    // Every other section resolves to zero rated skills.
+    for (const section of freestyle.sections) {
+      if (section.name === "The swim") continue;
+      expect(section.skills).toEqual([]);
+    }
   });
 
   it("initialVisibleGroup picks the first group with any rated skills", () => {

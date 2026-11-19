@@ -148,10 +148,16 @@ export interface ScreenGroup<Skill extends SkillMinimal> {
   sections: ScreenGroupSection<Skill>[];
 }
 
-// Assemble the nine ordered groups. Every group is returned even if it's
-// empty for the current swimmer — the group switcher needs the full list
-// so a coach can navigate to an empty "IM turns" (and the row area
-// renders "Not rated yet" for every row it contains).
+// Assemble the nine ordered groups. Every group AND every section is
+// returned — including sections that resolve to zero rated skills —
+// so the shape matches `activeGroupSectionSlugs`. Having the two
+// helpers return a parallel structure keeps the "initial-visible"
+// logic in sync with the row renderer: both iterate the same section
+// list, just with different payloads.
+//
+// Consumers that want to know "which group has any rating?" use the
+// skills-length sum in `initialVisibleGroup` below; they don't rely on
+// section membership.
 export function buildScreenGroups<Skill extends SkillMinimal>(
   skills: ReadonlyArray<Skill>,
 ): ScreenGroup<Skill>[] {
@@ -160,21 +166,17 @@ export function buildScreenGroups<Skill extends SkillMinimal>(
     bySlug.set(skill.slug, skill);
   }
   return SCREEN_SLUGS.map((screenSlug) => {
-    const sections = SCREEN_SECTIONS[screenSlug]
-      .map((section) => {
-        const resolved: Skill[] = [];
-        const seen = new Set<string>();
-        for (const slug of section.slugs) {
-          if (seen.has(slug)) continue;
-          seen.add(slug);
-          const skill = bySlug.get(slug);
-          if (skill !== undefined) resolved.push(skill);
-        }
-        return { name: section.name, skills: resolved };
-      })
-      // Drop sections that resolve to nothing (e.g., Finish when the
-      // swimmer has no finishing rating yet) so the row area stays tight.
-      .filter((section) => section.skills.length > 0);
+    const sections = SCREEN_SECTIONS[screenSlug].map((section) => {
+      const resolved: Skill[] = [];
+      const seen = new Set<string>();
+      for (const slug of section.slugs) {
+        if (seen.has(slug)) continue;
+        seen.add(slug);
+        const skill = bySlug.get(slug);
+        if (skill !== undefined) resolved.push(skill);
+      }
+      return { name: section.name, skills: resolved };
+    });
     return {
       screenSlug,
       name: PROGRESS_GROUP_LABELS[screenSlug],
