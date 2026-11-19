@@ -328,6 +328,11 @@ export async function createTestUser(emailPrefix: string): Promise<TestUser> {
         });
         // Delete remaining audit log rows (member_added etc. with no swimmer ref).
         await adminDb().delete(householdAuditLog).where(eq(householdAuditLog.householdId, householdId));
+        // Audit rows this user authored in another household (e.g., a
+        // coach voiding a rating on a swimmer that belongs to a different
+        // household). actorId has ON DELETE RESTRICT, so the profile
+        // delete below would fail without this.
+        await adminDb().delete(householdAuditLog).where(eq(householdAuditLog.actorId, userId));
         // Delete members before household (profileId has ON DELETE RESTRICT on profiles).
         await adminDb().delete(householdMembers).where(eq(householdMembers.householdId, householdId));
         await adminDb().delete(households).where(eq(households.id, householdId));
