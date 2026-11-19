@@ -1280,23 +1280,22 @@ export default function EvaluateContent({
                                   test fixture or sparse screen does not. */}
                               {section.name === "The swim" &&
                                 (selectedScreen.screenSlug === "freestyle" ||
-                                  selectedScreen.screenSlug === "butterfly") && (
+                                  selectedScreen.screenSlug === "butterfly") && (() => {
+                                const breathingIssue = sessionSetupIssues.find(
+                                  (issue) => issue.field === "breathingPattern",
+                                );
+                                return (
                                   <div className="tablet:col-span-2">
                                     <BreathingPatternField
                                       value={draft.breathingPattern}
                                       onChange={(next) =>
                                         setDraft((prev) => ({ ...prev, breathingPattern: next }))
                                       }
-                                      {...(sessionSetupIssues.find(
-                                        (issue) => issue.field === "breathingPattern",
-                                      ) && {
-                                        issue: sessionSetupIssues.find(
-                                          (issue) => issue.field === "breathingPattern",
-                                        )!,
-                                      })}
+                                      {...(breathingIssue && { issue: breathingIssue })}
                                     />
                                   </div>
-                                )}
+                                );
+                              })()}
                             </div>
                           </CollapsibleSection>
                         );
