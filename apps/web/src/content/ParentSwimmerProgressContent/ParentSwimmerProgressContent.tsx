@@ -81,13 +81,18 @@ export default function ParentSwimmerProgressContent({
 
   const getSlugName = (slug: string): string => slugToName.get(slug) ?? slug;
 
-  const startParentSlugs = new Set(progress.startProgress.map((start) => start.slug));
+  // Start components don't appear in SCREEN_SECTIONS so they can't surface
+  // as rows in a group — drop them from the input list anyway to keep
+  // the panel's work tight. Start parents stay: the panel synthesizes a
+  // composite row for each one so the Starts section inside the Starts-
+  // and-turns group has entries even though progress.skills never
+  // contains a composite parent directly.
   const startComponentSlugs = new Set(
     progress.startProgress.flatMap((start) => start.components.map((component) => component.slug)),
   );
 
   const displaySkills = progress.skills.filter(
-    (skill) => !startParentSlugs.has(skill.slug) && !startComponentSlugs.has(skill.slug),
+    (skill) => !startComponentSlugs.has(skill.slug),
   );
 
   // Pass 3: switcher-driven groups instead of per-category collapsibles.
@@ -267,6 +272,8 @@ export default function ParentSwimmerProgressContent({
               ParentSkillProgressRow. */}
           <ParentStrokeGroupsPanel
             skills={displaySkills}
+            startProgress={progress.startProgress}
+            categories={categories}
             nowIso={nowIso}
             rollups={latestScreenGroupRollups}
           />

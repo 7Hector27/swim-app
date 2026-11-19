@@ -57,10 +57,7 @@ interface SwimmerProgressContentProps {
 export default function SwimmerProgressContent({
   swimmer,
   progress,
-  // `categories` is accepted for API compatibility with the server page but
-  // no longer used — Pass 3 groups by evaluate-screen groups, not catalog
-  // categories.
-  categories: _categories,
+  categories,
   scoreHistory,
   golfScore,
   nowIso,
@@ -101,14 +98,18 @@ export default function SwimmerProgressContent({
   }
 
   // Pass 3: nine evaluate-screen groups instead of catalog categories.
-  // Hide start parents + their components from the generic list — starts
-  // have their own StartProgression section above.
-  const startParentSlugs = new Set(progress.startProgress.map((start) => start.slug));
+  // Start components (track-start-reaction, …) aren't in SCREEN_SECTIONS,
+  // so they never land as rows in a group — but we drop them from the
+  // input list anyway to keep the payload the panel resolves against
+  // tight. Start parent slugs (track-start, relay-start, back-start) are
+  // kept here: the panel synthesizes composite rows from
+  // progress.startProgress so the Starts section inside the Starts-and-
+  // turns group lists them even though they aren't in progress.skills.
   const startComponentSlugs = new Set(
     progress.startProgress.flatMap((start) => start.components.map((component) => component.slug)),
   );
   const groupableSkills = progress.skills.filter(
-    (skill) => !startParentSlugs.has(skill.slug) && !startComponentSlugs.has(skill.slug),
+    (skill) => !startComponentSlugs.has(skill.slug),
   );
   // Latest session's rollups drive the switcher badges + the header count.
   const latestScreenGroupRollups =
@@ -216,6 +217,8 @@ export default function SwimmerProgressContent({
               </h2>
               <StrokeGroupsPanel
                 skills={groupableSkills}
+                startProgress={progress.startProgress}
+                categories={categories}
                 swimmerId={swimmer.id}
                 nowIso={now.toISOString()}
                 editContext={editContext}
