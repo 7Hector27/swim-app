@@ -95,6 +95,8 @@ type FreestyleRating = {
   measurementValue?: string | null;
   measurementUnit?: "stroke_cycles_per_minute" | "stroke_count" | "seconds" | "feet" | null;
   golfScoreCategory?: "push_off_in_water" | "deck_dive" | "block_dive" | null;
+  timeSeconds?: number | null;
+  strokeCountValue?: number | null;
 };
 
 async function createFreestyleSession(options: {
@@ -123,6 +125,8 @@ async function createFreestyleSession(options: {
         measurementValue: rating.measurementValue ?? null,
         measurementUnit: rating.measurementUnit ?? null,
         golfScoreCategory: rating.golfScoreCategory ?? null,
+        timeSeconds: rating.timeSeconds ?? null,
+        strokeCountValue: rating.strokeCountValue ?? null,
         note: null,
         faultTags: rating.faultTags ?? [],
         ratedAt: `${options.sessionDate ?? "2026-10-01"}T10:00:00.000Z`,
@@ -742,10 +746,16 @@ describe("per-rating validation is shared between CREATE and PATCH", () => {
         ],
       });
     expect(createRes.status).toBe(422);
-    expect(createRes.body.issues?.[0]?.message).toMatch(/golf score category is required/i);
+    expect(createRes.body.issues?.[0]?.message).toMatch(/pick a test category before saving a golf score/i);
 
     const session = await createFreestyleSession({
-      ratings: [{ skillId: freeGolfSkillId, grade: 3, golfScoreCategory: "push_off_in_water" }],
+      ratings: [{
+        skillId: freeGolfSkillId,
+        grade: 3,
+        golfScoreCategory: "push_off_in_water",
+        timeSeconds: 12.5,
+        strokeCountValue: 17,
+      }],
     });
     const patchRes = await request(app)
       .patch(`/coach/sessions/${session.sessionId}`)
@@ -756,7 +766,7 @@ describe("per-rating validation is shared between CREATE and PATCH", () => {
         }),
       );
     expect(patchRes.status).toBe(422);
-    expect(patchRes.body.issues?.[0]?.message).toMatch(/golf score category is required/i);
+    expect(patchRes.body.issues?.[0]?.message).toMatch(/pick a test category before saving a golf score/i);
   });
 
   // side is required on a rated_per_side skill (breathing-timing-free).

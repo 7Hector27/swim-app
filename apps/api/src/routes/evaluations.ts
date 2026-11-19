@@ -496,6 +496,8 @@ evaluationsRouter.get(
         capacityUnit: skillRatings.capacityUnit,
         measurementValue: skillRatings.measurementValue,
         measurementUnit: skillRatings.measurementUnit,
+        timeSeconds: skillRatings.timeSeconds,
+        strokeCountValue: skillRatings.strokeCountValue,
         note: skillRatings.note,
         voidedAt: skillRatings.voidedAt,
         voidReason: skillRatings.voidReason,
@@ -518,6 +520,7 @@ evaluationsRouter.get(
     // coach-only route — switch to ParentSkillRatingSchema before adding any parent access
     res.json(ratingRows.map((row) => CoachSkillRatingSchema.parse({
       ...row,
+      timeSeconds: row.timeSeconds === null ? null : parseFloat(row.timeSeconds),
       voidedAt: row.voidedAt?.toISOString() ?? null,
       ratedAt: row.ratedAt.toISOString(),
       createdAt: row.createdAt.toISOString(),
@@ -1875,6 +1878,8 @@ ratingsRouter.patch(
         capacityUnit: skillRatings.capacityUnit,
         measurementValue: skillRatings.measurementValue,
         measurementUnit: skillRatings.measurementUnit,
+        timeSeconds: skillRatings.timeSeconds,
+        strokeCountValue: skillRatings.strokeCountValue,
         note: skillRatings.note,
         voidedAt: skillRatings.voidedAt,
         voidReason: skillRatings.voidReason,
@@ -1891,6 +1896,7 @@ ratingsRouter.patch(
     // coach-only route — switch to ParentSkillRatingSchema before adding any parent access
     res.json(CoachSkillRatingSchema.parse({
       ...updated,
+      timeSeconds: updated.timeSeconds === null ? null : parseFloat(updated.timeSeconds),
       voidedAt: updated.voidedAt?.toISOString() ?? null,
       ratedAt: updated.ratedAt.toISOString(),
       createdAt: updated.createdAt.toISOString(),
