@@ -1,0 +1,1049 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Parent progress page mock (reference only, sample data)</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+  </head>
+  <body>
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600&family=Fraunces:opsz,wght@9..144,600&display=swap"
+    />
+    <style>
+      body {
+        margin: 0;
+      }
+      a {
+        color: #1f45f0;
+      }
+      a:hover {
+        color: #14267a;
+      }
+      .h2 {
+        margin: 0;
+        font-family: Fraunces, Georgia, serif;
+        font-weight: 600;
+        font-size: 20px;
+      }
+      .sub {
+        margin: 0;
+        font-size: 13px;
+        color: #4a5470;
+      }
+      .card {
+        background: #ffffff;
+        border: 1px solid #d9dfec;
+        border-radius: 16px;
+        padding: 16px;
+      }
+      .pill {
+        font-family: inherit;
+        font-size: 13px;
+        padding: 8px 14px;
+        border-radius: 999px;
+        border: 1px solid #d9dfec;
+        background: #ffffff;
+        color: #4a5470;
+        min-height: 44px;
+      }
+      .pill.on {
+        background: #1f45f0;
+        border-color: #1f45f0;
+        color: #ffffff;
+        font-weight: 600;
+      }
+      .chip {
+        font-size: 13px;
+        padding: 6px 12px;
+        border-radius: 999px;
+        background: #e3e9fd;
+        color: #14267a;
+      }
+      .tile {
+        background: #ffffff;
+        border: 1px solid #d9dfec;
+        border-radius: 14px;
+        padding: 12px 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .big {
+        font-family: Fraunces, Georgia, serif;
+        font-weight: 600;
+        font-size: 26px;
+      }
+      .lbl {
+        font-size: 12px;
+        color: #4a5470;
+      }
+      .row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 64px;
+        gap: 10px;
+        align-items: center;
+        padding: 12px 0;
+        border-top: 1px solid #e6eaf3;
+      }
+      .pips {
+        display: flex;
+        gap: 3px;
+      }
+      .pips span {
+        flex: 1;
+        height: 8px;
+        border-radius: 2px;
+        background: #d9dfec;
+      }
+      .pips span.on {
+        background: #1f45f0;
+      }
+      .lv {
+        font-size: 12px;
+        color: #4a5470;
+      }
+      .win {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        padding: 12px 0;
+      }
+      .ico {
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        background: #e3e9fd;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex: none;
+      }
+    </style>
+    <div
+      style="
+        width: 390px;
+        box-sizing: border-box;
+        padding: 28px 20px 40px;
+        background: #f5f7fb;
+        color: #141b2d;
+        font-family: Figtree, system-ui, sans-serif;
+        display: flex;
+        flex-direction: column;
+        gap: 32px;
+      "
+    >
+      <div style="display: flex; flex-direction: column; gap: 14px">
+        <a href="#" style="font-size: 13px">‹ Dashboard</a>
+        <h1
+          style="
+            margin: 0;
+            font-family: Fraunces, Georgia, serif;
+            font-weight: 600;
+            font-size: 34px;
+          "
+        >
+          Lily's Progress
+        </h1>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px">
+          <div
+            class="tile"
+            style="
+              background: #1f45f0;
+              border-color: #1f45f0;
+              color: #ffffff;
+              grid-column: 1 / -1;
+            "
+          >
+            <span class="big">+7 levels</span
+            ><span style="font-size: 12px"
+              >gained this season across 5 skills</span
+            >
+          </div>
+          <div class="tile">
+            <span class="big">Nov 17</span
+            ><span class="lbl">last evaluated</span>
+          </div>
+          <div class="tile">
+            <span class="big">10</span
+            ><span class="lbl">evaluations since Sep</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 10px">
+        <h2 class="h2">Coach's focus</h2>
+        <div
+          class="card"
+          style="display: flex; flex-direction: column; gap: 12px"
+        >
+          <p style="margin: 0; font-size: 15px">
+            Keep the lead arm out front when breathing to the right.
+          </p>
+          <p class="sub">From Coach Jason, Nov 17</p>
+          <div
+            style="
+              border-top: 1px solid #e6eaf3;
+              padding-top: 12px;
+              display: flex;
+              flex-direction: column;
+              gap: 8px;
+            "
+          >
+            <span style="font-size: 13px; font-weight: 600"
+              >Working on next</span
+            >
+            <span style="font-size: 14px">Core stability</span>
+            <span style="font-size: 14px">Pull (freestyle)</span>
+            <span style="font-size: 14px">Breath timing, right side</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 10px">
+        <h2 class="h2">Recent wins</h2>
+        <div
+          class="card"
+          style="padding: 4px 16px; display: flex; flex-direction: column"
+        >
+          <div class="win" style="border-bottom: 1px solid #e6eaf3">
+            <span class="ico"
+              ><svg
+                width="18"
+                height="18"
+                viewBox="0 0 18 18"
+                fill="none"
+                stroke="#1F45F0"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M9 15V3"></path>
+                <path d="M4 8l5-5 5 5"></path></svg
+            ></span>
+            <div
+              style="display: flex; flex-direction: column; gap: 1px; flex: 1"
+            >
+              <span style="font-size: 14px; font-weight: 600"
+                >Kick reached Advanced</span
+              ><span class="lbl">Nov 10</span>
+            </div>
+          </div>
+          <div class="win" style="border-bottom: 1px solid #e6eaf3">
+            <span class="ico"
+              ><svg
+                width="18"
+                height="18"
+                viewBox="0 0 18 18"
+                fill="none"
+                stroke="#1F45F0"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M4 16V2"></path>
+                <path d="M4 3h10l-2.5 3.5L14 10H4"></path></svg
+            ></span>
+            <div
+              style="display: flex; flex-direction: column; gap: 1px; flex: 1"
+            >
+              <span style="font-size: 14px; font-weight: 600"
+                >Rotation held at Competent in a race</span
+              ><span class="lbl">Nov 3</span>
+            </div>
+          </div>
+          <div class="win">
+            <span class="ico"
+              ><svg
+                width="18"
+                height="18"
+                viewBox="0 0 18 18"
+                fill="none"
+                stroke="#1F45F0"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M9 15V3"></path>
+                <path d="M4 8l5-5 5 5"></path></svg
+            ></span>
+            <div
+              style="display: flex; flex-direction: column; gap: 1px; flex: 1"
+            >
+              <span style="font-size: 14px; font-weight: 600"
+                >Catch reached Competent</span
+              ><span class="lbl">Oct 27</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 10px">
+        <h2 class="h2">Snapshot</h2>
+        <div
+          class="card"
+          style="display: flex; flex-direction: column; gap: 8px"
+        >
+          <svg
+            width="100%"
+            viewBox="-40 0 480 320"
+            role="img"
+            aria-label="Radar of average level across nine skill groups. The filled shape is now and the dashed outline is the first evaluation. Freestyle is highest. IM turns and Racing are not rated yet."
+          >
+            <circle
+              cx="200"
+              cy="170"
+              r="24"
+              fill="none"
+              stroke="#D9DFEC"
+              stroke-width="1"
+            ></circle>
+            <circle
+              cx="200"
+              cy="170"
+              r="48"
+              fill="none"
+              stroke="#D9DFEC"
+              stroke-width="1"
+            ></circle>
+            <circle
+              cx="200"
+              cy="170"
+              r="72"
+              fill="none"
+              stroke="#D9DFEC"
+              stroke-width="1"
+            ></circle>
+            <circle
+              cx="200"
+              cy="170"
+              r="96"
+              fill="none"
+              stroke="#D9DFEC"
+              stroke-width="1"
+            ></circle>
+            <circle
+              cx="200"
+              cy="170"
+              r="120"
+              fill="none"
+              stroke="#C3CBDD"
+              stroke-width="1"
+            ></circle>
+            <line
+              x1="200"
+              y1="170"
+              x2="200"
+              y2="50"
+              stroke="#D9DFEC"
+              stroke-width="1"
+            ></line>
+            <line
+              x1="200"
+              y1="170"
+              x2="277.1"
+              y2="78.1"
+              stroke="#D9DFEC"
+              stroke-width="1"
+            ></line>
+            <line
+              x1="200"
+              y1="170"
+              x2="318.2"
+              y2="149.2"
+              stroke="#D9DFEC"
+              stroke-width="1"
+            ></line>
+            <line
+              x1="200"
+              y1="170"
+              x2="303.9"
+              y2="230"
+              stroke="#D9DFEC"
+              stroke-width="1"
+            ></line>
+            <line
+              x1="200"
+              y1="170"
+              x2="241"
+              y2="282.8"
+              stroke="#D9DFEC"
+              stroke-width="1"
+            ></line>
+            <line
+              x1="200"
+              y1="170"
+              x2="159"
+              y2="282.8"
+              stroke="#D9DFEC"
+              stroke-width="1"
+            ></line>
+            <line
+              x1="200"
+              y1="170"
+              x2="96.1"
+              y2="230"
+              stroke="#D9DFEC"
+              stroke-width="1"
+            ></line>
+            <line
+              x1="200"
+              y1="170"
+              x2="81.8"
+              y2="149.2"
+              stroke="#D9DFEC"
+              stroke-width="1"
+            ></line>
+            <line
+              x1="200"
+              y1="170"
+              x2="122.9"
+              y2="78.1"
+              stroke="#D9DFEC"
+              stroke-width="1"
+            ></line>
+            <polygon
+              points="200,131.6 227.8,136.9 261.5,159.2 243.6,195.2 212.3,203.8 189.3,199.3 164.7,190.4 200,170 200,170"
+              fill="#1F45F0"
+              fill-opacity="0.22"
+              stroke="#1F45F0"
+              stroke-width="3"
+              stroke-linejoin="round"
+            ></polygon>
+            <polygon
+              points="200,141.2 215.4,151.6 235.5,163.8 227,185.6 208.2,192.6 191.8,192.6 175.1,184.4 200,170 200,170"
+              fill="none"
+              stroke="#141B2D"
+              stroke-width="2"
+              stroke-dasharray="4 4"
+              stroke-linejoin="round"
+            ></polygon>
+            <text
+              x="200"
+              y="32"
+              font-size="16"
+              fill="#141B2D"
+              text-anchor="middle"
+            >
+              Fundamentals
+            </text>
+            <text x="290" y="54" font-size="16" fill="#141B2D">Water</text>
+            <text x="290" y="74" font-size="16" fill="#141B2D">confidence</text>
+            <text
+              x="338"
+              y="152"
+              font-size="16"
+              font-weight="600"
+              fill="#141B2D"
+            >
+              Freestyle
+            </text>
+            <text x="321" y="248" font-size="16" fill="#141B2D">
+              Backstroke
+            </text>
+            <text
+              x="252"
+              y="308"
+              font-size="16"
+              fill="#141B2D"
+              text-anchor="middle"
+            >
+              Breaststroke
+            </text>
+            <text
+              x="146"
+              y="308"
+              font-size="16"
+              fill="#141B2D"
+              text-anchor="middle"
+            >
+              Butterfly
+            </text>
+            <text
+              x="79"
+              y="238"
+              font-size="16"
+              fill="#141B2D"
+              text-anchor="end"
+            >
+              Starts
+            </text>
+            <text
+              x="79"
+              y="258"
+              font-size="16"
+              fill="#141B2D"
+              text-anchor="end"
+            >
+              and turns
+            </text>
+            <text
+              x="62"
+              y="152"
+              font-size="16"
+              fill="#4A5470"
+              text-anchor="end"
+            >
+              IM turns
+            </text>
+            <text
+              x="110"
+              y="64"
+              font-size="16"
+              fill="#4A5470"
+              text-anchor="end"
+            >
+              Racing
+            </text>
+          </svg>
+          <div
+            style="
+              display: flex;
+              flex-wrap: wrap;
+              gap: 14px;
+              align-items: center;
+            "
+            class="lbl"
+          >
+            <span style="display: flex; align-items: center; gap: 6px"
+              ><svg
+                width="22"
+                height="12"
+                viewBox="0 0 22 12"
+                aria-hidden="true"
+              >
+                <rect
+                  x="1"
+                  y="1"
+                  width="20"
+                  height="10"
+                  rx="2"
+                  fill="#1F45F0"
+                  fill-opacity="0.22"
+                  stroke="#1F45F0"
+                  stroke-width="2"
+                ></rect></svg
+              >Now</span
+            >
+            <span style="display: flex; align-items: center; gap: 6px"
+              ><svg
+                width="22"
+                height="12"
+                viewBox="0 0 22 12"
+                aria-hidden="true"
+              >
+                <rect
+                  x="1"
+                  y="1"
+                  width="20"
+                  height="10"
+                  rx="2"
+                  fill="none"
+                  stroke="#141B2D"
+                  stroke-width="1.5"
+                  stroke-dasharray="4 4"
+                ></rect></svg
+              >When she started</span
+            >
+          </div>
+        </div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 12px">
+        <h2 class="h2">Skills</h2>
+        <div style="display: flex; flex-wrap: wrap; gap: 8px">
+          <button class="pill">Fundamentals</button
+          ><button class="pill">Water confidence</button
+          ><button class="pill on">Freestyle</button
+          ><button class="pill">Backstroke</button
+          ><button class="pill">Breaststroke</button
+          ><button class="pill">Butterfly</button
+          ><button class="pill">Starts and turns</button>
+        </div>
+        <div class="card" style="padding: 6px 16px 14px">
+          <div
+            style="
+              display: flex;
+              justify-content: space-between;
+              align-items: baseline;
+              padding: 10px 0;
+            "
+          >
+            <span style="font-weight: 600; font-size: 15px"
+              >Freestyle · The swim</span
+            ><span class="lbl">18 of 25 rated</span>
+          </div>
+          <div class="row">
+            <div style="display: flex; flex-direction: column; gap: 2px">
+              <span style="font-size: 14px; font-weight: 500">Kick</span
+              ><span class="lv">Advanced · up 1</span>
+            </div>
+            <div class="pips">
+              <span class="on"></span><span class="on"></span
+              ><span class="on"></span><span class="on"></span><span></span>
+            </div>
+          </div>
+          <div class="row">
+            <div style="display: flex; flex-direction: column; gap: 2px">
+              <span style="font-size: 14px; font-weight: 500"
+                >Head position</span
+              ><span class="lv">Competent · up 1</span>
+            </div>
+            <div class="pips">
+              <span class="on"></span><span class="on"></span
+              ><span class="on"></span><span></span><span></span>
+            </div>
+          </div>
+          <div class="row" style="border-top: 1px solid #1f45f0">
+            <div style="display: flex; flex-direction: column; gap: 2px">
+              <span style="font-size: 14px; font-weight: 600; color: #1f45f0"
+                >Catch</span
+              ><span class="lv">Competent · up 2</span>
+            </div>
+            <div class="pips">
+              <span class="on"></span><span class="on"></span
+              ><span class="on"></span><span></span><span></span>
+            </div>
+          </div>
+          <div
+            style="
+              background: #f5f7fb;
+              border-radius: 12px;
+              padding: 12px;
+              display: flex;
+              flex-direction: column;
+              gap: 10px;
+              margin-bottom: 8px;
+            "
+          >
+            <svg
+              width="100%"
+              viewBox="0 0 350 204"
+              role="img"
+              aria-label="Level ladder for catch, climbing from Emerging to Competent over the last six evaluations"
+            >
+              <rect x="0" y="8" width="350" height="34" fill="#FFFFFF"></rect>
+              <rect x="0" y="76" width="350" height="34" fill="#E3E9FD"></rect>
+              <rect x="0" y="144" width="350" height="34" fill="#FFFFFF"></rect>
+              <text x="6" y="29" font-size="12" fill="#4A5470">5 Mastery</text>
+              <text x="6" y="63" font-size="12" fill="#4A5470">4 Advanced</text>
+              <text
+                x="6"
+                y="97"
+                font-size="12"
+                font-weight="600"
+                fill="#1F45F0"
+              >
+                3 Competent
+              </text>
+              <text x="6" y="131" font-size="12" fill="#4A5470">
+                2 Developing
+              </text>
+              <text x="6" y="165" font-size="12" fill="#4A5470">
+                1 Emerging
+              </text>
+              <path
+                d="M104 161 H127 V127 H173 V93 H220 V127 H266 V93 H336"
+                fill="none"
+                stroke="#1F45F0"
+                stroke-width="3"
+                stroke-linejoin="round"
+                stroke-linecap="round"
+              ></path>
+              <circle
+                cx="104"
+                cy="161"
+                r="5.5"
+                fill="#FFFFFF"
+                stroke="#1F45F0"
+                stroke-width="2.5"
+              ></circle>
+              <circle
+                cx="150"
+                cy="127"
+                r="5.5"
+                fill="#FFFFFF"
+                stroke="#1F45F0"
+                stroke-width="2.5"
+              ></circle>
+              <polygon
+                points="197,86 204,98 190,98"
+                fill="#FFFFFF"
+                stroke="#1F45F0"
+                stroke-width="2.5"
+                stroke-linejoin="round"
+              ></polygon>
+              <polygon
+                points="243,120 250,127 243,134 236,127"
+                fill="#FFFFFF"
+                stroke="#1F45F0"
+                stroke-width="2.5"
+                stroke-linejoin="round"
+              ></polygon>
+              <circle
+                cx="290"
+                cy="93"
+                r="5.5"
+                fill="#FFFFFF"
+                stroke="#1F45F0"
+                stroke-width="2.5"
+              ></circle>
+              <circle cx="336" cy="93" r="10" fill="#1F45F0"></circle>
+              <text
+                x="336"
+                y="97"
+                font-size="11"
+                font-weight="600"
+                fill="#FFFFFF"
+                text-anchor="middle"
+              >
+                3
+              </text>
+              <text
+                x="104"
+                y="198"
+                font-size="11"
+                fill="#4A5470"
+                text-anchor="middle"
+              >
+                Oct 6
+              </text>
+              <text
+                x="220"
+                y="198"
+                font-size="11"
+                fill="#4A5470"
+                text-anchor="middle"
+              >
+                Oct 27
+              </text>
+              <text
+                x="346"
+                y="198"
+                font-size="11"
+                fill="#4A5470"
+                text-anchor="end"
+              >
+                Nov 17
+              </text>
+            </svg>
+            <div style="display: flex; flex-wrap: wrap; gap: 6px">
+              <span
+                class="chip"
+                style="background: #1f45f0; color: #ffffff; font-weight: 600"
+                >Now: Competent</span
+              >
+              <span class="chip">Up 2 levels since Sep</span>
+            </div>
+            <p class="sub">
+              <span style="font-weight: 600; color: #141b2d"
+                >Next, Advanced:</span
+              >
+              holds the same catch at race pace on most strokes.
+            </p>
+            <p class="lbl" style="margin: 0">
+              Circle is practice, triangle is a drill, diamond is a race.
+            </p>
+          </div>
+          <div class="row">
+            <div style="display: flex; flex-direction: column; gap: 2px">
+              <span style="font-size: 14px; font-weight: 500">Rotation</span
+              ><span class="lv">Competent · up 2</span>
+            </div>
+            <div class="pips">
+              <span class="on"></span><span class="on"></span
+              ><span class="on"></span><span></span><span></span>
+            </div>
+          </div>
+          <div class="row">
+            <div style="display: flex; flex-direction: column; gap: 2px">
+              <span style="font-size: 14px; font-weight: 500"
+                >Breath timing</span
+              ><span class="lv">Developing · left 3, right 2</span>
+            </div>
+            <div class="pips">
+              <span class="on"></span><span class="on"></span><span></span
+              ><span></span><span></span>
+            </div>
+          </div>
+          <div class="row">
+            <div style="display: flex; flex-direction: column; gap: 2px">
+              <span style="font-size: 14px; font-weight: 500">Pull</span
+              ><span class="lv">Developing · holding steady</span>
+            </div>
+            <div class="pips">
+              <span class="on"></span><span class="on"></span><span></span
+              ><span></span><span></span>
+            </div>
+          </div>
+          <a
+            href="#"
+            style="
+              font-size: 13px;
+              display: block;
+              padding-top: 12px;
+              border-top: 1px solid #e6eaf3;
+            "
+            >Show 12 more freestyle skills</a
+          >
+        </div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 12px">
+        <h2 class="h2">Starts</h2>
+        <div style="display: flex; flex-wrap: wrap; gap: 8px">
+          <button class="pill on">Track start</button
+          ><button class="pill">Backstroke start</button
+          ><button class="pill">Relay start</button>
+        </div>
+        <div
+          class="card"
+          style="display: flex; flex-direction: column; gap: 12px"
+        >
+          <svg
+            width="100%"
+            viewBox="0 0 350 152"
+            role="img"
+            aria-label="Dive arc from the block to the water: reaction level 3, drive level 2, height level 3, legs not graded yet, entry not graded yet, distance 7 feet"
+          >
+            <rect x="42" y="118" width="304" height="30" fill="#E3E9FD"></rect>
+            <line
+              x1="42"
+              y1="118"
+              x2="346"
+              y2="118"
+              stroke="#7E99F0"
+              stroke-width="1.5"
+            ></line>
+            <rect
+              x="8"
+              y="56"
+              width="34"
+              height="92"
+              rx="3"
+              fill="#D9DFEC"
+            ></rect>
+            <path
+              d="M25 42 Q 150 -20 300 116"
+              fill="none"
+              stroke="#8A96B5"
+              stroke-width="2"
+              stroke-dasharray="2 6"
+              stroke-linecap="round"
+            ></path>
+            <circle cx="25" cy="42" r="12" fill="#7E99F0"></circle>
+            <text
+              x="25"
+              y="46"
+              font-size="12"
+              font-weight="600"
+              fill="#141B2D"
+              text-anchor="middle"
+            >
+              3
+            </text>
+            <text x="6" y="18" font-size="11" fill="#4A5470">Reaction</text>
+            <circle cx="71" cy="26" r="12" fill="#B3C4F7"></circle>
+            <text
+              x="71"
+              y="30"
+              font-size="12"
+              font-weight="600"
+              fill="#141B2D"
+              text-anchor="middle"
+            >
+              2
+            </text>
+            <text
+              x="71"
+              y="54"
+              font-size="11"
+              fill="#4A5470"
+              text-anchor="middle"
+            >
+              Drive
+            </text>
+            <circle cx="143" cy="26" r="12" fill="#7E99F0"></circle>
+            <text
+              x="143"
+              y="30"
+              font-size="12"
+              font-weight="600"
+              fill="#141B2D"
+              text-anchor="middle"
+            >
+              3
+            </text>
+            <text
+              x="143"
+              y="54"
+              font-size="11"
+              fill="#4A5470"
+              text-anchor="middle"
+            >
+              Height
+            </text>
+            <circle
+              cx="227"
+              cy="60"
+              r="11"
+              fill="#FFFFFF"
+              stroke="#8A96B5"
+              stroke-width="1.5"
+              stroke-dasharray="3 3"
+            ></circle>
+            <text
+              x="227"
+              y="40"
+              font-size="11"
+              fill="#4A5470"
+              text-anchor="middle"
+            >
+              Legs
+            </text>
+            <circle
+              cx="276"
+              cy="95"
+              r="11"
+              fill="#FFFFFF"
+              stroke="#8A96B5"
+              stroke-width="1.5"
+              stroke-dasharray="3 3"
+            ></circle>
+            <text x="293" y="90" font-size="11" fill="#4A5470">Entry</text>
+            <line
+              x1="44"
+              y1="134"
+              x2="300"
+              y2="134"
+              stroke="#1F45F0"
+              stroke-width="1.5"
+            ></line>
+            <line
+              x1="44"
+              y1="129"
+              x2="44"
+              y2="139"
+              stroke="#1F45F0"
+              stroke-width="1.5"
+            ></line>
+            <line
+              x1="300"
+              y1="129"
+              x2="300"
+              y2="139"
+              stroke="#1F45F0"
+              stroke-width="1.5"
+            ></line>
+            <text
+              x="172"
+              y="147"
+              font-size="11"
+              font-weight="600"
+              fill="#14267A"
+              text-anchor="middle"
+            >
+              7 ft
+            </text>
+          </svg>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px">
+            <div class="tile" style="background: #f5f7fb">
+              <span class="lbl">Reaction time</span
+              ><span class="big">0.82 s</span
+              ><span class="lbl">0.06 s faster than her first</span>
+            </div>
+            <div class="tile" style="background: #f5f7fb">
+              <span class="lbl">Entry distance</span
+              ><span class="big">7 ft</span
+              ><span class="lbl">1 ft farther than her first</span>
+            </div>
+          </div>
+          <p class="sub">
+            Darker circles are stronger. Dashed circles haven't been graded yet.
+          </p>
+        </div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 12px">
+        <div style="display: flex; flex-direction: column; gap: 2px">
+          <h2 class="h2">Golf score</h2>
+          <p class="sub">
+            Seconds plus strokes for one length. Lower is better.
+          </p>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px">
+          <div
+            class="card"
+            style="
+              padding: 14px;
+              display: flex;
+              flex-direction: column;
+              gap: 4px;
+            "
+          >
+            <span style="font-weight: 600; font-size: 13px">Freestyle</span
+            ><span class="big">37.2</span>
+            <svg
+              width="100%"
+              viewBox="0 0 150 54"
+              role="img"
+              aria-label="Freestyle golf score falling from 41 to 37.2"
+            >
+              <rect x="0" y="22" width="150" height="18" fill="#E3E9FD"></rect>
+              <polyline
+                points="6,8 40,14 76,20 112,27 144,31"
+                fill="none"
+                stroke="#1F45F0"
+                stroke-width="2.5"
+                stroke-linejoin="round"
+                stroke-linecap="round"
+              ></polyline>
+              <circle cx="144" cy="31" r="4.5" fill="#1F45F0"></circle>
+            </svg>
+            <span class="lbl">Down 3.8 since Sep</span>
+          </div>
+          <div
+            class="card"
+            style="
+              padding: 14px;
+              display: flex;
+              flex-direction: column;
+              gap: 4px;
+            "
+          >
+            <span style="font-weight: 600; font-size: 13px">Backstroke</span
+            ><span class="big">44.0</span>
+            <svg
+              width="100%"
+              viewBox="0 0 150 54"
+              role="img"
+              aria-label="Backstroke golf score falling from 45.5 to 44"
+            >
+              <rect x="0" y="28" width="150" height="18" fill="#E3E9FD"></rect>
+              <polyline
+                points="6,10 76,16 144,18"
+                fill="none"
+                stroke="#1F45F0"
+                stroke-width="2.5"
+                stroke-linejoin="round"
+                stroke-linecap="round"
+              ></polyline>
+              <circle cx="144" cy="18" r="4.5" fill="#1F45F0"></circle>
+            </svg>
+            <span class="lbl">Down 1.5 since Oct</span>
+          </div>
+        </div>
+        <p class="sub">
+          The shaded band is the typical range for her age group.
+        </p>
+      </div>
+
+      <p class="sub">
+        Sample data. Parents never see fault tags or coach notes.
+      </p>
+    </div>
+  </body>
+</html>

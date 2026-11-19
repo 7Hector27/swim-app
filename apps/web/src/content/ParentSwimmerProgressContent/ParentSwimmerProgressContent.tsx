@@ -1,5 +1,5 @@
 import type {
-  CategoriesResponse,
+  ParentCategoriesResponse,
   ParentSwimmer,
   ParentSwimmerProgressResponse,
   ParentScoreHistoryResponse,
@@ -27,7 +27,7 @@ export interface ParentSwimmerProgressSectionFailures {
 interface ParentSwimmerProgressContentProps {
   swimmer: ParentSwimmer;
   progress: ParentSwimmerProgressResponse;
-  categories: CategoriesResponse;
+  categories: ParentCategoriesResponse;
   // Charts need an oldest-to-newest set of session-level snapshots. The
   // backend always sends one (empty when the swimmer has no evaluations); the
   // prop is optional only so existing unit tests that pre-date the charts

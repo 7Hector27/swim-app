@@ -12,6 +12,7 @@ import {
   SCREEN_SECTIONS,
   SCREEN_SLUGS,
   type CategoriesResponse,
+  type ParentCategoriesResponse,
   type ScreenSlug,
   type SkillCurrentLevel,
   type StartGradeResult,
@@ -52,7 +53,7 @@ export interface CatalogIndexEntry {
 // this name AND this skill is scoped to a single stroke, append " (<stroke>)";
 // otherwise leave the name alone.
 export function buildCatalogIndex(
-  categories: CategoriesResponse,
+  categories: CategoriesResponse | ParentCategoriesResponse,
 ): Map<string, CatalogIndexEntry> {
   const nameCount = new Map<string, number>();
   for (const cat of categories) {

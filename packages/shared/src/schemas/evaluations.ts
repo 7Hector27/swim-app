@@ -260,6 +260,23 @@ export type SkillCategoryWithSkills = z.infer<typeof SkillCategoryWithSkillsSche
 export const CategoriesResponseSchema = z.array(SkillCategoryWithSkillsSchema);
 export type CategoriesResponse = z.infer<typeof CategoriesResponseSchema>;
 
+// Parent-facing variant of the catalog response. Strips fault tags from
+// every skill — parents never see fault tags, per the policy in
+// `docs/accounts.md`. The schema is `.strict()` so any future addition
+// of coach-only fields fails to parse rather than silently reaching a
+// parent client.
+export const ParentSkillForRatingSchema = SkillForRatingSchema.omit({ faultTags: true }).strict();
+export type ParentSkillForRating = z.infer<typeof ParentSkillForRatingSchema>;
+
+export const ParentSkillCategoryWithSkillsSchema = SkillCategoryWithSkillsSchema
+  .omit({ skills: true })
+  .extend({ skills: z.array(ParentSkillForRatingSchema) })
+  .strict();
+export type ParentSkillCategoryWithSkills = z.infer<typeof ParentSkillCategoryWithSkillsSchema>;
+
+export const ParentCategoriesResponseSchema = z.array(ParentSkillCategoryWithSkillsSchema);
+export type ParentCategoriesResponse = z.infer<typeof ParentCategoriesResponseSchema>;
+
 // ── Screen-based response (replaces /categories for the evaluation form) ───────
 
 export const ScreenWithSkillsSchema = z.object({

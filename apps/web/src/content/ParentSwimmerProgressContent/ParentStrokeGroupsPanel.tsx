@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import {
   PROGRESS_GROUP_LABELS,
   SCREEN_SLUGS,
-  type CategoriesResponse,
+  type ParentCategoriesResponse,
   type ParentSwimmerProgressResponse,
   type ScreenSlug,
 } from "@swim-app/shared";
@@ -37,7 +37,7 @@ function toScreenSlug(slug: string): ScreenSlug | null {
 interface ParentStrokeGroupsPanelProps {
   skills: ReadonlyArray<ParentSkillProgress>;
   startProgress: ReadonlyArray<ParentStartProgress>;
-  categories: CategoriesResponse;
+  categories: ParentCategoriesResponse;
   nowIso: string;
   rollups: ReadonlyArray<GroupRollupLoose>;
 }

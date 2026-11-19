@@ -1,4 +1,6 @@
 import {
+  ParentCategoriesResponseSchema,
+  type ParentCategoriesResponse,
   ParentPersonalBestsResponseSchema,
   type ParentPersonalBestsResponse,
   ParentScoreHistoryResponseSchema,
@@ -29,6 +31,27 @@ export async function fetchParentSwimmerProgress(
     const parsed = ParentSwimmerProgressResponseSchema.safeParse(body);
     if (!parsed.success) return { ok: false, status: 500 };
     return { ok: true, data: parsed.data };
+  } catch {
+    return { ok: false, status: 500 };
+  }
+}
+
+export type FetchParentSkillCategoriesResult =
+  | { ok: true; categories: ParentCategoriesResponse }
+  | { ok: false; status: number };
+
+export async function fetchParentSkillCategories(
+  accessToken: string,
+): Promise<FetchParentSkillCategoriesResult> {
+  try {
+    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/parent/categories`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!response.ok) return { ok: false, status: response.status };
+    const body: unknown = await response.json();
+    const parsed = ParentCategoriesResponseSchema.safeParse(body);
+    if (!parsed.success) return { ok: false, status: 500 };
+    return { ok: true, categories: parsed.data };
   } catch {
     return { ok: false, status: 500 };
   }

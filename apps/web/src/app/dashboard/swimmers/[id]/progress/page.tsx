@@ -5,10 +5,10 @@ import ParentSwimmerProgressContent from "@/content/ParentSwimmerProgressContent
 import { requireAuth } from "@/lib/requireAuth";
 import {
   fetchParentScoreHistory,
+  fetchParentSkillCategories,
   fetchParentSwimmer,
   fetchParentSwimmerProgress,
 } from "@/lib/api/parentProgress";
-import { fetchSkillCategories } from "@/lib/api/evaluations";
 
 export const metadata: Metadata = {
   title: "Progress · Axiom Aquatics",
@@ -31,7 +31,7 @@ export default async function ParentSwimmerProgressPage({ params }: Props) {
     await Promise.all([
       fetchParentSwimmer(id, auth.accessToken),
       fetchParentSwimmerProgress(id, auth.accessToken),
-      fetchSkillCategories(auth.accessToken),
+      fetchParentSkillCategories(auth.accessToken),
       fetchParentScoreHistory(id, auth.accessToken),
     ]);
 
