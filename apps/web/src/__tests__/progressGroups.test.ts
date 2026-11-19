@@ -1,14 +1,12 @@
 // Pass 3 — the pieces that drive the progress page's new stroke-group
 // layout: buildScreenGroups (assembles the nine screens from a flat
-// SkillProgress[]), the 6-week stale rule, and the "trend needs ≥ 3
-// ratings" rule used by SkillRow / ParentSkillProgressRow.
+// SkillProgress[]) and the 6-week stale rule.
 
 import { describe, it, expect } from "vitest";
 import { PROGRESS_GROUP_LABELS } from "@swim-app/shared";
 import { buildScreenGroups, initialVisibleGroup } from "../lib/screenGroups";
 import {
   isStaleBySessionDate,
-  MIN_RATINGS_FOR_TREND,
   pointGradeNumber,
 } from "../lib/progressRow";
 
@@ -115,12 +113,6 @@ describe("isStaleBySessionDate — 6-week rule", () => {
 
   it("returns false when the session date is today", () => {
     expect(isStaleBySessionDate("2026-11-20", now)).toBe(false);
-  });
-});
-
-describe("MIN_RATINGS_FOR_TREND", () => {
-  it("is 3 — matches the SkillRow trend-line gate", () => {
-    expect(MIN_RATINGS_FOR_TREND).toBe(3);
   });
 });
 

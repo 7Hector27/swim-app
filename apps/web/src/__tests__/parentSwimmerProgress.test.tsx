@@ -9,7 +9,7 @@ import type {
 
 vi.mock("@/components/SiteNav", () => ({ default: () => <nav /> }));
 vi.mock("@/components/TrendLine", () => ({ default: () => null }));
-vi.mock("@/components/SkillChart", () => ({ default: () => null }));
+vi.mock("@/components/LevelLadder", () => ({ default: () => null }));
 
 import ParentSwimmerProgressContent from "../content/ParentSwimmerProgressContent/ParentSwimmerProgressContent";
 

@@ -529,21 +529,16 @@ describe("SwimmerProgressContent — Edit affordances (ADR 032)", () => {
     measurements: [],
   };
 
-  it("SkillChart renders hollow-ring points for edited history rows", () => {
-    renderPage({ progress, scoreHistory });
-    // Expand the skill row so the sparkline + edit list render.
-    fireEvent.click(screen.getByRole("button", { name: /expand freestyle kick/i }));
-    const edited = screen.getAllByTestId("skill-chart-edited-point");
-    expect(edited.length).toBeGreaterThan(0);
-  });
-
-  it("SkillChart sr-only table annotates edited rows with '(edited, was N)'", () => {
+  it("edit list marks edited points with 'Edited (was N)'", () => {
     renderPage({ progress, scoreHistory });
     fireEvent.click(screen.getByRole("button", { name: /expand freestyle kick/i }));
-    expect(screen.getByText(/4 \(edited, was 2\)/)).toBeInTheDocument();
+    // The LevelLadder replaces the hollow-ring SVG treatment with a pill
+    // in the coach edit list that spells out the previous value.
+    const pill = screen.getByTestId("skill-chart-edited-pill");
+    expect(pill).toHaveTextContent(/Edited \(was 2\)/);
   });
 
-  it("SkillChart renders per-point Edit links that deep-link to editSession + skill slug", () => {
+  it("per-point Edit links deep-link to editSession + skill slug", () => {
     renderPage({ progress, scoreHistory });
     fireEvent.click(screen.getByRole("button", { name: /expand freestyle kick/i }));
     const links = screen.getAllByTestId("skill-chart-edit-link");
