@@ -33,6 +33,11 @@ interface LevelLadderProps {
   // ParentSkillProgress.levelDescriptors; coach API doesn't carry them).
   // Shape is { "1": "...", "2": "...", … } — keys are string digits.
   levelDescriptors?: Record<string, string> | undefined;
+  // When true, the "Next: <descriptor>" chip renders as a plain
+  // paragraph under the chip row instead of as its own chip. The parent
+  // view uses this — the parent brief asks for the Next line in plain
+  // text; the coach view keeps the chip form.
+  nextAsPlainText?: boolean;
 }
 
 // SVG virtual coordinate system. Width is set via width="100%" so the chart
@@ -108,7 +113,7 @@ function newestGradedIndex(series: LadderPoint[]): number | null {
   return null;
 }
 
-export default function LevelLadder({ skillName, history, ratedPerSide, levelDescriptors }: LevelLadderProps) {
+export default function LevelLadder({ skillName, history, ratedPerSide, levelDescriptors, nextAsPlainText = false }: LevelLadderProps) {
   const descriptors: Partial<Record<1 | 2 | 3 | 4 | 5, string>> | undefined = levelDescriptors
     ? ({
         1: levelDescriptors["1"],
@@ -188,7 +193,7 @@ export default function LevelLadder({ skillName, history, ratedPerSide, levelDes
   }
 
   return (
-    <div className="flex flex-col gap-3" data-testid="level-ladder">
+    <div className="flex flex-col gap-3 w-full max-w-[640px]" data-testid="level-ladder">
       {/* Legend: context shapes always; sides only when the skill is sided. */}
       <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-text-secondary">
         <span aria-label="Practice (circle)">● Practice</span>
@@ -237,9 +242,14 @@ export default function LevelLadder({ skillName, history, ratedPerSide, levelDes
                 x={PAD_LEFT - 6}
                 y={topY + BAND_HEIGHT / 2 + 3}
                 textAnchor="end"
-                fontSize={10}
-                fontWeight={isCurrent ? 600 : 400}
-                fill={isCurrent ? "var(--color-accent)" : "var(--color-text-secondary)"}
+                // CSS px so label text stays legible at any SVG render
+                // size — using an SVG-unit fontSize attribute would
+                // scale with the viewBox and inflate on desktop.
+                style={{
+                  fontSize: "11px",
+                  fontWeight: isCurrent ? 600 : 400,
+                  fill: isCurrent ? "var(--color-accent)" : "var(--color-text-secondary)",
+                }}
               >
                 {level} {LEVEL_NAMES[level]}
               </text>
@@ -311,9 +321,11 @@ export default function LevelLadder({ skillName, history, ratedPerSide, levelDes
                           x={cx}
                           y={cy + 3}
                           textAnchor="middle"
-                          fontSize={9}
-                          fontWeight={700}
-                          fill="var(--color-on-accent)"
+                          style={{
+                            fontSize: "11px",
+                            fontWeight: 700,
+                            fill: "var(--color-on-accent)",
+                          }}
                           aria-hidden="true"
                         >
                           {level}
@@ -371,9 +383,11 @@ export default function LevelLadder({ skillName, history, ratedPerSide, levelDes
                       x={cx}
                       y={cy + 3}
                       textAnchor="middle"
-                      fontSize={8}
-                      fontWeight={700}
-                      fill={point.notLegal ? "var(--color-on-danger)" : "var(--color-text)"}
+                      style={{
+                        fontSize: "9px",
+                        fontWeight: 700,
+                        fill: point.notLegal ? "var(--color-on-danger)" : "var(--color-text)",
+                      }}
                     >
                       <title>{title}</title>
                       {label}
@@ -382,27 +396,30 @@ export default function LevelLadder({ skillName, history, ratedPerSide, levelDes
                 );
               })}
 
-              {/* Date labels. Picks a sparse set so at 10 points they don't
-                  collide. Always includes first + last. */}
+              {/* Date labels. Picks a sparse set so at 10 points they
+                  don't collide. Always includes first + last. First and
+                  last labels anchor to their respective ends so neither
+                  overflows the plot — a middle-anchored last label at
+                  the right edge would clip half the "Nov 17" text. */}
               {(() => {
                 const tickSet = pickDateTickIndices(count);
                 return stream.points.map((point, index) => {
                   if (!tickSet.has(index)) return null;
-                  // When sided, only the first series draws date labels so
-                  // the x-axis isn't repeated. The two sides share the same
-                  // index→x mapping (both trimmed to the recent 10), so one
-                  // row of labels covers both.
                   if (ratedPerSide && stream.key !== "left") return null;
                   const cx = xForIndex(index, count);
                   const cy = PAD_TOP + BANDS_TOTAL_HEIGHT + SPECIAL_ROW_HEIGHT + 12;
+                  const anchor: "start" | "middle" | "end" =
+                    index === 0 ? "start" : index === count - 1 ? "end" : "middle";
                   return (
                     <text
                       key={`date-${point.id}`}
                       x={cx}
                       y={cy}
-                      textAnchor="middle"
-                      fontSize={8}
-                      fill="var(--color-text-secondary)"
+                      textAnchor={anchor}
+                      style={{ fontSize: "10px", fill: "var(--color-text-secondary)" }}
+                      data-testid="level-ladder-date-label"
+                      data-anchor={anchor}
+                      data-first-or-last={index === 0 || index === count - 1 ? "true" : undefined}
                     >
                       {formatLadderDate(point.sessionDate)}
                     </text>
@@ -414,38 +431,58 @@ export default function LevelLadder({ skillName, history, ratedPerSide, levelDes
         })}
       </svg>
 
-      {/* Chips. Flex-wraps naturally at phone width. */}
+      {/* Chips. Flex-wraps naturally at phone width. The Next chip is
+          optionally split out below as plain text — parents see it as
+          a paragraph underneath the chips, not as a chip. */}
       <div className="flex flex-col gap-2" data-testid="level-ladder-chips">
         {chipGroups.map((group) => {
-          if (group.chips.length === 0) return null;
+          const visibleChips = nextAsPlainText
+            ? group.chips.filter((chip) => chip.key !== "next")
+            : group.chips;
+          const nextChip = nextAsPlainText
+            ? group.chips.find((chip) => chip.key === "next")
+            : undefined;
+          if (visibleChips.length === 0 && !nextChip) return null;
           return (
-            <div key={group.key} className="flex flex-wrap gap-2 items-center">
-              {group.label && (
-                <span className="text-xs font-semibold text-text-secondary">{group.label}:</span>
+            <div key={group.key} className="flex flex-col gap-1">
+              {(visibleChips.length > 0 || group.label) && (
+                <div className="flex flex-wrap gap-2 items-center">
+                  {group.label && (
+                    <span className="text-xs font-semibold text-text-secondary">{group.label}:</span>
+                  )}
+                  {visibleChips.map((chip) => (
+                    <span
+                      key={`${group.key}-${chip.key}`}
+                      className="text-xs px-2 py-0.5 rounded-md"
+                      style={{
+                        backgroundColor:
+                          chip.tone === "accent"
+                            ? "var(--color-accent)"
+                            : chip.tone === "muted"
+                              ? "var(--color-surface-soft)"
+                              : "var(--color-border)",
+                        color:
+                          chip.tone === "accent"
+                            ? "var(--color-on-accent)"
+                            : chip.tone === "muted"
+                              ? "var(--color-text-secondary)"
+                              : "var(--color-text)",
+                      }}
+                      data-testid={`level-ladder-chip-${chip.key}`}
+                    >
+                      {chip.label}
+                    </span>
+                  ))}
+                </div>
               )}
-              {group.chips.map((chip) => (
-                <span
-                  key={`${group.key}-${chip.key}`}
-                  className="text-xs px-2 py-0.5 rounded-md"
-                  style={{
-                    backgroundColor:
-                      chip.tone === "accent"
-                        ? "var(--color-accent)"
-                        : chip.tone === "muted"
-                          ? "var(--color-surface-soft)"
-                          : "var(--color-border)",
-                    color:
-                      chip.tone === "accent"
-                        ? "var(--color-on-accent)"
-                        : chip.tone === "muted"
-                          ? "var(--color-text-secondary)"
-                          : "var(--color-text)",
-                  }}
-                  data-testid={`level-ladder-chip-${chip.key}`}
+              {nextChip && (
+                <p
+                  className="text-xs text-text-secondary"
+                  data-testid={`level-ladder-next-text-${group.key}`}
                 >
-                  {chip.label}
-                </span>
-              ))}
+                  {nextChip.label}
+                </p>
+              )}
             </div>
           );
         })}

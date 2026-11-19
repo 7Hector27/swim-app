@@ -22,13 +22,25 @@ interface StartsSectionProps {
   // parent hides both. Props forwarded verbatim to StartDiveCard.
   showSessionGrid?: boolean;
   showStillToGrade?: boolean;
+  // Narrow-column form. Short tab names ("Track", "Back", "Relay"),
+  // single-line stat under the arc instead of two tiles.
+  compact?: boolean;
 }
+
+// Short-form start names for the compact variant. Keys match the catalog
+// `-start` parent slugs.
+const SHORT_START_NAME: Record<string, string> = {
+  "track-start": "Track",
+  "back-start": "Back",
+  "relay-start": "Relay",
+};
 
 export default function StartsSection({
   startProgress,
   swimmerSkills,
   showSessionGrid = true,
   showStillToGrade = true,
+  compact = false,
 }: StartsSectionProps) {
   const initial = pickInitialStartSlug(startProgress);
   const [activeSlug, setActiveSlug] = useState<string | null>(initial);
@@ -68,7 +80,7 @@ export default function StartsSection({
               data-testid={`starts-tab-${start.slug}`}
             >
               <span>
-                {start.name}
+                {compact ? SHORT_START_NAME[start.slug] ?? start.name : start.name}
                 <span className="opacity-80"> · {tabStatusLabel(start)}</span>
               </span>
             </button>
@@ -85,6 +97,7 @@ export default function StartsSection({
           swimmerSkills={swimmerSkills}
           showSessionGrid={showSessionGrid}
           showStillToGrade={showStillToGrade}
+          compact={compact}
         />
       </div>
     </div>

@@ -6,20 +6,20 @@ interface SummaryCardProps {
   firstName: string;
 }
 
-// Season-summary card at the top of the parent progress page. Replaces
-// the old three-tile hero with one card carrying a plain-language
-// headline, a lesson byline, and a stacked bar showing the current level
-// distribution across the swimmer's rated non-rollup skills.
+// Season-summary card at the top of the parent progress page. Carries
+// a plain-language headline, a lesson byline, and a stacked bar showing
+// the current level distribution across the swimmer's rated non-rollup
+// skills.
 //
-// The stacked bar uses the same 5-step accent ramp as the Starts arc.
-// Each segment flex-grows proportionally to its count so a busy level
-// visually dominates. A segment too narrow for its count number drops
-// the number; the whole bar still carries a sentence-form text
-// alternative so screen readers get the exact distribution.
+// The stacked bar uses the same accent ramp as the Starts arc. Each
+// level's name sits inline with its count inside the segment ("26
+// Emerging"). Segments that are too narrow drop the name first, then
+// the count — the sentence-form aria-label always carries the full
+// distribution so screen readers never lose data.
 export default function SummaryCard({ data, firstName }: SummaryCardProps) {
   return (
     <section
-      className="rounded-lg border p-5 flex flex-col gap-4"
+      className="rounded-lg border p-5 flex flex-col gap-4 h-full"
       style={{
         backgroundColor: "var(--color-background)",
         borderColor: "var(--color-border)",
@@ -51,17 +51,6 @@ export default function SummaryCard({ data, firstName }: SummaryCardProps) {
             {data.total === 1 ? "skill is" : "skills are"} now
           </span>
           <StackedLevelBar entries={data.levelCounts} total={data.total} srText={data.levelsScreenReaderText} />
-          <div
-            className="grid gap-x-1 text-[10px] text-text-secondary leading-tight"
-            style={{ gridTemplateColumns: "repeat(5, minmax(0, 1fr))" }}
-            aria-hidden="true"
-          >
-            {data.levelCounts.map((entry) => (
-              <span key={entry.level} className="text-center truncate">
-                {LEVEL_NAMES[entry.level]}
-              </span>
-            ))}
-          </div>
         </div>
       )}
     </section>
@@ -99,31 +88,42 @@ function StackedLevelBar({ entries, total, srText }: StackedLevelBarProps) {
     >
       {entries.map((entry) => {
         if (entry.count === 0) return null;
-        // Percentage of the bar occupied by this level. Each segment
-        // gets a minimum width (~28px) at phone widths so a count of 1
-        // in a swimmer with 50+ rated skills still reads as a stripe
-        // rather than vanishing.
         const percent = (entry.count / total) * 100;
+        // Width thresholds. Each level's name sits inside the segment
+        // with its count ("26 Emerging"). When the segment is too narrow
+        // for the full phrase, show only the count. When it's too narrow
+        // even for that, show nothing. The sentence-form aria-label
+        // ensures the distribution is still fully readable to a screen
+        // reader.
+        //
+        // Thresholds picked against the phone-width case: at ~327px of
+        // bar width, 14% ≈ 46px — about enough for "Emerging" + the
+        // count; 7% ≈ 23px — about enough for a 1-2 digit count.
+        const showName = percent >= 14;
+        const showCount = percent >= 7;
+        const label = showName
+          ? `${entry.count} ${LEVEL_NAMES[entry.level]}`
+          : showCount
+            ? String(entry.count)
+            : "";
         return (
           <span
             key={entry.level}
-            className="relative flex items-center justify-center min-h-[28px] text-xs font-semibold tabular-nums"
+            className="relative flex items-center justify-center min-h-[32px] px-1 text-[11px] font-semibold tabular-nums whitespace-nowrap overflow-hidden"
             style={{
               flexGrow: entry.count,
               flexBasis: 0,
-              minWidth: "24px",
+              minWidth: "20px",
               backgroundColor: segmentBackground(entry.level),
               color: segmentTextColor(entry.level),
             }}
             data-testid={`parent-summary-segment-${entry.level}`}
             data-count={entry.count}
+            data-percent={percent.toFixed(2)}
+            data-shows={showName ? "name-and-count" : showCount ? "count" : "none"}
             aria-hidden="true"
           >
-            {/* Drop the number when the segment is thinner than ~6% of
-                the bar — the count would overflow a narrow stripe at
-                phone width otherwise. The sentence-form a11y label
-                still surfaces every count. */}
-            {percent >= 6 ? entry.count : ""}
+            {label}
           </span>
         );
       })}

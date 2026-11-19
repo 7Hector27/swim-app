@@ -246,6 +246,41 @@ describe("SummaryCard", () => {
     expect(screen.queryByTestId("parent-summary-lesson-line")).toBeNull();
   });
 
+  it("stacked bar shows the level name when the segment is wide, count only when narrower, nothing at the tail", () => {
+    // Fixture: one dominant level (50 at Developing), one mid (5 at
+    // Competent), one tiny tail (1 at Advanced). Across a 100-unit
+    // bar that's 89% / 9% / 2% — crosses both thresholds.
+    const skills: ParentSkillProgress[] = [
+      ...Array.from({ length: 50 }, (_, index) =>
+        skill({ slug: `d-${index}`, name: `D${index}`, current: level(2) }),
+      ),
+      ...Array.from({ length: 5 }, (_, index) =>
+        skill({ slug: `c-${index}`, name: `C${index}`, current: level(3) }),
+      ),
+      skill({ slug: "a-1", name: "A1", current: level(4) }),
+    ];
+    const data = buildSummaryCard(skills, ["2026-11-01"], "Lily");
+    render(<SummaryCard data={data} firstName="Lily" />);
+    const dev = screen.getByTestId("parent-summary-segment-2");
+    const com = screen.getByTestId("parent-summary-segment-3");
+    const adv = screen.getByTestId("parent-summary-segment-4");
+    // Developing segment at ~89% fits the full "50 Developing" phrase.
+    expect(dev.getAttribute("data-shows")).toBe("name-and-count");
+    expect(dev).toHaveTextContent("50 Developing");
+    // Competent segment at ~9% is too narrow for the name but still
+    // fits the count.
+    expect(com.getAttribute("data-shows")).toBe("count");
+    expect(com).toHaveTextContent("5");
+    expect(com).not.toHaveTextContent("Competent");
+    // Advanced segment at ~2% is too narrow even for the count; the
+    // segment renders empty visually. The aria-label still carries the
+    // full distribution.
+    expect(adv.getAttribute("data-shows")).toBe("none");
+    expect(adv.textContent ?? "").toBe("");
+    const bar = screen.getByTestId("parent-summary-stacked-bar");
+    expect(bar.getAttribute("aria-label") ?? "").toContain("1 at Advanced");
+  });
+
   it("hero headline flips to 'is getting started' when nothing has leveled up", () => {
     const skills = [
       // Rated but never changed → not counted as leveled up.

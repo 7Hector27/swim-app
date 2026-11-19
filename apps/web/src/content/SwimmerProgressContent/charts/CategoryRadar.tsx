@@ -8,7 +8,28 @@ interface CategoryRadarProps {
   // Unassessed-at-first axes collapse to the center so the shape stays
   // closed; a null array (default) hides the overlay entirely.
   firstEvaluation?: Array<{ average: number | null; assessedCount: number }>;
+  // When the radar renders in a narrow container (desktop side column,
+  // phone), the full "Water confidence" / "Starts and turns" labels
+  // collide with the shape. Passing shortLabels swaps every axis label
+  // for its short form ("Water" / "Starts") while the SVG's aria-label
+  // keeps the full names so screen readers still hear them.
+  shortLabels?: boolean;
 }
+
+// Short form of each category name used when `shortLabels` is on. Keys
+// match the raw catalog names used by the server. Anything not in this
+// map falls back to the raw name unchanged.
+const SHORT_LABEL: Record<string, string> = {
+  "Fundamentals": "Fundamentals",
+  "Water confidence": "Water",
+  "Freestyle": "Free",
+  "Backstroke": "Back",
+  "Breaststroke": "Breast",
+  "Butterfly": "Fly",
+  "Starts and turns": "Starts",
+  "IM turns": "IM",
+  "Racing": "Racing",
+};
 
 // viewBox is wider than tall because side labels (end/start anchored) need
 // generous horizontal padding, while top and bottom labels only need enough
@@ -68,9 +89,16 @@ function splitLabel(name: string): string[] {
 // Radar snapshot of category averages, 1-5 scale.
 // Unassessed categories draw at the center and dim their axis label; the
 // polygon still closes so the shape stays coherent.
-export default function CategoryRadar({ categories, firstEvaluation }: CategoryRadarProps) {
+export default function CategoryRadar({ categories, firstEvaluation, shortLabels = false }: CategoryRadarProps) {
   if (categories.length === 0) return null;
   const step = (Math.PI * 2) / categories.length;
+
+  // Sentence-form text alternative so a screen reader still hears the
+  // full category names even when the SVG renders short labels. One
+  // comma-separated list of "<Full name>: <avg>" entries.
+  const ariaLabel = categories
+    .map((category) => `${category.name}: ${category.average !== null ? category.average.toFixed(1) : "not rated yet"}`)
+    .join(", ");
 
   function pointAt(axisIndex: number, value: number): { x: number; y: number } {
     const angle = -Math.PI / 2 + axisIndex * step;
@@ -108,7 +136,7 @@ export default function CategoryRadar({ categories, firstEvaluation }: CategoryR
       width="100%"
       viewBox={`0 0 ${VB_WIDTH} ${VB_HEIGHT}`}
       role="img"
-      aria-label="Category score snapshot"
+      aria-label={`Category score snapshot. ${ariaLabel}`}
       className="rounded-[var(--radius-card)] block"
       style={{ backgroundColor: "var(--color-surface-soft)" }}
     >
@@ -215,7 +243,11 @@ export default function CategoryRadar({ categories, firstEvaluation }: CategoryR
         // labels sit over their spoke rather than drifting sideways.
         const textAnchor: "start" | "middle" | "end" =
           cosA > 0.3 ? "start" : cosA < -0.3 ? "end" : "middle";
-        const lines = splitLabel(category.name);
+        // When short labels are active, the single-word form is always
+        // one line; splitLabel is a no-op on a 5-letter name but we
+        // still route through it so future renames keep working.
+        const labelText = shortLabels ? SHORT_LABEL[category.name] ?? category.name : category.name;
+        const lines = splitLabel(labelText);
         // Vertical placement: lines are stacked around labelY. Top-of-chart
         // labels (sinA negative) sit above the point so the baseline doesn't
         // overlap the shape; bottom labels sit below; sides are centered.

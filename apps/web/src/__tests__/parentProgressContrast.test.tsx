@@ -9,7 +9,7 @@
 // assert the token name, not a resolved hex.
 
 import { describe, expect, it } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import type {
   ParentProgressRatingPoint,
   ParentSkillProgress,
@@ -115,27 +115,34 @@ const progress: ParentSwimmerProgressResponse = {
 };
 
 describe("ParentSwimmerProgressContent — token pair contrast", () => {
+  // The responsive layout renders both the mobile-tablet and desktop
+  // subtrees; CSS hides one at the active breakpoint. In JSDOM both are
+  // mounted, so testids live twice. Each contrast assertion scopes to
+  // the mobile-tablet block — the two blocks render the same tokens,
+  // so checking one is enough.
+  function mobileTablet() {
+    return within(screen.getByTestId("parent-layout-mobile-tablet"));
+  }
+
   it("summary card uses a light surface + light-safe text", () => {
     render(<ParentSwimmerProgressContent swimmer={swimmer} progress={progress} categories={[]} />);
-    const card = screen.getByTestId("parent-progress-summary-card");
+    const card = mobileTablet().getByTestId("parent-progress-summary-card");
     const bg = readStyleToken(card, "background-color");
     expect(bg && DARK_SURFACE_TOKENS.has(bg), `summary card uses dark surface token ${bg}`).toBe(false);
     expect(bg && LIGHT_SURFACE_TOKENS.has(bg)).toBe(true);
   });
 
-  it("Coach's focus card uses a light surface", () => {
+  it("Coach's note card uses a light surface", () => {
     render(<ParentSwimmerProgressContent swimmer={swimmer} progress={progress} categories={[]} />);
-    const section = screen.getByTestId("parent-progress-coach-focus");
-    const card = section.querySelector('[style*="background-color"]');
-    expect(card, "coach-focus card not found").not.toBeNull();
-    const bg = readStyleToken(card as Element, "background-color");
-    expect(bg && DARK_SURFACE_TOKENS.has(bg), `coach focus uses dark surface token ${bg}`).toBe(false);
+    const note = mobileTablet().getByTestId("parent-coach-focus-note");
+    const bg = readStyleToken(note, "background-color");
+    expect(bg && DARK_SURFACE_TOKENS.has(bg), `coach note uses dark surface token ${bg}`).toBe(false);
     expect(bg && LIGHT_SURFACE_TOKENS.has(bg)).toBe(true);
   });
 
   it("Recent wins card uses a light surface", () => {
     render(<ParentSwimmerProgressContent swimmer={swimmer} progress={progress} categories={[]} />);
-    const section = screen.getByTestId("parent-progress-recent-wins");
+    const section = mobileTablet().getByTestId("parent-progress-recent-wins");
     const card = section.querySelector('[style*="background-color"]');
     expect(card).not.toBeNull();
     const bg = readStyleToken(card as Element, "background-color");
@@ -171,10 +178,8 @@ describe("ParentSwimmerProgressContent — token pair contrast", () => {
         scoreHistory={scoreHistory}
       />,
     );
-    const snapshot = screen.getByTestId("parent-progress-snapshot");
-    const card = snapshot.querySelector('[style*="background-color"]');
-    expect(card).not.toBeNull();
-    const bg = readStyleToken(card as Element, "background-color");
+    const snapshot = mobileTablet().getByTestId("parent-progress-snapshot");
+    const bg = readStyleToken(snapshot, "background-color");
     expect(bg && DARK_SURFACE_TOKENS.has(bg)).toBe(false);
     expect(bg && LIGHT_SURFACE_TOKENS.has(bg)).toBe(true);
   });

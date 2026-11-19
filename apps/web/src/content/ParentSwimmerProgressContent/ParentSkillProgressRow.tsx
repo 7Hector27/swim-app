@@ -91,6 +91,7 @@ export default function ParentSkillProgressRow({ skill, nowIso }: ParentSkillPro
                 history={skill.history.map((point) => ({ ...point }))}
                 ratedPerSide={skill.ratedPerSide}
                 levelDescriptors={skill.levelDescriptors ?? undefined}
+                nextAsPlainText
               />
             </div>
           ) : (

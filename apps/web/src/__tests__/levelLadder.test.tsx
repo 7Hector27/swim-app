@@ -250,4 +250,64 @@ describe("LevelLadder component", () => {
     // point is skipped), so there's exactly one "newest" marker.
     expect(screen.getAllByTestId("level-ladder-newest")).toHaveLength(1);
   });
+
+  it("the first and last date labels anchor to their plot edges so they don't clip", () => {
+    const history: LadderPoint[] = [
+      makePoint({ id: "p3", sessionDate: "2026-10-25", grade: 4 }),
+      makePoint({ id: "p2", sessionDate: "2026-10-18", grade: 3 }),
+      makePoint({ id: "p1", sessionDate: "2026-10-11", grade: 2 }),
+    ];
+    render(
+      <LevelLadder
+        skillName="Freestyle Kick"
+        history={history}
+        ratedPerSide={false}
+      />,
+    );
+    const dateLabels = screen.getAllByTestId("level-ladder-date-label");
+    const edges = dateLabels.filter((node) => node.getAttribute("data-first-or-last") === "true");
+    // Every rendered tick that's first-or-last anchors to its own
+    // corner. Middle ticks stay centered.
+    expect(edges.length).toBeGreaterThan(0);
+    const first = dateLabels[0];
+    const last = dateLabels[dateLabels.length - 1];
+    expect(first?.getAttribute("data-anchor")).toBe("start");
+    expect(last?.getAttribute("data-anchor")).toBe("end");
+    // No middle label uses start or end.
+    const middle = dateLabels.filter((node) => node.getAttribute("data-first-or-last") !== "true");
+    for (const node of middle) {
+      expect(node.getAttribute("data-anchor")).toBe("middle");
+    }
+  });
+
+  it("parent view: `nextAsPlainText` lifts the Next chip out of the chip row into a paragraph", () => {
+    const history: LadderPoint[] = [
+      makePoint({ id: "p1", sessionDate: "2026-10-25", grade: 3 }),
+    ];
+    const { rerender } = render(
+      <LevelLadder
+        skillName="Freestyle Catch"
+        history={history}
+        ratedPerSide={false}
+        levelDescriptors={{ "4": "Efficient at race pace on most strokes." }}
+      />,
+    );
+    // Default (coach): Next renders as a chip.
+    expect(screen.getByTestId("level-ladder-chip-next")).toBeInTheDocument();
+
+    rerender(
+      <LevelLadder
+        skillName="Freestyle Catch"
+        history={history}
+        ratedPerSide={false}
+        levelDescriptors={{ "4": "Efficient at race pace on most strokes." }}
+        nextAsPlainText
+      />,
+    );
+    // Parent view: no chip; plain-text paragraph instead.
+    expect(screen.queryByTestId("level-ladder-chip-next")).toBeNull();
+    expect(screen.getByTestId("level-ladder-next-text-single")).toHaveTextContent(
+      "Advanced — Efficient at race pace on most strokes.",
+    );
+  });
 });

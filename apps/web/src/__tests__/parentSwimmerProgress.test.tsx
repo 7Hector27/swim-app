@@ -97,11 +97,10 @@ describe("ParentSwimmerProgressContent", () => {
         categories={categories}
       />,
     );
-    expect(screen.getByText("Freestyle Kick")).toBeInTheDocument();
-    // New parent row renders the level name + change text, not a bare
-    // number badge. "Competent" appears in a few places on the new
-    // page (summary-card legend, pip-bar level label); the data-testid
-    // on the row's change line is the unambiguous target.
+    // The responsive layout renders both the mobile-tablet and desktop
+    // subtrees. Use getAllByText to accept duplicates — it's the
+    // intent, not the count, that matters for this test.
+    expect(screen.getAllByText("Freestyle Kick").length).toBeGreaterThan(0);
     expect(screen.getAllByText(/Competent/).length).toBeGreaterThan(0);
   });
 
@@ -141,7 +140,7 @@ describe("ParentSwimmerProgressContent", () => {
         categories={categories}
       />,
     );
-    expect(screen.getByText("DQ")).toBeInTheDocument();
+    expect(screen.getAllByText("DQ").length).toBeGreaterThan(0);
   });
 
   // "Not assessed for skills from categories without data" was removed in
@@ -187,7 +186,9 @@ describe("ParentSwimmerProgressContent", () => {
     // The parent page now renders Starts via the shared StartsSection
     // component, which is mocked in this suite — asserting the section
     // heading is enough to prove the page composed it.
-    expect(screen.getByTestId("parent-progress-starts")).toBeInTheDocument();
+    // Both the mobile-tablet and desktop subtrees render a starts
+    // section; either one existing proves the page composed it.
+    expect(screen.getAllByTestId("parent-progress-starts").length).toBeGreaterThan(0);
   });
 
   it("shows L and R badges for side-rated skills", () => {
@@ -236,14 +237,14 @@ describe("ParentSwimmerProgressContent", () => {
     );
     // Sided skills now render as a combined change-text line on the
     // row ("left 3, right 4") rather than two separate badges.
-    expect(screen.getByText(/left 3, right 4/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/left 3, right 4/i).length).toBeGreaterThan(0);
   });
 
   // The old "Current focus" section was renamed to "Coach's focus" in
   // the rebuild. It stays hidden when nothing has ever been rated — the
   // whole hasAnyData gate skips it — so this assertion holds for the
   // empty-progress fixture.
-  it("hides Coach's focus when no priority has ever been written", () => {
+  it("hides the Coach's note card when no priority has ever been written", () => {
     render(
       <ParentSwimmerProgressContent
         swimmer={swimmer}
@@ -251,10 +252,13 @@ describe("ParentSwimmerProgressContent", () => {
         categories={categories}
       />,
     );
-    expect(screen.queryByTestId("parent-progress-coach-focus")).toBeNull();
+    // The note card renders null when latestCoachingPriority is null.
+    // The empty-data branch also short-circuits the whole hasAnyData
+    // block, so the testid simply never appears.
+    expect(screen.queryByTestId("parent-coach-focus-note")).toBeNull();
   });
 
-  it("renders Coach's focus with the priority text and the evaluation date byline", () => {
+  it("renders Coach's note card with the priority text and the no-name fallback byline", () => {
     const progress: ParentSwimmerProgressResponse = {
       ...emptyProgress,
       // The section renders inside the hasAnyData gate, so include a
@@ -297,14 +301,14 @@ describe("ParentSwimmerProgressContent", () => {
         categories={categories}
       />,
     );
-    const section = screen.getByTestId("parent-progress-coach-focus");
-    expect(section).toHaveTextContent("Rotate the hips more on each stroke");
-    // Date byline: no coach name available on the progress response, so
-    // the no-name fallback renders — "From your coach" with no date,
-    // since without an author there's nothing to attribute to.
-    expect(section).toHaveTextContent(/From your coach/);
-    // And the date-bearing primary form is explicitly not shown.
-    expect(section).not.toHaveTextContent(/From your coach · /);
+    // getAllByTestId: both the mobile-tablet and desktop subtrees render
+    // the note card — either one carries the same text.
+    const [note] = screen.getAllByTestId("parent-coach-focus-note");
+    expect(note).toHaveTextContent("Rotate the hips more on each stroke");
+    // Byline: no coach name on the fixture, so the no-name fallback
+    // renders — "From your coach" with no date.
+    expect(note).toHaveTextContent(/From your coach/);
+    expect(note).not.toHaveTextContent(/From your coach · /);
   });
 });
 
@@ -358,7 +362,7 @@ describe("ParentSwimmerProgressContent — charts", () => {
     );
     // The empty-data branch short-circuits before every post-tiles
     // section; the snapshot heading is a good proxy.
-    expect(screen.queryByTestId("parent-progress-snapshot")).toBeNull();
+    expect(screen.queryAllByTestId("parent-progress-snapshot")).toHaveLength(0);
   });
 
   it("one-evaluation state: no stray head-position hero chart", () => {
@@ -441,7 +445,7 @@ describe("ParentSwimmerProgressContent — charts", () => {
         scoreHistory={makeHistory([2, 3, 4])}
       />,
     );
-    expect(screen.getByTestId("parent-progress-snapshot")).toBeInTheDocument();
+    expect(screen.getAllByTestId("parent-progress-snapshot").length).toBeGreaterThan(0);
   });
 
   // Note: the real parent-route leak check lives in the API integration
