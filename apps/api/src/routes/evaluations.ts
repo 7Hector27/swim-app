@@ -646,8 +646,30 @@ evaluationsRouter.get(
     }
 
     const result = await computeSwimmerProgress(swimmerId);
-    req.log.info({ swimmerId, skillCount: result.skills.length }, "swimmer progress fetched");
-    res.json(result);
+
+    // Attach per-skill level descriptors so the coach ladder can render the
+    // "Next: <level> — <descriptor>" chip. Same shape and skillId→record
+    // map the parent progress route uses.
+    const displayedSkillIds = result.skills.map((skill) => skill.skillId);
+    const descriptorRows = displayedSkillIds.length > 0
+      ? await db
+          .select({ skillId: skillLevelDescriptors.skillId, level: skillLevelDescriptors.level, text: skillLevelDescriptors.text })
+          .from(skillLevelDescriptors)
+          .where(inArray(skillLevelDescriptors.skillId, displayedSkillIds))
+      : [];
+    const descriptorMap = new Map<string, Record<string, string>>();
+    for (const row of descriptorRows) {
+      const existing = descriptorMap.get(row.skillId) ?? {};
+      existing[String(row.level)] = row.text;
+      descriptorMap.set(row.skillId, existing);
+    }
+    const skillsWithDescriptors = result.skills.map((skill) => ({
+      ...skill,
+      ...(descriptorMap.has(skill.skillId) && { levelDescriptors: descriptorMap.get(skill.skillId) }),
+    }));
+
+    req.log.info({ swimmerId, skillCount: skillsWithDescriptors.length }, "swimmer progress fetched");
+    res.json({ ...result, skills: skillsWithDescriptors });
   }),
 );
 

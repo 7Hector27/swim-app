@@ -122,6 +122,7 @@ export default function SkillRow({ skill, swimmerId, nowIso, editContext }: Skil
                 skillName={skill.name}
                 history={skill.history}
                 ratedPerSide={skill.ratedPerSide}
+                levelDescriptors={skill.levelDescriptors ?? undefined}
               />
               {editContext && (
                 <CoachSkillEditList
