@@ -187,6 +187,7 @@ export async function computeScoreHistory(
       id: skills.id,
       slug: skills.slug,
       name: skills.name,
+      type: skills.type,
       parentSkillId: skills.parentSkillId,
       categoryId: skills.categoryId,
       categorySlug: skillCategories.slug,
@@ -196,6 +197,19 @@ export async function computeScoreHistory(
     .from(skills)
     .innerJoin(skillCategories, eq(skillCategories.id, skills.categoryId))
     .where(isNull(skills.archivedAt));
+
+  // Screen-group rollup rule: a skill whose grade is calculated — rollup
+  // (head-position-overall, free-bilateral-breathing) or composite parent
+  // (track-start, relay-start, back-start) — is display-only. The row
+  // still renders in its group, but its slug is excluded from the group's
+  // totalCount, assessedCount, and average. The raw rating rows for the
+  // composite's components (track-start-reaction, …) aren't in
+  // SCREEN_SECTIONS at all, so they never enter the rollup via this path.
+  const countingSlugs = new Set<string>(
+    allSkillRows
+      .filter((row) => row.type !== "rollup" && row.type !== "composite")
+      .map((row) => row.slug),
+  );
 
   type CategoryBucket = {
     categoryId: string;
@@ -352,9 +366,11 @@ export async function computeScoreHistory(
     // as categoryRollups (no_concept excluded, not_legal counts as 0), but
     // bucketed by SCREEN_SECTIONS instead of catalog category. A skill in
     // more than one section/screen contributes once per group it belongs
-    // to with the same effective grade.
+    // to with the same effective grade. Calculated skills (rollup +
+    // composite) are filtered out of both numerator and denominator via
+    // `countingSlugs`.
     const screenGroupRollups: ScoreHistoryScreenGroupRollup[] = SCREEN_SLUGS.map((screenSlug) => {
-      const slugs = uniqueScreenSkillSlugs(screenSlug);
+      const slugs = uniqueScreenSkillSlugs(screenSlug).filter((slug) => countingSlugs.has(slug));
       let sum = 0;
       let assessedCount = 0;
       for (const slug of slugs) {

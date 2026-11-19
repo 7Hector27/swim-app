@@ -2,7 +2,7 @@
 // Requires a running local Supabase stack (pnpm db:up) with migrations applied.
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import request from "supertest";
 import pino from "pino";
 import { createApp } from "../../app";
@@ -296,6 +296,83 @@ describe("GET /coach/swimmers/:id/score-history", () => {
       expect(im.average).toBeNull();
       expect(im.assessedCount).toBe(0);
       expect(im.totalCount).toBeGreaterThan(0);
+    } finally {
+      await cleanSwimmerData(swimmerId);
+      await hardDeleteSwimmer(swimmerId);
+    }
+  });
+
+  it("screenGroupRollups: calculated-type skills are display-only — totals per group match the expected reduced counts", async () => {
+    // One rating drives no sums; this test is purely about totalCount.
+    // Expected totals (after excluding rollup + composite skills):
+    //   fundamentals  7  (head-position-overall is a rollup)
+    //   water-conf.   5  (no calculated skills)
+    //   freestyle     24 (track-start composite, free-bilateral-breathing rollup)
+    //   backstroke    23 (back-start composite)
+    //   breaststroke  20 (track-start composite)
+    //   butterfly     24 (track-start composite)
+    //   starts        15 (track-start, relay-start, back-start composites)
+    //   im-turns      5  (no calculated skills)
+    //   racing        5  (no calculated skills)
+    const swimmerId = await createTestSwimmer();
+    try {
+      await postSession(coach, swimmerId, "freestyle", "2026-10-01", [
+        freshRating(freeKickSkillId, 3, "2026-10-01T10:00:00.000Z"),
+      ]);
+      const history = await getScoreHistory(coach, swimmerId);
+      const point = history.points[0]!;
+      const byScreen = new Map(
+        point.screenGroupRollups.map((rollup) => [rollup.screenSlug, rollup.totalCount]),
+      );
+      expect(byScreen.get("fundamentals")).toBe(7);
+      expect(byScreen.get("water-confidence")).toBe(5);
+      expect(byScreen.get("freestyle")).toBe(24);
+      expect(byScreen.get("backstroke")).toBe(23);
+      expect(byScreen.get("breaststroke")).toBe(20);
+      expect(byScreen.get("butterfly")).toBe(24);
+      expect(byScreen.get("starts")).toBe(15);
+      expect(byScreen.get("im-turns")).toBe(5);
+      expect(byScreen.get("racing")).toBe(5);
+    } finally {
+      await cleanSwimmerData(swimmerId);
+      await hardDeleteSwimmer(swimmerId);
+    }
+  });
+
+  it("screenGroupRollups: a group can reach X of X by rating every non-calculated skill", async () => {
+    // Water confidence: five rubric skills, no rollup or composite — rating
+    // all five must land assessedCount === totalCount === 5 and average === 4.
+    const waterSlugs = [
+      "water-submerging",
+      "water-front-float",
+      "water-back-float",
+      "water-treading",
+      "water-wall",
+    ];
+    const skillRowsForSlugs = await adminDb()
+      .select({ id: skills.id, slug: skills.slug })
+      .from(skills)
+      .where(inArray(skills.slug, waterSlugs));
+    const idBySlug = new Map(skillRowsForSlugs.map((row) => [row.slug, row.id]));
+
+    const swimmerId = await createTestSwimmer();
+    try {
+      await postSession(
+        coach,
+        swimmerId,
+        "water-confidence",
+        "2026-10-01",
+        waterSlugs.map((slug, index) =>
+          freshRating(idBySlug.get(slug)!, 4, `2026-10-01T10:0${index}:00.000Z`),
+        ),
+      );
+      const history = await getScoreHistory(coach, swimmerId);
+      const water = history.points[0]!.screenGroupRollups.find(
+        (rollup) => rollup.screenSlug === "water-confidence",
+      )!;
+      expect(water.totalCount).toBe(5);
+      expect(water.assessedCount).toBe(5);
+      expect(water.average).toBe(4);
     } finally {
       await cleanSwimmerData(swimmerId);
       await hardDeleteSwimmer(swimmerId);
