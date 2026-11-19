@@ -949,8 +949,11 @@ One row per skill observation. Append-only: after insert, only the three void fi
 | `side` | `rating_side` | yes | — | Enum: `left`, `right`. Set only when `skills.rated_per_side = true` (enforced in E-3). |
 | `capacity_value` | `numeric` | yes | — | e.g. distance in yards or number of reps |
 | `capacity_unit` | `capacity_unit` | yes | — | Enum: `yards`, `reps`. Present iff `capacity_value` is present. |
-| `measurement_value` | `numeric` | yes | — | e.g. tempo in cycles/min, stroke count, time in seconds |
-| `measurement_unit` | `measurement_unit` | yes | — | Enum: `stroke_cycles_per_minute`, `stroke_count`, `seconds`, `feet`. Present iff `measurement_value` is present. |
+| `measurement_value` | `numeric` | yes | — | e.g. tempo in cycles/min, stroke count, time in seconds, kicks/min |
+| `measurement_unit` | `measurement_unit` | yes | — | Enum: `stroke_cycles_per_minute`, `stroke_count`, `seconds`, `feet`, `kicks_per_minute`. Present iff `measurement_value` is present. |
+| `golf_score_category` | `text` | yes | — | Pass 2c: `push_off_in_water`, `deck_dive`, or `block_dive`. Set only on score-type skills (golf score); records which start was used so the chart can bucket points. |
+| `time_seconds` | `numeric(6,2)` | yes | — | Pass 2c: half of a golf-score pair. Non-negative. Present iff `stroke_count_value` is present and `golf_score_category` is set. |
+| `stroke_count_value` | `integer` | yes | — | Pass 2c: other half of the golf-score pair. Non-negative. Present iff `time_seconds` is present. The derived golf score the chart plots is `time_seconds + stroke_count_value` (lower is better). |
 | `note` | `text` | yes | — | Optional coach note |
 | `voided_at` | `timestamptz` | yes | — | Set when voided. All three void fields must be set together. |
 | `void_reason` | `text` | yes | — | Required when voiding. |
@@ -967,6 +970,9 @@ Constraints:
 - `CHECK (grade_xor_no_concept)` — `(no_concept=false AND grade IS NOT NULL AND grade BETWEEN 1 AND 5) OR (no_concept=true AND grade IS NULL)`
 - `CHECK (capacity_value_and_unit_consistent)` — both set or both null
 - `CHECK (measurement_value_and_unit_consistent)` — both set or both null
+- `CHECK (golf_fields_together)` — `time_seconds` and `stroke_count_value` are both set or both null
+- `CHECK (golf_fields_require_category)` — if `time_seconds` is set, `golf_score_category` must be set
+- `CHECK (golf_fields_non_negative)` — both `time_seconds` and `stroke_count_value` are ≥ 0 when present
 - `CHECK (void_fields_consistent)` — all three void fields set together or all null
 - `CHECK (supersede_fields_consistent)` — all three supersede fields set together or all null
 - `skill_ratings_append_only` trigger — permits writes to `voided_at`, `void_reason`, `void_by`, `superseded_at`, `superseded_by`, `superseded_by_rating_id`, and `updated_at`. Every other column is locked after insert.
