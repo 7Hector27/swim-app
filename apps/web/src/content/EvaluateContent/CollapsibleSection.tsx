@@ -33,19 +33,14 @@ export default function CollapsibleSection({
   const panelId = useId();
   const done = completed > 0;
   return (
-    <section
-      id={anchorId}
-      className="rounded border border-border"
-      style={{ borderColor: "var(--color-border)" }}
-    >
+    <section id={anchorId} className="rounded border border-border">
       <h3 className="m-0">
         <button
           type="button"
           onClick={onToggle}
           aria-expanded={open}
           aria-controls={panelId}
-          className="w-full flex items-center justify-between gap-3 px-4 min-h-[48px] text-left focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-focus-ring"
-          style={{ color: "var(--color-text)" }}
+          className="w-full flex items-center justify-between gap-3 px-4 min-h-[48px] text-left text-text focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-focus-ring"
         >
           <span className="flex items-center gap-2">
             <span
@@ -58,12 +53,11 @@ export default function CollapsibleSection({
             <span className="font-semibold text-sm">{name}</span>
           </span>
           <span
-            className="tabular-nums text-[10px] font-bold px-1.5 h-5 rounded-full inline-flex items-center"
-            style={{
-              backgroundColor: done ? "var(--color-accent)" : "transparent",
-              color: done ? "var(--color-on-accent)" : "var(--color-text-secondary)",
-              border: done ? "none" : "1px solid var(--color-border)",
-            }}
+            className={
+              done
+                ? "tabular-nums text-[10px] font-bold px-1.5 h-5 rounded-full inline-flex items-center bg-accent text-on-accent"
+                : "tabular-nums text-[10px] font-bold px-1.5 h-5 rounded-full inline-flex items-center border border-border text-text-secondary"
+            }
           >
             {completed}/{count}
           </span>
@@ -75,7 +69,6 @@ export default function CollapsibleSection({
           role="region"
           aria-label={`${name} skills`}
           className="px-4 pb-4 pt-1 border-t border-border"
-          style={{ borderColor: "var(--color-border)" }}
         >
           {children}
         </div>

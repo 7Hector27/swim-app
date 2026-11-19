@@ -174,8 +174,7 @@ export default function StrokeGroupsPanel({
                   {unratedRows.length > 0 && (
                     <details className="group">
                       <summary
-                        className="text-xs font-semibold cursor-pointer list-none flex items-center gap-2 py-2 min-h-[44px]"
-                        style={{ color: "var(--color-link)" }}
+                        className="text-xs font-semibold cursor-pointer list-none flex items-center gap-2 py-2 min-h-[44px] text-link"
                       >
                         <span
                           aria-hidden="true"
