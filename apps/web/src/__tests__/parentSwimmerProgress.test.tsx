@@ -300,8 +300,11 @@ describe("ParentSwimmerProgressContent", () => {
     const section = screen.getByTestId("parent-progress-coach-focus");
     expect(section).toHaveTextContent("Rotate the hips more on each stroke");
     // Date byline: no coach name available on the progress response, so
-    // the fallback "From your coach, Oct 14" copy renders.
-    expect(section).toHaveTextContent(/From your coach, Oct 14/);
+    // the no-name fallback renders — "From your coach" with no date,
+    // since without an author there's nothing to attribute to.
+    expect(section).toHaveTextContent(/From your coach/);
+    // And the date-bearing primary form is explicitly not shown.
+    expect(section).not.toHaveTextContent(/From your coach · /);
   });
 });
 

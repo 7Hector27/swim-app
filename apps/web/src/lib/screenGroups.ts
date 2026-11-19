@@ -30,6 +30,17 @@ const STROKE_LABEL: Record<Stroke, string> = {
   fly: "butterfly",
 };
 
+// Sentence-case stroke prefix used in prose like "Freestyle tempo reached
+// Competent". The parenthetical STROKE_LABEL form reads well in skill
+// lists ("Tempo (freestyle)") but breaks sentence flow on recent-win
+// headlines — so we keep both forms.
+const STROKE_SENTENCE_LABEL: Record<Stroke, string> = {
+  free: "Freestyle",
+  back: "Backstroke",
+  breast: "Breaststroke",
+  fly: "Butterfly",
+};
+
 export interface CatalogIndexEntry {
   skillId: string;
   slug: string;
@@ -40,6 +51,11 @@ export interface CatalogIndexEntry {
   // stroke: null in the catalog, so they stay undecorated, which is what
   // the progress-page spec asks for.
   displayName: string;
+  // Sentence-form of the same name for recent-win headlines and other
+  // prose: "Freestyle tempo" instead of "Tempo (freestyle)". Lowercases
+  // the raw name's first letter so the stroke-prefixed phrase reads like
+  // a sentence. Non-shared skills keep their raw name unchanged.
+  sentenceName: string;
   categoryId: string;
   categoryName: string;
   type: "rubric" | "measured" | "score" | "composite" | "rollup";
@@ -69,11 +85,16 @@ export function buildCatalogIndex(
         shared && skill.stroke !== null
           ? `${skill.name} (${STROKE_LABEL[skill.stroke]})`
           : skill.name;
+      const sentenceName =
+        shared && skill.stroke !== null
+          ? `${STROKE_SENTENCE_LABEL[skill.stroke]} ${skill.name.charAt(0).toLowerCase()}${skill.name.slice(1)}`
+          : skill.name;
       out.set(skill.slug, {
         skillId: skill.id,
         slug: skill.slug,
         rawName: skill.name,
         displayName,
+        sentenceName,
         categoryId: cat.id,
         categoryName: cat.name,
         type: skill.type,

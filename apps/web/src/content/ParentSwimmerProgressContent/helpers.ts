@@ -227,7 +227,11 @@ export function buildRecentWins(
     const oldestFirst = [...skill.history].reverse();
     const seenLevels = new Set<1 | 2 | 3 | 4 | 5>();
     let seenRaceAtOrAbove3 = false;
-    const displayName = catalogIndex.get(skill.slug)?.displayName ?? skill.name;
+    // Wins read as sentences ("Freestyle tempo reached Competent"), so
+    // we use the catalog's sentence-form name rather than the parenthetical
+    // displayName used in skill lists. Falls back to the raw skill name
+    // when no catalog index is available.
+    const displayName = catalogIndex.get(skill.slug)?.sentenceName ?? skill.name;
 
     for (const point of oldestFirst) {
       if (point.grade === 1 || point.grade === 2 || point.grade === 3 || point.grade === 4 || point.grade === 5) {
@@ -385,17 +389,28 @@ export function buildSummaryCard(
 
 // ── Latest coaching priority byline ──────────────────────────────────────
 
-// "From Coach <name>, <Mon D>" — composed from the latest priority plus
-// the coach's full name. The parent progress response doesn't currently
-// carry the coach's name on the priority object, so the caller resolves
-// it from elsewhere and hands in a `coachName` fallback.
+// "From Coach <first name> · <Mon D>" when the coach's name is known;
+// "From your coach" alone when it isn't. First name is the first
+// whitespace-separated word of coachName — the API returns the coach's
+// full name verbatim from profiles.full_name. The nameless fallback
+// also drops the date, since without an authoring coach the byline
+// stops functioning as attribution.
 export function coachPriorityByline(
   sessionDate: string,
   coachName: string | null,
 ): string {
-  const date = formatShortMonthDay(sessionDate);
-  if (!coachName) return `From your coach, ${date}`;
-  return `From Coach ${coachName.split(" ")[0] ?? coachName}, ${date}`;
+  const firstName = firstNameOf(coachName);
+  if (firstName === null) return "From your coach";
+  return `From Coach ${firstName} · ${formatShortMonthDay(sessionDate)}`;
+}
+
+function firstNameOf(coachName: string | null): string | null {
+  if (coachName === null) return null;
+  const trimmed = coachName.trim();
+  if (trimmed.length === 0) return null;
+  const first = trimmed.split(/\s+/)[0];
+  if (first === undefined || first.length === 0) return null;
+  return first;
 }
 
 // ── Score-history session dates ──────────────────────────────────────────

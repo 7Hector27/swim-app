@@ -190,13 +190,16 @@ describe("buildRecentWins", () => {
       history: [point({ id: "bt", sessionDate: "2026-11-10", grade: 3 })],
     });
     const catalog = new Map([
-      ["free-tempo", { skillId: "ft", slug: "free-tempo", rawName: "Tempo", displayName: "Tempo (freestyle)", categoryId: "x", categoryName: "Freestyle", type: "rubric" as const, unit: null, ratedPerSide: false, parentSkillId: null }],
-      ["back-tempo", { skillId: "bt", slug: "back-tempo", rawName: "Tempo", displayName: "Tempo (backstroke)", categoryId: "x", categoryName: "Backstroke", type: "rubric" as const, unit: null, ratedPerSide: false, parentSkillId: null }],
+      ["free-tempo", { skillId: "ft", slug: "free-tempo", rawName: "Tempo", displayName: "Tempo (freestyle)", sentenceName: "Freestyle tempo", categoryId: "x", categoryName: "Freestyle", type: "rubric" as const, unit: null, ratedPerSide: false, parentSkillId: null }],
+      ["back-tempo", { skillId: "bt", slug: "back-tempo", rawName: "Tempo", displayName: "Tempo (backstroke)", sentenceName: "Backstroke tempo", categoryId: "x", categoryName: "Backstroke", type: "rubric" as const, unit: null, ratedPerSide: false, parentSkillId: null }],
     ]);
     const wins = buildRecentWins([freeTempo, backTempo], catalog);
+    // Wins use the sentence form so the stroke sits at the head of the
+    // headline: "Freestyle tempo reached Competent" rather than the
+    // parenthetical "Tempo (freestyle)" suffix used elsewhere.
     expect(wins.map((win) => win.headline)).toEqual([
-      "Tempo (freestyle) reached Competent",
-      "Tempo (backstroke) reached Competent",
+      "Freestyle tempo reached Competent",
+      "Backstroke tempo reached Competent",
     ]);
   });
 

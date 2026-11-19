@@ -59,6 +59,7 @@ function catalogEntry(slug: string, displayName: string, categoryName: string): 
       slug,
       rawName: displayName,
       displayName,
+      sentenceName: displayName,
       categoryId: "cat",
       categoryName,
       type: "rubric",
@@ -187,10 +188,12 @@ describe("CoachFocus", () => {
         catalogIndex={new Map()}
       />,
     );
-    expect(screen.getByTestId("parent-coach-focus-byline")).toHaveTextContent(/From Coach Jason, Nov 17/);
+    // First-word only: the API returns "Jason Riley"; the byline reads
+    // "From Coach Jason". Middot separator before the date.
+    expect(screen.getByTestId("parent-coach-focus-byline")).toHaveTextContent("From Coach Jason · Nov 17");
   });
 
-  it("falls back to 'From your coach, <date>' when coachName is null", () => {
+  it("falls back to 'From your coach' (no date) when coachName is null", () => {
     render(
       <CoachFocus
         latestPriority={{ text: "Keep working.", sessionDate: "2026-10-14", coachName: null }}
@@ -200,7 +203,12 @@ describe("CoachFocus", () => {
         catalogIndex={new Map()}
       />,
     );
-    expect(screen.getByTestId("parent-coach-focus-byline")).toHaveTextContent(/From your coach, Oct 14/);
+    // Nameless fallback drops the date along with the name — without
+    // an author the date-bearing byline stops reading as attribution.
+    const byline = screen.getByTestId("parent-coach-focus-byline");
+    expect(byline).toHaveTextContent("From your coach");
+    expect(byline).not.toHaveTextContent("·");
+    expect(byline).not.toHaveTextContent("Oct 14");
   });
 });
 
