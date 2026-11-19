@@ -54,12 +54,8 @@ export default function ScreenGroupSwitcher({ options, active, onChange }: Scree
   }
 
   return (
-    <nav
-      aria-label="Progress groups"
-      aria-labelledby={groupId}
-      className="scrollbar-none overflow-x-auto -mx-page px-page"
-    >
-      <ul role="radiogroup" className="flex gap-1 w-max min-w-full py-1" aria-label="Progress group">
+    <nav aria-label="Progress groups" aria-labelledby={groupId}>
+      <ul role="radiogroup" className="flex flex-wrap gap-x-1 gap-y-1 py-1" aria-label="Progress group">
         {options.map((option, index) => {
           const selected = option.screenSlug === active;
           const done = option.assessedCount > 0;
@@ -75,7 +71,7 @@ export default function ScreenGroupSwitcher({ options, active, onChange }: Scree
                 tabIndex={selected ? 0 : -1}
                 onClick={() => onChange(option.screenSlug)}
                 onKeyDown={(event) => handleKeyDown(event, index)}
-                className="relative min-h-[44px] px-4 inline-flex items-center justify-center gap-2 whitespace-nowrap transition-colors duration-150 focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-focus-ring"
+                className="relative min-h-[44px] px-3 inline-flex items-center justify-center gap-2 whitespace-nowrap transition-colors duration-150 focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-focus-ring"
                 style={{
                   color: selected ? "var(--color-text)" : "var(--color-text-secondary)",
                 }}

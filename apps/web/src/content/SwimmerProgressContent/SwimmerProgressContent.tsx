@@ -138,7 +138,7 @@ export default function SwimmerProgressContent({
 
               <section className="flex flex-col gap-3">
                 <h2 className="text-lg font-heading text-text" style={{ fontVariationSettings: "\"SOFT\" 100, \"WONK\" 0" }}>
-                  Category snapshot
+                  Snapshot
                 </h2>
                 <div className="max-w-[360px] tablet:max-w-[480px] desktop:max-w-[560px] mx-auto w-full">
                   <CategoryRadar categories={categorySnapshot} />
@@ -152,7 +152,7 @@ export default function SwimmerProgressContent({
                       <span aria-hidden="true" className="transition-transform duration-200 group-open:rotate-90">
                         ›
                       </span>
-                      <span>Open category trends</span>
+                      <span>Open group trends</span>
                     </summary>
                     <div className="pt-2">
                       <CategoryTrendsGrid categories={categoryTrends} />
@@ -176,19 +176,21 @@ export default function SwimmerProgressContent({
                 )}
               </section>
 
-              {golfScore.trends.length > 0 && (
-                <section className="flex flex-col gap-3">
-                  <div className="flex flex-col gap-1">
-                    <h2 className="text-lg font-heading text-text" style={{ fontVariationSettings: "\"SOFT\" 100, \"WONK\" 0" }}>
-                      Golf score
-                    </h2>
-                    <p className="text-xs text-text-secondary">Lower is better. Band shows age-group 25th to 75th percentile.</p>
-                  </div>
-                  {golfScore.trends.map((trend) => (
+              <section className="flex flex-col gap-3">
+                <div className="flex flex-col gap-1">
+                  <h2 className="text-lg font-heading text-text" style={{ fontVariationSettings: "\"SOFT\" 100, \"WONK\" 0" }}>
+                    Golf score
+                  </h2>
+                  <p className="text-xs text-text-secondary">Lower is better. Band shows age-group 25th to 75th percentile.</p>
+                </div>
+                {golfScore.trends.length === 0 ? (
+                  <p className="text-sm text-text-secondary">No golf scores yet.</p>
+                ) : (
+                  golfScore.trends.map((trend) => (
                     <GolfScoreCard key={trend.skillSlug} trend={trend} editContext={editContext} />
-                  ))}
-                </section>
-              )}
+                  ))
+                )}
+              </section>
 
               {faultTags.length > 0 && (
                 <section className="flex flex-col gap-3">

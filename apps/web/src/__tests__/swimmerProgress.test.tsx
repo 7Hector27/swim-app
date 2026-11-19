@@ -193,7 +193,7 @@ describe("SwimmerProgressContent — empty state", () => {
     expect(cta).toHaveAttribute("href", `/coach/swimmers/${SWIMMER_ID}/evaluate`);
     // No chart sections should render.
     expect(screen.queryByText(/head position overall/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/category snapshot/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^snapshot$/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/skills/i)).not.toBeInTheDocument();
   });
 });
@@ -231,9 +231,9 @@ describe("SwimmerProgressContent — one-evaluation state", () => {
     };
     renderPage({ progress, scoreHistory });
     // The hero head-position chart was removed; the page now opens on the
-    // "Category snapshot" heading instead.
+    // "Snapshot" heading instead.
     expect(screen.queryByText(/head position overall/i)).toBeNull();
-    expect(screen.getByRole("heading", { name: /category snapshot/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /^snapshot$/i })).toBeInTheDocument();
     // The expandable per-skill row is present (collapsed by default).
     expect(screen.getByText("Freestyle Kick")).toBeInTheDocument();
   });
@@ -357,7 +357,7 @@ describe("SwimmerProgressContent — sections", () => {
     expect(screen.getByRole("heading", { name: /what to work on next/i })).toBeInTheDocument();
     // The Head position overall hero chart was removed.
     expect(screen.queryByText(/head position overall/i)).toBeNull();
-    expect(screen.getByRole("heading", { name: /category snapshot/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /^snapshot$/i })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /^starts$/i })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /^golf score$/i })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /fault tags/i })).toBeInTheDocument();

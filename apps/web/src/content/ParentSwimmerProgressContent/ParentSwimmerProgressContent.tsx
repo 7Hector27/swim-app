@@ -187,7 +187,7 @@ export default function ParentSwimmerProgressContent({
             </section>
           )}
 
-          {/* Category trends over time. Only renders when there are two or
+          {/* Group trends over time. Only renders when there are two or
               more non-voided evaluations (otherwise every mini-line would be
               a dot and the section would read as empty). */}
           {hasEnoughForTrend && categoryTrends.length > 0 && (
@@ -195,7 +195,7 @@ export default function ParentSwimmerProgressContent({
               className="flex flex-col gap-3"
               data-testid="parent-progress-category-trends"
             >
-              <h2 className="font-bold text-sm text-text">Category trends</h2>
+              <h2 className="font-bold text-sm text-text">Group trends</h2>
               <CategoryTrendsGrid categories={categoryTrends} />
             </section>
           )}

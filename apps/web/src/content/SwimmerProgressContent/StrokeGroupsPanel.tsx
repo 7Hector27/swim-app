@@ -89,24 +89,37 @@ export default function StrokeGroupsPanel({
             </p>
           ) : (
             <div className="flex flex-col gap-4">
-              {activeGroup.sections.map((section) => (
-                <section key={`${activeGroup.screenSlug}:${section.name}`} className="flex flex-col gap-1">
-                  <h4 className="text-xs font-semibold text-text-secondary uppercase tracking-wide">
-                    {section.name}
-                  </h4>
-                  <ul className="flex flex-col">
-                    {section.skills.map((skill) => (
-                      <SkillRow
-                        key={`${activeGroup.screenSlug}:${section.name}:${skill.slug}`}
-                        skill={skill}
-                        swimmerId={swimmerId}
-                        nowIso={nowIso}
-                        editContext={editContext}
-                      />
-                    ))}
-                  </ul>
-                </section>
-              ))}
+              {activeGroup.sections.map((section) => {
+                // Hide the per-section label when the group has exactly one
+                // section and the section name is the group name (Fundamentals,
+                // Water confidence, IM turns, Racing) — showing the same word
+                // twice reads as a mistake. Case-insensitive because the
+                // section name uses title case ("Water Confidence") while the
+                // group label is sentence case ("Water confidence").
+                const hideSectionLabel =
+                  activeGroup.sections.length === 1 &&
+                  section.name.toLowerCase() === activeGroup.name.toLowerCase();
+                return (
+                  <section key={`${activeGroup.screenSlug}:${section.name}`} className="flex flex-col gap-1">
+                    {!hideSectionLabel && (
+                      <h4 className="text-xs font-semibold text-text-secondary uppercase tracking-wide">
+                        {section.name}
+                      </h4>
+                    )}
+                    <ul className="flex flex-col">
+                      {section.skills.map((skill) => (
+                        <SkillRow
+                          key={`${activeGroup.screenSlug}:${section.name}:${skill.slug}`}
+                          skill={skill}
+                          swimmerId={swimmerId}
+                          nowIso={nowIso}
+                          editContext={editContext}
+                        />
+                      ))}
+                    </ul>
+                  </section>
+                );
+              })}
             </div>
           )}
         </div>
