@@ -346,6 +346,11 @@ export const SkillProgressSchema = z.object({
   currentLeft: SkillCurrentLevelSchema.nullable(),
   currentRight: SkillCurrentLevelSchema.nullable(),
   history: z.array(ProgressRatingPointSchema),
+  // Per-skill level-descriptor text keyed by level ("1" … "5"). Omitted
+  // when the skill has no descriptor rows in skill_level_descriptors. Both
+  // coach and parent progress responses include this when available —
+  // the ladder uses it for the "Next: <level> — <descriptor>" chip.
+  levelDescriptors: z.record(z.string(), z.string()).optional(),
 });
 export type SkillProgress = z.infer<typeof SkillProgressSchema>;
 
@@ -956,7 +961,6 @@ export type ParentProgressRatingPoint = z.infer<typeof ParentProgressRatingPoint
 
 export const ParentSkillProgressSchema = SkillProgressSchema.extend({
   history: z.array(ParentProgressRatingPointSchema),
-  levelDescriptors: z.record(z.string(), z.string()).optional(),
 });
 export type ParentSkillProgress = z.infer<typeof ParentSkillProgressSchema>;
 

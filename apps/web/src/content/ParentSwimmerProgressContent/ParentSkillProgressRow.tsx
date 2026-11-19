@@ -3,11 +3,10 @@
 import { useState } from "react";
 import type { ParentSkillProgress } from "@swim-app/shared";
 import TrendLine from "@/components/TrendLine";
-import SkillChart from "@/components/SkillChart";
+import LevelLadder from "@/components/LevelLadder";
 import {
   formatRecency,
   isStaleBySessionDate,
-  MIN_RATINGS_FOR_TREND,
 } from "@/lib/progressRow";
 import {
   currentLevelDisplay,
@@ -34,8 +33,10 @@ export default function ParentSkillProgressRow({ skill, nowIso }: ParentSkillPro
   const latestPoint = skill.history[0];
   const recencyLabel = formatRecency(latestPoint?.sessionDate, now);
   const stale = isStaleBySessionDate(latestPoint?.sessionDate, now);
-  // Only draw a trend line when there are enough effective ratings.
-  const canShowTrend = skill.history.length >= MIN_RATINGS_FOR_TREND;
+  // The ladder is the detailed view and works with a single rating, so the
+  // inline trend line drops its old 3-rating minimum here. TrendLine itself
+  // suppresses the sparkline when it has fewer than two numeric points.
+  const canShowTrend = skill.history.length >= 1;
 
   function levelDescription(grade: number | null, notLegal: boolean, noConcept: boolean): string {
     if (notLegal) return SPECIAL_DESCRIPTIONS.dq;
@@ -154,7 +155,14 @@ export default function ParentSkillProgressRow({ skill, nowIso }: ParentSkillPro
               )}
             </>
           ) : null}
-          <SkillChart history={skill.history} skillName={skill.name} />
+          {skill.history.length > 0 && (
+            <LevelLadder
+              skillName={skill.name}
+              history={skill.history.map((point) => ({ ...point }))}
+              ratedPerSide={skill.ratedPerSide}
+              levelDescriptors={skill.levelDescriptors ?? undefined}
+            />
+          )}
         </div>
       )}
     </li>
