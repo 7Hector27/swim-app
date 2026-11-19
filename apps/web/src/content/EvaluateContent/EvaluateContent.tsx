@@ -20,19 +20,30 @@ import {
   buildRatingKeys,
   buildRatingsArray,
   buildSectionGroups,
+  computeSectionCounts,
+  getDisambiguatedLabel,
+  slugifySectionName,
   validateSubmission,
   sortIssuesForScroll,
   anchorIdForIssue,
   DOM_IDS,
 } from "./helpers";
-import { SCREEN_SECTIONS } from "./screenSections";
+import { SCREEN_SECTIONS, SCREEN_SLUGS, type ScreenSlug } from "@swim-app/shared";
+
+// Narrower key type. `screenSlug` comes off the server as a plain string
+// but at this call site it's always one of the nine evaluate screens.
+function asScreenSlug(slug: string): ScreenSlug | null {
+  return (SCREEN_SLUGS as readonly string[]).includes(slug) ? (slug as ScreenSlug) : null;
+}
 import SessionSetup from "./SessionSetup";
+import AutosaveStatus from "./AutosaveStatus";
+import BreathingPatternField from "./BreathingPatternField";
 import CoachingPriorityField from "./CoachingPriorityField";
 import StartGroupSection from "./StartGroupSection";
 import SkillGradeRow from "./SkillGradeRow";
 import SideRatedRowPair from "./SideRatedRowPair";
 import CalculatedSkillRow from "./CalculatedSkillRow";
-import SectionTabs from "./SectionTabs";
+import CollapsibleSection from "./CollapsibleSection";
 import evaluateStyles from "./EvaluateContent.module.css";
 import UndoToast from "./UndoToast";
 
@@ -87,6 +98,10 @@ export default function EvaluateContent({
           faultTags: rating.faultTags,
           detailsOpen: false,
           golfScoreCategory: rating.golfScoreCategory,
+          // Pass 2c: pre-fill golf-score inputs from the stored pair so
+          // edit mode shows the coach exactly what was saved.
+          timeSeconds: rating.timeSeconds === null ? "" : String(rating.timeSeconds),
+          strokeCountValue: rating.strokeCountValue === null ? "" : String(rating.strokeCountValue),
         };
       }
       return {
@@ -113,6 +128,8 @@ export default function EvaluateContent({
           faultTags: entry.faultTags,
           detailsOpen: false,
           golfScoreCategory: entry.golfScoreCategory,
+          timeSeconds: entry.timeSeconds ?? "",
+          strokeCountValue: entry.strokeCountValue ?? "",
         };
       }
       return {
@@ -140,7 +157,10 @@ export default function EvaluateContent({
   // "This evaluation was edited elsewhere" banner on 409.
   const [staleBanner, setStaleBanner] = useState(false);
   const [skillSearch, setSkillSearch] = useState("");
-  const [activeSectionIndex, setActiveSectionIndex] = useState(0);
+  // Open/closed state per section, keyed by section NAME (unique per screen).
+  // A section is "open" when its entry is `true`. Default initialized in an
+  // effect once we know the screen's section groups — see openSections effect.
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
   // ADR 036 Phase 8 Part B Stop 3 piece 12 (animation audit #2):
   // mastered-moment state. `recentMasteryKey` is the draftKey that
   // just crossed into grade 5 — rendered as an inline chip next to
@@ -160,6 +180,9 @@ export default function EvaluateContent({
   const savedScreenSlugRef = useRef<string>("");
   const [serverDraftId, setServerDraftId] = useState<string | null>(resumeDraft?.id ?? null);
   const [draftSaveState, setDraftSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  // Pass 2b: timestamp of the last successful draft save, surfaced via
+  // AutosaveStatus. Null until the first save lands.
+  const [lastDraftSavedAt, setLastDraftSavedAt] = useState<number | null>(null);
 
   // Server draft detection
   const [serverDraftsBySlug, setServerDraftsBySlug] = useState<Map<string, import("@swim-app/shared").EvaluationDraft>>(new Map());
@@ -240,9 +263,12 @@ export default function EvaluateContent({
     const currentScreen = screens.find((screen) => screen.screenSlug === draft.screenSlug);
     const currentSkill = currentScreen?.skills.find((skill) => skill.slug === slug) ?? null;
     if (currentSkill !== null && currentScreen !== undefined) {
-      const sections = SCREEN_SECTIONS[currentScreen.screenSlug] ?? [];
-      const sectionIndex = sections.findIndex((section) => section.slugs.includes(slug));
-      if (sectionIndex >= 0) setActiveSectionIndex(sectionIndex);
+      const screenSlug = asScreenSlug(currentScreen.screenSlug);
+      const sections = screenSlug !== null ? SCREEN_SECTIONS[screenSlug] : [];
+      const sectionMatch = sections.find((section) => section.slugs.includes(slug));
+      if (sectionMatch) {
+        setOpenSections((prev) => ({ ...prev, [sectionMatch.name]: true }));
+      }
       const skillId = currentSkill.id;
       requestAnimationFrame(() => {
         document
@@ -482,6 +508,8 @@ export default function EvaluateContent({
         measurementValue: skillDraft.measurementValue,
         measurementUnit: skillDraft.measurementUnit,
         golfScoreCategory: skillDraft.golfScoreCategory,
+        timeSeconds: skillDraft.timeSeconds,
+        strokeCountValue: skillDraft.strokeCountValue,
         note: skillDraft.note,
       };
     }
@@ -495,6 +523,7 @@ export default function EvaluateContent({
     if (result.status === "saved") {
       setServerDraftId(result.id);
       setDraftSaveState("saved");
+      setLastDraftSavedAt(Date.now());
       draftChangedRef.current = false;
     } else {
       setDraftSaveState("error");
@@ -520,9 +549,9 @@ export default function EvaluateContent({
       breathingPattern: needsBreathing ? prev.breathingPattern : null,
       skills,
     }));
-    // Reset to the first section whenever the screen changes so the coach
-    // isn't dropped into an unrelated section index from the previous screen.
-    setActiveSectionIndex(0);
+    // Reset open-section state whenever the screen changes. The effect that
+    // seeds defaults for the new screen will populate it on the next render.
+    setOpenSections({});
   }
 
   function handleResumeBannerDraft() {
@@ -541,6 +570,8 @@ export default function EvaluateContent({
         faultTags: entry.faultTags,
         detailsOpen: false,
         golfScoreCategory: entry.golfScoreCategory,
+        timeSeconds: entry.timeSeconds ?? "",
+        strokeCountValue: entry.strokeCountValue ?? "",
       };
     }
     setDraft({
@@ -554,7 +585,7 @@ export default function EvaluateContent({
     setServerDraftId(bannerDraft.id);
     setBannerDraft(null);
     setShowBannerConfirm(false);
-    setActiveSectionIndex(0);
+    setOpenSections({});
   }
 
   async function handleStartFreshConfirmed() {
@@ -651,53 +682,65 @@ export default function EvaluateContent({
   );
   const ratingsIssue = sessionLevelIssues.find((issue) => issue.field === "ratings");
 
-  const screenSections = selectedScreen !== null
-    ? (SCREEN_SECTIONS[selectedScreen.screenSlug] ?? null)
-    : null;
+  const screenSections = (() => {
+    if (selectedScreen === null) return null;
+    const slug = asScreenSlug(selectedScreen.screenSlug);
+    return slug !== null ? SCREEN_SECTIONS[slug] : null;
+  })();
 
   const sectionGroups = selectedScreen !== null && screenSections !== null
     ? buildSectionGroups(selectedScreen, screenSections)
     : null;
 
-  // Which section does a given rating-key (`${skillId}` or `${skillId}:side`)
-  // belong to? Used to switch to the right tab before scrolling to the issue.
-  const sectionIndexForSkillId = useMemo(() => {
-    if (sectionGroups === null) return (): number | null => null;
-    const map = new Map<string, number>();
-    sectionGroups.forEach((section, index) => {
-      for (const skill of section.skills) {
-        map.set(skill.id, index);
-      }
-    });
-    return (skillId: string): number | null => map.get(skillId) ?? null;
-  }, [sectionGroups]);
+  // Seed the open-sections map when the screen first renders (or changes).
+  // Default: single-section screens auto-open; multi-section screens open
+  // "The swim" if it exists, otherwise the first section. Keyed by section
+  // name, which is unique per screen. Only seeds when the map is empty for
+  // the current screen so toggling by the coach isn't clobbered.
+  useEffect(() => {
+    if (sectionGroups === null) return;
+    const anyOpen = sectionGroups.some((section) => openSections[section.name]);
+    if (anyOpen) return;
+    const defaults: Record<string, boolean> = {};
+    if (sectionGroups.length === 1 && sectionGroups[0]) {
+      defaults[sectionGroups[0].name] = true;
+    } else {
+      const theSwim = sectionGroups.find((section) => section.name === "The swim");
+      const target = theSwim ?? sectionGroups[0];
+      if (target) defaults[target.name] = true;
+    }
+    setOpenSections(defaults);
+    // Intentionally keyed to the screen slug — we only want to re-seed when
+    // the screen itself changes, not on every section-group recompute.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft.screenSlug]);
 
-  // Per-section rated / total counts for the tab chips.
-  const sectionCounts = useMemo(() => {
-    if (sectionGroups === null) return [] as Array<{ name: string; count: number; completed: number }>;
-    return sectionGroups.map((section) => {
-      let completed = 0;
-      const ratable = section.skills.filter((skill) => skill.type !== "rollup");
-      for (const skill of ratable) {
-        const keys = skill.ratedPerSide
-          ? [`${skill.id}:left`, `${skill.id}:right`]
-          : [skill.id];
-        if (keys.some((key) => {
-          const skillDraft = draft.skills[key];
-          if (!skillDraft) return false;
-          return (
-            skillDraft.grade !== null ||
-            skillDraft.noConcept ||
-            skillDraft.notLegal ||
-            skillDraft.measurementValue !== ""
-          );
-        })) {
-          completed += 1;
+  // Which section does a given rating-key (`${skillId}` or `${skillId}:side`)
+  // belong to? Used to open the right collapsible before scrolling to the
+  // issue. A skill may appear in more than one section on the same screen
+  // (push-off, streamline-in-motion) — we return the first match so the
+  // scroll anchor and the opened section stay in sync.
+  const sectionNameForSkillId = useMemo(() => {
+    if (sectionGroups === null) return (): string | null => null;
+    const map = new Map<string, string>();
+    for (const section of sectionGroups) {
+      for (const skill of section.skills) {
+        if (!map.has(skill.id)) {
+          map.set(skill.id, section.name);
         }
       }
-      return { name: section.name, count: ratable.length, completed };
-    });
-  }, [sectionGroups, draft.skills]);
+    }
+    return (skillId: string): string | null => map.get(skillId) ?? null;
+  }, [sectionGroups]);
+
+  // Per-section rated / total counts for the tab chips. Logic lives in
+  // helpers.ts as `computeSectionCounts` so the composite-start branch
+  // (track-start / relay-start / back-start) is unit-testable in
+  // evaluateHelpers.test.ts.
+  const sectionCounts = useMemo(
+    () => computeSectionCounts(sectionGroups, selectedScreen?.skills ?? [], draft.skills),
+    [sectionGroups, draft.skills, selectedScreen],
+  );
 
   // Scroll to and focus the first invalid field whenever the coach taps Save
   // with issues, OR whenever a new server 422 arrives. If the issue lives in
@@ -731,23 +774,23 @@ export default function EvaluateContent({
       focusTarget?.focus({ preventScroll: true });
     }
 
-    // Per-skill issue: switch to the section that owns the skill (if we're
-    // not already there) and wait a frame so the anchor is mounted before
+    // Per-skill issue: open the section that owns the skill (if it's
+    // currently collapsed) and wait a frame so the anchor is mounted before
     // scrolling. Otherwise, scroll synchronously.
-    let needsSectionSwitch = false;
+    let needsSectionOpen = false;
     if (first.ratingIndex !== undefined) {
       const key = ratingKeys[first.ratingIndex];
       if (key !== undefined) {
         const skillId = key.split(":")[0] ?? key;
-        const index = sectionIndexForSkillId(skillId);
-        if (index !== null && index !== activeSectionIndex) {
-          setActiveSectionIndex(index);
-          needsSectionSwitch = true;
+        const sectionName = sectionNameForSkillId(skillId);
+        if (sectionName !== null && !openSections[sectionName]) {
+          setOpenSections((prev) => ({ ...prev, [sectionName]: true }));
+          needsSectionOpen = true;
         }
       }
     }
 
-    if (needsSectionSwitch) {
+    if (needsSectionOpen) {
       requestAnimationFrame(doScroll);
     } else {
       doScroll();
@@ -760,7 +803,7 @@ export default function EvaluateContent({
   function handleFormSubmit(event: React.FormEvent<HTMLFormElement>) {
     savedScreenSlugRef.current = draft.screenSlug;
     setTapNonce((prev) => prev + 1);
-    const issues = validateSubmission(draft, ratingsArray);
+    const issues = validateSubmission(draft, ratingsArray, selectedScreen?.skills);
     if (issues.length > 0) {
       event.preventDefault();
       setClientIssues(issues);
@@ -798,6 +841,8 @@ export default function EvaluateContent({
               measurementValue: rating.measurementValue,
               measurementUnit: rating.measurementUnit,
               golfScoreCategory: rating.golfScoreCategory,
+              timeSeconds: rating.timeSeconds,
+              strokeCountValue: rating.strokeCountValue,
               note: rating.note,
               faultTags: rating.faultTags,
             },
@@ -817,29 +862,43 @@ export default function EvaluateContent({
     if (!skillSearch.trim() || !sectionGroups) return [];
     const query = skillSearch.toLowerCase();
     const seen = new Set<string>();
-    const results: Array<{ skill: SkillForRating; sectionIndex: number; sectionName: string }> = [];
-    sectionGroups.forEach((section, index) => {
+    const results: Array<{ skill: SkillForRating; sectionName: string }> = [];
+    for (const section of sectionGroups) {
       for (const skill of section.skills) {
         if (skill.type === "rollup") continue;
+        // De-dup by skill id so a shared skill (push-off, streamline-in-motion)
+        // appears once in search even when it renders in two sections. The
+        // section we keep is the first one it appeared in, which jumpToSkill
+        // will open.
         if (skill.name.toLowerCase().includes(query) && !seen.has(skill.id)) {
-          results.push({ skill, sectionIndex: index, sectionName: section.name });
+          results.push({ skill, sectionName: section.name });
           seen.add(skill.id);
         }
       }
-    });
+    }
     return results.slice(0, 8);
   }, [skillSearch, sectionGroups]);
 
-  function jumpToSkill(skill: SkillForRating, sectionIndex: number) {
-    setActiveSectionIndex(sectionIndex);
+  function jumpToSkill(skill: SkillForRating, sectionName: string) {
+    setOpenSections((prev) => ({ ...prev, [sectionName]: true }));
     setSkillSearch("");
     requestAnimationFrame(() => {
       document.getElementById(`skill-${skill.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
     });
   }
 
-  function renderSkill(skill: SkillForRating, screen: typeof screens[number]) {
-    const label = skill.name;
+  function renderSkill(
+    skill: SkillForRating,
+    screen: typeof screens[number],
+    options?: {
+      reactKey?: string;
+      anchorId?: string;
+      scope?: ReadonlyArray<SkillForRating>;
+    },
+  ) {
+    const reactKey = options?.reactKey ?? skill.id;
+    const anchorId = options?.anchorId;
+    const label = options?.scope ? getDisambiguatedLabel(skill, options.scope) : skill.name;
     if (skill.type === "rollup") {
       let calculatedGrade: 1 | 2 | 3 | 4 | 5 | null = null;
       if (skill.slug === "free-bilateral-breathing") {
@@ -853,7 +912,7 @@ export default function EvaluateContent({
       const prev = prevGrades[skill.slug];
       return (
         <CalculatedSkillRow
-          key={skill.id}
+          key={reactKey}
           skill={skill}
           label={label}
           calculatedGrade={calculatedGrade}
@@ -868,7 +927,7 @@ export default function EvaluateContent({
       const prevRight = prevGrades[`${skill.slug}:right`];
       return (
         <SideRatedRowPair
-          key={skill.id}
+          key={reactKey}
           skill={skill}
           label={label}
           leftDraft={draft.skills[`${skill.id}:left`] ?? defaultSkillDraft()}
@@ -876,6 +935,7 @@ export default function EvaluateContent({
           onChange={patchSkill}
           onMastery={handleMastery}
           masteredKey={recentMasteryKey}
+          {...(anchorId !== undefined && { anchorId })}
           {...(leftIssues !== undefined && { leftIssues })}
           {...(rightIssues !== undefined && { rightIssues })}
           {...(prevLeft !== undefined && { prevGradeLeft: prevLeft })}
@@ -887,7 +947,7 @@ export default function EvaluateContent({
     const prev = prevGrades[skill.slug];
     return (
       <SkillGradeRow
-        key={skill.id}
+        key={reactKey}
         skill={skill}
         draftKey={skill.id}
         label={label}
@@ -895,6 +955,7 @@ export default function EvaluateContent({
         onChange={patchSkill}
         onMastery={handleMastery}
         masteredKey={recentMasteryKey}
+        {...(anchorId !== undefined && { anchorId })}
         {...(rowIssues !== undefined && { issues: rowIssues })}
         {...(prev !== undefined && { prevGrade: prev })}
       />
@@ -948,7 +1009,6 @@ export default function EvaluateContent({
 
   // ── Main form ─────────────────────────────────────────────────────────────────
 
-  const activeSection = sectionGroups?.[activeSectionIndex] ?? null;
   const startParentIds = selectedScreen
     ? new Set(
         selectedScreen.skills
@@ -1133,69 +1193,118 @@ export default function EvaluateContent({
                       className="absolute z-10 w-full mt-1 rounded border border-border overflow-auto bg-background"
                       style={{ maxHeight: "240px" }}
                     >
-                      {searchResults.map(({ skill, sectionIndex, sectionName }) => (
-                        <li key={`${skill.id}:${sectionIndex}`}>
-                          <button
-                            type="button"
-                            onClick={() => jumpToSkill(skill, sectionIndex)}
-                            className="w-full text-left px-3 py-2 text-sm text-text"
-                          >
-                            {skill.name}
-                            <span className="ml-2 text-xs text-text-secondary">
-                              {sectionName}
-                            </span>
-                          </button>
-                        </li>
-                      ))}
+                      {searchResults.map(({ skill, sectionName }) => {
+                        const searchLabel = getDisambiguatedLabel(
+                          skill,
+                          searchResults.map((row) => row.skill),
+                        );
+                        return (
+                          <li key={skill.id}>
+                            <button
+                              type="button"
+                              onClick={() => jumpToSkill(skill, sectionName)}
+                              className="w-full text-left px-3 py-2 text-sm text-text"
+                            >
+                              {searchLabel}
+                              <span className="ml-2 text-xs text-text-secondary">
+                                {sectionName}
+                              </span>
+                            </button>
+                          </li>
+                        );
+                      })}
                     </ul>
                   )}
                 </div>
 
-                {sectionGroups !== null && activeSection !== null ? (
-                  <>
-                    <SectionTabs
-                      sections={sectionCounts}
-                      activeIndex={activeSectionIndex}
-                      onSelect={setActiveSectionIndex}
-                    />
-                    {/* The React key on this <section> forces a remount
-                        on tab change, which re-fires the CSS module's
-                        @starting-style opacity 0→1 transition (180ms
-                        strong ease-out). Transitions, not keyframes,
-                        so rapid tab taps retarget mid-crossfade.
-                        animate skill #5. */}
-                    <section
-                      key={activeSectionIndex}
-                      id={DOM_IDS.ratings}
-                      aria-label={`${activeSection.name} skills`}
-                      className={`${evaluateStyles.sectionPanel} grid grid-cols-1 tablet:grid-cols-2 gap-4`}
-                    >
-                      {activeSection.skills.map((skill) => {
-                        if (startParentIds.has(skill.id)) {
-                          const components = selectedScreen.skills.filter(
-                            (other) => other.parentSkillId === skill.id,
-                          );
-                          return (
-                            <div key={skill.id} className="tablet:col-span-2">
-                              <StartGroupSection
-                                parent={skill}
-                                components={components}
-                                draftSkills={draft.skills}
-                                onChange={patchSkill}
-                                prevGrades={prevGrades}
-                                onMastery={handleMastery}
-                                masteredKey={recentMasteryKey}
-                              />
+                {sectionGroups !== null ? (
+                  <div id={DOM_IDS.ratings} className="flex flex-col gap-4">
+                    {(() => {
+                      const renderedSkillIds = new Set<string>();
+                      return sectionGroups.map((section) => {
+                        const count = sectionCounts.find((entry) => entry.name === section.name);
+                        const open = openSections[section.name] ?? false;
+                        return (
+                          <CollapsibleSection
+                            key={section.name}
+                            name={section.name}
+                            count={count?.count ?? 0}
+                            completed={count?.completed ?? 0}
+                            open={open}
+                            onToggle={() =>
+                              setOpenSections((prev) => ({ ...prev, [section.name]: !prev[section.name] }))
+                            }
+                            anchorId={`evaluate-section-${slugifySectionName(section.name)}`}
+                          >
+                            <div className={`${evaluateStyles.sectionPanel} grid grid-cols-1 tablet:grid-cols-2 gap-4`}>
+                              {section.skills.map((skill) => {
+                                const isFirstOccurrence = !renderedSkillIds.has(skill.id);
+                                renderedSkillIds.add(skill.id);
+                                // Only the first render of a shared skill
+                                // carries the canonical `skill-<id>` anchor so
+                                // validation jumps and deep links stay stable.
+                                const anchorId = isFirstOccurrence
+                                  ? `skill-${skill.id}`
+                                  : `skill-${skill.id}--${slugifySectionName(section.name)}`;
+                                const reactKey = `${section.name}:${skill.id}`;
+                                if (startParentIds.has(skill.id)) {
+                                  const components = selectedScreen.skills.filter(
+                                    (other) => other.parentSkillId === skill.id,
+                                  );
+                                  return (
+                                    <div key={reactKey} className="tablet:col-span-2">
+                                      <StartGroupSection
+                                        parent={skill}
+                                        components={components}
+                                        draftSkills={draft.skills}
+                                        onChange={patchSkill}
+                                        prevGrades={prevGrades}
+                                        onMastery={handleMastery}
+                                        masteredKey={recentMasteryKey}
+                                        anchorId={anchorId}
+                                      />
+                                    </div>
+                                  );
+                                }
+                                return renderSkill(skill, selectedScreen, {
+                                  reactKey,
+                                  anchorId,
+                                  scope: section.skills,
+                                });
+                              })}
+                              {/* Breathing pattern lives inside The swim on
+                                  freestyle / butterfly (per the Oct 14 doc).
+                                  Placed at the end of the section so it sits
+                                  after the rhythmic-breathing row when the
+                                  catalog has it, and still renders when a
+                                  test fixture or sparse screen does not. */}
+                              {section.name === "The swim" &&
+                                (selectedScreen.screenSlug === "freestyle" ||
+                                  selectedScreen.screenSlug === "butterfly") && (() => {
+                                const breathingIssue = sessionSetupIssues.find(
+                                  (issue) => issue.field === "breathingPattern",
+                                );
+                                return (
+                                  <div className="tablet:col-span-2">
+                                    <BreathingPatternField
+                                      value={draft.breathingPattern}
+                                      onChange={(next) =>
+                                        setDraft((prev) => ({ ...prev, breathingPattern: next }))
+                                      }
+                                      {...(breathingIssue && { issue: breathingIssue })}
+                                    />
+                                  </div>
+                                );
+                              })()}
                             </div>
-                          );
-                        }
-                        return renderSkill(skill, selectedScreen);
-                      })}
-                    </section>
-                  </>
+                          </CollapsibleSection>
+                        );
+                      });
+                    })()}
+                  </div>
                 ) : (
                   // Fallback for screens without a SCREEN_SECTIONS entry: no
-                  // tabs, just a flat grid of every skill in the screen.
+                  // collapsible headers, just a flat grid of every skill.
                   <section
                     id={DOM_IDS.ratings}
                     className="grid grid-cols-1 tablet:grid-cols-2 gap-4"
@@ -1269,8 +1378,11 @@ export default function EvaluateContent({
                   disabled={draft.screenSlug === "" || draftSaveState === "saving"}
                   className="inline-flex items-center justify-center px-5 min-h-[48px] font-semibold text-sm rounded-[var(--radius-button)] border border-border text-text"
                 >
-                  {draftSaveState === "saving" ? "Saving..." : draftSaveState === "saved" ? "Draft saved" : draftSaveState === "error" ? "Save failed" : "Save as draft"}
+                  Save as draft
                 </button>
+              )}
+              {!isEditMode && (
+                <AutosaveStatus state={draftSaveState} lastSavedAt={lastDraftSavedAt} />
               )}
             </div>
           </form>

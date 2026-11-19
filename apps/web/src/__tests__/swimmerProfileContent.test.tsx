@@ -271,6 +271,7 @@ describe("SwimmerProfileContent — Progress card", () => {
             totalCount: 5,
           },
         ],
+        screenGroupRollups: [],
         starts: [],
         counts: { level1: 0, level2: 2, level3: 2, level4: 2, level5: 0, notLegal: 0, noConcept: 0 },
         totalLevelsGained: 4,

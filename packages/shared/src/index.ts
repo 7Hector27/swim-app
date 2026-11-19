@@ -565,6 +565,11 @@ export { calculateBilateralBreathingGrade } from "./lib/bilateralBreathingGrade"
 
 export { SCREEN_SKILLS, SCREEN_SLUGS, SCREEN_NAMES } from "./lib/screenSkills";
 export type { ScreenSlug } from "./lib/screenSkills";
+export {
+  SCREEN_SECTIONS,
+  PROGRESS_GROUP_LABELS,
+  uniqueScreenSkillSlugs,
+} from "./lib/screenSections";
 
 export type {
   EvaluationContext,
@@ -599,6 +604,7 @@ export type {
   GolfScoreTrend,
   GolfScoreTrendsResponse,
   ScoreHistoryCategoryRollup,
+  ScoreHistoryScreenGroupRollup,
   ScoreHistoryStart,
   ScoreHistoryLevelCounts,
   ScoreHistoryPoint,

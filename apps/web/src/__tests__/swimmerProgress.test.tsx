@@ -69,6 +69,7 @@ function makeScorePoint(overrides: {
   sessionId: string;
   headPositionOverall: number | null;
   categoryRollups?: ScoreHistoryResponse["points"][number]["categoryRollups"];
+  screenGroupRollups?: ScoreHistoryResponse["points"][number]["screenGroupRollups"];
   starts?: ScoreHistoryResponse["points"][number]["starts"];
   counts?: ScoreHistoryResponse["points"][number]["counts"];
   totalLevelsGained?: number;
@@ -80,6 +81,7 @@ function makeScorePoint(overrides: {
     sessionId: overrides.sessionId,
     headPositionOverall: overrides.headPositionOverall,
     categoryRollups: overrides.categoryRollups ?? [],
+    screenGroupRollups: overrides.screenGroupRollups ?? [],
     starts: overrides.starts ?? [],
     counts: overrides.counts ?? { ...EMPTY_LEVEL_COUNTS },
     totalLevelsGained: overrides.totalLevelsGained ?? 0,
@@ -191,7 +193,7 @@ describe("SwimmerProgressContent — empty state", () => {
     expect(cta).toHaveAttribute("href", `/coach/swimmers/${SWIMMER_ID}/evaluate`);
     // No chart sections should render.
     expect(screen.queryByText(/head position overall/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/category snapshot/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^snapshot$/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/skills/i)).not.toBeInTheDocument();
   });
 });
@@ -229,9 +231,9 @@ describe("SwimmerProgressContent — one-evaluation state", () => {
     };
     renderPage({ progress, scoreHistory });
     // The hero head-position chart was removed; the page now opens on the
-    // "Category snapshot" heading instead.
+    // "Snapshot" heading instead.
     expect(screen.queryByText(/head position overall/i)).toBeNull();
-    expect(screen.getByRole("heading", { name: /category snapshot/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /^snapshot$/i })).toBeInTheDocument();
     // The expandable per-skill row is present (collapsed by default).
     expect(screen.getByText("Freestyle Kick")).toBeInTheDocument();
   });
@@ -339,8 +341,8 @@ describe("SwimmerProgressContent — sections", () => {
           {
             category: "push_off_in_water",
             points: [
-              { ratedAt: "2026-10-25T18:00:00.000Z", sessionDate: "2026-10-25", sessionId: "ssss0000-0000-0000-0000-000000000025", grade: 3, measurementValue: "29.5" },
-              { ratedAt: "2026-10-11T18:00:00.000Z", sessionDate: "2026-10-11", sessionId: "ssss0000-0000-0000-0000-000000000011", grade: 3, measurementValue: "30.4" },
+              { ratedAt: "2026-10-25T18:00:00.000Z", sessionDate: "2026-10-25", sessionId: "ssss0000-0000-0000-0000-000000000025", grade: 3, timeSeconds: 12.50, strokeCountValue: 17 },
+              { ratedAt: "2026-10-11T18:00:00.000Z", sessionDate: "2026-10-11", sessionId: "ssss0000-0000-0000-0000-000000000011", grade: 3, timeSeconds: 13.40, strokeCountValue: 17 },
             ],
             ageBands: { bandCount: 12, p25: 25.0, p50: 28.0, p75: 32.0 },
           },
@@ -355,7 +357,7 @@ describe("SwimmerProgressContent — sections", () => {
     expect(screen.getByRole("heading", { name: /what to work on next/i })).toBeInTheDocument();
     // The Head position overall hero chart was removed.
     expect(screen.queryByText(/head position overall/i)).toBeNull();
-    expect(screen.getByRole("heading", { name: /category snapshot/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /^snapshot$/i })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /^starts$/i })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /^golf score$/i })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /fault tags/i })).toBeInTheDocument();
@@ -445,21 +447,27 @@ describe("SwimmerProgressContent — sections", () => {
     expect(normalizeIds(secondContainer.innerHTML)).toBe(firstHtml);
   });
 
-  it("groups skills under their category in the Skills column", () => {
-    renderPage({
-      progress,
-      scoreHistory,
-      golfScore,
-      categories: [
-        { id: FREE_CAT_ID, slug: "freestyle", name: "Freestyle", sortOrder: 3, skills: [] },
-        { id: BREATH_CAT_ID, slug: "breathing", name: "Breathing", sortOrder: 2, skills: [] },
-      ],
-    });
-    // Both categories appear as disclosure headers in the Skills column
+  it("renders the screen-group switcher in the Skills column with every group", () => {
+    // Pass 3 replaced the per-category collapsibles with a single switcher
+    // that lists all nine evaluate-screen groups. Catalog category names
+    // (e.g. "Breathing") no longer appear as headings in this column.
+    renderPage({ progress, scoreHistory, golfScore });
     const skillsHeading = screen.getByRole("heading", { name: /^skills$/i });
     const skillsSection = skillsHeading.parentElement as HTMLElement;
-    expect(within(skillsSection).getByText("Freestyle")).toBeInTheDocument();
-    expect(within(skillsSection).getByText("Breathing")).toBeInTheDocument();
+    const switcher = within(skillsSection).getByRole("radiogroup", { name: /progress group/i });
+    for (const label of [
+      "Fundamentals",
+      "Water confidence",
+      "Freestyle",
+      "Backstroke",
+      "Breaststroke",
+      "Butterfly",
+      "Starts and turns",
+      "IM turns",
+      "Racing",
+    ]) {
+      expect(within(switcher).getByText(label)).toBeInTheDocument();
+    }
   });
 });
 

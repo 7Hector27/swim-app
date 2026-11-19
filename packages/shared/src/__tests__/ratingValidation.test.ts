@@ -27,6 +27,8 @@ function makePayload(overrides: Partial<RatingPayload> = {}): RatingPayload {
     measurementValue: null,
     measurementUnit: null,
     golfScoreCategory: null,
+    timeSeconds: null,
+    strokeCountValue: null,
     faultTags: [],
     ...overrides,
   };
@@ -46,14 +48,14 @@ describe("validateRatingAgainstSkill", () => {
   });
 
   describe("golfScoreCategory", () => {
-    it("requires golfScoreCategory on score skills when noConcept is false", () => {
+    it("requires golfScoreCategory on score skills when the rating has a grade (no noConcept)", () => {
       const issue = validateRatingAgainstSkill(
         makeSkill({ type: "score" }),
-        makePayload({ golfScoreCategory: null, noConcept: false }),
+        makePayload({ grade: 3, golfScoreCategory: null, noConcept: false }),
       );
       expect(issue).toEqual({
         field: "golfScoreCategory",
-        message: expect.stringMatching(/required/i),
+        message: expect.stringMatching(/pick a test category/i),
       });
     });
 
@@ -74,6 +76,90 @@ describe("validateRatingAgainstSkill", () => {
         field: "golfScoreCategory",
         message: expect.stringMatching(/only applies to score/i),
       });
+    });
+  });
+
+  describe("golf grade requires time + stroke count", () => {
+    it("requires timeSeconds + strokeCountValue on a graded score rating", () => {
+      const issue = validateRatingAgainstSkill(
+        makeSkill({ type: "score" }),
+        makePayload({
+          grade: 3,
+          noConcept: false,
+          golfScoreCategory: "push_off_in_water",
+          timeSeconds: null,
+          strokeCountValue: null,
+        }),
+      );
+      expect(issue).toEqual({
+        field: "timeSeconds",
+        message: expect.stringMatching(/enter the time and stroke count/i),
+      });
+    });
+
+    it("requires timeSeconds when only strokeCountValue is set", () => {
+      const issue = validateRatingAgainstSkill(
+        makeSkill({ type: "score" }),
+        makePayload({
+          grade: 3,
+          noConcept: false,
+          golfScoreCategory: "push_off_in_water",
+          timeSeconds: null,
+          strokeCountValue: 18,
+        }),
+      );
+      expect(issue?.field).toBe("timeSeconds");
+    });
+
+    it("requires strokeCountValue when only timeSeconds is set", () => {
+      const issue = validateRatingAgainstSkill(
+        makeSkill({ type: "score" }),
+        makePayload({
+          grade: 3,
+          noConcept: false,
+          golfScoreCategory: "push_off_in_water",
+          timeSeconds: 14.25,
+          strokeCountValue: null,
+        }),
+      );
+      expect(issue?.field).toBe("timeSeconds");
+    });
+
+    it("accepts noConcept=true on a score skill with no numbers", () => {
+      const issue = validateRatingAgainstSkill(
+        makeSkill({ type: "score" }),
+        makePayload({
+          grade: null,
+          noConcept: true,
+          golfScoreCategory: null,
+          timeSeconds: null,
+          strokeCountValue: null,
+        }),
+      );
+      expect(issue).toBeNull();
+    });
+
+    it("accepts a full golf rating (grade + category + pair)", () => {
+      const issue = validateRatingAgainstSkill(
+        makeSkill({ type: "score" }),
+        makePayload({
+          grade: 3,
+          noConcept: false,
+          golfScoreCategory: "deck_dive",
+          timeSeconds: 14.25,
+          strokeCountValue: 18,
+        }),
+      );
+      expect(issue).toBeNull();
+    });
+
+    it("doesn't require numbers on a non-score measured skill with a grade", () => {
+      // Tempo etc. still save with just a grade.
+      const issue = validateRatingAgainstSkill(
+        makeSkill({ type: "measured" }),
+        makePayload({ grade: 3, noConcept: false }),
+      );
+      expect(issue).toBeNull();
     });
   });
 

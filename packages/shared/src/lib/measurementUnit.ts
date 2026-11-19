@@ -25,14 +25,13 @@ const CATALOG_TO_ENUM: Record<string, MeasurementUnit> = {
   "ft": "feet",
   "cycles/min": "stroke_cycles_per_minute",
   "strokes/length": "stroke_count",
+  "kicks/min": "kicks_per_minute",
 };
 
 // Catalog unit labels that intentionally do not map to a measurement_unit
-// enum. These skills record their raw numbers elsewhere (e.g. golf-score
-// skills use `measurementValue` + `golfScoreCategory` instead of a plain
-// measurement) or don't persist measurements at all.
+// enum. Golf-score skills record their raw numbers in time_seconds +
+// stroke_count_value (plus golfScoreCategory), not measurement_value.
 export const INTENTIONALLY_UNMAPPED_CATALOG_UNITS: ReadonlySet<string> = new Set([
-  "kicks/min",
   "time_s + stroke_count",
 ]);
 

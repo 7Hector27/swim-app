@@ -49,6 +49,10 @@ export interface RatingPayload {
   measurementValue: string | null;
   measurementUnit: MeasurementUnit | null;
   golfScoreCategory: GolfScoreCategory | null;
+  // Pass 2c: golf-score inputs — hundredths-of-a-second time and the
+  // paired stroke count. Only allowed on `score` skills.
+  timeSeconds: number | null;
+  strokeCountValue: number | null;
   faultTags: readonly string[];
 }
 
@@ -63,7 +67,9 @@ export interface RatingValidationIssue {
     | "notLegal"
     | "faultTags"
     | "measurementValue"
-    | "measurementUnit";
+    | "measurementUnit"
+    | "timeSeconds"
+    | "strokeCountValue";
   message: string;
 }
 
@@ -83,11 +89,23 @@ export function validateRatingAgainstSkill(
     };
   }
 
-  if (skill.type === "score" && payload.golfScoreCategory === null && !payload.noConcept) {
-    return {
-      field: "golfScoreCategory",
-      message: "Golf score category is required for score skills",
-    };
+  // Score (golf) skills: if the coach set a 1-5 grade, the row must also
+  // carry a category + time + stroke count. "No concept" opts out —
+  // numbers aren't expected when the swimmer can't do it. Other measured
+  // skills (tempo, kick rate, stroke count) still save with just a grade.
+  if (skill.type === "score" && payload.grade !== null && !payload.noConcept) {
+    if (payload.golfScoreCategory === null) {
+      return {
+        field: "golfScoreCategory",
+        message: "Pick a test category before saving a golf score.",
+      };
+    }
+    if (payload.timeSeconds === null || payload.strokeCountValue === null) {
+      return {
+        field: "timeSeconds",
+        message: "Enter the time and stroke count for this golf score.",
+      };
+    }
   }
   if (skill.type !== "score" && payload.golfScoreCategory !== null) {
     return {
@@ -131,6 +149,20 @@ export function validateRatingAgainstSkill(
         message: `Measurement unit must be ${skill.unit}`,
       };
     }
+  }
+
+  // Golf-score inputs (Pass 2c): only allowed on score skills, and the two
+  // numeric fields pair with each other. The category requirement and
+  // paired-fields invariant are also enforced by Zod + DB check constraints;
+  // the type gate is only enforceable here because it needs catalog context.
+  if (
+    (payload.timeSeconds !== null || payload.strokeCountValue !== null) &&
+    skill.type !== "score"
+  ) {
+    return {
+      field: "timeSeconds",
+      message: "Golf-score time and stroke count only allowed on score skills",
+    };
   }
 
   return null;

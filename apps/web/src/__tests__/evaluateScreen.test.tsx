@@ -27,7 +27,8 @@ import SkillGradeRow from "../content/EvaluateContent/SkillGradeRow";
 import CalculatedSkillRow from "../content/EvaluateContent/CalculatedSkillRow";
 import StartGroupSection from "../content/EvaluateContent/StartGroupSection";
 import UndoToast from "../content/EvaluateContent/UndoToast";
-import SectionTabs from "../content/EvaluateContent/SectionTabs";
+import CollapsibleSection from "../content/EvaluateContent/CollapsibleSection";
+import AutosaveStatus from "../content/EvaluateContent/AutosaveStatus";
 import EvaluateContent from "../content/EvaluateContent/EvaluateContent";
 import { buildRatingsArray, defaultSkillDraft } from "../content/EvaluateContent/helpers";
 import { submitEvaluation } from "../content/EvaluateContent/actions";
@@ -142,23 +143,56 @@ describe("buildRatingsArray", () => {
 // ── Component tests ───────────────────────────────────────────────────────────
 
 describe("GradeSelector", () => {
-  it("renders N/A button", () => {
-    const onChange = vi.fn();
-    render(<GradeSelector value={null} disabled={false} onChange={onChange} labelPrefix="Kick" />);
-    expect(screen.getByRole("radio", { name: /n\/a/i })).toBeInTheDocument();
+  // Pass 2b: the N/A pill is gone — an untouched row has nothing selected.
+  // Tapping the already-selected grade clears it to null. Arrow keys move
+  // between the five grade pills; a polite live region announces the
+  // cleared state.
+
+  it("renders only the 1-5 grade buttons (no N/A pill)", () => {
+    render(<GradeSelector value={null} disabled={false} onChange={vi.fn()} labelPrefix="Kick" />);
+    for (const grade of ["1", "2", "3", "4", "5"]) {
+      expect(screen.getByRole("radio", { name: grade })).toBeInTheDocument();
+    }
+    expect(screen.queryByRole("radio", { name: /n\/a/i })).toBeNull();
   });
 
-  it("N/A is selected by default when value is null", () => {
-    const onChange = vi.fn();
-    render(<GradeSelector value={null} disabled={false} onChange={onChange} labelPrefix="Kick" />);
-    expect(screen.getByRole("radio", { name: /n\/a/i })).toHaveAttribute("aria-checked", "true");
+  it("nothing is selected when value is null (untouched row)", () => {
+    render(<GradeSelector value={null} disabled={false} onChange={vi.fn()} labelPrefix="Kick" />);
+    for (const grade of ["1", "2", "3", "4", "5"]) {
+      expect(screen.getByRole("radio", { name: grade })).toHaveAttribute("aria-checked", "false");
+    }
   });
 
-  it("calls onChange with the grade when a grade button is clicked", () => {
+  it("calls onChange with the grade when a grade pill is tapped", () => {
     const onChange = vi.fn();
     render(<GradeSelector value={null} disabled={false} onChange={onChange} labelPrefix="Kick" />);
     fireEvent.click(screen.getByRole("radio", { name: "3" }));
     expect(onChange).toHaveBeenCalledWith(3);
+  });
+
+  it("calls onChange(null) when the already-selected grade is tapped (toggle to cleared)", () => {
+    const onChange = vi.fn();
+    render(<GradeSelector value={4} disabled={false} onChange={onChange} labelPrefix="Kick" />);
+    fireEvent.click(screen.getByRole("radio", { name: "4" }));
+    expect(onChange).toHaveBeenCalledWith(null);
+  });
+
+  it("announces the cleared state via a polite live region", () => {
+    const { rerender } = render(
+      <GradeSelector value={3} disabled={false} onChange={vi.fn()} labelPrefix="Freestyle kick" />,
+    );
+    expect(screen.getByRole("status").textContent).toMatch(/grade 3/i);
+    rerender(<GradeSelector value={null} disabled={false} onChange={vi.fn()} labelPrefix="Freestyle kick" />);
+    expect(screen.getByRole("status").textContent).toMatch(/no grade selected/i);
+  });
+
+  it("arrow keys cycle onChange through adjacent grades", () => {
+    const onChange = vi.fn();
+    render(<GradeSelector value={3} disabled={false} onChange={onChange} labelPrefix="Kick" />);
+    fireEvent.keyDown(screen.getByRole("radio", { name: "3" }), { key: "ArrowRight" });
+    expect(onChange).toHaveBeenLastCalledWith(4);
+    fireEvent.keyDown(screen.getByRole("radio", { name: "3" }), { key: "ArrowLeft" });
+    expect(onChange).toHaveBeenLastCalledWith(2);
   });
 });
 
@@ -240,6 +274,281 @@ describe("SkillGradeRow — previous rating badge", () => {
       />,
     );
     expect(screen.getByLabelText(/no previous rating/i)).toBeInTheDocument();
+  });
+});
+
+describe("SkillGradeRow — measurement on row (Pass 2b)", () => {
+  // The number box moved from DetailsPanel onto the row. The details panel
+  // now only holds fault tags, capacity, and the free-text note.
+  const MEASURED_SKILL: SkillForRating = {
+    ...SKILL,
+    id: "measured-skill",
+    slug: "free-tempo",
+    name: "Tempo",
+    type: "measured",
+    unit: "cycles/min",
+    notLegalAllowed: false,
+  };
+
+  it("shows the measurement number input on the row with the unit label", () => {
+    render(
+      <SkillGradeRow
+        skill={MEASURED_SKILL}
+        draftKey={MEASURED_SKILL.id}
+        label="Tempo"
+        draft={defaultSkillDraft()}
+        onChange={vi.fn()}
+      />,
+    );
+    // Row-level input exists and is visible without expanding anything.
+    expect(screen.getByRole("spinbutton", { name: /Measurement/i })).toBeInTheDocument();
+    expect(screen.getByText("cycles/min")).toBeInTheDocument();
+    // No "Hide details" / "Add details" expansion needed to see it.
+    expect(screen.queryByRole("button", { name: /Hide details/i })).toBeNull();
+  });
+
+  it("writes the typed value to measurementValue through onChange", () => {
+    const onChange = vi.fn();
+    render(
+      <SkillGradeRow
+        skill={MEASURED_SKILL}
+        draftKey={MEASURED_SKILL.id}
+        label="Tempo"
+        draft={defaultSkillDraft()}
+        onChange={onChange}
+      />,
+    );
+    fireEvent.change(screen.getByRole("spinbutton", { name: /Measurement/i }), { target: { value: "62" } });
+    expect(onChange).toHaveBeenCalledWith(MEASURED_SKILL.id, { measurementValue: "62" });
+  });
+
+  it("details panel no longer renders the measurement input (it lives on the row)", () => {
+    const onChange = vi.fn();
+    render(
+      <SkillGradeRow
+        skill={MEASURED_SKILL}
+        draftKey={MEASURED_SKILL.id}
+        label="Tempo"
+        draft={{ ...defaultSkillDraft(), detailsOpen: true }}
+        onChange={onChange}
+      />,
+    );
+    // Exactly one measurement spinbutton on the whole row (the one on the
+    // header level), and the details panel shows capacity + note instead.
+    expect(screen.getAllByRole("spinbutton", { name: /Measurement/i })).toHaveLength(1);
+    expect(screen.getByLabelText(/Capacity/i)).toBeInTheDocument();
+  });
+
+  // Pass 2c: golf score + kick rate stop using the fallback note.
+  // Golf score renders the two-input mode (see "SkillGradeRow — Pass 2c
+  // golf + kick rate" below). Kick rate becomes a normal single-input
+  // measured row once "kicks/min" maps to kicks_per_minute.
+});
+
+describe("SkillGradeRow — Pass 2c golf + kick rate", () => {
+  // Pass 2c: golf-score skills render two number inputs (Time + Stroke
+  // count) and a derived golf score. Kick rate (previously blocked by
+  // the unmapped-unit fallback) now renders as a normal single-input
+  // measured row because "kicks/min" maps to kicks_per_minute.
+
+  it("golf skill shows Time and Stroke count inputs and the derived score", () => {
+    const golf: SkillForRating = {
+      ...SKILL,
+      id: "golf-score",
+      slug: "free-golf-score",
+      name: "Golf score",
+      type: "score",
+      unit: "time_s + stroke_count",
+      notLegalAllowed: false,
+    };
+    const onChange = vi.fn();
+    render(
+      <SkillGradeRow
+        skill={golf}
+        draftKey={golf.id}
+        label="Golf score"
+        draft={{ ...defaultSkillDraft(), timeSeconds: "14.25", strokeCountValue: "18" }}
+        onChange={onChange}
+      />,
+    );
+    expect(screen.getByLabelText(/Time/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Stroke count/i)).toBeInTheDocument();
+    // Category pills still on the row for golf.
+    expect(screen.getByRole("button", { name: /Push-off in water/i })).toBeInTheDocument();
+    // Derived score = 14.25 + 18 = 32.25 → "32.3" rounded to 1 decimal.
+    // The number only appears in the derived readout paragraph, so matching
+    // by the numeric text is safe (the label "Golf score" has no colon).
+    expect(screen.getByText(/32\.3/)).toBeInTheDocument();
+  });
+
+  it("golf skill writes timeSeconds / strokeCountValue through onChange", () => {
+    const golf: SkillForRating = {
+      ...SKILL,
+      id: "golf-score",
+      slug: "free-golf-score",
+      name: "Golf score",
+      type: "score",
+      unit: "time_s + stroke_count",
+      notLegalAllowed: false,
+    };
+    const onChange = vi.fn();
+    render(
+      <SkillGradeRow
+        skill={golf}
+        draftKey={golf.id}
+        label="Golf score"
+        draft={defaultSkillDraft()}
+        onChange={onChange}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText(/Time/i), { target: { value: "14.25" } });
+    expect(onChange).toHaveBeenCalledWith(golf.id, { timeSeconds: "14.25" });
+    fireEvent.change(screen.getByLabelText(/Stroke count/i), { target: { value: "18" } });
+    expect(onChange).toHaveBeenCalledWith(golf.id, { strokeCountValue: "18" });
+  });
+
+  it("kick-rate skill now renders a single-number row (was the 'can't be saved yet' fallback)", () => {
+    const kickRate: SkillForRating = {
+      ...SKILL,
+      id: "kick-rate",
+      slug: "free-kick-rate",
+      name: "Kick rate",
+      type: "measured",
+      unit: "kicks/min",
+      notLegalAllowed: false,
+    };
+    render(
+      <SkillGradeRow
+        skill={kickRate}
+        draftKey={kickRate.id}
+        label="Kick rate"
+        draft={defaultSkillDraft()}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("spinbutton", { name: /Measurement/i })).toBeInTheDocument();
+    expect(screen.getByText("kicks/min")).toBeInTheDocument();
+    expect(screen.queryByText(/can't be saved yet/i)).toBeNull();
+  });
+
+  it("buildRatingsArray emits timeSeconds + strokeCountValue for score skills", () => {
+    const golf: SkillForRating = {
+      ...SKILL,
+      id: "golf-score",
+      slug: "free-golf-score",
+      name: "Golf score",
+      type: "score",
+      unit: "time_s + stroke_count",
+      notLegalAllowed: false,
+    };
+    const ratings = buildRatingsArray([golf], {
+      [golf.id]: {
+        ...defaultSkillDraft(),
+        grade: 3,
+        timeSeconds: "14.25",
+        strokeCountValue: "18",
+        golfScoreCategory: "push_off_in_water",
+      },
+    });
+    expect(ratings).toHaveLength(1);
+    expect(ratings[0]!.timeSeconds).toBe(14.25);
+    expect(ratings[0]!.strokeCountValue).toBe(18);
+    expect(ratings[0]!.golfScoreCategory).toBe("push_off_in_water");
+  });
+
+  it("buildRatingsArray passes through a partial pair so validateSubmission can flag it", () => {
+    // Pass 2c follow-up: silent scrub replaced by surfacing the partial
+    // state to Zod. validateSubmission emits a timeSeconds issue; the row
+    // renders "Enter both time and stroke count" and save is blocked.
+    const golf: SkillForRating = {
+      ...SKILL,
+      id: "golf-score",
+      slug: "free-golf-score",
+      name: "Golf score",
+      type: "score",
+      unit: "time_s + stroke_count",
+      notLegalAllowed: false,
+    };
+    const ratings = buildRatingsArray([golf], {
+      [golf.id]: {
+        ...defaultSkillDraft(),
+        grade: 3,
+        timeSeconds: "14.25",
+        strokeCountValue: "",
+        golfScoreCategory: "push_off_in_water",
+      },
+    });
+    expect(ratings[0]!.timeSeconds).toBe(14.25);
+    expect(ratings[0]!.strokeCountValue).toBeNull();
+  });
+
+  // Pass 2c follow-up: row-level rendering of the two validation errors.
+
+  it("renders the 'Enter both time and stroke count' message under the two inputs when passed a timeSeconds issue", () => {
+    const golf: SkillForRating = {
+      ...SKILL,
+      id: "golf-score",
+      slug: "free-golf-score",
+      name: "Golf score",
+      type: "score",
+      unit: "time_s + stroke_count",
+      notLegalAllowed: false,
+    };
+    render(
+      <SkillGradeRow
+        skill={golf}
+        draftKey={golf.id}
+        label="Golf score"
+        draft={{ ...defaultSkillDraft(), grade: 3, timeSeconds: "14.25", strokeCountValue: "" }}
+        onChange={vi.fn()}
+        issues={[{ ratingIndex: 0, field: "timeSeconds", message: "Enter both time and stroke count." }]}
+      />,
+    );
+    expect(screen.getByText(/Enter both time and stroke count/i)).toBeInTheDocument();
+    // The stroke-count input (the empty one) gets aria-invalid; the
+    // filled time input does not, so the coach's eye lands on the right box.
+    const strokesInput = screen.getByLabelText(/Stroke count/i);
+    expect(strokesInput).toHaveAttribute("aria-invalid", "true");
+    const timeInput = screen.getByLabelText(/Time/i);
+    expect(timeInput).not.toHaveAttribute("aria-invalid");
+  });
+
+  it("renders the 'Pick a test category' message near the category pills when passed a golfScoreCategory issue", () => {
+    const golf: SkillForRating = {
+      ...SKILL,
+      id: "golf-score",
+      slug: "free-golf-score",
+      name: "Golf score",
+      type: "score",
+      unit: "time_s + stroke_count",
+      notLegalAllowed: false,
+    };
+    render(
+      <SkillGradeRow
+        skill={golf}
+        draftKey={golf.id}
+        label="Golf score"
+        draft={{
+          ...defaultSkillDraft(),
+          grade: 3,
+          timeSeconds: "14.25",
+          strokeCountValue: "18",
+          golfScoreCategory: null,
+        }}
+        onChange={vi.fn()}
+        issues={[
+          {
+            ratingIndex: 0,
+            field: "golfScoreCategory",
+            message: "Pick a test category before saving a golf score.",
+          },
+        ]}
+      />,
+    );
+    expect(screen.getByText(/Pick a test category/i)).toBeInTheDocument();
+    // Category pill group has aria-invalid set.
+    const categoryGroup = screen.getByRole("group", { name: "" });
+    expect(categoryGroup).toHaveAttribute("aria-invalid", "true");
   });
 });
 
@@ -582,7 +891,11 @@ describe("EvaluateContent — breathing pattern selector", () => {
       screenSlug: "butterfly",
       name: "Butterfly",
       skills: [{
-        id: "skill-fp-2", slug: "fly-kick", name: "Kick",
+        // fly-dolphin-kick lives in butterfly's "The swim" section — Pass 2a
+        // renders the breathing-pattern picker at the end of that section on
+        // freestyle/butterfly, so the fixture needs at least one slug that
+        // places the swim section in the rendered output.
+        id: "skill-fp-2", slug: "fly-dolphin-kick", name: "Dolphin kick",
         type: "rubric", unit: null, stroke: "fly" as const, ratedPerSide: false,
         notLegalAllowed: false, parentSkillId: null, sortOrder: 1, faultTags: [], descriptors: [],
       }],
@@ -671,77 +984,111 @@ describe("UndoToast", () => {
   });
 });
 
-// ── SectionTabs ───────────────────────────────────────────────────────────────
+// ── CollapsibleSection ────────────────────────────────────────────────────────
 
-describe("SectionTabs", () => {
-  const TEST_SECTIONS = [
-    { name: "Start", count: 2, completed: 0 },
-    { name: "Underwaters", count: 2, completed: 1 },
-    { name: "Breakout", count: 1, completed: 0 },
-  ];
-
-  it("scrolls the active tab into view when activeIndex changes, but not on first mount", () => {
-    const spy = vi.fn();
-    const original = Element.prototype.scrollIntoView;
-    Element.prototype.scrollIntoView = spy;
-
-    try {
-      const { rerender } = render(
-        <SectionTabs sections={TEST_SECTIONS} activeIndex={0} onSelect={() => {}} />,
-      );
-      // First mount: no scroll (don't jiggle the strip on page load).
-      expect(spy).not.toHaveBeenCalled();
-
-      rerender(
-        <SectionTabs sections={TEST_SECTIONS} activeIndex={2} onSelect={() => {}} />,
-      );
-      // Switching to a different tab (as validation-jump does): scroll it in.
-      expect(spy).toHaveBeenCalledTimes(1);
-      expect(spy).toHaveBeenCalledWith(
-        expect.objectContaining({ inline: "nearest", block: "nearest" }),
-      );
-    } finally {
-      Element.prototype.scrollIntoView = original;
-    }
+describe("CollapsibleSection", () => {
+  it("renders the section name and the completed/count badge", () => {
+    render(
+      <CollapsibleSection
+        name="The swim"
+        count={10}
+        completed={3}
+        open={true}
+        onToggle={() => {}}
+        anchorId="section-swim"
+      >
+        <div>body</div>
+      </CollapsibleSection>,
+    );
+    expect(screen.getByText("The swim")).toBeInTheDocument();
+    expect(screen.getByText("3/10")).toBeInTheDocument();
   });
 
-  it("hides the scrollbar via the reusable utility class", () => {
-    render(<SectionTabs sections={TEST_SECTIONS} activeIndex={0} onSelect={() => {}} />);
-    const nav = screen.getByRole("navigation", { name: /evaluation sections/i });
-    expect(nav.className).toMatch(/\bscrollbar-none\b/);
+  it("exposes aria-expanded + an anchorable section wrapper", () => {
+    const { rerender } = render(
+      <CollapsibleSection
+        name="Underwaters"
+        count={2}
+        completed={0}
+        open={false}
+        onToggle={() => {}}
+        anchorId="section-underwaters"
+      >
+        <div>body</div>
+      </CollapsibleSection>,
+    );
+    const toggle = screen.getByRole("button", { name: /Underwaters/ });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(document.getElementById("section-underwaters")).not.toBeNull();
+    // Body is hidden when the section is closed.
+    expect(screen.queryByText("body")).toBeNull();
+
+    rerender(
+      <CollapsibleSection
+        name="Underwaters"
+        count={2}
+        completed={0}
+        open={true}
+        onToggle={() => {}}
+        anchorId="section-underwaters"
+      >
+        <div>body</div>
+      </CollapsibleSection>,
+    );
+    expect(screen.getByRole("button", { name: /Underwaters/ })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    expect(screen.getByText("body")).toBeInTheDocument();
   });
 
-  it("honors prefers-reduced-motion when scrolling into view", () => {
-    const spy = vi.fn();
-    const originalScroll = Element.prototype.scrollIntoView;
-    Element.prototype.scrollIntoView = spy;
-    const matchMediaSpy = vi.spyOn(window, "matchMedia").mockImplementation((query) => ({
-      matches: query === "(prefers-reduced-motion: reduce)",
-      media: query,
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-      addListener: vi.fn(),
-      removeListener: vi.fn(),
-      onchange: null,
-      dispatchEvent: vi.fn(() => true),
-    }));
-
-    try {
-      const { rerender } = render(
-        <SectionTabs sections={TEST_SECTIONS} activeIndex={0} onSelect={() => {}} />,
-      );
-      rerender(
-        <SectionTabs sections={TEST_SECTIONS} activeIndex={1} onSelect={() => {}} />,
-      );
-      expect(spy).toHaveBeenCalledWith(expect.objectContaining({ behavior: "auto" }));
-    } finally {
-      Element.prototype.scrollIntoView = originalScroll;
-      matchMediaSpy.mockRestore();
-    }
+  it("calls onToggle when the header is clicked", () => {
+    const toggle = vi.fn();
+    render(
+      <CollapsibleSection
+        name="Breakout"
+        count={1}
+        completed={0}
+        open={false}
+        onToggle={toggle}
+        anchorId="section-breakout"
+      >
+        <div>body</div>
+      </CollapsibleSection>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Breakout/ }));
+    expect(toggle).toHaveBeenCalledTimes(1);
   });
 });
 
 // ── Pre-save client validation ────────────────────────────────────────────────
+
+describe("AutosaveStatus", () => {
+  it("renders nothing when idle", () => {
+    const { container } = render(<AutosaveStatus state="idle" lastSavedAt={null} />);
+    expect(container.firstChild).toBeNull();
+  });
+
+  it("shows 'Saving...' while the draft is in flight", () => {
+    render(<AutosaveStatus state="saving" lastSavedAt={null} />);
+    expect(screen.getByTestId("autosave-status").textContent).toBe("Saving...");
+  });
+
+  it("shows 'Saved' with the local time after a successful save", () => {
+    // Fixed instant — 10:23 America/Los_Angeles.
+    const ts = new Date("2026-11-18T18:23:00Z").getTime();
+    render(<AutosaveStatus state="saved" lastSavedAt={ts} />);
+    expect(screen.getByTestId("autosave-status").textContent).toMatch(/^Saved/);
+    expect(screen.getByTestId("autosave-status").textContent).toMatch(/10:23/);
+  });
+
+  it("surfaces an error with role=alert when the save fails", () => {
+    render(<AutosaveStatus state="error" lastSavedAt={null} />);
+    const status = screen.getByTestId("autosave-status");
+    expect(status.textContent).toBe("Couldn't save. Try again.");
+    expect(status).toHaveAttribute("role", "alert");
+  });
+});
 
 describe("EvaluateContent — pre-save validation", () => {
   const VALIDATION_SCREENS: ScreensResponse = [

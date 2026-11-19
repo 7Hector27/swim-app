@@ -1,4 +1,11 @@
-import { CreateSessionBodySchema, displayUnitToMeasurementEnum } from "@swim-app/shared";
+import {
+  CreateSessionBodySchema,
+  displayUnitToMeasurementEnum,
+  validateRatingAgainstSkill,
+  type RatingPayload,
+  type RatingSkillDef,
+} from "@swim-app/shared";
+import type { SkillForRating } from "@swim-app/shared";
 
 // A single validation issue, keyed by rating index when the problem is on a
 // specific skill row (so the UI can scroll to and annotate the right field).
@@ -30,6 +37,14 @@ const FIELD_MESSAGE_OVERRIDES: Record<string, string> = {
     "Pick a 1 to 5 grade, or toggle 'No concept'.",
   notLegal:
     "'Not legal' needs a 1 to 5 grade.",
+  // Pass 2c follow-up: golf-score numbers. Shown for any time/stroke
+  // problem (partial pair caught by Zod, or grade-without-pair caught by
+  // the catalog validator). Matches the catalog's canonical message so
+  // the coach sees the same copy in both situations.
+  timeSeconds: "Enter the time and stroke count for this golf score.",
+  // Golf pair + no category picked. Zod reports on this field when
+  // timeSeconds is set but golfScoreCategory is null.
+  golfScoreCategory: "Pick a test category before saving a golf score.",
   coachingPriority: "Enter a coaching priority.",
   sessionDate: "Pick a session date.",
   context: "Pick a context.",
@@ -155,13 +170,20 @@ export function sortIssuesForScroll(
 }
 
 // Checks everything the API requires on the client, so a tap on Save with a
-// missing field never fires a request. Combines (a) explicit per-field
-// checks for the session-level fields the form hosts, and (b) the shared
-// Zod schema for everything inside the ratings array (per-skill rules like
-// "measurementValue needs a unit"). Returns issues ready to render.
+// missing field never fires a request. Combines three layers:
+//   1. Explicit per-field checks for the session-level fields the form hosts.
+//   2. Catalog-aware per-rating checks (validateRatingAgainstSkill) for
+//      rules that need skill context — notably "golf grade requires
+//      time + strokes + category." Requires screenSkills.
+//   3. The shared Zod schema for structural rules (paired fields, grade
+//      vs noConcept, etc.). Zod runs last so catalog messages take
+//      precedence on overlapping fields.
+// Returns issues ready to render. When screenSkills is omitted (legacy
+// call sites + some tests), layer 2 is skipped.
 export function validateSubmission(
   draft: SessionDraft,
   ratingsArray: ReturnType<typeof buildRatingsArray>,
+  screenSkills?: ReadonlyArray<SkillForRating>,
 ): EvaluateFieldIssue[] {
   const issues: EvaluateFieldIssue[] = [];
 
@@ -184,8 +206,38 @@ export function validateSubmission(
     issues.push({ field: "ratings", message: FIELD_MESSAGE_OVERRIDES.ratings ?? "" });
   }
 
-  // Full schema parse catches per-rating problems the row-level UI doesn't
-  // enforce directly (measurement/capacity pairing, grade/noConcept pairing).
+  // Layer 2 — catalog-aware per-rating checks. The shared validator is
+  // the single source of truth; the server runs the same function on
+  // CREATE and PATCH, so any divergence surfaces immediately.
+  if (screenSkills !== undefined) {
+    const skillById = new Map(screenSkills.map((skill) => [skill.id, skill]));
+    for (let ratingIndex = 0; ratingIndex < ratingsArray.length; ratingIndex++) {
+      const rating = ratingsArray[ratingIndex]!;
+      const skill = skillById.get(rating.skillId);
+      if (!skill) continue;
+      const skillDef: RatingSkillDef = {
+        type: skill.type,
+        ratedPerSide: skill.ratedPerSide,
+        notLegalAllowed: skill.notLegalAllowed,
+        unit: skill.unit,
+        allowedFaultTags: skill.faultTags,
+      };
+      // buildRatingsArray returns `measurementUnit: string | null` so the
+      // dropdown's string value can flow through unchanged for skills
+      // without a catalog unit; the catalog validator rejects mismatches.
+      // RatingPayload narrows the type to the MeasurementUnit enum, so
+      // cast at this boundary.
+      const issue = validateRatingAgainstSkill(skillDef, rating as unknown as RatingPayload);
+      if (issue) {
+        issues.push({ ratingIndex, field: issue.field, message: issue.message });
+      }
+    }
+  }
+
+  // Layer 3 — Zod. Catches structural issues the catalog pass can't see
+  // (measurement/capacity pairing, grade/noConcept pairing). Runs after
+  // the catalog layer so when both fire on the same field+index, the
+  // catalog's user-facing copy wins the dedupe.
   if (ratingsArray.length > 0 && draft.screenSlug !== "") {
     const trimmedPriority = draft.coachingPriority.trim();
     const body = {
@@ -199,9 +251,20 @@ export function validateSubmission(
     const parsed = CreateSessionBodySchema.safeParse(body);
     if (!parsed.success) {
       for (const issue of mapZodIssuesToFieldIssues(parsed.error.issues)) {
-        // Skip issues we already reported from the explicit per-field pass
-        // (session-level checks are more specific than Zod's generic ones).
+        // Session-level checks are more specific than Zod's generic ones.
         if (issue.ratingIndex === undefined && issues.some((existing) => existing.field === issue.field)) {
+          continue;
+        }
+        // Per-rating dedupe against the catalog layer: if we already
+        // emitted an issue for this (ratingIndex, field), the catalog
+        // message wins.
+        if (
+          issue.ratingIndex !== undefined &&
+          issues.some(
+            (existing) =>
+              existing.ratingIndex === issue.ratingIndex && existing.field === issue.field,
+          )
+        ) {
           continue;
         }
         issues.push(issue);
@@ -240,6 +303,11 @@ export type SkillDraft = {
   faultTags: string[];
   detailsOpen: boolean;
   golfScoreCategory: "push_off_in_water" | "deck_dive" | "block_dive" | null;
+  // Pass 2c: golf-score inputs — free text while typing, parsed to
+  // number at submit time. buildRatingsArray converts "12.5" → 12.5
+  // and "" → null.
+  timeSeconds: string;
+  strokeCountValue: string;
 };
 
 export type SessionDraft = {
@@ -270,6 +338,8 @@ export function defaultSkillDraft(): SkillDraft {
     faultTags: [],
     detailsOpen: false,
     golfScoreCategory: null,
+    timeSeconds: "",
+    strokeCountValue: "",
   };
 }
 
@@ -339,6 +409,139 @@ export function buildSectionGroups(
   return result;
 }
 
+// Per-section "X / Y rated" chip math on the evaluate screen. Pulled out
+// of EvaluateContent so the composite-start branch is unit-testable.
+//
+// Rule mirrors the progress page's screenGroupRollups so the evaluate
+// chip and the progress "X of Y skills rated" line never disagree:
+// - Rollups drop from the total (type === "rollup" filtered out).
+// - Composite starts (track-start / relay-start / back-start) stay in the
+//   total and count as rated when their component drafts resolve to
+//   graded or not_legal. in_progress (any component unfilled) and
+//   no_concept (every component no_concept) are in the total only.
+//   Start components themselves aren't in SCREEN_SECTIONS so they can't
+//   bump the total directly.
+export type ComponentDraftStatus = "unfilled" | "no_concept" | "not_legal" | "graded";
+
+export function componentDraftStatus(
+  componentId: string,
+  ratedPerSide: boolean,
+  draftSkills: Record<string, SkillDraft>,
+): ComponentDraftStatus {
+  const keys = ratedPerSide ? [`${componentId}:left`, `${componentId}:right`] : [componentId];
+  let seenNoConcept = false;
+  let seenNotLegal = false;
+  let seenGraded = false;
+  for (const key of keys) {
+    const skillDraft = draftSkills[key];
+    if (!skillDraft) continue;
+    if (skillDraft.notLegal) seenNotLegal = true;
+    else if (skillDraft.noConcept) seenNoConcept = true;
+    else if (skillDraft.grade !== null || skillDraft.measurementValue !== "") seenGraded = true;
+  }
+  // calculateStartGrade ordering: not_legal > in_progress > no_concept >
+  // graded. "Unfilled" is this function's equivalent of "in_progress" for
+  // a single component; the caller composes them below.
+  if (seenNotLegal) return "not_legal";
+  if (seenGraded) return "graded";
+  if (seenNoConcept) return "no_concept";
+  return "unfilled";
+}
+
+export function computeSectionCounts(
+  sectionGroups: Array<{ name: string; skills: import("@swim-app/shared").SkillForRating[] }> | null,
+  screenSkills: ReadonlyArray<import("@swim-app/shared").SkillForRating>,
+  draftSkills: Record<string, SkillDraft>,
+): Array<{ name: string; count: number; completed: number }> {
+  if (sectionGroups === null) return [];
+  const componentsByParentId = new Map<string, import("@swim-app/shared").SkillForRating[]>();
+  for (const candidate of screenSkills) {
+    if (candidate.parentSkillId !== null) {
+      const existing = componentsByParentId.get(candidate.parentSkillId) ?? [];
+      existing.push(candidate);
+      componentsByParentId.set(candidate.parentSkillId, existing);
+    }
+  }
+  return sectionGroups.map((section) => {
+    let completed = 0;
+    const ratable = section.skills.filter((skill) => skill.type !== "rollup");
+    for (const skill of ratable) {
+      if (skill.type === "composite") {
+        const components = componentsByParentId.get(skill.id) ?? [];
+        if (components.length === 0) continue;
+        const statuses = components.map((comp) =>
+          componentDraftStatus(comp.id, comp.ratedPerSide, draftSkills),
+        );
+        // not_legal on any component beats a missing one (calculateStartGrade
+        // rule 1 trumps rule 2). Everything resolved → graded. All
+        // no_concept → no_concept. Otherwise → in_progress (not counted).
+        if (statuses.some((status) => status === "not_legal")) {
+          completed += 1;
+          continue;
+        }
+        if (statuses.some((status) => status === "unfilled")) continue;
+        if (statuses.every((status) => status === "no_concept")) continue;
+        completed += 1;
+        continue;
+      }
+      const keys = skill.ratedPerSide
+        ? [`${skill.id}:left`, `${skill.id}:right`]
+        : [skill.id];
+      if (
+        keys.some((key) => {
+          const skillDraft = draftSkills[key];
+          if (!skillDraft) return false;
+          return (
+            skillDraft.grade !== null ||
+            skillDraft.noConcept ||
+            skillDraft.notLegal ||
+            skillDraft.measurementValue !== ""
+          );
+        })
+      ) {
+        completed += 1;
+      }
+    }
+    return { name: section.name, count: ratable.length, completed };
+  });
+}
+
+// URL-safe slug for a section name — used to scope DOM ids when the same
+// skill renders in more than one section on the same screen (push-off and
+// streamline-in-motion on stroke screens). Pass 2a addition.
+export function slugifySectionName(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+// UI label for a skill, with a stroke suffix when more than one distinct
+// skill in `scope` shares the same display name. Different rows that render
+// the SAME skillId (push-off in Start + The wall) aren't ambiguous and never
+// get a suffix. Pass 2a addition for the Oct 14 screen rule "Every repeated
+// skill label includes its stroke."
+const STROKE_FULL_NAME: Record<"free" | "back" | "breast" | "fly", string> = {
+  free: "freestyle",
+  back: "backstroke",
+  breast: "breaststroke",
+  fly: "butterfly",
+};
+
+export function getDisambiguatedLabel(
+  skill: import("@swim-app/shared").SkillForRating,
+  scope: ReadonlyArray<import("@swim-app/shared").SkillForRating>,
+): string {
+  const sameName = scope.filter(
+    (other) => other.name === skill.name && other.id !== skill.id,
+  );
+  if (sameName.length === 0) return skill.name;
+  if (skill.stroke !== null && skill.stroke in STROKE_FULL_NAME) {
+    return `${skill.name} (${STROKE_FULL_NAME[skill.stroke as keyof typeof STROKE_FULL_NAME]})`;
+  }
+  return skill.name;
+}
+
 // Returns the draftKey for each entry in `buildRatingsArray` (same order).
 // Lets the UI translate server/safeParse `ratings[i]` issue paths back to
 // the specific skill row.
@@ -377,6 +580,8 @@ export function buildRatingsArray(
   faultTags: string[];
   ratedAt: string;
   golfScoreCategory: "push_off_in_water" | "deck_dive" | "block_dive" | null;
+  timeSeconds: number | null;
+  strokeCountValue: number | null;
 }> {
   const ratings = [];
   const now = new Date().toISOString();
@@ -398,6 +603,23 @@ export function buildRatingsArray(
       const measurementUnit = measurementValue === null
         ? null
         : (displayUnitToMeasurementEnum(skill.unit) ?? d.measurementUnit);
+      // Pass 2c: parse the two golf-score free-text inputs. Only emit them
+      // on score skills (API rejects them on non-score). Empty string → null.
+      // A partial pair (one filled, one empty) is passed through so the
+      // Zod paired-fields rule fires in validateSubmission — the coach sees
+      // "Enter both time and stroke count" instead of a silent drop.
+      let timeSeconds: number | null = null;
+      let strokeCountValue: number | null = null;
+      if (skill.type === "score") {
+        if (d.timeSeconds !== "") {
+          const parsedTime = parseFloat(d.timeSeconds);
+          if (!Number.isNaN(parsedTime)) timeSeconds = parsedTime;
+        }
+        if (d.strokeCountValue !== "") {
+          const parsedStrokes = parseInt(d.strokeCountValue, 10);
+          if (!Number.isNaN(parsedStrokes)) strokeCountValue = parsedStrokes;
+        }
+      }
       ratings.push({
         skillId: skill.id,
         grade: d.grade,
@@ -412,6 +634,8 @@ export function buildRatingsArray(
         faultTags: d.faultTags,
         ratedAt: now,
         golfScoreCategory: d.golfScoreCategory,
+        timeSeconds,
+        strokeCountValue,
       });
     }
   }

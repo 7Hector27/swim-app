@@ -3,7 +3,7 @@
 
 import type { Server } from "http";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import request from "supertest";
 import pino from "pino";
 import { createApp } from "../../app";
@@ -16,6 +16,7 @@ import {
 import type { TestUser } from "./helpers";
 import {
   evaluationSessions,
+  householdAuditLog,
   profiles,
   ratingFaultTags,
   skillDependencies,
@@ -320,6 +321,163 @@ describe("skill_ratings CHECK constraints", () => {
   });
 });
 
+// ── Pass 2c: golf-score column constraints + kick-rate round trip ───────────
+
+describe("skill_ratings — Pass 2c golf + kick_rate", () => {
+  let golfSkillId: string;
+  let kickRateSkillId: string;
+  beforeAll(async () => {
+    const golfRows = await adminDb()
+      .select({ id: skills.id })
+      .from(skills)
+      .where(eq(skills.slug, "free-golf-score"))
+      .limit(1);
+    if (!golfRows[0]) throw new Error("Catalog skill free-golf-score not found");
+    golfSkillId = golfRows[0].id;
+
+    const kickRateRows = await adminDb()
+      .select({ id: skills.id })
+      .from(skills)
+      .where(eq(skills.slug, "free-kick-rate"))
+      .limit(1);
+    if (!kickRateRows[0]) throw new Error("Catalog skill free-kick-rate not found");
+    kickRateSkillId = kickRateRows[0].id;
+  });
+
+  it("rejects timeSeconds without strokeCountValue (golf_fields_together)", async () => {
+    await expect(
+      adminDb().insert(skillRatings).values({
+        ...validRatingValues(),
+        skillId: golfSkillId,
+        timeSeconds: "14.25",
+        golfScoreCategory: "push_off_in_water",
+      }),
+    ).rejects.toMatchObject({ message: expect.stringContaining("golf_fields_together") });
+  });
+
+  it("rejects strokeCountValue without timeSeconds (golf_fields_together)", async () => {
+    await expect(
+      adminDb().insert(skillRatings).values({
+        ...validRatingValues(),
+        skillId: golfSkillId,
+        strokeCountValue: 18,
+        golfScoreCategory: "push_off_in_water",
+      }),
+    ).rejects.toMatchObject({ message: expect.stringContaining("golf_fields_together") });
+  });
+
+  it("rejects timeSeconds + strokeCountValue without a category (golf_fields_require_category)", async () => {
+    await expect(
+      adminDb().insert(skillRatings).values({
+        ...validRatingValues(),
+        skillId: golfSkillId,
+        timeSeconds: "14.25",
+        strokeCountValue: 18,
+      }),
+    ).rejects.toMatchObject({ message: expect.stringContaining("golf_fields_require_category") });
+  });
+
+  it("rejects a negative timeSeconds (golf_fields_non_negative)", async () => {
+    await expect(
+      adminDb().insert(skillRatings).values({
+        ...validRatingValues(),
+        skillId: golfSkillId,
+        timeSeconds: "-1.00",
+        strokeCountValue: 18,
+        golfScoreCategory: "push_off_in_water",
+      }),
+    ).rejects.toMatchObject({ message: expect.stringContaining("golf_fields_non_negative") });
+  });
+
+  it("rejects a negative strokeCountValue (golf_fields_non_negative)", async () => {
+    await expect(
+      adminDb().insert(skillRatings).values({
+        ...validRatingValues(),
+        skillId: golfSkillId,
+        timeSeconds: "14.25",
+        strokeCountValue: -1,
+        golfScoreCategory: "push_off_in_water",
+      }),
+    ).rejects.toMatchObject({ message: expect.stringContaining("golf_fields_non_negative") });
+  });
+
+  it("accepts a full golf-score row (time + strokes + category)", async () => {
+    const rows = await adminDb()
+      .insert(skillRatings)
+      .values({
+        ...validRatingValues(),
+        skillId: golfSkillId,
+        timeSeconds: "14.25",
+        strokeCountValue: 18,
+        golfScoreCategory: "deck_dive",
+      })
+      .returning({ id: skillRatings.id });
+    expect(rows[0]!.id).toBeTruthy();
+    await adminDb().delete(skillRatings).where(eq(skillRatings.id, rows[0]!.id));
+  });
+
+  it("append-only trigger rejects UPDATE of time_seconds on an existing row", async () => {
+    const rows = await adminDb()
+      .insert(skillRatings)
+      .values({
+        ...validRatingValues(),
+        skillId: golfSkillId,
+        timeSeconds: "14.25",
+        strokeCountValue: 18,
+        golfScoreCategory: "deck_dive",
+      })
+      .returning({ id: skillRatings.id });
+    const id = rows[0]!.id;
+    try {
+      await expect(
+        adminDb().update(skillRatings).set({ timeSeconds: "15.00" }).where(eq(skillRatings.id, id)),
+      ).rejects.toMatchObject({ message: expect.stringContaining("append-only") });
+    } finally {
+      await adminDb().delete(skillRatings).where(eq(skillRatings.id, id));
+    }
+  });
+
+  it("append-only trigger rejects UPDATE of stroke_count_value on an existing row", async () => {
+    const rows = await adminDb()
+      .insert(skillRatings)
+      .values({
+        ...validRatingValues(),
+        skillId: golfSkillId,
+        timeSeconds: "14.25",
+        strokeCountValue: 18,
+        golfScoreCategory: "deck_dive",
+      })
+      .returning({ id: skillRatings.id });
+    const id = rows[0]!.id;
+    try {
+      await expect(
+        adminDb().update(skillRatings).set({ strokeCountValue: 19 }).where(eq(skillRatings.id, id)),
+      ).rejects.toMatchObject({ message: expect.stringContaining("append-only") });
+    } finally {
+      await adminDb().delete(skillRatings).where(eq(skillRatings.id, id));
+    }
+  });
+
+  it("kick-rate rating round-trips with measurementUnit=kicks_per_minute", async () => {
+    const rows = await adminDb()
+      .insert(skillRatings)
+      .values({
+        ...validRatingValues(),
+        skillId: kickRateSkillId,
+        measurementValue: "45",
+        measurementUnit: "kicks_per_minute",
+      })
+      .returning({
+        id: skillRatings.id,
+        measurementValue: skillRatings.measurementValue,
+        measurementUnit: skillRatings.measurementUnit,
+      });
+    expect(rows[0]!.measurementValue).toBe("45");
+    expect(rows[0]!.measurementUnit).toBe("kicks_per_minute");
+    await adminDb().delete(skillRatings).where(eq(skillRatings.id, rows[0]!.id));
+  });
+});
+
 // ── skill_ratings append-only trigger ────────────────────────────────────────
 
 async function withFreshRating(fn: (id: string) => Promise<void>): Promise<void> {
@@ -602,6 +760,227 @@ describe("API integration tests — evaluations routes", () => {
     expect(response.status).toBe(409);
 
     await adminDb().delete(skillRatings).where(eq(skillRatings.id, ratingId));
+  });
+
+  // ── Audit log: void + undo both write a household_audit_log row ────────────
+
+  it("PATCH void writes a rating_voided audit row in the same transaction", async () => {
+    const rows = await adminDb()
+      .insert(skillRatings)
+      .values({
+        sessionId,
+        swimmerId,
+        skillId,
+        coachId,
+        grade: 3,
+        notLegal: false,
+        noConcept: false,
+        ratedAt: new Date(),
+      })
+      .returning({ id: skillRatings.id });
+    const ratingId = rows[0]!.id;
+
+    try {
+      const response = await request(app)
+        .patch(`/coach/ratings/${ratingId}/void`)
+        .set("Authorization", `Bearer ${coachToken}`)
+        .send({ reason: "Wrong swimmer" });
+      expect(response.status).toBe(200);
+
+      const auditRows = await adminDb()
+        .select({
+          action: householdAuditLog.action,
+          actorId: householdAuditLog.actorId,
+          targetSwimmerId: householdAuditLog.targetSwimmerId,
+          payload: householdAuditLog.payload,
+        })
+        .from(householdAuditLog)
+        .where(
+          and(
+            eq(householdAuditLog.action, "rating_voided"),
+            eq(householdAuditLog.targetSwimmerId, swimmerId),
+          ),
+        );
+      const match = auditRows.find(
+        (row) => (row.payload as { ratingId?: string } | null)?.ratingId === ratingId,
+      );
+      expect(match).toBeDefined();
+      expect(match!.actorId).toBe(coachId);
+      const payload = match!.payload as {
+        ratingId: string;
+        sessionId: string;
+        skillId: string;
+        reason: string;
+      };
+      expect(payload.sessionId).toBe(sessionId);
+      expect(payload.skillId).toBe(skillId);
+      expect(payload.reason).toBe("Wrong swimmer");
+    } finally {
+      await adminDb()
+        .delete(householdAuditLog)
+        .where(
+          and(
+            eq(householdAuditLog.action, "rating_voided"),
+            eq(householdAuditLog.targetSwimmerId, swimmerId),
+          ),
+        );
+      await adminDb().delete(skillRatings).where(eq(skillRatings.id, ratingId));
+    }
+  });
+
+  it("DELETE undo writes a rating_undone audit row in the same transaction", async () => {
+    const rows = await adminDb()
+      .insert(skillRatings)
+      .values({
+        sessionId,
+        swimmerId,
+        skillId,
+        coachId,
+        grade: 3,
+        notLegal: false,
+        noConcept: false,
+        ratedAt: new Date(),
+      })
+      .returning({ id: skillRatings.id });
+    const ratingId = rows[0]!.id;
+
+    try {
+      const response = await request(app)
+        .delete(`/coach/ratings/${ratingId}`)
+        .set("Authorization", `Bearer ${coachToken}`);
+      expect(response.status).toBe(204);
+
+      // The rating row is gone — assert via the audit log instead.
+      const auditRows = await adminDb()
+        .select({
+          action: householdAuditLog.action,
+          actorId: householdAuditLog.actorId,
+          targetSwimmerId: householdAuditLog.targetSwimmerId,
+          payload: householdAuditLog.payload,
+        })
+        .from(householdAuditLog)
+        .where(
+          and(
+            eq(householdAuditLog.action, "rating_undone"),
+            eq(householdAuditLog.targetSwimmerId, swimmerId),
+          ),
+        );
+      const match = auditRows.find(
+        (row) => (row.payload as { ratingId?: string } | null)?.ratingId === ratingId,
+      );
+      expect(match).toBeDefined();
+      expect(match!.actorId).toBe(coachId);
+      const payload = match!.payload as {
+        ratingId: string;
+        sessionId: string;
+        skillId: string;
+      };
+      expect(payload.sessionId).toBe(sessionId);
+      expect(payload.skillId).toBe(skillId);
+    } finally {
+      await adminDb()
+        .delete(householdAuditLog)
+        .where(
+          and(
+            eq(householdAuditLog.action, "rating_undone"),
+            eq(householdAuditLog.targetSwimmerId, swimmerId),
+          ),
+        );
+    }
+  });
+
+  // ── Regression guard: schema shape on routes that return a skillRatings row ─
+  // Pass 2c (f2f5970) added required timeSeconds + strokeCountValue to
+  // SkillRatingBaseSchema. Two routes (PATCH ratings/:id/void and
+  // GET swimmers/:id/skills/:skillId/ratings) kept their old SELECT / RETURNING
+  // column list and started 500ing with a ZodError. These tests pin the shape
+  // so a future column addition to the base schema can't silently regress
+  // either response again.
+
+  it("PATCH void on a golf-score rating returns the full schema shape with both pair fields", async () => {
+    const golfRows = await adminDb()
+      .select({ id: skills.id })
+      .from(skills)
+      .where(eq(skills.slug, "free-golf-score"))
+      .limit(1);
+    const golfSkillId = golfRows[0]!.id;
+
+    const rows = await adminDb()
+      .insert(skillRatings)
+      .values({
+        sessionId,
+        swimmerId,
+        skillId: golfSkillId,
+        coachId,
+        grade: 3,
+        notLegal: false,
+        noConcept: false,
+        golfScoreCategory: "push_off_in_water",
+        timeSeconds: "14.25",
+        strokeCountValue: 18,
+        ratedAt: new Date("2026-10-01T10:00:00Z"),
+      })
+      .returning({ id: skillRatings.id });
+    const ratingId = rows[0]!.id;
+
+    try {
+      const response = await request(app)
+        .patch(`/coach/ratings/${ratingId}/void`)
+        .set("Authorization", `Bearer ${coachToken}`)
+        .send({ reason: "Data entry error" });
+      expect(response.status).toBe(200);
+      // Both pair fields must round-trip, timeSeconds as a number (Drizzle
+      // numeric comes back as a string from pg — missing parseFloat was half
+      // of the original bug).
+      expect(response.body.timeSeconds).toBe(14.25);
+      expect(response.body.strokeCountValue).toBe(18);
+      expect(response.body.voidedAt).not.toBeNull();
+      expect(response.body.voidReason).toBe("Data entry error");
+    } finally {
+      await adminDb().delete(skillRatings).where(eq(skillRatings.id, ratingId));
+    }
+  });
+
+  it("GET /skills/:skillId/ratings returns the full schema shape with both pair fields", async () => {
+    const golfRows = await adminDb()
+      .select({ id: skills.id })
+      .from(skills)
+      .where(eq(skills.slug, "free-golf-score"))
+      .limit(1);
+    const golfSkillId = golfRows[0]!.id;
+
+    const rows = await adminDb()
+      .insert(skillRatings)
+      .values({
+        sessionId,
+        swimmerId,
+        skillId: golfSkillId,
+        coachId,
+        grade: 4,
+        notLegal: false,
+        noConcept: false,
+        golfScoreCategory: "deck_dive",
+        timeSeconds: "12.50",
+        strokeCountValue: 17,
+        ratedAt: new Date("2026-10-02T10:00:00Z"),
+      })
+      .returning({ id: skillRatings.id });
+    const ratingId = rows[0]!.id;
+
+    try {
+      const response = await request(app)
+        .get(`/coach/swimmers/${swimmerId}/skills/${golfSkillId}/ratings`)
+        .set("Authorization", `Bearer ${coachToken}`);
+      expect(response.status).toBe(200);
+      const match = (response.body as Array<Record<string, unknown>>).find(
+        (entry) => entry.id === ratingId,
+      );
+      expect(match).toBeDefined();
+      expect(match!.timeSeconds).toBe(12.5);
+      expect(match!.strokeCountValue).toBe(17);
+    } finally {
+      await adminDb().delete(skillRatings).where(eq(skillRatings.id, ratingId));
+    }
   });
 
   // ── GET /coach/swimmers/:id/skills matches shared helpers ───────────────────

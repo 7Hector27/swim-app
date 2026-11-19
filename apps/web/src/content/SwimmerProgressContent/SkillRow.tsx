@@ -5,7 +5,12 @@ import type { SkillCurrentLevel, SwimmerProgressResponse } from "@swim-app/share
 import TrendLine from "@/components/TrendLine";
 import SkillChart from "@/components/SkillChart";
 import type { EvaluationEditContext } from "@/lib/evaluationEditHref";
-import { evaluateHrefFor, formatRecency } from "./helpers";
+import {
+  formatRecency,
+  isStaleBySessionDate,
+  MIN_RATINGS_FOR_TREND,
+} from "@/lib/progressRow";
+import { evaluateHrefFor } from "./helpers";
 
 type SkillProgress = SwimmerProgressResponse["skills"][number];
 
@@ -27,12 +32,25 @@ export default function SkillRow({ skill, swimmerId, nowIso, editContext }: Skil
   const now = nowIso !== undefined ? new Date(nowIso) : new Date();
   const recencyLabel = formatRecency(latestPoint?.sessionDate, now);
   const href = evaluateHrefFor(swimmerId, skill.slug);
+  // Pass 3: never-rated and stale states. A skill is "never rated" when
+  // the current level is null (both sides null for per-side skills).
+  const neverRated = skill.ratedPerSide
+    ? skill.currentLeft === null && skill.currentRight === null
+    : skill.current === null;
+  const stale = isStaleBySessionDate(latestPoint?.sessionDate, now);
+  // Only draw a trend line when there are enough effective ratings for
+  // the line to tell a story. Group-level trends aren't gated by this.
+  const canShowTrend = skill.history.length >= MIN_RATINGS_FOR_TREND;
 
   return (
     <li
       id={`skill-${skill.slug}`}
       className="flex flex-col border-b scroll-mt-24"
-      style={{ borderColor: "var(--color-border)" }}
+      style={{
+        borderColor: "var(--color-border)",
+        opacity: stale ? 0.65 : 1,
+      }}
+      data-stale={stale ? "true" : undefined}
     >
       <div className="flex items-center gap-3 py-3 min-h-[44px]">
         <button
@@ -42,6 +60,7 @@ export default function SkillRow({ skill, swimmerId, nowIso, editContext }: Skil
           aria-label={`${open ? "Collapse" : "Expand"} ${skill.name} history`}
           className="shrink-0 w-6 h-6 inline-flex items-center justify-center rounded-full text-xs"
           style={{ color: "var(--color-text-secondary)" }}
+          disabled={neverRated}
         >
           <span aria-hidden="true" style={{ transition: "transform 180ms cubic-bezier(0.23, 1, 0.32, 1)", transform: open ? "rotate(90deg)" : "rotate(0deg)" }}>
             ›
@@ -55,19 +74,23 @@ export default function SkillRow({ skill, swimmerId, nowIso, editContext }: Skil
           >
             {skill.name}
           </a>
-          {recencyLabel && (
+          {neverRated ? (
+            <span className="text-xs text-text-secondary">Not rated yet</span>
+          ) : recencyLabel ? (
             <span className="text-xs text-text-secondary">{recencyLabel}</span>
-          )}
+          ) : null}
         </div>
 
-        {skill.ratedPerSide ? (
-          <SideBadges left={skill.currentLeft} right={skill.currentRight} />
-        ) : (
-          <SingleBadge level={skill.current} />
+        {!neverRated && (
+          skill.ratedPerSide ? (
+            <SideBadges left={skill.currentLeft} right={skill.currentRight} />
+          ) : (
+            <SingleBadge level={skill.current} />
+          )
         )}
 
         <div className="hidden tablet:block">
-          {skill.history.length >= 2 && (
+          {canShowTrend && (
             <TrendLine
               history={skill.history.map((point) => ({
                 grade: point.grade,

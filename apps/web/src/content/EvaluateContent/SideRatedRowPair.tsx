@@ -17,6 +17,9 @@ interface SideRatedRowPairProps {
   prevGradeRight?: SwimmerSkillsResponse["grades"][string];
   onMastery?: (draftKey: string) => void;
   masteredKey?: string | null;
+  // Overrides the default `skill-<skill.id>` DOM id so a shared per-side
+  // skill rendered in two sections stays unique across occurrences.
+  anchorId?: string;
 }
 
 export default function SideRatedRowPair({
@@ -31,12 +34,13 @@ export default function SideRatedRowPair({
   prevGradeRight,
   onMastery,
   masteredKey,
+  anchorId,
 }: SideRatedRowPairProps) {
   const displayName = label ?? skill.name;
   // The side labels use a middle dot, not an em dash — the project style
   // avoids em dashes in UI copy.
   return (
-    <div id={`skill-${skill.id}`} className="flex flex-col gap-2">
+    <div id={anchorId ?? `skill-${skill.id}`} className="flex flex-col gap-2">
       <SkillGradeRow
         skill={skill}
         draftKey={`${skill.id}:left`}

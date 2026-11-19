@@ -5,12 +5,14 @@ import {
   buildSkillGroups,
   buildSectionGroups,
   buildRatingsArray,
+  computeSectionCounts,
   validateSubmission,
   sortIssuesForScroll,
   anchorIdForIssue,
   DOM_IDS,
   initialSessionDraft,
   defaultSkillDraft,
+  type SkillDraft,
 } from "../content/EvaluateContent/helpers";
 import type { SkillForRating } from "@swim-app/shared";
 import { CreateSessionBodySchema } from "@swim-app/shared";
@@ -183,7 +185,7 @@ describe("buildSectionGroups", () => {
 // ── screenSections coverage ───────────────────────────────────────────────────
 
 import { SCREEN_SLUGS } from "@swim-app/shared";
-import { SCREEN_SECTIONS } from "../content/EvaluateContent/screenSections";
+import { SCREEN_SECTIONS } from "@swim-app/shared";
 
 describe("SCREEN_SECTIONS", () => {
   it("every screen slug has a section layout", () => {
@@ -233,6 +235,8 @@ describe("buildRatingsArray — measured skill with catalog unit", () => {
       faultTags: [],
       detailsOpen: false,
       golfScoreCategory: null,
+      timeSeconds: "",
+      strokeCountValue: "",
     };
   }
 
@@ -270,12 +274,13 @@ describe("buildRatingsArray — measured skill with catalog unit", () => {
   });
 
   it("still rejects (and reports the right field) when the catalog unit has no enum map", () => {
-    // "kicks/min" has no enum equivalent — the UI hides the measurement input
-    // for this case, so coaches can't reach the failing state. But if a stale
-    // draft or an older client ever submits `measurementValue` for such a
-    // skill, the schema's rejection surfaces the per-row field path.
-    const kickSkill: SkillForRating = { ...measuredSkill, slug: "freestyle-kick-rate", unit: "kicks/min" };
-    const ratings = buildRatingsArray([kickSkill], {
+    // Pass 2c: `kicks/min` now maps to `kicks_per_minute`, so this defensive
+    // check uses the one remaining intentionally-unmapped catalog unit
+    // (`time_s + stroke_count`, golf score). If a stale draft or older
+    // client submits a raw `measurementValue` for such a skill, the
+    // schema's rejection surfaces the per-row field path.
+    const unmapped: SkillForRating = { ...measuredSkill, slug: "free-golf-score", unit: "time_s + stroke_count" };
+    const ratings = buildRatingsArray([unmapped], {
       [SKILL_ID]: { ...baseSkillDraft(), measurementValue: "30" },
     });
     const parsed = CreateSessionBodySchema.safeParse({
@@ -438,25 +443,227 @@ describe("validateSubmission", () => {
   });
 
   it("still surfaces per-rating issues (measurement without a unit) via the schema", () => {
-    const kickSkill: SkillForRating = {
+    // Pass 2c: `kicks/min` now maps to `kicks_per_minute`, so the
+    // "no enum mapping" branch is exercised with the one remaining
+    // intentionally-unmapped catalog unit (golf score's
+    // `time_s + stroke_count`). The invariant under test is still
+    // "measurementValue without measurementUnit → per-rating error."
+    const unmappedUnitSkill: SkillForRating = {
       ...SKILL,
       id: "00000000-0000-0000-cccc-000000000002",
-      slug: "free-kick-rate",
+      slug: "free-golf-score",
       type: "measured",
-      unit: "kicks/min", // no enum mapping; triggers the "both or neither" check
+      unit: "time_s + stroke_count", // intentionally unmapped
     };
     const draft = {
       ...filledDraft(),
       skills: {
-        [kickSkill.id]: { ...defaultSkillDraft(), grade: 3 as const, measurementValue: "30" },
+        [unmappedUnitSkill.id]: { ...defaultSkillDraft(), grade: 3 as const, measurementValue: "30" },
       },
     };
-    const ratings = buildRatingsArray([kickSkill], draft.skills);
+    const ratings = buildRatingsArray([unmappedUnitSkill], draft.skills);
     const issues = validateSubmission(draft, ratings);
     const measurementIssue = issues.find(
       (issue) => issue.ratingIndex === 0 && issue.field === "measurementValue",
     );
     expect(measurementIssue).toBeDefined();
+  });
+
+  // Pass 2c follow-up: half-filled golf and golf-without-category are
+  // caught client-side so the save button never hits the server with a
+  // row the DB check would reject anyway.
+
+  it("surfaces a timeSeconds issue when time is filled but stroke count is blank", () => {
+    const golfSkill: SkillForRating = {
+      ...SKILL,
+      id: "00000000-0000-0000-eeee-000000000001",
+      slug: "free-golf-score",
+      type: "score",
+      unit: "time_s + stroke_count",
+    };
+    const draft = {
+      ...filledDraft(),
+      skills: {
+        [golfSkill.id]: {
+          ...defaultSkillDraft(),
+          grade: 3 as const,
+          timeSeconds: "14.25",
+          strokeCountValue: "",
+          golfScoreCategory: "push_off_in_water" as const,
+        },
+      },
+    };
+    const ratings = buildRatingsArray([golfSkill], draft.skills);
+    const issues = validateSubmission(draft, ratings);
+    const pairIssue = issues.find(
+      (issue) => issue.ratingIndex === 0 && issue.field === "timeSeconds",
+    );
+    expect(pairIssue).toBeDefined();
+    expect(pairIssue?.message).toMatch(/enter the time and stroke count/i);
+  });
+
+  it("surfaces a timeSeconds issue when stroke count is filled but time is blank", () => {
+    const golfSkill: SkillForRating = {
+      ...SKILL,
+      id: "00000000-0000-0000-eeee-000000000002",
+      slug: "free-golf-score",
+      type: "score",
+      unit: "time_s + stroke_count",
+    };
+    const draft = {
+      ...filledDraft(),
+      skills: {
+        [golfSkill.id]: {
+          ...defaultSkillDraft(),
+          grade: 3 as const,
+          timeSeconds: "",
+          strokeCountValue: "18",
+          golfScoreCategory: "push_off_in_water" as const,
+        },
+      },
+    };
+    const ratings = buildRatingsArray([golfSkill], draft.skills);
+    const issues = validateSubmission(draft, ratings);
+    const pairIssue = issues.find(
+      (issue) => issue.ratingIndex === 0 && issue.field === "timeSeconds",
+    );
+    expect(pairIssue).toBeDefined();
+  });
+
+  it("surfaces a golfScoreCategory issue when time + stroke count are filled but no category is picked", () => {
+    const golfSkill: SkillForRating = {
+      ...SKILL,
+      id: "00000000-0000-0000-eeee-000000000003",
+      slug: "free-golf-score",
+      type: "score",
+      unit: "time_s + stroke_count",
+    };
+    const draft = {
+      ...filledDraft(),
+      skills: {
+        [golfSkill.id]: {
+          ...defaultSkillDraft(),
+          grade: 3 as const,
+          timeSeconds: "14.25",
+          strokeCountValue: "18",
+          golfScoreCategory: null,
+        },
+      },
+    };
+    const ratings = buildRatingsArray([golfSkill], draft.skills);
+    // Catalog validation needs screenSkills to run.
+    const issues = validateSubmission(draft, ratings, [golfSkill]);
+    const categoryIssue = issues.find(
+      (issue) => issue.ratingIndex === 0 && issue.field === "golfScoreCategory",
+    );
+    expect(categoryIssue).toBeDefined();
+    expect(categoryIssue?.message).toMatch(/pick a test category/i);
+  });
+
+  // Golf-grade-requires-pair rule: a 1-5 golf grade with empty time/strokes
+  // is blocked client-side with a clear message, even when there's no
+  // partial-pair state for the Zod rule to catch.
+  it("blocks save when a graded golf rating has no time or stroke count", () => {
+    const golfSkill: SkillForRating = {
+      ...SKILL,
+      id: "00000000-0000-0000-eeee-000000000004",
+      slug: "free-golf-score",
+      type: "score",
+      unit: "time_s + stroke_count",
+    };
+    const draft = {
+      ...filledDraft(),
+      skills: {
+        [golfSkill.id]: {
+          ...defaultSkillDraft(),
+          grade: 3 as const,
+          timeSeconds: "",
+          strokeCountValue: "",
+          golfScoreCategory: "push_off_in_water" as const,
+        },
+      },
+    };
+    const ratings = buildRatingsArray([golfSkill], draft.skills);
+    const issues = validateSubmission(draft, ratings, [golfSkill]);
+    const pairIssue = issues.find(
+      (issue) => issue.ratingIndex === 0 && issue.field === "timeSeconds",
+    );
+    expect(pairIssue).toBeDefined();
+    expect(pairIssue?.message).toMatch(/enter the time and stroke count/i);
+  });
+
+  it("does NOT block save when a measured (non-score) skill has a grade and no number", () => {
+    const tempoSkill: SkillForRating = {
+      ...SKILL,
+      id: "00000000-0000-0000-eeee-000000000005",
+      slug: "free-tempo",
+      type: "measured",
+      unit: "cycles/min",
+    };
+    const draft = {
+      ...filledDraft(),
+      skills: {
+        [tempoSkill.id]: {
+          ...defaultSkillDraft(),
+          grade: 3 as const,
+          measurementValue: "",
+        },
+      },
+    };
+    const ratings = buildRatingsArray([tempoSkill], draft.skills);
+    const issues = validateSubmission(draft, ratings, [tempoSkill]);
+    expect(issues).toEqual([]);
+  });
+
+  it("accepts a graded golf rating that carries category + time + strokes (end-to-end valid)", () => {
+    const golfSkill: SkillForRating = {
+      ...SKILL,
+      id: "00000000-0000-0000-eeee-000000000006",
+      slug: "free-golf-score",
+      type: "score",
+      unit: "time_s + stroke_count",
+    };
+    const draft = {
+      ...filledDraft(),
+      skills: {
+        [golfSkill.id]: {
+          ...defaultSkillDraft(),
+          grade: 4 as const,
+          timeSeconds: "14.25",
+          strokeCountValue: "18",
+          golfScoreCategory: "block_dive" as const,
+        },
+      },
+    };
+    const ratings = buildRatingsArray([golfSkill], draft.skills);
+    const issues = validateSubmission(draft, ratings, [golfSkill]);
+    expect(issues).toEqual([]);
+  });
+
+  it("accepts noConcept on a score skill with no numbers (rule skips when noConcept is true)", () => {
+    const golfSkill: SkillForRating = {
+      ...SKILL,
+      id: "00000000-0000-0000-eeee-000000000007",
+      slug: "free-golf-score",
+      type: "score",
+      unit: "time_s + stroke_count",
+    };
+    const draft = {
+      ...filledDraft(),
+      skills: {
+        [golfSkill.id]: {
+          ...defaultSkillDraft(),
+          grade: null,
+          noConcept: true,
+          timeSeconds: "",
+          strokeCountValue: "",
+          golfScoreCategory: null,
+        },
+      },
+    };
+    const ratings = buildRatingsArray([golfSkill], draft.skills);
+    const issues = validateSubmission(draft, ratings, [golfSkill]);
+    expect(issues).toEqual([]);
   });
 });
 
@@ -501,6 +708,99 @@ describe("anchorIdForIssue", () => {
 
   it("returns null for an unknown field", () => {
     expect(anchorIdForIssue({ field: "nonsense", message: "" }, [])).toBeNull();
+  });
+});
+
+// ── computeSectionCounts: composite-start branch ──────────────────────────────
+
+describe("computeSectionCounts — composite starts", () => {
+  const PARENT_ID = "11111111-1111-1111-1111-111111111111";
+  const C1_ID = "22222222-2222-2222-2222-222222222222";
+  const C2_ID = "33333333-3333-3333-3333-333333333333";
+  const C3_ID = "44444444-4444-4444-4444-444444444444";
+
+  function makeSkill(overrides: Partial<SkillForRating> & { id: string }): SkillForRating {
+    return {
+      id: overrides.id,
+      slug: overrides.slug ?? overrides.id,
+      name: overrides.name ?? overrides.id,
+      type: overrides.type ?? "rubric",
+      unit: overrides.unit ?? null,
+      stroke: overrides.stroke ?? null,
+      ratedPerSide: overrides.ratedPerSide ?? false,
+      notLegalAllowed: overrides.notLegalAllowed ?? false,
+      parentSkillId: overrides.parentSkillId ?? null,
+      sortOrder: overrides.sortOrder ?? 1,
+      faultTags: overrides.faultTags ?? [],
+      descriptors: overrides.descriptors ?? [],
+    };
+  }
+
+  function draft(overrides: Partial<SkillDraft>): SkillDraft {
+    return { ...defaultSkillDraft(), ...overrides };
+  }
+
+  const parent = makeSkill({ id: PARENT_ID, slug: "track-start", name: "Track start", type: "composite" });
+  const c1 = makeSkill({ id: C1_ID, slug: "track-start-reaction", parentSkillId: PARENT_ID });
+  const c2 = makeSkill({ id: C2_ID, slug: "track-start-height", parentSkillId: PARENT_ID });
+  const c3 = makeSkill({ id: C3_ID, slug: "track-start-distance", parentSkillId: PARENT_ID });
+
+  const sectionGroups = [{ name: "Starts", skills: [parent] }];
+  const screenSkills = [parent, c1, c2, c3];
+
+  it("all components graded → composite counts as rated (1 of 1)", () => {
+    const drafts: Record<string, SkillDraft> = {
+      [C1_ID]: draft({ grade: 3 }),
+      [C2_ID]: draft({ grade: 4 }),
+      [C3_ID]: draft({ grade: 5 }),
+    };
+    const result = computeSectionCounts(sectionGroups, screenSkills, drafts);
+    expect(result).toEqual([{ name: "Starts", count: 1, completed: 1 }]);
+  });
+
+  it("any component not_legal → composite counts as rated, even with other components still unfilled", () => {
+    // Rule 1 of calculateStartGrade beats rule 2: not_legal trumps
+    // in_progress. The evaluate chip must reflect that.
+    const drafts: Record<string, SkillDraft> = {
+      [C1_ID]: draft({ grade: 3, notLegal: true }),
+    };
+    const result = computeSectionCounts(sectionGroups, screenSkills, drafts);
+    expect(result).toEqual([{ name: "Starts", count: 1, completed: 1 }]);
+  });
+
+  it("all components no_concept → composite in total only, not rated (0 of 1)", () => {
+    const drafts: Record<string, SkillDraft> = {
+      [C1_ID]: draft({ noConcept: true }),
+      [C2_ID]: draft({ noConcept: true }),
+      [C3_ID]: draft({ noConcept: true }),
+    };
+    const result = computeSectionCounts(sectionGroups, screenSkills, drafts);
+    expect(result).toEqual([{ name: "Starts", count: 1, completed: 0 }]);
+  });
+
+  it("some components rated, some unfilled → in_progress, not rated (0 of 1)", () => {
+    const drafts: Record<string, SkillDraft> = {
+      [C1_ID]: draft({ grade: 3 }),
+      [C2_ID]: draft({ grade: 4 }),
+      // C3 unfilled
+    };
+    const result = computeSectionCounts(sectionGroups, screenSkills, drafts);
+    expect(result).toEqual([{ name: "Starts", count: 1, completed: 0 }]);
+  });
+
+  it("drops rollup-type skills from the total", () => {
+    const rollup = makeSkill({ id: "55555555-5555-5555-5555-555555555555", slug: "head-position-overall", type: "rollup" });
+    const result = computeSectionCounts(
+      [{ name: "Fundamentals", skills: [rollup, parent] }],
+      [rollup, parent, c1, c2, c3],
+      {
+        [C1_ID]: draft({ grade: 4 }),
+        [C2_ID]: draft({ grade: 4 }),
+        [C3_ID]: draft({ grade: 4 }),
+      },
+    );
+    // Rollup dropped from the total, composite still counted.
+    expect(result).toEqual([{ name: "Fundamentals", count: 1, completed: 1 }]);
   });
 });
 

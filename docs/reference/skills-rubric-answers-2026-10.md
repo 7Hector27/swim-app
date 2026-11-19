@@ -2,6 +2,8 @@
 
 Answers to the Phase 1 design questions for the swimmer evaluation system.
 
+> **Superseded in part.** Where this doc and `decisions-screens-skills-2026-10-14.md` disagree, the Oct 14 decisions doc wins. The one point still open is the "Stroke-breath coordination" rename: this doc originally called it **Stroke hold on breath**; the Oct 14 doc and the current catalog call it **Stroke integrity on breath**. See the catalog's PR summary for the open question.
+
 ---
 
 ## The big ones (hard to change once you start rating)
@@ -41,7 +43,7 @@ No. Three separate grades — one per stroke:
 **5. Anything to add, remove, split, or merge in the skill list?**
 
 - **Body rotation**: remove the shared grade; rate rotation separately for freestyle and backstroke.
-- **Freestyle breathing**: breath timing and stroke hold on breath (renamed from stroke-breath coordination) are separate skills, each rated left and right. Bilateral breathing is calculated from the left and right grades, not rated.
+- **Freestyle breathing**: breath timing and stroke integrity on breath (renamed from stroke-breath coordination; originally proposed here as "stroke hold on breath" — see supersession note at top) are separate skills, each rated left and right. Bilateral breathing is calculated from the left and right grades, not rated.
 - **Fault tags**: each skill gets a short list of common faults the coach can tap when rating (e.g. breaststroke breath timing: head lifts late, lifts early, returns too slow, returns too fast), so two swimmers with the same grade show what's actually different.
 - **Rhythmic breathing**: applies to free, fly and back. Drop backstroke breath timing and stroke-breath coordination.
 - **Tempo**: rated per stroke. Drop breaststroke stroke rate (same measurement as breaststroke tempo). Use one unit for tempo everywhere (stroke cycles per minute).
@@ -121,7 +123,7 @@ Different per stroke. Keep the shared 1–5 progression (cued → practice pace 
 
 **15. Breaststroke stroke-breath coordination lists body rotation, but breaststroke doesn't really rotate. Drop it?**
 
-Yes. Drop body rotation from breaststroke and butterfly stroke-hold-on-breath; neither stroke rotates. Freestyle stroke-hold-on-breath links to freestyle rotation (not a shared body rotation grade). Backstroke stroke-hold-on-breath was dropped in answer 5.
+Yes. Drop body rotation from breaststroke and butterfly stroke integrity on breath; neither stroke rotates. Freestyle stroke integrity on breath links to freestyle rotation (not a shared body rotation grade). Backstroke stroke integrity on breath was dropped in answer 5.
 
 ---
 

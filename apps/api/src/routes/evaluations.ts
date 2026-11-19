@@ -251,6 +251,10 @@ evaluationsRouter.post(
             ...(ratingInput.measurementValue !== null && { measurementValue: ratingInput.measurementValue }),
             ...(ratingInput.measurementUnit !== null && { measurementUnit: ratingInput.measurementUnit }),
             ...(ratingInput.golfScoreCategory !== null && { golfScoreCategory: ratingInput.golfScoreCategory }),
+            // Pass 2c: numeric(6,2) accepts a numeric JS value; Drizzle
+            // converts it to a canonical string on the wire.
+            ...(ratingInput.timeSeconds !== null && { timeSeconds: String(ratingInput.timeSeconds) }),
+            ...(ratingInput.strokeCountValue !== null && { strokeCountValue: ratingInput.strokeCountValue }),
             ...(ratingInput.note !== null && { note: ratingInput.note }),
             ratedAt: new Date(ratingInput.ratedAt),
           })
@@ -492,6 +496,8 @@ evaluationsRouter.get(
         capacityUnit: skillRatings.capacityUnit,
         measurementValue: skillRatings.measurementValue,
         measurementUnit: skillRatings.measurementUnit,
+        timeSeconds: skillRatings.timeSeconds,
+        strokeCountValue: skillRatings.strokeCountValue,
         note: skillRatings.note,
         voidedAt: skillRatings.voidedAt,
         voidReason: skillRatings.voidReason,
@@ -514,6 +520,7 @@ evaluationsRouter.get(
     // coach-only route — switch to ParentSkillRatingSchema before adding any parent access
     res.json(ratingRows.map((row) => CoachSkillRatingSchema.parse({
       ...row,
+      timeSeconds: row.timeSeconds === null ? null : parseFloat(row.timeSeconds),
       voidedAt: row.voidedAt?.toISOString() ?? null,
       ratedAt: row.ratedAt.toISOString(),
       createdAt: row.createdAt.toISOString(),
@@ -808,7 +815,8 @@ evaluationsRouter.get(
     const ratingRows = await db
       .select({
         grade: skillRatings.grade,
-        measurementValue: skillRatings.measurementValue,
+        timeSeconds: skillRatings.timeSeconds,
+        strokeCountValue: skillRatings.strokeCountValue,
         golfScoreCategory: skillRatings.golfScoreCategory,
         ratedAt: skillRatings.ratedAt,
         sessionId: skillRatings.sessionId,
@@ -909,7 +917,8 @@ evaluationsRouter.get(
             const cohortRows = await db
               .select({
                 swimmerId: skillRatings.swimmerId,
-                measurementValue: skillRatings.measurementValue,
+                timeSeconds: skillRatings.timeSeconds,
+                strokeCountValue: skillRatings.strokeCountValue,
                 ratedAt: skillRatings.ratedAt,
               })
               .from(skillRatings)
@@ -920,20 +929,25 @@ evaluationsRouter.get(
                   eq(skillRatings.golfScoreCategory, category),
                   isNull(skillRatings.voidedAt),
                   isNull(skillRatings.supersededAt),
-                  isNotNull(skillRatings.measurementValue),
+                  isNotNull(skillRatings.timeSeconds),
+                  isNotNull(skillRatings.strokeCountValue),
                   inArray(skillRatings.swimmerId, cohortIds),
                   eq(skills.type, "score"),
                 ),
               )
               .orderBy(skillRatings.swimmerId, desc(skillRatings.ratedAt));
 
+            // Band on the derived golf score: time (parsed from numeric) +
+            // stroke count. Each cohort swimmer's LATEST reading in this
+            // category contributes once.
             const seenSwimmerIds = new Set<string>();
             const latestValues: number[] = [];
             for (const cohortRow of cohortRows) {
               if (seenSwimmerIds.has(cohortRow.swimmerId)) continue;
               seenSwimmerIds.add(cohortRow.swimmerId);
-              const value = parseFloat(cohortRow.measurementValue ?? "");
-              if (!isNaN(value)) latestValues.push(value);
+              const time = cohortRow.timeSeconds === null ? NaN : parseFloat(cohortRow.timeSeconds);
+              const strokes = cohortRow.strokeCountValue;
+              if (!isNaN(time) && strokes !== null) latestValues.push(time + strokes);
             }
 
             latestValues.sort((first, second) => first - second);
@@ -956,7 +970,10 @@ evaluationsRouter.get(
             sessionDate: point.sessionDate,
             sessionId: point.sessionId,
             grade: point.grade,
-            measurementValue: point.measurementValue ?? null,
+            // numeric(6,2) comes back as string from node-postgres; parseFloat
+            // or null so the shared schema's z.number().nullable() accepts it.
+            timeSeconds: point.timeSeconds === null ? null : parseFloat(point.timeSeconds),
+            strokeCountValue: point.strokeCountValue,
           })),
           ageBands,
         });
@@ -1096,6 +1113,8 @@ sessionsRouter.get(
         measurementValue: skillRatings.measurementValue,
         measurementUnit: skillRatings.measurementUnit,
         golfScoreCategory: skillRatings.golfScoreCategory,
+        timeSeconds: skillRatings.timeSeconds,
+        strokeCountValue: skillRatings.strokeCountValue,
         note: skillRatings.note,
         ratedAt: skillRatings.ratedAt,
       })
@@ -1183,6 +1202,10 @@ sessionsRouter.get(
       measurementValue: row.measurementValue,
       measurementUnit: row.measurementUnit,
       golfScoreCategory: row.golfScoreCategory as GetSessionRating["golfScoreCategory"],
+      // numeric(6,2) comes back as string from node-postgres; parse to number
+      // or null so the shared schema's z.number().nullable() accepts it.
+      timeSeconds: row.timeSeconds === null ? null : parseFloat(row.timeSeconds),
+      strokeCountValue: row.strokeCountValue,
       note: row.note,
       faultTags: tagsByRatingId.get(row.id) ?? [],
       ratedAt: row.ratedAt.toISOString(),
@@ -1230,6 +1253,8 @@ type RatingFieldKey =
   | "measurementValue"
   | "measurementUnit"
   | "golfScoreCategory"
+  | "timeSeconds"
+  | "strokeCountValue"
   | "note"
   | "faultTags";
 
@@ -1297,6 +1322,8 @@ sessionsRouter.patch(
         measurementValue: skillRatings.measurementValue,
         measurementUnit: skillRatings.measurementUnit,
         golfScoreCategory: skillRatings.golfScoreCategory,
+        timeSeconds: skillRatings.timeSeconds,
+        strokeCountValue: skillRatings.strokeCountValue,
         note: skillRatings.note,
         voidedAt: skillRatings.voidedAt,
         supersededAt: skillRatings.supersededAt,
@@ -1381,6 +1408,10 @@ sessionsRouter.patch(
       if ((live.measurementValue ?? null) !== ratingBody.measurementValue) changedFields.push("measurementValue");
       if ((live.measurementUnit ?? null) !== ratingBody.measurementUnit) changedFields.push("measurementUnit");
       if ((live.golfScoreCategory ?? null) !== ratingBody.golfScoreCategory) changedFields.push("golfScoreCategory");
+      // Pass 2c: numeric(6,2) comes back as a string; parse before compare.
+      const liveTime = live.timeSeconds === null ? null : parseFloat(live.timeSeconds);
+      if (liveTime !== ratingBody.timeSeconds) changedFields.push("timeSeconds");
+      if ((live.strokeCountValue ?? null) !== ratingBody.strokeCountValue) changedFields.push("strokeCountValue");
       if ((live.note ?? null) !== ratingBody.note) changedFields.push("note");
       if (!arraysEqualUnordered(tagsByRatingId.get(live.id) ?? [], ratingBody.faultTags)) {
         changedFields.push("faultTags");
@@ -1497,6 +1528,8 @@ sessionsRouter.patch(
             measurementValue: diff.body.measurementValue,
             measurementUnit: diff.body.measurementUnit,
             golfScoreCategory: diff.body.golfScoreCategory,
+            timeSeconds: diff.body.timeSeconds === null ? null : String(diff.body.timeSeconds),
+            strokeCountValue: diff.body.strokeCountValue,
             note: diff.body.note,
             // Observation time is preserved (ADR 032).
             ratedAt: diff.live.ratedAt,
@@ -1754,10 +1787,15 @@ ratingsRouter.delete(
       .select({
         id: skillRatings.id,
         coachId: skillRatings.coachId,
+        swimmerId: skillRatings.swimmerId,
+        sessionId: skillRatings.sessionId,
+        skillId: skillRatings.skillId,
         voidedAt: skillRatings.voidedAt,
         createdAt: skillRatings.createdAt,
+        householdId: swimmers.householdId,
       })
       .from(skillRatings)
+      .innerJoin(swimmers, eq(swimmers.id, skillRatings.swimmerId))
       .where(eq(skillRatings.id, ratingId))
       .limit(1);
 
@@ -1780,7 +1818,23 @@ ratingsRouter.delete(
       return;
     }
 
-    await db.delete(skillRatings).where(eq(skillRatings.id, ratingId));
+    // Delete + audit row go together in one transaction per the
+    // CLAUDE.md audit-log rule: if the insert fails, the delete rolls
+    // back and nothing changes.
+    await db.transaction(async (tx) => {
+      await tx.delete(skillRatings).where(eq(skillRatings.id, ratingId));
+      await tx.insert(householdAuditLog).values({
+        householdId: rating.householdId,
+        actorId: coachId,
+        action: "rating_undone",
+        targetSwimmerId: rating.swimmerId,
+        payload: {
+          ratingId: rating.id,
+          sessionId: rating.sessionId,
+          skillId: rating.skillId,
+        },
+      });
+    });
 
     req.log.info({ ratingId, coachId }, "rating deleted");
 
@@ -1802,9 +1856,14 @@ ratingsRouter.patch(
       .select({
         id: skillRatings.id,
         coachId: skillRatings.coachId,
+        swimmerId: skillRatings.swimmerId,
+        sessionId: skillRatings.sessionId,
+        skillId: skillRatings.skillId,
         voidedAt: skillRatings.voidedAt,
+        householdId: swimmers.householdId,
       })
       .from(skillRatings)
+      .innerJoin(swimmers, eq(swimmers.id, skillRatings.swimmerId))
       .where(eq(skillRatings.id, ratingId))
       .limit(1);
 
@@ -1823,44 +1882,63 @@ ratingsRouter.patch(
 
     const now = new Date();
 
-    const updatedRows = await db
-      .update(skillRatings)
-      .set({
-        voidedAt: now,
-        voidReason: body.reason,
-        voidBy: coachId,
-      })
-      .where(eq(skillRatings.id, ratingId))
-      .returning({
-        id: skillRatings.id,
-        sessionId: skillRatings.sessionId,
-        swimmerId: skillRatings.swimmerId,
-        skillId: skillRatings.skillId,
-        coachId: skillRatings.coachId,
-        grade: skillRatings.grade,
-        notLegal: skillRatings.notLegal,
-        noConcept: skillRatings.noConcept,
-        side: skillRatings.side,
-        capacityValue: skillRatings.capacityValue,
-        capacityUnit: skillRatings.capacityUnit,
-        measurementValue: skillRatings.measurementValue,
-        measurementUnit: skillRatings.measurementUnit,
-        note: skillRatings.note,
-        voidedAt: skillRatings.voidedAt,
-        voidReason: skillRatings.voidReason,
-        voidBy: skillRatings.voidBy,
-        ratedAt: skillRatings.ratedAt,
-        createdAt: skillRatings.createdAt,
-        updatedAt: skillRatings.updatedAt,
+    // Void + audit row go together in one transaction per the CLAUDE.md
+    // audit-log rule: if the insert fails, the void rolls back and the
+    // rating stays live.
+    const updated = await db.transaction(async (tx) => {
+      const updatedRows = await tx
+        .update(skillRatings)
+        .set({
+          voidedAt: now,
+          voidReason: body.reason,
+          voidBy: coachId,
+        })
+        .where(eq(skillRatings.id, ratingId))
+        .returning({
+          id: skillRatings.id,
+          sessionId: skillRatings.sessionId,
+          swimmerId: skillRatings.swimmerId,
+          skillId: skillRatings.skillId,
+          coachId: skillRatings.coachId,
+          grade: skillRatings.grade,
+          notLegal: skillRatings.notLegal,
+          noConcept: skillRatings.noConcept,
+          side: skillRatings.side,
+          capacityValue: skillRatings.capacityValue,
+          capacityUnit: skillRatings.capacityUnit,
+          measurementValue: skillRatings.measurementValue,
+          measurementUnit: skillRatings.measurementUnit,
+          timeSeconds: skillRatings.timeSeconds,
+          strokeCountValue: skillRatings.strokeCountValue,
+          note: skillRatings.note,
+          voidedAt: skillRatings.voidedAt,
+          voidReason: skillRatings.voidReason,
+          voidBy: skillRatings.voidBy,
+          ratedAt: skillRatings.ratedAt,
+          createdAt: skillRatings.createdAt,
+          updatedAt: skillRatings.updatedAt,
+        });
+      await tx.insert(householdAuditLog).values({
+        householdId: rating.householdId,
+        actorId: coachId,
+        action: "rating_voided",
+        targetSwimmerId: rating.swimmerId,
+        payload: {
+          ratingId: rating.id,
+          sessionId: rating.sessionId,
+          skillId: rating.skillId,
+          reason: body.reason,
+        },
       });
-
-    const updated = updatedRows[0]!;
+      return updatedRows[0]!;
+    });
 
     req.log.info({ ratingId, coachId }, "rating voided");
 
     // coach-only route — switch to ParentSkillRatingSchema before adding any parent access
     res.json(CoachSkillRatingSchema.parse({
       ...updated,
+      timeSeconds: updated.timeSeconds === null ? null : parseFloat(updated.timeSeconds),
       voidedAt: updated.voidedAt?.toISOString() ?? null,
       ratedAt: updated.ratedAt.toISOString(),
       createdAt: updated.createdAt.toISOString(),
