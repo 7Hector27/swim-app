@@ -2,6 +2,12 @@
 
 interface CategoryRadarProps {
   categories: Array<{ name: string; average: number | null; assessedCount: number }>;
+  // Optional "first evaluation" overlay drawn as a dashed polygon
+  // beneath the current shape. Same axis order as `categories` — the
+  // parent page computes this from the earliest point of score history.
+  // Unassessed-at-first axes collapse to the center so the shape stays
+  // closed; a null array (default) hides the overlay entirely.
+  firstEvaluation?: Array<{ average: number | null; assessedCount: number }>;
 }
 
 // viewBox is wider than tall because side labels (end/start anchored) need
@@ -62,7 +68,7 @@ function splitLabel(name: string): string[] {
 // Radar snapshot of category averages, 1-5 scale.
 // Unassessed categories draw at the center and dim their axis label; the
 // polygon still closes so the shape stays coherent.
-export default function CategoryRadar({ categories }: CategoryRadarProps) {
+export default function CategoryRadar({ categories, firstEvaluation }: CategoryRadarProps) {
   if (categories.length === 0) return null;
   const step = (Math.PI * 2) / categories.length;
 
@@ -79,6 +85,23 @@ export default function CategoryRadar({ categories }: CategoryRadarProps) {
       return `${pointCoord.x.toFixed(1)},${pointCoord.y.toFixed(1)}`;
     })
     .join(" ");
+
+  // Dashed "when she started" overlay. Only draws when the swimmer has
+  // more than one evaluation and the overlay's axis list lines up with
+  // the categories prop (same length and order). An unassessed-at-first
+  // axis collapses to the center, matching how the current shape handles
+  // unassessed axes — the dashed shape still closes.
+  const firstPolygon =
+    firstEvaluation && firstEvaluation.length === categories.length
+      ? categories
+          .map((_, index) => {
+            const entry = firstEvaluation[index];
+            const value = entry?.average ?? 0;
+            const pointCoord = pointAt(index, value);
+            return `${pointCoord.x.toFixed(1)},${pointCoord.y.toFixed(1)}`;
+          })
+          .join(" ")
+      : null;
 
   return (
     <svg
@@ -139,6 +162,22 @@ export default function CategoryRadar({ categories }: CategoryRadarProps) {
           />
         );
       })}
+      {/* Dashed "when she started" overlay drawn beneath the current
+          shape so it reads as context, not as the primary data. Uses
+          the text token for the stroke so it stays readable in both
+          themes (the token flips light/dark). No fill — the current
+          shape is the attention-grabber. */}
+      {firstPolygon && (
+        <polygon
+          points={firstPolygon}
+          fill="none"
+          stroke="var(--color-text)"
+          strokeWidth={1.5}
+          strokeDasharray="4 4"
+          strokeLinejoin="round"
+          data-testid="category-radar-first-evaluation"
+        />
+      )}
       <polygon
         points={polygon}
         fill="var(--color-accent)"

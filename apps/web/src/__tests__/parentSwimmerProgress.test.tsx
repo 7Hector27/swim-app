@@ -99,8 +99,10 @@ describe("ParentSwimmerProgressContent", () => {
     );
     expect(screen.getByText("Freestyle Kick")).toBeInTheDocument();
     // New parent row renders the level name + change text, not a bare
-    // number badge.
-    expect(screen.getByText(/Competent/)).toBeInTheDocument();
+    // number badge. "Competent" appears in a few places on the new
+    // page (summary-card legend, pip-bar level label); the data-testid
+    // on the row's change line is the unambiguous target.
+    expect(screen.getAllByText(/Competent/).length).toBeGreaterThan(0);
   });
 
   it("shows DQ for not-legal in danger style", () => {
@@ -285,6 +287,7 @@ describe("ParentSwimmerProgressContent", () => {
       latestCoachingPriority: {
         text: "Rotate the hips more on each stroke",
         sessionDate: "2026-10-14",
+        coachName: null,
       },
     };
     render(

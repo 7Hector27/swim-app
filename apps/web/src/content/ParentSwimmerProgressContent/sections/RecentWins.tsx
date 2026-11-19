@@ -35,11 +35,15 @@ export default function RecentWins({ wins, swimmerFirstName }: RecentWinsProps) 
             Wins will show up here as {swimmerFirstName} levels up.
           </p>
         ) : (
-          <ul className="flex flex-col divide-y" style={{ borderColor: "var(--color-border)" }}>
+          <ul className="flex flex-col">
             {wins.map((win, index) => (
               <li
                 key={`${win.skillSlug}-${win.kind}-${index}`}
                 className="flex items-center gap-3 px-4 py-3"
+                // Thin divider in the border token between rows. Starts
+                // on the second item so the top row sits flush against
+                // the card's own border.
+                style={index > 0 ? { borderTop: "1px solid var(--color-border)" } : undefined}
                 data-testid="parent-recent-win"
               >
                 <WinIcon kind={win.kind} />

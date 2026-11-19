@@ -1,18 +1,20 @@
 import type {
   ParentCategoriesResponse,
   ParentScoreHistoryResponse,
+  ParentSkillProgress,
   ParentSwimmer,
   ParentSwimmerProgressResponse,
 } from "@swim-app/shared";
 import InlineError from "@/components/InlineError";
 import StartsSection from "@/components/StartsSection";
 import CategoryRadar from "@/content/SwimmerProgressContent/charts/CategoryRadar";
-import { latestScreenGroupSnapshot } from "@/lib/progressCharts";
+import { firstScreenGroupSnapshot, latestScreenGroupSnapshot } from "@/lib/progressCharts";
+import { buildCatalogIndex } from "@/lib/screenGroups";
 import ParentStrokeGroupsPanel from "./ParentStrokeGroupsPanel";
 import CoachFocus from "./sections/CoachFocus";
 import RecentWins from "./sections/RecentWins";
-import SummaryTiles from "./sections/SummaryTiles";
-import { buildRecentWins, buildSummaryTiles } from "./helpers";
+import SummaryCard from "./sections/SummaryCard";
+import { buildRecentWins, buildSummaryCard } from "./helpers";
 
 // Per-section failure flags. `progress` is primary (the page throws if it
 // fails), so it isn't listed. Defaults to all false, keeping existing tests
@@ -65,6 +67,7 @@ export default function ParentSwimmerProgressContent({
   sectionFailures = {},
 }: ParentSwimmerProgressContentProps) {
   const categorySnapshot = latestScreenGroupSnapshot(scoreHistory);
+  const firstSnapshot = firstScreenGroupSnapshot(scoreHistory);
 
   // Start-component skills shouldn't appear as rows in the group listing;
   // their data lives inside the Starts section.
@@ -80,11 +83,18 @@ export default function ParentSwimmerProgressContent({
   // SSR + hydration.
   const nowIso = new Date().toISOString();
 
+  // Shared catalog index: lets the summary card, recent wins, and
+  // coach's-focus cards all decorate names with the stroke suffix for
+  // shared skills like Tempo.
+  const catalogIndex = buildCatalogIndex(categories);
+  const skillsBySlug = new Map<string, ParentSkillProgress>();
+  for (const skill of progress.skills) skillsBySlug.set(skill.slug, skill);
+
   // Session dates union — scoreHistory ships one entry per evaluation
   // session already, so the count there matches "evaluations this season".
   const sessionDates = scoreHistory.points.map((point) => point.sessionDate);
-  const summaryTiles = buildSummaryTiles(displaySkills, sessionDates);
-  const recentWins = buildRecentWins(displaySkills);
+  const summaryCard = buildSummaryCard(displaySkills, sessionDates, swimmer.firstName);
+  const recentWins = buildRecentWins(displaySkills, catalogIndex);
 
   const hasAnyData =
     progress.skills.length > 0 ||
@@ -95,10 +105,6 @@ export default function ParentSwimmerProgressContent({
   const failedSections: string[] = [];
   if (sectionFailures.categories) failedSections.push("skill categories");
   if (sectionFailures.scoreHistory) failedSections.push("score history");
-
-  // Coach's name isn't on the parent progress response today; the byline
-  // helper falls back to "From your coach, Nov 17" when passed null.
-  const coachName: string | null = null;
 
   return (
     <div className="flex flex-col flex-1">
@@ -114,7 +120,6 @@ export default function ParentSwimmerProgressContent({
             >
               {swimmer.firstName}&apos;s Progress
             </h1>
-            {hasAnyData && <SummaryTiles data={summaryTiles} />}
           </div>
 
           {failedSections.length > 0 && (
@@ -132,13 +137,20 @@ export default function ParentSwimmerProgressContent({
 
           {hasAnyData && (
             <>
+              {/* Top row: summary card + recent wins side-by-side on
+                  tablet and desktop, stacked on phone. */}
+              <div className="grid gap-4 tablet:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] items-start">
+                <SummaryCard data={summaryCard} firstName={swimmer.firstName} />
+                <RecentWins wins={recentWins} swimmerFirstName={swimmer.firstName} />
+              </div>
+
               <CoachFocus
                 latestPriority={progress.latestCoachingPriority}
                 workingOnNext={progress.coachingPriorities}
-                coachName={coachName}
+                swimmerFirstName={swimmer.firstName}
+                skillsBySlug={skillsBySlug}
+                catalogIndex={catalogIndex}
               />
-
-              <RecentWins wins={recentWins} swimmerFirstName={swimmer.firstName} />
 
               {categorySnapshot.length > 0 && (
                 <section
@@ -153,11 +165,18 @@ export default function ParentSwimmerProgressContent({
                   >
                     Snapshot
                   </h2>
+                  {/* Cap the radar's render width at every breakpoint.
+                      SVG text font-size scales with the viewBox when the
+                      container grows unbounded; capping width here keeps
+                      the labels close to body-text size on desktop. */}
                   <div
-                    className="rounded-lg border p-4"
+                    className="rounded-lg border p-4 mx-auto w-full max-w-[380px] tablet:max-w-[440px] desktop:max-w-[520px]"
                     style={{ backgroundColor: "var(--color-background)", borderColor: "var(--color-border)" }}
                   >
-                    <CategoryRadar categories={categorySnapshot} />
+                    <CategoryRadar
+                      categories={categorySnapshot}
+                      {...(firstSnapshot.length > 0 && { firstEvaluation: firstSnapshot })}
+                    />
                   </div>
                 </section>
               )}

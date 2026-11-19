@@ -240,6 +240,58 @@ describe("GET /swimmers/:id/progress", () => {
     await adminDb().delete(evaluationSessions).where(eq(evaluationSessions.swimmerId, swimmerId));
     await coach.cleanup();
   });
+
+  it("latestCoachingPriority carries the authoring coach's name", async () => {
+    const coach = await createTestUser("parent-progress-priority-coach");
+    await adminDb().update(profiles).set({ role: "coach", fullName: "Jason Riley" }).where(eq(profiles.id, coach.userId));
+
+    const sessionRes = await request(app)
+      .post(`/coach/swimmers/${swimmerId}/sessions`)
+      .set("Authorization", `Bearer ${coach.accessToken}`)
+      .send({
+        screenSlug: "freestyle",
+        breathingPattern: "every_3",
+        sessionDate: "2026-10-15",
+        context: "practice",
+        coachingPriority: "Keep the lead arm out front when breathing to the right.",
+        ratings: [
+          {
+            skillId,
+            grade: 3,
+            notLegal: false,
+            noConcept: false,
+            side: null,
+            capacityValue: null,
+            capacityUnit: null,
+            measurementValue: null,
+            measurementUnit: null,
+            note: null,
+            faultTags: [],
+            ratedAt: "2026-10-15T09:00:00.000Z",
+          },
+        ],
+      });
+    expect(sessionRes.status).toBe(201);
+
+    const progressRes = await request(app)
+      .get(`/swimmers/${swimmerId}/progress`)
+      .set("Authorization", `Bearer ${owner.accessToken}`);
+    expect(progressRes.status).toBe(200);
+    const priority = progressRes.body.latestCoachingPriority as {
+      text: string;
+      sessionDate: string;
+      coachName: string | null;
+    } | null;
+    expect(priority).not.toBeNull();
+    expect(priority?.coachName).toBe("Jason Riley");
+    expect(priority?.text).toBe("Keep the lead arm out front when breathing to the right.");
+    expect(priority?.sessionDate).toBe("2026-10-15");
+
+    // Cleanup
+    await adminDb().delete(skillRatings).where(eq(skillRatings.swimmerId, swimmerId));
+    await adminDb().delete(evaluationSessions).where(eq(evaluationSessions.swimmerId, swimmerId));
+    await coach.cleanup();
+  });
 });
 
 // ── GET /swimmers/:id/score-history (parent route) ─────────────────────────

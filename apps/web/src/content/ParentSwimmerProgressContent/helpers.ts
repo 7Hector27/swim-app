@@ -6,6 +6,7 @@ import type {
   StartGradeResult,
 } from "@swim-app/shared";
 import { LEVEL_NAMES } from "@/components/LevelLadder/helpers";
+import type { CatalogIndexEntry } from "@/lib/screenGroups";
 
 export function currentLevelDisplay(level: SkillCurrentLevel): string {
   if (level.notLegal) return "DQ";
@@ -177,44 +178,6 @@ export function rowPipCount(skill: ParentSkillProgress): 1 | 2 | 3 | 4 | 5 | nul
   return latestGradeFromCurrent(skill.current);
 }
 
-// ── Summary tiles ────────────────────────────────────────────────────────
-
-export interface SummaryTilesData {
-  levelsGained: number;                // sum of (latest − first) across skills that went up
-  skillsLeveledUp: number;             // how many distinct skills contributed to levelsGained
-  lastEvaluatedShort: string | null;   // "Nov 17" from the most-recent session date
-  evaluationsThisSeason: number;       // sessions in scoreHistory.points
-  seasonStartMonth: string | null;     // "Sep" from the earliest session in the window
-}
-
-export function buildSummaryTiles(
-  skills: ParentSkillProgress[],
-  sessionDates: string[],
-): SummaryTilesData {
-  let levelsGained = 0;
-  let skillsLeveledUp = 0;
-  for (const skill of skills) {
-    const latest = latestGradeFromCurrent(skill.current);
-    const first = firstGradeFromHistory(skill.history);
-    if (latest !== null && first !== null && latest > first) {
-      levelsGained += latest - first;
-      skillsLeveledUp += 1;
-    }
-  }
-
-  const sortedDates = [...sessionDates].sort();
-  const earliest = sortedDates[0] ?? null;
-  const latestDate = sortedDates[sortedDates.length - 1] ?? null;
-
-  return {
-    levelsGained,
-    skillsLeveledUp,
-    lastEvaluatedShort: latestDate ? formatShortMonthDay(latestDate) : null,
-    evaluationsThisSeason: sessionDates.length,
-    seasonStartMonth: earliest ? formatMonth(earliest) : null,
-  };
-}
-
 // ── Recent wins ──────────────────────────────────────────────────────────
 
 export type WinKind = "newLevel" | "raceHeld" | "mastery";
@@ -241,8 +204,20 @@ export interface RecentWin {
 //
 // The function never emits "held steady", "dropped" or "DQ" items — the
 // brief limits this section to positive events.
+//
+// `catalogIndex` is used to decorate skill names with their stroke when
+// another skill shares the same raw name ("Freestyle tempo" rather than
+// "Tempo"). Without the index the four tempo skills all read "Tempo",
+// which looks like the same win fired three times. Pass an empty Map
+// when the catalog hasn't loaded — the function then falls back to the
+// raw skill name.
+//
+// Final stage before returning: dedupe by headline, preferring variety
+// across strokes when several skills land the same type of win on the
+// same day. Two wins with identical headlines never surface.
 export function buildRecentWins(
   skills: ReadonlyArray<ParentSkillProgress>,
+  catalogIndex: ReadonlyMap<string, CatalogIndexEntry> = new Map(),
   maxWins: number = 3,
 ): RecentWin[] {
   const wins: RecentWin[] = [];
@@ -252,6 +227,7 @@ export function buildRecentWins(
     const oldestFirst = [...skill.history].reverse();
     const seenLevels = new Set<1 | 2 | 3 | 4 | 5>();
     let seenRaceAtOrAbove3 = false;
+    const displayName = catalogIndex.get(skill.slug)?.displayName ?? skill.name;
 
     for (const point of oldestFirst) {
       if (point.grade === 1 || point.grade === 2 || point.grade === 3 || point.grade === 4 || point.grade === 5) {
@@ -261,20 +237,20 @@ export function buildRecentWins(
           wins.push({
             kind: "mastery",
             skillSlug: skill.slug,
-            skillName: skill.name,
+            skillName: displayName,
             level: 5,
             sessionDate: point.sessionDate,
-            headline: `${skill.name} reached Mastery`,
+            headline: `${displayName} reached Mastery`,
           });
           seenLevels.add(5);
         } else if (level >= 2 && !seenLevels.has(level)) {
           wins.push({
             kind: "newLevel",
             skillSlug: skill.slug,
-            skillName: skill.name,
+            skillName: displayName,
             level,
             sessionDate: point.sessionDate,
-            headline: `${skill.name} reached ${LEVEL_NAMES[level]}`,
+            headline: `${displayName} reached ${LEVEL_NAMES[level]}`,
           });
           seenLevels.add(level);
         } else if (level === 1) {
@@ -287,10 +263,10 @@ export function buildRecentWins(
           wins.push({
             kind: "raceHeld",
             skillSlug: skill.slug,
-            skillName: skill.name,
+            skillName: displayName,
             level,
             sessionDate: point.sessionDate,
-            headline: `${skill.name} held at ${LEVEL_NAMES[level]} in a race`,
+            headline: `${displayName} held at ${LEVEL_NAMES[level]} in a race`,
           });
           seenRaceAtOrAbove3 = true;
         }
@@ -298,9 +274,113 @@ export function buildRecentWins(
     }
   }
 
-  // Newest first, trimmed to `maxWins`.
+  // Newest first.
   wins.sort((left, right) => (left.sessionDate < right.sessionDate ? 1 : left.sessionDate > right.sessionDate ? -1 : 0));
-  return wins.slice(0, maxWins);
+
+  // Dedupe by headline. If two wins share identical text (same raw-named
+  // skill before catalog decoration, or coincidentally identical copy),
+  // only the first is kept. This also fires when several per-stroke
+  // skills reach the same level on the same day *without* catalog
+  // decoration — the decorated headlines now carry the stroke prefix so
+  // ordinarily that case produces distinct text.
+  const deduped: RecentWin[] = [];
+  const seenHeadlines = new Set<string>();
+  for (const win of wins) {
+    if (seenHeadlines.has(win.headline)) continue;
+    seenHeadlines.add(win.headline);
+    deduped.push(win);
+  }
+
+  return deduped.slice(0, maxWins);
+}
+
+// ── Summary card ─────────────────────────────────────────────────────────
+
+export interface LevelDistributionEntry {
+  level: 1 | 2 | 3 | 4 | 5;
+  count: number;
+}
+
+export interface SummaryCardData {
+  // "<First name> has moved up in N skills" or "<First name> is getting
+  // started" when N === 0. Noun agreement is baked in: "skill" at N === 1,
+  // "skills" otherwise.
+  headline: string;
+  // "Last lesson graded <Mon D> · N evaluations since <Mon>". Dates only
+  // appear when the swimmer actually has sessions; a brand-new swimmer
+  // gets null and the caller skips the line.
+  lessonLine: string | null;
+  // Current level counts — one entry per level 1-5. Rollups (`type ===
+  // "rollup"`) and DQ / NC states don't count. The stacked bar label is
+  // "Where <her> N rated skills are now" where N === total.
+  levelCounts: ReadonlyArray<LevelDistributionEntry>;
+  total: number;
+  // Sentence-form text alternative so a screen reader hears the
+  // distribution without having to interpret the SVG bar segments.
+  levelsScreenReaderText: string;
+}
+
+// Counts current level per rated non-rollup skill. DQ / NC / unrated
+// skills don't appear in the distribution. Always returns the five
+// buckets in level-ascending order, even when counts are zero — the
+// stacked bar needs a slot per level so the segments render in a stable
+// order when counts change.
+function levelDistribution(skills: ReadonlyArray<ParentSkillProgress>): LevelDistributionEntry[] {
+  const counts: Record<1 | 2 | 3 | 4 | 5, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+  for (const skill of skills) {
+    if (skill.type === "rollup") continue;
+    const current = skill.ratedPerSide ? (skill.currentLeft ?? skill.currentRight) : skill.current;
+    if (current === null) continue;
+    if (current.notLegal || current.noConcept) continue;
+    const grade = current.grade;
+    if (grade === 1 || grade === 2 || grade === 3 || grade === 4 || grade === 5) {
+      counts[grade] += 1;
+    }
+  }
+  return [1, 2, 3, 4, 5].map((level) => ({ level: level as 1 | 2 | 3 | 4 | 5, count: counts[level as 1 | 2 | 3 | 4 | 5] }));
+}
+
+export function buildSummaryCard(
+  skills: ReadonlyArray<ParentSkillProgress>,
+  sessionDates: ReadonlyArray<string>,
+  firstName: string,
+): SummaryCardData {
+  let skillsLeveledUp = 0;
+  for (const skill of skills) {
+    const latest = latestGradeFromCurrent(skill.current);
+    const first = firstGradeFromHistory(skill.history);
+    if (latest !== null && first !== null && latest > first) {
+      skillsLeveledUp += 1;
+    }
+  }
+
+  const headline =
+    skillsLeveledUp === 0
+      ? `${firstName} is getting started`
+      : `${firstName} has moved up in ${skillsLeveledUp} ${skillsLeveledUp === 1 ? "skill" : "skills"}`;
+
+  const sortedDates = [...sessionDates].sort();
+  const earliest = sortedDates[0] ?? null;
+  const latestDate = sortedDates[sortedDates.length - 1] ?? null;
+  const lessonLine =
+    latestDate !== null
+      ? `Last lesson graded ${formatShortMonthDay(latestDate)} · ${sessionDates.length} ${sessionDates.length === 1 ? "evaluation" : "evaluations"}${earliest ? ` since ${formatMonth(earliest)}` : ""}`
+      : null;
+
+  const levelCounts = levelDistribution(skills);
+  const total = levelCounts.reduce((sum, entry) => sum + entry.count, 0);
+
+  // "3 skills at Emerging, 6 at Developing, …". Includes every level so
+  // the a11y description stays consistent with the visual bar's five
+  // segments.
+  const parts = levelCounts.map((entry, index) => {
+    const name = LEVEL_NAMES[entry.level];
+    if (index === 0) return `${entry.count} ${entry.count === 1 ? "skill" : "skills"} at ${name}`;
+    return `${entry.count} at ${name}`;
+  });
+  const levelsScreenReaderText = parts.join(", ");
+
+  return { headline, lessonLine, levelCounts, total, levelsScreenReaderText };
 }
 
 // ── Latest coaching priority byline ──────────────────────────────────────

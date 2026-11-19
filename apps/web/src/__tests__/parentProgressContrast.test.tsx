@@ -30,13 +30,6 @@ vi.mock("@/content/SwimmerProgressContent/charts/CategoryRadar", () => ({ defaul
 
 const LIGHT_SURFACE_TOKENS = new Set(["--color-background", "--color-surface-soft"]);
 const DARK_SURFACE_TOKENS = new Set(["--color-card", "--color-section", "--color-ink"]);
-const LIGHT_SAFE_TEXT_TOKENS = new Set([
-  "--color-text",
-  "--color-text-secondary",
-  "--color-heading",
-  "--color-on-accent",
-  "--color-on-danger",
-]);
 
 function readStyleToken(element: Element, cssProp: string): string | null {
   const style = element.getAttribute("style") ?? "";
@@ -117,29 +110,17 @@ const progress: ParentSwimmerProgressResponse = {
   startProgress: [],
   headPositionOverall: 3,
   coachingPriorities: [{ targetSlug: "free-pull", targetName: "Pull", chain: [] }],
-  latestCoachingPriority: { text: "Rotate the hips more on each stroke", sessionDate: "2026-11-10" },
+  latestCoachingPriority: { text: "Rotate the hips more on each stroke", sessionDate: "2026-11-10", coachName: null },
   latestCoachingNotes: [],
 };
 
 describe("ParentSwimmerProgressContent — token pair contrast", () => {
-  it("summary tiles use light surfaces + light-safe text (accent tile excepted — pairs with on-accent)", () => {
+  it("summary card uses a light surface + light-safe text", () => {
     render(<ParentSwimmerProgressContent swimmer={swimmer} progress={progress} categories={[]} />);
-    const tiles = [
-      screen.getByTestId("parent-tile-levels-gained"),
-      screen.getByTestId("parent-tile-last-evaluated"),
-      screen.getByTestId("parent-tile-evaluations-count"),
-    ];
-    for (const tile of tiles) {
-      const bg = readStyleToken(tile, "background-color");
-      const text = readStyleToken(tile, "color");
-      expect(bg && DARK_SURFACE_TOKENS.has(bg), `tile uses dark surface token ${bg}`).toBe(false);
-      if (bg === "--color-accent") {
-        expect(text).toBe("--color-on-accent");
-      } else {
-        expect(bg && LIGHT_SURFACE_TOKENS.has(bg)).toBe(true);
-        expect(text && LIGHT_SAFE_TEXT_TOKENS.has(text)).toBe(true);
-      }
-    }
+    const card = screen.getByTestId("parent-progress-summary-card");
+    const bg = readStyleToken(card, "background-color");
+    expect(bg && DARK_SURFACE_TOKENS.has(bg), `summary card uses dark surface token ${bg}`).toBe(false);
+    expect(bg && LIGHT_SURFACE_TOKENS.has(bg)).toBe(true);
   });
 
   it("Coach's focus card uses a light surface", () => {

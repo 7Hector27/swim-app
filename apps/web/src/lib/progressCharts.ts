@@ -131,6 +131,30 @@ export function latestScreenGroupSnapshot(history: ScoreHistoryPointsOnly): Arra
   }));
 }
 
+// Same shape as latestScreenGroupSnapshot but from the first (oldest)
+// session, so the radar can overlay a "when she started" shape. Empty
+// when there's only one session — a single session is both first and
+// latest, and drawing an identical dashed outline would confuse rather
+// than inform.
+export function firstScreenGroupSnapshot(history: ScoreHistoryPointsOnly): Array<{
+  screenSlug: string;
+  name: string;
+  average: number | null;
+  assessedCount: number;
+  totalCount: number;
+}> {
+  if (history.points.length < 2) return [];
+  const first = history.points[0];
+  if (!first) return [];
+  return first.screenGroupRollups.map((rollup) => ({
+    screenSlug: rollup.screenSlug,
+    name: rollup.name,
+    average: rollup.average,
+    assessedCount: rollup.assessedCount,
+    totalCount: rollup.totalCount,
+  }));
+}
+
 // Per-start progression series from score history. Order and names are taken
 // from the first point so a newly-rated start doesn't rearrange earlier
 // points. sessionId is threaded through so deep-links (e.g. edit affordances

@@ -8,6 +8,7 @@ import {
   lessons,
   meetSwims,
   meets,
+  profiles,
   skillLevelDescriptors,
   skillRatings,
   swimmers,
@@ -83,8 +84,14 @@ parentProgressRouter.get(
         .select({
           sessionDate: evaluationSessions.sessionDate,
           coachingPriority: evaluationSessions.coachingPriority,
+          // Join the session's coach profile to surface the author's
+          // name next to the priority byline. Null when the profile has
+          // no full_name on record; the client falls back to "From your
+          // coach" copy.
+          coachName: profiles.fullName,
         })
         .from(evaluationSessions)
+        .leftJoin(profiles, eq(profiles.id, evaluationSessions.coachId))
         .where(
           and(
             eq(evaluationSessions.swimmerId, swimmerId),
@@ -112,6 +119,7 @@ parentProgressRouter.get(
         ? {
             text: latestPriorityRow.coachingPriority,
             sessionDate: latestPriorityRow.sessionDate,
+            coachName: latestPriorityRow.coachName ?? null,
           }
         : null;
 

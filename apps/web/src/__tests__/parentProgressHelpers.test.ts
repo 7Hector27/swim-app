@@ -1,5 +1,5 @@
 // Pure-helper tests for the parent progress page: recent-wins
-// detection, summary-tile math, and the skill-row change / level /
+// detection, summary-card math, and the skill-row change / level /
 // pips helpers.
 
 import { describe, it, expect } from "vitest";
@@ -10,7 +10,7 @@ import type {
 } from "@swim-app/shared";
 import {
   buildRecentWins,
-  buildSummaryTiles,
+  buildSummaryCard,
   rowChangeText,
   rowLevelLabel,
   rowPipCount,
@@ -157,7 +157,7 @@ describe("buildRecentWins", () => {
         history: [point({ id: "d1", sessionDate: "2026-11-20", grade: 2 })],
       }),
     ];
-    const wins = buildRecentWins(skills, 3);
+    const wins = buildRecentWins(skills, new Map(), 3);
     expect(wins).toHaveLength(3);
     expect(wins.map((win) => win.skillName)).toEqual(["D", "C", "B"]);
   });
@@ -174,6 +174,52 @@ describe("buildRecentWins", () => {
       ],
     });
     expect(buildRecentWins([stuck])).toEqual([]);
+  });
+
+  it("decorates shared-name skills with their stroke via the catalog index", () => {
+    const freeTempo = skill({
+      slug: "free-tempo",
+      name: "Tempo",
+      current: level(3),
+      history: [point({ id: "ft", sessionDate: "2026-11-10", grade: 3 })],
+    });
+    const backTempo = skill({
+      slug: "back-tempo",
+      name: "Tempo",
+      current: level(3),
+      history: [point({ id: "bt", sessionDate: "2026-11-10", grade: 3 })],
+    });
+    const catalog = new Map([
+      ["free-tempo", { skillId: "ft", slug: "free-tempo", rawName: "Tempo", displayName: "Tempo (freestyle)", categoryId: "x", categoryName: "Freestyle", type: "rubric" as const, unit: null, ratedPerSide: false, parentSkillId: null }],
+      ["back-tempo", { skillId: "bt", slug: "back-tempo", rawName: "Tempo", displayName: "Tempo (backstroke)", categoryId: "x", categoryName: "Backstroke", type: "rubric" as const, unit: null, ratedPerSide: false, parentSkillId: null }],
+    ]);
+    const wins = buildRecentWins([freeTempo, backTempo], catalog);
+    expect(wins.map((win) => win.headline)).toEqual([
+      "Tempo (freestyle) reached Competent",
+      "Tempo (backstroke) reached Competent",
+    ]);
+  });
+
+  it("dedupes wins by headline — two wins never share identical copy", () => {
+    // Two skills with the same raw name and NO catalog decoration; the
+    // current fallback uses raw name, so both would fire the same win
+    // text without the dedupe guard. Dedupe keeps the first occurrence
+    // (newest-first sort → the later one).
+    const tempoA = skill({
+      slug: "a-tempo",
+      name: "Tempo",
+      current: level(3),
+      history: [point({ id: "a", sessionDate: "2026-11-10", grade: 3 })],
+    });
+    const tempoB = skill({
+      slug: "b-tempo",
+      name: "Tempo",
+      current: level(3),
+      history: [point({ id: "b", sessionDate: "2026-11-10", grade: 3 })],
+    });
+    const wins = buildRecentWins([tempoA, tempoB]);
+    expect(wins).toHaveLength(1);
+    expect(wins[0]?.headline).toBe("Tempo reached Competent");
   });
 
   it("never fires a win for a level drop", () => {
@@ -197,80 +243,106 @@ describe("buildRecentWins", () => {
   });
 });
 
-// ── Summary tiles ────────────────────────────────────────────────────────
+// ── Summary card ────────────────────────────────────────────────────────
 
-describe("buildSummaryTiles", () => {
-  it("counts levels gained as (latest − first) summed across improved skills", () => {
-    const skills = [
-      skill({
-        slug: "a",
-        name: "A",
-        current: level(4),
-        history: [
-          point({ id: "a4", sessionDate: "2026-11-10", grade: 4 }),
-          point({ id: "a2", sessionDate: "2026-09-30", grade: 2 }),
-        ],
-      }),
-      skill({
-        slug: "b",
-        name: "B",
-        current: level(5),
-        history: [
-          point({ id: "b5", sessionDate: "2026-11-10", grade: 5 }),
-          point({ id: "b3", sessionDate: "2026-10-01", grade: 3 }),
-        ],
-      }),
-      skill({
-        slug: "c",
-        name: "C",
-        current: level(2),
-        history: [point({ id: "c2", sessionDate: "2026-10-01", grade: 2 })],
-      }),
-    ];
-    const data = buildSummaryTiles(skills, ["2026-09-30", "2026-10-01", "2026-11-10"]);
-    // A +2, B +2, C held steady → total 4 across 2 skills.
-    expect(data.levelsGained).toBe(4);
-    expect(data.skillsLeveledUp).toBe(2);
+describe("buildSummaryCard — headline", () => {
+  it("N === 0: '<Name> is getting started'", () => {
+    const data = buildSummaryCard([], [], "Maya");
+    expect(data.headline).toBe("Maya is getting started");
   });
 
-  it("formats the last-evaluated date and the season-start month", () => {
+  it("N === 1: singular 'skill'", () => {
     const skills = [
       skill({
         slug: "a",
         name: "A",
         current: level(3),
-        history: [point({ id: "a1", sessionDate: "2026-09-30", grade: 3 })],
+        history: [
+          point({ id: "a3", sessionDate: "2026-11-01", grade: 3 }),
+          point({ id: "a1", sessionDate: "2026-09-30", grade: 1 }),
+        ],
       }),
     ];
-    const data = buildSummaryTiles(skills, ["2026-09-30", "2026-11-17"]);
-    expect(data.lastEvaluatedShort).toBe("Nov 17");
-    expect(data.seasonStartMonth).toBe("Sep");
-    expect(data.evaluationsThisSeason).toBe(2);
+    const data = buildSummaryCard(skills, ["2026-09-30", "2026-11-01"], "Maya");
+    expect(data.headline).toBe("Maya has moved up in 1 skill");
   });
 
-  it("empty-state: zero sessions → counts 0, dates null", () => {
-    const data = buildSummaryTiles([], []);
-    expect(data).toEqual({
-      levelsGained: 0,
-      skillsLeveledUp: 0,
-      lastEvaluatedShort: null,
-      evaluationsThisSeason: 0,
-      seasonStartMonth: null,
-    });
-  });
-
-  it("excludes skills that never had a numeric first rating (DQ or NC only)", () => {
+  it("N > 1: plural 'skills'", () => {
     const skills = [
       skill({
-        slug: "dq-only",
-        name: "DQ only",
-        current: level(null, { notLegal: true }),
-        history: [point({ id: "p1", sessionDate: "2026-11-01", grade: null, notLegal: true })],
+        slug: "a",
+        name: "A",
+        current: level(3),
+        history: [point({ id: "a3", sessionDate: "2026-11-01", grade: 3 }), point({ id: "a1", sessionDate: "2026-09-30", grade: 1 })],
+      }),
+      skill({
+        slug: "b",
+        name: "B",
+        current: level(4),
+        history: [point({ id: "b4", sessionDate: "2026-11-01", grade: 4 }), point({ id: "b2", sessionDate: "2026-09-30", grade: 2 })],
       }),
     ];
-    const data = buildSummaryTiles(skills, ["2026-11-01"]);
-    expect(data.levelsGained).toBe(0);
-    expect(data.skillsLeveledUp).toBe(0);
+    const data = buildSummaryCard(skills, ["2026-09-30", "2026-11-01"], "Lily");
+    expect(data.headline).toBe("Lily has moved up in 2 skills");
+  });
+});
+
+describe("buildSummaryCard — stacked bar + screen-reader text", () => {
+  it("counts current level across non-rollup rated skills, excluding DQ / NC", () => {
+    const skills = [
+      skill({ slug: "a", name: "A", current: level(2) }),
+      skill({ slug: "b", name: "B", current: level(2) }),
+      skill({ slug: "c", name: "C", current: level(4) }),
+      skill({ slug: "dq", name: "DQ only", current: level(null, { notLegal: true }) }),
+      skill({ slug: "nc", name: "NC only", current: level(null, { noConcept: true }) }),
+      skill({ slug: "unrated", name: "Unrated" }),
+    ];
+    const data = buildSummaryCard(skills, ["2026-10-01"], "Maya");
+    // Three counted: 2 skills at level 2, 1 skill at level 4. Others
+    // excluded.
+    expect(data.total).toBe(3);
+    expect(data.levelCounts).toEqual([
+      { level: 1, count: 0 },
+      { level: 2, count: 2 },
+      { level: 3, count: 0 },
+      { level: 4, count: 1 },
+      { level: 5, count: 0 },
+    ]);
+  });
+
+  it("excludes rollup-type skills from the distribution", () => {
+    const skills = [
+      skill({ slug: "a", name: "A", current: level(3) }),
+      { ...skill({ slug: "rollup", name: "Rollup", current: level(5) }), type: "rollup" as const },
+    ];
+    const data = buildSummaryCard(skills, ["2026-10-01"], "Maya");
+    expect(data.total).toBe(1);
+    expect(data.levelCounts[2]?.count).toBe(1);        // level 3
+    expect(data.levelCounts[4]?.count).toBe(0);        // level 5 skipped
+  });
+
+  it("builds a sentence-form text alternative that lists every level", () => {
+    const skills = [
+      skill({ slug: "a", name: "A", current: level(2) }),
+      skill({ slug: "b", name: "B", current: level(2) }),
+      skill({ slug: "c", name: "C", current: level(4) }),
+    ];
+    const data = buildSummaryCard(skills, ["2026-10-01"], "Maya");
+    expect(data.levelsScreenReaderText).toBe(
+      "0 skills at Emerging, 2 at Developing, 0 at Competent, 1 at Advanced, 0 at Mastery",
+    );
+  });
+
+  it("empty-state: total is 0, lesson line is null", () => {
+    const data = buildSummaryCard([], [], "Maya");
+    expect(data.total).toBe(0);
+    expect(data.lessonLine).toBeNull();
+  });
+
+  it("formats the lesson byline with the latest date and season-start month", () => {
+    const skills = [skill({ slug: "a", name: "A", current: level(3) })];
+    const data = buildSummaryCard(skills, ["2026-09-30", "2026-11-17"], "Lily");
+    expect(data.lessonLine).toBe("Last lesson graded Nov 17 · 2 evaluations since Sep");
   });
 });
 
