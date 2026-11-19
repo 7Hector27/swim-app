@@ -41,23 +41,10 @@ export function formatDate(isoString: string): string {
   }).format(new Date(isoString));
 }
 
-// Human-friendly "rated X ago" string using the given `now` for deterministic
-// rendering (tests pin now). Null when sessionDate is missing.
-export function formatRecency(sessionDate: string | undefined, now: Date = new Date()): string | null {
-  if (!sessionDate) return null;
-  const [year, month, day] = sessionDate.split("-").map(Number);
-  const then = new Date(Date.UTC(year!, month! - 1, day!));
-  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  const dayMs = 24 * 60 * 60 * 1000;
-  const days = Math.max(0, Math.round((today.getTime() - then.getTime()) / dayMs));
-  if (days === 0) return "Rated today";
-  if (days === 1) return "Rated 1 day ago";
-  if (days < 7) return `Rated ${days} days ago`;
-  if (days < 14) return "Rated 1 week ago";
-  if (days < 60) return `Rated ${Math.floor(days / 7)} weeks ago`;
-  if (days < 365) return `Rated ${Math.floor(days / 30)} months ago`;
-  return "Rated over a year ago";
-}
+// formatRecency moved to @/lib/progressRow in Pass 3 — the parent progress
+// page now imports the same helper. Re-export so legacy callers keep
+// working; prefer the lib path for new call sites.
+export { formatRecency } from "@/lib/progressRow";
 
 // Fault-tag frequency across every non-voided rating in the progress response.
 // Counted per (tag, skill) pair; dedupes a tag within a single rating. Coach

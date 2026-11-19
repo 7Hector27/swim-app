@@ -66,7 +66,7 @@ describe("ParentSwimmerProgressContent", () => {
       skills: [
         {
           skillId: SKILL_ID,
-          slug: "freestyle-kick",
+          slug: "free-kick",
           name: "Freestyle Kick",
           categoryId: CAT_ID,
           categoryName: "Freestyle",
@@ -106,7 +106,7 @@ describe("ParentSwimmerProgressContent", () => {
       skills: [
         {
           skillId: SKILL_ID,
-          slug: "freestyle-kick",
+          slug: "free-kick",
           name: "Freestyle Kick",
           categoryId: CAT_ID,
           categoryName: "Freestyle",
@@ -139,41 +139,12 @@ describe("ParentSwimmerProgressContent", () => {
     expect(screen.getByText("DQ")).toBeInTheDocument();
   });
 
-  it("shows Not assessed for skills from categories without data", () => {
-    const cats: CategoriesResponse = [
-      {
-        id: CAT_ID,
-        slug: "freestyle",
-        name: "Freestyle",
-        sortOrder: 1,
-        skills: [
-          {
-            id: SKILL_ID,
-            slug: "freestyle-kick",
-            name: "Freestyle Kick",
-            type: "rubric",
-            unit: null,
-            stroke: null,
-            ratedPerSide: false,
-            notLegalAllowed: false,
-            parentSkillId: null,
-            sortOrder: 1,
-            faultTags: [],
-            descriptors: [],
-          },
-        ],
-      },
-    ];
-    render(
-      <ParentSwimmerProgressContent
-        swimmer={swimmer}
-        progress={emptyProgress}
-        categories={cats}
-      />,
-    );
-    expect(screen.getByText("Freestyle Kick")).toBeInTheDocument();
-    expect(screen.getAllByText("Not assessed").length).toBeGreaterThan(0);
-  });
+  // "Not assessed for skills from categories without data" was removed in
+  // Pass 3. The old behavior listed every catalog skill under its category
+  // and showed "Not assessed" for the un-rated ones. The new progress
+  // layout only renders skills the swimmer has actually been rated on; the
+  // group header shows "X of Y skills rated" so coaches still see what's
+  // outstanding, and an empty group shows the "Nothing rated yet" copy.
 
   it("shows start grade section", () => {
     const progress: ParentSwimmerProgressResponse = {
@@ -218,7 +189,7 @@ describe("ParentSwimmerProgressContent", () => {
       skills: [
         {
           skillId: SIDED_ID,
-          slug: "freestyle-breathing",
+          slug: "free-stroke-timing",
           name: "Freestyle Breathing",
           categoryId: CAT_ID,
           categoryName: "Freestyle",
@@ -308,6 +279,17 @@ describe("ParentSwimmerProgressContent — charts", () => {
             categoryId: CAT_ID,
             categorySlug: "freestyle",
             categoryName: "Freestyle",
+            average: value,
+            assessedCount: value !== null ? 1 : 0,
+            totalCount: 1,
+          },
+        ],
+        // Pass 3: the trend grid now reads screenGroupRollups. One group
+        // with assessed data is enough for the grid to render.
+        screenGroupRollups: [
+          {
+            screenSlug: "freestyle",
+            name: "Freestyle",
             average: value,
             assessedCount: value !== null ? 1 : 0,
             totalCount: 1,

@@ -500,6 +500,30 @@ export const ScoreHistoryCategoryRollupSchema = z.object({
 });
 export type ScoreHistoryCategoryRollup = z.infer<typeof ScoreHistoryCategoryRollupSchema>;
 
+// Per-screen-group rollup that mirrors the evaluate screens' nine groups
+// (fundamentals, water-confidence, freestyle, backstroke, breaststroke,
+// butterfly, starts, im-turns, racing). Same latest-effective-grade rules
+// as categoryRollups — no_concept excluded, not_legal counts as 0 — but
+// bucketed by SCREEN_SECTIONS instead of catalog category. A skill that
+// lives on more than one screen (push-off, streamline-in-motion, wall
+// approach, breakouts, etc.) contributes to each group it belongs to
+// with the same effective grade.
+export const ScoreHistoryScreenGroupRollupSchema = z.object({
+  // One of SCREEN_SLUGS: "fundamentals" | "water-confidence" | "freestyle"
+  // | "backstroke" | "breaststroke" | "butterfly" | "starts" | "im-turns"
+  // | "racing". Kept as a plain string here so the Zod enum doesn't need
+  // to import across the schemas/lib boundary.
+  screenSlug: z.string(),
+  // Progress-page display label (e.g. "Starts and turns"), set from
+  // PROGRESS_GROUP_LABELS on the server so clients don't have to look it
+  // up.
+  name: z.string(),
+  average: z.number().nullable(),
+  assessedCount: z.number().int().nonnegative(),
+  totalCount: z.number().int().nonnegative(),
+});
+export type ScoreHistoryScreenGroupRollup = z.infer<typeof ScoreHistoryScreenGroupRollupSchema>;
+
 export const ScoreHistoryStartSchema = z.object({
   slug: z.string(),
   name: z.string(),
@@ -532,6 +556,9 @@ export const ScoreHistoryPointSchema = z.object({
   sessionId: z.string().uuid(),
   headPositionOverall: z.number().int().min(1).max(5).nullable(),
   categoryRollups: z.array(ScoreHistoryCategoryRollupSchema),
+  // Pass 3: screen-group rollups mirror the evaluate screens (9 entries,
+  // SCREEN_SECTIONS-keyed). categoryRollups stays for backward compat.
+  screenGroupRollups: z.array(ScoreHistoryScreenGroupRollupSchema),
   starts: z.array(ScoreHistoryStartSchema),
   // Progression tallies as of this date (collapsed by side).
   counts: ScoreHistoryLevelCountsSchema,

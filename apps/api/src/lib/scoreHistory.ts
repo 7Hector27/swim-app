@@ -16,13 +16,18 @@ import {
   latestEffectiveRatings,
   weakerSideGrade,
   MASTERY_LEVEL,
+  PROGRESS_GROUP_LABELS,
+  SCREEN_SLUGS,
+  uniqueScreenSkillSlugs,
   type GradeMap,
   type PerStrokeGrades,
   type RatingRecord,
   type ScoreHistoryResponse,
   type ScoreHistoryPoint,
   type ScoreHistoryCategoryRollup,
+  type ScoreHistoryScreenGroupRollup,
   type ScoreHistoryStart,
+  type StartGradeResult,
   type ScoreHistoryLevelCounts,
   type ScoreHistoryMilestone,
   type ScoreHistoryFaultTrend,
@@ -183,6 +188,7 @@ export async function computeScoreHistory(
       id: skills.id,
       slug: skills.slug,
       name: skills.name,
+      type: skills.type,
       parentSkillId: skills.parentSkillId,
       categoryId: skills.categoryId,
       categorySlug: skillCategories.slug,
@@ -192,6 +198,28 @@ export async function computeScoreHistory(
     .from(skills)
     .innerJoin(skillCategories, eq(skillCategories.id, skills.categoryId))
     .where(isNull(skills.archivedAt));
+
+  // Screen-group rollup rule:
+  // - Rollup skills (head-position-overall, free-bilateral-breathing) are
+  //   display-only. Their inputs already count, so including them would
+  //   double-count the same ability. The slug is dropped from both
+  //   totalCount and assessedCount.
+  // - Composite starts (track-start, relay-start, back-start) count as
+  //   one skill each in every group that lists them; the start's grade
+  //   comes from calculateStartGrade on its components. graded/not_legal
+  //   are "rated", in_progress/no_concept are "in total only". See the
+  //   per-slug branch in the screenGroupRollups loop below.
+  // The raw rating rows for a composite's components (track-start-reaction,
+  // …) aren't in SCREEN_SECTIONS at all, so they only influence the group
+  // through the composite parent — never via their own slug.
+  const countingSlugs = new Set<string>(
+    allSkillRows
+      .filter((row) => row.type !== "rollup")
+      .map((row) => row.slug),
+  );
+  const compositeSlugs = new Set<string>(
+    allSkillRows.filter((row) => row.type === "composite").map((row) => row.slug),
+  );
 
   type CategoryBucket = {
     categoryId: string;
@@ -344,6 +372,55 @@ export async function computeScoreHistory(
       if (numeric !== null) skillsLearned += 1;
     }
 
+    // Pass 3: per-screen-group rollups. Same latest-effective-grade logic
+    // as categoryRollups (no_concept excluded, not_legal counts as 0), but
+    // bucketed by SCREEN_SECTIONS instead of catalog category. A skill in
+    // more than one section/screen contributes once per group it belongs
+    // to with the same effective grade.
+    //
+    // Composite starts: one slug per composite is in `slugs` (so they add
+    // 1 to totalCount per group). Their contribution to assessedCount and
+    // the average comes from the per-date `startEntries` built above, not
+    // from `collapsed[slug]` (which is undefined for composites — they're
+    // never rated directly).
+    const startGradeBySlug = new Map<string, StartGradeResult>();
+    for (const entry of startEntries) {
+      startGradeBySlug.set(entry.slug, entry.grade);
+    }
+    const screenGroupRollups: ScoreHistoryScreenGroupRollup[] = SCREEN_SLUGS.map((screenSlug) => {
+      const slugs = uniqueScreenSkillSlugs(screenSlug).filter((slug) => countingSlugs.has(slug));
+      let sum = 0;
+      let assessedCount = 0;
+      for (const slug of slugs) {
+        if (compositeSlugs.has(slug)) {
+          const startGrade = startGradeBySlug.get(slug);
+          if (!startGrade) continue;
+          if (startGrade.status === "graded") {
+            sum += startGrade.grade;
+            assessedCount += 1;
+          } else if (startGrade.status === "not_legal") {
+            // Not legal still counts as rated — contributes 0 to the sum,
+            // same as non-composite not_legal below.
+            assessedCount += 1;
+          }
+          // in_progress and no_concept: in total only, not rated.
+          continue;
+        }
+        const grade = collapsed[slug];
+        if (grade === undefined || grade === null) continue;
+        if (grade === "no_concept") continue;
+        sum += grade === "not_legal" ? 0 : grade;
+        assessedCount += 1;
+      }
+      return {
+        screenSlug,
+        name: PROGRESS_GROUP_LABELS[screenSlug],
+        average: assessedCount > 0 ? sum / assessedCount : null,
+        assessedCount,
+        totalCount: slugs.length,
+      };
+    });
+
     // Every date in sortedDates came from a non-voided rating, so the
     // session row must exist. Fall back to the empty string if a race ever
     // drops it — the chart's deep link will 404 on the server rather than
@@ -354,6 +431,7 @@ export async function computeScoreHistory(
       sessionId: primary?.id ?? "",
       headPositionOverall: headPosOverall,
       categoryRollups,
+      screenGroupRollups,
       starts: startEntries,
       counts,
       totalLevelsGained,

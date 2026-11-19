@@ -183,7 +183,7 @@ describe("buildSectionGroups", () => {
 // ── screenSections coverage ───────────────────────────────────────────────────
 
 import { SCREEN_SLUGS } from "@swim-app/shared";
-import { SCREEN_SECTIONS } from "../content/EvaluateContent/screenSections";
+import { SCREEN_SECTIONS } from "@swim-app/shared";
 
 describe("SCREEN_SECTIONS", () => {
   it("every screen slug has a section layout", () => {

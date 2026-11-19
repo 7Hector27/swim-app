@@ -92,6 +92,45 @@ export function latestCategorySnapshot(history: ScoreHistoryPointsOnly): Array<{
   }));
 }
 
+// Pass 3: screen-group counterparts. `screenGroupRollups` carry the nine
+// progress-page groups' averages + counts. The radar and category-trend
+// grid both switch to this on the progress pages; the catalog-based
+// equivalents stay available for any other caller that needs them.
+export function screenGroupTrendSeries(history: ScoreHistoryPointsOnly): Array<{
+  screenSlug: string;
+  name: string;
+  points: Array<{ sessionDate: string; value: number | null }>;
+}> {
+  const first = history.points[0];
+  if (!first) return [];
+  return first.screenGroupRollups.map((rollup, groupIndex) => ({
+    screenSlug: rollup.screenSlug,
+    name: rollup.name,
+    points: history.points.map((point) => ({
+      sessionDate: point.sessionDate,
+      value: point.screenGroupRollups[groupIndex]?.average ?? null,
+    })),
+  }));
+}
+
+export function latestScreenGroupSnapshot(history: ScoreHistoryPointsOnly): Array<{
+  screenSlug: string;
+  name: string;
+  average: number | null;
+  assessedCount: number;
+  totalCount: number;
+}> {
+  const latest = history.points[history.points.length - 1];
+  if (!latest) return [];
+  return latest.screenGroupRollups.map((rollup) => ({
+    screenSlug: rollup.screenSlug,
+    name: rollup.name,
+    average: rollup.average,
+    assessedCount: rollup.assessedCount,
+    totalCount: rollup.totalCount,
+  }));
+}
+
 // Per-start progression series from score history. Order and names are taken
 // from the first point so a newly-rated start doesn't rearrange earlier points.
 // sessionId is threaded through so StartProgression can deep-link to edit mode
