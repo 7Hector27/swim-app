@@ -7,7 +7,7 @@ import type {
 } from "@swim-app/shared";
 import CategoryTrendsGrid from "@/components/CategoryTrendsGrid";
 import InlineError from "@/components/InlineError";
-import StartsSection from "./StartsSection";
+import StartsSection from "@/components/StartsSection";
 import {
   latestScreenGroupSnapshot,
   screenGroupTrendSeries,

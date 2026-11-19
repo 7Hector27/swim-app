@@ -315,14 +315,20 @@ function formatDeltaNumber(value: number): string {
 // response to just the fields they thread through — most of SkillProgress
 // (category, type, ratedPerSide, …) is irrelevant here.
 export function startComponentHistoryMap(
-  skills: Array<{ slug: string; history: ProgressRatingPoint[] }>,
+  // History typed with faultTags optional so both coach and parent-shape
+  // skills are accepted — the Starts code never reads that field.
+  skills: Array<{
+    slug: string;
+    history: ReadonlyArray<Omit<ProgressRatingPoint, "faultTags"> & { faultTags?: ReadonlyArray<string> }>;
+  }>,
   components: StartComponentProgress[],
 ): Map<string, ProgressRatingPoint[]> {
   const slugs = new Set(components.map((component) => component.slug));
   const map = new Map<string, ProgressRatingPoint[]>();
   for (const skill of skills) {
     if (!slugs.has(skill.slug)) continue;
-    map.set(skill.slug, skill.history);
+    // Coerce — downstream only reads the fields both shapes carry.
+    map.set(skill.slug, skill.history as unknown as ProgressRatingPoint[]);
   }
   return map;
 }

@@ -11,8 +11,8 @@ import type {
   StartComponentProgress,
   StartProgress,
 } from "@swim-app/shared";
-import StartsSection from "../content/SwimmerProgressContent/StartsSection";
-import StartDiveCard from "../content/SwimmerProgressContent/StartsSection/StartDiveCard";
+import StartsSection from "../components/StartsSection";
+import StartDiveCard from "../components/StartsSection/StartDiveCard";
 import {
   bezierPoint,
   BLOCK_ARC_CONTROL,
@@ -36,7 +36,7 @@ import {
   WALL_ARC_CONTROL,
   WALL_ARC_END,
   WALL_ARC_START,
-} from "../content/SwimmerProgressContent/StartsSection/helpers";
+} from "../components/StartsSection/helpers";
 
 // ── Fixtures ──────────────────────────────────────────────────────────────
 

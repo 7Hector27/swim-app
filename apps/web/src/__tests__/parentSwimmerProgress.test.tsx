@@ -8,8 +8,9 @@ import type {
 } from "@swim-app/shared";
 
 vi.mock("@/components/SiteNav", () => ({ default: () => <nav /> }));
-vi.mock("@/components/TrendLine", () => ({ default: () => null }));
 vi.mock("@/components/LevelLadder", () => ({ default: () => null }));
+vi.mock("@/components/StartsSection", () => ({ default: () => null }));
+vi.mock("@/content/SwimmerProgressContent/charts/CategoryRadar", () => ({ default: () => null }));
 
 import ParentSwimmerProgressContent from "../content/ParentSwimmerProgressContent/ParentSwimmerProgressContent";
 
@@ -97,7 +98,9 @@ describe("ParentSwimmerProgressContent", () => {
       />,
     );
     expect(screen.getByText("Freestyle Kick")).toBeInTheDocument();
-    expect(screen.getByText("3")).toBeInTheDocument();
+    // New parent row renders the level name + change text, not a bare
+    // number badge.
+    expect(screen.getByText(/Competent/)).toBeInTheDocument();
   });
 
   it("shows DQ for not-legal in danger style", () => {
@@ -179,10 +182,10 @@ describe("ParentSwimmerProgressContent", () => {
         categories={categories}
       />,
     );
-    expect(screen.getByText("Track Start")).toBeInTheDocument();
-    // StartLadderCard surfaces the overall grade as a "Grade N" badge.
-    const badges = screen.getAllByTestId("start-ladder-status-badge");
-    expect(badges.some((badge) => badge.textContent === "Grade 4")).toBe(true);
+    // The parent page now renders Starts via the shared StartsSection
+    // component, which is mocked in this suite — asserting the section
+    // heading is enough to prove the page composed it.
+    expect(screen.getByTestId("parent-progress-starts")).toBeInTheDocument();
   });
 
   it("shows L and R badges for side-rated skills", () => {
@@ -229,14 +232,16 @@ describe("ParentSwimmerProgressContent", () => {
         categories={categories}
       />,
     );
-    expect(screen.getByText(/L 3/)).toBeInTheDocument();
-    expect(screen.getByText(/R 4/)).toBeInTheDocument();
+    // Sided skills now render as a combined change-text line on the
+    // row ("left 3, right 4") rather than two separate badges.
+    expect(screen.getByText(/left 3, right 4/i)).toBeInTheDocument();
   });
 
-  // Regression: when the API returns latestCoachingPriority = null (swimmer
-  // has never had a priority written), the "Current focus" section is hidden
-  // entirely. No placeholder, no empty box.
-  it("hides Current focus when no priority has ever been written", () => {
+  // The old "Current focus" section was renamed to "Coach's focus" in
+  // the rebuild. It stays hidden when nothing has ever been rated — the
+  // whole hasAnyData gate skips it — so this assertion holds for the
+  // empty-progress fixture.
+  it("hides Coach's focus when no priority has ever been written", () => {
     render(
       <ParentSwimmerProgressContent
         swimmer={swimmer}
@@ -244,12 +249,39 @@ describe("ParentSwimmerProgressContent", () => {
         categories={categories}
       />,
     );
-    expect(screen.queryByTestId("parent-progress-current-focus")).toBeNull();
+    expect(screen.queryByTestId("parent-progress-coach-focus")).toBeNull();
   });
 
-  it("renders Current focus with the coach's text and the evaluation date", () => {
+  it("renders Coach's focus with the priority text and the evaluation date byline", () => {
     const progress: ParentSwimmerProgressResponse = {
       ...emptyProgress,
+      // The section renders inside the hasAnyData gate, so include a
+      // rated skill so the gate opens.
+      skills: [
+        {
+          skillId: SKILL_ID,
+          slug: "free-kick",
+          name: "Freestyle Kick",
+          categoryId: CAT_ID,
+          categoryName: "Freestyle",
+          type: "rubric",
+          unit: null,
+          ratedPerSide: false,
+          parentSkillId: null,
+          current: {
+            grade: 3,
+            notLegal: false,
+            noConcept: false,
+            capacityValue: null,
+            capacityUnit: null,
+            measurementValue: null,
+            measurementUnit: null,
+          },
+          currentLeft: null,
+          currentRight: null,
+          history: [],
+        },
+      ],
       latestCoachingPriority: {
         text: "Rotate the hips more on each stroke",
         sessionDate: "2026-10-14",
@@ -262,11 +294,11 @@ describe("ParentSwimmerProgressContent", () => {
         categories={categories}
       />,
     );
-    const section = screen.getByTestId("parent-progress-current-focus");
+    const section = screen.getByTestId("parent-progress-coach-focus");
     expect(section).toHaveTextContent("Rotate the hips more on each stroke");
-    // Date-string rendering uses the UTC-anchored formatter in helpers.ts so
-    // the day is "Oct 14, 2026" regardless of the test runner's TZ.
-    expect(section).toHaveTextContent(/From Oct 14, 2026/);
+    // Date byline: no coach name available on the progress response, so
+    // the fallback "From your coach, Oct 14" copy renders.
+    expect(section).toHaveTextContent(/From your coach, Oct 14/);
   });
 });
 
@@ -309,7 +341,7 @@ describe("ParentSwimmerProgressContent — charts", () => {
     };
   }
 
-  it("empty state: no charts render when there is no evaluation data", () => {
+  it("empty state: no snapshot section renders when there is no evaluation data", () => {
     render(
       <ParentSwimmerProgressContent
         swimmer={swimmer}
@@ -318,14 +350,40 @@ describe("ParentSwimmerProgressContent — charts", () => {
         scoreHistory={emptyScoreHistory}
       />,
     );
-    expect(screen.queryByTestId("parent-progress-head-position-trend")).toBeNull();
-    expect(screen.queryByTestId("parent-progress-category-trends")).toBeNull();
+    // The empty-data branch short-circuits before every post-tiles
+    // section; the snapshot heading is a good proxy.
+    expect(screen.queryByTestId("parent-progress-snapshot")).toBeNull();
   });
 
-  it("one-evaluation state: no head-position section renders (hero chart removed)", () => {
+  it("one-evaluation state: no stray head-position hero chart", () => {
     const progress: ParentSwimmerProgressResponse = {
       ...emptyProgress,
       headPositionOverall: 3,
+      skills: [
+        {
+          skillId: SKILL_ID,
+          slug: "free-kick",
+          name: "Freestyle Kick",
+          categoryId: CAT_ID,
+          categoryName: "Freestyle",
+          type: "rubric",
+          unit: null,
+          ratedPerSide: false,
+          parentSkillId: null,
+          current: {
+            grade: 3,
+            notLegal: false,
+            noConcept: false,
+            capacityValue: null,
+            capacityUnit: null,
+            measurementValue: null,
+            measurementUnit: null,
+          },
+          currentLeft: null,
+          currentRight: null,
+          history: [],
+        },
+      ],
     };
     render(
       <ParentSwimmerProgressContent
@@ -336,17 +394,38 @@ describe("ParentSwimmerProgressContent — charts", () => {
       />,
     );
     expect(screen.queryByTestId("parent-progress-head-position-trend")).toBeNull();
-    // The old "trend unlocks after the second rating" hint was tied to the
-    // deleted hero section; it must not render anywhere now.
-    expect(screen.queryByText(/trend unlocks after the second rating/i)).toBeNull();
     expect(screen.queryByText(/head position overall/i)).toBeNull();
-    expect(screen.queryByTestId("parent-progress-category-trends")).toBeNull();
   });
 
-  it("multi-session state: still no head-position chart (hero removed) but category trends appear", () => {
+  it("multi-session state: snapshot section appears alongside skills", () => {
     const progress: ParentSwimmerProgressResponse = {
       ...emptyProgress,
       headPositionOverall: 4,
+      skills: [
+        {
+          skillId: SKILL_ID,
+          slug: "free-kick",
+          name: "Freestyle Kick",
+          categoryId: CAT_ID,
+          categoryName: "Freestyle",
+          type: "rubric",
+          unit: null,
+          ratedPerSide: false,
+          parentSkillId: null,
+          current: {
+            grade: 4,
+            notLegal: false,
+            noConcept: false,
+            capacityValue: null,
+            capacityUnit: null,
+            measurementValue: null,
+            measurementUnit: null,
+          },
+          currentLeft: null,
+          currentRight: null,
+          history: [],
+        },
+      ],
     };
     render(
       <ParentSwimmerProgressContent
@@ -356,23 +435,7 @@ describe("ParentSwimmerProgressContent — charts", () => {
         scoreHistory={makeHistory([2, 3, 4])}
       />,
     );
-    expect(screen.queryByTestId("parent-progress-head-position-trend")).toBeNull();
-    expect(screen.queryByText(/head position overall/i)).toBeNull();
-    expect(screen.getByTestId("parent-progress-category-trends")).toBeInTheDocument();
-  });
-
-  it("renders the category trends grid when there are two or more sessions", () => {
-    render(
-      <ParentSwimmerProgressContent
-        swimmer={swimmer}
-        progress={emptyProgress}
-        categories={categories}
-        scoreHistory={makeHistory([2, 3, 4])}
-      />,
-    );
-    const grid = screen.getByTestId("parent-progress-category-trends");
-    expect(grid).toBeInTheDocument();
-    expect(grid.textContent).toMatch(/Freestyle/);
+    expect(screen.getByTestId("parent-progress-snapshot")).toBeInTheDocument();
   });
 
   // Note: the real parent-route leak check lives in the API integration

@@ -25,6 +25,12 @@ import {
   type ArcDot,
 } from "./helpers";
 
+// Fault tags aren't read anywhere inside the Starts code, so the prop
+// accepts the structural intersection of coach and parent history
+// shapes — the parent omits faultTags; the coach's extra field is
+// simply ignored here.
+type StartsHistoryPoint = Omit<ProgressRatingPoint, "faultTags">;
+
 interface StartDiveCardProps {
   start: StartProgress;
   // Slice of SwimmerProgressResponse["skills"] — only the entries matching
@@ -32,11 +38,22 @@ interface StartDiveCardProps {
   // flat so the parent orchestrator doesn't thread two shapes through.
   swimmerSkills: Array<{
     slug: string;
-    history: ProgressRatingPoint[];
+    history: StartsHistoryPoint[];
   }>;
+  // Controls which card regions render. The coach progress page shows the
+  // session-by-session grid + the "Still to grade" tile; the parent page
+  // hides both — parents don't see per-session detail or coach-tempo
+  // metadata. Defaults keep the coach behaviour unchanged.
+  showSessionGrid?: boolean;
+  showStillToGrade?: boolean;
 }
 
-export default function StartDiveCard({ start, swimmerSkills }: StartDiveCardProps) {
+export default function StartDiveCard({
+  start,
+  swimmerSkills,
+  showSessionGrid = true,
+  showStillToGrade = true,
+}: StartDiveCardProps) {
   if (!hasAnyGraded(start)) {
     return (
       <div
@@ -77,27 +94,36 @@ export default function StartDiveCard({ start, swimmerSkills }: StartDiveCardPro
       style={{ borderColor: "var(--color-border)", backgroundColor: "var(--color-surface-soft)" }}
       data-testid={`start-dive-card-${start.slug}`}
     >
-      <div className="grid gap-5 desktop:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] items-start">
+      <div
+        className={
+          showSessionGrid
+            ? "grid gap-5 desktop:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] items-start"
+            : "flex flex-col gap-3"
+        }
+      >
         <div className="flex flex-col gap-3 min-w-0">
           <DiveArcSvg plot={plot} startName={start.name} srDescription={srDescription} />
           <StatTiles
             reactionHistory={reactionHistory}
             distanceHistory={distanceHistory}
             stillToGrade={stillToGrade}
+            showStillToGrade={showStillToGrade}
           />
         </div>
 
-        <div className="flex flex-col gap-2 min-w-0">
-          <span className="font-semibold text-sm text-text">Each part, session by session</span>
-          <ComponentSessionGrid
-            components={start.components}
-            sessionDates={sessionDatesOldestFirst}
-            lookup={sessionLookup}
-          />
-          <p className="text-xs text-text-secondary">
-            The start gets its overall grade once every component is graded.
-          </p>
-        </div>
+        {showSessionGrid && (
+          <div className="flex flex-col gap-2 min-w-0">
+            <span className="font-semibold text-sm text-text">Each part, session by session</span>
+            <ComponentSessionGrid
+              components={start.components}
+              sessionDates={sessionDatesOldestFirst}
+              lookup={sessionLookup}
+            />
+            <p className="text-xs text-text-secondary">
+              The start gets its overall grade once every component is graded.
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -323,9 +349,12 @@ interface StatTilesProps {
   reactionHistory: ProgressRatingPoint[];
   distanceHistory: ProgressRatingPoint[];
   stillToGrade: number;
+  // Parent view hides the still-to-grade count; it reads as coach tempo
+  // metadata rather than a swimmer-progress fact.
+  showStillToGrade?: boolean;
 }
 
-function StatTiles({ reactionHistory, distanceHistory, stillToGrade }: StatTilesProps) {
+function StatTiles({ reactionHistory, distanceHistory, stillToGrade, showStillToGrade = true }: StatTilesProps) {
   const reactionFirst = firstMeasurement(reactionHistory);
   const reactionLatest = latestMeasurement(reactionHistory);
   const distanceFirst = firstMeasurement(distanceHistory);
@@ -366,7 +395,7 @@ function StatTiles({ reactionHistory, distanceHistory, stillToGrade }: StatTiles
     });
   }
 
-  if (stillToGrade > 0) {
+  if (showStillToGrade && stillToGrade > 0) {
     tiles.push({
       key: "stillToGrade",
       label: "Still to grade",

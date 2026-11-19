@@ -5,16 +5,31 @@ import type { ProgressRatingPoint, StartProgress } from "@swim-app/shared";
 import StartDiveCard from "./StartDiveCard";
 import { pickInitialStartSlug, tabStatusLabel } from "./helpers";
 
+// Starts code never reads faultTags off a rating point, so the prop
+// accepts the structural intersection of the coach and parent history
+// shapes — both parent variants omit faultTags; the coach's extra field
+// is simply unused here.
+type StartsHistoryPoint = Omit<ProgressRatingPoint, "faultTags">;
+
 interface StartsSectionProps {
   startProgress: StartProgress[];
   // Flat list — only `slug` and `history` are read inside the card.
   swimmerSkills: Array<{
     slug: string;
-    history: ProgressRatingPoint[];
+    history: StartsHistoryPoint[];
   }>;
+  // Coach shows the session-by-session grid + the "Still to grade" tile;
+  // parent hides both. Props forwarded verbatim to StartDiveCard.
+  showSessionGrid?: boolean;
+  showStillToGrade?: boolean;
 }
 
-export default function StartsSection({ startProgress, swimmerSkills }: StartsSectionProps) {
+export default function StartsSection({
+  startProgress,
+  swimmerSkills,
+  showSessionGrid = true,
+  showStillToGrade = true,
+}: StartsSectionProps) {
   const initial = pickInitialStartSlug(startProgress);
   const [activeSlug, setActiveSlug] = useState<string | null>(initial);
 
@@ -65,7 +80,12 @@ export default function StartsSection({ startProgress, swimmerSkills }: StartsSe
         id={`starts-panel-${activeStart.slug}`}
         aria-labelledby={`starts-tab-${activeStart.slug}`}
       >
-        <StartDiveCard start={activeStart} swimmerSkills={swimmerSkills} />
+        <StartDiveCard
+          start={activeStart}
+          swimmerSkills={swimmerSkills}
+          showSessionGrid={showSessionGrid}
+          showStillToGrade={showStillToGrade}
+        />
       </div>
     </div>
   );
