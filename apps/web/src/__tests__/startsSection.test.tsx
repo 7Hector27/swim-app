@@ -178,7 +178,12 @@ const backComponents: StartComponentProgress[] = [
     },
   }),
   component({ slug: "back-start-entry-alignment", name: "Entry alignment" }),
-  component({ slug: "back-start-streamline", name: "Streamline" }),
+  // Backstroke start has 5 active catalog components per the Oct 14
+  // decisions doc — "Streamline off the wall" was archived (now covered by
+  // the shared Streamline skill) and is filtered out of
+  // SwimmerProgressResponse.startProgress[].components by the API
+  // (progressCalculation.ts: .where(isNull(skills.archivedAt))), so no
+  // archived slug ever reaches the UI.
 ];
 
 const relayNothing = relayStart({
@@ -329,13 +334,15 @@ describe("StartsSection helpers — buildDiveArcPlot", () => {
   });
 
   it("backstroke start: dots land on the wall arc", () => {
+    // Back-start has 5 catalog components post-archival; subtracting the
+    // distance component leaves 4 dots on the arc.
     const plot = buildDiveArcPlot(backStart({ grade: { status: "graded", grade: 2 }, components: backComponents }));
     expect(plot.kind).toBe("wall");
-    expect(plot.dots).toHaveLength(5);
+    expect(plot.dots).toHaveLength(4);
     expect(plot.dots[0]?.x).toBe(WALL_ARC_START.x);
     expect(plot.dots[0]?.y).toBe(WALL_ARC_START.y);
-    expect(plot.dots[4]?.x).toBe(WALL_ARC_END.x);
-    expect(plot.dots[4]?.y).toBe(WALL_ARC_END.y);
+    expect(plot.dots[3]?.x).toBe(WALL_ARC_END.x);
+    expect(plot.dots[3]?.y).toBe(WALL_ARC_END.y);
   });
 
   it("passes through ungraded components as level null so the SVG draws a dashed dot", () => {
@@ -562,10 +569,69 @@ describe("StartDiveCard — backstroke start uses the wall arc", () => {
     const start = backStart({ grade: { status: "graded", grade: 2 }, components: backComponents });
     render(<StartDiveCard start={start} swimmerSkills={[]} />);
     const dots = screen.getAllByTestId("dive-arc-dot");
-    expect(dots).toHaveLength(5);
+    // 5 components − 1 distance = 4 arc dots.
+    expect(dots).toHaveLength(4);
     // Slugs are drawn in catalog order; the first non-distance slug is
     // back-start-reaction and lands on the arc's start anchor.
     expect(dots[0]?.getAttribute("data-component")).toBe("back-start-reaction");
+  });
+});
+
+// The decisions doc (Oct 14) archived `back-start-streamline`. The coach
+// API filters archived skills out of progress.startProgress[].components,
+// so the UI never receives it — and therefore never surfaces it. These
+// tests assert that the component list → arc / tiles / grid pipeline
+// never resurrects an archived slug from any derived data (grade's
+// `missing` list, session-date union, still-to-grade count) when the
+// input components match the real post-archival catalog.
+describe("StartsSection — archived back-start-streamline never surfaces", () => {
+  it("renders exactly the 5 active back-start components (no streamline anywhere)", () => {
+    const start = backStart({
+      grade: { status: "in_progress", missing: ["back-start-entry-alignment"] },
+      components: backComponents,
+    });
+    // Include a stray back-start-streamline rating in the per-skill
+    // history to simulate a leak through a different code path. The grid
+    // + component list drive off `start.components`, so even with the
+    // leaked history, the streamline row should not render.
+    const leakedStreamline = [
+      {
+        slug: "back-start-streamline",
+        history: [point({ id: "s1", sessionDate: "2026-10-01", grade: 3 })],
+      },
+    ];
+    render(<StartDiveCard start={start} swimmerSkills={leakedStreamline} />);
+
+    // Arc: 4 dots, none for streamline.
+    const arcDots = screen.getAllByTestId("dive-arc-dot");
+    expect(arcDots).toHaveLength(4);
+    for (const dot of arcDots) {
+      expect(dot.getAttribute("data-component")).not.toBe("back-start-streamline");
+    }
+
+    // Session grid: no row for streamline (no cells and no empty slots
+    // tagged with the archived slug).
+    const gridCells = screen.queryAllByTestId("start-session-grid-cell");
+    const gridEmpty = screen.queryAllByTestId("start-session-grid-empty");
+    for (const cell of [...gridCells, ...gridEmpty]) {
+      expect(cell.getAttribute("data-component")).not.toBe("back-start-streamline");
+    }
+
+    // Still-to-grade tile: counts only against the 5 active components —
+    // one ungraded (entry-alignment), not two.
+    expect(screen.getByTestId("start-stat-tile-stillToGrade")).toHaveTextContent("1");
+  });
+
+  it("'N of M' tab reads against the active catalog count, not an inflated 6", () => {
+    // Match the real post-archival shape: 5 components total, 4 of them
+    // graded (reaction, push, arch, distance). The tab status reads
+    // "4 of 5", not "4 of 6".
+    const start = backStart({
+      grade: { status: "in_progress", missing: ["back-start-entry-alignment"] },
+      components: backComponents,
+    });
+    render(<StartsSection startProgress={[start]} swimmerSkills={[]} />);
+    expect(screen.getByTestId("starts-tab-back-start")).toHaveTextContent("4 of 5");
   });
 });
 
@@ -594,13 +660,15 @@ describe("StartsSection — tabs + default selection", () => {
   it("renders each tab's status text alongside the start name", () => {
     const track = trackStart({ grade: { status: "graded", grade: 3 }, components: trackComponents });
     const back = backStart({
-      grade: { status: "in_progress", missing: ["back-start-streamline", "back-start-entry-alignment"] },
+      grade: { status: "in_progress", missing: ["back-start-entry-alignment"] },
       components: backComponents,
     });
     const relay = relayNothing;
     render(<StartsSection startProgress={[track, back, relay]} swimmerSkills={[]} />);
     expect(screen.getByTestId("starts-tab-track-start")).toHaveTextContent("Grade 3");
-    expect(screen.getByTestId("starts-tab-back-start")).toHaveTextContent("4 of 6");
+    // Back-start has 5 active components (streamline archived); 4 are
+    // graded in the fixture, so the tab reads "4 of 5".
+    expect(screen.getByTestId("starts-tab-back-start")).toHaveTextContent("4 of 5");
     expect(screen.getByTestId("starts-tab-relay-start")).toHaveTextContent("Not started");
   });
 });
