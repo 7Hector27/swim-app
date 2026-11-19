@@ -478,19 +478,31 @@ describe("DELETE /ratings/:id", () => {
     mockDbSelect.mockReturnValueOnce(requireUserSelect(profileCoach));
   });
 
+  // The DELETE handler joins skillRatings to swimmers for the audit log,
+  // so the lookup chain is .from(skillRatings).innerJoin(swimmers)
+  // .where(...).limit(1).
+  function ratingSelect(rows: Array<Record<string, unknown>>) {
+    const limit = vi.fn().mockResolvedValue(rows);
+    const where = vi.fn().mockReturnValue({ limit });
+    const innerJoin = vi.fn().mockReturnValue({ where });
+    return { from: vi.fn().mockReturnValue({ innerJoin }) };
+  }
+
   it("past undo window → 409", async () => {
-    // Second select call returns the rating with old createdAt
-    const ratingLimit = vi.fn().mockResolvedValue([
-      {
-        id: RATING_ID,
-        coachId: COACH_ID,
-        voidedAt: null,
-        createdAt: oldTime,
-      },
-    ]);
-    const ratingWhere = vi.fn().mockReturnValue({ limit: ratingLimit });
-    mockDbSelect
-      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: ratingWhere }) });
+    mockDbSelect.mockReturnValueOnce(
+      ratingSelect([
+        {
+          id: RATING_ID,
+          coachId: COACH_ID,
+          swimmerId: SWIMMER_ID,
+          sessionId: SESSION_ID,
+          skillId: SKILL_ID,
+          voidedAt: null,
+          createdAt: oldTime,
+          householdId: "household-id",
+        },
+      ]),
+    );
 
     const res = await request(app)
       .delete(`/coach/ratings/${RATING_ID}`)
@@ -501,17 +513,20 @@ describe("DELETE /ratings/:id", () => {
   });
 
   it("already voided → 409", async () => {
-    const ratingLimit = vi.fn().mockResolvedValue([
-      {
-        id: RATING_ID,
-        coachId: COACH_ID,
-        voidedAt: now,
-        createdAt: now,
-      },
-    ]);
-    const ratingWhere = vi.fn().mockReturnValue({ limit: ratingLimit });
-    mockDbSelect
-      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: ratingWhere }) });
+    mockDbSelect.mockReturnValueOnce(
+      ratingSelect([
+        {
+          id: RATING_ID,
+          coachId: COACH_ID,
+          swimmerId: SWIMMER_ID,
+          sessionId: SESSION_ID,
+          skillId: SKILL_ID,
+          voidedAt: now,
+          createdAt: now,
+          householdId: "household-id",
+        },
+      ]),
+    );
 
     const res = await request(app)
       .delete(`/coach/ratings/${RATING_ID}`)
@@ -522,17 +537,20 @@ describe("DELETE /ratings/:id", () => {
   });
 
   it("not owned by this coach → 404", async () => {
-    const ratingLimit = vi.fn().mockResolvedValue([
-      {
-        id: RATING_ID,
-        coachId: "different-coach-id",
-        voidedAt: null,
-        createdAt: now,
-      },
-    ]);
-    const ratingWhere = vi.fn().mockReturnValue({ limit: ratingLimit });
-    mockDbSelect
-      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: ratingWhere }) });
+    mockDbSelect.mockReturnValueOnce(
+      ratingSelect([
+        {
+          id: RATING_ID,
+          coachId: "different-coach-id",
+          swimmerId: SWIMMER_ID,
+          sessionId: SESSION_ID,
+          skillId: SKILL_ID,
+          voidedAt: null,
+          createdAt: now,
+          householdId: "household-id",
+        },
+      ]),
+    );
 
     const res = await request(app)
       .delete(`/coach/ratings/${RATING_ID}`)
@@ -829,35 +847,32 @@ describe("PATCH /ratings/:id/void", () => {
     authAs(profileCoach);
   });
 
+  // The void handler joins skillRatings to swimmers for the audit log,
+  // so the lookup chain is .from(skillRatings).innerJoin(swimmers)
+  // .where(...).limit(1).
+  function ratingSelect(rows: Array<Record<string, unknown>>) {
+    const limit = vi.fn().mockResolvedValue(rows);
+    const where = vi.fn().mockReturnValue({ limit });
+    const innerJoin = vi.fn().mockReturnValue({ where });
+    return { from: vi.fn().mockReturnValue({ innerJoin }) };
+  }
+
   it("already voided → 409", async () => {
-    const ratingLimit = vi.fn().mockResolvedValue([
-      {
-        id: RATING_ID,
-        coachId: COACH_ID,
-        voidedAt: now,
-        sessionId: SESSION_ID,
-        swimmerId: SWIMMER_ID,
-        skillId: SKILL_ID,
-        grade: 3,
-        notLegal: false,
-        noConcept: false,
-        side: null,
-        capacityValue: null,
-        capacityUnit: null,
-        measurementValue: null,
-        measurementUnit: null,
-        note: null,
-        voidReason: "old reason",
-        voidBy: COACH_ID,
-        ratedAt: now,
-        createdAt: now,
-        updatedAt: now,
-      },
-    ]);
-    const ratingWhere = vi.fn().mockReturnValue({ limit: ratingLimit });
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachRouter requireUser (once)
-      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: ratingWhere }) });
+      .mockReturnValueOnce(
+        ratingSelect([
+          {
+            id: RATING_ID,
+            coachId: COACH_ID,
+            voidedAt: now,
+            sessionId: SESSION_ID,
+            swimmerId: SWIMMER_ID,
+            skillId: SKILL_ID,
+            householdId: "household-id",
+          },
+        ]),
+      );
 
     const res = await request(app)
       .patch(`/coach/ratings/${RATING_ID}/void`)
@@ -882,34 +897,21 @@ describe("PATCH /ratings/:id/void", () => {
   });
 
   it("not owned by this coach → 404", async () => {
-    const ratingLimit = vi.fn().mockResolvedValue([
-      {
-        id: RATING_ID,
-        coachId: "other-coach",
-        voidedAt: null,
-        sessionId: SESSION_ID,
-        swimmerId: SWIMMER_ID,
-        skillId: SKILL_ID,
-        grade: 3,
-        notLegal: false,
-        noConcept: false,
-        side: null,
-        capacityValue: null,
-        capacityUnit: null,
-        measurementValue: null,
-        measurementUnit: null,
-        note: null,
-        voidReason: null,
-        voidBy: null,
-        ratedAt: now,
-        createdAt: now,
-        updatedAt: now,
-      },
-    ]);
-    const ratingWhere = vi.fn().mockReturnValue({ limit: ratingLimit });
     mockDbSelect
       .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachRouter requireUser (once)
-      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: ratingWhere }) });
+      .mockReturnValueOnce(
+        ratingSelect([
+          {
+            id: RATING_ID,
+            coachId: "other-coach",
+            voidedAt: null,
+            sessionId: SESSION_ID,
+            swimmerId: SWIMMER_ID,
+            skillId: SKILL_ID,
+            householdId: "household-id",
+          },
+        ]),
+      );
 
     const res = await request(app)
       .patch(`/coach/ratings/${RATING_ID}/void`)
