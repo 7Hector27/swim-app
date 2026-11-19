@@ -1787,10 +1787,15 @@ ratingsRouter.delete(
       .select({
         id: skillRatings.id,
         coachId: skillRatings.coachId,
+        swimmerId: skillRatings.swimmerId,
+        sessionId: skillRatings.sessionId,
+        skillId: skillRatings.skillId,
         voidedAt: skillRatings.voidedAt,
         createdAt: skillRatings.createdAt,
+        householdId: swimmers.householdId,
       })
       .from(skillRatings)
+      .innerJoin(swimmers, eq(swimmers.id, skillRatings.swimmerId))
       .where(eq(skillRatings.id, ratingId))
       .limit(1);
 
@@ -1813,7 +1818,23 @@ ratingsRouter.delete(
       return;
     }
 
-    await db.delete(skillRatings).where(eq(skillRatings.id, ratingId));
+    // Delete + audit row go together in one transaction per the
+    // CLAUDE.md audit-log rule: if the insert fails, the delete rolls
+    // back and nothing changes.
+    await db.transaction(async (tx) => {
+      await tx.delete(skillRatings).where(eq(skillRatings.id, ratingId));
+      await tx.insert(householdAuditLog).values({
+        householdId: rating.householdId,
+        actorId: coachId,
+        action: "rating_undone",
+        targetSwimmerId: rating.swimmerId,
+        payload: {
+          ratingId: rating.id,
+          sessionId: rating.sessionId,
+          skillId: rating.skillId,
+        },
+      });
+    });
 
     req.log.info({ ratingId, coachId }, "rating deleted");
 
@@ -1835,9 +1856,14 @@ ratingsRouter.patch(
       .select({
         id: skillRatings.id,
         coachId: skillRatings.coachId,
+        swimmerId: skillRatings.swimmerId,
+        sessionId: skillRatings.sessionId,
+        skillId: skillRatings.skillId,
         voidedAt: skillRatings.voidedAt,
+        householdId: swimmers.householdId,
       })
       .from(skillRatings)
+      .innerJoin(swimmers, eq(swimmers.id, skillRatings.swimmerId))
       .where(eq(skillRatings.id, ratingId))
       .limit(1);
 
@@ -1856,40 +1882,56 @@ ratingsRouter.patch(
 
     const now = new Date();
 
-    const updatedRows = await db
-      .update(skillRatings)
-      .set({
-        voidedAt: now,
-        voidReason: body.reason,
-        voidBy: coachId,
-      })
-      .where(eq(skillRatings.id, ratingId))
-      .returning({
-        id: skillRatings.id,
-        sessionId: skillRatings.sessionId,
-        swimmerId: skillRatings.swimmerId,
-        skillId: skillRatings.skillId,
-        coachId: skillRatings.coachId,
-        grade: skillRatings.grade,
-        notLegal: skillRatings.notLegal,
-        noConcept: skillRatings.noConcept,
-        side: skillRatings.side,
-        capacityValue: skillRatings.capacityValue,
-        capacityUnit: skillRatings.capacityUnit,
-        measurementValue: skillRatings.measurementValue,
-        measurementUnit: skillRatings.measurementUnit,
-        timeSeconds: skillRatings.timeSeconds,
-        strokeCountValue: skillRatings.strokeCountValue,
-        note: skillRatings.note,
-        voidedAt: skillRatings.voidedAt,
-        voidReason: skillRatings.voidReason,
-        voidBy: skillRatings.voidBy,
-        ratedAt: skillRatings.ratedAt,
-        createdAt: skillRatings.createdAt,
-        updatedAt: skillRatings.updatedAt,
+    // Void + audit row go together in one transaction per the CLAUDE.md
+    // audit-log rule: if the insert fails, the void rolls back and the
+    // rating stays live.
+    const updated = await db.transaction(async (tx) => {
+      const updatedRows = await tx
+        .update(skillRatings)
+        .set({
+          voidedAt: now,
+          voidReason: body.reason,
+          voidBy: coachId,
+        })
+        .where(eq(skillRatings.id, ratingId))
+        .returning({
+          id: skillRatings.id,
+          sessionId: skillRatings.sessionId,
+          swimmerId: skillRatings.swimmerId,
+          skillId: skillRatings.skillId,
+          coachId: skillRatings.coachId,
+          grade: skillRatings.grade,
+          notLegal: skillRatings.notLegal,
+          noConcept: skillRatings.noConcept,
+          side: skillRatings.side,
+          capacityValue: skillRatings.capacityValue,
+          capacityUnit: skillRatings.capacityUnit,
+          measurementValue: skillRatings.measurementValue,
+          measurementUnit: skillRatings.measurementUnit,
+          timeSeconds: skillRatings.timeSeconds,
+          strokeCountValue: skillRatings.strokeCountValue,
+          note: skillRatings.note,
+          voidedAt: skillRatings.voidedAt,
+          voidReason: skillRatings.voidReason,
+          voidBy: skillRatings.voidBy,
+          ratedAt: skillRatings.ratedAt,
+          createdAt: skillRatings.createdAt,
+          updatedAt: skillRatings.updatedAt,
+        });
+      await tx.insert(householdAuditLog).values({
+        householdId: rating.householdId,
+        actorId: coachId,
+        action: "rating_voided",
+        targetSwimmerId: rating.swimmerId,
+        payload: {
+          ratingId: rating.id,
+          sessionId: rating.sessionId,
+          skillId: rating.skillId,
+          reason: body.reason,
+        },
       });
-
-    const updated = updatedRows[0]!;
+      return updatedRows[0]!;
+    });
 
     req.log.info({ ratingId, coachId }, "rating voided");
 

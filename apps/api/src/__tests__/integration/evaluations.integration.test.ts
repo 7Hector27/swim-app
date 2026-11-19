@@ -3,7 +3,7 @@
 
 import type { Server } from "http";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import request from "supertest";
 import pino from "pino";
 import { createApp } from "../../app";
@@ -16,6 +16,7 @@ import {
 import type { TestUser } from "./helpers";
 import {
   evaluationSessions,
+  householdAuditLog,
   profiles,
   ratingFaultTags,
   skillDependencies,
@@ -759,6 +760,133 @@ describe("API integration tests — evaluations routes", () => {
     expect(response.status).toBe(409);
 
     await adminDb().delete(skillRatings).where(eq(skillRatings.id, ratingId));
+  });
+
+  // ── Audit log: void + undo both write a household_audit_log row ────────────
+
+  it("PATCH void writes a rating_voided audit row in the same transaction", async () => {
+    const rows = await adminDb()
+      .insert(skillRatings)
+      .values({
+        sessionId,
+        swimmerId,
+        skillId,
+        coachId,
+        grade: 3,
+        notLegal: false,
+        noConcept: false,
+        ratedAt: new Date(),
+      })
+      .returning({ id: skillRatings.id });
+    const ratingId = rows[0]!.id;
+
+    try {
+      const response = await request(app)
+        .patch(`/coach/ratings/${ratingId}/void`)
+        .set("Authorization", `Bearer ${coachToken}`)
+        .send({ reason: "Wrong swimmer" });
+      expect(response.status).toBe(200);
+
+      const auditRows = await adminDb()
+        .select({
+          action: householdAuditLog.action,
+          actorId: householdAuditLog.actorId,
+          targetSwimmerId: householdAuditLog.targetSwimmerId,
+          payload: householdAuditLog.payload,
+        })
+        .from(householdAuditLog)
+        .where(
+          and(
+            eq(householdAuditLog.action, "rating_voided"),
+            eq(householdAuditLog.targetSwimmerId, swimmerId),
+          ),
+        );
+      const match = auditRows.find(
+        (row) => (row.payload as { ratingId?: string } | null)?.ratingId === ratingId,
+      );
+      expect(match).toBeDefined();
+      expect(match!.actorId).toBe(coachId);
+      const payload = match!.payload as {
+        ratingId: string;
+        sessionId: string;
+        skillId: string;
+        reason: string;
+      };
+      expect(payload.sessionId).toBe(sessionId);
+      expect(payload.skillId).toBe(skillId);
+      expect(payload.reason).toBe("Wrong swimmer");
+    } finally {
+      await adminDb()
+        .delete(householdAuditLog)
+        .where(
+          and(
+            eq(householdAuditLog.action, "rating_voided"),
+            eq(householdAuditLog.targetSwimmerId, swimmerId),
+          ),
+        );
+      await adminDb().delete(skillRatings).where(eq(skillRatings.id, ratingId));
+    }
+  });
+
+  it("DELETE undo writes a rating_undone audit row in the same transaction", async () => {
+    const rows = await adminDb()
+      .insert(skillRatings)
+      .values({
+        sessionId,
+        swimmerId,
+        skillId,
+        coachId,
+        grade: 3,
+        notLegal: false,
+        noConcept: false,
+        ratedAt: new Date(),
+      })
+      .returning({ id: skillRatings.id });
+    const ratingId = rows[0]!.id;
+
+    try {
+      const response = await request(app)
+        .delete(`/coach/ratings/${ratingId}`)
+        .set("Authorization", `Bearer ${coachToken}`);
+      expect(response.status).toBe(204);
+
+      // The rating row is gone — assert via the audit log instead.
+      const auditRows = await adminDb()
+        .select({
+          action: householdAuditLog.action,
+          actorId: householdAuditLog.actorId,
+          targetSwimmerId: householdAuditLog.targetSwimmerId,
+          payload: householdAuditLog.payload,
+        })
+        .from(householdAuditLog)
+        .where(
+          and(
+            eq(householdAuditLog.action, "rating_undone"),
+            eq(householdAuditLog.targetSwimmerId, swimmerId),
+          ),
+        );
+      const match = auditRows.find(
+        (row) => (row.payload as { ratingId?: string } | null)?.ratingId === ratingId,
+      );
+      expect(match).toBeDefined();
+      expect(match!.actorId).toBe(coachId);
+      const payload = match!.payload as {
+        ratingId: string;
+        sessionId: string;
+        skillId: string;
+      };
+      expect(payload.sessionId).toBe(sessionId);
+      expect(payload.skillId).toBe(skillId);
+    } finally {
+      await adminDb()
+        .delete(householdAuditLog)
+        .where(
+          and(
+            eq(householdAuditLog.action, "rating_undone"),
+            eq(householdAuditLog.targetSwimmerId, swimmerId),
+          ),
+        );
+    }
   });
 
   // ── Regression guard: schema shape on routes that return a skillRatings row ─
