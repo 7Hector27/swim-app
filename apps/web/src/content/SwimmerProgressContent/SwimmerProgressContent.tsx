@@ -7,11 +7,10 @@ import type {
 } from "@swim-app/shared";
 import CategoryTrendsGrid from "@/components/CategoryTrendsGrid";
 import InlineError from "@/components/InlineError";
-import StartLadderCard from "@/components/StartLadderCard";
+import StartsSection from "./StartsSection";
 import {
   latestScreenGroupSnapshot,
   screenGroupTrendSeries,
-  startSeries,
 } from "@/lib/progressCharts";
 import CategoryRadar from "./charts/CategoryRadar";
 import GolfScoreCard from "./charts/GolfScoreCard";
@@ -68,7 +67,6 @@ export default function SwimmerProgressContent({
   // instead of catalog categories.
   const categorySnapshot = latestScreenGroupSnapshot(scoreHistory);
   const categoryTrends = screenGroupTrendSeries(scoreHistory);
-  const starts = startSeries(scoreHistory);
   const faultTags = faultTagFrequency(progress);
   const cadence = sessionCadence(progress, now);
 
@@ -163,30 +161,6 @@ export default function SwimmerProgressContent({
               </section>
 
               <section className="flex flex-col gap-3">
-                <h2 className="text-lg font-heading text-text" style={{ fontVariationSettings: "\"SOFT\" 100, \"WONK\" 0" }}>
-                  Starts
-                </h2>
-                {progress.startProgress.length === 0 ? (
-                  <p className="text-sm text-text-secondary">No start ratings yet.</p>
-                ) : (
-                  <div className="grid gap-4 tablet:grid-cols-2 desktop:grid-cols-3" data-testid="starts-grid">
-                    {progress.startProgress.map((start) => {
-                      const historyEntry = starts.find((entry) => entry.slug === start.slug);
-                      return (
-                        <StartLadderCard
-                          key={start.slug}
-                          name={start.name}
-                          grade={start.grade}
-                          components={start.components}
-                          history={historyEntry?.points ?? []}
-                        />
-                      );
-                    })}
-                  </div>
-                )}
-              </section>
-
-              <section className="flex flex-col gap-3">
                 <div className="flex flex-col gap-1">
                   <h2 className="text-lg font-heading text-text" style={{ fontVariationSettings: "\"SOFT\" 100, \"WONK\" 0" }}>
                     Golf score
@@ -235,6 +209,19 @@ export default function SwimmerProgressContent({
               />
             </div>
           </div>
+
+          <section className="flex flex-col gap-3" data-testid="starts-section">
+            <h2
+              className="text-lg font-heading text-text"
+              style={{ fontVariationSettings: "\"SOFT\" 100, \"WONK\" 0" }}
+            >
+              Starts
+            </h2>
+            <StartsSection
+              startProgress={progress.startProgress}
+              swimmerSkills={progress.skills}
+            />
+          </section>
         </div>
       </main>
     </div>
