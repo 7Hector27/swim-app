@@ -20,6 +20,7 @@ import {
   buildRatingKeys,
   buildRatingsArray,
   buildSectionGroups,
+  computeSectionCounts,
   getDisambiguatedLabel,
   slugifySectionName,
   validateSubmission,
@@ -732,86 +733,14 @@ export default function EvaluateContent({
     return (skillId: string): string | null => map.get(skillId) ?? null;
   }, [sectionGroups]);
 
-  // Per-section rated / total counts for the tab chips.
-  //
-  // Rule mirrors the progress page's screenGroupRollups so the evaluate
-  // chip and the progress "X of Y skills rated" line never disagree:
-  // - Rollups are dropped from the total.
-  // - Composite starts (track-start / relay-start / back-start) stay in
-  //   the total and count as rated when their component drafts resolve to
-  //   `graded` or `not_legal`. `in_progress` (any component unfilled) and
-  //   `no_concept` (every component no_concept) are in the total only.
-  //   Components themselves aren't in SCREEN_SECTIONS so they don't add
-  //   to the total directly.
-  const sectionCounts = useMemo(() => {
-    if (sectionGroups === null) return [] as Array<{ name: string; count: number; completed: number }>;
-    const componentsByParentId = new Map<string, typeof sectionGroups[number]["skills"]>();
-    if (selectedScreen) {
-      for (const candidate of selectedScreen.skills) {
-        if (candidate.parentSkillId !== null) {
-          const existing = componentsByParentId.get(candidate.parentSkillId) ?? [];
-          existing.push(candidate);
-          componentsByParentId.set(candidate.parentSkillId, existing);
-        }
-      }
-    }
-    type ComponentStatus = "unfilled" | "no_concept" | "not_legal" | "graded";
-    function componentStatus(componentId: string, ratedPerSide: boolean): ComponentStatus {
-      const keys = ratedPerSide ? [`${componentId}:left`, `${componentId}:right`] : [componentId];
-      let seenNoConcept = false;
-      let seenNotLegal = false;
-      let seenGraded = false;
-      for (const key of keys) {
-        const skillDraft = draft.skills[key];
-        if (!skillDraft) continue;
-        if (skillDraft.notLegal) seenNotLegal = true;
-        else if (skillDraft.noConcept) seenNoConcept = true;
-        else if (skillDraft.grade !== null || skillDraft.measurementValue !== "") seenGraded = true;
-      }
-      if (seenNotLegal) return "not_legal";
-      if (seenGraded) return "graded";
-      if (seenNoConcept) return "no_concept";
-      return "unfilled";
-    }
-    return sectionGroups.map((section) => {
-      let completed = 0;
-      const ratable = section.skills.filter((skill) => skill.type !== "rollup");
-      for (const skill of ratable) {
-        if (skill.type === "composite") {
-          const components = componentsByParentId.get(skill.id) ?? [];
-          if (components.length === 0) continue;
-          const statuses = components.map((comp) => componentStatus(comp.id, comp.ratedPerSide));
-          // calculateStartGrade rule ordering: not_legal > in_progress >
-          // no_concept > graded. not_legal and graded both count as rated;
-          // in_progress and no_concept are in the total only.
-          if (statuses.some((status) => status === "not_legal")) {
-            completed += 1;
-            continue;
-          }
-          if (statuses.some((status) => status === "unfilled")) continue;
-          if (statuses.every((status) => status === "no_concept")) continue;
-          completed += 1;
-          continue;
-        }
-        const keys = skill.ratedPerSide
-          ? [`${skill.id}:left`, `${skill.id}:right`]
-          : [skill.id];
-        if (keys.some((key) => {
-          const skillDraft = draft.skills[key];
-          if (!skillDraft) return false;
-          return (
-            skillDraft.grade !== null ||
-            skillDraft.noConcept ||
-            skillDraft.notLegal ||
-            skillDraft.measurementValue !== ""
-          );
-        })) {
-          completed += 1;
-        }
-      }
-      return { name: section.name, count: ratable.length, completed };
-    });
-  }, [sectionGroups, draft.skills, selectedScreen]);
+  // Per-section rated / total counts for the tab chips. Logic lives in
+  // helpers.ts as `computeSectionCounts` so the composite-start branch
+  // (track-start / relay-start / back-start) is unit-testable in
+  // evaluateHelpers.test.ts.
+  const sectionCounts = useMemo(
+    () => computeSectionCounts(sectionGroups, selectedScreen?.skills ?? [], draft.skills),
+    [sectionGroups, draft.skills, selectedScreen],
+  );
 
   // Scroll to and focus the first invalid field whenever the coach taps Save
   // with issues, OR whenever a new server 422 arrives. If the issue lives in

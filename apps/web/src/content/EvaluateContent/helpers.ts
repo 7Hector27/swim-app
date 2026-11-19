@@ -409,6 +409,103 @@ export function buildSectionGroups(
   return result;
 }
 
+// Per-section "X / Y rated" chip math on the evaluate screen. Pulled out
+// of EvaluateContent so the composite-start branch is unit-testable.
+//
+// Rule mirrors the progress page's screenGroupRollups so the evaluate
+// chip and the progress "X of Y skills rated" line never disagree:
+// - Rollups drop from the total (type === "rollup" filtered out).
+// - Composite starts (track-start / relay-start / back-start) stay in the
+//   total and count as rated when their component drafts resolve to
+//   graded or not_legal. in_progress (any component unfilled) and
+//   no_concept (every component no_concept) are in the total only.
+//   Start components themselves aren't in SCREEN_SECTIONS so they can't
+//   bump the total directly.
+export type ComponentDraftStatus = "unfilled" | "no_concept" | "not_legal" | "graded";
+
+export function componentDraftStatus(
+  componentId: string,
+  ratedPerSide: boolean,
+  draftSkills: Record<string, SkillDraft>,
+): ComponentDraftStatus {
+  const keys = ratedPerSide ? [`${componentId}:left`, `${componentId}:right`] : [componentId];
+  let seenNoConcept = false;
+  let seenNotLegal = false;
+  let seenGraded = false;
+  for (const key of keys) {
+    const skillDraft = draftSkills[key];
+    if (!skillDraft) continue;
+    if (skillDraft.notLegal) seenNotLegal = true;
+    else if (skillDraft.noConcept) seenNoConcept = true;
+    else if (skillDraft.grade !== null || skillDraft.measurementValue !== "") seenGraded = true;
+  }
+  // calculateStartGrade ordering: not_legal > in_progress > no_concept >
+  // graded. "Unfilled" is this function's equivalent of "in_progress" for
+  // a single component; the caller composes them below.
+  if (seenNotLegal) return "not_legal";
+  if (seenGraded) return "graded";
+  if (seenNoConcept) return "no_concept";
+  return "unfilled";
+}
+
+export function computeSectionCounts(
+  sectionGroups: Array<{ name: string; skills: import("@swim-app/shared").SkillForRating[] }> | null,
+  screenSkills: ReadonlyArray<import("@swim-app/shared").SkillForRating>,
+  draftSkills: Record<string, SkillDraft>,
+): Array<{ name: string; count: number; completed: number }> {
+  if (sectionGroups === null) return [];
+  const componentsByParentId = new Map<string, import("@swim-app/shared").SkillForRating[]>();
+  for (const candidate of screenSkills) {
+    if (candidate.parentSkillId !== null) {
+      const existing = componentsByParentId.get(candidate.parentSkillId) ?? [];
+      existing.push(candidate);
+      componentsByParentId.set(candidate.parentSkillId, existing);
+    }
+  }
+  return sectionGroups.map((section) => {
+    let completed = 0;
+    const ratable = section.skills.filter((skill) => skill.type !== "rollup");
+    for (const skill of ratable) {
+      if (skill.type === "composite") {
+        const components = componentsByParentId.get(skill.id) ?? [];
+        if (components.length === 0) continue;
+        const statuses = components.map((comp) =>
+          componentDraftStatus(comp.id, comp.ratedPerSide, draftSkills),
+        );
+        // not_legal on any component beats a missing one (calculateStartGrade
+        // rule 1 trumps rule 2). Everything resolved → graded. All
+        // no_concept → no_concept. Otherwise → in_progress (not counted).
+        if (statuses.some((status) => status === "not_legal")) {
+          completed += 1;
+          continue;
+        }
+        if (statuses.some((status) => status === "unfilled")) continue;
+        if (statuses.every((status) => status === "no_concept")) continue;
+        completed += 1;
+        continue;
+      }
+      const keys = skill.ratedPerSide
+        ? [`${skill.id}:left`, `${skill.id}:right`]
+        : [skill.id];
+      if (
+        keys.some((key) => {
+          const skillDraft = draftSkills[key];
+          if (!skillDraft) return false;
+          return (
+            skillDraft.grade !== null ||
+            skillDraft.noConcept ||
+            skillDraft.notLegal ||
+            skillDraft.measurementValue !== ""
+          );
+        })
+      ) {
+        completed += 1;
+      }
+    }
+    return { name: section.name, count: ratable.length, completed };
+  });
+}
+
 // URL-safe slug for a section name — used to scope DOM ids when the same
 // skill renders in more than one section on the same screen (push-off and
 // streamline-in-motion on stroke screens). Pass 2a addition.
