@@ -7,7 +7,7 @@ import type {
 } from "@swim-app/shared";
 import CategoryTrendsGrid from "@/components/CategoryTrendsGrid";
 import InlineError from "@/components/InlineError";
-import StartProgression from "@/components/StartProgression";
+import StartLadderCard from "@/components/StartLadderCard";
 import {
   latestScreenGroupSnapshot,
   screenGroupTrendSeries,
@@ -166,13 +166,22 @@ export default function SwimmerProgressContent({
                 <h2 className="text-lg font-heading text-text" style={{ fontVariationSettings: "\"SOFT\" 100, \"WONK\" 0" }}>
                   Starts
                 </h2>
-                {starts.length === 0 ? (
+                {progress.startProgress.length === 0 ? (
                   <p className="text-sm text-text-secondary">No start ratings yet.</p>
                 ) : (
-                  <div className="flex flex-col gap-5">
-                    {starts.map((start) => (
-                      <StartProgression key={start.slug} name={start.name} points={start.points} editContext={editContext} />
-                    ))}
+                  <div className="grid gap-4 tablet:grid-cols-2 desktop:grid-cols-3" data-testid="starts-grid">
+                    {progress.startProgress.map((start) => {
+                      const historyEntry = starts.find((entry) => entry.slug === start.slug);
+                      return (
+                        <StartLadderCard
+                          key={start.slug}
+                          name={start.name}
+                          grade={start.grade}
+                          components={start.components}
+                          history={historyEntry?.points ?? []}
+                        />
+                      );
+                    })}
                   </div>
                 )}
               </section>

@@ -132,9 +132,10 @@ export function latestScreenGroupSnapshot(history: ScoreHistoryPointsOnly): Arra
 }
 
 // Per-start progression series from score history. Order and names are taken
-// from the first point so a newly-rated start doesn't rearrange earlier points.
-// sessionId is threaded through so StartProgression can deep-link to edit mode
-// on coach-shaped history; absent on parent-shaped history.
+// from the first point so a newly-rated start doesn't rearrange earlier
+// points. sessionId is threaded through so deep-links (e.g. edit affordances
+// on the coach view) can target the originating session; absent on
+// parent-shaped history.
 export function startSeries(history: ScoreHistoryPointsOnly): Array<{
   slug: string;
   name: string;

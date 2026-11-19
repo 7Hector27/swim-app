@@ -180,7 +180,9 @@ describe("ParentSwimmerProgressContent", () => {
       />,
     );
     expect(screen.getByText("Track Start")).toBeInTheDocument();
-    expect(screen.getAllByText("4").length).toBeGreaterThan(0);
+    // StartLadderCard surfaces the overall grade as a "Grade N" badge.
+    const badges = screen.getAllByTestId("start-ladder-status-badge");
+    expect(badges.some((badge) => badge.textContent === "Grade 4")).toBe(true);
   });
 
   it("shows L and R badges for side-rated skills", () => {

@@ -3,11 +3,10 @@ import type {
   ParentSwimmer,
   ParentSwimmerProgressResponse,
   ParentScoreHistoryResponse,
-  StartGradeResult,
 } from "@swim-app/shared";
 import CategoryTrendsGrid from "@/components/CategoryTrendsGrid";
 import InlineError from "@/components/InlineError";
-import StartProgression from "@/components/StartProgression";
+import StartLadderCard from "@/components/StartLadderCard";
 import {
   screenGroupTrendSeries,
   startSeries,
@@ -15,9 +14,6 @@ import {
 import ParentStrokeGroupsPanel from "./ParentStrokeGroupsPanel";
 import {
   formatProgressSessionDate,
-  formatStartGradeDisplay,
-  currentLevelDisplay,
-  currentLevelIsDanger,
 } from "./helpers";
 
 // Per-section failure flags. `progress` is primary (the page throws if it
@@ -47,10 +43,6 @@ const EMPTY_SCORE_HISTORY: ParentScoreHistoryResponse = {
   measurements: [],
 };
 
-function startGradeIsDanger(result: StartGradeResult): boolean {
-  return result.status === "not_legal";
-}
-
 export default function ParentSwimmerProgressContent({
   swimmer,
   progress,
@@ -63,23 +55,6 @@ export default function ParentSwimmerProgressContent({
   const startTrends = startSeries(scoreHistory);
   const totalPoints = scoreHistory.points.length;
   const hasEnoughForTrend = totalPoints >= 2;
-  const slugToName = new Map<string, string>();
-  for (const cat of categories) {
-    for (const skill of cat.skills) {
-      slugToName.set(skill.slug, skill.name);
-    }
-  }
-  for (const skill of progress.skills) {
-    slugToName.set(skill.slug, skill.name);
-  }
-  for (const start of progress.startProgress) {
-    slugToName.set(start.slug, start.name);
-    for (const comp of start.components) {
-      slugToName.set(comp.slug, comp.name);
-    }
-  }
-
-  const getSlugName = (slug: string): string => slugToName.get(slug) ?? slug;
 
   // Start components don't appear in SCREEN_SECTIONS so they can't surface
   // as rows in a group — drop them from the input list anyway to keep
@@ -211,58 +186,20 @@ export default function ParentSwimmerProgressContent({
               <h2 className="font-bold text-sm text-text">
                 Starts
               </h2>
-              <ul className="flex flex-col gap-3">
+              <div className="grid gap-4 tablet:grid-cols-2 desktop:grid-cols-3">
                 {progress.startProgress.map((start) => {
-                  const gradeText = formatStartGradeDisplay(start.grade, getSlugName);
-                  const isDanger = startGradeIsDanger(start.grade);
-                  const trend = startTrends.find((entry) => entry.slug === start.slug);
+                  const historyEntry = startTrends.find((entry) => entry.slug === start.slug);
                   return (
-                    <li key={start.slug} className="flex flex-col gap-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-semibold text-text">
-                          {start.name}
-                        </span>
-                        <span
-                          className="text-xs font-semibold px-1.5 py-0.5 rounded"
-                          style={{
-                            backgroundColor: isDanger ? "var(--color-danger)" : "var(--color-border)",
-                            color: isDanger ? "var(--color-on-danger)" : "var(--color-text)",
-                          }}
-                        >
-                          {gradeText}
-                        </span>
-                      </div>
-                      <ul className="flex flex-col gap-0.5 pl-3 border-l border-border">
-                        {start.components.map((comp) => (
-                          <li key={comp.slug} className="flex items-center gap-2 text-xs">
-                            <span className="text-text-secondary flex-1">{comp.name}</span>
-                            {comp.current !== null ? (
-                              <span
-                                className="font-semibold px-1 py-0.5 rounded"
-                                style={{
-                                  backgroundColor: currentLevelIsDanger(comp.current)
-                                    ? "var(--color-danger)"
-                                    : "var(--color-border)",
-                                  color: currentLevelIsDanger(comp.current)
-                                    ? "var(--color-on-danger)"
-                                    : "var(--color-text)",
-                                }}
-                              >
-                                {currentLevelDisplay(comp.current)}
-                              </span>
-                            ) : (
-                              <span className="text-text-secondary">Not assessed</span>
-                            )}
-                          </li>
-                        ))}
-                      </ul>
-                      {trend && hasEnoughForTrend && (
-                        <StartProgression name={start.name} points={trend.points} />
-                      )}
-                    </li>
+                    <StartLadderCard
+                      key={start.slug}
+                      name={start.name}
+                      grade={start.grade}
+                      components={start.components}
+                      history={historyEntry?.points ?? []}
+                    />
                   );
                 })}
-              </ul>
+              </div>
             </section>
           )}
 
