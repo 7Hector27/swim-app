@@ -761,6 +761,100 @@ describe("API integration tests — evaluations routes", () => {
     await adminDb().delete(skillRatings).where(eq(skillRatings.id, ratingId));
   });
 
+  // ── Regression guard: schema shape on routes that return a skillRatings row ─
+  // Pass 2c (f2f5970) added required timeSeconds + strokeCountValue to
+  // SkillRatingBaseSchema. Two routes (PATCH ratings/:id/void and
+  // GET swimmers/:id/skills/:skillId/ratings) kept their old SELECT / RETURNING
+  // column list and started 500ing with a ZodError. These tests pin the shape
+  // so a future column addition to the base schema can't silently regress
+  // either response again.
+
+  it("PATCH void on a golf-score rating returns the full schema shape with both pair fields", async () => {
+    const golfRows = await adminDb()
+      .select({ id: skills.id })
+      .from(skills)
+      .where(eq(skills.slug, "free-golf-score"))
+      .limit(1);
+    const golfSkillId = golfRows[0]!.id;
+
+    const rows = await adminDb()
+      .insert(skillRatings)
+      .values({
+        sessionId,
+        swimmerId,
+        skillId: golfSkillId,
+        coachId,
+        grade: 3,
+        notLegal: false,
+        noConcept: false,
+        golfScoreCategory: "push_off_in_water",
+        timeSeconds: "14.25",
+        strokeCountValue: 18,
+        ratedAt: new Date("2026-10-01T10:00:00Z"),
+      })
+      .returning({ id: skillRatings.id });
+    const ratingId = rows[0]!.id;
+
+    try {
+      const response = await request(app)
+        .patch(`/coach/ratings/${ratingId}/void`)
+        .set("Authorization", `Bearer ${coachToken}`)
+        .send({ reason: "Data entry error" });
+      expect(response.status).toBe(200);
+      // Both pair fields must round-trip, timeSeconds as a number (Drizzle
+      // numeric comes back as a string from pg — missing parseFloat was half
+      // of the original bug).
+      expect(response.body.timeSeconds).toBe(14.25);
+      expect(response.body.strokeCountValue).toBe(18);
+      expect(response.body.voidedAt).not.toBeNull();
+      expect(response.body.voidReason).toBe("Data entry error");
+    } finally {
+      await adminDb().delete(skillRatings).where(eq(skillRatings.id, ratingId));
+    }
+  });
+
+  it("GET /skills/:skillId/ratings returns the full schema shape with both pair fields", async () => {
+    const golfRows = await adminDb()
+      .select({ id: skills.id })
+      .from(skills)
+      .where(eq(skills.slug, "free-golf-score"))
+      .limit(1);
+    const golfSkillId = golfRows[0]!.id;
+
+    const rows = await adminDb()
+      .insert(skillRatings)
+      .values({
+        sessionId,
+        swimmerId,
+        skillId: golfSkillId,
+        coachId,
+        grade: 4,
+        notLegal: false,
+        noConcept: false,
+        golfScoreCategory: "deck_dive",
+        timeSeconds: "12.50",
+        strokeCountValue: 17,
+        ratedAt: new Date("2026-10-02T10:00:00Z"),
+      })
+      .returning({ id: skillRatings.id });
+    const ratingId = rows[0]!.id;
+
+    try {
+      const response = await request(app)
+        .get(`/coach/swimmers/${swimmerId}/skills/${golfSkillId}/ratings`)
+        .set("Authorization", `Bearer ${coachToken}`);
+      expect(response.status).toBe(200);
+      const match = (response.body as Array<Record<string, unknown>>).find(
+        (entry) => entry.id === ratingId,
+      );
+      expect(match).toBeDefined();
+      expect(match!.timeSeconds).toBe(12.5);
+      expect(match!.strokeCountValue).toBe(17);
+    } finally {
+      await adminDb().delete(skillRatings).where(eq(skillRatings.id, ratingId));
+    }
+  });
+
   // ── GET /coach/swimmers/:id/skills matches shared helpers ───────────────────
 
   it("GET /skills: grades match latestEffectiveRatings, voided latest falls back, side-rated returns both sides", async () => {
