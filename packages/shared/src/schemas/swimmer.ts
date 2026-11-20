@@ -189,6 +189,13 @@ export const CoachSwimmerSchema = z.object({
   currentLeagues: z.array(LeagueSchema),
   memberNames: z.array(z.string()),
   lastLesson: CoachSwimmerLastLessonSchema.nullable(),
+  // Disambiguation inputs for the coach-only swimmer picker on the meet
+  // detail page. `householdName` is the owning household's name, used when
+  // two active swimmers share the same first + last name. `birthMonthYear`
+  // is a "YYYY-MM" string — finer than `age` without exposing the raw
+  // birthdate across the wire (ADR 016).
+  householdName: z.string(),
+  birthMonthYear: z.string().regex(/^\d{4}-\d{2}$/),
 });
 
 export type CoachSwimmer = z.infer<typeof CoachSwimmerSchema>;

@@ -7,6 +7,7 @@ import {
   coachNotes,
   evaluationSessions,
   householdMembers,
+  households,
   leagueRegistrations,
   lessonLocations,
   lessonSwimmers,
@@ -172,7 +173,7 @@ coachSwimmersRouter.get(
       return;
     }
 
-    const [clubRows, regRows, memberRows, homePoolRows, lastLessonBySwimmer] =
+    const [clubRows, regRows, memberRows, homePoolRows, householdRows, lastLessonBySwimmer] =
       await Promise.all([
         db
           .select({
@@ -211,6 +212,11 @@ coachSwimmersRouter.get(
             ),
           )
           .limit(1),
+        db
+          .select({ name: households.name })
+          .from(households)
+          .where(eq(households.id, swimmer.householdId))
+          .limit(1),
         fetchLastLessonsForSwimmers([swimmerId], nowUtc()),
       ]);
 
@@ -228,6 +234,8 @@ coachSwimmersRouter.get(
       createdAt: toISO(swimmer.createdAt),
       updatedAt: toISO(swimmer.updatedAt),
       householdId: swimmer.householdId,
+      householdName: householdRows[0]?.name ?? "",
+      birthMonthYear: swimmer.birthDate.slice(0, 7),
       clubs: clubRows.map(mapClub),
       currentLeagues: regRows.map((row) => row.league),
       members: memberRows,

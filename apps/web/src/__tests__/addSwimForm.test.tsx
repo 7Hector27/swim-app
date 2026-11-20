@@ -63,7 +63,7 @@ describe("AddSwimForm — requires a meet (practice path removed)", () => {
     expect(Array.from(picker.options).some((option) => option.value === "__new__")).toBe(true);
   });
 
-  it("keeps Save disabled until a meet and a time are chosen", async () => {
+  it("surfaces inline errors next to the missing fields when Save is tapped empty", async () => {
     const user = userEvent.setup();
     render(
       <AddSwimForm
@@ -74,24 +74,15 @@ describe("AddSwimForm — requires a meet (practice path removed)", () => {
         onSuccess={() => {}}
       />,
     );
+    // Save is always enabled — tapping it with nothing filled surfaces each
+    // field's own message.
     const save = screen.getByRole("button", { name: /save time/i });
-    expect(save).toBeDisabled();
-
-    // Type a complete time
-    const min = screen.getByLabelText("Minutes") as HTMLInputElement;
-    const sec = screen.getByLabelText("Seconds") as HTMLInputElement;
-    const hun = screen.getByLabelText("Hundredths") as HTMLInputElement;
-    await user.click(min);
-    await user.keyboard("1");
-    await user.click(sec);
-    await user.keyboard("02");
-    await user.click(hun);
-    await user.keyboard("34");
-    // Still disabled — no meet picked.
-    expect(save).toBeDisabled();
-
-    await user.selectOptions(screen.getByLabelText("Meet"), MEET_ID);
     expect(save).toBeEnabled();
+    await user.click(save);
+    const alerts = screen.getAllByRole("alert");
+    expect(alerts.some((el) => el.textContent?.includes("Choose a meet"))).toBe(true);
+    expect(alerts.some((el) => el.textContent?.includes("Enter a time"))).toBe(true);
+    expect(alerts.some((el) => el.textContent?.includes("Pick a date"))).toBe(true);
   });
 });
 
@@ -122,7 +113,8 @@ describe("AddSwimForm — deviation warning", () => {
       />,
     );
     // Default distance=50 Free; change to 100 so the PB matches.
-    await user.selectOptions(screen.getByLabelText(/distance/i), "100");
+    // Distance is now a button-group (EventPicker); pick 100 by role.
+    await user.click(screen.getByRole("radio", { name: "100" }));
     // 1:30.00 vs 1:00.00 PB → 50% slower.
     await fillTime(user, "1", "30", "00");
     const warning = screen.getByTestId("deviation-warning");
@@ -141,7 +133,8 @@ describe("AddSwimForm — deviation warning", () => {
         onSuccess={() => {}}
       />,
     );
-    await user.selectOptions(screen.getByLabelText(/distance/i), "100");
+    // Distance is now a button-group (EventPicker); pick 100 by role.
+    await user.click(screen.getByRole("radio", { name: "100" }));
     await fillTime(user, "1", "00", "00");
     expect(screen.queryByTestId("deviation-warning")).not.toBeInTheDocument();
   });
@@ -160,7 +153,8 @@ describe("AddSwimForm — no-clear-on-error rule", () => {
       />,
     );
     // Fill the form.
-    await user.selectOptions(screen.getByLabelText(/distance/i), "100");
+    // Distance is now a button-group (EventPicker); pick 100 by role.
+    await user.click(screen.getByRole("radio", { name: "100" }));
     await user.click(screen.getByLabelText("Seconds"));
     await user.keyboard("58");
     await user.click(screen.getByLabelText("Hundredths"));

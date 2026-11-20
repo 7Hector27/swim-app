@@ -102,6 +102,8 @@ const testSwimmer = {
   members: [],
   memberNames: [],
   lastLesson: null,
+  householdName: "Smith",
+  birthMonthYear: "2013-01",
   homePool: null,
   createdAt: now,
   updatedAt: now,

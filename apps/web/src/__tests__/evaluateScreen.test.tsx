@@ -664,6 +664,8 @@ const SWIMMER_DETAIL: CoachSwimmerDetail = {
   currentLeagues: [],
   memberNames: [],
   lastLesson: null,
+  householdName: "Smith",
+  birthMonthYear: "2013-01",
   birthDate: "2015-01-01",
   householdId: "00000000-0000-0000-0000-000000000ff0",
   members: [],

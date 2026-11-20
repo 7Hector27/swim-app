@@ -48,21 +48,23 @@ const testSwimmer = {
   members: [],
   memberNames: [],
   lastLesson: null,
+  householdName: "Smith",
+  birthMonthYear: "2013-01",
   homePool: null,
   createdAt: now,
   updatedAt: now,
 };
 
 async function addOnePendingRow(user: ReturnType<typeof userEvent.setup>, time: string): Promise<void> {
-  // Click the swimmer in the dropdown.
-  await user.click(screen.getByRole("button", { name: /Alex Smith/i }));
+  // Pick the swimmer from the native select.
+  await user.selectOptions(screen.getByLabelText("Swimmer"), SWIMMER_ID);
   // Type the time into the TimeInput (seconds + hundredths).
   await user.click(screen.getByLabelText("Seconds"));
   await user.keyboard(time.split(".")[0]!);
   await user.click(screen.getByLabelText("Hundredths"));
   await user.keyboard(time.split(".")[1]!);
-  // Change distance to 100 (TimeInput and distance default 50 are fine too; pick 100 to match PB).
-  await user.selectOptions(screen.getByLabelText(/distance/i), "100");
+  // Tap the 100 distance button to match PB.
+  await user.click(screen.getByRole("radio", { name: "100" }));
   await user.click(screen.getByRole("button", { name: /add result/i }));
 }
 

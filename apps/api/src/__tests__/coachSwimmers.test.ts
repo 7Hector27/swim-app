@@ -132,6 +132,22 @@ function homePoolSelect(row: { address: string; city: string; state: string; zip
   return { from: vi.fn().mockReturnValue({ where }) };
 }
 
+// Households-name lookup used by `loadCoachSwimmerList` (no .limit() chain).
+function householdsListSelect(name: string) {
+  const rows = [{ id: HOUSEHOLD_A_ID, name }];
+  const where = vi.fn().mockResolvedValue(rows);
+  return { from: vi.fn().mockReturnValue({ where }) };
+}
+
+// Households-name lookup used by the /coach/swimmers/:id detail route (chains
+// .limit(1) after .where()).
+function householdsDetailSelect(name: string) {
+  const rows = [{ name }];
+  const limit = vi.fn().mockResolvedValue(rows);
+  const where = vi.fn().mockReturnValue({ limit });
+  return { from: vi.fn().mockReturnValue({ where }) };
+}
+
 beforeEach(() => {
   vi.resetAllMocks();
 });
@@ -230,7 +246,8 @@ describe("GET /coach/swimmers", () => {
       .mockReturnValueOnce(swimmersSelect([baseSwimmerRow]))
       .mockReturnValueOnce(clubsSelect())
       .mockReturnValueOnce(regsSelect())
-      .mockReturnValueOnce(memberNamesSelect());
+      .mockReturnValueOnce(memberNamesSelect())
+      .mockReturnValueOnce(householdsListSelect("Smith"));
     mockDbExecute.mockResolvedValueOnce([]);
 
     const res = await request(app)
@@ -276,7 +293,8 @@ describe("GET /coach/swimmers/:id", () => {
       .mockReturnValueOnce(clubsSelect())
       .mockReturnValueOnce(regsSelect())
       .mockReturnValueOnce(membersSelect())
-      .mockReturnValueOnce(homePoolSelect(pool));
+      .mockReturnValueOnce(homePoolSelect(pool))
+      .mockReturnValueOnce(householdsDetailSelect("Smith"));
     mockDbExecute.mockResolvedValueOnce([]);
 
     const res = await request(app)
@@ -300,7 +318,8 @@ describe("GET /coach/swimmers/:id", () => {
       .mockReturnValueOnce(clubsSelect())
       .mockReturnValueOnce(regsSelect())
       .mockReturnValueOnce(membersSelect())
-      .mockReturnValueOnce(homePoolSelect(null));
+      .mockReturnValueOnce(homePoolSelect(null))
+      .mockReturnValueOnce(householdsDetailSelect("Smith"));
     mockDbExecute.mockResolvedValueOnce([]);
 
     const res = await request(app)

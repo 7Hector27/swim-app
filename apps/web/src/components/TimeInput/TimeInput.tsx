@@ -9,6 +9,10 @@ interface TimeInputProps {
   onChange: (next: number | null) => void;
   label?: string;
   disabled?: boolean;
+  // "md" (default) keeps the compact nudge pair under each box; "lg" draws
+  // phone-friendly 44px minus/plus buttons flanking each box with "min",
+  // "sec", "1/100" unit labels underneath — used by the Add result card.
+  size?: "md" | "lg";
   // The id applied to the minutes field so an external <label> can target it.
   id?: string;
   // Focuses the minutes box on mount (and on `focusKey` change).
@@ -85,11 +89,19 @@ export default function TimeInput({
   onChange,
   label = "Time",
   disabled,
+  size = "md",
   id,
   autoFocus,
   focusKey,
   "aria-describedby": ariaDescribedBy,
 }: TimeInputProps) {
+  const isLg = size === "lg";
+  const boxClass = isLg
+    ? "h-[52px] w-[60px] min-w-[44px] px-1 rounded-lg border border-border bg-background text-text text-[22px] font-semibold tabular-nums text-center focus:outline focus:outline-2 focus:outline-focus-ring disabled:opacity-60 aria-[invalid=true]:border-danger"
+    : "h-11 w-12 min-w-[44px] px-1 rounded-lg border border-border bg-background text-text text-base tabular-nums text-center focus:outline focus:outline-2 focus:outline-focus-ring disabled:opacity-60 aria-[invalid=true]:border-danger";
+  const separatorClass = isLg
+    ? "pb-[2.25rem] text-text-secondary text-[22px] font-semibold"
+    : "pb-[1.75rem] text-text-secondary font-semibold";
   const groupId = useId();
   const minId = id ?? `${groupId}-min`;
   const secId = `${groupId}-sec`;
@@ -128,8 +140,16 @@ export default function TimeInput({
   const secRef = useRef<HTMLInputElement>(null);
   const hunRef = useRef<HTMLInputElement>(null);
 
+  const didMountRef = useRef(false);
   useEffect(() => {
-    if (autoFocus) minRef.current?.focus();
+    if (!didMountRef.current) {
+      didMountRef.current = true;
+      if (autoFocus) minRef.current?.focus();
+      return;
+    }
+    // Subsequent `focusKey` or `autoFocus` changes always pull focus —
+    // callers rely on this to focus the Time field on validation errors.
+    minRef.current?.focus();
   }, [autoFocus, focusKey]);
 
   function emit(next: { min: string; sec: string; hun: string }): void {
@@ -322,8 +342,8 @@ export default function TimeInput({
       disabled={disabled}
     >
       <legend className="text-xs font-semibold text-text-secondary">{label}</legend>
-      <div className="flex items-end gap-1">
-        <div className="flex flex-col gap-0.5">
+      <div className={isLg ? "flex items-end gap-1 tablet:gap-2" : "flex items-end gap-1"}>
+        <div className="flex flex-col items-center gap-1">
           <label htmlFor={minId} className="sr-only">
             Minutes
           </label>
@@ -335,7 +355,7 @@ export default function TimeInput({
             autoComplete="off"
             maxLength={4}
             aria-label="Minutes"
-            placeholder="0"
+            placeholder=""
             value={minText}
             disabled={disabled}
             onChange={(event) => handleTyped("min", event.target.value)}
@@ -344,12 +364,19 @@ export default function TimeInput({
             onWheel={(event) => handleWheel("min", event)}
             onFocus={(event) => event.currentTarget.select()}
             onBlur={() => handleBlur("min")}
-            className="h-11 w-12 min-w-[44px] px-1 rounded-lg border border-border bg-background text-text text-base tabular-nums text-center focus:outline focus:outline-2 focus:outline-focus-ring disabled:opacity-60"
+            className={boxClass}
           />
-          <NudgeButtons {...(disabled !== undefined && { disabled })} onUp={() => nudge("min", 1, 1)} onDown={() => nudge("min", -1, 1)} label="minutes" />
+          <NudgeButtons
+            {...(disabled !== undefined && { disabled })}
+            onUp={() => nudge("min", 1, 1)}
+            onDown={() => nudge("min", -1, 1)}
+            label="minutes"
+            size={size}
+          />
+          {isLg && <span className="text-[10px] font-semibold text-text-secondary uppercase tracking-wide">min</span>}
         </div>
-        <span aria-hidden="true" className="pb-11 tablet:pb-11 text-text-secondary font-semibold pb-[1.75rem]">:</span>
-        <div className="flex flex-col gap-0.5">
+        <span aria-hidden="true" className={separatorClass}>:</span>
+        <div className="flex flex-col items-center gap-1">
           <label htmlFor={secId} className="sr-only">
             Seconds
           </label>
@@ -362,7 +389,7 @@ export default function TimeInput({
             maxLength={2}
             aria-label="Seconds"
             aria-invalid={invalidSec}
-            placeholder="00"
+            placeholder=""
             value={secText}
             disabled={disabled}
             onChange={(event) => handleTyped("sec", event.target.value)}
@@ -371,12 +398,19 @@ export default function TimeInput({
             onWheel={(event) => handleWheel("sec", event)}
             onFocus={(event) => event.currentTarget.select()}
             onBlur={() => handleBlur("sec")}
-            className="h-11 w-12 min-w-[44px] px-1 rounded-lg border border-border bg-background text-text text-base tabular-nums text-center focus:outline focus:outline-2 focus:outline-focus-ring disabled:opacity-60 aria-[invalid=true]:border-danger"
+            className={boxClass}
           />
-          <NudgeButtons {...(disabled !== undefined && { disabled })} onUp={() => nudge("sec", 1, 1)} onDown={() => nudge("sec", -1, 1)} label="seconds" />
+          <NudgeButtons
+            {...(disabled !== undefined && { disabled })}
+            onUp={() => nudge("sec", 1, 1)}
+            onDown={() => nudge("sec", -1, 1)}
+            label="seconds"
+            size={size}
+          />
+          {isLg && <span className="text-[10px] font-semibold text-text-secondary uppercase tracking-wide">sec</span>}
         </div>
-        <span aria-hidden="true" className="pb-[1.75rem] text-text-secondary font-semibold">.</span>
-        <div className="flex flex-col gap-0.5">
+        <span aria-hidden="true" className={separatorClass}>.</span>
+        <div className="flex flex-col items-center gap-1">
           <label htmlFor={hunId} className="sr-only">
             Hundredths
           </label>
@@ -389,7 +423,7 @@ export default function TimeInput({
             maxLength={2}
             aria-label="Hundredths"
             aria-invalid={invalidHun}
-            placeholder="00"
+            placeholder=""
             value={hunText}
             disabled={disabled}
             onChange={(event) => handleTyped("hun", event.target.value)}
@@ -398,9 +432,16 @@ export default function TimeInput({
             onWheel={(event) => handleWheel("hun", event)}
             onFocus={(event) => event.currentTarget.select()}
             onBlur={() => handleBlur("hun")}
-            className="h-11 w-12 min-w-[44px] px-1 rounded-lg border border-border bg-background text-text text-base tabular-nums text-center focus:outline focus:outline-2 focus:outline-focus-ring disabled:opacity-60 aria-[invalid=true]:border-danger"
+            className={boxClass}
           />
-          <NudgeButtons {...(disabled !== undefined && { disabled })} onUp={() => nudge("hun", 1, 1)} onDown={() => nudge("hun", -1, 1)} label="hundredths" />
+          <NudgeButtons
+            {...(disabled !== undefined && { disabled })}
+            onUp={() => nudge("hun", 1, 1)}
+            onDown={() => nudge("hun", -1, 1)}
+            label="hundredths"
+            size={size}
+          />
+          {isLg && <span className="text-[10px] font-semibold text-text-secondary uppercase tracking-wide">1/100</span>}
         </div>
       </div>
     </fieldset>
@@ -412,21 +453,27 @@ function NudgeButtons({
   onDown,
   disabled,
   label,
+  size = "md",
 }: {
   onUp: () => void;
   onDown: () => void;
   disabled?: boolean;
   label: string;
+  size?: "md" | "lg";
 }) {
+  const buttonClass =
+    size === "lg"
+      ? "inline-flex items-center justify-center h-11 w-11 min-w-[44px] rounded-lg border border-border bg-background text-text text-base font-bold leading-none hover:bg-surface-soft focus:outline focus:outline-2 focus:outline-focus-ring disabled:opacity-60"
+      : "h-6 w-6 rounded border border-border bg-background text-text-secondary text-xs font-bold leading-none hover:text-text focus:outline focus:outline-2 focus:outline-focus-ring disabled:opacity-60";
   return (
-    <div className="flex items-center justify-center gap-0.5">
+    <div className={size === "lg" ? "flex items-center justify-center gap-1" : "flex items-center justify-center gap-0.5"}>
       <button
         type="button"
         onClick={onDown}
         disabled={disabled}
         aria-label={`Decrease ${label}`}
         tabIndex={-1}
-        className="h-6 w-6 rounded border border-border bg-background text-text-secondary text-xs font-bold leading-none hover:text-text focus:outline focus:outline-2 focus:outline-focus-ring disabled:opacity-60"
+        className={buttonClass}
       >
         −
       </button>
@@ -436,7 +483,7 @@ function NudgeButtons({
         disabled={disabled}
         aria-label={`Increase ${label}`}
         tabIndex={-1}
-        className="h-6 w-6 rounded border border-border bg-background text-text-secondary text-xs font-bold leading-none hover:text-text focus:outline focus:outline-2 focus:outline-focus-ring disabled:opacity-60"
+        className={buttonClass}
       >
         +
       </button>

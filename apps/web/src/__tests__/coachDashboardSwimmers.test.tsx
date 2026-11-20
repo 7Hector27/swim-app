@@ -17,6 +17,8 @@ function makeSwimmer(overrides: Partial<CoachSwimmer> & { id: string }): CoachSw
     currentLeagues: [],
     memberNames: ["Jordan Smith"],
     lastLesson: null,
+    householdName: "Smith",
+    birthMonthYear: "2015-01",
     ...overrides,
   };
 }

@@ -21,6 +21,8 @@ import {
   isValidEvent,
 } from "@swim-app/shared";
 
+import EventPicker from "@/components/EventPicker";
+import SwimmerSelect from "@/components/SwimmerSelect";
 import TimeInput from "@/components/TimeInput";
 import {
   deleteSavedSwim,
@@ -325,70 +327,34 @@ interface EntryRowProps {
   onAdd: (row: Omit<PendingRow, "id">) => void;
 }
 
-function EntryRow({ meet, swimmers, pending, savedSwims, bestsBySwimmer: _bests, onAdd }: EntryRowProps) {
-  void _bests; // referenced for intended-usage clarity; feedback is shown in PendingList rows
-  const [swimmerQuery, setSwimmerQuery] = useState("");
+function EntryRow({ meet, swimmers, pending, savedSwims, bestsBySwimmer, onAdd }: EntryRowProps) {
   const [swimmerId, setSwimmerId] = useState<string>("");
   const [stroke, setStroke] = useState<SwimStroke>("free");
   const [distance, setDistance] = useState<number>(() => VALID_EVENTS.free[0] ?? 50);
   const [time, setTime] = useState<number | null>(null);
-  const [focusTick, setFocusTick] = useState(0);
-  const swimmerInputRef = useRef<HTMLInputElement>(null);
+  const [swimmerError, setSwimmerError] = useState<string | null>(null);
+  const [timeError, setTimeError] = useState<string | null>(null);
+  // Bumping this value re-focuses the TimeInput's minutes box. Used to pull
+  // focus to the Time field when it's the first invalid input on submit.
+  const [timeFocusKey, setTimeFocusKey] = useState(0);
 
-  const distances = VALID_EVENTS[stroke] ?? [];
+  const swimmerSelectRef = useRef<HTMLSelectElement>(null);
 
-  const trimmedQuery = swimmerQuery.trim().toLowerCase();
-  const matchingSwimmers = useMemo(() => {
-    if (trimmedQuery.length === 0) return swimmers.slice(0, 8);
-    return swimmers
-      .filter((swimmer) =>
-        `${swimmer.firstName} ${swimmer.lastName}`.toLowerCase().includes(trimmedQuery),
-      )
-      .slice(0, 12);
-  }, [swimmers, trimmedQuery]);
-
-  const selectedSwimmer = swimmers.find((swimmer) => swimmer.id === swimmerId) ?? null;
-
-  const canAdd =
-    swimmerId !== "" &&
-    isValidEvent(distance, stroke) &&
-    time !== null &&
-    time > 0 &&
-    time <= MAX_SWIM_HUNDREDTHS;
-
-  function reset(keepEvent: boolean): void {
-    if (!keepEvent) {
-      setStroke("free");
-      setDistance(VALID_EVENTS.free[0] ?? 50);
-    }
-    setSwimmerId("");
-    setSwimmerQuery("");
-    setTime(null);
-    // bump focusTick to re-focus swimmer search
-    setFocusTick((tick) => tick + 1);
-  }
-
-  useEffect(() => {
-    // Return focus to the swimmer search after a successful add.
-    if (focusTick > 0) swimmerInputRef.current?.focus();
-  }, [focusTick]);
-
-  function handleAdd(): void {
-    if (!canAdd || time === null) return;
-    onAdd({
-      swimmerId,
-      eventDistance: distance,
-      eventStroke: stroke,
-      course: meet.course,
-      timeHundredths: time,
-    });
-    // After add: event stays selected, focus returns to swimmer field.
-    reset(true);
-  }
+  const bestForEvent = useMemo(() => {
+    if (swimmerId === "") return null;
+    const list = bestsBySwimmer.get(swimmerId) ?? [];
+    return (
+      list.find(
+        (pb) =>
+          pb.eventDistance === distance &&
+          pb.eventStroke === stroke &&
+          pb.course === meet.course,
+      ) ?? null
+    );
+  }, [bestsBySwimmer, swimmerId, distance, stroke, meet.course]);
 
   // Note what's already in the batch or saved so the coach spots duplicates
-  // sooner. (The PendingList shows the formal flag; the entry row just
-  // disables Add visually via `canAdd`.)
+  // sooner. PendingList also surfaces the formal flag per row.
   const duplicate = useMemo(() => {
     if (swimmerId === "" || time === null) return false;
     const key = (row: {
@@ -424,116 +390,106 @@ function EntryRow({ meet, swimmers, pending, savedSwims, bestsBySwimmer: _bests,
     return false;
   }, [swimmerId, distance, stroke, time, meet.course, pending, savedSwims]);
 
+  function handleAdd(): void {
+    // Always-enabled Add button validates here. Errors are shown next to
+    // the field at fault and focus moves there. State is never cleared.
+    let firstErrorFocus: (() => void) | null = null;
+    if (swimmerId === "") {
+      setSwimmerError("Choose a swimmer");
+      if (firstErrorFocus === null) firstErrorFocus = () => swimmerSelectRef.current?.focus();
+    } else {
+      setSwimmerError(null);
+    }
+    if (time === null || time <= 0 || time > MAX_SWIM_HUNDREDTHS || !isValidEvent(distance, stroke)) {
+      const message = time === null || time <= 0 ? "Enter a time" : "That time is out of range";
+      setTimeError(message);
+      if (firstErrorFocus === null) firstErrorFocus = () => setTimeFocusKey((tick) => tick + 1);
+    } else {
+      setTimeError(null);
+    }
+
+    if (firstErrorFocus !== null) {
+      firstErrorFocus();
+      return;
+    }
+
+    if (time === null) return; // narrow for TypeScript
+    onAdd({
+      swimmerId,
+      eventDistance: distance,
+      eventStroke: stroke,
+      course: meet.course,
+      timeHundredths: time,
+    });
+
+    // After add: clear swimmer and time, keep stroke and distance, focus
+    // the swimmer select.
+    setSwimmerId("");
+    setTime(null);
+    setSwimmerError(null);
+    setTimeError(null);
+    // Imperatively focus — a useState tick + useEffect would also work but
+    // synchronous focus() avoids any re-render flicker between pending list
+    // updates and the focus call.
+    swimmerSelectRef.current?.focus();
+  }
+
   return (
     <section
       aria-label="Add result"
-      className="flex flex-col gap-3 rounded-card border border-border p-4 bg-background"
+      className="flex flex-col gap-4 rounded-card border border-border p-4 tablet:p-5 bg-background"
     >
       <h2 className="text-sm font-semibold text-text">Add result</h2>
 
-      <div className="flex flex-col gap-3 tablet:flex-row tablet:items-end tablet:flex-wrap">
-        <div className="flex flex-col gap-1 flex-1 min-w-[180px]">
-          <label htmlFor="entry-swimmer" className="text-xs font-semibold text-text-secondary">
-            Swimmer
-          </label>
-          <input
-            id="entry-swimmer"
-            ref={swimmerInputRef}
-            type="search"
-            autoComplete="off"
-            placeholder="Search swimmer…"
-            value={swimmerQuery}
-            onChange={(event) => {
-              setSwimmerQuery(event.target.value);
-              setSwimmerId("");
+      <div className="flex flex-col gap-4 tablet:flex-row tablet:items-start tablet:gap-5">
+        <div className="flex flex-col gap-2 tablet:flex-1 tablet:min-w-[220px]">
+          <SwimmerSelect
+            ref={swimmerSelectRef}
+            swimmers={swimmers}
+            value={swimmerId}
+            onChange={(next) => {
+              setSwimmerId(next);
+              setSwimmerError(null);
             }}
-            className="h-11 px-3 rounded-lg border border-border bg-background text-text text-base focus:outline focus:outline-2 focus:outline-focus-ring"
+            error={swimmerError}
           />
-          {selectedSwimmer !== null ? (
+          {swimmerId !== "" && swimmerError === null && (
             <p className="text-xs text-text-secondary">
-              Selected: <span className="font-semibold text-text">{selectedSwimmer.firstName} {selectedSwimmer.lastName}</span>{" "}
-              <button
-                type="button"
-                className="underline text-link"
-                onClick={() => {
-                  setSwimmerId("");
-                  setSwimmerQuery("");
-                }}
-              >
-                change
-              </button>
-            </p>
-          ) : (
-            <ul className="flex flex-col gap-1 max-h-48 overflow-y-auto border border-border rounded-lg bg-surface-soft">
-              {matchingSwimmers.length === 0 ? (
-                <li className="px-3 py-2 text-xs text-text-secondary">No swimmers match.</li>
+              {bestForEvent !== null ? (
+                <>
+                  Best: <span className="font-semibold text-text tabular-nums">{bestForEvent.timeString}</span>
+                </>
               ) : (
-                matchingSwimmers.map((swimmer) => (
-                  <li key={swimmer.id}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSwimmerId(swimmer.id);
-                        setSwimmerQuery(`${swimmer.firstName} ${swimmer.lastName}`);
-                      }}
-                      className="flex w-full items-center justify-between gap-2 px-3 min-h-[44px] text-sm text-left text-text hover:bg-section-item-hover"
-                    >
-                      <span>
-                        {swimmer.firstName} {swimmer.lastName}
-                      </span>
-                      <span className="text-xs text-text-secondary">Age {swimmer.age}</span>
-                    </button>
-                  </li>
-                ))
+                "No time in this event yet"
               )}
-            </ul>
+            </p>
           )}
         </div>
 
-        <div className="flex gap-3 flex-wrap tablet:flex-nowrap">
-          <div className="flex flex-col gap-1 min-w-[110px]">
-            <label htmlFor="entry-stroke" className="text-xs font-semibold text-text-secondary">
-              Stroke
-            </label>
-            <select
-              id="entry-stroke"
-              value={stroke}
-              onChange={(event) => {
-                const next = event.target.value as SwimStroke;
-                setStroke(next);
-                const d = VALID_EVENTS[next] ?? [];
-                const first = d[0];
-                if (first !== undefined && !d.includes(distance)) setDistance(first);
-              }}
-              className="h-11 px-3 rounded-lg border border-border bg-background text-text text-base focus:outline focus:outline-2 focus:outline-focus-ring"
-            >
-              {STROKE_ORDER.map((value) => (
-                <option key={value} value={value}>
-                  {STROKE_LABELS[value]}
-                </option>
-              ))}
-            </select>
-          </div>
+        <div className="tablet:flex-1 tablet:min-w-[240px]">
+          <EventPicker
+            stroke={stroke}
+            distance={distance}
+            onStrokeChange={setStroke}
+            onDistanceChange={setDistance}
+          />
+        </div>
 
-          <div className="flex flex-col gap-1 min-w-[100px]">
-            <label htmlFor="entry-distance" className="text-xs font-semibold text-text-secondary">
-              Distance
-            </label>
-            <select
-              id="entry-distance"
-              value={distance}
-              onChange={(event) => setDistance(Number(event.target.value))}
-              className="h-11 px-3 rounded-lg border border-border bg-background text-text text-base focus:outline focus:outline-2 focus:outline-focus-ring"
-            >
-              {distances.map((value) => (
-                <option key={value} value={value}>
-                  {value}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <TimeInput value={time} onChange={setTime} />
+        <div className="flex flex-col gap-2">
+          <TimeInput
+            size="lg"
+            value={time}
+            focusKey={timeFocusKey}
+            onChange={(next) => {
+              setTime(next);
+              setTimeError(null);
+            }}
+          />
+          {timeError !== null && (
+            <p role="alert" className="text-xs text-danger">
+              {timeError}
+            </p>
+          )}
         </div>
       </div>
 
@@ -543,12 +499,11 @@ function EntryRow({ meet, swimmers, pending, savedSwims, bestsBySwimmer: _bests,
         </p>
       )}
 
-      <div>
+      <div className="tablet:flex tablet:justify-end">
         <button
           type="button"
           onClick={handleAdd}
-          disabled={!canAdd}
-          className="inline-flex items-center justify-center px-5 min-h-[44px] font-bold text-sm rounded-button bg-button-primary-background text-button-primary-text disabled:opacity-60 w-full tablet:w-auto"
+          className="inline-flex items-center justify-center px-5 min-h-[44px] font-bold text-sm rounded-button bg-button-primary-background text-button-primary-text w-full tablet:w-auto"
         >
           Add result
         </button>

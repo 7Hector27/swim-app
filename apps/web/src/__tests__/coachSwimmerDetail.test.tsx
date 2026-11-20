@@ -64,6 +64,8 @@ const TEST_SWIMMER = {
   members: [{ fullName: "Jane Smith", phone: "555-1234" }],
   memberNames: ["Jane Smith"],
   lastLesson: null,
+  householdName: "Smith",
+  birthMonthYear: "2013-01",
   homePool: null,
   createdAt: "2024-01-01T00:00:00Z",
   updatedAt: "2024-01-01T00:00:00Z",

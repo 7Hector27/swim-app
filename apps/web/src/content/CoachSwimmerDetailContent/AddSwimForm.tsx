@@ -11,8 +11,10 @@ import {
   deviationFromBest,
   formatSwimTime,
   MAX_SWIM_HUNDREDTHS,
+  isValidEvent,
 } from "@swim-app/shared";
 
+import EventPicker from "@/components/EventPicker";
 import TimeInput from "@/components/TimeInput";
 import { addSwimForSwimmer } from "./actions";
 import type { AddSwimState } from "./actions";
@@ -28,14 +30,6 @@ interface AddSwimFormProps {
   personalBests: PersonalBest[];
   onSuccess: () => void;
 }
-
-const STROKE_LABELS: Record<SwimStroke, string> = {
-  free: "Free",
-  back: "Back",
-  breast: "Breast",
-  fly: "Fly",
-  im: "IM",
-};
 
 const COURSE_LABELS: Record<Course, string> = { scy: "SCY", scm: "SCM", lcm: "LCM" };
 
@@ -57,6 +51,16 @@ export default function AddSwimForm({
   const [swumOn, setSwumOn] = useState<string>("");
   const [meetId, setMeetId] = useState<string>("");
 
+  // Inline, per-field validation errors. Nothing in `handleValidate` clears
+  // a typed value — these only toggle the error text + which field pulls
+  // focus on next submit.
+  const [timeError, setTimeError] = useState<string | null>(null);
+  const [meetError, setMeetError] = useState<string | null>(null);
+  const [dateError, setDateError] = useState<string | null>(null);
+  const [timeFocusKey, setTimeFocusKey] = useState(0);
+  const meetSelectRef = useRef<HTMLSelectElement>(null);
+  const dateInputRef = useRef<HTMLInputElement>(null);
+
   // Inline create-meet popover.
   const [showCreateMeet, setShowCreateMeet] = useState(false);
   const [newMeetName, setNewMeetName] = useState("");
@@ -73,15 +77,6 @@ export default function AddSwimForm({
   useEffect(() => {
     if (state.status === "success") onSuccess();
   }, [state.status, onSuccess]);
-
-  const distances = VALID_EVENTS[stroke] ?? [];
-
-  const canSubmit =
-    meetId !== "" &&
-    timeHundredths !== null &&
-    timeHundredths > 0 &&
-    timeHundredths <= MAX_SWIM_HUNDREDTHS &&
-    swumOn !== "";
 
   const matchingBest = personalBests.find(
     (pb) => pb.eventDistance === distance && pb.eventStroke === stroke && pb.course === course,
@@ -112,6 +107,7 @@ export default function AddSwimForm({
       setMeetId(result.meet.id);
       setCourse(result.meet.course);
       setSwumOn(result.meet.meetDate);
+      setMeetError(null);
       setShowCreateMeet(false);
       setNewMeetName("");
       setNewMeetDate("");
@@ -120,10 +116,56 @@ export default function AddSwimForm({
     });
   }
 
+  // Always-enabled submit. Validate inline, surface messages next to the
+  // field, and focus the first invalid field. Return `false` to short-circuit
+  // the server action — React 19 form actions call the function regardless,
+  // so we use `onSubmit` + preventDefault to control the flow.
+  function handleSubmit(event: React.FormEvent<HTMLFormElement>): void {
+    let hasError = false;
+    let focus: (() => void) | null = null;
+
+    if (meetId === "") {
+      setMeetError("Choose a meet");
+      hasError = true;
+      if (focus === null) focus = () => meetSelectRef.current?.focus();
+    } else {
+      setMeetError(null);
+    }
+
+    if (
+      timeHundredths === null ||
+      timeHundredths <= 0 ||
+      timeHundredths > MAX_SWIM_HUNDREDTHS ||
+      !isValidEvent(distance, stroke)
+    ) {
+      const message =
+        timeHundredths === null || timeHundredths <= 0 ? "Enter a time" : "That time is out of range";
+      setTimeError(message);
+      hasError = true;
+      if (focus === null) focus = () => setTimeFocusKey((tick) => tick + 1);
+    } else {
+      setTimeError(null);
+    }
+
+    if (swumOn === "") {
+      setDateError("Pick a date");
+      hasError = true;
+      if (focus === null) focus = () => dateInputRef.current?.focus();
+    } else {
+      setDateError(null);
+    }
+
+    if (hasError) {
+      event.preventDefault();
+      focus?.();
+    }
+  }
+
   return (
     <form
       action={action}
-      className="flex flex-col gap-3 p-4 rounded-lg border border-border bg-surface-soft"
+      onSubmit={handleSubmit}
+      className="flex flex-col gap-4 p-4 tablet:p-5 rounded-lg border border-border bg-surface-soft"
     >
       {/* All fields are strictly controlled via React state and travel as hidden
           inputs on submit. Nothing uses `defaultValue`, so React 19's
@@ -135,50 +177,32 @@ export default function AddSwimForm({
       <input type="hidden" name="swumOn" value={swumOn} />
       <input type="hidden" name="meetId" value={meetId} />
 
-      <div className="flex flex-col gap-3 tablet:flex-row tablet:flex-wrap">
-        <div className="flex flex-col gap-1 flex-1 min-w-[140px]">
-          <label htmlFor="add-swim-stroke" className="text-xs font-semibold text-text-secondary">
-            Stroke
-          </label>
-          <select
-            id="add-swim-stroke"
-            value={stroke}
-            onChange={(event) => {
-              const next = event.target.value as SwimStroke;
-              setStroke(next);
-              const d = VALID_EVENTS[next] ?? [];
-              const first = d[0];
-              if (first !== undefined && !d.includes(distance)) setDistance(first);
+      <EventPicker
+        stroke={stroke}
+        distance={distance}
+        onStrokeChange={setStroke}
+        onDistanceChange={setDistance}
+      />
+
+      <div className="flex flex-col gap-4 tablet:flex-row tablet:items-start tablet:gap-5">
+        <div className="flex flex-col gap-2">
+          <TimeInput
+            size="lg"
+            value={timeHundredths}
+            focusKey={timeFocusKey}
+            onChange={(next) => {
+              setTimeHundredths(next);
+              setTimeError(null);
             }}
-            className="h-11 px-3 rounded-lg border border-border bg-background text-text text-base focus:outline focus:outline-2 focus:outline-focus-ring"
-          >
-            {(Object.keys(STROKE_LABELS) as SwimStroke[]).map((value) => (
-              <option key={value} value={value}>
-                {STROKE_LABELS[value]}
-              </option>
-            ))}
-          </select>
+          />
+          {timeError !== null && (
+            <p role="alert" className="text-xs text-danger">
+              {timeError}
+            </p>
+          )}
         </div>
 
-        <div className="flex flex-col gap-1 flex-1 min-w-[120px]">
-          <label htmlFor="add-swim-distance" className="text-xs font-semibold text-text-secondary">
-            Distance
-          </label>
-          <select
-            id="add-swim-distance"
-            value={distance}
-            onChange={(event) => setDistance(Number(event.target.value))}
-            className="h-11 px-3 rounded-lg border border-border bg-background text-text text-base focus:outline focus:outline-2 focus:outline-focus-ring"
-          >
-            {distances.map((value) => (
-              <option key={value} value={value}>
-                {value}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="flex flex-col gap-1 flex-1 min-w-[120px]">
+        <div className="flex flex-col gap-1 tablet:flex-1 tablet:min-w-[160px]">
           <label htmlFor="add-swim-course" className="text-xs font-semibold text-text-secondary">
             Course
           </label>
@@ -186,7 +210,7 @@ export default function AddSwimForm({
             id="add-swim-course"
             value={course}
             onChange={(event) => setCourse(event.target.value as Course)}
-            className="h-11 px-3 rounded-lg border border-border bg-background text-text text-base focus:outline focus:outline-2 focus:outline-focus-ring"
+            className="h-11 min-h-[44px] px-3 rounded-lg border border-border bg-background text-text text-base focus:outline focus:outline-2 focus:outline-focus-ring"
           >
             {(Object.keys(COURSE_LABELS) as Course[]).map((value) => (
               <option key={value} value={value}>
@@ -195,23 +219,28 @@ export default function AddSwimForm({
             ))}
           </select>
         </div>
-      </div>
 
-      <div className="flex flex-col gap-3 tablet:flex-row tablet:flex-wrap tablet:items-end">
-        <TimeInput value={timeHundredths} onChange={setTimeHundredths} />
-
-        <div className="flex flex-col gap-1 flex-1 min-w-[160px]">
+        <div className="flex flex-col gap-1 tablet:flex-1 tablet:min-w-[160px]">
           <label htmlFor="add-swim-date" className="text-xs font-semibold text-text-secondary">
             Date
           </label>
           <input
             id="add-swim-date"
+            ref={dateInputRef}
             type="date"
-            required
             value={swumOn}
-            onChange={(event) => setSwumOn(event.target.value)}
-            className="h-11 px-3 rounded-lg border border-border bg-background text-text text-base focus:outline focus:outline-2 focus:outline-focus-ring"
+            aria-invalid={dateError !== null}
+            onChange={(event) => {
+              setSwumOn(event.target.value);
+              setDateError(null);
+            }}
+            className="h-11 min-h-[44px] px-3 rounded-lg border border-border bg-background text-text text-base focus:outline focus:outline-2 focus:outline-focus-ring aria-[invalid=true]:border-danger"
           />
+          {dateError !== null && (
+            <p role="alert" className="text-xs text-danger">
+              {dateError}
+            </p>
+          )}
         </div>
       </div>
 
@@ -221,8 +250,9 @@ export default function AddSwimForm({
         </label>
         <select
           id="add-swim-meet"
-          required
+          ref={meetSelectRef}
           value={meetId}
+          aria-invalid={meetError !== null}
           onChange={(event) => {
             const next = event.target.value;
             if (next === "__new__") {
@@ -230,13 +260,14 @@ export default function AddSwimForm({
               return;
             }
             setMeetId(next);
+            setMeetError(null);
             const picked = meets.find((meet) => meet.id === next);
             if (picked) {
               setCourse(picked.course);
               if (swumOn === "") setSwumOn(picked.meetDate);
             }
           }}
-          className="h-11 px-3 rounded-lg border border-border bg-background text-text text-base focus:outline focus:outline-2 focus:outline-focus-ring"
+          className="h-11 min-h-[44px] px-3 rounded-lg border border-border bg-background text-text text-base focus:outline focus:outline-2 focus:outline-focus-ring aria-[invalid=true]:border-danger"
         >
           <option value="">Pick a meet…</option>
           {meets.map((meet) => (
@@ -246,6 +277,11 @@ export default function AddSwimForm({
           ))}
           <option value="__new__">+ Create a new meet</option>
         </select>
+        {meetError !== null && (
+          <p role="alert" className="text-xs text-danger">
+            {meetError}
+          </p>
+        )}
       </div>
 
       {showCreateMeet && (
@@ -282,29 +318,23 @@ export default function AddSwimForm({
         </p>
       )}
 
-      <div className="flex flex-col gap-2 tablet:flex-row">
-        <SubmitButton disabled={!canSubmit || isPending} label={isPending ? "Saving…" : "Save time"} />
+      <div className="flex flex-col gap-2 tablet:flex-row tablet:justify-end">
         <button
           type="button"
           onClick={onSuccess}
-          className="inline-flex items-center justify-center px-4 h-11 font-semibold text-sm rounded-button text-text-secondary"
+          className="inline-flex items-center justify-center px-4 min-h-[44px] font-semibold text-sm rounded-button text-text-secondary"
         >
           Cancel
         </button>
+        <button
+          type="submit"
+          disabled={isPending}
+          className="inline-flex items-center justify-center px-5 min-h-[44px] font-bold text-sm rounded-button disabled:opacity-60 bg-button-primary-background text-button-primary-text w-full tablet:w-auto"
+        >
+          {isPending ? "Saving…" : "Save time"}
+        </button>
       </div>
     </form>
-  );
-}
-
-function SubmitButton({ disabled, label }: { disabled: boolean; label: string }) {
-  return (
-    <button
-      type="submit"
-      disabled={disabled}
-      className="inline-flex items-center justify-center px-4 h-11 font-bold text-sm rounded-button disabled:opacity-60 bg-button-primary-background text-button-primary-text w-full tablet:w-auto"
-    >
-      {label}
-    </button>
   );
 }
 
