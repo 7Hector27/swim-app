@@ -1,7 +1,6 @@
 import type {
   ParentProgressRatingPoint,
   ParentSkillProgress,
-  ParentSwimmerProgressResponse,
   SkillCurrentLevel,
   StartGradeResult,
 } from "@swim-app/shared";
@@ -405,20 +404,3 @@ export function coachPriorityByline(
   return `From Coach ${coachFirstName} · ${formatShortMonthDay(sessionDate)}`;
 }
 
-// ── Score-history session dates ──────────────────────────────────────────
-
-// Flat list of unique session dates across a parent score-history payload.
-// Used by the summary tiles to count "evaluations since <month>" and to
-// find the latest-evaluated date without needing a `.sessionId` field
-// (which the parent schema doesn't carry).
-export function scoreHistorySessionDates(
-  scoreHistory: ParentSwimmerProgressResponse extends unknown
-    ? { points: ReadonlyArray<{ sessionDate: string }> }
-    : never,
-): string[] {
-  const dates = new Set<string>();
-  for (const point of scoreHistory.points) {
-    dates.add(point.sessionDate);
-  }
-  return Array.from(dates);
-}
