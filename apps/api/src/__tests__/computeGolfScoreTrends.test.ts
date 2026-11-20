@@ -214,6 +214,45 @@ describe("computeGolfScoreTrends — N+1 fix", () => {
     expect(backPush.ageBands).toEqual({ bandCount: 15, p25: 43.5, p50: 47, p75: 50.5 });
   });
 
+  it("audience: 'parent' builds points WITHOUT sessionId so the field never leaves the library", async () => {
+    mockDbSelect
+      .mockReturnValueOnce(ratingsChain(ownRatings))
+      .mockReturnValueOnce(swimmerRowChain([{ birthDate: BIRTH_DATE }]))
+      .mockReturnValueOnce(cohortIdsChain(COHORT_IDS.map((id) => ({ id, birthDate: COHORT_BIRTHDATE }))))
+      .mockReturnValueOnce(cohortScoresChain(cohortRows(), () => {}));
+
+    const result = await computeGolfScoreTrends(SWIMMER_ID, logger, { audience: "parent" });
+
+    for (const trend of result.trends) {
+      for (const category of trend.byCategory) {
+        for (const point of category.points) {
+          expect(
+            "sessionId" in point,
+            `parent point should not carry sessionId (saw it on ${trend.skillSlug}/${category.category})`,
+          ).toBe(false);
+        }
+      }
+    }
+  });
+
+  it("audience: 'coach' (default) keeps sessionId on every point", async () => {
+    mockDbSelect
+      .mockReturnValueOnce(ratingsChain(ownRatings))
+      .mockReturnValueOnce(swimmerRowChain([{ birthDate: BIRTH_DATE }]))
+      .mockReturnValueOnce(cohortIdsChain(COHORT_IDS.map((id) => ({ id, birthDate: COHORT_BIRTHDATE }))))
+      .mockReturnValueOnce(cohortScoresChain(cohortRows(), () => {}));
+
+    const result = await computeGolfScoreTrends(SWIMMER_ID, logger);
+
+    for (const trend of result.trends) {
+      for (const category of trend.byCategory) {
+        for (const point of category.points) {
+          expect(typeof point.sessionId).toBe("string");
+        }
+      }
+    }
+  });
+
   it("emits no ageBands when the cohort has fewer than ten rated swimmers", async () => {
     // Trim cohort to nine and run only Freestyle / push-off.
     const trimmedCohort = COHORT_IDS.slice(0, 9);

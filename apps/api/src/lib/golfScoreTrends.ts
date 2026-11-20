@@ -1,10 +1,15 @@
 // Shared golf-score-trends computation used by both the coach route
 // (/coach/swimmers/:id/golf-score-trends) and the parent route
-// (/swimmers/:id/golf-score). The two routes serve the same data
-// shape — per stroke + category trend points plus an age-group band —
-// with one difference: the parent route strips `sessionId` from each
-// point before shipping, since parents can't reach the per-session
-// edit affordance it deep-links to.
+// (/swimmers/:id/golf-score). The two routes serve the same per
+// (stroke, category) trend plus an age-group band. The only shape
+// difference is `sessionId`: coach points carry it (deep-links to the
+// edit affordance), parent points do not (parents can't reach the edit
+// page, and leaking the id widens their view for no gain).
+//
+// The audience is a function parameter — not a post-hoc strip at the
+// route boundary — so the coach shape is never built for a parent
+// caller and the TypeScript return type guides callers to the right
+// shape.
 
 import type { Logger } from "pino";
 import { and, asc, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
@@ -19,6 +24,8 @@ import {
   type GolfScoreAgeBands,
   type GolfScoreCategoryTrend,
   type GolfScoreTrend,
+  type ParentGolfScoreCategoryTrend,
+  type ParentGolfScoreTrend,
 } from "@swim-app/shared";
 
 function computePercentile(sorted: number[], p: number): number {
@@ -29,10 +36,35 @@ function computePercentile(sorted: number[], p: number): number {
   return sorted[lower]! + (index - lower) * (sorted[upper]! - sorted[lower]!);
 }
 
+export interface ComputeGolfScoreTrendsOptions {
+  // "coach" keeps sessionId on every point; "parent" drops it before
+  // the point object is constructed. Defaults to "coach" so existing
+  // callers keep the richer shape.
+  audience?: "coach" | "parent";
+}
+
+// Overloads let callers that pass `{ audience: "parent" }` see the
+// ParentGolfScoreTrend return type (no sessionId) without a cast.
+export function computeGolfScoreTrends(
+  swimmerId: string,
+  logger: Pick<Logger, "warn">,
+): Promise<{ trends: GolfScoreTrend[] }>;
+export function computeGolfScoreTrends(
+  swimmerId: string,
+  logger: Pick<Logger, "warn">,
+  options: { audience: "coach" },
+): Promise<{ trends: GolfScoreTrend[] }>;
+export function computeGolfScoreTrends(
+  swimmerId: string,
+  logger: Pick<Logger, "warn">,
+  options: { audience: "parent" },
+): Promise<{ trends: ParentGolfScoreTrend[] }>;
 export async function computeGolfScoreTrends(
   swimmerId: string,
   logger: Pick<Logger, "warn">,
-): Promise<{ trends: GolfScoreTrend[] }> {
+  options: ComputeGolfScoreTrendsOptions = {},
+): Promise<{ trends: GolfScoreTrend[] } | { trends: ParentGolfScoreTrend[] }> {
+  const audience = options.audience ?? "coach";
   const ratingRows = await db
     .select({
       grade: skillRatings.grade,
@@ -93,7 +125,10 @@ export async function computeGolfScoreTrends(
     categoryPoints.push(row);
   }
 
-  const trends: GolfScoreTrend[] = [];
+  // Trends collect into a union of the two shapes; the audience-conditional
+  // point builder below determines which branch each entry lands in. Assert
+  // at return so callers see the audience-specific shape.
+  const trends: Array<GolfScoreTrend | ParentGolfScoreTrend> = [];
 
   // Fetch cohort swimmer IDs once, before any skill/category loops, to avoid N+1 queries.
   let cohortIds: string[] = [];
@@ -187,7 +222,7 @@ export async function computeGolfScoreTrends(
   }
 
   for (const [, skillEntry] of skillMap) {
-    const byCategory: GolfScoreCategoryTrend[] = [];
+    const byCategory: Array<GolfScoreCategoryTrend | ParentGolfScoreCategoryTrend> = [];
 
     for (const [category, points] of skillEntry.categories) {
       const parsedCategory = GolfScoreCategorySchema.safeParse(category);
@@ -213,10 +248,14 @@ export async function computeGolfScoreTrends(
 
       byCategory.push({
         category: parsedCategory.data,
+        // sessionId lives on coach points only. Spreading it conditionally
+        // means the parent shape never contains the field at build time,
+        // so ParentGolfScoreTrendPointSchema.strict() never has to catch
+        // a leak at parse time.
         points: points.map((point) => ({
           ratedAt: point.ratedAt.toISOString(),
           sessionDate: point.sessionDate,
-          sessionId: point.sessionId,
+          ...(audience === "coach" && { sessionId: point.sessionId }),
           grade: point.grade,
           timeSeconds: point.timeSeconds === null ? null : parseFloat(point.timeSeconds),
           strokeCountValue: point.strokeCountValue,
@@ -230,9 +269,12 @@ export async function computeGolfScoreTrends(
         skillSlug: skillEntry.slug,
         skillName: skillEntry.name,
         byCategory,
-      });
+      } as GolfScoreTrend | ParentGolfScoreTrend);
     }
   }
 
-  return { trends };
+  if (audience === "parent") {
+    return { trends: trends as ParentGolfScoreTrend[] };
+  }
+  return { trends: trends as GolfScoreTrend[] };
 }

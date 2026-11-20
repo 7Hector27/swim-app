@@ -247,18 +247,14 @@ parentProgressRouter.get(
   requireHouseholdSwimmer,
   asyncHandler(async (req, res) => {
     const { id: swimmerId } = req.params as unknown as IdParams;
-    const { trends } = await computeGolfScoreTrends(swimmerId, req.log);
-    const parentFacing: ParentGolfScoreTrendsResponse = {
-      trends: trends.map((trend) => ({
-        skillSlug: trend.skillSlug,
-        skillName: trend.skillName,
-        byCategory: trend.byCategory.map((categoryTrend) => ({
-          category: categoryTrend.category,
-          ageBands: categoryTrend.ageBands,
-          points: categoryTrend.points.map(({ sessionId: _sessionId, ...rest }) => rest),
-        })),
-      })),
-    };
+    // audience: "parent" tells the shared library to build points without
+    // sessionId at all — no post-hoc strip at this boundary, so a future
+    // caller can't forget to clean up.
+    const parentFacing: ParentGolfScoreTrendsResponse = await computeGolfScoreTrends(
+      swimmerId,
+      req.log,
+      { audience: "parent" },
+    );
     // Parse through the strict parent schema so a future addition of a
     // coach-only field to the point shape fails here rather than
     // reaching the client.
