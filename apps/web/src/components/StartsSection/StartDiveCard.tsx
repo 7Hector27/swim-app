@@ -46,15 +46,6 @@ interface StartDiveCardProps {
   // metadata. Defaults keep the coach behaviour unchanged.
   showSessionGrid?: boolean;
   showStillToGrade?: boolean;
-  // Narrow-column layout: the two reaction/distance tiles collapse to a
-  // single-line "Reaction 0.82 s · Distance 7 ft" stat and the tile grid
-  // goes away. Used by the parent page's desktop side column, where the
-  // Starts card has to share space with Snapshot + Golf.
-  compact?: boolean;
-  // Renders both tile forms and toggles between them via a viewport
-  // media query so the Starts section mounts once (preserving active
-  // tab selection) and still flips to compact at the desktop breakpoint.
-  compactOnDesktop?: boolean;
 }
 
 export default function StartDiveCard({
@@ -62,8 +53,6 @@ export default function StartDiveCard({
   swimmerSkills,
   showSessionGrid = true,
   showStillToGrade = true,
-  compact = false,
-  compactOnDesktop = false,
 }: StartDiveCardProps) {
   if (!hasAnyGraded(start)) {
     return (
@@ -114,36 +103,12 @@ export default function StartDiveCard({
       >
         <div className="flex flex-col gap-3 min-w-0">
           <DiveArcSvg plot={plot} startName={start.name} srDescription={srDescription} />
-          {compactOnDesktop ? (
-            <>
-              <div className="desktop:hidden">
-                <StatTiles
-                  reactionHistory={reactionHistory}
-                  distanceHistory={distanceHistory}
-                  stillToGrade={stillToGrade}
-                  showStillToGrade={showStillToGrade}
-                  compact={false}
-                />
-              </div>
-              <div className="hidden desktop:block">
-                <StatTiles
-                  reactionHistory={reactionHistory}
-                  distanceHistory={distanceHistory}
-                  stillToGrade={stillToGrade}
-                  showStillToGrade={showStillToGrade}
-                  compact
-                />
-              </div>
-            </>
-          ) : (
-            <StatTiles
-              reactionHistory={reactionHistory}
-              distanceHistory={distanceHistory}
-              stillToGrade={stillToGrade}
-              showStillToGrade={showStillToGrade}
-              compact={compact}
-            />
-          )}
+          <StatTiles
+            reactionHistory={reactionHistory}
+            distanceHistory={distanceHistory}
+            stillToGrade={stillToGrade}
+            showStillToGrade={showStillToGrade}
+          />
         </div>
 
         {showSessionGrid && (
@@ -387,12 +352,9 @@ interface StatTilesProps {
   // Parent view hides the still-to-grade count; it reads as coach tempo
   // metadata rather than a swimmer-progress fact.
   showStillToGrade?: boolean;
-  // Narrow-column form: collapses the two-tile grid to a single text
-  // line ("Reaction 0.82 s · Distance 7 ft").
-  compact?: boolean;
 }
 
-function StatTiles({ reactionHistory, distanceHistory, stillToGrade, showStillToGrade = true, compact = false }: StatTilesProps) {
+function StatTiles({ reactionHistory, distanceHistory, stillToGrade, showStillToGrade = true }: StatTilesProps) {
   const reactionFirst = firstMeasurement(reactionHistory);
   const reactionLatest = latestMeasurement(reactionHistory);
   const distanceFirst = firstMeasurement(distanceHistory);
@@ -443,21 +405,6 @@ function StatTiles({ reactionHistory, distanceHistory, stillToGrade, showStillTo
   }
 
   if (tiles.length === 0) return null;
-
-  if (compact) {
-    const measurementTiles = tiles.filter((tile) => tile.key !== "stillToGrade");
-    if (measurementTiles.length === 0) return null;
-    return (
-      <p className="text-xs text-text-secondary" data-testid="start-stat-tiles-compact">
-        {measurementTiles
-          .map((tile) => {
-            const prefix = tile.key === "reaction" ? "Reaction" : "Distance";
-            return `${prefix} ${tile.value}`;
-          })
-          .join(" · ")}
-      </p>
-    );
-  }
 
   return (
     <div

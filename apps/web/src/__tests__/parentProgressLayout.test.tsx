@@ -1,9 +1,12 @@
-// Layout-structure tests for the single-tree parent progress page.
-// The grid root uses grid-template-areas per breakpoint; JSDOM
+// Layout tests for the rebuilt parent progress page. The page is a
+// single flat column of sections — no breakpoint-cloned subtrees. JSDOM
 // doesn't apply media queries, so the strategy is structural:
-// assert that each section lives inside a slot tagged with the
-// expected grid-area via `[grid-area:name]` className, and that
-// every element id in the rendered tree is unique.
+//
+//   - exactly one section node for each section testid
+//   - section order (top-to-bottom) matches the coach mock
+//   - every element id in the rendered tree is unique
+//   - no removed-variant markers linger (compact starts tiles, compact
+//     golf list, short radar labels)
 
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
@@ -19,8 +22,6 @@ import ParentSwimmerProgressContent from "../content/ParentSwimmerProgressConten
 
 vi.mock("@/components/SiteNav", () => ({ default: () => null }));
 vi.mock("@/components/LevelLadder", () => ({ default: () => null }));
-vi.mock("@/components/StartsSection", () => ({ default: () => null }));
-vi.mock("@/content/SwimmerProgressContent/charts/CategoryRadar", () => ({ default: () => null }));
 
 const SWIMMER_ID = "aaaa0000-0000-0000-0000-000000000001";
 const CAT_ID = "cccc0000-0000-0000-0000-000000000001";
@@ -118,15 +119,26 @@ const baseProgress: ParentSwimmerProgressResponse = {
 const baseScoreHistory = {
   points: [
     {
+      sessionDate: "2026-09-30",
+      headPositionOverall: 2,
+      categoryRollups: [],
+      screenGroupRollups: [{ screenSlug: "freestyle" as const, name: "Freestyle", average: 2, assessedCount: 1, totalCount: 2 }],
+      starts: [],
+      counts: { level1: 0, level2: 1, level3: 0, level4: 0, level5: 0, notLegal: 0, noConcept: 0 },
+      totalLevelsGained: 0,
+      skillsMastered: 0,
+      skillsLearned: 1,
+    },
+    {
       sessionDate: "2026-11-10",
       headPositionOverall: 3,
       categoryRollups: [],
-      screenGroupRollups: [{ screenSlug: "freestyle" as const, name: "Freestyle", average: 3, assessedCount: 1, totalCount: 1 }],
+      screenGroupRollups: [{ screenSlug: "freestyle" as const, name: "Freestyle", average: 3, assessedCount: 1, totalCount: 2 }],
       starts: [{ slug: "track-start", name: "Track start", grade: { status: "graded" as const, grade: 3 as const } }],
       counts: { level1: 0, level2: 0, level3: 1, level4: 0, level5: 0, notLegal: 0, noConcept: 0 },
-      totalLevelsGained: 0,
+      totalLevelsGained: 1,
       skillsMastered: 0,
-      skillsLearned: 0,
+      skillsLearned: 1,
     },
   ],
   recentChanges: [],
@@ -136,8 +148,8 @@ const baseScoreHistory = {
 
 // ── Single-tree structure ────────────────────────────────────────────────
 
-describe("ParentSwimmerProgressContent — single-tree layout", () => {
-  it("renders exactly one layout root", () => {
+describe("ParentSwimmerProgressContent — single tree", () => {
+  it("renders exactly one layout root and one node per section", () => {
     render(
       <ParentSwimmerProgressContent
         swimmer={swimmer}
@@ -147,51 +159,14 @@ describe("ParentSwimmerProgressContent — single-tree layout", () => {
       />,
     );
     expect(screen.getAllByTestId("parent-progress-layout")).toHaveLength(1);
-  });
-
-  it("each section mounts exactly once — no duplicate mobile/desktop subtrees", () => {
-    render(
-      <ParentSwimmerProgressContent
-        swimmer={swimmer}
-        progress={baseProgress}
-        categories={[]}
-        scoreHistory={baseScoreHistory}
-      />,
-    );
-    // Testids from each section component appear once in the rendered tree.
     expect(screen.getAllByTestId("parent-progress-summary-card")).toHaveLength(1);
     expect(screen.getAllByTestId("parent-progress-recent-wins")).toHaveLength(1);
     expect(screen.getAllByTestId("parent-coach-focus-note")).toHaveLength(1);
     expect(screen.getAllByTestId("parent-progress-focus")).toHaveLength(1);
     expect(screen.getAllByTestId("parent-progress-snapshot")).toHaveLength(1);
-    expect(screen.getAllByTestId("parent-progress-starts")).toHaveLength(1);
+    expect(screen.getAllByTestId("parent-progress-where-she-stands")).toHaveLength(1);
     expect(screen.getAllByTestId("parent-progress-skills")).toHaveLength(1);
-  });
-
-  it("each section lives inside the grid area that matches its name", () => {
-    render(
-      <ParentSwimmerProgressContent
-        swimmer={swimmer}
-        progress={baseProgress}
-        categories={[]}
-        scoreHistory={baseScoreHistory}
-      />,
-    );
-    // Grid slot wrappers: summary, wins, note each wrap their section;
-    // focus/snapshot/starts/skills each are the sections themselves
-    // tagged with `[grid-area:*]`.
-    const assertGridArea = (element: Element, area: string) => {
-      // The arbitrary-value class contains the grid-area name.
-      expect(element.className).toMatch(new RegExp(`\\[grid-area:${area}\\]`));
-    };
-    // Each section's grid cell is either the section or its wrapper div.
-    assertGridArea(screen.getByTestId("parent-progress-summary-card").parentElement!, "summary");
-    assertGridArea(screen.getByTestId("parent-progress-recent-wins").parentElement!, "wins");
-    assertGridArea(screen.getByTestId("parent-coach-focus-note").parentElement!, "note");
-    assertGridArea(screen.getByTestId("parent-progress-focus"), "focus");
-    assertGridArea(screen.getByTestId("parent-progress-snapshot"), "snapshot");
-    assertGridArea(screen.getByTestId("parent-progress-starts"), "starts");
-    assertGridArea(screen.getByTestId("parent-progress-skills"), "skills");
+    expect(screen.getAllByTestId("parent-progress-starts")).toHaveLength(1);
   });
 
   it("every id in the rendered tree is unique", () => {
@@ -204,51 +179,166 @@ describe("ParentSwimmerProgressContent — single-tree layout", () => {
       />,
     );
     const nodes = document.querySelectorAll("[id]");
-    const ids: string[] = [];
-    for (const node of nodes) {
-      const id = node.getAttribute("id");
-      if (id !== null && id.length > 0) ids.push(id);
-    }
     const seen = new Set<string>();
     const duplicates: string[] = [];
-    for (const id of ids) {
+    for (const node of nodes) {
+      const id = node.getAttribute("id");
+      if (id === null || id.length === 0) continue;
       if (seen.has(id)) duplicates.push(id);
       else seen.add(id);
     }
     expect(duplicates, `duplicate ids found: ${duplicates.join(", ")}`).toEqual([]);
   });
-});
 
-// ── Focus cards row ──────────────────────────────────────────────────────
-
-describe("ParentSwimmerProgressContent — focus cards share a row", () => {
-  function render3(priorities: ProgressCoachingPriority[]) {
-    const progress = { ...baseProgress, coachingPriorities: priorities };
+  it("sections appear top-to-bottom in the order from the coach mock", () => {
     render(
       <ParentSwimmerProgressContent
         swimmer={swimmer}
-        progress={progress}
+        progress={baseProgress}
         categories={[]}
         scoreHistory={baseScoreHistory}
       />,
     );
-  }
-
-  it("with 1 priority: card-count=1 — the single card fills its row", () => {
-    render3([priority("a", "A")]);
-    const list = screen.getByTestId("parent-coach-focus-list");
-    expect(list.getAttribute("data-card-count")).toBe("1");
+    const orderedTestIds = [
+      "parent-progress-summary-card",
+      "parent-progress-recent-wins",
+      "parent-coach-focus-note",
+      "parent-progress-focus",
+      "parent-progress-snapshot",
+      "parent-progress-where-she-stands",
+      "parent-progress-skills",
+      "parent-progress-starts",
+    ];
+    const layout = screen.getByTestId("parent-progress-layout");
+    const positions = orderedTestIds.map((testid) => {
+      const node = layout.querySelector(`[data-testid="${testid}"]`);
+      expect(node, `missing ${testid}`).not.toBeNull();
+      // compareDocumentPosition ordering: iterate all candidates in DOM
+      // order and pick the first matching testid for stable comparison.
+      return positionIn(layout, node!);
+    });
+    for (let index = 1; index < positions.length; index += 1) {
+      expect(
+        positions[index]! > positions[index - 1]!,
+        `${orderedTestIds[index]} should come after ${orderedTestIds[index - 1]}`,
+      ).toBe(true);
+    }
   });
 
-  it("with 2 priorities: card-count=2 — row splits 50/50, no third-column gap", () => {
-    render3([priority("a", "A"), priority("b", "B")]);
-    const list = screen.getByTestId("parent-coach-focus-list");
-    expect(list.getAttribute("data-card-count")).toBe("2");
-  });
-
-  it("with 3 priorities: card-count=3 — never a 2+1 wrap", () => {
-    render3([priority("a", "A"), priority("b", "B"), priority("c", "C")]);
-    const list = screen.getByTestId("parent-coach-focus-list");
-    expect(list.getAttribute("data-card-count")).toBe("3");
+  it("no side-column artifacts linger (compact starts / compact golf / short radar labels)", () => {
+    render(
+      <ParentSwimmerProgressContent
+        swimmer={swimmer}
+        progress={baseProgress}
+        categories={[]}
+        scoreHistory={baseScoreHistory}
+      />,
+    );
+    expect(screen.queryByTestId("start-stat-tiles-compact")).toBeNull();
+    expect(screen.queryByTestId("parent-golf-score-compact-list")).toBeNull();
+    // Radar renders FULL labels only (no short label variant).
+    const shortVariant = document.querySelector('[data-variant="short"]');
+    expect(shortVariant).toBeNull();
   });
 });
+
+describe("ParentSwimmerProgressContent — golf visibility", () => {
+  it("hides the entire golf section (heading included) when no trends have scored points", () => {
+    render(
+      <ParentSwimmerProgressContent
+        swimmer={swimmer}
+        progress={baseProgress}
+        categories={[]}
+        scoreHistory={baseScoreHistory}
+        // No golfScore prop → defaults to empty trends array
+      />,
+    );
+    expect(screen.queryByTestId("parent-progress-golf")).toBeNull();
+    expect(screen.queryByText("Golf score")).toBeNull();
+  });
+
+  it("renders the golf section when at least one trend has a scored point", () => {
+    render(
+      <ParentSwimmerProgressContent
+        swimmer={swimmer}
+        progress={baseProgress}
+        categories={[]}
+        scoreHistory={baseScoreHistory}
+        golfScore={{
+          trends: [
+            {
+              skillSlug: "free-golf-score",
+              skillName: "Freestyle golf score",
+              byCategory: [
+                {
+                  category: "push_off_in_water",
+                  ageBands: null,
+                  points: [
+                    {
+                      ratedAt: "2026-11-10T18:00:00.000Z",
+                      sessionDate: "2026-11-10",
+                      grade: 3,
+                      timeSeconds: 14,
+                      strokeCountValue: 22,
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        }}
+      />,
+    );
+    expect(screen.getByTestId("parent-progress-golf")).toBeInTheDocument();
+    expect(screen.getByText("Golf score")).toBeInTheDocument();
+  });
+
+  it("hides the golf section when the only points are partial (time or strokes missing)", () => {
+    render(
+      <ParentSwimmerProgressContent
+        swimmer={swimmer}
+        progress={baseProgress}
+        categories={[]}
+        scoreHistory={baseScoreHistory}
+        golfScore={{
+          trends: [
+            {
+              skillSlug: "free-golf-score",
+              skillName: "Freestyle golf score",
+              byCategory: [
+                {
+                  category: "push_off_in_water",
+                  ageBands: null,
+                  points: [
+                    {
+                      ratedAt: "2026-11-10T18:00:00.000Z",
+                      sessionDate: "2026-11-10",
+                      grade: 3,
+                      timeSeconds: 14,
+                      strokeCountValue: null,
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        }}
+      />,
+    );
+    expect(screen.queryByTestId("parent-progress-golf")).toBeNull();
+  });
+});
+
+// Walk `layout` in document order and return the index of `target`.
+// Lets the order test compare positions of nested nodes across branches.
+function positionIn(layout: Element, target: Element): number {
+  const walker = document.createTreeWalker(layout, NodeFilter.SHOW_ELEMENT);
+  let index = 0;
+  let node = walker.nextNode();
+  while (node) {
+    if (node === target) return index;
+    index += 1;
+    node = walker.nextNode();
+  }
+  return -1;
+}

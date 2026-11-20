@@ -131,4 +131,40 @@ describe("CategoryRadar — label bounding boxes stay inside the viewBox", () =>
       else expect(anchor).toBe("middle");
     }
   });
+
+  it("renders full labels only (no short-label variant) by default", () => {
+    const { container } = render(<CategoryRadar categories={REAL_CATEGORIES} />);
+    const shortVariants = container.querySelectorAll("text[data-variant='short']");
+    expect(shortVariants).toHaveLength(0);
+    // Every real category name is present in full form.
+    const texts = Array.from(container.querySelectorAll("text[data-testid='category-radar-label']"));
+    const labelTexts = texts
+      .map((textEl) =>
+        Array.from(textEl.querySelectorAll("tspan"))
+          .map((tspan) => tspan.textContent ?? "")
+          .join(" "),
+      )
+      .map((line) => line.replace(/\s+/g, " ").trim());
+    for (const category of REAL_CATEGORIES) {
+      expect(labelTexts).toContain(category.name);
+    }
+  });
+
+  it("renders both the current and the first-evaluation shapes when the overlay is passed", () => {
+    const first = REAL_CATEGORIES.map(() => ({ average: 1.5, assessedCount: 1 }));
+    const { container } = render(
+      <CategoryRadar categories={REAL_CATEGORIES} firstEvaluation={first} />,
+    );
+    // Current shape is the filled accent polygon; first evaluation is a
+    // dashed outline marked with data-testid="category-radar-first-evaluation".
+    const polygons = container.querySelectorAll("polygon");
+    // Rings (5) + current shape + first-evaluation overlay = 7 polygons.
+    expect(polygons.length).toBeGreaterThanOrEqual(7);
+    expect(container.querySelector('[data-testid="category-radar-first-evaluation"]')).not.toBeNull();
+  });
+
+  it("omits the first-evaluation overlay when no overlay is passed", () => {
+    const { container } = render(<CategoryRadar categories={REAL_CATEGORIES} />);
+    expect(container.querySelector('[data-testid="category-radar-first-evaluation"]')).toBeNull();
+  });
 });

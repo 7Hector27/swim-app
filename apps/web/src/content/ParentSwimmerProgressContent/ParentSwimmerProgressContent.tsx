@@ -8,6 +8,7 @@ import type {
 } from "@swim-app/shared";
 import InlineError from "@/components/InlineError";
 import StartsSection from "@/components/StartsSection";
+import WhereSheStands, { buildLanes } from "@/components/WhereSheStands";
 import CategoryRadar from "@/content/SwimmerProgressContent/charts/CategoryRadar";
 import { firstScreenGroupSnapshot, latestScreenGroupSnapshot } from "@/lib/progressCharts";
 import { buildCatalogIndex } from "@/lib/screenGroups";
@@ -46,21 +47,20 @@ const EMPTY_SCORE_HISTORY: ParentScoreHistoryResponse = {
 
 const EMPTY_GOLF: ParentGolfScoreTrendsResponse = { trends: [] };
 
-// Single-tree responsive layout. Each section mounts once; the root
-// grid swaps grid-template-areas per breakpoint:
+// Parent progress page, laid out to match the coach mock minus coach-only
+// sections (faults, session grid, evaluations-by-week, coach notes).
 //
-//   Phone (≤768px): one column, DOM reading order.
-//   Tablet (769-1247px): 2-col rows for snapshot+starts; wins and
-//     focus render as card rows internally.
-//   Desktop (≥1248px): 12-col grid with Summary+Note stacked in the
-//     left 8 cols / Wins stretched on the right 4; focus row full-
-//     width; Skills left 8 / Snapshot+Starts+Golf stacked right 4.
+// Order on every breakpoint:
+//   1. Header
+//   2. Top row — Summary (2/3) + Wins (1/3) on tablet+, stacked on phone
+//   3. Coach's note (when present) + Working on next (3 equal cards)
+//   4. Snapshot (half) + Where she stands (half) on tablet+, stacked phone
+//   5. Skills (full width)
+//   6. Starts (full width, full names, no session grid)
+//   7. Golf score (full width) — the whole section is absent when the
+//      swimmer has no golf scores
 //
-// Dual-form components (Wins list vs cards, Starts full vs compact,
-// Radar long vs short labels, Golf cards vs compact list) each handle
-// their own viewport switch internally — one DOM instance, one copy
-// of their state (Starts tab selection, open skill row) that survives
-// a breakpoint change.
+// Each section mounts exactly once; there's no breakpoint-cloned subtree.
 export default function ParentSwimmerProgressContent({
   swimmer,
   progress,
@@ -71,6 +71,7 @@ export default function ParentSwimmerProgressContent({
 }: ParentSwimmerProgressContentProps) {
   const categorySnapshot = latestScreenGroupSnapshot(scoreHistory);
   const firstSnapshot = firstScreenGroupSnapshot(scoreHistory);
+  const lanes = buildLanes(firstSnapshot, categorySnapshot);
 
   const startComponentSlugs = new Set(
     progress.startProgress.flatMap((start) => start.components.map((component) => component.slug)),
@@ -101,14 +102,24 @@ export default function ParentSwimmerProgressContent({
   if (sectionFailures.scoreHistory) failedSections.push("score history");
   if (sectionFailures.golfScore) failedSections.push("golf score");
 
-  const golfVisible = golfScore.trends.length > 0;
+  // Golf hides the whole section (heading included) when there's nothing
+  // meaningful to show. A trend counts as "has data" only when at least
+  // one point in it carries both time + strokes — a partial measurement
+  // that can't form a golf score shouldn't surface the section at all.
+  const golfVisible = golfScore.trends.some((trend) =>
+    trend.byCategory.some((cat) =>
+      cat.points.some((point) => point.timeSeconds !== null && point.strokeCountValue !== null),
+    ),
+  );
   const startsVisible = progress.startProgress.length > 0;
-  const snapshotVisible = categorySnapshot.length > 0;
+  // Both charts in row 3 share a single visibility toggle so the row
+  // never leaves a lonely chart hanging.
+  const groupRowVisible = categorySnapshot.length > 0;
 
   return (
     <div className="flex flex-col flex-1">
       <main className="flex-1 px-page pt-8 pb-20 tablet:pb-8">
-        <div className="mx-auto max-w-content flex flex-col gap-6">
+        <div className="mx-auto max-w-content flex flex-col gap-6" data-testid="parent-progress-layout">
           <div className="flex flex-col gap-3">
             <a href="/dashboard" className="text-sm underline text-link">
               ← Dashboard
@@ -135,21 +146,26 @@ export default function ParentSwimmerProgressContent({
           )}
 
           {hasAnyData && (
-            <div
-              className="parent-progress-grid"
-              data-testid="parent-progress-layout"
-            >
-              <div className="[grid-area:summary]">
-                <SummaryCard data={summaryCard} firstName={swimmer.firstName} />
+            <>
+              {/* Row 2 — Summary (2/3) + Wins (1/3) on tablet+ */}
+              <div
+                className="grid grid-cols-1 tablet:grid-cols-3 gap-6 items-start"
+                data-testid="parent-progress-top-row"
+              >
+                <div className="tablet:col-span-2 min-w-0">
+                  <SummaryCard data={summaryCard} firstName={swimmer.firstName} />
+                </div>
+                <div className="tablet:col-span-1 min-w-0">
+                  <RecentWins wins={recentWins} swimmerFirstName={swimmer.firstName} />
+                </div>
               </div>
-              <div className="[grid-area:wins]">
-                <RecentWins wins={recentWins} swimmerFirstName={swimmer.firstName} />
-              </div>
-              <div className="[grid-area:note]">
+
+              {/* Row 3 — Coach's note (when present) + Working on next */}
+              {progress.latestCoachingPriority && (
                 <CoachNoteCard latestPriority={progress.latestCoachingPriority} />
-              </div>
+              )}
               <section
-                className="[grid-area:focus] flex flex-col gap-3"
+                className="flex flex-col gap-3"
                 aria-labelledby="parent-focus-heading"
                 data-testid="parent-progress-focus"
               >
@@ -167,53 +183,53 @@ export default function ParentSwimmerProgressContent({
                   catalogIndex={catalogIndex}
                 />
               </section>
-              {snapshotVisible && (
-                <section
-                  className="[grid-area:snapshot] rounded-lg border p-4 flex flex-col gap-2"
-                  style={{ backgroundColor: "var(--color-background)", borderColor: "var(--color-border)" }}
-                  aria-labelledby="parent-snapshot-heading"
-                  data-testid="parent-progress-snapshot"
+
+              {/* Row 4 — Snapshot + Where she stands */}
+              {groupRowVisible && (
+                <div
+                  className="grid grid-cols-1 tablet:grid-cols-2 gap-6 items-start"
+                  data-testid="parent-progress-group-row"
                 >
-                  <h2
-                    id="parent-snapshot-heading"
-                    className="text-base font-heading text-text"
-                    style={{ fontVariationSettings: "\"SOFT\" 100, \"WONK\" 0" }}
+                  <section
+                    className="flex flex-col gap-3 min-w-0"
+                    aria-labelledby="parent-snapshot-heading"
+                    data-testid="parent-progress-snapshot"
                   >
-                    Snapshot
-                  </h2>
-                  <div className="mx-auto w-full max-w-[360px] tablet:max-w-[400px] desktop:max-w-[280px]">
+                    <h2
+                      id="parent-snapshot-heading"
+                      className="text-lg font-heading text-text"
+                      style={{ fontVariationSettings: "\"SOFT\" 100, \"WONK\" 0" }}
+                    >
+                      Snapshot
+                    </h2>
                     <CategoryRadar
                       categories={categorySnapshot}
                       {...(firstSnapshot.length > 0 && { firstEvaluation: firstSnapshot })}
-                      shortLabelsOnDesktop
                     />
-                  </div>
-                </section>
-              )}
-              {startsVisible && (
-                <section
-                  className="[grid-area:starts] flex flex-col gap-3"
-                  aria-labelledby="parent-starts-heading"
-                  data-testid="parent-progress-starts"
-                >
-                  <h2
-                    id="parent-starts-heading"
-                    className="text-base font-heading text-text"
-                    style={{ fontVariationSettings: "\"SOFT\" 100, \"WONK\" 0" }}
+                  </section>
+                  <section
+                    className="flex flex-col gap-3 min-w-0"
+                    aria-labelledby="parent-where-heading"
+                    data-testid="parent-progress-where-she-stands"
                   >
-                    Starts
-                  </h2>
-                  <StartsSection
-                    startProgress={progress.startProgress}
-                    swimmerSkills={progress.skills.map((skill) => ({ slug: skill.slug, history: skill.history }))}
-                    showSessionGrid={false}
-                    showStillToGrade={false}
-                    compactOnDesktop
-                  />
-                </section>
+                    <h2
+                      id="parent-where-heading"
+                      className="text-lg font-heading text-text"
+                      style={{ fontVariationSettings: "\"SOFT\" 100, \"WONK\" 0" }}
+                    >
+                      Where she stands
+                    </h2>
+                    <WhereSheStands lanes={lanes} />
+                    <p className="text-xs text-text-secondary">
+                      Ring is the first evaluation, dot is now. The number is the average and how many skills are rated.
+                    </p>
+                  </section>
+                </div>
               )}
+
+              {/* Row 5 — Skills */}
               <section
-                className="[grid-area:skills] flex flex-col gap-3"
+                className="flex flex-col gap-3"
                 aria-labelledby="parent-skills-heading"
                 data-testid="parent-progress-skills"
               >
@@ -232,81 +248,54 @@ export default function ParentSwimmerProgressContent({
                   rollups={latestScreenGroupRollups}
                 />
               </section>
+
+              {/* Row 6 — Starts */}
+              {startsVisible && (
+                <section
+                  className="flex flex-col gap-3"
+                  aria-labelledby="parent-starts-heading"
+                  data-testid="parent-progress-starts"
+                >
+                  <h2
+                    id="parent-starts-heading"
+                    className="text-lg font-heading text-text"
+                    style={{ fontVariationSettings: "\"SOFT\" 100, \"WONK\" 0" }}
+                  >
+                    Starts
+                  </h2>
+                  <StartsSection
+                    startProgress={progress.startProgress}
+                    swimmerSkills={progress.skills.map((skill) => ({ slug: skill.slug, history: skill.history }))}
+                    showSessionGrid={false}
+                    showStillToGrade={false}
+                  />
+                </section>
+              )}
+
+              {/* Row 7 — Golf score (section hidden entirely when empty) */}
               {golfVisible && (
                 <section
-                  className="[grid-area:golf] rounded-lg border p-4 flex flex-col gap-3 desktop:rounded-lg desktop:border desktop:p-4"
-                  style={{ backgroundColor: "var(--color-background)", borderColor: "var(--color-border)" }}
+                  className="flex flex-col gap-3"
                   aria-labelledby="parent-golf-heading"
                   data-testid="parent-progress-golf"
                 >
                   <h2
                     id="parent-golf-heading"
-                    className="text-base font-heading text-text"
+                    className="text-lg font-heading text-text"
                     style={{ fontVariationSettings: "\"SOFT\" 100, \"WONK\" 0" }}
                   >
                     Golf score
                   </h2>
+                  <p className="text-xs text-text-secondary">
+                    Time plus strokes for one 25 at race pace. Lower is better.
+                  </p>
                   <GolfScoreList trends={golfScore.trends} />
                 </section>
               )}
-            </div>
+            </>
           )}
         </div>
       </main>
-      <ParentProgressGridStyles />
     </div>
-  );
-}
-
-// Grid-template-areas definitions kept in one inline <style> so the
-// three breakpoints' layouts live together next to the component they
-// drive. Using Tailwind arbitrary values here would produce an
-// unreadable classname 300 characters long.
-function ParentProgressGridStyles() {
-  return (
-    <style>{`
-      .parent-progress-grid {
-        display: grid;
-        gap: 1.5rem;
-        grid-template-columns: 1fr;
-        grid-template-areas:
-          "summary"
-          "wins"
-          "note"
-          "focus"
-          "snapshot"
-          "starts"
-          "skills"
-          "golf";
-        align-items: start;
-      }
-
-      @media (min-width: 769px) {
-        .parent-progress-grid {
-          grid-template-columns: 1fr 1fr;
-          grid-template-areas:
-            "summary summary"
-            "wins wins"
-            "note note"
-            "focus focus"
-            "snapshot starts"
-            "skills skills"
-            "golf golf";
-        }
-      }
-
-      @media (min-width: 1248px) {
-        .parent-progress-grid {
-          grid-template-columns: repeat(12, minmax(0, 1fr));
-          grid-template-areas:
-            "summary summary summary summary summary summary summary summary wins wins wins wins"
-            "note note note note note note note note wins wins wins wins"
-            "focus focus focus focus focus focus focus focus focus focus focus focus"
-            "skills skills skills skills skills skills skills skills snapshot snapshot snapshot snapshot"
-            "skills skills skills skills skills skills skills skills starts starts starts starts"
-            "skills skills skills skills skills skills skills skills golf golf golf golf";
-        }
-      }
-    `}</style>
   );
 }

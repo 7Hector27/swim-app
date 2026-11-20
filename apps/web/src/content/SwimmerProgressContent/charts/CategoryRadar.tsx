@@ -8,17 +8,12 @@ interface CategoryRadarProps {
   // Unassessed-at-first axes collapse to the center so the shape stays
   // closed; a null array (default) hides the overlay entirely.
   firstEvaluation?: Array<{ average: number | null; assessedCount: number }>;
-  // When the radar renders in a narrow container (desktop side column,
-  // phone), the full "Water confidence" / "Starts and turns" labels
+  // When the radar renders in a narrow container (coach swimmer profile
+  // card), the full "Water confidence" / "Starts and turns" labels
   // collide with the shape. Passing shortLabels swaps every axis label
   // for its short form ("Water" / "Starts") while the SVG's aria-label
   // keeps the full names so screen readers still hear them.
   shortLabels?: boolean;
-  // Renders BOTH label variants inside the SVG and toggles visibility
-  // via a viewport media query so the component mounts once and still
-  // flips labels at the desktop breakpoint. Used by the parent page
-  // where the radar sits in a narrow 4-col grid area on desktop.
-  shortLabelsOnDesktop?: boolean;
 }
 
 // Short form of each category name used when `shortLabels` is on. Keys
@@ -94,7 +89,7 @@ function splitLabel(name: string): string[] {
 // Radar snapshot of category averages, 1-5 scale.
 // Unassessed categories draw at the center and dim their axis label; the
 // polygon still closes so the shape stays coherent.
-export default function CategoryRadar({ categories, firstEvaluation, shortLabels = false, shortLabelsOnDesktop = false }: CategoryRadarProps) {
+export default function CategoryRadar({ categories, firstEvaluation, shortLabels = false }: CategoryRadarProps) {
   if (categories.length === 0) return null;
   const step = (Math.PI * 2) / categories.length;
 
@@ -162,15 +157,6 @@ export default function CategoryRadar({ categories, firstEvaluation, shortLabels
         }
         @media (min-width: 1248px) {
           .category-radar-label { font-size: ${FONT_SIZE_DESKTOP}px; }
-        }
-        /* When shortLabelsOnDesktop is on the component renders both
-           label variants; hide the one that doesn't apply at each
-           viewport so screen readers still see both (via aria-label)
-           and only one visual form renders at a time. */
-        .category-radar-label-short { display: none; }
-        @media (min-width: 1248px) {
-          .category-radar-label-full { display: none; }
-          .category-radar-label-short { display: inline; }
         }
       `}</style>
 
@@ -296,48 +282,6 @@ export default function CategoryRadar({ categories, firstEvaluation, shortLabels
                 </tspan>
               ))}
             </text>
-          );
-        }
-        if (shortLabelsOnDesktop) {
-          const fullBaseY = labelY + topBiasFor(fullLines.length);
-          const shortBaseY = labelY + topBiasFor(shortLines.length);
-          return (
-            <g key={`label-${index}`}>
-              <text
-                x={labelX}
-                y={fullBaseY}
-                textAnchor={textAnchor}
-                fontWeight={500}
-                fill={fill}
-                opacity={opacity}
-                className="category-radar-label category-radar-label-full"
-                data-testid="category-radar-label"
-                data-variant="full"
-              >
-                {fullLines.map((line, lineIndex) => (
-                  <tspan key={lineIndex} x={labelX} dy={lineIndex === 0 ? 0 : LINE_HEIGHT}>
-                    {line}
-                  </tspan>
-                ))}
-              </text>
-              <text
-                x={labelX}
-                y={shortBaseY}
-                textAnchor={textAnchor}
-                fontWeight={500}
-                fill={fill}
-                opacity={opacity}
-                className="category-radar-label category-radar-label-short"
-                data-testid="category-radar-label"
-                data-variant="short"
-              >
-                {shortLines.map((line, lineIndex) => (
-                  <tspan key={lineIndex} x={labelX} dy={lineIndex === 0 ? 0 : LINE_HEIGHT}>
-                    {line}
-                  </tspan>
-                ))}
-              </text>
-            </g>
           );
         }
         const baseY = labelY + topBiasFor(fullLines.length);

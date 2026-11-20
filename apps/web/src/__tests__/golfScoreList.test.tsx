@@ -74,12 +74,12 @@ describe("GolfScoreList — populated", () => {
     ],
   };
 
-  it("renders both the card grid (phone/tablet) and the compact list (desktop)", () => {
+  it("renders one card per stroke in a responsive card grid", () => {
     render(<GolfScoreList trends={[twoCategoriesTrend]} />);
     expect(screen.getByTestId("parent-golf-score-cards")).toBeInTheDocument();
-    expect(screen.getByTestId("parent-golf-score-compact-list")).toBeInTheDocument();
-    // Both forms carry the stroke name.
     expect(screen.getAllByText("Freestyle golf score").length).toBeGreaterThan(0);
+    // No compact-list form on the rebuilt parent page.
+    expect(screen.queryByTestId("parent-golf-score-compact-list")).toBeNull();
   });
 
   it("surfaces the category switch when more than one category has data", () => {
@@ -128,7 +128,7 @@ describe("GolfScoreList — populated", () => {
 
   it("change-label: shows 'Down 2.5 since Sep' for a two-point improving trend", () => {
     render(<GolfScoreList trends={[twoCategoriesTrend]} />);
-    const list = screen.getByTestId("parent-golf-score-compact-list");
-    expect(list.textContent ?? "").toMatch(/Down 2\.5 since Sep/);
+    const cards = screen.getByTestId("parent-golf-score-cards");
+    expect(cards.textContent ?? "").toMatch(/Down 2\.5 since Sep/);
   });
 });

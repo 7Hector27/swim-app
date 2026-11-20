@@ -26,7 +26,14 @@ import { vi } from "vitest";
 vi.mock("@/components/SiteNav", () => ({ default: () => null }));
 vi.mock("@/components/LevelLadder", () => ({ default: () => null }));
 vi.mock("@/components/StartsSection", () => ({ default: () => null }));
-vi.mock("@/content/SwimmerProgressContent/charts/CategoryRadar", () => ({ default: () => null }));
+// The radar provides its own light-surface background on its SVG root,
+// so the test mock needs to emit a node carrying that token — otherwise
+// the snapshot section has nothing to inspect.
+vi.mock("@/content/SwimmerProgressContent/charts/CategoryRadar", () => ({
+  default: () => (
+    <div data-testid="category-radar-mock" style={{ backgroundColor: "var(--color-surface-soft)" }} />
+  ),
+}));
 
 const LIGHT_SURFACE_TOKENS = new Set(["--color-background", "--color-surface-soft"]);
 const DARK_SURFACE_TOKENS = new Set(["--color-card", "--color-section", "--color-ink"]);
@@ -170,7 +177,12 @@ describe("ParentSwimmerProgressContent — token pair contrast", () => {
       />,
     );
     const snapshot = screen.getByTestId("parent-progress-snapshot");
-    const bg = readStyleToken(snapshot, "background-color");
+    // The snapshot section itself has no card wrapper — the radar SVG
+    // inside carries the light-surface background so it reads as a card
+    // without being nested inside another one.
+    const surfaceNode = snapshot.querySelector('[style*="background-color"]');
+    expect(surfaceNode).not.toBeNull();
+    const bg = readStyleToken(surfaceNode as Element, "background-color");
     expect(bg && DARK_SURFACE_TOKENS.has(bg)).toBe(false);
     expect(bg && LIGHT_SURFACE_TOKENS.has(bg)).toBe(true);
   });

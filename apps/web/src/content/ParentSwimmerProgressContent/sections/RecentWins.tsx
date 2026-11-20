@@ -5,18 +5,9 @@ interface RecentWinsProps {
   swimmerFirstName: string;
 }
 
-// Up to three recent wins. Switches between two visual forms via
-// viewport CSS so the component mounts once and keeps a single DOM
-// node per section:
-//
-//   - Phone + desktop: stacked list inside a single card. Desktop
-//     uses this form because the wins sit in the narrow right column
-//     of the 12-col grid where cards would be cramped.
-//   - Tablet (769-1247px): 1-up / 2-up / 3-up card grid matching the
-//     actual win count so the row never leaves a lonely third column.
-//
-// Empty state carries the "Wins will show up here as <name> levels
-// up." copy; CSS routes it to the right surface regardless of form.
+// Up to three recent wins as a stacked list inside one card. The section
+// lives in the top-row 1/3 column on tablet+ and a stack of its own on
+// phone — a list reads at every width.
 export default function RecentWins({ wins, swimmerFirstName }: RecentWinsProps) {
   return (
     <section
@@ -41,59 +32,28 @@ export default function RecentWins({ wins, swimmerFirstName }: RecentWinsProps) 
           </p>
         </div>
       ) : (
-        <>
-          {/* List variant — visible on phone and on desktop (hidden
-              only at the tablet range). */}
-          <div
-            className="tablet:max-desktop:hidden rounded-lg border h-full"
-            style={{ backgroundColor: "var(--color-background)", borderColor: "var(--color-border)" }}
-            data-testid="parent-recent-wins-list"
-          >
-            <ul className="flex flex-col h-full">
-              {wins.map((win, index) => (
-                <li
-                  key={`${win.skillSlug}-${win.kind}-${index}`}
-                  className="flex items-center gap-3 px-4 py-3 flex-1"
-                  style={index > 0 ? { borderTop: "1px solid var(--color-border)" } : undefined}
-                  data-testid="parent-recent-win"
-                >
-                  <WinIcon kind={win.kind} />
-                  <div className="flex flex-col gap-0.5 min-w-0 flex-1">
-                    <span className="text-sm font-semibold text-text truncate">{win.headline}</span>
-                    <span className="text-xs text-text-secondary">{formatShortMonthDay(win.sessionDate)}</span>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </div>
-          {/* Cards variant — tablet only. Column count matches the
-              actual win count so 1/2 priorities don't leave gaps. */}
-          <div
-            className={`hidden tablet:max-desktop:grid gap-3 ${
-              wins.length === 1
-                ? "tablet:grid-cols-1"
-                : wins.length === 2
-                  ? "tablet:grid-cols-2"
-                  : "tablet:grid-cols-3"
-            }`}
-            data-testid="parent-recent-wins-cards"
-          >
+        <div
+          className="rounded-lg border h-full"
+          style={{ backgroundColor: "var(--color-background)", borderColor: "var(--color-border)" }}
+          data-testid="parent-recent-wins-list"
+        >
+          <ul className="flex flex-col h-full">
             {wins.map((win, index) => (
-              <div
+              <li
                 key={`${win.skillSlug}-${win.kind}-${index}`}
-                className="rounded-lg border p-4 flex items-start gap-3"
-                style={{ backgroundColor: "var(--color-background)", borderColor: "var(--color-border)" }}
+                className="flex items-center gap-3 px-4 py-3 flex-1"
+                style={index > 0 ? { borderTop: "1px solid var(--color-border)" } : undefined}
                 data-testid="parent-recent-win"
               >
                 <WinIcon kind={win.kind} />
                 <div className="flex flex-col gap-0.5 min-w-0 flex-1">
-                  <span className="text-sm font-semibold text-text">{win.headline}</span>
+                  <span className="text-sm font-semibold text-text truncate">{win.headline}</span>
                   <span className="text-xs text-text-secondary">{formatShortMonthDay(win.sessionDate)}</span>
                 </div>
-              </div>
+              </li>
             ))}
-          </div>
-        </>
+          </ul>
+        </div>
       )}
     </section>
   );

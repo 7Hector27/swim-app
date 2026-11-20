@@ -20,20 +20,12 @@ const CATEGORY_LABELS: Record<GolfScoreCategory, string> = {
 
 const CATEGORY_ORDER: GolfScoreCategory[] = ["push_off_in_water", "deck_dive", "block_dive"];
 
-// Parent-side golf-score renderer. Switches between two visual forms
-// via viewport CSS:
+// One card per stroke across a responsive grid. The parent page's Golf
+// section only mounts when there's at least one scored trend, so empty
+// states don't reach this component.
 //
-//   - Desktop (≥1248px): compact one-row-per-stroke list used in the
-//     desktop side column. Each row is stroke / latest score / change
-//     since the first score.
-//   - Phone / tablet: 2-up or 3-up card grid.
-//
-// Category switch only appears when more than one category has data.
-// Returns null when the response has no trends, so the layout section
-// can live-wrapper the list and the whole section hides naturally.
+// The category switch only appears when more than one category has data.
 export default function GolfScoreList({ trends }: GolfScoreListProps) {
-  // Which categories actually have at least one point across all
-  // trends. The tab strip only renders when there's more than one.
   const categoriesPresent = useMemo(() => collectCategoriesPresent(trends), [trends]);
   const [activeCategory, setActiveCategory] = useState<GolfScoreCategory | null>(
     categoriesPresent[0] ?? null,
@@ -41,8 +33,6 @@ export default function GolfScoreList({ trends }: GolfScoreListProps) {
 
   if (trends.length === 0 || categoriesPresent.length === 0) return null;
 
-  // If the selection is stale (data changed and the selected category
-  // is gone), fall back to the first available one.
   const safeActive = categoriesPresent.includes(activeCategory as GolfScoreCategory)
     ? (activeCategory as GolfScoreCategory)
     : (categoriesPresent[0] as GolfScoreCategory);
@@ -88,32 +78,15 @@ export default function GolfScoreList({ trends }: GolfScoreListProps) {
           })}
         </div>
       )}
-      {/* Card grid: visible on phone and tablet; hidden on desktop. */}
       <div
-        className="grid grid-cols-1 gap-3 tablet:grid-cols-2 desktop:hidden"
+        className="grid gap-3"
+        style={{ gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" }}
         data-testid="parent-golf-score-cards"
       >
         {visibleTrends.map(({ trend, category }) => (
           <CardRow key={trend.skillSlug} trend={trend} category={category} />
         ))}
       </div>
-      {/* Compact list: hidden on phone/tablet; visible on desktop. */}
-      <ul
-        className="hidden desktop:flex flex-col gap-2 text-sm"
-        data-testid="parent-golf-score-compact-list"
-      >
-        {visibleTrends.map(({ trend, category }, index) => (
-          <li
-            key={trend.skillSlug}
-            className="flex items-baseline justify-between gap-2"
-            style={index > 0 ? { borderTop: "1px solid var(--color-border)", paddingTop: "0.5rem" } : undefined}
-          >
-            <span className="text-text truncate">{trend.skillName}</span>
-            <span className="tabular-nums font-semibold text-text">{formatScore(latestScore(category.points))}</span>
-            <span className="text-xs text-text-secondary">{changeLabel(category.points)}</span>
-          </li>
-        ))}
-      </ul>
     </div>
   );
 }
@@ -126,10 +99,13 @@ function CardRow({ trend, category }: { trend: ParentGolfScoreTrend; category: P
     <div
       className="rounded-lg border p-4 flex flex-col gap-1"
       style={{ backgroundColor: "var(--color-background)", borderColor: "var(--color-border)" }}
+      data-testid="parent-golf-score-card"
     >
       <span className="text-xs font-semibold text-text">{trend.skillName}</span>
-      <span className="font-heading text-2xl font-semibold text-text tabular-nums">{formatScore(latest)}</span>
-      <span className="text-xs text-text-secondary">{changeLabel(category.points)}</span>
+      <div className="flex items-baseline gap-2">
+        <span className="font-heading text-2xl font-semibold text-text tabular-nums">{formatScore(latest)}</span>
+        <span className="text-xs text-text-secondary">{changeLabel(category.points)}</span>
+      </div>
     </div>
   );
 }
@@ -189,9 +165,16 @@ function collectCategoriesPresent(
   const present = new Set<GolfScoreCategory>();
   for (const trend of trends) {
     for (const categoryTrend of trend.byCategory) {
-      if (categoryTrend.points.length > 0) present.add(categoryTrend.category);
+      // "Present" means at least one scorable point — both time and strokes
+      // recorded. A partially-captured point shouldn't surface the category.
+      if (
+        categoryTrend.points.some(
+          (point) => point.timeSeconds !== null && point.strokeCountValue !== null,
+        )
+      ) {
+        present.add(categoryTrend.category);
+      }
     }
   }
-  // Preserve a stable visual order rather than the Set's insertion order.
   return CATEGORY_ORDER.filter((category) => present.has(category));
 }

@@ -22,31 +22,13 @@ interface StartsSectionProps {
   // parent hides both. Props forwarded verbatim to StartDiveCard.
   showSessionGrid?: boolean;
   showStillToGrade?: boolean;
-  // Narrow-column form. Short tab names ("Track", "Back", "Relay"),
-  // single-line stat under the arc instead of two tiles.
-  compact?: boolean;
-  // Renders both tab-name forms + both stat-tile forms inside the SVG
-  // and toggles visibility via a viewport media query. Used by the
-  // parent page so the Starts section mounts once and still switches
-  // to the compact form in the desktop 4-col side column.
-  compactOnDesktop?: boolean;
 }
-
-// Short-form start names for the compact variant. Keys match the catalog
-// `-start` parent slugs.
-const SHORT_START_NAME: Record<string, string> = {
-  "track-start": "Track",
-  "back-start": "Back",
-  "relay-start": "Relay",
-};
 
 export default function StartsSection({
   startProgress,
   swimmerSkills,
   showSessionGrid = true,
   showStillToGrade = true,
-  compact = false,
-  compactOnDesktop = false,
 }: StartsSectionProps) {
   const initial = pickInitialStartSlug(startProgress);
   const [activeSlug, setActiveSlug] = useState<string | null>(initial);
@@ -86,17 +68,7 @@ export default function StartsSection({
               data-testid={`starts-tab-${start.slug}`}
             >
               <span>
-                {compact ? (
-                  SHORT_START_NAME[start.slug] ?? start.name
-                ) : compactOnDesktop ? (
-                  <>
-                    {/* Full name on phone + tablet, short on desktop. */}
-                    <span className="desktop:hidden">{start.name}</span>
-                    <span className="hidden desktop:inline">{SHORT_START_NAME[start.slug] ?? start.name}</span>
-                  </>
-                ) : (
-                  start.name
-                )}
+                {start.name}
                 <span className="opacity-80"> · {tabStatusLabel(start)}</span>
               </span>
             </button>
@@ -113,8 +85,6 @@ export default function StartsSection({
           swimmerSkills={swimmerSkills}
           showSessionGrid={showSessionGrid}
           showStillToGrade={showStillToGrade}
-          compact={compact}
-          compactOnDesktop={compactOnDesktop}
         />
       </div>
     </div>
