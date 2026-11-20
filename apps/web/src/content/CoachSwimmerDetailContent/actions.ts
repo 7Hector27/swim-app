@@ -92,17 +92,18 @@ export async function addSwimForSwimmer(
   if (!session) redirect("/login");
 
   const meetId = formData.get("meetId");
-  const swimType = meetId ? "meet" : "practice";
+  if (typeof meetId !== "string" || meetId === "") {
+    return { status: "error", message: "Pick a meet for this swim." };
+  }
 
   const raw: Record<string, unknown> = {
-    swimType,
+    meetId,
     eventDistance: Number(formData.get("eventDistance")),
     eventStroke: formData.get("eventStroke"),
     course: formData.get("course"),
     timeString: formData.get("timeString"),
     swumOn: formData.get("swumOn"),
   };
-  if (meetId) raw["meetId"] = meetId;
 
   const parsed = CreateMeetSwimBodySchema.safeParse(raw);
   if (!parsed.success) {
@@ -129,6 +130,15 @@ export async function addSwimForSwimmer(
     }
     if (body.error === "invalid_time") {
       return { status: "error", message: "Invalid time. Use M:SS.HH or SS.HH (e.g. 1:02.34 or 58.30)." };
+    }
+    if (body.error === "time_out_of_range") {
+      return { status: "error", message: "That time is outside the valid range." };
+    }
+    if (body.error === "swum_on_before_meet") {
+      return { status: "error", message: "The swim date can't be before the meet date." };
+    }
+    if (body.error === "duplicate_swim") {
+      return { status: "error", message: "That exact swim is already saved for this meet." };
     }
     return { status: "error", message: "Invalid swim data. Please check your entries." };
   }

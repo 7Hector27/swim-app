@@ -55,6 +55,8 @@ const testMeet = {
 const testSwim = {
   id: SWIM_ID,
   swimmerId: SWIMMER_ID,
+  swimmerFirstName: "Alex",
+  swimmerLastName: "Smith",
   swimType: "meet" as const,
   meetId: MEET_ID,
   meetName: "Spring Invitational",

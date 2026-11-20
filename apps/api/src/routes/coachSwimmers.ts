@@ -37,6 +37,7 @@ import {
   CreateMeetSwimBodySchema,
   PatchMeetSwimBodySchema,
   PatchCoachSwimmerBodySchema,
+  MAX_SWIM_HUNDREDTHS,
   calculateAge,
   todayLA,
   type CoachSwimmerDetail,
@@ -613,38 +614,54 @@ coachSwimmersRouter.post(
       res.status(422).json({ error: "invalid_time" });
       return;
     }
+    if (timeHundredths <= 0 || timeHundredths > MAX_SWIM_HUNDREDTHS) {
+      res.status(422).json({ error: "time_out_of_range" });
+      return;
+    }
 
-    let meetName: string | null = null;
-    let meetDate: string | null = null;
+    const meetRows = await db
+      .select({ id: meets.id, name: meets.name, meetDate: meets.meetDate })
+      .from(meets)
+      .where(eq(meets.id, body.meetId))
+      .limit(1);
 
-    if (body.swimType === "meet" && body.meetId !== undefined) {
-      const meetRows = await db
-        .select({ id: meets.id, name: meets.name, meetDate: meets.meetDate })
-        .from(meets)
-        .where(eq(meets.id, body.meetId))
-        .limit(1);
+    const meet = meetRows[0];
+    if (!meet) {
+      res.status(422).json({ error: "meet_not_found" });
+      return;
+    }
 
-      const meet = meetRows[0];
-      if (!meet) {
-        res.status(422).json({ error: "meet_not_found" });
-        return;
-      }
+    if (body.swumOn < meet.meetDate) {
+      res.status(422).json({ error: "swum_on_before_meet" });
+      return;
+    }
 
-      if (body.swumOn < meet.meetDate) {
-        res.status(422).json({ error: "swum_on_before_meet" });
-        return;
-      }
+    const duplicates = await db
+      .select({ id: meetSwims.id })
+      .from(meetSwims)
+      .where(
+        and(
+          eq(meetSwims.swimmerId, swimmerId),
+          eq(meetSwims.meetId, body.meetId),
+          eq(meetSwims.eventDistance, body.eventDistance),
+          eq(meetSwims.eventStroke, body.eventStroke),
+          eq(meetSwims.course, body.course),
+          eq(meetSwims.timeHundredths, timeHundredths),
+        ),
+      )
+      .limit(1);
 
-      meetName = meet.name;
-      meetDate = meet.meetDate;
+    if (duplicates[0]) {
+      res.status(422).json({ error: "duplicate_swim" });
+      return;
     }
 
     const rows = await db
       .insert(meetSwims)
       .values({
         swimmerId,
-        swimType: body.swimType,
-        ...(body.meetId !== undefined && { meetId: body.meetId }),
+        swimType: "meet",
+        meetId: body.meetId,
         eventDistance: body.eventDistance,
         eventStroke: body.eventStroke,
         course: body.course,
@@ -656,7 +673,7 @@ coachSwimmersRouter.post(
 
     const created = rows[0]!;
 
-    res.status(201).json(toSwimResponse(created, meetName, meetDate));
+    res.status(201).json(toSwimResponse(created, meet.name, meet.meetDate));
   }),
 );
 

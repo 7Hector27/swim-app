@@ -28,7 +28,6 @@ export async function addSwim(
   }
 
   const raw = {
-    swimType: "meet",
     meetId,
     eventDistance: Number(formData.get("eventDistance")),
     eventStroke: formData.get("eventStroke"),
