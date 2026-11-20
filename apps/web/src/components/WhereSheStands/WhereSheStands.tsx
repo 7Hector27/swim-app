@@ -1,173 +1,307 @@
 import {
-  averageToX,
+  averageToPct,
+  averagesEqual,
   buildAriaLabel,
-  FIRST_ROW_Y,
-  HEADER_Y,
   laneIsRated,
-  laneTextY,
-  laneTrackY,
-  RIGHT_LABEL_X,
-  ROW_STEP,
-  SCALE_X_POSITIONS,
-  TRACK_X_END,
-  TRACK_X_START,
-  totalViewHeight,
+  SCALE_LABELS,
+  stretchTone,
   type Lane,
+  type StretchTone,
 } from "./helpers";
 
 interface WhereSheStandsProps {
   lanes: ReadonlyArray<Lane>;
 }
 
-// One lane per skill group on a 1-5 track. A ring marks the first evaluation
-// average and a dot marks the current one, with "<avg> · <rated> of <total>"
-// at the right. Groups with no rated skills (first or current) render a
-// dotted lane and "Not rated yet."
+// Four-column breakdown of where the swimmer stands per skill group:
+//   Group name | 1–5 track | Average | Skills rated
 //
-// The SVG has its own light-surface background and border radius so the
-// component reads as a card without needing an outer wrapper — matching the
-// CategoryRadar snapshot it pairs with.
+// Each data row is rendered as a single `<tr>` carrying one bottom
+// border, so the divider under every row runs uninterrupted from the
+// group name through to the last column. The header row shares the
+// same table so the column widths stay aligned across rows.
+//
+// Phone (≤768px): the "Skills rated" column is hidden and that cell's
+// content ("N of M") moves under the group name as a subtitle. On a
+// not-rated row the "Not rated yet" cell spans the two trailing
+// columns on tablet+ and sits in the Average slot alone on phone.
 export default function WhereSheStands({ lanes }: WhereSheStandsProps) {
   if (lanes.length === 0) return null;
-  const height = totalViewHeight(lanes.length);
+  const ariaLabel = buildAriaLabel(lanes);
 
   return (
-    <svg
-      width="100%"
-      viewBox={`0 0 ${RIGHT_LABEL_X} ${height}`}
-      role="img"
-      aria-label={buildAriaLabel(lanes)}
-      className="rounded-[var(--radius-card)] block"
-      style={{ backgroundColor: "var(--color-surface-soft)", padding: "16px 20px" }}
+    <section
+      className="rounded-lg p-4 flex flex-col gap-3"
+      style={{ backgroundColor: "var(--color-surface-soft)" }}
+      aria-label={ariaLabel}
       data-testid="where-she-stands"
     >
-      <style>{`
-        .wss-web { stroke: var(--color-placeholder-border); }
-        [data-theme="dark"] .wss-web { stroke: var(--color-border); }
-      `}</style>
-
-      {/* 1-5 scale header */}
-      {SCALE_X_POSITIONS.map((x, index) => (
-        <text
-          key={index}
-          x={x}
-          y={HEADER_Y}
-          fontSize={11}
-          fill="var(--color-text-secondary)"
-          textAnchor="middle"
-        >
-          {index + 1}
-        </text>
-      ))}
-
-      {lanes.map((lane, index) => (
-        <LaneRow key={lane.slug} lane={lane} index={index} />
-      ))}
-    </svg>
+      <table
+        className="w-full text-sm"
+        style={{ borderCollapse: "collapse" }}
+      >
+        <colgroup>
+          <col style={{ width: "28%" }} />
+          <col />
+          <col style={{ width: "48px" }} />
+          <col className="hidden tablet:table-column" style={{ width: "72px" }} />
+        </colgroup>
+        <thead>
+          <tr
+            style={{ borderBottom: "1px solid var(--color-border)" }}
+            data-testid="wss-header-row"
+          >
+            <th
+              scope="col"
+              className="text-left text-xs font-normal text-text-secondary py-2 pr-3 align-bottom"
+            >
+              Group
+            </th>
+            <th
+              scope="col"
+              className="py-2 px-3 align-bottom"
+              aria-label="Average on a 1 to 5 scale"
+            >
+              <div className="flex justify-between text-xs text-text-secondary" data-testid="wss-scale-labels">
+                <span>{SCALE_LABELS[0]}</span>
+                <span>{SCALE_LABELS[1]}</span>
+                <span>{SCALE_LABELS[2]}</span>
+              </div>
+            </th>
+            <th
+              scope="col"
+              className="text-right text-xs font-normal text-text-secondary py-2 pl-3 align-bottom"
+            >
+              Average
+            </th>
+            <th
+              scope="col"
+              className="hidden tablet:table-cell text-right text-xs font-normal text-text-secondary py-2 pl-3 align-bottom"
+            >
+              Skills rated
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {lanes.map((lane, index) => (
+            <LaneRow key={lane.slug} lane={lane} isLast={index === lanes.length - 1} />
+          ))}
+        </tbody>
+      </table>
+      <Legend />
+    </section>
   );
 }
 
-function LaneRow({ lane, index }: { lane: Lane; index: number }) {
-  const trackY = laneTrackY(index);
-  const textY = laneTextY(index);
+function LaneRow({ lane, isLast }: { lane: Lane; isLast: boolean }) {
   const rated = laneIsRated(lane);
+  const rowBorderStyle = isLast ? undefined : { borderBottom: "1px solid var(--color-border)" };
   const nameFill = rated ? "var(--color-text)" : "var(--color-text-secondary)";
-  const currentX = lane.currentAverage !== null ? averageToX(lane.currentAverage) : null;
-  const firstX = lane.firstAverage !== null ? averageToX(lane.firstAverage) : null;
+
+  if (!rated) {
+    return (
+      <tr
+        style={rowBorderStyle}
+        data-testid="wss-lane-row"
+        data-slug={lane.slug}
+        data-rated="false"
+      >
+        <td className="py-3 pr-3 align-middle" style={{ color: nameFill }}>
+          {lane.name}
+        </td>
+        <td className="py-3 px-3 align-middle">
+          <NotRatedTrack />
+        </td>
+        {/* Tablet+: "Not rated yet" spans Average + Skills rated (two
+            cells collapsed into one). Phone: Skills rated is hidden, so
+            the message lives in the Average slot alone. */}
+        <td
+          className="tablet:hidden text-right py-3 pl-3 align-middle text-text-secondary text-xs"
+          data-testid="wss-lane-not-rated-phone"
+        >
+          Not rated yet
+        </td>
+        <td
+          colSpan={2}
+          className="hidden tablet:table-cell text-right py-3 pl-3 align-middle text-text-secondary text-xs"
+          data-testid="wss-lane-not-rated-desktop"
+        >
+          Not rated yet
+        </td>
+      </tr>
+    );
+  }
+
+  const avgText = lane.currentAverage !== null ? lane.currentAverage.toFixed(1) : "—";
+  const ratedText = `${lane.currentAssessedCount} of ${lane.totalCount}`;
 
   return (
-    <g data-testid="where-she-stands-lane" data-slug={lane.slug} data-rated={rated ? "true" : "false"}>
-      <text x={0} y={textY} fontSize={13} fill={nameFill}>
-        {lane.name}
-      </text>
-
-      {rated ? (
-        <>
-          <line
-            x1={TRACK_X_START}
-            y1={trackY}
-            x2={TRACK_X_END}
-            y2={trackY}
-            className="wss-web"
-            strokeWidth={6}
-            strokeLinecap="round"
-          />
-          {firstX !== null && currentX !== null && (
-            <line
-              x1={Math.min(firstX, currentX)}
-              y1={trackY}
-              x2={Math.max(firstX, currentX)}
-              y2={trackY}
-              stroke="var(--color-accent)"
-              strokeWidth={6}
-              strokeLinecap="round"
-              opacity={0.6}
-            />
-          )}
-          {firstX !== null && (
-            <circle
-              cx={firstX}
-              cy={trackY}
-              r={5}
-              fill="var(--color-surface-soft)"
-              stroke="var(--color-text)"
-              strokeWidth={2}
-              data-testid="where-she-stands-ring"
-              data-slug={lane.slug}
-              data-cx={firstX.toFixed(2)}
-            />
-          )}
-          {currentX !== null && (
-            <circle
-              cx={currentX}
-              cy={trackY}
-              r={8}
-              fill="var(--color-accent)"
-              data-testid="where-she-stands-dot"
-              data-slug={lane.slug}
-              data-cx={currentX.toFixed(2)}
-            />
-          )}
-          <text
-            x={RIGHT_LABEL_X}
-            y={textY}
-            fontSize={12}
-            fill="var(--color-text-secondary)"
-            textAnchor="end"
+    <tr
+      style={rowBorderStyle}
+      data-testid="wss-lane-row"
+      data-slug={lane.slug}
+      data-rated="true"
+    >
+      <td className="py-3 pr-3 align-middle" style={{ color: nameFill }}>
+        <div className="flex flex-col gap-0.5 min-w-0">
+          <span className="truncate">{lane.name}</span>
+          {/* Phone-only subtitle: "Skills rated" moves under the name. */}
+          <span
+            className="tablet:hidden text-xs text-text-secondary"
+            data-testid="wss-lane-rated-phone"
           >
-            {lane.currentAverage !== null ? lane.currentAverage.toFixed(1) : "—"}
-            {" · "}
-            {lane.currentAssessedCount} of {lane.totalCount}
-          </text>
-        </>
-      ) : (
-        <>
-          <line
-            x1={TRACK_X_START}
-            y1={trackY}
-            x2={TRACK_X_END}
-            y2={trackY}
-            className="wss-web"
-            strokeWidth={6}
-            strokeLinecap="round"
-            strokeDasharray="1 12"
-            data-testid="where-she-stands-not-rated-track"
-          />
-          <text
-            x={RIGHT_LABEL_X}
-            y={textY}
-            fontSize={12}
-            fill="var(--color-text-secondary)"
-            textAnchor="end"
-          >
-            Not rated yet
-          </text>
-        </>
-      )}
-    </g>
+            {ratedText}
+          </span>
+        </div>
+      </td>
+      <td className="py-3 px-3 align-middle">
+        <Track lane={lane} />
+      </td>
+      <td
+        className="text-right py-3 pl-3 align-middle font-medium tabular-nums"
+        data-testid="wss-lane-average"
+      >
+        {avgText}
+      </td>
+      <td
+        className="hidden tablet:table-cell text-right py-3 pl-3 align-middle text-text-secondary tabular-nums text-sm"
+        data-testid="wss-lane-rated-desktop"
+      >
+        {ratedText}
+      </td>
+    </tr>
   );
 }
 
-// Export the lane helpers via the barrel so pages can build lanes from
-// screen-group snapshots.
-export { FIRST_ROW_Y, ROW_STEP };
+// ── Track + markers ──────────────────────────────────────────────────────
+
+function Track({ lane }: { lane: Lane }) {
+  const first = lane.firstAverage;
+  const current = lane.currentAverage;
+  const tone: StretchTone = stretchTone(lane);
+  const equal = averagesEqual(first, current);
+
+  const firstPct = first !== null ? averageToPct(first) : null;
+  const currentPct = current !== null ? averageToPct(current) : null;
+
+  // Stretch: when both markers exist and tone !== "flat"/"none", fill the
+  // segment between them. Accent for improvement, neutral for regression.
+  const stretchStyle =
+    firstPct !== null && currentPct !== null && tone !== "flat" && tone !== "none"
+      ? (() => {
+          const left = Math.min(firstPct, currentPct);
+          const width = Math.abs(currentPct - firstPct);
+          const bg = tone === "up" ? "var(--color-accent)" : "var(--color-text-secondary)";
+          return { left: `${left}%`, width: `${width}%`, backgroundColor: bg };
+        })()
+      : null;
+
+  return (
+    <div
+      className="relative"
+      style={{ height: "20px" }}
+      role="presentation"
+      data-testid="wss-track"
+      data-tone={tone}
+    >
+      {/* Baseline track: full width at 6px tall, rounded, neutral color. */}
+      <div
+        className="absolute left-0 right-0 top-1/2 -translate-y-1/2 rounded-full"
+        style={{ height: "6px", backgroundColor: "var(--color-border)" }}
+      />
+      {stretchStyle && (
+        <div
+          className="absolute top-1/2 -translate-y-1/2 rounded-full"
+          style={{ height: "6px", ...stretchStyle }}
+          data-testid="wss-track-stretch"
+          data-tone={tone}
+        />
+      )}
+      {/* Ring at the first-evaluation position. Skip when first === current
+          so the ring doesn't overlap the dot. */}
+      {firstPct !== null && !equal && (
+        <span
+          className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 pointer-events-none"
+          style={{
+            left: `${firstPct}%`,
+            width: "10px",
+            height: "10px",
+            backgroundColor: "var(--color-surface-soft)",
+            borderColor: "var(--color-text)",
+          }}
+          data-testid="wss-marker-ring"
+          data-slug={lane.slug}
+          data-pct={firstPct.toFixed(2)}
+        />
+      )}
+      {/* Filled dot at the current position. */}
+      {currentPct !== null && (
+        <span
+          className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full pointer-events-none"
+          style={{
+            left: `${currentPct}%`,
+            width: "14px",
+            height: "14px",
+            backgroundColor: "var(--color-accent)",
+          }}
+          data-testid="wss-marker-dot"
+          data-slug={lane.slug}
+          data-pct={currentPct.toFixed(2)}
+        />
+      )}
+    </div>
+  );
+}
+
+function NotRatedTrack() {
+  return (
+    <div
+      className="relative"
+      style={{ height: "20px" }}
+      role="presentation"
+      data-testid="wss-track"
+      data-tone="not-rated"
+    >
+      <div
+        className="absolute left-0 right-0 top-1/2 -translate-y-1/2 rounded-full"
+        style={{
+          height: "6px",
+          backgroundImage:
+            "repeating-linear-gradient(to right, var(--color-border) 0, var(--color-border) 4px, transparent 4px, transparent 8px)",
+        }}
+        data-testid="wss-track-not-rated"
+      />
+    </div>
+  );
+}
+
+function Legend() {
+  return (
+    <div
+      className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-text-secondary"
+      data-testid="wss-legend"
+    >
+      <span className="flex items-center gap-1.5">
+        <span
+          aria-hidden="true"
+          className="inline-block rounded-full border-2"
+          style={{
+            width: "10px",
+            height: "10px",
+            backgroundColor: "var(--color-surface-soft)",
+            borderColor: "var(--color-text)",
+          }}
+        />
+        First evaluation
+      </span>
+      <span className="flex items-center gap-1.5">
+        <span
+          aria-hidden="true"
+          className="inline-block rounded-full"
+          style={{ width: "14px", height: "14px", backgroundColor: "var(--color-accent)" }}
+        />
+        Now
+      </span>
+    </div>
+  );
+}

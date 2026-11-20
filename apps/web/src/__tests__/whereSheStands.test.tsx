@@ -1,58 +1,89 @@
-// Lane math + rendering coverage for WhereSheStands. The chart maps
-// averages 1..5 to a pixel band inside a 520-unit viewBox; the helpers
-// are tested directly (no render), and a smaller render pass asserts
-// the SVG includes a ring + dot per rated lane and a dotted line + "Not
-// rated yet" text per unrated lane.
+// Covers the four-column WhereSheStands table: header labels, one
+// divider per row with none on individual cells, filled stretch tone
+// (up / flat / down), the not-rated row, the ring-collapses-to-dot rule
+// when first equals current, and the phone arrangement where "Skills
+// rated" moves under the group name.
 
 import { describe, it, expect } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import WhereSheStands from "../components/WhereSheStands/WhereSheStands";
 import {
-  averageToX,
+  averageToPct,
+  averagesEqual,
   buildLanes,
   laneIsRated,
-  TRACK_X_END,
-  TRACK_X_START,
-  totalViewHeight,
+  SCALE_LABELS,
+  stretchTone,
   type Lane,
 } from "../components/WhereSheStands/helpers";
 
-// ── averageToX ───────────────────────────────────────────────────────────
+// ── averageToPct ─────────────────────────────────────────────────────────
 
-describe("averageToX", () => {
-  it("1.0 lands at the left edge of the track", () => {
-    expect(averageToX(1)).toBe(TRACK_X_START);
+describe("averageToPct", () => {
+  it("1.0 → 0% (left edge)", () => {
+    expect(averageToPct(1)).toBe(0);
   });
 
-  it("5.0 lands at the right edge of the track", () => {
-    expect(averageToX(5)).toBe(TRACK_X_END);
+  it("5.0 → 100% (right edge)", () => {
+    expect(averageToPct(5)).toBe(100);
   });
 
-  it("3.0 lands at the midpoint of the track", () => {
-    expect(averageToX(3)).toBe((TRACK_X_START + TRACK_X_END) / 2);
+  it("3.0 → 50% (midpoint)", () => {
+    expect(averageToPct(3)).toBe(50);
   });
 
-  it("2.6 lands 40% of the way from 1 to 5 → x = 150 + 0.4 * 280 = 262", () => {
-    // Coach mock uses this exact value for Freestyle at 2.6 average.
-    expect(averageToX(2.6)).toBeCloseTo(262, 5);
+  it("2.6 → 40%", () => {
+    expect(averageToPct(2.6)).toBeCloseTo(40, 5);
   });
 
-  it("1.6 lands 15% of the way from 1 to 5 → x = 150 + 0.15 * 280 = 192", () => {
-    expect(averageToX(1.6)).toBeCloseTo(192, 5);
-  });
-
-  it("clamps averages below 1 to the left edge", () => {
-    expect(averageToX(0.3)).toBe(TRACK_X_START);
-  });
-
-  it("clamps averages above 5 to the right edge", () => {
-    expect(averageToX(5.8)).toBe(TRACK_X_END);
+  it("clamps values outside 1..5 to the track edges", () => {
+    expect(averageToPct(0.3)).toBe(0);
+    expect(averageToPct(5.8)).toBe(100);
   });
 });
 
-// ── laneIsRated ──────────────────────────────────────────────────────────
+// ── averagesEqual + stretchTone ──────────────────────────────────────────
 
-describe("laneIsRated", () => {
+describe("averagesEqual + stretchTone", () => {
+  it("averagesEqual rounds within a tenth so server-side fp noise doesn't split a flat tone", () => {
+    expect(averagesEqual(2.5, 2.5)).toBe(true);
+    expect(averagesEqual(2.5, 2.52)).toBe(true);
+    expect(averagesEqual(2.5, 2.7)).toBe(false);
+    expect(averagesEqual(null, 2.5)).toBe(false);
+    expect(averagesEqual(2.5, null)).toBe(false);
+  });
+
+  const base: Lane = {
+    slug: "freestyle",
+    name: "Freestyle",
+    firstAverage: null,
+    firstAssessedCount: 0,
+    currentAverage: null,
+    currentAssessedCount: 0,
+    totalCount: 25,
+  };
+
+  it("up: current > first", () => {
+    expect(stretchTone({ ...base, firstAverage: 1.5, firstAssessedCount: 1, currentAverage: 2.5, currentAssessedCount: 3 })).toBe("up");
+  });
+
+  it("down: current < first", () => {
+    expect(stretchTone({ ...base, firstAverage: 3.0, firstAssessedCount: 3, currentAverage: 2.0, currentAssessedCount: 3 })).toBe("down");
+  });
+
+  it("flat: current equals first", () => {
+    expect(stretchTone({ ...base, firstAverage: 2.5, firstAssessedCount: 2, currentAverage: 2.5, currentAssessedCount: 3 })).toBe("flat");
+  });
+
+  it("none: either average is null", () => {
+    expect(stretchTone({ ...base, firstAverage: null, currentAverage: 2.5, currentAssessedCount: 3 })).toBe("none");
+    expect(stretchTone({ ...base, firstAverage: 2.0, firstAssessedCount: 1, currentAverage: null })).toBe("none");
+  });
+});
+
+// ── laneIsRated + buildLanes ─────────────────────────────────────────────
+
+describe("laneIsRated + buildLanes", () => {
   const baseLane: Lane = {
     slug: "freestyle",
     name: "Freestyle",
@@ -63,25 +94,16 @@ describe("laneIsRated", () => {
     totalCount: 25,
   };
 
-  it("is false when nothing has ever been rated in the group", () => {
+  it("laneIsRated is false when nothing has ever been rated", () => {
     expect(laneIsRated(baseLane)).toBe(false);
   });
 
-  it("is true when the current evaluation has at least one rated skill", () => {
+  it("laneIsRated is true when the current evaluation has at least one rated skill", () => {
     expect(laneIsRated({ ...baseLane, currentAssessedCount: 1 })).toBe(true);
   });
 
-  it("is true when the first evaluation had a rated skill (even if current regressed)", () => {
-    expect(laneIsRated({ ...baseLane, firstAssessedCount: 2 })).toBe(true);
-  });
-});
-
-// ── buildLanes ───────────────────────────────────────────────────────────
-
-describe("buildLanes", () => {
-  it("joins first + current rollups by slug, following the current snapshot's order", () => {
+  it("buildLanes follows the current snapshot's order and joins by slug", () => {
     const first = [
-      { screenSlug: "backstroke", name: "Backstroke", average: 1.5, assessedCount: 2, totalCount: 24 },
       { screenSlug: "freestyle", name: "Freestyle", average: 1.8, assessedCount: 5, totalCount: 25 },
     ];
     const current = [
@@ -91,141 +113,198 @@ describe("buildLanes", () => {
     const lanes = buildLanes(first, current);
     expect(lanes.map((lane) => lane.slug)).toEqual(["freestyle", "backstroke"]);
     expect(lanes[0]).toMatchObject({
-      slug: "freestyle",
       firstAverage: 1.8,
       firstAssessedCount: 5,
       currentAverage: 2.6,
       currentAssessedCount: 18,
       totalCount: 25,
     });
-  });
-
-  it("drops firstAverage to null when the group didn't appear in the first snapshot", () => {
-    const first = [
-      { screenSlug: "freestyle", name: "Freestyle", average: 1.8, assessedCount: 5, totalCount: 25 },
-    ];
-    const current = [
-      { screenSlug: "freestyle", name: "Freestyle", average: 2.6, assessedCount: 18, totalCount: 25 },
-      { screenSlug: "backstroke", name: "Backstroke", average: 2.1, assessedCount: 24, totalCount: 24 },
-    ];
-    const lanes = buildLanes(first, current);
-    const backstroke = lanes.find((lane) => lane.slug === "backstroke");
-    expect(backstroke).toMatchObject({
-      firstAverage: null,
-      firstAssessedCount: 0,
-      currentAverage: 2.1,
-      currentAssessedCount: 24,
-    });
-  });
-
-  it("returns an empty array when the latest snapshot is empty", () => {
-    expect(buildLanes([], [])).toEqual([]);
-  });
-
-  it("firstSnapshot empty (single-evaluation swimmer) → every lane has firstAverage null", () => {
-    const current = [
-      { screenSlug: "freestyle", name: "Freestyle", average: 2.0, assessedCount: 4, totalCount: 25 },
-    ];
-    const lanes = buildLanes([], current);
-    expect(lanes).toHaveLength(1);
-    expect(lanes[0]!.firstAverage).toBeNull();
-    expect(lanes[0]!.firstAssessedCount).toBe(0);
-    expect(lanes[0]!.currentAverage).toBe(2.0);
+    // Missing from the first snapshot → firstAverage null, assessedCount 0.
+    expect(lanes[1]).toMatchObject({ firstAverage: null, firstAssessedCount: 0 });
   });
 });
 
-// ── totalViewHeight ──────────────────────────────────────────────────────
+// ── Rendering ────────────────────────────────────────────────────────────
 
-describe("totalViewHeight", () => {
-  it("grows linearly with the lane count (30 units per row + top/bottom pad)", () => {
-    const one = totalViewHeight(1);
-    const two = totalViewHeight(2);
-    expect(two - one).toBe(30);
-    const nine = totalViewHeight(9);
-    expect(nine).toBeGreaterThan(one);
-  });
-});
+const RATED_LANES: Lane[] = [
+  {
+    slug: "freestyle",
+    name: "Freestyle",
+    firstAverage: 1.8,
+    firstAssessedCount: 5,
+    currentAverage: 2.6,
+    currentAssessedCount: 18,
+    totalCount: 25,
+  },
+  {
+    slug: "backstroke",
+    name: "Backstroke",
+    firstAverage: 3.0,
+    firstAssessedCount: 10,
+    currentAverage: 2.0,
+    currentAssessedCount: 12,
+    totalCount: 24,
+  },
+  {
+    slug: "butterfly",
+    name: "Butterfly",
+    firstAverage: 2.0,
+    firstAssessedCount: 1,
+    currentAverage: 2.0,
+    currentAssessedCount: 4,
+    totalCount: 25,
+  },
+  {
+    slug: "im-turns",
+    name: "IM turns",
+    firstAverage: null,
+    firstAssessedCount: 0,
+    currentAverage: null,
+    currentAssessedCount: 0,
+    totalCount: 5,
+  },
+];
 
-// ── rendering ────────────────────────────────────────────────────────────
-
-describe("WhereSheStands — rendering", () => {
-  const laneFixture: Lane[] = [
-    {
-      slug: "freestyle",
-      name: "Freestyle",
-      firstAverage: 1.8,
-      firstAssessedCount: 5,
-      currentAverage: 2.6,
-      currentAssessedCount: 18,
-      totalCount: 25,
-    },
-    {
-      slug: "butterfly",
-      name: "Butterfly",
-      firstAverage: null,
-      firstAssessedCount: 0,
-      currentAverage: null,
-      currentAssessedCount: 0,
-      totalCount: 25,
-    },
-  ];
-
-  it("returns null for an empty lanes list", () => {
+describe("WhereSheStands — header + table structure", () => {
+  it("returns null when no lanes are passed", () => {
     const { container } = render(<WhereSheStands lanes={[]} />);
     expect(container.firstChild).toBeNull();
   });
 
-  it("rated lane renders a ring at firstAverage, a dot at currentAverage, and the X-of-Y label", () => {
-    render(<WhereSheStands lanes={laneFixture} />);
-    const freestyleLane = document.querySelector('[data-testid="where-she-stands-lane"][data-slug="freestyle"]');
-    expect(freestyleLane).not.toBeNull();
-    const ring = within(freestyleLane as HTMLElement).getByTestId("where-she-stands-ring");
-    const dot = within(freestyleLane as HTMLElement).getByTestId("where-she-stands-dot");
-    // Ring at x = averageToX(1.8) = 150 + 0.2 * 280 = 206.
-    expect(parseFloat(ring.getAttribute("data-cx") ?? "")).toBeCloseTo(206, 2);
-    // Dot at x = averageToX(2.6) = 262.
-    expect(parseFloat(dot.getAttribute("data-cx") ?? "")).toBeCloseTo(262, 2);
-    expect(freestyleLane!.textContent).toMatch(/2\.6/);
-    expect(freestyleLane!.textContent).toMatch(/18 of 25/);
+  it("header row includes 'Group', 'Average', and 'Skills rated' column labels", () => {
+    render(<WhereSheStands lanes={RATED_LANES} />);
+    const header = screen.getByTestId("wss-header-row");
+    expect(within(header).getByText("Group")).toBeInTheDocument();
+    expect(within(header).getByText("Average")).toBeInTheDocument();
+    expect(within(header).getByText("Skills rated")).toBeInTheDocument();
   });
 
-  it("unrated lane renders a dotted track + 'Not rated yet' and no dot/ring", () => {
-    render(<WhereSheStands lanes={laneFixture} />);
-    const butterflyLane = document.querySelector('[data-testid="where-she-stands-lane"][data-slug="butterfly"]');
-    expect(butterflyLane).not.toBeNull();
-    expect(butterflyLane!.getAttribute("data-rated")).toBe("false");
-    expect(within(butterflyLane as HTMLElement).getByTestId("where-she-stands-not-rated-track")).toBeInTheDocument();
-    expect(within(butterflyLane as HTMLElement).queryByTestId("where-she-stands-ring")).toBeNull();
-    expect(within(butterflyLane as HTMLElement).queryByTestId("where-she-stands-dot")).toBeNull();
-    expect(butterflyLane!.textContent).toContain("Not rated yet");
+  it("scale-label row uses '1 Emerging', '3 Competent', '5 Mastery' (not the bare digits)", () => {
+    render(<WhereSheStands lanes={RATED_LANES} />);
+    const scale = screen.getByTestId("wss-scale-labels");
+    expect(scale.textContent ?? "").toContain(SCALE_LABELS[0]);
+    expect(scale.textContent ?? "").toContain(SCALE_LABELS[1]);
+    expect(scale.textContent ?? "").toContain(SCALE_LABELS[2]);
+    // No bare "1 2 3 4 5" sequence.
+    expect(scale.textContent ?? "").not.toMatch(/^\s*1\s+2\s+3\s+4\s+5\s*$/);
+  });
+});
+
+describe("WhereSheStands — one divider per row, none on cells", () => {
+  it("every row EXCEPT the last carries a single bottom-border; no <td>/<th> carries its own border", () => {
+    render(<WhereSheStands lanes={RATED_LANES} />);
+    const table = screen.getByTestId("where-she-stands").querySelector("table")!;
+    const rows = Array.from(table.querySelectorAll("tr"));
+    // Header + 4 data rows. The last data row has no border.
+    expect(rows).toHaveLength(5);
+    for (let index = 0; index < rows.length - 1; index += 1) {
+      const style = rows[index]!.getAttribute("style") ?? "";
+      expect(style, `row ${index} should carry a bottom border`).toMatch(/border-bottom:\s*1px solid/);
+    }
+    // Last row carries no bottom border.
+    const lastStyle = rows[rows.length - 1]!.getAttribute("style") ?? "";
+    expect(lastStyle).not.toMatch(/border-bottom:/);
+    // No cell carries its own border — the row owns the divider so it
+    // runs unbroken across the column gaps.
+    const cells = table.querySelectorAll("td, th");
+    for (const cell of cells) {
+      const cellStyle = cell.getAttribute("style") ?? "";
+      expect(cellStyle).not.toMatch(/border(-bottom|-top)?:\s*1px/);
+    }
+  });
+});
+
+describe("WhereSheStands — stretch fill tone", () => {
+  function getTrack(slug: string): HTMLElement {
+    const row = document.querySelector(`[data-testid="wss-lane-row"][data-slug="${slug}"]`);
+    expect(row, `missing lane ${slug}`).not.toBeNull();
+    return within(row as HTMLElement).getByTestId("wss-track");
+  }
+
+  it("up: the stretch between first and current fills with the accent color", () => {
+    render(<WhereSheStands lanes={RATED_LANES} />);
+    const track = getTrack("freestyle");
+    expect(track.getAttribute("data-tone")).toBe("up");
+    const stretch = within(track).getByTestId("wss-track-stretch");
+    expect(stretch.getAttribute("style") ?? "").toContain("background-color: var(--color-accent)");
   });
 
-  it("renders a dot without a ring when the first evaluation is missing (single-eval swimmer)", () => {
-    render(
-      <WhereSheStands
-        lanes={[
-          {
-            slug: "freestyle",
-            name: "Freestyle",
-            firstAverage: null,
-            firstAssessedCount: 0,
-            currentAverage: 2.0,
-            currentAssessedCount: 4,
-            totalCount: 25,
-          },
-        ]}
-      />,
-    );
-    const lane = document.querySelector('[data-testid="where-she-stands-lane"]')!;
-    expect(within(lane as HTMLElement).queryByTestId("where-she-stands-ring")).toBeNull();
-    expect(within(lane as HTMLElement).getByTestId("where-she-stands-dot")).toBeInTheDocument();
+  it("down: the stretch fills with a neutral color and both markers stay visible", () => {
+    render(<WhereSheStands lanes={RATED_LANES} />);
+    const track = getTrack("backstroke");
+    expect(track.getAttribute("data-tone")).toBe("down");
+    const stretch = within(track).getByTestId("wss-track-stretch");
+    expect(stretch.getAttribute("style") ?? "").toContain("background-color: var(--color-text-secondary)");
+    expect(within(track).getByTestId("wss-marker-ring")).toBeInTheDocument();
+    expect(within(track).getByTestId("wss-marker-dot")).toBeInTheDocument();
   });
 
-  it("aria-label describes each lane for a screen reader", () => {
-    render(<WhereSheStands lanes={laneFixture} />);
-    const svg = screen.getByTestId("where-she-stands");
-    const aria = svg.getAttribute("aria-label") ?? "";
-    expect(aria).toContain("Freestyle: 2.6, 18 of 25");
-    expect(aria).toContain("Butterfly: not rated yet");
+  it("flat: first equals current → only the dot is drawn, no ring and no stretch", () => {
+    render(<WhereSheStands lanes={RATED_LANES} />);
+    const track = getTrack("butterfly");
+    expect(track.getAttribute("data-tone")).toBe("flat");
+    expect(within(track).queryByTestId("wss-marker-ring")).toBeNull();
+    expect(within(track).queryByTestId("wss-track-stretch")).toBeNull();
+    expect(within(track).getByTestId("wss-marker-dot")).toBeInTheDocument();
+  });
+});
+
+describe("WhereSheStands — not-rated lane", () => {
+  it("renders a dotted track and 'Not rated yet' spanning the last two columns on tablet+", () => {
+    render(<WhereSheStands lanes={RATED_LANES} />);
+    const row = document.querySelector('[data-testid="wss-lane-row"][data-slug="im-turns"]');
+    expect(row).not.toBeNull();
+    expect(row!.getAttribute("data-rated")).toBe("false");
+    expect(within(row as HTMLElement).getByTestId("wss-track-not-rated")).toBeInTheDocument();
+    const desktopNotRated = within(row as HTMLElement).getByTestId("wss-lane-not-rated-desktop");
+    expect(desktopNotRated.getAttribute("colspan")).toBe("2");
+    expect(desktopNotRated).toHaveTextContent("Not rated yet");
+    // Phone-only not-rated cell also exists so the message still shows
+    // when Skills rated is hidden. One of the two is visible per viewport.
+    expect(within(row as HTMLElement).getByTestId("wss-lane-not-rated-phone")).toHaveTextContent("Not rated yet");
+    expect(within(row as HTMLElement).queryByTestId("wss-marker-ring")).toBeNull();
+    expect(within(row as HTMLElement).queryByTestId("wss-marker-dot")).toBeNull();
+  });
+});
+
+describe("WhereSheStands — phone arrangement", () => {
+  it("Skills rated moves under the group name on phone (tablet-hidden subtitle)", () => {
+    render(<WhereSheStands lanes={RATED_LANES} />);
+    const freestyle = document.querySelector('[data-testid="wss-lane-row"][data-slug="freestyle"]')!;
+    const phone = within(freestyle as HTMLElement).getByTestId("wss-lane-rated-phone");
+    expect(phone).toHaveTextContent("18 of 25");
+    // The subtitle hides on tablet+ via Tailwind's responsive class.
+    expect(phone.className).toContain("tablet:hidden");
+    // The Skills rated column cell is desktop-only.
+    const desktop = within(freestyle as HTMLElement).getByTestId("wss-lane-rated-desktop");
+    expect(desktop.className).toContain("hidden");
+    expect(desktop.className).toContain("tablet:table-cell");
+  });
+
+  it("Skills rated column header hides on phone and the scale labels stay on one line", () => {
+    render(<WhereSheStands lanes={RATED_LANES} />);
+    const skillsHeader = screen.getByText("Skills rated").closest("th")!;
+    expect(skillsHeader.className).toContain("hidden");
+    expect(skillsHeader.className).toContain("tablet:table-cell");
+  });
+});
+
+describe("WhereSheStands — legend", () => {
+  it("renders the legend inside the card with 'First evaluation' + 'Now'", () => {
+    render(<WhereSheStands lanes={RATED_LANES} />);
+    const legend = screen.getByTestId("wss-legend");
+    expect(legend).toHaveTextContent("First evaluation");
+    expect(legend).toHaveTextContent("Now");
+  });
+});
+
+describe("WhereSheStands — aria-label", () => {
+  it("describes each lane's average + rated count (and not-rated lanes)", () => {
+    render(<WhereSheStands lanes={RATED_LANES} />);
+    const section = screen.getByTestId("where-she-stands");
+    const aria = section.getAttribute("aria-label") ?? "";
+    expect(aria).toContain("Freestyle: average 2.6, 18 of 25 skills rated");
+    expect(aria).toContain("Backstroke: average 2.0, 12 of 24 skills rated");
+    expect(aria).toContain("IM turns: not rated yet");
   });
 });

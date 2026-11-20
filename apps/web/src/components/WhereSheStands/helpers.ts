@@ -1,5 +1,6 @@
-// Pure math + lane-shape helpers for WhereSheStands, kept outside the
-// component so the viewBox math can be unit-tested without rendering.
+// Pure math + lane-shape helpers for WhereSheStands. Kept outside the
+// component so the track positioning + aria-label math can be exercised
+// without rendering.
 
 export interface Lane {
   slug: string;
@@ -11,40 +12,24 @@ export interface Lane {
   totalCount: number;
 }
 
-// Horizontal axis maps score 1..5 to the pixel band [TRACK_X_START, TRACK_X_END]
-// inside the 520-unit viewBox. Values outside 1..5 clamp at the edges so a
-// future bad average can't push a dot off the chart.
-export const TRACK_X_START = 150;
-export const TRACK_X_END = 430;
-export const SCALE_X_POSITIONS = [150, 220, 290, 360, 430] as const;
-export const RIGHT_LABEL_X = 520;
+// Rating-scale endpoint + midpoint labels, surfaced above the track in
+// the header row. Lifted into a constant so tests can assert the labels
+// without re-deriving them.
+export const SCALE_LABELS = ["1 Emerging", "3 Competent", "5 Mastery"] as const;
 
-// y position tuning: scale header at y=14 (11px font), first row baseline at
-// y=44, then +30 per row. Track lines sit 4 units above the text baseline so
-// text and dot read as aligned. Keep in lockstep with WhereSheStands.tsx.
-export const HEADER_Y = 14;
-export const FIRST_ROW_Y = 44;
-export const ROW_STEP = 30;
-export const BOTTOM_PAD = 12;
-
-export function laneTextY(index: number): number {
-  return FIRST_ROW_Y + index * ROW_STEP;
-}
-
-export function laneTrackY(index: number): number {
-  return laneTextY(index) - 4;
-}
-
-export function totalViewHeight(laneCount: number): number {
-  if (laneCount === 0) return HEADER_Y + BOTTOM_PAD;
-  return laneTextY(laneCount - 1) + BOTTOM_PAD;
-}
-
-// Position the ring (first) or dot (now) along the 1..5 track. An average of
-// 1 sits at TRACK_X_START; 5 sits at TRACK_X_END. Values outside 1..5 clamp.
-export function averageToX(average: number): number {
+// Map a score average (1..5) to a track position expressed as a percentage
+// of the track width. 1 → 0%, 5 → 100%; values outside 1..5 clamp.
+export function averageToPct(average: number): number {
   const clamped = Math.max(1, Math.min(5, average));
-  return TRACK_X_START + ((clamped - 1) / 4) * (TRACK_X_END - TRACK_X_START);
+  return ((clamped - 1) / 4) * 100;
+}
+
+// Two averages are considered equal when they round to the same tenth —
+// radar / lane rollups are computed server-side and arrive with fp noise.
+// At the "equal" threshold we draw only the dot, per the brief.
+export function averagesEqual(firstAverage: number | null, currentAverage: number | null): boolean {
+  if (firstAverage === null || currentAverage === null) return false;
+  return Math.abs(firstAverage - currentAverage) < 0.05;
 }
 
 // A lane is rated when either the first or current snapshot had any assessed
@@ -53,10 +38,23 @@ export function laneIsRated(lane: Lane): boolean {
   return lane.firstAssessedCount > 0 || lane.currentAssessedCount > 0;
 }
 
+// Direction of the filled stretch between first and current:
+//   - "up"   → accent fill (improvement)
+//   - "down" → neutral fill (regression; keep both markers visible)
+//   - "flat" → no stretch (first equals current, ring collapses to dot)
+//   - "none" → one of the averages is missing (skip the stretch)
+export type StretchTone = "up" | "down" | "flat" | "none";
+
+export function stretchTone(lane: Lane): StretchTone {
+  if (lane.firstAverage === null || lane.currentAverage === null) return "none";
+  if (averagesEqual(lane.firstAverage, lane.currentAverage)) return "flat";
+  return lane.currentAverage > lane.firstAverage ? "up" : "down";
+}
+
 // Build display-ready lanes from first + latest screen-group rollups. Order
 // follows the latest snapshot so a newly-rated group doesn't shuffle earlier
-// rows. When the swimmer has only one evaluation, firstSnapshot is empty —
-// the ring collapses to null and only the current dot renders.
+// rows. firstSnapshot may be empty — every lane's firstAverage collapses to
+// null and the row shows only the current dot.
 export function buildLanes(
   firstSnapshot: ReadonlyArray<{
     screenSlug: string;
@@ -95,7 +93,7 @@ export function buildAriaLabel(lanes: ReadonlyArray<Lane>): string {
     .map((lane) => {
       if (!laneIsRated(lane)) return `${lane.name}: not rated yet`;
       const avg = lane.currentAverage !== null ? lane.currentAverage.toFixed(1) : "—";
-      return `${lane.name}: ${avg}, ${lane.currentAssessedCount} of ${lane.totalCount} skills rated`;
+      return `${lane.name}: average ${avg}, ${lane.currentAssessedCount} of ${lane.totalCount} skills rated`;
     })
     .join(". ");
 }

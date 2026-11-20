@@ -132,10 +132,13 @@ export function latestScreenGroupSnapshot(history: ScoreHistoryPointsOnly): Arra
 }
 
 // Same shape as latestScreenGroupSnapshot but from the first (oldest)
-// session, so the radar can overlay a "when she started" shape. Empty
-// when there's only one session — a single session is both first and
-// latest, and drawing an identical dashed outline would confuse rather
-// than inform.
+// session. Always returns the oldest session's rollups when any exist —
+// the "hide identical overlay on single-session swimmers" decision is a
+// view concern and lives at the component-prop boundary (e.g. the radar
+// passes `firstEvaluation` only when points.length >= 2). Shipping the
+// rollups here unconditionally lets WhereSheStands draw a ring for the
+// first evaluation whenever one exists, including single-session
+// swimmers (where first === current collapses to just the dot).
 export function firstScreenGroupSnapshot(history: ScoreHistoryPointsOnly): Array<{
   screenSlug: string;
   name: string;
@@ -143,7 +146,6 @@ export function firstScreenGroupSnapshot(history: ScoreHistoryPointsOnly): Array
   assessedCount: number;
   totalCount: number;
 }> {
-  if (history.points.length < 2) return [];
   const first = history.points[0];
   if (!first) return [];
   return first.screenGroupRollups.map((rollup) => ({

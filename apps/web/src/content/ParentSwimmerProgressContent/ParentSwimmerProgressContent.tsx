@@ -72,6 +72,12 @@ export default function ParentSwimmerProgressContent({
   const categorySnapshot = latestScreenGroupSnapshot(scoreHistory);
   const firstSnapshot = firstScreenGroupSnapshot(scoreHistory);
   const lanes = buildLanes(firstSnapshot, categorySnapshot);
+  // Radar's dashed first-evaluation outline only makes sense when the
+  // swimmer has more than one session — on a single-session swimmer it
+  // overlays an identical shape. WhereSheStands always ships both
+  // snapshots because its "first equals current" state is a visible dot
+  // anchor, not a duplicate.
+  const radarFirstEvaluation = scoreHistory.points.length >= 2 ? firstSnapshot : [];
 
   const startComponentSlugs = new Set(
     progress.startProgress.flatMap((start) => start.components.map((component) => component.slug)),
@@ -204,7 +210,7 @@ export default function ParentSwimmerProgressContent({
                     </h2>
                     <CategoryRadar
                       categories={categorySnapshot}
-                      {...(firstSnapshot.length > 0 && { firstEvaluation: firstSnapshot })}
+                      {...(radarFirstEvaluation.length > 0 && { firstEvaluation: radarFirstEvaluation })}
                     />
                   </section>
                   <section
@@ -220,9 +226,6 @@ export default function ParentSwimmerProgressContent({
                       Where she stands
                     </h2>
                     <WhereSheStands lanes={lanes} />
-                    <p className="text-xs text-text-secondary">
-                      Ring is the first evaluation, dot is now. The number is the average and how many skills are rated.
-                    </p>
                   </section>
                 </div>
               )}
