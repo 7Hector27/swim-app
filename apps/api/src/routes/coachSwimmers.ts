@@ -78,6 +78,82 @@ coachSwimmersRouter.get(
   }),
 );
 
+// GET /coach/swimmer-bests — bulk personal bests for every active swimmer,
+// shaped for the meet-detail entry form. Practice swims are excluded.
+coachSwimmersRouter.get(
+  "/bests/all",
+  validate({}),
+  asyncHandler(async (_req, res) => {
+    const rows = await db
+      .select({
+        swimmerId: meetSwims.swimmerId,
+        eventDistance: meetSwims.eventDistance,
+        eventStroke: meetSwims.eventStroke,
+        course: meetSwims.course,
+        timeHundredths: sql<number>`min(${meetSwims.timeHundredths})`.mapWith(Number),
+        // The swimId of the fastest swim is picked separately below.
+      })
+      .from(meetSwims)
+      .innerJoin(swimmers, eq(swimmers.id, meetSwims.swimmerId))
+      .where(and(isActiveSwimmer, eq(meetSwims.swimType, "meet")))
+      .groupBy(meetSwims.swimmerId, meetSwims.eventDistance, meetSwims.eventStroke, meetSwims.course);
+
+    // Resolve swimId for each (swimmer, event, course, bestTime). One extra
+    // query; deliberate keep-it-simple — the meet-detail page refetches on
+    // revalidate so a small extra read is fine.
+    const idRows = rows.length === 0 ? [] : await db
+      .select({
+        id: meetSwims.id,
+        swimmerId: meetSwims.swimmerId,
+        eventDistance: meetSwims.eventDistance,
+        eventStroke: meetSwims.eventStroke,
+        course: meetSwims.course,
+        timeHundredths: meetSwims.timeHundredths,
+      })
+      .from(meetSwims)
+      .where(eq(meetSwims.swimType, "meet"));
+
+    const idByKey = new Map<string, string>();
+    for (const row of idRows) {
+      const key = `${row.swimmerId}|${row.eventDistance}|${row.eventStroke}|${row.course}|${row.timeHundredths}`;
+      if (!idByKey.has(key)) idByKey.set(key, row.id);
+    }
+
+    const byId = new Map<string, Array<{
+      eventDistance: number;
+      eventStroke: "free" | "back" | "breast" | "fly" | "im";
+      course: "scy" | "scm" | "lcm";
+      timeHundredths: number;
+      timeString: string;
+      swimId: string;
+    }>>();
+
+    for (const row of rows) {
+      const key = `${row.swimmerId}|${row.eventDistance}|${row.eventStroke}|${row.course}|${row.timeHundredths}`;
+      const swimId = idByKey.get(key);
+      if (!swimId) continue;
+      const bucket = byId.get(row.swimmerId) ?? [];
+      bucket.push({
+        eventDistance: row.eventDistance,
+        eventStroke: row.eventStroke,
+        course: row.course,
+        timeHundredths: row.timeHundredths,
+        timeString: formatSwimTime(row.timeHundredths),
+        swimId,
+      });
+      byId.set(row.swimmerId, bucket);
+    }
+
+    const response = {
+      rows: Array.from(byId.entries()).map(([swimmerId, personalBests]) => ({
+        swimmerId,
+        personalBests,
+      })),
+    };
+    res.json(response);
+  }),
+);
+
 coachSwimmersRouter.get(
   "/:id",
   validate({ params: IdParamsSchema }),

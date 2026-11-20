@@ -19,12 +19,10 @@ const BOTTOM_NAV_TABS = [
   { label: "Swimmers", href: "/coach/swimmers" },
 ] as const;
 
-// Meets moved onto the /coach/swimmers page as a tab — a season of
-// meets is a roster-shaped concern, so it lives next to the swimmers
-// list rather than as a top-level destination. The /coach/meets URL
-// still resolves (redirects to /coach/swimmers?tab=meets) so existing
-// links and bookmarks keep working.
+// Meets is now its own top-level destination (ADR 0045 cleanup) —
+// `/coach/meets` is a real page with inline create + per-meet results.
 const MORE_SHEET_ITEMS = [
+  { label: "Meets", href: "/coach/meets" },
   { label: "Families", href: "/coach/families" },
   { label: "Availability", href: "/coach/availability" },
   { label: "Account settings", href: "/account" },
@@ -36,6 +34,7 @@ const DESKTOP_NAV_LINKS = [
   { label: "Schedule", href: "/coach/schedule" },
   { label: "Availability", href: "/coach/availability" },
   { label: "Swimmers", href: "/coach/swimmers" },
+  { label: "Meets", href: "/coach/meets" },
   { label: "Families", href: "/coach/families" },
 ] as const;
 
@@ -186,7 +185,18 @@ const TAB_ICONS: Record<TabLabel, () => React.ReactElement> = {
 // bottom-tab icons above so the sheet reads as a continuation of the
 // nav, not a separate styling language. Account and Log out used to
 // render without one.
+function MeetsIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <rect x="3" y="4" width="14" height="13" rx="2" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M3 8h14" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M7 11h6M7 14h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 const SHEET_ICONS: Record<string, () => React.ReactElement> = {
+  Meets: MeetsIcon,
   Families: FamiliesIcon,
   Availability: AvailabilityIcon,
   "Account settings": AccountIcon,

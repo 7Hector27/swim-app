@@ -2,9 +2,11 @@ import {
   MeetResponseSchema,
   MeetWithSwimsResponseSchema,
   MeetSwimsResponseSchema,
+  SwimmerBestsResponseSchema,
   type MeetResponse,
   type MeetWithSwimsResponse,
   type MeetSwimsResponse,
+  type SwimmerBestsResponse,
 } from "@swim-app/shared";
 
 export type FetchMeetsResult = { ok: true; meets: MeetResponse[] } | { ok: false; status: number };
@@ -70,6 +72,31 @@ export async function fetchSwimmerMeetSwims(
     const parsed = MeetSwimsResponseSchema.safeParse(body);
     if (!parsed.success) {
       console.warn("fetchSwimmerMeetSwims: 200 response did not match MeetSwimsResponseSchema");
+      return { ok: false, status: 500 };
+    }
+    return { ok: true, data: parsed.data };
+  } catch {
+    return { ok: false, status: 500 };
+  }
+}
+
+export type FetchSwimmerBestsResult =
+  | { ok: true; data: SwimmerBestsResponse }
+  | { ok: false; status: number };
+
+export async function fetchAllSwimmerBests(
+  accessToken: string,
+): Promise<FetchSwimmerBestsResult> {
+  try {
+    const response = await fetch(
+      `${process.env.NEXT_PUBLIC_API_URL}/coach/swimmers/bests/all`,
+      { headers: { Authorization: `Bearer ${accessToken}` } },
+    );
+    if (!response.ok) return { ok: false, status: response.status };
+    const body: unknown = await response.json();
+    const parsed = SwimmerBestsResponseSchema.safeParse(body);
+    if (!parsed.success) {
+      console.warn("fetchAllSwimmerBests: 200 response did not match schema");
       return { ok: false, status: 500 };
     }
     return { ok: true, data: parsed.data };

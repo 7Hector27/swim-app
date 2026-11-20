@@ -175,6 +175,21 @@ export const MeetSwimsResponseSchema = z.object({
 });
 export type MeetSwimsResponse = z.infer<typeof MeetSwimsResponseSchema>;
 
+// Per-swimmer PBs, returned in one shot by GET /coach/swimmer-bests. Powers
+// the meet-detail entry form: for each pending row, the UI needs the
+// swimmer's current best in that (event, stroke, course) to decide whether
+// to show "new best — X.XX faster", "first time", or the 20% warning.
+export const SwimmerBestsRowSchema = z.object({
+  swimmerId: z.string().uuid(),
+  personalBests: z.array(PersonalBestSchema),
+});
+export type SwimmerBestsRow = z.infer<typeof SwimmerBestsRowSchema>;
+
+export const SwimmerBestsResponseSchema = z.object({
+  rows: z.array(SwimmerBestsRowSchema),
+});
+export type SwimmerBestsResponse = z.infer<typeof SwimmerBestsResponseSchema>;
+
 // ── Parent personal best ──────────────────────────────────────────────────────
 
 // Parent-facing personal best: same best-time logic as the coach side, with

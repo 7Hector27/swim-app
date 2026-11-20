@@ -514,6 +514,8 @@ export type {
   ParentSwimmerSummariesResponse,
   ParentSwimmerSummaryBestEvent,
   ParentSwimmerSummaryNextLesson,
+  SwimmerBestsRow,
+  SwimmerBestsResponse,
 } from "./schemas/meets";
 export {
   SwimStrokeSchema,
@@ -539,6 +541,8 @@ export {
   ParentSwimmerSummariesResponseSchema,
   ParentSwimmerSummaryBestEventSchema,
   ParentSwimmerSummaryNextLessonSchema,
+  SwimmerBestsRowSchema,
+  SwimmerBestsResponseSchema,
 } from "./schemas/meets";
 
 export type { AgeGroup } from "./lib/ageGroup";
