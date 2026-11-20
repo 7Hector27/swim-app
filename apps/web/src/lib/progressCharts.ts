@@ -55,47 +55,9 @@ export function headPositionSeries(
   }));
 }
 
-// Per-category trend series indexed from the first point's rollups so the
-// shape stays stable across time.
-export function categoryTrendSeries(history: ScoreHistoryPointsOnly): Array<{
-  categoryId: string;
-  name: string;
-  points: Array<{ sessionDate: string; value: number | null }>;
-}> {
-  const first = history.points[0];
-  if (!first) return [];
-  return first.categoryRollups.map((rollup, categoryIndex) => ({
-    categoryId: rollup.categoryId,
-    name: rollup.categoryName,
-    points: history.points.map((point) => ({
-      sessionDate: point.sessionDate,
-      value: point.categoryRollups[categoryIndex]?.average ?? null,
-    })),
-  }));
-}
-
-export function latestCategorySnapshot(history: ScoreHistoryPointsOnly): Array<{
-  categoryId: string;
-  name: string;
-  average: number | null;
-  assessedCount: number;
-  totalCount: number;
-}> {
-  const latest = history.points[history.points.length - 1];
-  if (!latest) return [];
-  return latest.categoryRollups.map((rollup) => ({
-    categoryId: rollup.categoryId,
-    name: rollup.categoryName,
-    average: rollup.average,
-    assessedCount: rollup.assessedCount,
-    totalCount: rollup.totalCount,
-  }));
-}
-
-// Pass 3: screen-group counterparts. `screenGroupRollups` carry the nine
-// progress-page groups' averages + counts. The radar and category-trend
-// grid both switch to this on the progress pages; the catalog-based
-// equivalents stay available for any other caller that needs them.
+// Screen-group rollups. `screenGroupRollups` carry the nine progress-
+// page groups' averages + counts, which is what the radar + trend grid
+// render on every progress / profile surface.
 export function screenGroupTrendSeries(history: ScoreHistoryPointsOnly): Array<{
   screenSlug: string;
   name: string;
