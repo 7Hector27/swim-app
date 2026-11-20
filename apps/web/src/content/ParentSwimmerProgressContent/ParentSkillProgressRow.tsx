@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { ParentSkillProgress } from "@swim-app/shared";
-import LevelLadder from "@/components/LevelLadder";
+import LevelLadder, { LadderDetails } from "@/components/LevelLadder";
 import { isStaleBySessionDate } from "@/lib/progressRow";
 import { rowChangeText, rowLevelLabel, rowPipCount } from "./helpers";
 
@@ -83,15 +83,19 @@ export default function ParentSkillProgressRow({ skill, nowIso }: ParentSkillPro
         <div className="pb-4 pt-1">
           {skill.history.length > 0 ? (
             <div
-              className="rounded p-3"
-              style={{ backgroundColor: "var(--color-background)" }}
+              className="rounded-lg p-4 flex flex-col gap-4 tablet:grid tablet:gap-6 tablet:[grid-template-columns:minmax(0,400px)_minmax(0,1fr)] tablet:items-start"
+              style={{ backgroundColor: "var(--color-surface-soft)" }}
+              data-testid="skill-row-opened-panel"
             >
               <LevelLadder
                 skillName={skill.name}
                 history={skill.history.map((point) => ({ ...point }))}
                 ratedPerSide={skill.ratedPerSide}
+              />
+              <LadderDetails
+                history={skill.history.map((point) => ({ ...point }))}
+                ratedPerSide={skill.ratedPerSide}
                 levelDescriptors={skill.levelDescriptors ?? undefined}
-                nextAsPlainText
               />
             </div>
           ) : (

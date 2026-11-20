@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { SkillCurrentLevel, SkillGrade, SwimmerProgressResponse } from "@swim-app/shared";
 import TrendLine from "@/components/TrendLine";
-import LevelLadder from "@/components/LevelLadder";
+import LevelLadder, { LadderDetails } from "@/components/LevelLadder";
 import { evaluationEditHref, type EvaluationEditContext } from "@/lib/evaluationEditHref";
 import {
   formatRecency,
@@ -105,32 +105,42 @@ export default function SkillRow({ skill, swimmerId, nowIso, editContext }: Skil
       </div>
 
       {open && (
-        <div className="pb-4 pl-9 flex flex-col gap-3">
+        <div className="pb-4 pl-9">
           {skill.current !== null && skill.current.capacityValue !== null && (
-            <p className="text-xs text-text-secondary">
+            <p className="text-xs text-text-secondary mb-3">
               Capacity: {skill.current.capacityValue} {skill.current.capacityUnit ?? ""}
             </p>
           )}
           {skill.current !== null && skill.current.measurementValue !== null && (
-            <p className="text-xs text-text-secondary">
+            <p className="text-xs text-text-secondary mb-3">
               {skill.unit ?? "Measurement"}: {skill.current.measurementValue} {skill.current.measurementUnit ?? ""}
             </p>
           )}
           {skill.history.length > 0 ? (
-            <>
+            <div
+              className="rounded-lg p-4 flex flex-col gap-4 tablet:grid tablet:gap-6 tablet:[grid-template-columns:minmax(0,400px)_minmax(0,1fr)] tablet:items-start"
+              style={{ backgroundColor: "var(--color-surface-soft)" }}
+              data-testid="skill-row-opened-panel"
+            >
               <LevelLadder
                 skillName={skill.name}
                 history={skill.history}
                 ratedPerSide={skill.ratedPerSide}
-                levelDescriptors={skill.levelDescriptors ?? undefined}
               />
-              {editContext && (
-                <CoachSkillEditList
-                  history={skill.history}
-                  editContext={{ ...editContext, skillSlug: skill.slug }}
-                />
-              )}
-            </>
+              <LadderDetails
+                history={skill.history}
+                ratedPerSide={skill.ratedPerSide}
+                levelDescriptors={skill.levelDescriptors ?? undefined}
+                extras={
+                  editContext ? (
+                    <CoachSkillEditList
+                      history={skill.history}
+                      editContext={{ ...editContext, skillSlug: skill.slug }}
+                    />
+                  ) : undefined
+                }
+              />
+            </div>
           ) : (
             <p className="text-xs text-text-secondary italic">No rated sessions yet.</p>
           )}

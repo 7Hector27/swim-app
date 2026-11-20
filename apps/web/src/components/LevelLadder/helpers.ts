@@ -89,17 +89,17 @@ export interface ChipData {
   tone: "accent" | "neutral" | "muted";
 }
 
-// Picks the chips the brief describes, in display order:
-//   1. "Now: <levelName>"       (or NL / NC when the latest point isn't graded)
-//   2. "Up N" / "Held" / "Down N" — based on first vs latest graded point
-//   3. "Held <level> N sessions in a row" — only when N >= 2
-//   4. "Next: <levelName>: <descriptor>" — only when a descriptor exists.
-//      The coach API doesn't ship descriptors, so the chip is parent-only in
-//      practice; the component passes undefined and we silently skip it.
-export function buildChips(
-  series: LadderPoint[],
-  levelDescriptors?: Partial<Record<1 | 2 | 3 | 4 | 5, string>> | undefined,
-): ChipData[] {
+// Chip set rendered in the details column of an opened skill row.
+// Exactly two chips:
+//   1. "Now: <levelName>" — or NL / NC when the latest point isn't graded.
+//   2. The change chip:
+//        - "Up N levels since <date>"   (improved)
+//        - "Held since <date>"          (same first vs. last level)
+//        - "Down N levels since <date>" (regressed)
+//        - "First rating"               (single graded rating)
+// The streak chip and the Next-level chip have been dropped — the Next
+// descriptor renders as plain text under the chips (see buildNextDescriptor).
+export function buildChips(series: LadderPoint[]): ChipData[] {
   const chips: ChipData[] = [];
   if (series.length === 0) return chips;
 
@@ -116,7 +116,7 @@ export function buildChips(
     chips.push({ key: "now", label: "Now: No concept", tone: "muted" });
   }
 
-  // Chip 2: Up / Held / Down
+  // Chip 2: change over time
   const first = firstGradedPoint(series);
   const last = lastGradedPoint(series);
   if (first && last && first.id !== last.id) {
@@ -143,55 +143,37 @@ export function buildChips(
       }
     }
   } else if (first && last && first.id === last.id) {
-    // Single graded rating. "Held since <date>" still reads correctly.
-    const firstDate = formatLadderDate(first.sessionDate);
-    chips.push({ key: "delta", label: `Held since ${firstDate}`, tone: "neutral" });
-  }
-
-  // Chip 3: streak at latest level. Walk backwards from the newest graded
-  // point and count consecutive points at the same level (ignoring NL/NC
-  // interleavings would hide meaningful breaks, so they end the streak).
-  if (latestLevel !== null && series.length >= 2) {
-    let streak = 0;
-    for (let index = series.length - 1; index >= 0; index -= 1) {
-      const point = series[index];
-      if (!point) break;
-      const level = ladderEffectiveLevel(point);
-      if (level === latestLevel) streak += 1;
-      else break;
-    }
-    if (streak >= 2) {
-      chips.push({
-        key: "streak",
-        label: `Held ${LEVEL_NAMES[latestLevel]} ${streak} sessions in a row`,
-        tone: "neutral",
-      });
-    }
-  }
-
-  // Chip 4: Next level + descriptor. Suppressed when no descriptor is
-  // available — the brief says to leave the chip out when the skill has no
-  // level descriptors, so "Next: Advanced" with no explanation never ships.
-  if (latestLevel !== null && latestLevel < 5 && levelDescriptors) {
-    const nextLevel = (latestLevel + 1) as 1 | 2 | 3 | 4 | 5;
-    const descriptor = levelDescriptors[nextLevel];
-    if (descriptor && descriptor.trim().length > 0) {
-      chips.push({
-        key: "next",
-        label: `Next: ${LEVEL_NAMES[nextLevel]} — ${descriptor}`,
-        tone: "accent",
-      });
-    }
+    // Single graded rating — the brief calls this "First rating" so the
+    // chip reads cleanly even when the swimmer has only one evaluation.
+    chips.push({ key: "delta", label: "First rating", tone: "neutral" });
   }
 
   return chips;
 }
 
-// Which point indices should carry a date label underneath. Dense series
-// overflow at phone width (10 points × ~70px date labels doesn't fit in a
-// 240px plot), so we always label the first and last and distribute at most
-// `maxLabels` evenly across the rest.
-export function pickDateTickIndices(count: number, maxLabels: number = 5): Set<number> {
+// Next-level descriptor shown under the chips as plain text. Returns null
+// when the skill has no descriptors, the latest rating is already at the
+// max level, or the latest is NL / NC.
+export function buildNextDescriptor(
+  series: LadderPoint[],
+  levelDescriptors?: Partial<Record<1 | 2 | 3 | 4 | 5, string>> | undefined,
+): { levelName: string; text: string } | null {
+  if (!levelDescriptors || series.length === 0) return null;
+  const latest = series[series.length - 1];
+  if (!latest) return null;
+  const latestLevel = ladderEffectiveLevel(latest);
+  if (latestLevel === null || latestLevel >= 5) return null;
+  const nextLevel = (latestLevel + 1) as 1 | 2 | 3 | 4 | 5;
+  const descriptor = levelDescriptors[nextLevel];
+  if (!descriptor || descriptor.trim().length === 0) return null;
+  return { levelName: LEVEL_NAMES[nextLevel], text: descriptor };
+}
+
+// Which point indices should carry a date label underneath. The ladder
+// draws the first and last labels at every width and then adds at most
+// one or two in between so dense series don't overflow. Default
+// `maxLabels` of 4 covers first + last + up to two middle ticks.
+export function pickDateTickIndices(count: number, maxLabels: number = 4): Set<number> {
   if (count <= 0) return new Set();
   if (count <= maxLabels) {
     const all = new Set<number>();

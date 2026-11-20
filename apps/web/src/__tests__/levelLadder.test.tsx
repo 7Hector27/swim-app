@@ -1,16 +1,25 @@
 // Covers the LevelLadder helpers (pure functions) and the component's
-// visible behavior across the states the brief called out: step path for a
-// known series, up / held / down chips, single rating, left/right rendering,
-// and a Not-legal point surfaced as a separate marker.
+// visible behavior across the states the rebuilt brief called out:
+// 12 CSS px text throughout, a left gutter wide enough for "2 Developing",
+// single-rating anchored at the right edge of the plot, last date label
+// anchored to end, the shape legend moved out of the chart into
+// LadderDetails, and the details column rendering with / without the
+// Next-level descriptor.
 
 import { describe, it, expect } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import { stepLinePath } from "../lib/stepChart";
-import LevelLadder from "../components/LevelLadder";
+import LevelLadder, {
+  LADDER_LABEL_GUTTER,
+  LADDER_LABEL_RIGHT_PAD,
+  LADDER_VIEW_WIDTH,
+} from "../components/LevelLadder/LevelLadder";
+import LadderDetails from "../components/LevelLadder/LadderDetails";
 import {
   BAND_ORDER,
   buildChips,
   buildLadderSeries,
+  buildNextDescriptor,
   LEVEL_NAMES,
   pickDateTickIndices,
   trimToRecent,
@@ -29,6 +38,8 @@ function makePoint(overrides: Partial<LadderPoint> & { id: string; sessionDate: 
   };
 }
 
+// ── Helper tests ─────────────────────────────────────────────────────────
+
 describe("LevelLadder helpers — LEVEL_NAMES", () => {
   it("names the five levels in the order the brief lists them", () => {
     expect(LEVEL_NAMES[1]).toBe("Emerging");
@@ -44,7 +55,6 @@ describe("LevelLadder helpers — LEVEL_NAMES", () => {
 });
 
 describe("LevelLadder helpers — buildLadderSeries", () => {
-  // The progress payload ships newest-first; the ladder draws oldest-left.
   const history: LadderPoint[] = [
     makePoint({ id: "p3", sessionDate: "2026-10-25", grade: 4 }),
     makePoint({ id: "p2", sessionDate: "2026-10-18", grade: 3 }),
@@ -68,21 +78,12 @@ describe("LevelLadder helpers — buildLadderSeries", () => {
 });
 
 describe("LevelLadder helpers — step path", () => {
-  // Shared with the ladder: dates are drawn as even-spaced slots, not
-  // real-day spacing. Y collapses to the band centres. The step goes
-  // horizontal-then-vertical so a rating is "held" until the next session
-  // changed it, not interpolated.
   it("produces a step path with horizontal-then-vertical segments for a known series", () => {
-    // Three points at grade 2 → 3 → 4, at indices 0, 1, 2, evenly spaced.
-    // Y values are band centres; the helper doesn't care what they are, so
-    // we feed deterministic numbers (10, 20, 30) and check the string.
     const path = stepLinePath([
       { x: 0, y: 30 },
       { x: 50, y: 20 },
       { x: 100, y: 10 },
     ]);
-    // First a MoveTo. Then for each next point, a horizontal LineTo at the
-    // previous y followed by a vertical LineTo to the new y.
     expect(path).toBe(
       "M 0.00 30.00 L 50.00 30.00 L 50.00 20.00 L 100.00 20.00 L 100.00 10.00",
     );
@@ -110,8 +111,8 @@ describe("LevelLadder helpers — buildChips", () => {
     ];
     const chips = buildChips(buildLadderSeries(flat));
     expect(chips.find((chip) => chip.key === "delta")?.label).toMatch(/^Held since /);
-    const streakChip = chips.find((chip) => chip.key === "streak");
-    expect(streakChip?.label).toBe("Held Competent 3 sessions in a row");
+    // The streak chip was dropped in the rebuilt ladder — only now + delta remain.
+    expect(chips.find((chip) => chip.key === "streak")).toBeUndefined();
   });
 
   it("Down: emits 'Down N levels since <date>' when the swimmer has regressed", () => {
@@ -123,40 +124,58 @@ describe("LevelLadder helpers — buildChips", () => {
     expect(chips.find((chip) => chip.key === "delta")?.label).toMatch(/^Down 2 levels since /);
   });
 
-  it("single rating: emits 'Now' and 'Held since <date>' but no streak chip", () => {
+  it("single rating: emits 'Now' and 'First rating' — no streak, no 'since'", () => {
     const single = [makePoint({ id: "p1", sessionDate: "2026-10-25", grade: 3 })];
     const chips = buildChips(buildLadderSeries(single));
     expect(chips.map((chip) => chip.key)).toEqual(["now", "delta"]);
     expect(chips[0]?.label).toBe("Now: Competent");
-    expect(chips[1]?.label).toMatch(/^Held since /);
+    expect(chips[1]?.label).toBe("First rating");
   });
 
-  it("descriptors: 'Next: <level>' is emitted only when the next level's descriptor is non-empty", () => {
-    const series = buildLadderSeries([
-      makePoint({ id: "p1", sessionDate: "2026-10-25", grade: 3 }),
-    ]);
-    // Without descriptors: the chip is silently skipped.
-    const noDescriptors = buildChips(series);
-    expect(noDescriptors.find((chip) => chip.key === "next")).toBeUndefined();
-    // With a descriptor for the next level (4 → Advanced): the chip appears.
-    const withDescriptors = buildChips(series, { 4: "Efficient at race pace" });
-    const nextChip = withDescriptors.find((chip) => chip.key === "next");
-    expect(nextChip?.label).toBe("Next: Advanced — Efficient at race pace");
+  it("no Next chip — the Next descriptor renders as plain text in LadderDetails, not as a chip", () => {
+    const series = buildLadderSeries([makePoint({ id: "p1", sessionDate: "2026-10-25", grade: 3 })]);
+    const chips = buildChips(series);
+    expect(chips.find((chip) => chip.key === "next")).toBeUndefined();
+  });
+});
+
+describe("LevelLadder helpers — buildNextDescriptor", () => {
+  const series = buildLadderSeries([makePoint({ id: "p1", sessionDate: "2026-10-25", grade: 3 })]);
+
+  it("returns null when descriptors are undefined", () => {
+    expect(buildNextDescriptor(series, undefined)).toBeNull();
+  });
+
+  it("returns null when the next-level descriptor is missing or blank", () => {
+    expect(buildNextDescriptor(series, { 4: "" })).toBeNull();
+    expect(buildNextDescriptor(series, { 5: "A" })).toBeNull();
+  });
+
+  it("returns the next level name and the descriptor text when both are present", () => {
+    expect(buildNextDescriptor(series, { 4: "Efficient at race pace" })).toEqual({
+      levelName: "Advanced",
+      text: "Efficient at race pace",
+    });
+  });
+
+  it("returns null when the latest rating is already at level 5", () => {
+    const mastered = buildLadderSeries([makePoint({ id: "p1", sessionDate: "2026-10-25", grade: 5 })]);
+    expect(buildNextDescriptor(mastered, { 5: "N/A" })).toBeNull();
   });
 });
 
 describe("LevelLadder helpers — pickDateTickIndices", () => {
-  it("returns every index when the series is short (≤ maxLabels)", () => {
-    const picks = pickDateTickIndices(4, 5);
-    expect([...picks].sort((a, b) => a - b)).toEqual([0, 1, 2, 3]);
+  it("returns every index when the series fits (≤ maxLabels)", () => {
+    const picks = pickDateTickIndices(3);
+    expect([...picks].sort((a, b) => a - b)).toEqual([0, 1, 2]);
   });
 
-  it("spans 10 points with 5 labels including first and last", () => {
-    const picks = pickDateTickIndices(10, 5);
+  it("spans 10 points with at most 4 labels including first + last", () => {
+    const picks = pickDateTickIndices(10);
     expect(picks.has(0)).toBe(true);
     expect(picks.has(9)).toBe(true);
     expect(picks.size).toBeGreaterThanOrEqual(3);
-    expect(picks.size).toBeLessThanOrEqual(5);
+    expect(picks.size).toBeLessThanOrEqual(4);
   });
 });
 
@@ -168,10 +187,10 @@ describe("LevelLadder helpers — trimToRecent", () => {
   });
 });
 
-// ── Component-level tests ────────────────────────────────────────────────
+// ── Chart rendering ──────────────────────────────────────────────────────
 
-describe("LevelLadder component", () => {
-  it("renders the five band labels using the rating-scale names", () => {
+describe("LevelLadder — chart rendering", () => {
+  it("renders the five band labels using the rating-scale names, at 12px CSS font-size", () => {
     render(
       <LevelLadder
         skillName="Freestyle Kick"
@@ -179,17 +198,15 @@ describe("LevelLadder component", () => {
         ratedPerSide={false}
       />,
     );
-    // Band labels render inside the SVG as "<level> <name>" rows. Pattern
-    // matches those directly and avoids colliding with the newest point's
-    // tooltip (which also contains the level name).
-    expect(screen.getByText("1 Emerging")).toBeInTheDocument();
-    expect(screen.getByText("2 Developing")).toBeInTheDocument();
-    expect(screen.getByText("3 Competent")).toBeInTheDocument();
-    expect(screen.getByText("4 Advanced")).toBeInTheDocument();
-    expect(screen.getByText("5 Mastery")).toBeInTheDocument();
+    for (const label of ["1 Emerging", "2 Developing", "3 Competent", "4 Advanced", "5 Mastery"]) {
+      const node = screen.getByText(label);
+      expect(node).toBeInTheDocument();
+      // CSS px, not viewBox units — keeps text size stable at every viewport.
+      expect(node.getAttribute("style") ?? "").toContain("font-size: 12px");
+    }
   });
 
-  it("single rating: renders one 'newest' point and the Now / Held chips", () => {
+  it("left gutter fits the longest level label ('2 Developing') at 12px with padding", () => {
     render(
       <LevelLadder
         skillName="Freestyle Kick"
@@ -197,61 +214,74 @@ describe("LevelLadder component", () => {
         ratedPerSide={false}
       />,
     );
-    // Exactly one newest marker exists in a one-rating series.
-    expect(screen.getAllByTestId("level-ladder-newest")).toHaveLength(1);
-    expect(screen.getByTestId("level-ladder-chip-now")).toHaveTextContent("Now: Competent");
-    expect(screen.getByTestId("level-ladder-chip-delta")).toHaveTextContent(/Held since /);
+    // Upper-bound width per character at 12px Figtree. categoryRadar.test
+    // uses the same 7.5 * (font/13) heuristic — kept in lockstep so a passing
+    // assertion here is conservative vs. real rendering.
+    const CHAR_WIDTH_12PX = 7.5 * (12 / 13);
+    const labelNodes = screen.getAllByTestId("level-ladder-band-label");
+    for (const node of labelNodes) {
+      const content = Array.from(node.childNodes)
+        .map((child) => child.textContent ?? "")
+        .join("")
+        .trim();
+      const widthEstimate = content.length * CHAR_WIDTH_12PX;
+      // Labels anchor at x = LADDER_LABEL_GUTTER - LADDER_LABEL_RIGHT_PAD with
+      // textAnchor="end", so the left edge of the label is at
+      // (gutter - padRight) - width. That must stay ≥ 0 so the "3" in
+      // "3 Competent" doesn't clip to a "B".
+      const labelRightX = LADDER_LABEL_GUTTER - LADDER_LABEL_RIGHT_PAD;
+      const labelLeftX = labelRightX - widthEstimate;
+      expect(labelLeftX, `${content} left edge @12px`).toBeGreaterThanOrEqual(0);
+    }
   });
 
-  it("left/right: draws two step lines (one dashed) and labels chip groups L / R", () => {
-    const history: LadderPoint[] = [
-      makePoint({ id: "l2", sessionDate: "2026-10-25", grade: 4, side: "left" }),
-      makePoint({ id: "r2", sessionDate: "2026-10-25", grade: 3, side: "right" }),
-      makePoint({ id: "l1", sessionDate: "2026-10-11", grade: 2, side: "left" }),
-      makePoint({ id: "r1", sessionDate: "2026-10-11", grade: 2, side: "right" }),
-    ];
-    render(
-      <LevelLadder
-        skillName="Bilateral breathing"
-        history={history}
-        ratedPerSide={true}
-      />,
-    );
-    // Two distinct step lines, keyed by side.
-    expect(screen.getByTestId("level-ladder-line-left")).toBeInTheDocument();
-    expect(screen.getByTestId("level-ladder-line-right")).toBeInTheDocument();
-    // Right side is dashed; left is not.
-    expect(screen.getByTestId("level-ladder-line-right").getAttribute("stroke-dasharray")).toBeTruthy();
-    expect(screen.getByTestId("level-ladder-line-left").getAttribute("stroke-dasharray")).toBeFalsy();
-    // Chip groups carry side labels. The L group's Now chip shows the
-    // left-side's current level, R shows the right's.
-    const chipRoot = screen.getByTestId("level-ladder-chips");
-    expect(within(chipRoot).getByText("L:")).toBeInTheDocument();
-    expect(within(chipRoot).getByText("R:")).toBeInTheDocument();
-  });
-
-  it("Not legal: draws the dedicated marker below the bands rather than plotting a level", () => {
-    const history: LadderPoint[] = [
-      makePoint({ id: "p2", sessionDate: "2026-10-25", grade: 3 }),
-      makePoint({ id: "p1", sessionDate: "2026-10-18", grade: 2, notLegal: true }),
-    ];
+  it("caps the drawing size at 400 CSS px wide and never scales up above it", () => {
     render(
       <LevelLadder
         skillName="Freestyle Kick"
-        history={history}
+        history={[makePoint({ id: "p1", sessionDate: "2026-10-25", grade: 3 })]}
         ratedPerSide={false}
       />,
     );
-    // A separate special-row marker is present and is labelled "NL".
-    const specials = screen.getAllByTestId("level-ladder-special");
-    expect(specials).toHaveLength(1);
-    expect(specials[0]).toHaveTextContent("NL");
-    // And the step line only has one point drawn (the graded one — the NL
-    // point is skipped), so there's exactly one "newest" marker.
-    expect(screen.getAllByTestId("level-ladder-newest")).toHaveLength(1);
+    const svg = screen.getByTestId("level-ladder");
+    const style = svg.getAttribute("style") ?? "";
+    expect(style).toContain(`max-width: ${LADDER_VIEW_WIDTH}px`);
+    expect(style).toContain("width: 100%");
   });
 
-  it("the first and last date labels anchor to their plot edges so they don't clip", () => {
+  it("single rating anchors the point to the right edge of the plot (not floating in the middle)", () => {
+    render(
+      <LevelLadder
+        skillName="Freestyle Kick"
+        history={[makePoint({ id: "p1", sessionDate: "2026-10-25", grade: 3 })]}
+        ratedPerSide={false}
+      />,
+    );
+    const newest = screen.getByTestId("level-ladder-newest");
+    const circle = newest.querySelector("circle");
+    expect(circle).not.toBeNull();
+    const cx = Number(circle!.getAttribute("cx"));
+    // Right edge = VIEW_WIDTH - PAD_RIGHT. The component exports the
+    // gutter + VIEW_WIDTH but not PAD_RIGHT; its value (16) is reflected
+    // in the single-rating test by asserting cx lands ≥ the plot's right
+    // third rather than its centre (which would be ~248).
+    expect(cx).toBeGreaterThan(LADDER_VIEW_WIDTH * 0.75);
+  });
+
+  it("single rating date label sits under the right-edge point and anchors to end", () => {
+    render(
+      <LevelLadder
+        skillName="Freestyle Kick"
+        history={[makePoint({ id: "p1", sessionDate: "2026-10-25", grade: 3 })]}
+        ratedPerSide={false}
+      />,
+    );
+    const dates = screen.getAllByTestId("level-ladder-date-label");
+    expect(dates).toHaveLength(1);
+    expect(dates[0]?.getAttribute("data-anchor")).toBe("end");
+  });
+
+  it("first and last date labels anchor to the plot edges; middle ticks stay centred", () => {
     const history: LadderPoint[] = [
       makePoint({ id: "p3", sessionDate: "2026-10-25", grade: 4 }),
       makePoint({ id: "p2", sessionDate: "2026-10-18", grade: 3 }),
@@ -265,49 +295,150 @@ describe("LevelLadder component", () => {
       />,
     );
     const dateLabels = screen.getAllByTestId("level-ladder-date-label");
-    const edges = dateLabels.filter((node) => node.getAttribute("data-first-or-last") === "true");
-    // Every rendered tick that's first-or-last anchors to its own
-    // corner. Middle ticks stay centered.
-    expect(edges.length).toBeGreaterThan(0);
     const first = dateLabels[0];
     const last = dateLabels[dateLabels.length - 1];
     expect(first?.getAttribute("data-anchor")).toBe("start");
     expect(last?.getAttribute("data-anchor")).toBe("end");
-    // No middle label uses start or end.
     const middle = dateLabels.filter((node) => node.getAttribute("data-first-or-last") !== "true");
     for (const node of middle) {
       expect(node.getAttribute("data-anchor")).toBe("middle");
     }
   });
 
-  it("parent view: `nextAsPlainText` lifts the Next chip out of the chip row into a paragraph", () => {
-    const history: LadderPoint[] = [
-      makePoint({ id: "p1", sessionDate: "2026-10-25", grade: 3 }),
-    ];
-    const { rerender } = render(
+  it("dates render at 12px (stays 12 CSS px even as the SVG shrinks)", () => {
+    render(
       <LevelLadder
-        skillName="Freestyle Catch"
-        history={history}
+        skillName="Freestyle Kick"
+        history={[
+          makePoint({ id: "p2", sessionDate: "2026-10-25", grade: 4 }),
+          makePoint({ id: "p1", sessionDate: "2026-10-11", grade: 2 }),
+        ]}
         ratedPerSide={false}
-        levelDescriptors={{ "4": "Efficient at race pace on most strokes." }}
       />,
     );
-    // Default (coach): Next renders as a chip.
-    expect(screen.getByTestId("level-ladder-chip-next")).toBeInTheDocument();
+    const dates = screen.getAllByTestId("level-ladder-date-label");
+    for (const node of dates) {
+      expect(node.getAttribute("style") ?? "").toContain("font-size: 12px");
+    }
+  });
 
-    rerender(
+  it("newest point is a filled circle with the grade number (even when the context is a drill or race)", () => {
+    render(
       <LevelLadder
-        skillName="Freestyle Catch"
-        history={history}
+        skillName="Freestyle Kick"
+        history={[makePoint({ id: "p1", sessionDate: "2026-10-25", grade: 3, context: "race" })]}
         ratedPerSide={false}
-        levelDescriptors={{ "4": "Efficient at race pace on most strokes." }}
-        nextAsPlainText
       />,
     );
-    // Parent view: no chip; plain-text paragraph instead.
-    expect(screen.queryByTestId("level-ladder-chip-next")).toBeNull();
-    expect(screen.getByTestId("level-ladder-next-text-single")).toHaveTextContent(
-      "Advanced — Efficient at race pace on most strokes.",
+    const newest = screen.getByTestId("level-ladder-newest");
+    expect(newest.querySelector("circle")).not.toBeNull();
+    const numberText = newest.querySelector("text");
+    expect(numberText?.textContent).toBe("3");
+    expect(numberText?.getAttribute("style") ?? "").toContain("font-size: 12px");
+  });
+
+  it("left/right: draws two step lines (one dashed)", () => {
+    const history: LadderPoint[] = [
+      makePoint({ id: "l2", sessionDate: "2026-10-25", grade: 4, side: "left" }),
+      makePoint({ id: "r2", sessionDate: "2026-10-25", grade: 3, side: "right" }),
+      makePoint({ id: "l1", sessionDate: "2026-10-11", grade: 2, side: "left" }),
+      makePoint({ id: "r1", sessionDate: "2026-10-11", grade: 2, side: "right" }),
+    ];
+    render(<LevelLadder skillName="Bilateral breathing" history={history} ratedPerSide={true} />);
+    expect(screen.getByTestId("level-ladder-line-left")).toBeInTheDocument();
+    expect(screen.getByTestId("level-ladder-line-right")).toBeInTheDocument();
+    expect(screen.getByTestId("level-ladder-line-right").getAttribute("stroke-dasharray")).toBeTruthy();
+    expect(screen.getByTestId("level-ladder-line-left").getAttribute("stroke-dasharray")).toBeFalsy();
+  });
+
+  it("Not legal: draws the dedicated marker below the bands rather than plotting a level", () => {
+    const history: LadderPoint[] = [
+      makePoint({ id: "p2", sessionDate: "2026-10-25", grade: 3 }),
+      makePoint({ id: "p1", sessionDate: "2026-10-18", grade: 2, notLegal: true }),
+    ];
+    render(<LevelLadder skillName="Freestyle Kick" history={history} ratedPerSide={false} />);
+    const specials = screen.getAllByTestId("level-ladder-special");
+    expect(specials).toHaveLength(1);
+    expect(specials[0]).toHaveTextContent("NL");
+    expect(screen.getAllByTestId("level-ladder-newest")).toHaveLength(1);
+  });
+
+  it("does not render the shape legend inside the chart — the legend lives in LadderDetails", () => {
+    const { container } = render(
+      <LevelLadder
+        skillName="Freestyle Kick"
+        history={[makePoint({ id: "p1", sessionDate: "2026-10-25", grade: 3 })]}
+        ratedPerSide={false}
+      />,
     );
+    // No "Practice / Drill / Race" legend text inside the chart.
+    expect(container.textContent ?? "").not.toMatch(/Practice.*Drill.*Race/);
+  });
+});
+
+// ── LadderDetails rendering ──────────────────────────────────────────────
+
+describe("LadderDetails", () => {
+  const history: LadderPoint[] = [
+    makePoint({ id: "p3", sessionDate: "2026-10-25", grade: 4 }),
+    makePoint({ id: "p2", sessionDate: "2026-10-18", grade: 3 }),
+    makePoint({ id: "p1", sessionDate: "2026-10-11", grade: 2 }),
+  ];
+
+  it("renders the Now + delta chips", () => {
+    render(<LadderDetails history={history} ratedPerSide={false} />);
+    const now = screen.getByTestId("level-ladder-chip-now");
+    expect(now).toHaveTextContent("Now: Advanced");
+    const delta = screen.getByTestId("level-ladder-chip-delta");
+    expect(delta.textContent ?? "").toMatch(/^Up 2 levels since /);
+  });
+
+  it("renders the Next, <levelName>: descriptor line when descriptors are present", () => {
+    render(
+      <LadderDetails
+        history={history}
+        ratedPerSide={false}
+        levelDescriptors={{ 5: "Efficient at race pace on most strokes." }}
+      />,
+    );
+    const next = screen.getByTestId("ladder-details-next-single");
+    expect(next.textContent ?? "").toContain("Next, Mastery:");
+    expect(next.textContent ?? "").toContain("Efficient at race pace on most strokes.");
+  });
+
+  it("omits the Next line when the skill has no descriptors", () => {
+    render(<LadderDetails history={history} ratedPerSide={false} />);
+    expect(screen.queryByTestId("ladder-details-next-single")).toBeNull();
+  });
+
+  it("surfaces the shape legend as a single text line", () => {
+    render(<LadderDetails history={history} ratedPerSide={false} />);
+    const legend = screen.getByTestId("ladder-details-legend");
+    expect(legend).toHaveTextContent("Circle is practice, triangle is a drill, diamond is a race.");
+  });
+
+  it("per-side skills: emits one chip row per side labelled L / R", () => {
+    const sided: LadderPoint[] = [
+      makePoint({ id: "l2", sessionDate: "2026-10-25", grade: 4, side: "left" }),
+      makePoint({ id: "r2", sessionDate: "2026-10-25", grade: 3, side: "right" }),
+      makePoint({ id: "l1", sessionDate: "2026-10-11", grade: 2, side: "left" }),
+      makePoint({ id: "r1", sessionDate: "2026-10-11", grade: 2, side: "right" }),
+    ];
+    render(<LadderDetails history={sided} ratedPerSide={true} />);
+    const left = screen.getByTestId("ladder-details-chips-left");
+    const right = screen.getByTestId("ladder-details-chips-right");
+    expect(within(left).getByText("L:")).toBeInTheDocument();
+    expect(within(right).getByText("R:")).toBeInTheDocument();
+  });
+
+  it("renders the coach-only extras slot under the legend when provided", () => {
+    render(
+      <LadderDetails
+        history={history}
+        ratedPerSide={false}
+        extras={<p data-testid="coach-extras">Edit list goes here</p>}
+      />,
+    );
+    expect(screen.getByTestId("coach-extras")).toBeInTheDocument();
   });
 });
