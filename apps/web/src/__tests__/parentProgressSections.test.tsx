@@ -1,6 +1,9 @@
-// Component-level coverage for the rebuilt top-of-page sections:
-// CoachFocus (cap at 3, empty state, descriptor presence) and
-// SummaryCard (headline + stacked bar).
+// Component-level coverage for the rebuilt top-of-page sections. The
+// coach's focus area now splits across two production components:
+// CoachNoteCard renders the latest priority's text + byline, and
+// CoachFocusList renders the capped three-card Working on next grid.
+// Tests here drive those production components directly; the earlier
+// combined CoachFocus component has been deleted.
 
 import { describe, it, expect } from "vitest";
 import { render, screen, within } from "@testing-library/react";
@@ -10,7 +13,8 @@ import type {
   ProgressCoachingPriority,
   SkillCurrentLevel,
 } from "@swim-app/shared";
-import CoachFocus from "../content/ParentSwimmerProgressContent/sections/CoachFocus";
+import CoachFocusList from "../content/ParentSwimmerProgressContent/sections/CoachFocusList";
+import CoachNoteCard from "../content/ParentSwimmerProgressContent/sections/CoachNoteCard";
 import SummaryCard from "../content/ParentSwimmerProgressContent/sections/SummaryCard";
 import { buildSummaryCard } from "../content/ParentSwimmerProgressContent/helpers";
 import type { CatalogIndexEntry } from "../lib/screenGroups";
@@ -74,15 +78,9 @@ function priority(slug: string, name: string): ProgressCoachingPriority {
   return { targetSlug: slug, targetName: name, chain: [] };
 }
 
-// ── CoachFocus ───────────────────────────────────────────────────────────
+// ── CoachFocusList ───────────────────────────────────────────────────────
 
-describe("CoachFocus", () => {
-  const latest: LatestCoachingPriority = {
-    text: "Keep the lead arm out front when breathing to the right.",
-    sessionDate: "2026-11-17",
-    coachFirstName: "Jason",
-  };
-
+describe("CoachFocusList", () => {
   it("caps the Working on next list at 3 cards, in the order the server returned them", () => {
     const priorities: ProgressCoachingPriority[] = [
       priority("free-core-stability", "Core stability"),
@@ -96,8 +94,7 @@ describe("CoachFocus", () => {
     );
     const catalog = new Map(priorities.map((entry) => catalogEntry(entry.targetSlug, entry.targetName, "Freestyle")));
     render(
-      <CoachFocus
-        latestPriority={latest}
+      <CoachFocusList
         workingOnNext={priorities}
         swimmerFirstName="Lily"
         skillsBySlug={skillsBySlug}
@@ -132,8 +129,7 @@ describe("CoachFocus", () => {
       catalogEntry("free-pull", "Pull", "Freestyle"),
     ]);
     render(
-      <CoachFocus
-        latestPriority={latest}
+      <CoachFocusList
         workingOnNext={[priority("free-catch", "Catch"), priority("free-pull", "Pull")]}
         swimmerFirstName="Lily"
         skillsBySlug={skillsBySlug}
@@ -147,10 +143,9 @@ describe("CoachFocus", () => {
     expect(within(cards[1]!).queryByTestId("parent-coach-focus-next")).toBeNull();
   });
 
-  it("empty state: shows the on-track line when there are no priorities and no latest note", () => {
+  it("empty state: shows the on-track line when there are no priorities", () => {
     render(
-      <CoachFocus
-        latestPriority={null}
+      <CoachFocusList
         workingOnNext={[]}
         swimmerFirstName="Maya"
         skillsBySlug={new Map()}
@@ -161,46 +156,33 @@ describe("CoachFocus", () => {
       "Nothing flagged right now. Maya is on track.",
     );
   });
+});
 
-  it("hides the note card when there is no latest priority, even with priority cards", () => {
-    render(
-      <CoachFocus
-        latestPriority={null}
-        workingOnNext={[priority("a", "A")]}
-        swimmerFirstName="Maya"
-        skillsBySlug={new Map([["a", skill({ slug: "a", name: "A", current: level(3) })]])}
-        catalogIndex={new Map([catalogEntry("a", "A", "Freestyle")])}
-      />,
-    );
-    expect(screen.queryByTestId("parent-coach-focus-note")).toBeNull();
-    expect(screen.queryByTestId("parent-coach-focus-byline")).toBeNull();
-    // Priority cards still render.
-    expect(screen.getByTestId("parent-coach-focus-card")).toBeInTheDocument();
+// ── CoachNoteCard ────────────────────────────────────────────────────────
+
+describe("CoachNoteCard", () => {
+  const latest: LatestCoachingPriority = {
+    text: "Keep the lead arm out front when breathing to the right.",
+    sessionDate: "2026-11-17",
+    coachFirstName: "Jason",
+  };
+
+  it("returns null when there is no latest priority (the page conditionally renders it)", () => {
+    const { container } = render(<CoachNoteCard latestPriority={null} />);
+    expect(container.firstChild).toBeNull();
   });
 
-  it("surfaces the coach's name in the byline when the response carries one", () => {
-    render(
-      <CoachFocus
-        latestPriority={latest}
-        workingOnNext={[]}
-        swimmerFirstName="Lily"
-        skillsBySlug={new Map()}
-        catalogIndex={new Map()}
-      />,
-    );
-    // First-word only: the API returns "Jason Riley"; the byline reads
-    // "From Coach Jason". Middot separator before the date.
+  it("surfaces the coach's first name in the byline when the response carries one", () => {
+    render(<CoachNoteCard latestPriority={latest} />);
+    // The API already returns just the first name; the byline reads
+    // "From Coach Jason · Nov 17". Middot separator before the date.
     expect(screen.getByTestId("parent-coach-focus-byline")).toHaveTextContent("From Coach Jason · Nov 17");
   });
 
   it("falls back to 'From your coach' (no date) when coachFirstName is null", () => {
     render(
-      <CoachFocus
+      <CoachNoteCard
         latestPriority={{ text: "Keep working.", sessionDate: "2026-10-14", coachFirstName: null }}
-        workingOnNext={[]}
-        swimmerFirstName="Lily"
-        skillsBySlug={new Map()}
-        catalogIndex={new Map()}
       />,
     );
     // Nameless fallback drops the date along with the name — without
