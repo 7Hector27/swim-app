@@ -1,10 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { render } from "@testing-library/react";
-import CategoryRadar from "../content/SwimmerProgressContent/charts/CategoryRadar";
+import CategoryRadar, { __TEST__ } from "../content/SwimmerProgressContent/charts/CategoryRadar";
 
 // Real category names from the skills catalog. Any wrapping/padding fix
 // has to handle the longest ones ("Starts, Turns & Underwaters",
-// "Body Position & Balance") without clipping.
+// "Body Position & Balance") without clipping or overlapping the chart.
 const REAL_CATEGORIES = [
   "Body Position & Balance",
   "Breathing & Coordination",
@@ -29,6 +29,7 @@ function charWidthFor(fontSize: number): number {
 
 interface LabelBox {
   text: string;
+  centerX: number;
   left: number;
   right: number;
   top: number;
@@ -37,11 +38,11 @@ interface LabelBox {
 
 function readLabelBoxes(container: HTMLElement, fontSize: number): LabelBox[] {
   const charWidth = charWidthFor(fontSize);
-  // Line height scales with font-size: the component uses 16 viewBox units
+  // Line height scales with font-size: the component uses 17 viewBox units
   // at the base and the step-ups are 1 and 2 units of font-size, so line
   // height effectively grows by a similar ratio when the text visually
   // enlarges. 18 is a safe bound for the desktop step.
-  const lineHeight = 15 * (fontSize / 13);
+  const lineHeight = 17 * (fontSize / 14);
   const texts = Array.from(container.querySelectorAll<SVGTextElement>("text[data-testid='category-radar-label']"));
   return texts.map((textEl) => {
     const anchor = textEl.getAttribute("text-anchor") ?? "start";
@@ -53,10 +54,10 @@ function readLabelBoxes(container: HTMLElement, fontSize: number): LabelBox[] {
     const y = Number(textEl.getAttribute("y"));
     const left = anchor === "start" ? x : anchor === "end" ? x - width : x - width / 2;
     const right = anchor === "start" ? x + width : anchor === "end" ? x : x + width / 2;
-    // Approximate ascender as 10 × (font/13) and descender as 3 × (font/13).
-    const top = y - 10 * (fontSize / 13);
-    const bottom = y + (tspans.length - 1) * lineHeight + 3 * (fontSize / 13);
-    return { text: lines.join(" / "), left, right, top, bottom };
+    // Approximate ascender as 10 × (font/14) and descender as 3 × (font/14).
+    const top = y - 10 * (fontSize / 14);
+    const bottom = y + (tspans.length - 1) * lineHeight + 3 * (fontSize / 14);
+    return { text: lines.join(" / "), centerX: (left + right) / 2, left, right, top, bottom };
   });
 }
 
@@ -81,14 +82,14 @@ describe("CategoryRadar — label bounding boxes stay inside the viewBox", () =>
   // The invariant we check — label bbox fits inside the SVG viewBox — is
   // scale-invariant, so one render covers phone (320), tablet (769, 1024),
   // and desktop (1280) container widths. We re-run the invariant for each
-  // breakpoint's font-size step (phone 13, tablet 14, desktop 15) because
-  // the font-size change is applied in viewBox units (via CSS media rules
-  // on .category-radar-label), which can widen text in viewBox space.
+  // breakpoint's font-size step because the font-size change is applied in
+  // viewBox units (via CSS media rules on .category-radar-label), which
+  // can widen text in viewBox space.
   it.each([
-    { label: "phone (320px)", fontSize: 13 },
-    { label: "tablet 769px", fontSize: 14 },
-    { label: "tablet 1024px", fontSize: 14 },
-    { label: "desktop 1280px", fontSize: 15 },
+    { label: "phone (320px)", fontSize: 14 },
+    { label: "tablet 769px", fontSize: 15 },
+    { label: "tablet 1024px", fontSize: 15 },
+    { label: "desktop 1280px", fontSize: 16 },
   ])("real category names fit inside the viewBox at $label", ({ fontSize }) => {
     const { container } = render(<CategoryRadar categories={REAL_CATEGORIES} />);
     assertAllLabelsFit(container, fontSize);
@@ -117,18 +118,25 @@ describe("CategoryRadar — label bounding boxes stay inside the viewBox", () =>
     expect(twoLineCount).toBeGreaterThanOrEqual(4);
   });
 
-  it("anchors labels by angle: start on the right, end on the left, middle at the top", () => {
+  it("every label is centered: text-anchor is 'middle' on every label", () => {
     const { container } = render(<CategoryRadar categories={REAL_CATEGORIES} />);
-    const svg = container.querySelector("svg")!;
-    const vb = svg.getAttribute("viewBox")!.split(" ").map(Number);
-    const cx = vb[0]! + vb[2]! / 2;
     const texts = Array.from(container.querySelectorAll("text[data-testid='category-radar-label']"));
+    expect(texts.length).toBeGreaterThan(0);
     for (const textEl of texts) {
-      const x = Number(textEl.getAttribute("x"));
-      const anchor = textEl.getAttribute("text-anchor");
-      if (x > cx + 10) expect(anchor).toBe("start");
-      else if (x < cx - 10) expect(anchor).toBe("end");
-      else expect(anchor).toBe("middle");
+      expect(textEl.getAttribute("text-anchor")).toBe("middle");
+    }
+  });
+
+  it("both lines of a two-line label share one center x so the block centers on its axis", () => {
+    const { container } = render(<CategoryRadar categories={REAL_CATEGORIES} />);
+    const texts = Array.from(container.querySelectorAll("text[data-testid='category-radar-label']"));
+    const twoLine = texts.filter((textEl) => textEl.querySelectorAll("tspan").length === 2);
+    expect(twoLine.length).toBeGreaterThanOrEqual(4);
+    for (const textEl of twoLine) {
+      const parentX = textEl.getAttribute("x");
+      const tspanXs = Array.from(textEl.querySelectorAll("tspan")).map((tspan) => tspan.getAttribute("x"));
+      expect(tspanXs[0]).toBe(parentX);
+      expect(tspanXs[1]).toBe(parentX);
     }
   });
 
@@ -136,7 +144,6 @@ describe("CategoryRadar — label bounding boxes stay inside the viewBox", () =>
     const { container } = render(<CategoryRadar categories={REAL_CATEGORIES} />);
     const shortVariants = container.querySelectorAll("text[data-variant='short']");
     expect(shortVariants).toHaveLength(0);
-    // Every real category name is present in full form.
     const texts = Array.from(container.querySelectorAll("text[data-testid='category-radar-label']"));
     const labelTexts = texts
       .map((textEl) =>
@@ -147,6 +154,42 @@ describe("CategoryRadar — label bounding boxes stay inside the viewBox", () =>
       .map((line) => line.replace(/\s+/g, " ").trim());
     for (const category of REAL_CATEGORIES) {
       expect(labelTexts).toContain(category.name);
+    }
+  });
+
+  it("no label's bounding box intersects the outer ring at any font size", () => {
+    const { CX: cx, CY: cy, SHAPE_RADIUS: ringRadius } = __TEST__;
+    for (const fontSize of [14, 15, 16]) {
+      const { container, unmount } = renderOnce();
+      const boxes = readLabelBoxes(container, fontSize);
+      for (const box of boxes) {
+        // Nearest point of an axis-aligned rect to (cx, cy):
+        const nearestX = Math.max(box.left, Math.min(cx, box.right));
+        const nearestY = Math.max(box.top, Math.min(cy, box.bottom));
+        const dx = nearestX - cx;
+        const dy = nearestY - cy;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        expect(distance, `${box.text} intersects the outer ring at ${fontSize}px (distance ${distance.toFixed(2)} ≤ ${ringRadius})`).toBeGreaterThan(ringRadius);
+      }
+      unmount();
+    }
+  });
+
+  it("no pair of label boxes overlaps at any font size", () => {
+    for (const fontSize of [14, 15, 16]) {
+      const { container, unmount } = renderOnce();
+      const boxes = readLabelBoxes(container, fontSize);
+      for (let i = 0; i < boxes.length; i += 1) {
+        for (let j = i + 1; j < boxes.length; j += 1) {
+          const a = boxes[i]!;
+          const b = boxes[j]!;
+          const overlapsX = a.left < b.right && b.left < a.right;
+          const overlapsY = a.top < b.bottom && b.top < a.bottom;
+          const overlaps = overlapsX && overlapsY;
+          expect(overlaps, `labels overlap at ${fontSize}px: "${a.text}" and "${b.text}"`).toBe(false);
+        }
+      }
+      unmount();
     }
   });
 
@@ -168,3 +211,8 @@ describe("CategoryRadar — label bounding boxes stay inside the viewBox", () =>
     expect(container.querySelector('[data-testid="category-radar-first-evaluation"]')).toBeNull();
   });
 });
+
+function renderOnce(): { container: HTMLElement; unmount: () => void } {
+  const { container, unmount } = render(<CategoryRadar categories={REAL_CATEGORIES} />);
+  return { container, unmount };
+}
