@@ -113,6 +113,79 @@ export async function computeGolfScoreTrends(
       .map((cohortSwimmer) => cohortSwimmer.id);
   }
 
+  // Collect every (skillSlug, category) pair that has at least one point for
+  // this swimmer — anything else can't surface an age band, so we don't
+  // fetch cohort ratings for it. The cohort fetch below runs ONCE across
+  // all pairs instead of N times inside the per-category loop (the N+1 fix).
+  const cohortSlugs = new Set<string>();
+  const cohortCategories = new Set<string>();
+  for (const [, skillEntry] of skillMap) {
+    for (const [category] of skillEntry.categories) {
+      cohortSlugs.add(skillEntry.slug);
+      cohortCategories.add(category);
+    }
+  }
+
+  // Bucket of latest-per-swimmer cohort values per (slug, category). Keyed
+  // by `${slug}::${category}` so the per-category loop can read it in O(1).
+  // Stays empty when ageGroup is null, cohort is empty, or this swimmer
+  // has no scored points at all.
+  const cohortValuesByKey = new Map<string, number[]>();
+
+  if (ageGroup !== null && cohortIds.length > 0 && cohortSlugs.size > 0) {
+    const cohortRows = await db
+      .select({
+        swimmerId: skillRatings.swimmerId,
+        slug: skills.slug,
+        category: skillRatings.golfScoreCategory,
+        timeSeconds: skillRatings.timeSeconds,
+        strokeCountValue: skillRatings.strokeCountValue,
+        ratedAt: skillRatings.ratedAt,
+      })
+      .from(skillRatings)
+      .innerJoin(skills, eq(skills.id, skillRatings.skillId))
+      .where(
+        and(
+          inArray(skills.slug, Array.from(cohortSlugs)),
+          inArray(skillRatings.golfScoreCategory, Array.from(cohortCategories)),
+          isNull(skillRatings.voidedAt),
+          isNull(skillRatings.supersededAt),
+          isNotNull(skillRatings.timeSeconds),
+          isNotNull(skillRatings.strokeCountValue),
+          inArray(skillRatings.swimmerId, cohortIds),
+          eq(skills.type, "score"),
+        ),
+      )
+      .orderBy(skillRatings.swimmerId, desc(skillRatings.ratedAt));
+
+    // One "latest per cohort swimmer" per (slug, category) key. Walks the
+    // rows ordered by swimmerId + desc(ratedAt) so the first row seen for
+    // a given (key, swimmerId) is the newest — identical to the original
+    // per-category selection logic.
+    const seenByKey = new Map<string, Set<string>>();
+    for (const row of cohortRows) {
+      if (row.category === null) continue;
+      const key = `${row.slug}::${row.category}`;
+      let seen = seenByKey.get(key);
+      if (!seen) {
+        seen = new Set();
+        seenByKey.set(key, seen);
+      }
+      if (seen.has(row.swimmerId)) continue;
+      seen.add(row.swimmerId);
+      const time = row.timeSeconds === null ? NaN : parseFloat(row.timeSeconds);
+      const strokes = row.strokeCountValue;
+      if (!isNaN(time) && strokes !== null) {
+        let values = cohortValuesByKey.get(key);
+        if (!values) {
+          values = [];
+          cohortValuesByKey.set(key, values);
+        }
+        values.push(time + strokes);
+      }
+    }
+  }
+
   for (const [, skillEntry] of skillMap) {
     const byCategory: GolfScoreCategoryTrend[] = [];
 
@@ -127,51 +200,15 @@ export async function computeGolfScoreTrends(
       }
 
       let ageBands: GolfScoreAgeBands | null = null;
-
-      if (ageGroup !== null && cohortIds.length > 0) {
-        const cohortRows = await db
-          .select({
-            swimmerId: skillRatings.swimmerId,
-            timeSeconds: skillRatings.timeSeconds,
-            strokeCountValue: skillRatings.strokeCountValue,
-            ratedAt: skillRatings.ratedAt,
-          })
-          .from(skillRatings)
-          .innerJoin(skills, eq(skills.id, skillRatings.skillId))
-          .where(
-            and(
-              eq(skills.slug, skillEntry.slug),
-              eq(skillRatings.golfScoreCategory, category),
-              isNull(skillRatings.voidedAt),
-              isNull(skillRatings.supersededAt),
-              isNotNull(skillRatings.timeSeconds),
-              isNotNull(skillRatings.strokeCountValue),
-              inArray(skillRatings.swimmerId, cohortIds),
-              eq(skills.type, "score"),
-            ),
-          )
-          .orderBy(skillRatings.swimmerId, desc(skillRatings.ratedAt));
-
-        const seenSwimmerIds = new Set<string>();
-        const latestValues: number[] = [];
-        for (const cohortRow of cohortRows) {
-          if (seenSwimmerIds.has(cohortRow.swimmerId)) continue;
-          seenSwimmerIds.add(cohortRow.swimmerId);
-          const time = cohortRow.timeSeconds === null ? NaN : parseFloat(cohortRow.timeSeconds);
-          const strokes = cohortRow.strokeCountValue;
-          if (!isNaN(time) && strokes !== null) latestValues.push(time + strokes);
-        }
-
-        latestValues.sort((first, second) => first - second);
-
-        if (latestValues.length >= 10) {
-          ageBands = {
-            bandCount: latestValues.length,
-            p25: computePercentile(latestValues, 25),
-            p50: computePercentile(latestValues, 50),
-            p75: computePercentile(latestValues, 75),
-          };
-        }
+      const latestValues = cohortValuesByKey.get(`${skillEntry.slug}::${category}`);
+      if (latestValues && latestValues.length >= 10) {
+        const sorted = [...latestValues].sort((first, second) => first - second);
+        ageBands = {
+          bandCount: sorted.length,
+          p25: computePercentile(sorted, 25),
+          p50: computePercentile(sorted, 50),
+          p75: computePercentile(sorted, 75),
+        };
       }
 
       byCategory.push({
