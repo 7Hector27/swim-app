@@ -1,26 +1,37 @@
 import { siteLinks } from "@/lib/siteLinks";
+import { fetchLeaderboardSummary } from "@/lib/api/leaderboard";
 
 import ThemeLogo from "@/components/ThemeLogo";
 
-const footerColumns = [
-  {
-    heading: "Explore",
-    items: [
-      { label: "Home", href: "/" },
-      { label: "Lessons", href: "/#lessons" },
-      { label: "Leaderboards", href: "/leaderboard" },
-      { label: "Coach Jason", href: "/#coach" },
-      { label: "FAQ", href: "/#faq" },
-    ],
-  },
-  {
-    heading: "Legal",
-    items: [
-      { label: "Privacy", href: "/privacy" },
-      { label: "Terms", href: "/terms" },
-    ],
-  },
-];
+interface FooterLink {
+  label: string;
+  href: string;
+}
+
+// Built on the server so the footer never advertises an empty leaderboard —
+// when no board qualifies, the "Leaderboards" link drops out entirely.
+async function buildFooterColumns(): Promise<Array<{ heading: string; items: FooterLink[] }>> {
+  const summary = await fetchLeaderboardSummary();
+  const hasAnyBoard = (summary?.qualifying ?? []).length > 0;
+
+  const exploreItems: FooterLink[] = [
+    { label: "Home", href: "/" },
+    { label: "Lessons", href: "/#lessons" },
+  ];
+  if (hasAnyBoard) exploreItems.push({ label: "Leaderboards", href: "/leaderboard" });
+  exploreItems.push({ label: "Coach Jason", href: "/#coach" }, { label: "FAQ", href: "/#faq" });
+
+  return [
+    { heading: "Explore", items: exploreItems },
+    {
+      heading: "Legal",
+      items: [
+        { label: "Privacy", href: "/privacy" },
+        { label: "Terms", href: "/terms" },
+      ],
+    },
+  ];
+}
 
 const iconButtonClass =
   "w-11 h-11 rounded-full flex items-center justify-center bg-white/10 text-text-secondary-on-section hover:bg-white/20 hover:text-text-on-section transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring)]";
@@ -76,7 +87,9 @@ function SocialIconRow() {
   );
 }
 
-export default function SiteFooter() {
+export default async function SiteFooter() {
+  const footerColumns = await buildFooterColumns();
+
   return (
     <footer className="bg-section text-text-on-section border-t border-divider-section">
       <div className="mx-auto max-w-content px-page py-12 tablet:py-16">

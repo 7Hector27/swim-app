@@ -551,6 +551,8 @@ export { AgeGroupSchema, ageToGroup } from "./lib/ageGroup";
 export type {
   MotivationalStandardName,
   LeaderboardQuery,
+  LeaderboardBoardId,
+  LeaderboardSummary,
   PublicBoardRow,
   PublicMasterRow,
   PublicBoardResponse,
@@ -561,8 +563,11 @@ export type {
   CoachMasterResponse,
 } from "./schemas/leaderboard";
 export {
+  MIN_SWIMMERS_PER_EVENT_LIST,
   MotivationalStandardNameSchema,
   LeaderboardQuerySchema,
+  LeaderboardBoardIdSchema,
+  LeaderboardSummarySchema,
   PublicBoardRowSchema,
   PublicMasterRowSchema,
   PublicBoardResponseSchema,

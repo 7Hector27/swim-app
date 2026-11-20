@@ -7,17 +7,24 @@ import { useSession } from "@/components/Providers";
 import { logout } from "@/lib/logout";
 import styles from "./ProfileMenu.module.css";
 
-const PARENT_MENU_ITEMS = [
+interface MenuItem {
+  label: string;
+  href: string;
+}
+
+// The Leaderboards entries are filtered out by `ProfileMenu` when no board
+// qualifies — the layout fans the `hasAnyBoard` flag down from the root.
+const PARENT_MENU_ITEMS: MenuItem[] = [
   { label: "Dashboard", href: "/dashboard" },
   { label: "Leaderboards", href: "/leaderboard" },
   { label: "Household", href: "/household" },
   { label: "Account settings", href: "/account" },
-] as const;
+];
 
-const COACH_MENU_ITEMS = [
+const COACH_MENU_ITEMS: MenuItem[] = [
   { label: "Dashboard", href: "/dashboard" },
   { label: "Account settings", href: "/account" },
-] as const;
+];
 
 function ChevronDown({ open }: { open: boolean }) {
   return (
@@ -40,9 +47,18 @@ function ChevronDown({ open }: { open: boolean }) {
   );
 }
 
-export default function ProfileMenu() {
+interface ProfileMenuProps {
+  // Hide the Leaderboards link when no public board qualifies. Optional —
+  // SiteNav (signed-out) and places that don't surface a Leaderboards entry
+  // can omit it; it defaults to `true` so pre-existing callers see the same
+  // behaviour they did before. Parent + coach nav always pass the real value.
+  hasAnyBoard?: boolean;
+}
+
+export default function ProfileMenu({ hasAnyBoard = true }: ProfileMenuProps) {
   const { role } = useSession();
-  const menuItems = role === "coach" ? COACH_MENU_ITEMS : PARENT_MENU_ITEMS;
+  const baseItems = role === "coach" ? COACH_MENU_ITEMS : PARENT_MENU_ITEMS;
+  const menuItems = baseItems.filter((item) => hasAnyBoard || item.href !== "/leaderboard");
   const [isOpen, setIsOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);

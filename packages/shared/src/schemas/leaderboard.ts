@@ -9,6 +9,23 @@ export { AgeGroupSchema };
 export const MotivationalStandardNameSchema = z.enum(["B", "BB", "A", "AA", "AAA", "AAAA"]);
 export type MotivationalStandardName = z.infer<typeof MotivationalStandardNameSchema>;
 
+// Minimum swimmers in one event list (same sex, age group, distance, stroke,
+// course) before the list qualifies for a public leaderboard. Enforced on
+// the API side so small groups never travel to the browser. Coach endpoints
+// ignore this threshold.
+export const MIN_SWIMMERS_PER_EVENT_LIST = 3;
+
+// Identifiers for the three public boards.
+export const LeaderboardBoardIdSchema = z.enum(["club", "isl", "master"]);
+export type LeaderboardBoardId = z.infer<typeof LeaderboardBoardIdSchema>;
+
+// GET /leaderboard/summary — tells the homepage, landing page, and nav which
+// boards currently have at least one qualifying event list.
+export const LeaderboardSummarySchema = z.object({
+  qualifying: z.array(LeaderboardBoardIdSchema),
+});
+export type LeaderboardSummary = z.infer<typeof LeaderboardSummarySchema>;
+
 export const LeaderboardQuerySchema = z.object({
   eventDistance: z.coerce.number().int().positive().optional(),
   eventStroke: SwimStrokeSchema.optional(),
@@ -31,8 +48,10 @@ export const PublicBoardRowSchema = z.object({
 });
 export type PublicBoardRow = z.infer<typeof PublicBoardRowSchema>;
 
+// ADR 023 (decided): standards are optional. A master-board row carries a
+// standard when one is defined and the PB meets its cut, null otherwise.
 export const PublicMasterRowSchema = PublicBoardRowSchema.extend({
-  standard: MotivationalStandardNameSchema,
+  standard: MotivationalStandardNameSchema.nullable(),
 });
 export type PublicMasterRow = z.infer<typeof PublicMasterRowSchema>;
 
@@ -42,7 +61,6 @@ export const PublicBoardResponseSchema = z.object({
 export type PublicBoardResponse = z.infer<typeof PublicBoardResponseSchema>;
 
 export const PublicMasterResponseSchema = z.object({
-  standardsAvailable: z.boolean(),
   rows: z.array(PublicMasterRowSchema),
 });
 export type PublicMasterResponse = z.infer<typeof PublicMasterResponseSchema>;

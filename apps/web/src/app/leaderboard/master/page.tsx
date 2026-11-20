@@ -15,11 +15,5 @@ export default async function MasterBoardPage({
     Object.entries(rawParams).map(([key, value]) => [key, Array.isArray(value) ? value[0] : value]),
   );
   const data = await fetchMasterBoard(params);
-  return (
-    <MasterBoardContent
-      standardsAvailable={data?.standardsAvailable ?? false}
-      rows={data?.rows ?? []}
-      loadFailed={data === null}
-    />
-  );
+  return <MasterBoardContent rows={data?.rows ?? []} loadFailed={data === null} />;
 }

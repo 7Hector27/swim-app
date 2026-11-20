@@ -151,25 +151,27 @@ describe("BoardFilters — URL updates", () => {
 });
 
 describe("MasterBoardContent", () => {
-  it("shows the Standards coming soon banner when standardsAvailable is false", () => {
-    render(<MasterBoardContent standardsAvailable={false} rows={[masterRow]} />);
-    expect(screen.getByText("Standards coming soon")).toBeTruthy();
+  it("shows the Standard column when at least one row carries a standard", () => {
+    render(<MasterBoardContent rows={[masterRow]} />);
+    expect(screen.getByText("Standard")).toBeTruthy();
+    // No "Standards coming soon" banner — ADR 023 (decided) dropped it.
+    expect(screen.queryByText(/Standards coming soon/i)).toBeNull();
+  });
+
+  it("hides the Standard column when no row carries a standard", () => {
+    const noStandardRow = { ...masterRow, standard: null };
+    render(<MasterBoardContent rows={[noStandardRow]} />);
     expect(screen.queryByText("Standard")).toBeNull();
   });
 
-  it("shows the Standard column and no banner when standardsAvailable is true", () => {
-    render(<MasterBoardContent standardsAvailable={true} rows={[masterRow]} />);
-    expect(screen.queryByText("Standards coming soon")).toBeNull();
-    expect(screen.getByText("Standard")).toBeTruthy();
+  it("shows the 'Not enough results yet' message when rows is empty", () => {
+    render(<MasterBoardContent rows={[]} />);
+    expect(screen.getByText(/not enough results yet/i)).toBeTruthy();
   });
 
-  it("shows the load-failed message and hides the banner when loadFailed is true", () => {
-    render(<MasterBoardContent standardsAvailable={false} rows={[]} loadFailed={true} />);
+  it("shows the load-failed message when loadFailed is true", () => {
+    render(<MasterBoardContent rows={[]} loadFailed={true} />);
     expect(screen.getByText("Couldn't load the leaderboard. Try again.")).toBeTruthy();
-    expect(screen.queryByText("Standards coming soon")).toBeNull();
-    expect(
-      screen.queryByText("No times match those filters — try adjusting your selection."),
-    ).toBeNull();
   });
 });
 
@@ -180,11 +182,9 @@ describe("ClubBoardContent — rows shown", () => {
     expect(screen.getByText("Ethan K.")).toBeTruthy();
   });
 
-  it("shows empty state when server returns no rows for the active filters", () => {
+  it("shows the 'Not enough results yet' empty state when server returns no rows", () => {
     render(<ClubBoardContent rows={[]} />);
-    expect(
-      screen.getByText("No times match those filters — try adjusting your selection."),
-    ).toBeTruthy();
+    expect(screen.getByText(/not enough results yet/i)).toBeTruthy();
   });
 
   it("shows the load-failed message instead of the empty state when loadFailed is true", () => {

@@ -8,10 +8,14 @@ import { asyncHandler } from "../middleware/asyncHandler";
 import { isActiveSwimmer } from "../db/queries";
 import {
   LeaderboardQuerySchema,
+  LeaderboardSummarySchema,
+  MIN_SWIMMERS_PER_EVENT_LIST,
+  type LeaderboardBoardId,
   type LeaderboardQuery,
   PublicBoardResponseSchema,
   PublicMasterResponseSchema,
   ageToGroup,
+  type AgeGroup,
   type MotivationalStandardName,
   calculateAge,
   currentSeasonStartYear,
@@ -24,6 +28,7 @@ import {
   applyFilters,
   assignRanks,
   assignMasterRanks,
+  filterByEventListThreshold,
   highestStandard,
 } from "../lib/leaderboard";
 
@@ -39,183 +44,88 @@ const limiter = rateLimit({
 
 leaderboardRouter.use(limiter);
 
-// ── Club board ─────────────────────────────────────────────────────────────────
+// ── Board loaders (shared by endpoints + summary) ──────────────────────────
 
-leaderboardRouter.get(
-  "/leaderboard/club",
-  validate({ query: LeaderboardQuerySchema }),
-  asyncHandler(async (req, res) => {
-    const query = req.query as LeaderboardQuery;
-    const today = todayLA();
-    const seasonYear = currentSeasonStartYear("club", today);
+type ClubRow = {
+  firstName: string;
+  lastInitial: string;
+  sex: "female" | "male";
+  ageGroup: AgeGroup;
+  eventDistance: number;
+  eventStroke: "free" | "back" | "breast" | "fly" | "im";
+  course: "scy" | "scm" | "lcm";
+  timeHundredths: number;
+};
 
-    const registrations = await db
-      .select({ swimmerId: leagueRegistrations.swimmerId })
-      .from(leagueRegistrations)
-      .where(
-        and(
-          eq(leagueRegistrations.league, "club"),
-          eq(leagueRegistrations.seasonStartYear, seasonYear),
-          isNull(leagueRegistrations.withdrawnAt),
-        ),
-      );
+type MasterRow = ClubRow & { standard: MotivationalStandardName | null };
 
-    const swimmerIds = registrations.map((row) => row.swimmerId);
+async function loadLeagueBoardRows(league: "club" | "summer_league"): Promise<ClubRow[]> {
+  const today = todayLA();
+  const seasonYear = currentSeasonStartYear(league, today);
 
-    const eligibleSwimmers = swimmerIds.length === 0
-      ? []
-      : await db
-          .select({
-            id: swimmers.id,
-            firstName: swimmers.firstName,
-            lastName: swimmers.lastName,
-            birthDate: swimmers.birthDate,
-            sex: swimmers.sex,
-          })
-          .from(swimmers)
-          .where(and(isActiveSwimmer, eq(swimmers.isPublic, true), inArray(swimmers.id, swimmerIds)));
-
-    const pbs = await fetchPbs(eligibleSwimmers.map((swimmer) => swimmer.id));
-
-    const swimmerMap = new Map(eligibleSwimmers.map((swimmer) => [swimmer.id, swimmer]));
-
-    // Age group and lastInitial are resolved here; birthDate, id, and lastName
-    // never travel past this point on the public path.
-    const rawRows = pbs.flatMap((pb) => {
-      const swimmer = swimmerMap.get(pb.swimmerId);
-      if (!swimmer) return [];
-      const ageGroup = ageToGroup(calculateAge(swimmer.birthDate, today));
-      if (!ageGroup) return [];
-      return [{
-        firstName: swimmer.firstName,
-        lastInitial: swimmer.lastName.charAt(0).toUpperCase(),
-        sex: swimmer.sex,
-        ageGroup,
-        eventDistance: pb.eventDistance,
-        eventStroke: pb.eventStroke,
-        course: pb.course,
-        timeHundredths: pb.timeHundredths,
-      }];
-    });
-
-    const filtered = applyFilters(rawRows, query);
-    const ranked = assignRanks(filtered);
-
-    const rows = ranked.map((row) => ({
-      firstName: row.firstName,
-      lastInitial: row.lastInitial,
-      ageGroup: row.ageGroup,
-      sex: row.sex,
-      time: formatSwimTime(row.timeHundredths),
-      eventDistance: row.eventDistance,
-      eventStroke: row.eventStroke,
-      course: row.course,
-      rank: row.rank,
-    }));
-
-    res.json(PublicBoardResponseSchema.parse({ rows }));
-  }),
-);
-
-// ── ISL board ──────────────────────────────────────────────────────────────────
-// Age group uses the registered_on date, not today. See ADR 023.
-
-leaderboardRouter.get(
-  "/leaderboard/isl",
-  validate({ query: LeaderboardQuerySchema }),
-  asyncHandler(async (req, res) => {
-    const query = req.query as LeaderboardQuery;
-    const today = todayLA();
-    const seasonYear = currentSeasonStartYear("summer_league", today);
-
-    const registrations = await db
-      .select({
-        swimmerId: leagueRegistrations.swimmerId,
-        registeredOn: leagueRegistrations.registeredOn,
-      })
-      .from(leagueRegistrations)
-      .where(
-        and(
-          eq(leagueRegistrations.league, "summer_league"),
-          eq(leagueRegistrations.seasonStartYear, seasonYear),
-          isNull(leagueRegistrations.withdrawnAt),
-        ),
-      );
-
-    const swimmerIds = registrations.map((row) => row.swimmerId);
-    const registeredOnMap = new Map<string, string>(
-      registrations.map((row) => [row.swimmerId, row.registeredOn]),
+  const registrations = await db
+    .select({
+      swimmerId: leagueRegistrations.swimmerId,
+      registeredOn: leagueRegistrations.registeredOn,
+    })
+    .from(leagueRegistrations)
+    .where(
+      and(
+        eq(leagueRegistrations.league, league),
+        eq(leagueRegistrations.seasonStartYear, seasonYear),
+        isNull(leagueRegistrations.withdrawnAt),
+      ),
     );
 
-    const eligibleSwimmers = swimmerIds.length === 0
-      ? []
-      : await db
-          .select({
-            id: swimmers.id,
-            firstName: swimmers.firstName,
-            lastName: swimmers.lastName,
-            birthDate: swimmers.birthDate,
-            sex: swimmers.sex,
-          })
-          .from(swimmers)
-          .where(and(isActiveSwimmer, eq(swimmers.isPublic, true), inArray(swimmers.id, swimmerIds)));
+  const swimmerIds = registrations.map((row) => row.swimmerId);
+  if (swimmerIds.length === 0) return [];
 
-    const pbs = await fetchPbs(eligibleSwimmers.map((swimmer) => swimmer.id));
+  // ISL uses `registeredOn` for age (ADR 023); club uses today.
+  const ageDateBySwimmer = new Map<string, string>(
+    registrations.map((row) => [row.swimmerId, league === "summer_league" ? row.registeredOn : today]),
+  );
 
-    const swimmerMap = new Map(eligibleSwimmers.map((swimmer) => [swimmer.id, swimmer]));
+  const eligibleSwimmers = await db
+    .select({
+      id: swimmers.id,
+      firstName: swimmers.firstName,
+      lastName: swimmers.lastName,
+      birthDate: swimmers.birthDate,
+      sex: swimmers.sex,
+    })
+    .from(swimmers)
+    .where(and(isActiveSwimmer, eq(swimmers.isPublic, true), inArray(swimmers.id, swimmerIds)));
 
-    // Age group and lastInitial are resolved here; birthDate, id, and lastName
-    // never travel past this point on the public path.
-    const rawRows = pbs.flatMap((pb) => {
-      const swimmer = swimmerMap.get(pb.swimmerId);
-      if (!swimmer) return [];
-      const ageDate = registeredOnMap.get(swimmer.id);
-      if (!ageDate) return [];
-      const ageGroup = ageToGroup(calculateAge(swimmer.birthDate, ageDate));
-      if (!ageGroup) return [];
-      return [{
-        firstName: swimmer.firstName,
-        lastInitial: swimmer.lastName.charAt(0).toUpperCase(),
-        sex: swimmer.sex,
-        ageGroup,
-        eventDistance: pb.eventDistance,
-        eventStroke: pb.eventStroke,
-        course: pb.course,
-        timeHundredths: pb.timeHundredths,
-      }];
-    });
+  const pbs = await fetchPbs(eligibleSwimmers.map((swimmer) => swimmer.id));
+  const swimmerMap = new Map(eligibleSwimmers.map((swimmer) => [swimmer.id, swimmer]));
 
-    const filtered = applyFilters(rawRows, query);
-    const ranked = assignRanks(filtered);
+  // Age group + lastInitial resolved here; birthDate, id, and lastName never
+  // cross the public boundary.
+  return pbs.flatMap((pb) => {
+    const swimmer = swimmerMap.get(pb.swimmerId);
+    if (!swimmer) return [];
+    const ageDate = ageDateBySwimmer.get(swimmer.id);
+    if (!ageDate) return [];
+    const ageGroup = ageToGroup(calculateAge(swimmer.birthDate, ageDate));
+    if (!ageGroup) return [];
+    return [{
+      firstName: swimmer.firstName,
+      lastInitial: swimmer.lastName.charAt(0).toUpperCase(),
+      sex: swimmer.sex,
+      ageGroup,
+      eventDistance: pb.eventDistance,
+      eventStroke: pb.eventStroke,
+      course: pb.course,
+      timeHundredths: pb.timeHundredths,
+    }];
+  });
+}
 
-    const rows = ranked.map((row) => ({
-      firstName: row.firstName,
-      lastInitial: row.lastInitial,
-      ageGroup: row.ageGroup,
-      sex: row.sex,
-      time: formatSwimTime(row.timeHundredths),
-      eventDistance: row.eventDistance,
-      eventStroke: row.eventStroke,
-      course: row.course,
-      rank: row.rank,
-    }));
+async function loadMasterBoardRows(): Promise<MasterRow[]> {
+  const today = todayLA();
 
-    res.json(PublicBoardResponseSchema.parse({ rows }));
-  }),
-);
-
-// ── Master board ───────────────────────────────────────────────────────────────
-// Eligibility: all active is_public swimmers regardless of league registration.
-// See ADR 023.
-
-leaderboardRouter.get(
-  "/leaderboard/master",
-  validate({ query: LeaderboardQuerySchema }),
-  asyncHandler(async (req, res) => {
-    const query = req.query as LeaderboardQuery;
-    const today = todayLA();
-
-    const allStandards = await db
+  const [allStandardsRaw, eligibleSwimmers] = await Promise.all([
+    db
       .select({
         standardName: motivationalStandards.standardName,
         eventDistance: motivationalStandards.eventDistance,
@@ -225,14 +135,8 @@ leaderboardRouter.get(
         ageGroup: motivationalStandards.ageGroup,
         cutTimeHundredths: motivationalStandards.cutTimeHundredths,
       })
-      .from(motivationalStandards);
-
-    if (allStandards.length === 0) {
-      res.json(PublicMasterResponseSchema.parse({ standardsAvailable: false, rows: [] }));
-      return;
-    }
-
-    const eligibleSwimmers = await db
+      .from(motivationalStandards),
+    db
       .select({
         id: swimmers.id,
         firstName: swimmers.firstName,
@@ -241,35 +145,105 @@ leaderboardRouter.get(
         sex: swimmers.sex,
       })
       .from(swimmers)
-      .where(and(isActiveSwimmer, eq(swimmers.isPublic, true)));
+      .where(and(isActiveSwimmer, eq(swimmers.isPublic, true))),
+  ]);
+  const allStandards = allStandardsRaw as RawStandard[];
 
-    const pbs = await fetchPbs(eligibleSwimmers.map((swimmer) => swimmer.id));
+  const pbs = await fetchPbs(eligibleSwimmers.map((swimmer) => swimmer.id));
+  const swimmerMap = new Map(eligibleSwimmers.map((swimmer) => [swimmer.id, swimmer]));
 
-    const swimmerMap = new Map(eligibleSwimmers.map((swimmer) => [swimmer.id, swimmer]));
+  // ADR 023 (decided): master board no longer requires standards. Every
+  // eligible swimmer with a meet time appears. A standard is attached when
+  // one exists for the row's (event, stroke, course, sex, age) and the PB
+  // meets its cut; otherwise it's null and the row is ranked purely by time.
+  return pbs.flatMap((pb) => {
+    const swimmer = swimmerMap.get(pb.swimmerId);
+    if (!swimmer) return [];
+    const ageGroup = ageToGroup(calculateAge(swimmer.birthDate, today));
+    if (!ageGroup) return [];
+    const standard = allStandards.length === 0
+      ? null
+      : highestStandard(pb, swimmer.sex, ageGroup, allStandards);
+    return [{
+      firstName: swimmer.firstName,
+      lastInitial: swimmer.lastName.charAt(0).toUpperCase(),
+      sex: swimmer.sex,
+      ageGroup,
+      eventDistance: pb.eventDistance,
+      eventStroke: pb.eventStroke,
+      course: pb.course,
+      timeHundredths: pb.timeHundredths,
+      standard,
+    }];
+  });
+}
 
-    // Age group, lastInitial, and standard are resolved here; birthDate, id, and
-    // lastName never travel past this point on the public path.
-    const rawRows = pbs.flatMap((pb) => {
-      const swimmer = swimmerMap.get(pb.swimmerId);
-      if (!swimmer) return [];
-      const ageGroup = ageToGroup(calculateAge(swimmer.birthDate, today));
-      if (!ageGroup) return [];
-      const standard = highestStandard(pb, swimmer.sex, ageGroup, allStandards as RawStandard[]);
-      if (!standard) return [];
-      return [{
-        firstName: swimmer.firstName,
-        lastInitial: swimmer.lastName.charAt(0).toUpperCase(),
-        sex: swimmer.sex,
-        ageGroup,
-        eventDistance: pb.eventDistance,
-        eventStroke: pb.eventStroke,
-        course: pb.course,
-        timeHundredths: pb.timeHundredths,
-        standard,
-      }];
-    });
+// ── Club board ─────────────────────────────────────────────────────────────
 
-    const filtered = applyFilters(rawRows, query);
+leaderboardRouter.get(
+  "/leaderboard/club",
+  validate({ query: LeaderboardQuerySchema }),
+  asyncHandler(async (req, res) => {
+    const query = req.query as LeaderboardQuery;
+    const rawRows = await loadLeagueBoardRows("club");
+    const qualifying = filterByEventListThreshold(rawRows, MIN_SWIMMERS_PER_EVENT_LIST);
+    const filtered = applyFilters(qualifying, query);
+    const ranked = assignRanks(filtered);
+
+    const rows = ranked.map((row) => ({
+      firstName: row.firstName,
+      lastInitial: row.lastInitial,
+      ageGroup: row.ageGroup,
+      sex: row.sex,
+      time: formatSwimTime(row.timeHundredths),
+      eventDistance: row.eventDistance,
+      eventStroke: row.eventStroke,
+      course: row.course,
+      rank: row.rank,
+    }));
+
+    res.json(PublicBoardResponseSchema.parse({ rows }));
+  }),
+);
+
+// ── ISL board ──────────────────────────────────────────────────────────────
+
+leaderboardRouter.get(
+  "/leaderboard/isl",
+  validate({ query: LeaderboardQuerySchema }),
+  asyncHandler(async (req, res) => {
+    const query = req.query as LeaderboardQuery;
+    const rawRows = await loadLeagueBoardRows("summer_league");
+    const qualifying = filterByEventListThreshold(rawRows, MIN_SWIMMERS_PER_EVENT_LIST);
+    const filtered = applyFilters(qualifying, query);
+    const ranked = assignRanks(filtered);
+
+    const rows = ranked.map((row) => ({
+      firstName: row.firstName,
+      lastInitial: row.lastInitial,
+      ageGroup: row.ageGroup,
+      sex: row.sex,
+      time: formatSwimTime(row.timeHundredths),
+      eventDistance: row.eventDistance,
+      eventStroke: row.eventStroke,
+      course: row.course,
+      rank: row.rank,
+    }));
+
+    res.json(PublicBoardResponseSchema.parse({ rows }));
+  }),
+);
+
+// ── Master board ───────────────────────────────────────────────────────────
+
+leaderboardRouter.get(
+  "/leaderboard/master",
+  validate({ query: LeaderboardQuerySchema }),
+  asyncHandler(async (req, res) => {
+    const query = req.query as LeaderboardQuery;
+    const rawRows = await loadMasterBoardRows();
+    const qualifying = filterByEventListThreshold(rawRows, MIN_SWIMMERS_PER_EVENT_LIST);
+    const filtered = applyFilters(qualifying, query);
     const ranked = assignMasterRanks(filtered);
 
     const rows = ranked.map((row) => ({
@@ -282,9 +256,31 @@ leaderboardRouter.get(
       eventStroke: row.eventStroke,
       course: row.course,
       rank: row.rank,
-      standard: row.standard as MotivationalStandardName,
+      standard: row.standard,
     }));
 
-    res.json(PublicMasterResponseSchema.parse({ standardsAvailable: true, rows }));
+    res.json(PublicMasterResponseSchema.parse({ rows }));
+  }),
+);
+
+// ── Summary ────────────────────────────────────────────────────────────────
+// Lightweight endpoint the homepage, landing page, and nav call to decide
+// whether to show leaderboard surfaces. A board "qualifies" when it has at
+// least one event list with ≥ MIN_SWIMMERS_PER_EVENT_LIST swimmers.
+
+leaderboardRouter.get(
+  "/leaderboard/summary",
+  validate({}),
+  asyncHandler(async (_req, res) => {
+    const [club, isl, master] = await Promise.all([
+      loadLeagueBoardRows("club").then((rows) => filterByEventListThreshold(rows, MIN_SWIMMERS_PER_EVENT_LIST)),
+      loadLeagueBoardRows("summer_league").then((rows) => filterByEventListThreshold(rows, MIN_SWIMMERS_PER_EVENT_LIST)),
+      loadMasterBoardRows().then((rows) => filterByEventListThreshold(rows, MIN_SWIMMERS_PER_EVENT_LIST)),
+    ]);
+    const qualifying: LeaderboardBoardId[] = [];
+    if (club.length > 0) qualifying.push("club");
+    if (isl.length > 0) qualifying.push("isl");
+    if (master.length > 0) qualifying.push("master");
+    res.json(LeaderboardSummarySchema.parse({ qualifying }));
   }),
 );

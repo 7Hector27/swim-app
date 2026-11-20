@@ -51,7 +51,7 @@ beforeEach(() => {
 describe("NavController", () => {
   it("shows SiteNav for signed-out visitors on the home page", () => {
     mockSession.isSignedIn = false;
-    render(<NavController />);
+    render(<NavController hasAnyBoard={true} />);
     expect(screen.getByTestId("site-nav")).toBeInTheDocument();
     expect(screen.queryByTestId("parent-nav")).not.toBeInTheDocument();
     expect(screen.queryByTestId("coach-nav")).not.toBeInTheDocument();
@@ -60,7 +60,7 @@ describe("NavController", () => {
   it("shows ParentNav for a signed-in parent on the home page", () => {
     mockSession.isSignedIn = true;
     mockSession.role = "parent";
-    render(<NavController />);
+    render(<NavController hasAnyBoard={true} />);
     expect(screen.getByTestId("parent-nav")).toBeInTheDocument();
     expect(screen.queryByTestId("site-nav")).not.toBeInTheDocument();
     expect(screen.queryByTestId("coach-nav")).not.toBeInTheDocument();
@@ -69,7 +69,7 @@ describe("NavController", () => {
   it("shows CoachNav for a signed-in coach on the home page", () => {
     mockSession.isSignedIn = true;
     mockSession.role = "coach";
-    render(<NavController />);
+    render(<NavController hasAnyBoard={true} />);
     expect(screen.getByTestId("coach-nav")).toBeInTheDocument();
     expect(screen.queryByTestId("site-nav")).not.toBeInTheDocument();
     expect(screen.queryByTestId("parent-nav")).not.toBeInTheDocument();
@@ -89,14 +89,14 @@ describe("NavController on /dashboard", () => {
   it("shows ParentNav for a parent on /dashboard", () => {
     mockSession.isSignedIn = true;
     mockSession.role = "parent";
-    render(<NavController />);
+    render(<NavController hasAnyBoard={true} />);
     expect(screen.getByTestId("parent-nav")).toBeInTheDocument();
   });
 
   it("shows CoachNav for a coach on /dashboard", () => {
     mockSession.isSignedIn = true;
     mockSession.role = "coach";
-    render(<NavController />);
+    render(<NavController hasAnyBoard={true} />);
     expect(screen.getByTestId("coach-nav")).toBeInTheDocument();
   });
 });
