@@ -97,16 +97,129 @@ function CardRow({ trend, category }: { trend: ParentGolfScoreTrend; category: P
   const latest = latestScore(category.points);
   return (
     <div
-      className="rounded-lg border p-4 flex flex-col gap-1"
+      className="rounded-lg border p-4 flex flex-col gap-2"
       style={{ backgroundColor: "var(--color-background)", borderColor: "var(--color-border)" }}
       data-testid="parent-golf-score-card"
+      data-slug={trend.skillSlug}
     >
       <span className="text-xs font-semibold text-text">{trend.skillName}</span>
-      <div className="flex items-baseline gap-2">
-        <span className="font-heading text-2xl font-semibold text-text tabular-nums">{formatScore(latest)}</span>
-        <span className="text-xs text-text-secondary">{changeLabel(category.points)}</span>
-      </div>
+      <span className="font-heading text-2xl font-semibold text-text tabular-nums">{formatScore(latest)}</span>
+      <Sparkline
+        skillName={trend.skillName}
+        points={category.points}
+        ageBands={category.ageBands}
+      />
+      <span className="text-xs text-text-secondary">{changeLabel(category.points)}</span>
     </div>
+  );
+}
+
+// Per-card sparkline matching docs/design/parent-progress-page-mock.html:
+// a soft age-group band spanning p25..p75, a polyline through the scored
+// points, and a filled dot at the newest point. A single-rating card
+// draws only the dot (plus the band, if available). Hidden entirely
+// when the category has no scorable points — a partial measurement
+// shouldn't surface the section at all upstream.
+const SPARK_VIEW_WIDTH = 150;
+const SPARK_VIEW_HEIGHT = 54;
+const SPARK_PAD_X = 6;
+const SPARK_Y_TOP = 6;
+const SPARK_Y_BOTTOM = 48;
+
+function Sparkline({
+  skillName,
+  points,
+  ageBands,
+}: {
+  skillName: string;
+  points: ReadonlyArray<ParentGolfScoreTrendPoint>;
+  ageBands: ParentGolfScoreCategoryTrend["ageBands"];
+}) {
+  const scoredPoints = points.filter(
+    (point) => point.timeSeconds !== null && point.strokeCountValue !== null,
+  );
+  const totals = scoredPoints.map((point) => (point.timeSeconds ?? 0) + (point.strokeCountValue ?? 0));
+  if (totals.length === 0) return null;
+
+  // Value range covers both the swimmer's points and the age band so the
+  // band and the line stay in the same visual space. Pad by 5% so markers
+  // sit inside the plot rather than on the edges; when min === max (a
+  // single flat series with no band), fall back to a 1-unit span.
+  const bandMin = ageBands !== null ? ageBands.p25 : null;
+  const bandMax = ageBands !== null ? ageBands.p75 : null;
+  const candidates: number[] = [...totals];
+  if (bandMin !== null) candidates.push(bandMin);
+  if (bandMax !== null) candidates.push(bandMax);
+  let rangeMin = Math.min(...candidates);
+  let rangeMax = Math.max(...candidates);
+  if (rangeMax === rangeMin) {
+    rangeMin -= 0.5;
+    rangeMax += 0.5;
+  }
+  const pad = (rangeMax - rangeMin) * 0.05;
+  rangeMin -= pad;
+  rangeMax += pad;
+
+  // Higher value → higher in SVG (smaller y). Lower-is-better plots
+  // physically lower on the chart, matching the mock's "line falling =
+  // score improving" read.
+  function yFor(value: number): number {
+    const t = (value - rangeMin) / (rangeMax - rangeMin);
+    return SPARK_Y_BOTTOM - t * (SPARK_Y_BOTTOM - SPARK_Y_TOP);
+  }
+
+  function xFor(index: number): number {
+    if (totals.length <= 1) return SPARK_VIEW_WIDTH - SPARK_PAD_X;
+    return SPARK_PAD_X + (index / (totals.length - 1)) * (SPARK_VIEW_WIDTH - 2 * SPARK_PAD_X);
+  }
+
+  const polylinePoints = totals.map((value, index) => `${xFor(index)},${yFor(value)}`).join(" ");
+  const latestIndex = totals.length - 1;
+  const latestX = xFor(latestIndex);
+  const latestY = yFor(totals[latestIndex]!);
+
+  const bandY = bandMax !== null ? yFor(bandMax) : null;
+  const bandHeight = bandMin !== null && bandMax !== null ? yFor(bandMin) - yFor(bandMax) : null;
+
+  return (
+    <svg
+      width="100%"
+      viewBox={`0 0 ${SPARK_VIEW_WIDTH} ${SPARK_VIEW_HEIGHT}`}
+      role="img"
+      aria-label={`${skillName} golf score trend`}
+      className="block"
+      data-testid="parent-golf-score-sparkline"
+      data-point-count={totals.length}
+    >
+      {bandY !== null && bandHeight !== null && (
+        <rect
+          x={0}
+          y={bandY}
+          width={SPARK_VIEW_WIDTH}
+          height={bandHeight}
+          fill="color-mix(in oklab, var(--color-accent) 15%, var(--color-background))"
+          data-testid="parent-golf-score-band"
+        />
+      )}
+      {totals.length >= 2 && (
+        <polyline
+          points={polylinePoints}
+          fill="none"
+          stroke="var(--color-accent)"
+          strokeWidth={2}
+          strokeLinejoin="round"
+          strokeLinecap="round"
+          data-testid="parent-golf-score-line"
+        />
+      )}
+      <circle
+        cx={latestX}
+        cy={latestY}
+        r={4}
+        fill="var(--color-accent)"
+        data-testid="parent-golf-score-latest-dot"
+      />
+    </svg>
   );
 }
 

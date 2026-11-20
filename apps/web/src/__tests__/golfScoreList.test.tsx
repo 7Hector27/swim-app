@@ -132,3 +132,72 @@ describe("GolfScoreList — populated", () => {
     expect(cards.textContent ?? "").toMatch(/Down 2\.5 since Sep/);
   });
 });
+
+describe("GolfScoreList — sparkline per card", () => {
+  it("draws a polyline + latest dot when the category has two or more scored points", () => {
+    const trend = trendWithPoints({
+      skillSlug: "free-golf-score",
+      skillName: "Freestyle golf score",
+      category: "push_off_in_water",
+      points: [
+        { sessionDate: "2026-09-10", timeSeconds: 14.5, strokes: 22 },
+        { sessionDate: "2026-11-10", timeSeconds: 13.0, strokes: 21 },
+      ],
+    });
+    render(<GolfScoreList trends={[trend]} />);
+    const card = screen.getByTestId("parent-golf-score-card");
+    const spark = within(card).getByTestId("parent-golf-score-sparkline");
+    expect(spark.getAttribute("data-point-count")).toBe("2");
+    expect(within(spark).getByTestId("parent-golf-score-line")).toBeInTheDocument();
+    expect(within(spark).getByTestId("parent-golf-score-latest-dot")).toBeInTheDocument();
+  });
+
+  it("single score: draws only the dot (no polyline)", () => {
+    const oneCategoryTrend = trendWithPoints({
+      skillSlug: "free-golf-score",
+      skillName: "Freestyle golf score",
+      category: "push_off_in_water",
+      points: [{ sessionDate: "2026-11-10", timeSeconds: 13, strokes: 21 }],
+    });
+    render(<GolfScoreList trends={[oneCategoryTrend]} />);
+    const spark = screen.getByTestId("parent-golf-score-sparkline");
+    expect(spark.getAttribute("data-point-count")).toBe("1");
+    expect(within(spark).queryByTestId("parent-golf-score-line")).toBeNull();
+    expect(within(spark).getByTestId("parent-golf-score-latest-dot")).toBeInTheDocument();
+  });
+
+  it("draws the age-group band when the category carries p25 + p75", () => {
+    const trend: ParentGolfScoreTrend = {
+      skillSlug: "free-golf-score",
+      skillName: "Freestyle golf score",
+      byCategory: [
+        {
+          category: "push_off_in_water",
+          ageBands: { bandCount: 15, p25: 32, p50: 36, p75: 40 },
+          points: [
+            { ratedAt: "2026-09-10T18:00:00.000Z", sessionDate: "2026-09-10", grade: 3, timeSeconds: 14.5, strokeCountValue: 22 },
+            { ratedAt: "2026-11-10T18:00:00.000Z", sessionDate: "2026-11-10", grade: 3, timeSeconds: 13.0, strokeCountValue: 21 },
+          ],
+        },
+      ],
+    };
+    render(<GolfScoreList trends={[trend]} />);
+    const spark = screen.getByTestId("parent-golf-score-sparkline");
+    expect(within(spark).getByTestId("parent-golf-score-band")).toBeInTheDocument();
+  });
+
+  it("omits the band when ageBands is null", () => {
+    const trend = trendWithPoints({
+      skillSlug: "free-golf-score",
+      skillName: "Freestyle golf score",
+      category: "push_off_in_water",
+      points: [
+        { sessionDate: "2026-09-10", timeSeconds: 14.5, strokes: 22 },
+        { sessionDate: "2026-11-10", timeSeconds: 13.0, strokes: 21 },
+      ],
+    });
+    render(<GolfScoreList trends={[trend]} />);
+    const spark = screen.getByTestId("parent-golf-score-sparkline");
+    expect(within(spark).queryByTestId("parent-golf-score-band")).toBeNull();
+  });
+});

@@ -290,9 +290,12 @@ export default function ParentSwimmerProgressContent({
                     Golf score
                   </h2>
                   <p className="text-xs text-text-secondary">
-                    Time plus strokes for one 25 at race pace. Lower is better.
+                    Seconds plus strokes for one length. Lower is better.
                   </p>
                   <GolfScoreList trends={golfScore.trends} />
+                  <p className="text-xs text-text-secondary">
+                    The shaded band is the typical range for her age group.
+                  </p>
                 </section>
               )}
             </>
