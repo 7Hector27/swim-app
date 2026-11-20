@@ -51,6 +51,10 @@ interface StartDiveCardProps {
   // goes away. Used by the parent page's desktop side column, where the
   // Starts card has to share space with Snapshot + Golf.
   compact?: boolean;
+  // Renders both tile forms and toggles between them via a viewport
+  // media query so the Starts section mounts once (preserving active
+  // tab selection) and still flips to compact at the desktop breakpoint.
+  compactOnDesktop?: boolean;
 }
 
 export default function StartDiveCard({
@@ -59,6 +63,7 @@ export default function StartDiveCard({
   showSessionGrid = true,
   showStillToGrade = true,
   compact = false,
+  compactOnDesktop = false,
 }: StartDiveCardProps) {
   if (!hasAnyGraded(start)) {
     return (
@@ -109,13 +114,36 @@ export default function StartDiveCard({
       >
         <div className="flex flex-col gap-3 min-w-0">
           <DiveArcSvg plot={plot} startName={start.name} srDescription={srDescription} />
-          <StatTiles
-            reactionHistory={reactionHistory}
-            distanceHistory={distanceHistory}
-            stillToGrade={stillToGrade}
-            showStillToGrade={showStillToGrade}
-            compact={compact}
-          />
+          {compactOnDesktop ? (
+            <>
+              <div className="desktop:hidden">
+                <StatTiles
+                  reactionHistory={reactionHistory}
+                  distanceHistory={distanceHistory}
+                  stillToGrade={stillToGrade}
+                  showStillToGrade={showStillToGrade}
+                  compact={false}
+                />
+              </div>
+              <div className="hidden desktop:block">
+                <StatTiles
+                  reactionHistory={reactionHistory}
+                  distanceHistory={distanceHistory}
+                  stillToGrade={stillToGrade}
+                  showStillToGrade={showStillToGrade}
+                  compact
+                />
+              </div>
+            </>
+          ) : (
+            <StatTiles
+              reactionHistory={reactionHistory}
+              distanceHistory={distanceHistory}
+              stillToGrade={stillToGrade}
+              showStillToGrade={showStillToGrade}
+              compact={compact}
+            />
+          )}
         </div>
 
         {showSessionGrid && (

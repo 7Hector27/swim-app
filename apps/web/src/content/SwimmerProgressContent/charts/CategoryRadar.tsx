@@ -14,6 +14,11 @@ interface CategoryRadarProps {
   // for its short form ("Water" / "Starts") while the SVG's aria-label
   // keeps the full names so screen readers still hear them.
   shortLabels?: boolean;
+  // Renders BOTH label variants inside the SVG and toggles visibility
+  // via a viewport media query so the component mounts once and still
+  // flips labels at the desktop breakpoint. Used by the parent page
+  // where the radar sits in a narrow 4-col grid area on desktop.
+  shortLabelsOnDesktop?: boolean;
 }
 
 // Short form of each category name used when `shortLabels` is on. Keys
@@ -89,7 +94,7 @@ function splitLabel(name: string): string[] {
 // Radar snapshot of category averages, 1-5 scale.
 // Unassessed categories draw at the center and dim their axis label; the
 // polygon still closes so the shape stays coherent.
-export default function CategoryRadar({ categories, firstEvaluation, shortLabels = false }: CategoryRadarProps) {
+export default function CategoryRadar({ categories, firstEvaluation, shortLabels = false, shortLabelsOnDesktop = false }: CategoryRadarProps) {
   if (categories.length === 0) return null;
   const step = (Math.PI * 2) / categories.length;
 
@@ -157,6 +162,15 @@ export default function CategoryRadar({ categories, firstEvaluation, shortLabels
         }
         @media (min-width: 1248px) {
           .category-radar-label { font-size: ${FONT_SIZE_DESKTOP}px; }
+        }
+        /* When shortLabelsOnDesktop is on the component renders both
+           label variants; hide the one that doesn't apply at each
+           viewport so screen readers still see both (via aria-label)
+           and only one visual form renders at a time. */
+        .category-radar-label-short { display: none; }
+        @media (min-width: 1248px) {
+          .category-radar-label-full { display: none; }
+          .category-radar-label-short { display: inline; }
         }
       `}</style>
 
@@ -243,18 +257,90 @@ export default function CategoryRadar({ categories, firstEvaluation, shortLabels
         // labels sit over their spoke rather than drifting sideways.
         const textAnchor: "start" | "middle" | "end" =
           cosA > 0.3 ? "start" : cosA < -0.3 ? "end" : "middle";
-        // When short labels are active, the single-word form is always
-        // one line; splitLabel is a no-op on a 5-letter name but we
-        // still route through it so future renames keep working.
-        const labelText = shortLabels ? SHORT_LABEL[category.name] ?? category.name : category.name;
-        const lines = splitLabel(labelText);
+        const fullName = category.name;
+        const shortName = SHORT_LABEL[category.name] ?? category.name;
+        const fullLines = splitLabel(fullName);
+        const shortLines = splitLabel(shortName);
         // Vertical placement: lines are stacked around labelY. Top-of-chart
         // labels (sinA negative) sit above the point so the baseline doesn't
         // overlap the shape; bottom labels sit below; sides are centered.
-        const topBias = sinA < -0.5 ? -(lines.length - 1) * LINE_HEIGHT : sinA > 0.5 ? LINE_HEIGHT : -((lines.length - 1) / 2) * LINE_HEIGHT;
-        const baseY = labelY + topBias;
+        function topBiasFor(lineCount: number): number {
+          return sinA < -0.5 ? -(lineCount - 1) * LINE_HEIGHT : sinA > 0.5 ? LINE_HEIGHT : -((lineCount - 1) / 2) * LINE_HEIGHT;
+        }
         const fill = category.assessedCount === 0 ? "var(--color-text-secondary)" : "var(--color-text)";
         const opacity = category.assessedCount === 0 ? 0.65 : 1;
+
+        // Label rendering has three modes:
+        //   - `shortLabels` static: only short lines render.
+        //   - `shortLabelsOnDesktop`: both variants render; CSS inside
+        //     the `<style>` block above hides the non-active one at
+        //     the desktop breakpoint.
+        //   - default: full lines only.
+        if (shortLabels) {
+          const baseY = labelY + topBiasFor(shortLines.length);
+          return (
+            <text
+              key={`label-${index}`}
+              x={labelX}
+              y={baseY}
+              textAnchor={textAnchor}
+              fontWeight={500}
+              fill={fill}
+              opacity={opacity}
+              className="category-radar-label"
+              data-testid="category-radar-label"
+            >
+              {shortLines.map((line, lineIndex) => (
+                <tspan key={lineIndex} x={labelX} dy={lineIndex === 0 ? 0 : LINE_HEIGHT}>
+                  {line}
+                </tspan>
+              ))}
+            </text>
+          );
+        }
+        if (shortLabelsOnDesktop) {
+          const fullBaseY = labelY + topBiasFor(fullLines.length);
+          const shortBaseY = labelY + topBiasFor(shortLines.length);
+          return (
+            <g key={`label-${index}`}>
+              <text
+                x={labelX}
+                y={fullBaseY}
+                textAnchor={textAnchor}
+                fontWeight={500}
+                fill={fill}
+                opacity={opacity}
+                className="category-radar-label category-radar-label-full"
+                data-testid="category-radar-label"
+                data-variant="full"
+              >
+                {fullLines.map((line, lineIndex) => (
+                  <tspan key={lineIndex} x={labelX} dy={lineIndex === 0 ? 0 : LINE_HEIGHT}>
+                    {line}
+                  </tspan>
+                ))}
+              </text>
+              <text
+                x={labelX}
+                y={shortBaseY}
+                textAnchor={textAnchor}
+                fontWeight={500}
+                fill={fill}
+                opacity={opacity}
+                className="category-radar-label category-radar-label-short"
+                data-testid="category-radar-label"
+                data-variant="short"
+              >
+                {shortLines.map((line, lineIndex) => (
+                  <tspan key={lineIndex} x={labelX} dy={lineIndex === 0 ? 0 : LINE_HEIGHT}>
+                    {line}
+                  </tspan>
+                ))}
+              </text>
+            </g>
+          );
+        }
+        const baseY = labelY + topBiasFor(fullLines.length);
         return (
           <text
             key={`label-${index}`}
@@ -267,7 +353,7 @@ export default function CategoryRadar({ categories, firstEvaluation, shortLabels
             className="category-radar-label"
             data-testid="category-radar-label"
           >
-            {lines.map((line, lineIndex) => (
+            {fullLines.map((line, lineIndex) => (
               <tspan key={lineIndex} x={labelX} dy={lineIndex === 0 ? 0 : LINE_HEIGHT}>
                 {line}
               </tspan>

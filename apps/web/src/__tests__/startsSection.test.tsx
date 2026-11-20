@@ -681,6 +681,27 @@ describe("StartsSection — tabs + default selection", () => {
     expect(screen.getByTestId("starts-tab-back-start")).toHaveTextContent("4 of 5");
     expect(screen.getByTestId("starts-tab-relay-start")).toHaveTextContent("Not started");
   });
+
+  it("tab selection survives a re-render (proxy for a breakpoint resize)", () => {
+    // The parent page renders StartsSection once inside a single tree;
+    // when the viewport crosses a breakpoint the component rerenders
+    // in place rather than remounting. React preserves state across a
+    // rerender with the same key, so after flipping tabs manually a
+    // fresh render with the same props should keep the selection.
+    const track = trackStart({ grade: { status: "graded", grade: 3 }, components: trackComponents });
+    const back = backStart({ grade: { status: "graded", grade: 2 }, components: backComponents });
+    const { rerender } = render(<StartsSection startProgress={[track, back]} swimmerSkills={[]} />);
+    // Default lands on track (first with graded component in this fixture).
+    expect(screen.getByTestId("starts-tab-track-start").getAttribute("aria-selected")).toBe("true");
+    fireEvent.click(screen.getByTestId("starts-tab-back-start"));
+    expect(screen.getByTestId("starts-tab-back-start").getAttribute("aria-selected")).toBe("true");
+
+    // Re-render the same component tree (what happens when a CSS
+    // media-query boundary is crossed in a real browser — React
+    // reconciles, state persists).
+    rerender(<StartsSection startProgress={[track, back]} swimmerSkills={[]} />);
+    expect(screen.getByTestId("starts-tab-back-start").getAttribute("aria-selected")).toBe("true");
+  });
 });
 
 // Keep shortUnit assertions tight — it's used all over the card.

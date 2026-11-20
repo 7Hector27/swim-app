@@ -115,12 +115,14 @@ describe("GET /swimmers/:id/progress (parent)", () => {
           }),
         }),
       })
-      // latest-priority query: .select().from().where().orderBy().limit(1)
+      // latest-priority query: .select().from().leftJoin().where().orderBy().limit(1)
       .mockReturnValueOnce({
         from: vi.fn().mockReturnValue({
-          where: vi.fn().mockReturnValue({
-            orderBy: vi.fn().mockReturnValue({
-              limit: vi.fn().mockResolvedValue([sessionRow]),
+          leftJoin: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              orderBy: vi.fn().mockReturnValue({
+                limit: vi.fn().mockResolvedValue([sessionRow]),
+              }),
             }),
           }),
         }),
@@ -168,9 +170,11 @@ describe("GET /swimmers/:id/progress (parent)", () => {
       // latest-priority query (same latest row)
       .mockReturnValueOnce({
         from: vi.fn().mockReturnValue({
-          where: vi.fn().mockReturnValue({
-            orderBy: vi.fn().mockReturnValue({
-              limit: vi.fn().mockResolvedValue([sessionRows[0]]),
+          leftJoin: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              orderBy: vi.fn().mockReturnValue({
+                limit: vi.fn().mockResolvedValue([sessionRows[0]]),
+              }),
             }),
           }),
         }),
@@ -210,9 +214,11 @@ describe("GET /swimmers/:id/progress (parent)", () => {
       // latest-priority query (no non-voided sessions)
       .mockReturnValueOnce({
         from: vi.fn().mockReturnValue({
-          where: vi.fn().mockReturnValue({
-            orderBy: vi.fn().mockReturnValue({
-              limit: vi.fn().mockResolvedValue([]),
+          leftJoin: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              orderBy: vi.fn().mockReturnValue({
+                limit: vi.fn().mockResolvedValue([]),
+              }),
             }),
           }),
         }),
@@ -252,9 +258,11 @@ describe("GET /swimmers/:id/progress (parent)", () => {
       })
       .mockReturnValueOnce({
         from: vi.fn().mockReturnValue({
-          where: vi.fn().mockReturnValue({
-            orderBy: vi.fn().mockReturnValue({
-              limit: vi.fn().mockResolvedValue([]),
+          leftJoin: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              orderBy: vi.fn().mockReturnValue({
+                limit: vi.fn().mockResolvedValue([]),
+              }),
             }),
           }),
         }),
@@ -296,9 +304,11 @@ describe("GET /swimmers/:id/progress (parent)", () => {
       })
       .mockReturnValueOnce({
         from: vi.fn().mockReturnValue({
-          where: vi.fn().mockReturnValue({
-            orderBy: vi.fn().mockReturnValue({
-              limit: vi.fn().mockResolvedValue([latestRow]),
+          leftJoin: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              orderBy: vi.fn().mockReturnValue({
+                limit: vi.fn().mockResolvedValue([latestRow]),
+              }),
             }),
           }),
         }),
@@ -312,6 +322,7 @@ describe("GET /swimmers/:id/progress (parent)", () => {
     expect(res.body.latestCoachingPriority).toEqual({
       text: "Rotate the hips more",
       sessionDate: "2025-06-10",
+      coachName: null,
     });
   });
 
@@ -344,9 +355,11 @@ describe("GET /swimmers/:id/progress (parent)", () => {
       })
       .mockReturnValueOnce({
         from: vi.fn().mockReturnValue({
-          where: vi.fn().mockReturnValue({
-            orderBy: vi.fn().mockReturnValue({
-              limit: vi.fn().mockResolvedValue([latestRow]),
+          leftJoin: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              orderBy: vi.fn().mockReturnValue({
+                limit: vi.fn().mockResolvedValue([latestRow]),
+              }),
             }),
           }),
         }),
@@ -360,6 +373,7 @@ describe("GET /swimmers/:id/progress (parent)", () => {
     expect(res.body.latestCoachingPriority).toEqual({
       text: "Earlier (live)",
       sessionDate: "2025-06-01",
+      coachName: null,
     });
   });
 });

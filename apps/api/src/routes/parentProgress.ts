@@ -19,11 +19,13 @@ import { requireUser } from "../middleware/requireUser";
 import { requireParent } from "../middleware/requireParent";
 import { requireHouseholdMember } from "../middleware/requireHouseholdMember";
 import { requireHouseholdSwimmer } from "../middleware/requireHouseholdSwimmer";
+import { computeGolfScoreTrends } from "../lib/golfScoreTrends";
 import { computeSwimmerProgress } from "../lib/progressCalculation";
 import { computeScoreHistory } from "../lib/scoreHistory";
 import {
   formatSwimTime,
   IdParamsSchema,
+  ParentGolfScoreTrendsResponseSchema,
   ParentPersonalBestsResponseSchema,
   ParentScoreHistoryResponseSchema,
   ParentSwimmerProgressResponseSchema,
@@ -32,6 +34,7 @@ import {
   type IdParams,
   type LatestCoachingPriority,
   type ParentCoachingNote,
+  type ParentGolfScoreTrendsResponse,
   type ParentPersonalBest,
   type ParentPersonalBestsResponse,
   type ParentSwimmerSummariesResponse,
@@ -213,6 +216,42 @@ parentProgressRouter.get(
     };
     const body = ParentScoreHistoryResponseSchema.parse(parentFacing);
     req.log.info({ swimmerId, pointCount: body.points.length }, "parent score history fetched");
+    res.json(body);
+  }),
+);
+
+// GET /swimmers/:id/golf-score: parent-facing golf-score trends.
+// Mirrors /coach/swimmers/:id/golf-score-trends with one difference:
+// each trend point has `sessionId` stripped, since parents can't reach
+// the per-session edit affordance that id deep-links to. The computation
+// itself is shared — see lib/golfScoreTrends.ts — so the two routes
+// never drift on cohort / age-band / aggregation rules.
+parentProgressRouter.get(
+  "/:id/golf-score",
+  requireUser,
+  requireParent,
+  validate({ params: IdParamsSchema }),
+  requireHouseholdMember,
+  requireHouseholdSwimmer,
+  asyncHandler(async (req, res) => {
+    const { id: swimmerId } = req.params as unknown as IdParams;
+    const { trends } = await computeGolfScoreTrends(swimmerId, req.log);
+    const parentFacing: ParentGolfScoreTrendsResponse = {
+      trends: trends.map((trend) => ({
+        skillSlug: trend.skillSlug,
+        skillName: trend.skillName,
+        byCategory: trend.byCategory.map((categoryTrend) => ({
+          category: categoryTrend.category,
+          ageBands: categoryTrend.ageBands,
+          points: categoryTrend.points.map(({ sessionId: _sessionId, ...rest }) => rest),
+        })),
+      })),
+    };
+    // Parse through the strict parent schema so a future addition of a
+    // coach-only field to the point shape fails here rather than
+    // reaching the client.
+    const body = ParentGolfScoreTrendsResponseSchema.parse(parentFacing);
+    req.log.info({ swimmerId, trendCount: body.trends.length }, "parent golf score fetched");
     res.json(body);
   }),
 );

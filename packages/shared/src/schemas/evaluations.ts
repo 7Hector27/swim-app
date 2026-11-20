@@ -504,6 +504,31 @@ export const GolfScoreTrendsResponseSchema = z.object({
 });
 export type GolfScoreTrendsResponse = z.infer<typeof GolfScoreTrendsResponseSchema>;
 
+// Parent-facing variants. Same shape as the coach versions minus
+// `sessionId` on each point — parents can't reach the per-session edit
+// affordance that field deep-links to. `.strict()` so any future
+// coach-only field added to GolfScoreTrendPoint fails to parse rather
+// than silently leaking.
+export const ParentGolfScoreTrendPointSchema = GolfScoreTrendPointSchema.omit({ sessionId: true }).strict();
+export type ParentGolfScoreTrendPoint = z.infer<typeof ParentGolfScoreTrendPointSchema>;
+
+export const ParentGolfScoreCategoryTrendSchema = GolfScoreCategoryTrendSchema
+  .omit({ points: true })
+  .extend({ points: z.array(ParentGolfScoreTrendPointSchema) })
+  .strict();
+export type ParentGolfScoreCategoryTrend = z.infer<typeof ParentGolfScoreCategoryTrendSchema>;
+
+export const ParentGolfScoreTrendSchema = GolfScoreTrendSchema
+  .omit({ byCategory: true })
+  .extend({ byCategory: z.array(ParentGolfScoreCategoryTrendSchema) })
+  .strict();
+export type ParentGolfScoreTrend = z.infer<typeof ParentGolfScoreTrendSchema>;
+
+export const ParentGolfScoreTrendsResponseSchema = z.object({
+  trends: z.array(ParentGolfScoreTrendSchema),
+}).strict();
+export type ParentGolfScoreTrendsResponse = z.infer<typeof ParentGolfScoreTrendsResponseSchema>;
+
 // ── Score history ─────────────────────────────────────────────────────────────
 // Server-side computeAsOf: one point per non-voided session date, each carrying
 // head-position overall (2.4), per-category rollups (2.5), and start-grade

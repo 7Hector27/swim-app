@@ -1,6 +1,8 @@
 import {
   ParentCategoriesResponseSchema,
   type ParentCategoriesResponse,
+  ParentGolfScoreTrendsResponseSchema,
+  type ParentGolfScoreTrendsResponse,
   ParentPersonalBestsResponseSchema,
   type ParentPersonalBestsResponse,
   ParentScoreHistoryResponseSchema,
@@ -75,6 +77,29 @@ export async function fetchParentSwimmer(
     const parsed = ParentSwimmerSchema.safeParse(body);
     if (!parsed.success) return { ok: false, status: 500 };
     return { ok: true, swimmer: parsed.data };
+  } catch {
+    return { ok: false, status: 500 };
+  }
+}
+
+export type FetchParentGolfScoreResult =
+  | { ok: true; data: ParentGolfScoreTrendsResponse }
+  | { ok: false; status: number };
+
+export async function fetchParentGolfScore(
+  swimmerId: string,
+  accessToken: string,
+): Promise<FetchParentGolfScoreResult> {
+  try {
+    const response = await fetch(
+      `${process.env.NEXT_PUBLIC_API_URL}/swimmers/${swimmerId}/golf-score`,
+      { headers: { Authorization: `Bearer ${accessToken}` }, cache: "no-store" },
+    );
+    if (!response.ok) return { ok: false, status: response.status };
+    const body: unknown = await response.json();
+    const parsed = ParentGolfScoreTrendsResponseSchema.safeParse(body);
+    if (!parsed.success) return { ok: false, status: 500 };
+    return { ok: true, data: parsed.data };
   } catch {
     return { ok: false, status: 500 };
   }

@@ -1,11 +1,12 @@
-// Breakpoint-structure tests for the rebuilt parent progress layout.
-// JSDOM doesn't apply media queries, so the test strategy is
-// structural: both the mobile-tablet and desktop subtrees are mounted
-// in the DOM (CSS hides one at a time), and we assert the shape of
-// each block via data-testids + class attributes.
+// Layout-structure tests for the single-tree parent progress page.
+// The grid root uses grid-template-areas per breakpoint; JSDOM
+// doesn't apply media queries, so the strategy is structural:
+// assert that each section lives inside a slot tagged with the
+// expected grid-area via `[grid-area:name]` className, and that
+// every element id in the rendered tree is unique.
 
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import type {
   ParentProgressRatingPoint,
   ParentSkillProgress,
@@ -100,94 +101,154 @@ const baseProgress: ParentSwimmerProgressResponse = {
       history: [point("k4", "2026-11-10", 4), point("k2", "2026-09-30", 2)],
     }),
   ],
-  startProgress: [],
+  startProgress: [
+    {
+      slug: "track-start",
+      name: "Track start",
+      grade: { status: "graded", grade: 3 },
+      components: [{ slug: "track-start-reaction", name: "Reaction", current: level(3) }],
+    },
+  ],
   headPositionOverall: 3,
   coachingPriorities: [priority("free-pull", "Pull"), priority("free-catch", "Catch"), priority("free-head-position", "Head position")],
   latestCoachingPriority: { text: "Rotate the hips more on each stroke", sessionDate: "2026-11-10", coachName: "Jason" },
   latestCoachingNotes: [],
 };
 
-describe("ParentSwimmerProgressContent — layout structure", () => {
-  it("renders both the mobile-tablet and desktop subtrees", () => {
-    render(<ParentSwimmerProgressContent swimmer={swimmer} progress={baseProgress} categories={[]} />);
-    expect(screen.getByTestId("parent-layout-mobile-tablet")).toBeInTheDocument();
-    expect(screen.getByTestId("parent-layout-desktop")).toBeInTheDocument();
-  });
+const baseScoreHistory = {
+  points: [
+    {
+      sessionDate: "2026-11-10",
+      headPositionOverall: 3,
+      categoryRollups: [],
+      screenGroupRollups: [{ screenSlug: "freestyle" as const, name: "Freestyle", average: 3, assessedCount: 1, totalCount: 1 }],
+      starts: [{ slug: "track-start", name: "Track start", grade: { status: "graded" as const, grade: 3 as const } }],
+      counts: { level1: 0, level2: 0, level3: 1, level4: 0, level5: 0, notLegal: 0, noConcept: 0 },
+      totalLevelsGained: 0,
+      skillsMastered: 0,
+      skillsLearned: 0,
+    },
+  ],
+  recentChanges: [],
+  milestones: [],
+  measurements: [],
+};
 
-  it("desktop subtree lays out on a 12-column grid with `grid-template-columns:repeat(12,…)`", () => {
-    render(<ParentSwimmerProgressContent swimmer={swimmer} progress={baseProgress} categories={[]} />);
-    const desktop = screen.getByTestId("parent-layout-desktop");
-    const className = desktop.getAttribute("class") ?? "";
-    expect(className).toMatch(/grid-template-columns:repeat\(12/);
-  });
+// ── Single-tree structure ────────────────────────────────────────────────
 
-  it("desktop subtree contains a side stack holding Snapshot + Starts + Golf slot", () => {
-    const withSnapshot: ParentSwimmerProgressResponse = {
-      ...baseProgress,
-      startProgress: [
-        {
-          slug: "track-start",
-          name: "Track start",
-          grade: { status: "graded", grade: 3 },
-          components: [{ slug: "track-start-reaction", name: "Reaction", current: level(3) }],
-        },
-      ],
-    };
+describe("ParentSwimmerProgressContent — single-tree layout", () => {
+  it("renders exactly one layout root", () => {
     render(
       <ParentSwimmerProgressContent
         swimmer={swimmer}
-        progress={withSnapshot}
+        progress={baseProgress}
         categories={[]}
-        scoreHistory={{
-          points: [
-            {
-              sessionDate: "2026-11-10",
-              headPositionOverall: 3,
-              categoryRollups: [],
-              screenGroupRollups: [{ screenSlug: "freestyle" as const, name: "Freestyle", average: 3, assessedCount: 1, totalCount: 1 }],
-              starts: [{ slug: "track-start", name: "Track start", grade: { status: "graded", grade: 3 } }],
-              counts: { level1: 0, level2: 0, level3: 1, level4: 0, level5: 0, notLegal: 0, noConcept: 0 },
-              totalLevelsGained: 0,
-              skillsMastered: 0,
-              skillsLearned: 0,
-            },
-          ],
-          recentChanges: [],
-          milestones: [],
-          measurements: [],
-        }}
+        scoreHistory={baseScoreHistory}
       />,
     );
-    const sideStack = screen.getByTestId("parent-layout-side-stack");
-    expect(within(sideStack).getByTestId("parent-progress-snapshot")).toBeInTheDocument();
-    expect(within(sideStack).getByTestId("parent-progress-starts")).toBeInTheDocument();
+    expect(screen.getAllByTestId("parent-progress-layout")).toHaveLength(1);
+  });
+
+  it("each section mounts exactly once — no duplicate mobile/desktop subtrees", () => {
+    render(
+      <ParentSwimmerProgressContent
+        swimmer={swimmer}
+        progress={baseProgress}
+        categories={[]}
+        scoreHistory={baseScoreHistory}
+      />,
+    );
+    // Testids from each section component appear once in the rendered tree.
+    expect(screen.getAllByTestId("parent-progress-summary-card")).toHaveLength(1);
+    expect(screen.getAllByTestId("parent-progress-recent-wins")).toHaveLength(1);
+    expect(screen.getAllByTestId("parent-coach-focus-note")).toHaveLength(1);
+    expect(screen.getAllByTestId("parent-progress-focus")).toHaveLength(1);
+    expect(screen.getAllByTestId("parent-progress-snapshot")).toHaveLength(1);
+    expect(screen.getAllByTestId("parent-progress-starts")).toHaveLength(1);
+    expect(screen.getAllByTestId("parent-progress-skills")).toHaveLength(1);
+  });
+
+  it("each section lives inside the grid area that matches its name", () => {
+    render(
+      <ParentSwimmerProgressContent
+        swimmer={swimmer}
+        progress={baseProgress}
+        categories={[]}
+        scoreHistory={baseScoreHistory}
+      />,
+    );
+    // Grid slot wrappers: summary, wins, note each wrap their section;
+    // focus/snapshot/starts/skills each are the sections themselves
+    // tagged with `[grid-area:*]`.
+    const assertGridArea = (element: Element, area: string) => {
+      // The arbitrary-value class contains the grid-area name.
+      expect(element.className).toMatch(new RegExp(`\\[grid-area:${area}\\]`));
+    };
+    // Each section's grid cell is either the section or its wrapper div.
+    assertGridArea(screen.getByTestId("parent-progress-summary-card").parentElement!, "summary");
+    assertGridArea(screen.getByTestId("parent-progress-recent-wins").parentElement!, "wins");
+    assertGridArea(screen.getByTestId("parent-coach-focus-note").parentElement!, "note");
+    assertGridArea(screen.getByTestId("parent-progress-focus"), "focus");
+    assertGridArea(screen.getByTestId("parent-progress-snapshot"), "snapshot");
+    assertGridArea(screen.getByTestId("parent-progress-starts"), "starts");
+    assertGridArea(screen.getByTestId("parent-progress-skills"), "skills");
+  });
+
+  it("every id in the rendered tree is unique", () => {
+    render(
+      <ParentSwimmerProgressContent
+        swimmer={swimmer}
+        progress={baseProgress}
+        categories={[]}
+        scoreHistory={baseScoreHistory}
+      />,
+    );
+    const nodes = document.querySelectorAll("[id]");
+    const ids: string[] = [];
+    for (const node of nodes) {
+      const id = node.getAttribute("id");
+      if (id !== null && id.length > 0) ids.push(id);
+    }
+    const seen = new Set<string>();
+    const duplicates: string[] = [];
+    for (const id of ids) {
+      if (seen.has(id)) duplicates.push(id);
+      else seen.add(id);
+    }
+    expect(duplicates, `duplicate ids found: ${duplicates.join(", ")}`).toEqual([]);
   });
 });
+
+// ── Focus cards row ──────────────────────────────────────────────────────
 
 describe("ParentSwimmerProgressContent — focus cards share a row", () => {
   function render3(priorities: ProgressCoachingPriority[]) {
     const progress = { ...baseProgress, coachingPriorities: priorities };
-    render(<ParentSwimmerProgressContent swimmer={swimmer} progress={progress} categories={[]} />);
+    render(
+      <ParentSwimmerProgressContent
+        swimmer={swimmer}
+        progress={progress}
+        categories={[]}
+        scoreHistory={baseScoreHistory}
+      />,
+    );
   }
 
-  it("with 1 priority: both subtrees mark card-count=1 so the single card fills its row", () => {
+  it("with 1 priority: card-count=1 — the single card fills its row", () => {
     render3([priority("a", "A")]);
-    for (const list of screen.getAllByTestId("parent-coach-focus-list")) {
-      expect(list.getAttribute("data-card-count")).toBe("1");
-    }
+    const list = screen.getByTestId("parent-coach-focus-list");
+    expect(list.getAttribute("data-card-count")).toBe("1");
   });
 
-  it("with 2 priorities: card-count=2 — cards share a row 50/50, no third-column gap", () => {
+  it("with 2 priorities: card-count=2 — row splits 50/50, no third-column gap", () => {
     render3([priority("a", "A"), priority("b", "B")]);
-    for (const list of screen.getAllByTestId("parent-coach-focus-list")) {
-      expect(list.getAttribute("data-card-count")).toBe("2");
-    }
+    const list = screen.getByTestId("parent-coach-focus-list");
+    expect(list.getAttribute("data-card-count")).toBe("2");
   });
 
-  it("with 3 priorities: card-count=3 — never two + one wrap", () => {
+  it("with 3 priorities: card-count=3 — never a 2+1 wrap", () => {
     render3([priority("a", "A"), priority("b", "B"), priority("c", "C")]);
-    for (const list of screen.getAllByTestId("parent-coach-focus-list")) {
-      expect(list.getAttribute("data-card-count")).toBe("3");
-    }
+    const list = screen.getByTestId("parent-coach-focus-list");
+    expect(list.getAttribute("data-card-count")).toBe("3");
   });
 });
