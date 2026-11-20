@@ -329,6 +329,119 @@ describe("GET /coach/meets/:id", () => {
   });
 });
 
+// ── POST /coach/meets/:id/swims (batch) ───────────────────────────────────────
+
+describe("POST /coach/meets/:id/swims (batch)", () => {
+  const baseRow = {
+    swimmerId: SWIMMER_ID,
+    eventDistance: 100,
+    eventStroke: "free" as const,
+    course: "scy" as const,
+    timeString: "58.30",
+    swumOn: "2025-06-01",
+  };
+
+  function activeSwimmersSelect(ids: string[]) {
+    const where = vi.fn().mockResolvedValue(ids.map((id) => ({ id })));
+    return { from: vi.fn().mockReturnValue({ where }) };
+  }
+
+  function existingSwimsSelect(
+    rows: Array<{
+      swimmerId: string;
+      eventDistance: number;
+      eventStroke: string;
+      course: string;
+      timeHundredths: number;
+    }>,
+  ) {
+    const where = vi.fn().mockResolvedValue(rows);
+    return { from: vi.fn().mockReturnValue({ where }) };
+  }
+
+  it("inserts every row in one transaction when all validate", async () => {
+    authAs(profileCoach);
+    const insertValues = vi.fn().mockResolvedValue([]);
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(profileCoach))
+      .mockReturnValueOnce(meetSelect(baseMeetRow))
+      .mockReturnValueOnce(activeSwimmersSelect([SWIMMER_ID]))
+      .mockReturnValueOnce(existingSwimsSelect([]));
+    mockDbTransaction.mockImplementation(async (cb) => {
+      await cb({ insert: () => ({ values: insertValues }) });
+    });
+
+    const res = await request(app)
+      .post(`/coach/meets/${MEET_ID}/swims`)
+      .set("Authorization", "Bearer token")
+      .send({ rows: [baseRow, { ...baseRow, timeString: "59.00" }] });
+
+    expect(res.status).toBe(201);
+    expect(res.body.inserted).toBe(2);
+    expect(mockDbTransaction).toHaveBeenCalledTimes(1);
+    expect(insertValues).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects the whole batch and returns per-row errors when any row fails", async () => {
+    authAs(profileCoach);
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(profileCoach))
+      .mockReturnValueOnce(meetSelect(baseMeetRow))
+      .mockReturnValueOnce(activeSwimmersSelect([SWIMMER_ID]))
+      .mockReturnValueOnce(existingSwimsSelect([]));
+
+    const res = await request(app)
+      .post(`/coach/meets/${MEET_ID}/swims`)
+      .set("Authorization", "Bearer token")
+      .send({
+        rows: [
+          baseRow, // ok
+          { ...baseRow, timeString: "not-a-time" }, // invalid_time at index 1
+        ],
+      });
+
+    expect(res.status).toBe(422);
+    expect(res.body.error).toBe("batch_validation_failed");
+    expect(res.body.rowErrors).toEqual([{ index: 1, error: "invalid_time" }]);
+    // Transaction never started.
+    expect(mockDbTransaction).not.toHaveBeenCalled();
+  });
+
+  it("flags intra-batch duplicates (same quad twice in the same batch)", async () => {
+    authAs(profileCoach);
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(profileCoach))
+      .mockReturnValueOnce(meetSelect(baseMeetRow))
+      .mockReturnValueOnce(activeSwimmersSelect([SWIMMER_ID]))
+      .mockReturnValueOnce(existingSwimsSelect([]));
+
+    const res = await request(app)
+      .post(`/coach/meets/${MEET_ID}/swims`)
+      .set("Authorization", "Bearer token")
+      .send({ rows: [baseRow, baseRow] });
+
+    expect(res.status).toBe(422);
+    expect(res.body.rowErrors).toEqual([{ index: 1, error: "duplicate_swim" }]);
+  });
+
+  it("flags rows whose swumOn is before the meet date", async () => {
+    authAs(profileCoach);
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(profileCoach))
+      .mockReturnValueOnce(meetSelect({ ...baseMeetRow, meetDate: "2025-06-10" }))
+      .mockReturnValueOnce(activeSwimmersSelect([SWIMMER_ID]))
+      .mockReturnValueOnce(existingSwimsSelect([]));
+
+    const res = await request(app)
+      .post(`/coach/meets/${MEET_ID}/swims`)
+      .set("Authorization", "Bearer token")
+      .send({ rows: [{ ...baseRow, swumOn: "2025-06-01" }] });
+
+    expect(res.status).toBe(422);
+    expect(res.body.rowErrors).toEqual([{ index: 0, error: "swum_on_before_meet" }]);
+  });
+});
+
 // ── POST /coach/swimmers/:id/meet-swims ───────────────────────────────────────
 
 // After ADR 0045: `swimType="practice"` is no longer accepted. Every POST

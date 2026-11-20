@@ -122,7 +122,6 @@ export default function TimeInput({
     setMinText(value === null ? "" : next.min);
     setSecText(value === null ? "" : next.sec);
     setHunText(value === null ? "" : next.hun);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value]);
 
   const minRef = useRef<HTMLInputElement>(null);

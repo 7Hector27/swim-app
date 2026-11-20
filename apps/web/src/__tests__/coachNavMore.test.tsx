@@ -81,17 +81,16 @@ describe("CoachNav — More sheet", () => {
     expect(dialog).toHaveAttribute("open");
   });
 
-  it("sheet contains Families, Availability, Account settings, Log out (Meets moved to /coach/swimmers tab)", () => {
+  it("sheet contains Meets, Families, Availability, Account settings, Log out", () => {
     render(<CoachNav />);
     fireEvent.click(screen.getByRole("button", { name: /more/i }));
     const dialog = document.querySelector("dialog[aria-label='More navigation options']") as HTMLElement;
+    // ADR 0045 cleanup: Meets is a top-level destination again.
+    expect(within(dialog).getByRole("link", { name: "Meets" })).toBeInTheDocument();
     expect(within(dialog).getByRole("link", { name: "Families" })).toBeInTheDocument();
     expect(within(dialog).getByRole("link", { name: "Availability" })).toBeInTheDocument();
     expect(within(dialog).getByRole("link", { name: "Account settings" })).toBeInTheDocument();
     expect(within(dialog).getByRole("button", { name: "Log out" })).toBeInTheDocument();
-    // ADR 036 Phase 8 Part B Stop 3 piece 6: Meets lives on the
-    // Swimmers page as a tab now, not in the More sheet.
-    expect(within(dialog).queryByRole("link", { name: "Meets" })).not.toBeInTheDocument();
   });
 
   it("Close button closes the sheet", () => {

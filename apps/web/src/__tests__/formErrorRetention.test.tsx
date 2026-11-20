@@ -37,51 +37,14 @@ vi.mock("../content/CoachMeetsContent/actions", () => ({
   createMeet: vi.fn(),
   deleteMeet: vi.fn(),
 }));
-vi.mock("../content/CoachMeetDetailContent/actions", () => ({
-  addSwim: vi.fn(),
-}));
-
 // ── Imports (after mocks) ─────────────────────────────────────────────────────
 import LoginContent from "../content/LoginContent/LoginContent";
 import SignupContent from "../content/SignupContent/SignupContent";
 import AddNoteForm from "../components/AddNoteForm/AddNoteForm";
 import CoachMeetsContent from "../content/CoachMeetsContent/CoachMeetsContent";
-import CoachMeetDetailContent from "../content/CoachMeetDetailContent/CoachMeetDetailContent";
 
-// ── Fixtures ──────────────────────────────────────────────────────────────────
-const MEET_ID = "11111111-0000-0000-0000-000000000001";
-const SWIMMER_ID = "22222222-0000-0000-0000-000000000001";
-const now = "2025-01-01T00:00:00.000Z";
-
-const testMeet = {
-  id: MEET_ID,
-  name: "Spring Invitational",
-  meetDate: "2025-03-15",
-  course: "scy" as const,
-  swimCount: 0,
-  createdAt: now,
-  updatedAt: now,
-};
-
-const meetWithNoSwims = { ...testMeet, swims: [] };
-
-const testSwimmer = {
-  id: SWIMMER_ID,
-  firstName: "Alex",
-  lastName: "Smith",
-  age: 12,
-  sex: "male" as const,
-  isPublic: false,
-  birthDate: "2013-01-01",
-  currentLeagues: [],
-  clubs: [],
-  members: [],
-  memberNames: [],
-  lastLesson: null,
-  homePool: null,
-  createdAt: now,
-  updatedAt: now,
-};
+// The meet-detail Add-swim form is covered by meetDetailPending.test.tsx; this
+// file now tests the other controlled forms only.
 
 // ── Default idle state ────────────────────────────────────────────────────────
 beforeEach(() => {

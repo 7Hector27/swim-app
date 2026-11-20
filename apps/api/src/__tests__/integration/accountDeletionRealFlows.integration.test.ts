@@ -57,6 +57,7 @@ import {
   lessonSwimmers,
   lessons,
   meetSwims,
+  meets,
   profiles,
   ratingFaultTags,
   skillRatings,
@@ -476,11 +477,24 @@ async function recordEvaluation(opts: {
 }
 
 async function recordMeetSwim(opts: { coach: TestUser; swimmerId: string }): Promise<string> {
+  // After ADR 0045 every swim lives under a meet. Create a disposable meet
+  // for the deletion-cleanup assertion, then record the swim via the API.
+  const meetInsert = await adminDb()
+    .insert(meets)
+    .values({
+      name: `Deletion test meet ${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      meetDate: toLaDate(TEST_NOW),
+      course: "scy",
+      createdBy: opts.coach.userId,
+    })
+    .returning({ id: meets.id });
+  const meetId = meetInsert[0]!.id;
+
   const res = await request(app)
     .post(`/coach/swimmers/${opts.swimmerId}/meet-swims`)
     .set("Authorization", `Bearer ${opts.coach.accessToken}`)
     .send({
-      swimType: "practice",
+      meetId,
       eventDistance: 50,
       eventStroke: "free",
       course: "scy",
