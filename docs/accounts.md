@@ -92,10 +92,13 @@ All write actions produce an audit log entry.
 
 **Coaching priority (per evaluation):** Visible to parents by design — this is the focus the coach sets for that session, intended for parent awareness. Pending confirmation from Jason.
 
+**Coach identity on the latest coaching priority:** The parent progress response (`GET /swimmers/:id/progress`) includes the authoring coach's **first name only** on `latestCoachingPriority.coachFirstName`, so the parent UI can render "From Coach Jason · Nov 17" above the priority text. The first name is derived server-side from `profiles.full_name` (first whitespace-separated token) in `apps/api/src/routes/parentProgress.ts`. The last name and any other coach profile fields (email, phone, role) are never shipped on this payload. The field is `null` when no `full_name` is on record, and the client falls back to "From your coach".
+
 The following fields remain coach-only:
 - **Rating notes** (per-skill free-text): never shown to parents.
 - **Fault tags**: never shown to parents.
 - **Void reasons**: never shown to parents.
+- **Coach's last name, email, phone, role, and any other `profiles` field beyond `coachFirstName` on the latest priority**: never shown to parents through the progress route.
 
 ## Coach permissions
 

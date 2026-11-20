@@ -280,10 +280,11 @@ describe("GET /swimmers/:id/progress", () => {
     const priority = progressRes.body.latestCoachingPriority as {
       text: string;
       sessionDate: string;
-      coachName: string | null;
+      coachFirstName: string | null;
     } | null;
     expect(priority).not.toBeNull();
-    expect(priority?.coachName).toBe("Jason Riley");
+    // Parents only see the coach's first name — server trims the rest.
+    expect(priority?.coachFirstName).toBe("Jason");
     expect(priority?.text).toBe("Keep the lead arm out front when breathing to the right.");
     expect(priority?.sessionDate).toBe("2026-10-15");
 

@@ -80,7 +80,7 @@ describe("CoachFocus", () => {
   const latest: LatestCoachingPriority = {
     text: "Keep the lead arm out front when breathing to the right.",
     sessionDate: "2026-11-17",
-    coachName: "Jason Riley",
+    coachFirstName: "Jason",
   };
 
   it("caps the Working on next list at 3 cards, in the order the server returned them", () => {
@@ -193,10 +193,10 @@ describe("CoachFocus", () => {
     expect(screen.getByTestId("parent-coach-focus-byline")).toHaveTextContent("From Coach Jason · Nov 17");
   });
 
-  it("falls back to 'From your coach' (no date) when coachName is null", () => {
+  it("falls back to 'From your coach' (no date) when coachFirstName is null", () => {
     render(
       <CoachFocus
-        latestPriority={{ text: "Keep working.", sessionDate: "2026-10-14", coachName: null }}
+        latestPriority={{ text: "Keep working.", sessionDate: "2026-10-14", coachFirstName: null }}
         workingOnNext={[]}
         swimmerFirstName="Lily"
         skillsBySlug={new Map()}

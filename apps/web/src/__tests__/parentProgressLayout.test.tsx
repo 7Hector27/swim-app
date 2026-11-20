@@ -112,7 +112,7 @@ const baseProgress: ParentSwimmerProgressResponse = {
   ],
   headPositionOverall: 3,
   coachingPriorities: [priority("free-pull", "Pull"), priority("free-catch", "Catch"), priority("free-head-position", "Head position")],
-  latestCoachingPriority: { text: "Rotate the hips more on each stroke", sessionDate: "2026-11-10", coachName: "Jason" },
+  latestCoachingPriority: { text: "Rotate the hips more on each stroke", sessionDate: "2026-11-10", coachFirstName: "Jason" },
   latestCoachingNotes: [],
 };
 

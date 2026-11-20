@@ -72,7 +72,7 @@ export default function CoachFocus({
         <Heading />
         {latestPriority && (
           <span className="text-xs text-text-secondary" data-testid="parent-coach-focus-byline">
-            {coachPriorityByline(latestPriority.sessionDate, latestPriority.coachName)}
+            {coachPriorityByline(latestPriority.sessionDate, latestPriority.coachFirstName)}
           </span>
         )}
       </div>

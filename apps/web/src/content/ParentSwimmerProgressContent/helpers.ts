@@ -390,27 +390,19 @@ export function buildSummaryCard(
 // ── Latest coaching priority byline ──────────────────────────────────────
 
 // "From Coach <first name> · <Mon D>" when the coach's name is known;
-// "From your coach" alone when it isn't. First name is the first
-// whitespace-separated word of coachName — the API returns the coach's
-// full name verbatim from profiles.full_name. The nameless fallback
-// also drops the date, since without an authoring coach the byline
-// stops functioning as attribution.
+// "From your coach" alone when it isn't. The API already returns only
+// the coach's first name on this payload, derived server-side from the
+// first token of profiles.full_name — so the last name never leaves the
+// API. The nameless fallback also drops the date, since without an
+// authoring coach the byline stops functioning as attribution.
 export function coachPriorityByline(
   sessionDate: string,
-  coachName: string | null,
+  coachFirstName: string | null,
 ): string {
-  const firstName = firstNameOf(coachName);
-  if (firstName === null) return "From your coach";
-  return `From Coach ${firstName} · ${formatShortMonthDay(sessionDate)}`;
-}
-
-function firstNameOf(coachName: string | null): string | null {
-  if (coachName === null) return null;
-  const trimmed = coachName.trim();
-  if (trimmed.length === 0) return null;
-  const first = trimmed.split(/\s+/)[0];
-  if (first === undefined || first.length === 0) return null;
-  return first;
+  if (coachFirstName === null || coachFirstName.trim().length === 0) {
+    return "From your coach";
+  }
+  return `From Coach ${coachFirstName} · ${formatShortMonthDay(sessionDate)}`;
 }
 
 // ── Score-history session dates ──────────────────────────────────────────

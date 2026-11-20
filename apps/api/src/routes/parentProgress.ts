@@ -47,6 +47,18 @@ import {
 
 export const parentProgressRouter = Router();
 
+// Server-side first-name derivation so the parent progress response never
+// carries the coach's last name. Returns null for empty / null / undefined
+// input so the client falls back to "From your coach" copy.
+function firstNameOf(fullName: string | null | undefined): string | null {
+  if (fullName === null || fullName === undefined) return null;
+  const trimmed = fullName.trim();
+  if (trimmed.length === 0) return null;
+  const first = trimmed.split(/\s+/)[0];
+  if (first === undefined || first.length === 0) return null;
+  return first;
+}
+
 // GET /swimmers/:id/progress — parent-facing progress (no fault tags, no coach fields)
 parentProgressRouter.get(
   "/:id/progress",
@@ -87,11 +99,11 @@ parentProgressRouter.get(
         .select({
           sessionDate: evaluationSessions.sessionDate,
           coachingPriority: evaluationSessions.coachingPriority,
-          // Join the session's coach profile to surface the author's
-          // name next to the priority byline. Null when the profile has
-          // no full_name on record; the client falls back to "From your
-          // coach" copy.
-          coachName: profiles.fullName,
+          // Join the session's coach profile so the API can derive the
+          // coach's first name server-side. Parents only ever see the
+          // first name (per docs/accounts.md) — the full name is pulled
+          // here but trimmed below so the last name never leaves the API.
+          coachFullName: profiles.fullName,
         })
         .from(evaluationSessions)
         .leftJoin(profiles, eq(profiles.id, evaluationSessions.coachId))
@@ -122,7 +134,7 @@ parentProgressRouter.get(
         ? {
             text: latestPriorityRow.coachingPriority,
             sessionDate: latestPriorityRow.sessionDate,
-            coachName: latestPriorityRow.coachName ?? null,
+            coachFirstName: firstNameOf(latestPriorityRow.coachFullName),
           }
         : null;
 

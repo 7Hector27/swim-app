@@ -117,7 +117,7 @@ const progress: ParentSwimmerProgressResponse = {
   startProgress: [],
   headPositionOverall: 3,
   coachingPriorities: [{ targetSlug: "free-pull", targetName: "Pull", chain: [] }],
-  latestCoachingPriority: { text: "Rotate the hips more on each stroke", sessionDate: "2026-11-10", coachName: null },
+  latestCoachingPriority: { text: "Rotate the hips more on each stroke", sessionDate: "2026-11-10", coachFirstName: null },
   latestCoachingNotes: [],
 };
 

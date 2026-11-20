@@ -35,7 +35,7 @@ export default function CoachNoteCard({ latestPriority }: CoachNoteCardProps) {
           Coach's focus
         </h2>
         <span className="text-xs text-text-secondary" data-testid="parent-coach-focus-byline">
-          {coachPriorityByline(latestPriority.sessionDate, latestPriority.coachName)}
+          {coachPriorityByline(latestPriority.sessionDate, latestPriority.coachFirstName)}
         </span>
       </div>
       <p className="text-sm text-text">{latestPriority.text}</p>

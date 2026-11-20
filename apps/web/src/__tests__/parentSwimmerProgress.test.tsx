@@ -291,7 +291,7 @@ describe("ParentSwimmerProgressContent", () => {
       latestCoachingPriority: {
         text: "Rotate the hips more on each stroke",
         sessionDate: "2026-10-14",
-        coachName: null,
+        coachFirstName: null,
       },
     };
     render(

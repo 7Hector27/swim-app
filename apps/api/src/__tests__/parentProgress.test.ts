@@ -322,7 +322,7 @@ describe("GET /swimmers/:id/progress (parent)", () => {
     expect(res.body.latestCoachingPriority).toEqual({
       text: "Rotate the hips more",
       sessionDate: "2025-06-10",
-      coachName: null,
+      coachFirstName: null,
     });
   });
 
@@ -373,7 +373,7 @@ describe("GET /swimmers/:id/progress (parent)", () => {
     expect(res.body.latestCoachingPriority).toEqual({
       text: "Earlier (live)",
       sessionDate: "2025-06-01",
-      coachName: null,
+      coachFirstName: null,
     });
   });
 });

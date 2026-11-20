@@ -1018,15 +1018,16 @@ export type ParentCoachingNote = z.infer<typeof ParentCoachingNoteSchema>;
 // profile's current-focus card. Null when the swimmer has never had a priority
 // written on any session with at least one non-voided rating.
 //
-// coachName is the full name of the coach who authored the session. Null
-// when the coach's profile has no full_name on record — the client falls
-// back to "From your coach" copy in that case. Read-only on the parent
-// side; parents already see the priority text, so revealing which coach
-// wrote it doesn't widen their view.
+// coachFirstName is the coach's first name only, derived server-side from
+// the first token of profiles.full_name. Null when the profile has no
+// full_name on record — the client falls back to "From your coach" copy.
+// Parents only ever see this first name (per docs/accounts.md); the
+// server never sends a last name on this payload, so coach PII can't leak
+// through this route even if the UI layer changes later.
 export const LatestCoachingPrioritySchema = z.object({
   text: z.string().min(1),
   sessionDate: z.string(),
-  coachName: z.string().nullable(),
+  coachFirstName: z.string().nullable(),
 });
 export type LatestCoachingPriority = z.infer<typeof LatestCoachingPrioritySchema>;
 
