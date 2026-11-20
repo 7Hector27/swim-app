@@ -63,7 +63,7 @@ function CreateMeetForm() {
         onClick={() => setOpen(true)}
         className="inline-flex items-center justify-center px-5 min-h-[44px] font-bold text-sm rounded-button bg-button-primary-background text-button-primary-text"
       >
-        New meet
+        Create meet
       </button>
     );
   }

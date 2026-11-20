@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { CreateMeetBodySchema } from "@swim-app/shared";
+import { CreateMeetBodySchema, MeetResponseSchema, type CreateMeetBody, type MeetResponse } from "@swim-app/shared";
 import { createClient } from "@/lib/supabase/server";
 
 export type CreateMeetState =
@@ -49,6 +49,49 @@ export async function createMeet(
 
   revalidatePath("/coach/meets");
   return { status: "success" };
+}
+
+// Transactional variant used by inline "+ Create a new meet" flows (e.g. the
+// swimmer-detail Add-time form). Returns the created meet so the caller can
+// snap it into the picker without a full refetch.
+export type CreateMeetInlineResult =
+  | { status: "success"; meet: MeetResponse }
+  | { status: "error"; message: string };
+
+export async function createMeetInline(
+  body: CreateMeetBody,
+): Promise<CreateMeetInlineResult> {
+  const supabase = await createClient();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session) redirect("/login");
+
+  const parsed = CreateMeetBodySchema.safeParse(body);
+  if (!parsed.success) {
+    return { status: "error", message: "Please fill in all required fields." };
+  }
+
+  const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/coach/meets`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${session.access_token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(parsed.data),
+  });
+
+  if (response.status === 401) redirect("/api/signout");
+  if (!response.ok) {
+    return { status: "error", message: "Could not create meet. Please try again." };
+  }
+  const json: unknown = await response.json().catch(() => null);
+  const meetParsed = MeetResponseSchema.safeParse(json);
+  if (!meetParsed.success) {
+    return { status: "error", message: "Meet created but response was malformed." };
+  }
+  revalidatePath("/coach/meets");
+  return { status: "success", meet: meetParsed.data };
 }
 
 export type DeleteMeetState =
