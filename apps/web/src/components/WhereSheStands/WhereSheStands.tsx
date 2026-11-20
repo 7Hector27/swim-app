@@ -16,80 +16,99 @@ interface WhereSheStandsProps {
 // Four-column breakdown of where the swimmer stands per skill group:
 //   Group name | 1–5 track | Average | Skills rated
 //
-// Each data row is rendered as a single `<tr>` carrying one bottom
-// border, so the divider under every row runs uninterrupted from the
-// group name through to the last column. The header row shares the
-// same table so the column widths stay aligned across rows.
-//
-// Phone (≤768px): the "Skills rated" column is hidden and that cell's
-// content ("N of M") moves under the group name as a subtitle. On a
-// not-rated row the "Not rated yet" cell spans the two trailing
-// columns on tablet+ and sits in the Average slot alone on phone.
+// Layout is driven by the component's own width via a container query
+// (named `wss`), not the viewport, so the card adapts to its parent
+// column at every page width. Thresholds:
+//   - @min-[520px]/wss: full four-column layout.
+//   - below that:       compact three-column (Skills rated hidden, the
+//                       "N of M" count moves under the group name).
+//   - @min-[440px]/wss: full scale labels ("1 Emerging", "3 Competent",
+//                       "5 Mastery"). Below that: just the digits.
+// The table itself sits inside an `overflow-x-auto` wrapper with a
+// hard min-width, so the card never forces page-wide horizontal scroll —
+// if the compact layout still doesn't fit, scrolling happens inside the
+// card. The header/legend stay outside that wrapper so they're always
+// fully visible.
 export default function WhereSheStands({ lanes }: WhereSheStandsProps) {
   if (lanes.length === 0) return null;
   const ariaLabel = buildAriaLabel(lanes);
 
   return (
     <section
-      className="rounded-lg p-4 flex flex-col gap-3"
+      className="@container/wss rounded-lg p-4 flex flex-col gap-3"
       style={{ backgroundColor: "var(--color-surface-soft)" }}
       aria-label={ariaLabel}
       data-testid="where-she-stands"
     >
-      <table
-        className="w-full text-sm"
-        style={{ borderCollapse: "collapse" }}
-      >
-        <colgroup>
-          <col style={{ width: "28%" }} />
-          <col />
-          <col style={{ width: "48px" }} />
-          <col className="hidden tablet:table-column" style={{ width: "72px" }} />
-        </colgroup>
-        <thead>
-          <tr
-            style={{ borderBottom: "1px solid var(--color-border)" }}
-            data-testid="wss-header-row"
-          >
-            <th
-              scope="col"
-              className="text-left text-xs font-normal text-text-secondary py-2 pr-3 align-bottom"
+      <div className="overflow-x-auto" data-testid="wss-scroll-wrapper">
+        <table
+          className="w-full text-sm min-w-[280px]"
+          style={{ borderCollapse: "collapse" }}
+        >
+          <colgroup>
+            <col style={{ width: "28%" }} />
+            <col />
+            <col style={{ width: "48px" }} />
+            <col className="hidden @min-[520px]/wss:table-column" style={{ width: "72px" }} />
+          </colgroup>
+          <thead>
+            <tr
+              style={{ borderBottom: "1px solid var(--color-border)" }}
+              data-testid="wss-header-row"
             >
-              Group
-            </th>
-            <th
-              scope="col"
-              className="py-2 px-3 align-bottom"
-              aria-label="Average on a 1 to 5 scale"
-            >
-              <div className="flex justify-between text-xs text-text-secondary" data-testid="wss-scale-labels">
-                <span>{SCALE_LABELS[0]}</span>
-                <span>{SCALE_LABELS[1]}</span>
-                <span>{SCALE_LABELS[2]}</span>
-              </div>
-            </th>
-            <th
-              scope="col"
-              className="text-right text-xs font-normal text-text-secondary py-2 pl-3 align-bottom"
-            >
-              Average
-            </th>
-            <th
-              scope="col"
-              className="hidden tablet:table-cell text-right text-xs font-normal text-text-secondary py-2 pl-3 align-bottom"
-            >
-              Skills rated
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {lanes.map((lane, index) => (
-            <LaneRow key={lane.slug} lane={lane} isLast={index === lanes.length - 1} />
-          ))}
-        </tbody>
-      </table>
+              <th
+                scope="col"
+                className="text-left text-xs font-normal text-text-secondary py-2 pr-3 align-bottom"
+              >
+                Group
+              </th>
+              <th
+                scope="col"
+                className="py-2 px-3 align-bottom"
+                aria-label="Average on a 1 to 5 scale"
+              >
+                <div className="flex justify-between text-xs text-text-secondary" data-testid="wss-scale-labels">
+                  <ScaleLabel digit="1" full={SCALE_LABELS[0]} />
+                  <ScaleLabel digit="3" full={SCALE_LABELS[1]} />
+                  <ScaleLabel digit="5" full={SCALE_LABELS[2]} />
+                </div>
+              </th>
+              <th
+                scope="col"
+                className="text-right text-xs font-normal text-text-secondary py-2 pl-3 align-bottom"
+              >
+                Average
+              </th>
+              <th
+                scope="col"
+                className="hidden @min-[520px]/wss:table-cell text-right text-xs font-normal text-text-secondary py-2 pl-3 align-bottom"
+              >
+                Skills rated
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {lanes.map((lane, index) => (
+              <LaneRow key={lane.slug} lane={lane} isLast={index === lanes.length - 1} />
+            ))}
+          </tbody>
+        </table>
+      </div>
       <Legend />
     </section>
+  );
+}
+
+// Scale-label slot that swaps between a bare digit and the full word as
+// soon as the card is wide enough that "1 Emerging / 3 Competent / 5
+// Mastery" no longer overlaps. `whitespace-nowrap` keeps "3 Competent"
+// on one line even at the breakpoint boundary.
+function ScaleLabel({ digit, full }: { digit: string; full: string }) {
+  return (
+    <span className="whitespace-nowrap">
+      <span className="@min-[440px]/wss:hidden">{digit}</span>
+      <span className="hidden @min-[440px]/wss:inline">{full}</span>
+    </span>
   );
 }
 
@@ -112,18 +131,18 @@ function LaneRow({ lane, isLast }: { lane: Lane; isLast: boolean }) {
         <td className="py-3 px-3 align-middle">
           <NotRatedTrack />
         </td>
-        {/* Tablet+: "Not rated yet" spans Average + Skills rated (two
-            cells collapsed into one). Phone: Skills rated is hidden, so
-            the message lives in the Average slot alone. */}
+        {/* Compact (<520px): "Not rated yet" lives in the Average slot
+            alone, since Skills rated is hidden there. Wide (>=520px):
+            the same message spans Average + Skills rated. */}
         <td
-          className="tablet:hidden text-right py-3 pl-3 align-middle text-text-secondary text-xs"
+          className="@min-[520px]/wss:hidden text-right py-3 pl-3 align-middle text-text-secondary text-xs"
           data-testid="wss-lane-not-rated-phone"
         >
           Not rated yet
         </td>
         <td
           colSpan={2}
-          className="hidden tablet:table-cell text-right py-3 pl-3 align-middle text-text-secondary text-xs"
+          className="hidden @min-[520px]/wss:table-cell text-right py-3 pl-3 align-middle text-text-secondary text-xs"
           data-testid="wss-lane-not-rated-desktop"
         >
           Not rated yet
@@ -145,9 +164,10 @@ function LaneRow({ lane, isLast }: { lane: Lane; isLast: boolean }) {
       <td className="py-3 pr-3 align-middle" style={{ color: nameFill }}>
         <div className="flex flex-col gap-0.5 min-w-0">
           <span className="truncate">{lane.name}</span>
-          {/* Phone-only subtitle: "Skills rated" moves under the name. */}
+          {/* Compact (<520px): "Skills rated" moves under the name.
+              The count never wraps — "6 of 7" is treated as one token. */}
           <span
-            className="tablet:hidden text-xs text-text-secondary"
+            className="@min-[520px]/wss:hidden text-xs text-text-secondary whitespace-nowrap"
             data-testid="wss-lane-rated-phone"
           >
             {ratedText}
@@ -164,7 +184,7 @@ function LaneRow({ lane, isLast }: { lane: Lane; isLast: boolean }) {
         {avgText}
       </td>
       <td
-        className="hidden tablet:table-cell text-right py-3 pl-3 align-middle text-text-secondary tabular-nums text-sm"
+        className="hidden @min-[520px]/wss:table-cell text-right py-3 pl-3 align-middle text-text-secondary tabular-nums text-sm whitespace-nowrap"
         data-testid="wss-lane-rated-desktop"
       >
         {ratedText}

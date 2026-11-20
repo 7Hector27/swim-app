@@ -242,6 +242,61 @@ describe("ParentSwimmerProgressContent — single tree", () => {
   });
 });
 
+describe("ParentSwimmerProgressContent — Snapshot / Where she stands row", () => {
+  it("is a named @container/progress so inner rows can query the content width", () => {
+    render(
+      <ParentSwimmerProgressContent
+        swimmer={swimmer}
+        progress={baseProgress}
+        categories={[]}
+        scoreHistory={baseScoreHistory}
+      />,
+    );
+    const layout = screen.getByTestId("parent-progress-layout");
+    expect(layout.className).toContain("@container/progress");
+  });
+
+  it("switches from stacked to two columns only when the container is at least 864px (2×420 + 24 gap)", () => {
+    render(
+      <ParentSwimmerProgressContent
+        swimmer={swimmer}
+        progress={baseProgress}
+        categories={[]}
+        scoreHistory={baseScoreHistory}
+      />,
+    );
+    const row = document.querySelector('[data-testid="parent-progress-group-row"]');
+    expect(row).not.toBeNull();
+    const className = (row as HTMLElement).className;
+    expect(className).toContain("grid-cols-1");
+    expect(className).toContain("@min-[864px]/progress:grid-cols-2");
+    // The Snapshot column renders first so stacked order is Snapshot above WhereSheStands.
+    const snapshot = (row as HTMLElement).querySelector('[data-testid="parent-progress-snapshot"]');
+    const where = (row as HTMLElement).querySelector('[data-testid="parent-progress-where-she-stands"]');
+    expect(snapshot).not.toBeNull();
+    expect(where).not.toBeNull();
+    const position = snapshot!.compareDocumentPosition(where!);
+    expect(position & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+  });
+
+  it("each column in the row sets min-w-0 so a wide child can't stretch the row past its container", () => {
+    render(
+      <ParentSwimmerProgressContent
+        swimmer={swimmer}
+        progress={baseProgress}
+        categories={[]}
+        scoreHistory={baseScoreHistory}
+      />,
+    );
+    const row = document.querySelector('[data-testid="parent-progress-group-row"]')!;
+    const children = Array.from(row.children) as HTMLElement[];
+    expect(children.length).toBe(2);
+    for (const child of children) {
+      expect(child.className, `row child missing min-w-0: ${child.className}`).toContain("min-w-0");
+    }
+  });
+});
+
 describe("ParentSwimmerProgressContent — golf visibility", () => {
   it("hides the entire golf section (heading included) when no trends have scored points", () => {
     render(

@@ -47,7 +47,7 @@ export default function RecentWins({ wins, swimmerFirstName }: RecentWinsProps) 
               >
                 <WinIcon kind={win.kind} />
                 <div className="flex flex-col gap-0.5 min-w-0 flex-1">
-                  <span className="text-sm font-semibold text-text truncate">{win.headline}</span>
+                  <span className="text-sm font-semibold text-text">{win.headline}</span>
                   <span className="text-xs text-text-secondary">{formatShortMonthDay(win.sessionDate)}</span>
                 </div>
               </li>

@@ -267,25 +267,68 @@ describe("WhereSheStands — not-rated lane", () => {
   });
 });
 
-describe("WhereSheStands — phone arrangement", () => {
-  it("Skills rated moves under the group name on phone (tablet-hidden subtitle)", () => {
+describe("WhereSheStands — compact (narrow-container) arrangement", () => {
+  it("Skills rated moves under the group name below the 520px container threshold", () => {
     render(<WhereSheStands lanes={RATED_LANES} />);
     const freestyle = document.querySelector('[data-testid="wss-lane-row"][data-slug="freestyle"]')!;
     const phone = within(freestyle as HTMLElement).getByTestId("wss-lane-rated-phone");
     expect(phone).toHaveTextContent("18 of 25");
-    // The subtitle hides on tablet+ via Tailwind's responsive class.
-    expect(phone.className).toContain("tablet:hidden");
-    // The Skills rated column cell is desktop-only.
+    // The subtitle hides once the card itself crosses 520px (container
+    // query), not when the viewport does — matches the responsive rule.
+    expect(phone.className).toContain("@min-[520px]/wss:hidden");
+    // "6 of 7" must never line-break in the middle of the count.
+    expect(phone.className).toContain("whitespace-nowrap");
+    // The Skills rated column cell appears only above the same threshold.
     const desktop = within(freestyle as HTMLElement).getByTestId("wss-lane-rated-desktop");
     expect(desktop.className).toContain("hidden");
-    expect(desktop.className).toContain("tablet:table-cell");
+    expect(desktop.className).toContain("@min-[520px]/wss:table-cell");
   });
 
-  it("Skills rated column header hides on phone and the scale labels stay on one line", () => {
+  it("Skills rated column header is driven by the same container-query threshold", () => {
     render(<WhereSheStands lanes={RATED_LANES} />);
     const skillsHeader = screen.getByText("Skills rated").closest("th")!;
     expect(skillsHeader.className).toContain("hidden");
-    expect(skillsHeader.className).toContain("tablet:table-cell");
+    expect(skillsHeader.className).toContain("@min-[520px]/wss:table-cell");
+  });
+});
+
+// ── Containment + overflow ───────────────────────────────────────────────
+
+describe("WhereSheStands — container-query layout + inner scroll", () => {
+  it("the card is a named container (@container/wss) so children query its width, not the viewport", () => {
+    render(<WhereSheStands lanes={RATED_LANES} />);
+    const card = screen.getByTestId("where-she-stands");
+    expect(card.className).toContain("@container/wss");
+  });
+
+  it("the table sits in a horizontally-scrollable wrapper with a min-width so the card never forces page-wide horizontal scroll", () => {
+    render(<WhereSheStands lanes={RATED_LANES} />);
+    const wrapper = screen.getByTestId("wss-scroll-wrapper");
+    expect(wrapper.className).toContain("overflow-x-auto");
+    const table = wrapper.querySelector("table")!;
+    expect(table.className).toContain("min-w-[280px]");
+    expect(table.className).toContain("w-full");
+  });
+
+  it("the legend lives OUTSIDE the scroll wrapper so it's never clipped by overflow", () => {
+    render(<WhereSheStands lanes={RATED_LANES} />);
+    const wrapper = screen.getByTestId("wss-scroll-wrapper");
+    const legend = screen.getByTestId("wss-legend");
+    expect(wrapper.contains(legend)).toBe(false);
+    expect(screen.getByTestId("where-she-stands").contains(legend)).toBe(true);
+  });
+
+  it("scale labels render both the digit-only and full forms so the container query can swap between them", () => {
+    render(<WhereSheStands lanes={RATED_LANES} />);
+    const scale = screen.getByTestId("wss-scale-labels");
+    const digitOnly = Array.from(scale.querySelectorAll("span"))
+      .filter((span) => span.className.includes("@min-[440px]/wss:hidden"))
+      .map((span) => span.textContent);
+    expect(digitOnly).toEqual(["1", "3", "5"]);
+    const fullOnly = Array.from(scale.querySelectorAll("span"))
+      .filter((span) => span.className.includes("@min-[440px]/wss:inline"))
+      .map((span) => span.textContent);
+    expect(fullOnly).toEqual([SCALE_LABELS[0], SCALE_LABELS[1], SCALE_LABELS[2]]);
   });
 });
 

@@ -125,7 +125,10 @@ export default function ParentSwimmerProgressContent({
   return (
     <div className="flex flex-col flex-1">
       <main className="flex-1 px-page pt-8 pb-20 tablet:pb-8">
-        <div className="mx-auto max-w-content flex flex-col gap-6" data-testid="parent-progress-layout">
+        <div
+          className="@container/progress mx-auto max-w-content flex flex-col gap-6"
+          data-testid="parent-progress-layout"
+        >
           <div className="flex flex-col gap-3">
             <a href="/dashboard" className="text-sm underline text-link">
               ← Dashboard
@@ -190,10 +193,15 @@ export default function ParentSwimmerProgressContent({
                 />
               </section>
 
-              {/* Row 4 — Snapshot + Where she stands */}
+              {/* Row 4 — Snapshot + Where she stands.
+                  Two columns only when the content container is wide
+                  enough to give each column ~420px plus the 24px gap
+                  (2×420 + 24 = 864). Below that the row stacks and
+                  each card gets full content width, so WhereSheStands
+                  can sit in its 4-col arrangement without crowding. */}
               {groupRowVisible && (
                 <div
-                  className="grid grid-cols-1 tablet:grid-cols-2 gap-6 items-start"
+                  className="grid grid-cols-1 @min-[864px]/progress:grid-cols-2 gap-6 items-start"
                   data-testid="parent-progress-group-row"
                 >
                   <section
