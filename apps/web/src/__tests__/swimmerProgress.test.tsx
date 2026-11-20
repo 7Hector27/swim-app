@@ -447,6 +447,50 @@ describe("SwimmerProgressContent — sections", () => {
     expect(normalizeIds(secondContainer.innerHTML)).toBe(firstHtml);
   });
 
+  // ── Section order (phone vs. tablet+) ───────────────────────────────────
+
+  it("phone DOM order is Golf → Fault tags → Session cadence → Skills (unchanged)", () => {
+    renderPage({ progress, scoreHistory, golfScore });
+    const container = screen.getByTestId("coach-progress-main-sections");
+    const testIds = Array.from(container.querySelectorAll<HTMLElement>("[data-testid]"))
+      .map((node) => node.getAttribute("data-testid"))
+      .filter((testid): testid is string =>
+        testid === "coach-progress-golf" ||
+        testid === "coach-progress-faults" ||
+        testid === "coach-progress-cadence" ||
+        testid === "coach-progress-skills",
+      );
+    expect(testIds).toEqual([
+      "coach-progress-golf",
+      "coach-progress-faults",
+      "coach-progress-cadence",
+      "coach-progress-skills",
+    ]);
+  });
+
+  it("tablet+ visual order via Tailwind order classes: Skills → Golf → Fault tags → Session cadence", () => {
+    renderPage({ progress, scoreHistory, golfScore });
+    // Each section carries its own `tablet:order-N` class so the flex
+    // column flips its visual order at ≥769px without duplicating any
+    // section or changing the DOM.
+    expect(screen.getByTestId("coach-progress-skills").className).toContain("tablet:order-1");
+    expect(screen.getByTestId("coach-progress-golf").className).toContain("tablet:order-2");
+    expect(screen.getByTestId("coach-progress-faults").className).toContain("tablet:order-3");
+    expect(screen.getByTestId("coach-progress-cadence").className).toContain("tablet:order-4");
+  });
+
+  it("each section mounts exactly once (no second copy for the breakpoint swap)", () => {
+    renderPage({ progress, scoreHistory, golfScore });
+    for (const testid of [
+      "coach-progress-skills",
+      "coach-progress-golf",
+      "coach-progress-faults",
+      "coach-progress-cadence",
+    ]) {
+      expect(screen.getAllByTestId(testid)).toHaveLength(1);
+    }
+  });
+
   it("renders the screen-group switcher in the Skills column with every group", () => {
     // Pass 3 replaced the per-category collapsibles with a single switcher
     // that lists all nine evaluate-screen groups. Catalog category names
@@ -647,5 +691,73 @@ describe("SwimmerProgressContent — GroupStandings row", () => {
     expect(whatToWork).not.toBeNull();
     const position = whatToWork!.compareDocumentPosition(row);
     expect(position & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+  });
+});
+
+// ── Golf empty state ────────────────────────────────────────────────────
+
+describe("SwimmerProgressContent — Golf empty state", () => {
+  const progress: SwimmerProgressResponse = {
+    ...emptyProgress,
+    skills: [
+      makeSkill({
+        id: FREE_SKILL_ID,
+        slug: "free-kick",
+        name: "Freestyle Kick",
+        categoryId: FREE_CAT_ID,
+        categoryName: "Freestyle",
+        grade: 3,
+        history: [makePoint({ id: "p1", sessionDate: "2026-10-25", grade: 3 })],
+      }),
+    ],
+  };
+  const scoreHistory: ScoreHistoryResponse = {
+    points: [
+      makeScorePoint({
+        sessionDate: "2026-10-25",
+        sessionId: "ssss0000-0000-0000-0000-000000001025",
+        headPositionOverall: 3,
+      }),
+    ],
+    recentChanges: [],
+    milestones: [],
+    faultTrends: [],
+    measurements: [],
+  };
+
+  it("shows 'No golf scores yet.' under the heading/caption when trends[] is empty", () => {
+    renderPage({ progress, scoreHistory, golfScore: { trends: [] } });
+    expect(screen.getByRole("heading", { name: /^golf score$/i })).toBeInTheDocument();
+    expect(screen.getByText(/Lower is better/i)).toBeInTheDocument();
+    expect(screen.getByTestId("coach-progress-golf-empty")).toHaveTextContent("No golf scores yet.");
+  });
+
+  it("shows 'No golf scores yet.' when trends exist but no point carries both time and strokes", () => {
+    const partialOnly: GolfScoreTrendsResponse = {
+      trends: [
+        {
+          skillSlug: "free-golf-score",
+          skillName: "Freestyle golf score",
+          byCategory: [
+            {
+              category: "push_off_in_water",
+              points: [
+                {
+                  ratedAt: "2026-10-25T18:00:00.000Z",
+                  sessionDate: "2026-10-25",
+                  sessionId: "ssss0000-0000-0000-0000-000000001025",
+                  grade: 3,
+                  timeSeconds: 14,
+                  strokeCountValue: null,
+                },
+              ],
+              ageBands: null,
+            },
+          ],
+        },
+      ],
+    };
+    renderPage({ progress, scoreHistory, golfScore: partialOnly });
+    expect(screen.getByTestId("coach-progress-golf-empty")).toHaveTextContent("No golf scores yet.");
   });
 });

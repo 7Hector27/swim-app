@@ -129,6 +129,17 @@ export default function SwimmerProgressContent({
   // heading alone shows, matching the older coach layout.
   const standingsVisible = lanes.length > 0;
 
+  // The coach page always shows the Golf score heading + caption, and
+  // falls through to "No golf scores yet." when there's nothing to
+  // plot. A trend counts as data only when at least one point carries
+  // both time + strokes — a trend that exists but only holds partial
+  // measurements shouldn't be mistaken for scored data.
+  const golfHasScoredPoints = golfScore.trends.some((trend) =>
+    trend.byCategory.some((cat) =>
+      cat.points.some((point) => point.timeSeconds !== null && point.strokeCountValue !== null),
+    ),
+  );
+
   return (
     <div className="flex flex-col flex-1">
       <main className="flex-1 px-page py-6 tablet:py-10">
@@ -202,43 +213,50 @@ export default function SwimmerProgressContent({
             )}
           </div>
 
-          <div className="grid gap-6 tablet:gap-10 tablet:grid-cols-[7fr_5fr] items-start">
-            <div className="flex flex-col gap-6 min-w-0">
-              <section className="flex flex-col gap-3">
-                <div className="flex flex-col gap-1">
-                  <h2 className="text-lg font-heading text-text" style={{ fontVariationSettings: "\"SOFT\" 100, \"WONK\" 0" }}>
-                    Golf score
-                  </h2>
-                  <p className="text-xs text-text-secondary">Lower is better. Band shows age-group 25th to 75th percentile.</p>
-                </div>
-                {golfScore.trends.length === 0 ? (
-                  <p className="text-sm text-text-secondary">No golf scores yet.</p>
-                ) : (
-                  golfScore.trends.map((trend) => (
-                    <GolfScoreCard key={trend.skillSlug} trend={trend} editContext={editContext} />
-                  ))
-                )}
-              </section>
-
-              {faultTags.length > 0 && (
-                <section className="flex flex-col gap-3">
-                  <h2 className="text-lg font-heading text-text" style={{ fontVariationSettings: "\"SOFT\" 100, \"WONK\" 0" }}>
-                    Fault tags{" "}
-                    <span className="text-xs font-body text-text-secondary">coach only</span>
-                  </h2>
-                  <FaultTagBars tags={faultTags} />
-                </section>
-              )}
-
-              <section className="flex flex-col gap-3">
+          {/* DOM order (= phone order): Golf, Fault tags, Session
+              cadence, Skills — unchanged from the prior layout. On
+              tablet+ we flip to a single flex column with explicit
+              `order` so Skills leads and Golf + Session cadence sit
+              directly beneath it at the same full width:
+                phone:   Golf → Fault tags → Session cadence → Skills
+                tablet+: Skills → Golf → Fault tags → Session cadence
+              Each section mounts exactly once; `tablet:order-N` moves
+              it without a second copy. */}
+          <div className="flex flex-col gap-6 tablet:gap-10" data-testid="coach-progress-main-sections">
+            <section className="flex flex-col gap-3 min-w-0 tablet:order-2" data-testid="coach-progress-golf">
+              <div className="flex flex-col gap-1">
                 <h2 className="text-lg font-heading text-text" style={{ fontVariationSettings: "\"SOFT\" 100, \"WONK\" 0" }}>
-                  Session cadence
+                  Golf score
                 </h2>
-                <SessionCadence weeks={cadence} />
-              </section>
-            </div>
+                <p className="text-xs text-text-secondary">Lower is better. Band shows age-group 25th to 75th percentile.</p>
+              </div>
+              {!golfHasScoredPoints ? (
+                <p className="text-sm text-text-secondary" data-testid="coach-progress-golf-empty">No golf scores yet.</p>
+              ) : (
+                golfScore.trends.map((trend) => (
+                  <GolfScoreCard key={trend.skillSlug} trend={trend} editContext={editContext} />
+                ))
+              )}
+            </section>
 
-            <div className="flex flex-col gap-4 min-w-0">
+            {faultTags.length > 0 && (
+              <section className="flex flex-col gap-3 min-w-0 tablet:order-3" data-testid="coach-progress-faults">
+                <h2 className="text-lg font-heading text-text" style={{ fontVariationSettings: "\"SOFT\" 100, \"WONK\" 0" }}>
+                  Fault tags{" "}
+                  <span className="text-xs font-body text-text-secondary">coach only</span>
+                </h2>
+                <FaultTagBars tags={faultTags} />
+              </section>
+            )}
+
+            <section className="flex flex-col gap-3 min-w-0 tablet:order-4" data-testid="coach-progress-cadence">
+              <h2 className="text-lg font-heading text-text" style={{ fontVariationSettings: "\"SOFT\" 100, \"WONK\" 0" }}>
+                Session cadence
+              </h2>
+              <SessionCadence weeks={cadence} />
+            </section>
+
+            <section className="flex flex-col gap-4 min-w-0 tablet:order-1" data-testid="coach-progress-skills">
               <h2 className="text-lg font-heading text-text" style={{ fontVariationSettings: "\"SOFT\" 100, \"WONK\" 0" }}>
                 Skills
               </h2>
@@ -251,7 +269,7 @@ export default function SwimmerProgressContent({
                 editContext={editContext}
                 rollups={latestScreenGroupRollups}
               />
-            </div>
+            </section>
           </div>
 
           <section className="flex flex-col gap-3" data-testid="starts-section">
