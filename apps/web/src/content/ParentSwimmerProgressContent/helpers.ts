@@ -315,7 +315,7 @@ export interface SummaryCardData {
   lessonLine: string | null;
   // Current level counts — one entry per level 1-5. Rollups (`type ===
   // "rollup"`) and DQ / NC states don't count. The stacked bar label is
-  // "Where <her> N rated skills are now" where N === total.
+  // "Where <first name>'s N rated skills are now" where N === total.
   levelCounts: ReadonlyArray<LevelDistributionEntry>;
   total: number;
   // Sentence-form text alternative so a screen reader hears the

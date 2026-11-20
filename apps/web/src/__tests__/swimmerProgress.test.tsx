@@ -552,3 +552,100 @@ describe("SwimmerProgressContent — Edit affordances (ADR 032)", () => {
     }
   });
 });
+
+// ── GroupStandings integration (coach page) ─────────────────────────────
+
+describe("SwimmerProgressContent — GroupStandings row", () => {
+  const progress: SwimmerProgressResponse = {
+    ...emptyProgress,
+    headPositionOverall: 3,
+    coachingPriorities: [],
+    skills: [
+      makeSkill({
+        id: FREE_SKILL_ID,
+        slug: "free-kick",
+        name: "Freestyle Kick",
+        categoryId: FREE_CAT_ID,
+        categoryName: "Freestyle",
+        grade: 3,
+        history: [
+          makePoint({ id: "k-latest", sessionDate: "2026-10-25", grade: 3 }),
+          makePoint({ id: "k-first", sessionDate: "2026-09-30", grade: 2 }),
+        ],
+      }),
+    ],
+  };
+
+  const scoreHistory: ScoreHistoryResponse = {
+    points: [
+      makeScorePoint({
+        sessionDate: "2026-09-30",
+        sessionId: "ssss0000-0000-0000-0000-000000000930",
+        headPositionOverall: 2,
+        screenGroupRollups: [
+          { screenSlug: "freestyle", name: "Freestyle", average: 2, assessedCount: 1, totalCount: 2 },
+          { screenSlug: "backstroke", name: "Backstroke", average: 1.5, assessedCount: 2, totalCount: 3 },
+        ],
+      }),
+      makeScorePoint({
+        sessionDate: "2026-10-25",
+        sessionId: "ssss0000-0000-0000-0000-000000001025",
+        headPositionOverall: 3,
+        screenGroupRollups: [
+          { screenSlug: "freestyle", name: "Freestyle", average: 3, assessedCount: 2, totalCount: 2 },
+          { screenSlug: "backstroke", name: "Backstroke", average: 2.5, assessedCount: 3, totalCount: 3 },
+        ],
+      }),
+    ],
+    recentChanges: [],
+    milestones: [],
+    faultTrends: [],
+    measurements: [],
+  };
+
+  it("renders a 'Where <First name> stands' section next to Snapshot, with a lane per screen group", () => {
+    renderPage({ progress, scoreHistory });
+    expect(
+      screen.getByRole("heading", { name: new RegExp(`Where ${swimmer.firstName} stands`, "i") }),
+    ).toBeInTheDocument();
+    const standings = screen.getByTestId("coach-progress-group-standings");
+    const lanes = within(standings).getAllByTestId("group-standings-lane-row");
+    expect(lanes).toHaveLength(2);
+    expect(lanes.some((row) => row.getAttribute("data-slug") === "freestyle")).toBe(true);
+    expect(lanes.some((row) => row.getAttribute("data-slug") === "backstroke")).toBe(true);
+    // Lanes carry the current average, not just the first — Freestyle
+    // went 2 → 3.0 so the current-average cell reads 3.0.
+    const freestyleRow = lanes.find((row) => row.getAttribute("data-slug") === "freestyle")!;
+    expect(within(freestyleRow).getByTestId("group-standings-lane-average")).toHaveTextContent("3.0");
+  });
+
+  it("stacks the Snapshot / Group standings row below the 864px container threshold (Snapshot first)", () => {
+    renderPage({ progress, scoreHistory });
+    const row = screen.getByTestId("coach-progress-group-row");
+    expect(row.className).toContain("grid-cols-1");
+    expect(row.className).toContain("@min-[864px]/progress:grid-cols-2");
+    const snapshot = within(row).getByTestId("coach-progress-snapshot");
+    const standings = within(row).getByTestId("coach-progress-group-standings");
+    const position = snapshot.compareDocumentPosition(standings);
+    expect(position & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+  });
+
+  it("'What to work on next' appears above the Snapshot / Group standings row", () => {
+    const withPriority: SwimmerProgressResponse = {
+      ...progress,
+      coachingPriorities: [
+        {
+          targetSlug: "free-pull",
+          targetName: "Pull",
+          chain: [{ slug: "free-pull", name: "Pull", notAssessed: false }],
+        },
+      ],
+    };
+    renderPage({ progress: withPriority, scoreHistory });
+    const whatToWork = screen.getByRole("heading", { name: /what to work on next/i }).closest("section");
+    const row = screen.getByTestId("coach-progress-group-row");
+    expect(whatToWork).not.toBeNull();
+    const position = whatToWork!.compareDocumentPosition(row);
+    expect(position & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+  });
+});

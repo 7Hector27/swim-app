@@ -40,6 +40,10 @@ interface StartDiveCardProps {
     slug: string;
     history: StartsHistoryPoint[];
   }>;
+  // Swimmer's first name, used in the delta tile copy
+  // ("0.06 s faster than <Name>'s first"). Required so the UI never
+  // falls back to a hardcoded pronoun.
+  swimmerFirstName: string;
   // Controls which card regions render. The coach progress page shows the
   // session-by-session grid + the "Still to grade" tile; the parent page
   // hides both — parents don't see per-session detail or coach-tempo
@@ -51,6 +55,7 @@ interface StartDiveCardProps {
 export default function StartDiveCard({
   start,
   swimmerSkills,
+  swimmerFirstName,
   showSessionGrid = true,
   showStillToGrade = true,
 }: StartDiveCardProps) {
@@ -107,6 +112,7 @@ export default function StartDiveCard({
             reactionHistory={reactionHistory}
             distanceHistory={distanceHistory}
             stillToGrade={stillToGrade}
+            swimmerFirstName={swimmerFirstName}
             showStillToGrade={showStillToGrade}
           />
         </div>
@@ -349,12 +355,13 @@ interface StatTilesProps {
   reactionHistory: ProgressRatingPoint[];
   distanceHistory: ProgressRatingPoint[];
   stillToGrade: number;
+  swimmerFirstName: string;
   // Parent view hides the still-to-grade count; it reads as coach tempo
   // metadata rather than a swimmer-progress fact.
   showStillToGrade?: boolean;
 }
 
-function StatTiles({ reactionHistory, distanceHistory, stillToGrade, showStillToGrade = true }: StatTilesProps) {
+function StatTiles({ reactionHistory, distanceHistory, stillToGrade, swimmerFirstName, showStillToGrade = true }: StatTilesProps) {
   const reactionFirst = firstMeasurement(reactionHistory);
   const reactionLatest = latestMeasurement(reactionHistory);
   const distanceFirst = firstMeasurement(distanceHistory);
@@ -375,6 +382,7 @@ function StatTiles({ reactionHistory, distanceHistory, stillToGrade, showStillTo
         reactionFirst?.measurementUnit ?? null,
         reactionLatest.measurementValue,
         reactionLatest.measurementUnit,
+        swimmerFirstName,
         { isFirstOnly: reactionFirst !== null && reactionFirst.id === reactionLatest.id },
       ),
     });
@@ -390,6 +398,7 @@ function StatTiles({ reactionHistory, distanceHistory, stillToGrade, showStillTo
         distanceFirst?.measurementUnit ?? null,
         distanceLatest.measurementValue,
         distanceLatest.measurementUnit,
+        swimmerFirstName,
         { isFirstOnly: distanceFirst !== null && distanceFirst.id === distanceLatest.id },
       ),
     });

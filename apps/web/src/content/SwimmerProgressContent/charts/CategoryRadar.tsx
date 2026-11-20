@@ -111,7 +111,7 @@ export default function CategoryRadar({ categories, firstEvaluation }: CategoryR
     })
     .join(" ");
 
-  // Dashed "when she started" overlay. Only draws when the swimmer has
+  // Dashed first-evaluation overlay. Only draws when the swimmer has
   // more than one evaluation and the overlay's axis list lines up with
   // the categories prop (same length and order). An unassessed-at-first
   // axis collapses to the center, matching how the current shape handles
@@ -184,7 +184,7 @@ export default function CategoryRadar({ categories, firstEvaluation }: CategoryR
           />
         );
       })}
-      {/* Dashed "when she started" overlay drawn beneath the current
+      {/* Dashed first-evaluation overlay drawn beneath the current
           shape so it reads as context, not as the primary data. Uses
           the text token for the stroke so it stays readable in both
           themes (the token flips light/dark). No fill — the current

@@ -8,7 +8,7 @@ import type {
 } from "@swim-app/shared";
 import InlineError from "@/components/InlineError";
 import StartsSection from "@/components/StartsSection";
-import WhereSheStands, { buildLanes } from "@/components/WhereSheStands";
+import GroupStandings, { buildLanes } from "@/components/GroupStandings";
 import CategoryRadar from "@/content/SwimmerProgressContent/charts/CategoryRadar";
 import { firstScreenGroupSnapshot, latestScreenGroupSnapshot } from "@/lib/progressCharts";
 import { buildCatalogIndex } from "@/lib/screenGroups";
@@ -54,7 +54,7 @@ const EMPTY_GOLF: ParentGolfScoreTrendsResponse = { trends: [] };
 //   1. Header
 //   2. Top row — Summary (2/3) + Wins (1/3) on tablet+, stacked on phone
 //   3. Coach's note (when present) + Working on next (3 equal cards)
-//   4. Snapshot (half) + Where she stands (half) on tablet+, stacked phone
+//   4. Snapshot (half) + Group standings (half) on tablet+, stacked phone
 //   5. Skills (full width)
 //   6. Starts (full width, full names, no session grid)
 //   7. Golf score (full width) — the whole section is absent when the
@@ -193,11 +193,11 @@ export default function ParentSwimmerProgressContent({
                 />
               </section>
 
-              {/* Row 4 — Snapshot + Where she stands.
+              {/* Row 4 — Snapshot + Group standings.
                   Two columns only when the content container is wide
                   enough to give each column ~420px plus the 24px gap
                   (2×420 + 24 = 864). Below that the row stacks and
-                  each card gets full content width, so WhereSheStands
+                  each card gets full content width, so GroupStandings
                   can sit in its 4-col arrangement without crowding. */}
               {groupRowVisible && (
                 <div
@@ -224,16 +224,16 @@ export default function ParentSwimmerProgressContent({
                   <section
                     className="flex flex-col gap-3 min-w-0"
                     aria-labelledby="parent-where-heading"
-                    data-testid="parent-progress-where-she-stands"
+                    data-testid="parent-progress-group-standings"
                   >
                     <h2
                       id="parent-where-heading"
                       className="text-lg font-heading text-text"
                       style={{ fontVariationSettings: "\"SOFT\" 100, \"WONK\" 0" }}
                     >
-                      Where she stands
+                      {`Where ${swimmer.firstName} stands`}
                     </h2>
-                    <WhereSheStands lanes={lanes} />
+                    <GroupStandings lanes={lanes} />
                   </section>
                 </div>
               )}
@@ -277,6 +277,7 @@ export default function ParentSwimmerProgressContent({
                   <StartsSection
                     startProgress={progress.startProgress}
                     swimmerSkills={progress.skills.map((skill) => ({ slug: skill.slug, history: skill.history }))}
+                    swimmerFirstName={swimmer.firstName}
                     showSessionGrid={false}
                     showStillToGrade={false}
                   />
@@ -302,7 +303,7 @@ export default function ParentSwimmerProgressContent({
                   </p>
                   <GolfScoreList trends={golfScore.trends} />
                   <p className="text-xs text-text-secondary">
-                    The shaded band is the typical range for her age group.
+                    {`The shaded band is the typical range for ${swimmer.firstName}'s age group.`}
                   </p>
                 </section>
               )}

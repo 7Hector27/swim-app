@@ -18,6 +18,10 @@ interface StartsSectionProps {
     slug: string;
     history: StartsHistoryPoint[];
   }>;
+  // Swimmer's first name, threaded through to the measurement delta
+  // copy ("0.06 s faster than <Name>'s first"). Required so the UI
+  // never falls back to a hardcoded pronoun.
+  swimmerFirstName: string;
   // Coach shows the session-by-session grid + the "Still to grade" tile;
   // parent hides both. Props forwarded verbatim to StartDiveCard.
   showSessionGrid?: boolean;
@@ -27,6 +31,7 @@ interface StartsSectionProps {
 export default function StartsSection({
   startProgress,
   swimmerSkills,
+  swimmerFirstName,
   showSessionGrid = true,
   showStillToGrade = true,
 }: StartsSectionProps) {
@@ -83,6 +88,7 @@ export default function StartsSection({
         <StartDiveCard
           start={activeStart}
           swimmerSkills={swimmerSkills}
+          swimmerFirstName={swimmerFirstName}
           showSessionGrid={showSessionGrid}
           showStillToGrade={showStillToGrade}
         />

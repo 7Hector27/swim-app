@@ -1,12 +1,12 @@
-// Covers the four-column WhereSheStands table: header labels, one
+// Covers the four-column GroupStandings table: header labels, one
 // divider per row with none on individual cells, filled stretch tone
 // (up / flat / down), the not-rated row, the ring-collapses-to-dot rule
-// when first equals current, and the phone arrangement where "Skills
+// when first equals current, and the compact arrangement where "Skills
 // rated" moves under the group name.
 
 import { describe, it, expect } from "vitest";
 import { render, screen, within } from "@testing-library/react";
-import WhereSheStands from "../components/WhereSheStands/WhereSheStands";
+import GroupStandings from "../components/GroupStandings/GroupStandings";
 import {
   averageToPct,
   averagesEqual,
@@ -15,7 +15,7 @@ import {
   SCALE_LABELS,
   stretchTone,
   type Lane,
-} from "../components/WhereSheStands/helpers";
+} from "../components/GroupStandings/helpers";
 
 // ── averageToPct ─────────────────────────────────────────────────────────
 
@@ -165,23 +165,23 @@ const RATED_LANES: Lane[] = [
   },
 ];
 
-describe("WhereSheStands — header + table structure", () => {
+describe("GroupStandings — header + table structure", () => {
   it("returns null when no lanes are passed", () => {
-    const { container } = render(<WhereSheStands lanes={[]} />);
+    const { container } = render(<GroupStandings lanes={[]} />);
     expect(container.firstChild).toBeNull();
   });
 
   it("header row includes 'Group', 'Average', and 'Skills rated' column labels", () => {
-    render(<WhereSheStands lanes={RATED_LANES} />);
-    const header = screen.getByTestId("wss-header-row");
+    render(<GroupStandings lanes={RATED_LANES} />);
+    const header = screen.getByTestId("group-standings-header-row");
     expect(within(header).getByText("Group")).toBeInTheDocument();
     expect(within(header).getByText("Average")).toBeInTheDocument();
     expect(within(header).getByText("Skills rated")).toBeInTheDocument();
   });
 
   it("scale-label row uses '1 Emerging', '3 Competent', '5 Mastery' (not the bare digits)", () => {
-    render(<WhereSheStands lanes={RATED_LANES} />);
-    const scale = screen.getByTestId("wss-scale-labels");
+    render(<GroupStandings lanes={RATED_LANES} />);
+    const scale = screen.getByTestId("group-standings-scale-labels");
     expect(scale.textContent ?? "").toContain(SCALE_LABELS[0]);
     expect(scale.textContent ?? "").toContain(SCALE_LABELS[1]);
     expect(scale.textContent ?? "").toContain(SCALE_LABELS[2]);
@@ -190,10 +190,10 @@ describe("WhereSheStands — header + table structure", () => {
   });
 });
 
-describe("WhereSheStands — one divider per row, none on cells", () => {
+describe("GroupStandings — one divider per row, none on cells", () => {
   it("every row EXCEPT the last carries a single bottom-border; no <td>/<th> carries its own border", () => {
-    render(<WhereSheStands lanes={RATED_LANES} />);
-    const table = screen.getByTestId("where-she-stands").querySelector("table")!;
+    render(<GroupStandings lanes={RATED_LANES} />);
+    const table = screen.getByTestId("group-standings").querySelector("table")!;
     const rows = Array.from(table.querySelectorAll("tr"));
     // Header + 4 data rows. The last data row has no border.
     expect(rows).toHaveLength(5);
@@ -214,96 +214,96 @@ describe("WhereSheStands — one divider per row, none on cells", () => {
   });
 });
 
-describe("WhereSheStands — stretch fill tone", () => {
+describe("GroupStandings — stretch fill tone", () => {
   function getTrack(slug: string): HTMLElement {
-    const row = document.querySelector(`[data-testid="wss-lane-row"][data-slug="${slug}"]`);
+    const row = document.querySelector(`[data-testid="group-standings-lane-row"][data-slug="${slug}"]`);
     expect(row, `missing lane ${slug}`).not.toBeNull();
-    return within(row as HTMLElement).getByTestId("wss-track");
+    return within(row as HTMLElement).getByTestId("group-standings-track");
   }
 
   it("up: the stretch between first and current fills with the accent color", () => {
-    render(<WhereSheStands lanes={RATED_LANES} />);
+    render(<GroupStandings lanes={RATED_LANES} />);
     const track = getTrack("freestyle");
     expect(track.getAttribute("data-tone")).toBe("up");
-    const stretch = within(track).getByTestId("wss-track-stretch");
+    const stretch = within(track).getByTestId("group-standings-track-stretch");
     expect(stretch.getAttribute("style") ?? "").toContain("background-color: var(--color-accent)");
   });
 
   it("down: the stretch fills with a neutral color and both markers stay visible", () => {
-    render(<WhereSheStands lanes={RATED_LANES} />);
+    render(<GroupStandings lanes={RATED_LANES} />);
     const track = getTrack("backstroke");
     expect(track.getAttribute("data-tone")).toBe("down");
-    const stretch = within(track).getByTestId("wss-track-stretch");
+    const stretch = within(track).getByTestId("group-standings-track-stretch");
     expect(stretch.getAttribute("style") ?? "").toContain("background-color: var(--color-text-secondary)");
-    expect(within(track).getByTestId("wss-marker-ring")).toBeInTheDocument();
-    expect(within(track).getByTestId("wss-marker-dot")).toBeInTheDocument();
+    expect(within(track).getByTestId("group-standings-marker-ring")).toBeInTheDocument();
+    expect(within(track).getByTestId("group-standings-marker-dot")).toBeInTheDocument();
   });
 
   it("flat: first equals current → only the dot is drawn, no ring and no stretch", () => {
-    render(<WhereSheStands lanes={RATED_LANES} />);
+    render(<GroupStandings lanes={RATED_LANES} />);
     const track = getTrack("butterfly");
     expect(track.getAttribute("data-tone")).toBe("flat");
-    expect(within(track).queryByTestId("wss-marker-ring")).toBeNull();
-    expect(within(track).queryByTestId("wss-track-stretch")).toBeNull();
-    expect(within(track).getByTestId("wss-marker-dot")).toBeInTheDocument();
+    expect(within(track).queryByTestId("group-standings-marker-ring")).toBeNull();
+    expect(within(track).queryByTestId("group-standings-track-stretch")).toBeNull();
+    expect(within(track).getByTestId("group-standings-marker-dot")).toBeInTheDocument();
   });
 });
 
-describe("WhereSheStands — not-rated lane", () => {
+describe("GroupStandings — not-rated lane", () => {
   it("renders a dotted track and 'Not rated yet' spanning the last two columns on tablet+", () => {
-    render(<WhereSheStands lanes={RATED_LANES} />);
-    const row = document.querySelector('[data-testid="wss-lane-row"][data-slug="im-turns"]');
+    render(<GroupStandings lanes={RATED_LANES} />);
+    const row = document.querySelector('[data-testid="group-standings-lane-row"][data-slug="im-turns"]');
     expect(row).not.toBeNull();
     expect(row!.getAttribute("data-rated")).toBe("false");
-    expect(within(row as HTMLElement).getByTestId("wss-track-not-rated")).toBeInTheDocument();
-    const desktopNotRated = within(row as HTMLElement).getByTestId("wss-lane-not-rated-desktop");
+    expect(within(row as HTMLElement).getByTestId("group-standings-track-not-rated")).toBeInTheDocument();
+    const desktopNotRated = within(row as HTMLElement).getByTestId("group-standings-lane-not-rated-desktop");
     expect(desktopNotRated.getAttribute("colspan")).toBe("2");
     expect(desktopNotRated).toHaveTextContent("Not rated yet");
     // Phone-only not-rated cell also exists so the message still shows
     // when Skills rated is hidden. One of the two is visible per viewport.
-    expect(within(row as HTMLElement).getByTestId("wss-lane-not-rated-phone")).toHaveTextContent("Not rated yet");
-    expect(within(row as HTMLElement).queryByTestId("wss-marker-ring")).toBeNull();
-    expect(within(row as HTMLElement).queryByTestId("wss-marker-dot")).toBeNull();
+    expect(within(row as HTMLElement).getByTestId("group-standings-lane-not-rated-phone")).toHaveTextContent("Not rated yet");
+    expect(within(row as HTMLElement).queryByTestId("group-standings-marker-ring")).toBeNull();
+    expect(within(row as HTMLElement).queryByTestId("group-standings-marker-dot")).toBeNull();
   });
 });
 
-describe("WhereSheStands — compact (narrow-container) arrangement", () => {
+describe("GroupStandings — compact (narrow-container) arrangement", () => {
   it("Skills rated moves under the group name below the 520px container threshold", () => {
-    render(<WhereSheStands lanes={RATED_LANES} />);
-    const freestyle = document.querySelector('[data-testid="wss-lane-row"][data-slug="freestyle"]')!;
-    const phone = within(freestyle as HTMLElement).getByTestId("wss-lane-rated-phone");
+    render(<GroupStandings lanes={RATED_LANES} />);
+    const freestyle = document.querySelector('[data-testid="group-standings-lane-row"][data-slug="freestyle"]')!;
+    const phone = within(freestyle as HTMLElement).getByTestId("group-standings-lane-rated-phone");
     expect(phone).toHaveTextContent("18 of 25");
     // The subtitle hides once the card itself crosses 520px (container
     // query), not when the viewport does — matches the responsive rule.
-    expect(phone.className).toContain("@min-[520px]/wss:hidden");
+    expect(phone.className).toContain("@min-[520px]/gs:hidden");
     // "6 of 7" must never line-break in the middle of the count.
     expect(phone.className).toContain("whitespace-nowrap");
     // The Skills rated column cell appears only above the same threshold.
-    const desktop = within(freestyle as HTMLElement).getByTestId("wss-lane-rated-desktop");
+    const desktop = within(freestyle as HTMLElement).getByTestId("group-standings-lane-rated-desktop");
     expect(desktop.className).toContain("hidden");
-    expect(desktop.className).toContain("@min-[520px]/wss:table-cell");
+    expect(desktop.className).toContain("@min-[520px]/gs:table-cell");
   });
 
   it("Skills rated column header is driven by the same container-query threshold", () => {
-    render(<WhereSheStands lanes={RATED_LANES} />);
+    render(<GroupStandings lanes={RATED_LANES} />);
     const skillsHeader = screen.getByText("Skills rated").closest("th")!;
     expect(skillsHeader.className).toContain("hidden");
-    expect(skillsHeader.className).toContain("@min-[520px]/wss:table-cell");
+    expect(skillsHeader.className).toContain("@min-[520px]/gs:table-cell");
   });
 });
 
 // ── Containment + overflow ───────────────────────────────────────────────
 
-describe("WhereSheStands — container-query layout + inner scroll", () => {
-  it("the card is a named container (@container/wss) so children query its width, not the viewport", () => {
-    render(<WhereSheStands lanes={RATED_LANES} />);
-    const card = screen.getByTestId("where-she-stands");
-    expect(card.className).toContain("@container/wss");
+describe("GroupStandings — container-query layout + inner scroll", () => {
+  it("the card is a named container (@container/gs) so children query its width, not the viewport", () => {
+    render(<GroupStandings lanes={RATED_LANES} />);
+    const card = screen.getByTestId("group-standings");
+    expect(card.className).toContain("@container/gs");
   });
 
   it("the table sits in a horizontally-scrollable wrapper with a min-width so the card never forces page-wide horizontal scroll", () => {
-    render(<WhereSheStands lanes={RATED_LANES} />);
-    const wrapper = screen.getByTestId("wss-scroll-wrapper");
+    render(<GroupStandings lanes={RATED_LANES} />);
+    const wrapper = screen.getByTestId("group-standings-scroll-wrapper");
     expect(wrapper.className).toContain("overflow-x-auto");
     const table = wrapper.querySelector("table")!;
     expect(table.className).toContain("min-w-[280px]");
@@ -311,40 +311,40 @@ describe("WhereSheStands — container-query layout + inner scroll", () => {
   });
 
   it("the legend lives OUTSIDE the scroll wrapper so it's never clipped by overflow", () => {
-    render(<WhereSheStands lanes={RATED_LANES} />);
-    const wrapper = screen.getByTestId("wss-scroll-wrapper");
-    const legend = screen.getByTestId("wss-legend");
+    render(<GroupStandings lanes={RATED_LANES} />);
+    const wrapper = screen.getByTestId("group-standings-scroll-wrapper");
+    const legend = screen.getByTestId("group-standings-legend");
     expect(wrapper.contains(legend)).toBe(false);
-    expect(screen.getByTestId("where-she-stands").contains(legend)).toBe(true);
+    expect(screen.getByTestId("group-standings").contains(legend)).toBe(true);
   });
 
   it("scale labels render both the digit-only and full forms so the container query can swap between them", () => {
-    render(<WhereSheStands lanes={RATED_LANES} />);
-    const scale = screen.getByTestId("wss-scale-labels");
+    render(<GroupStandings lanes={RATED_LANES} />);
+    const scale = screen.getByTestId("group-standings-scale-labels");
     const digitOnly = Array.from(scale.querySelectorAll("span"))
-      .filter((span) => span.className.includes("@min-[440px]/wss:hidden"))
+      .filter((span) => span.className.includes("@min-[440px]/gs:hidden"))
       .map((span) => span.textContent);
     expect(digitOnly).toEqual(["1", "3", "5"]);
     const fullOnly = Array.from(scale.querySelectorAll("span"))
-      .filter((span) => span.className.includes("@min-[440px]/wss:inline"))
+      .filter((span) => span.className.includes("@min-[440px]/gs:inline"))
       .map((span) => span.textContent);
     expect(fullOnly).toEqual([SCALE_LABELS[0], SCALE_LABELS[1], SCALE_LABELS[2]]);
   });
 });
 
-describe("WhereSheStands — legend", () => {
+describe("GroupStandings — legend", () => {
   it("renders the legend inside the card with 'First evaluation' + 'Now'", () => {
-    render(<WhereSheStands lanes={RATED_LANES} />);
-    const legend = screen.getByTestId("wss-legend");
+    render(<GroupStandings lanes={RATED_LANES} />);
+    const legend = screen.getByTestId("group-standings-legend");
     expect(legend).toHaveTextContent("First evaluation");
     expect(legend).toHaveTextContent("Now");
   });
 });
 
-describe("WhereSheStands — aria-label", () => {
+describe("GroupStandings — aria-label", () => {
   it("describes each lane's average + rated count (and not-rated lanes)", () => {
-    render(<WhereSheStands lanes={RATED_LANES} />);
-    const section = screen.getByTestId("where-she-stands");
+    render(<GroupStandings lanes={RATED_LANES} />);
+    const section = screen.getByTestId("group-standings");
     const aria = section.getAttribute("aria-label") ?? "";
     expect(aria).toContain("Freestyle: average 2.6, 18 of 25 skills rated");
     expect(aria).toContain("Backstroke: average 2.0, 12 of 24 skills rated");

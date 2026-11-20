@@ -164,7 +164,7 @@ describe("ParentSwimmerProgressContent — single tree", () => {
     expect(screen.getAllByTestId("parent-coach-focus-note")).toHaveLength(1);
     expect(screen.getAllByTestId("parent-progress-focus")).toHaveLength(1);
     expect(screen.getAllByTestId("parent-progress-snapshot")).toHaveLength(1);
-    expect(screen.getAllByTestId("parent-progress-where-she-stands")).toHaveLength(1);
+    expect(screen.getAllByTestId("parent-progress-group-standings")).toHaveLength(1);
     expect(screen.getAllByTestId("parent-progress-skills")).toHaveLength(1);
     expect(screen.getAllByTestId("parent-progress-starts")).toHaveLength(1);
   });
@@ -205,7 +205,7 @@ describe("ParentSwimmerProgressContent — single tree", () => {
       "parent-coach-focus-note",
       "parent-progress-focus",
       "parent-progress-snapshot",
-      "parent-progress-where-she-stands",
+      "parent-progress-group-standings",
       "parent-progress-skills",
       "parent-progress-starts",
     ];
@@ -242,7 +242,7 @@ describe("ParentSwimmerProgressContent — single tree", () => {
   });
 });
 
-describe("ParentSwimmerProgressContent — Snapshot / Where she stands row", () => {
+describe("ParentSwimmerProgressContent — Snapshot / Group standings row", () => {
   it("is a named @container/progress so inner rows can query the content width", () => {
     render(
       <ParentSwimmerProgressContent
@@ -272,7 +272,7 @@ describe("ParentSwimmerProgressContent — Snapshot / Where she stands row", () 
     expect(className).toContain("@min-[864px]/progress:grid-cols-2");
     // The Snapshot column renders first so stacked order is Snapshot above WhereSheStands.
     const snapshot = (row as HTMLElement).querySelector('[data-testid="parent-progress-snapshot"]');
-    const where = (row as HTMLElement).querySelector('[data-testid="parent-progress-where-she-stands"]');
+    const where = (row as HTMLElement).querySelector('[data-testid="parent-progress-group-standings"]');
     expect(snapshot).not.toBeNull();
     expect(where).not.toBeNull();
     const position = snapshot!.compareDocumentPosition(where!);

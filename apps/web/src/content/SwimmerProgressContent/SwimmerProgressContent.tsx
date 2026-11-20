@@ -6,9 +6,11 @@ import type {
   SwimmerProgressResponse,
 } from "@swim-app/shared";
 import CategoryTrendsGrid from "@/components/CategoryTrendsGrid";
+import GroupStandings, { buildLanes } from "@/components/GroupStandings";
 import InlineError from "@/components/InlineError";
 import StartsSection from "@/components/StartsSection";
 import {
+  firstScreenGroupSnapshot,
   latestScreenGroupSnapshot,
   screenGroupTrendSeries,
 } from "@/lib/progressCharts";
@@ -66,6 +68,8 @@ export default function SwimmerProgressContent({
   // Pass 3: radar + trend grid now bucket by evaluate-screen groups
   // instead of catalog categories.
   const categorySnapshot = latestScreenGroupSnapshot(scoreHistory);
+  const firstSnapshot = firstScreenGroupSnapshot(scoreHistory);
+  const lanes = buildLanes(firstSnapshot, categorySnapshot);
   const categoryTrends = screenGroupTrendSeries(scoreHistory);
   const faultTags = faultTagFrequency(progress);
   const cadence = sessionCadence(progress, now);
@@ -118,10 +122,17 @@ export default function SwimmerProgressContent({
   if (sectionFailures.scoreHistory) failedSections.push("score history");
   if (sectionFailures.golfScore) failedSections.push("golf score");
 
+  // GroupStandings itself renders null when lanes are empty, but the
+  // whole second column should disappear too so the row doesn't leave a
+  // dangling heading. The Snapshot column stays mounted regardless —
+  // when there's no radar data, CategoryRadar renders null and the
+  // heading alone shows, matching the older coach layout.
+  const standingsVisible = lanes.length > 0;
+
   return (
     <div className="flex flex-col flex-1">
       <main className="flex-1 px-page py-6 tablet:py-10">
-        <div className="mx-auto max-w-content flex flex-col gap-6 tablet:gap-10">
+        <div className="@container/progress mx-auto max-w-content flex flex-col gap-6 tablet:gap-10">
           <PageHeader swimmer={swimmer} />
 
           {failedSections.length > 0 && (
@@ -131,35 +142,68 @@ export default function SwimmerProgressContent({
             />
           )}
 
+          <WhatToWorkOn priorities={progress.coachingPriorities} swimmerId={swimmer.id} />
+
+          {/* Snapshot (radar) + Group standings row. Mirrors the parent
+              page: two columns only when the content container is wide
+              enough for each column to hit ~420px plus the 24px gap
+              (2×420 + 24 = 864). Below that, the row stacks with
+              Snapshot above so GroupStandings sits in its own full-
+              width 4-col arrangement. */}
+          <div
+            className="grid grid-cols-1 @min-[864px]/progress:grid-cols-2 gap-6 items-start"
+            data-testid="coach-progress-group-row"
+          >
+            <section
+              className="flex flex-col gap-3 min-w-0"
+              aria-labelledby="coach-snapshot-heading"
+              data-testid="coach-progress-snapshot"
+            >
+              <h2
+                id="coach-snapshot-heading"
+                className="text-lg font-heading text-text"
+                style={{ fontVariationSettings: "\"SOFT\" 100, \"WONK\" 0" }}
+              >
+                Snapshot
+              </h2>
+              <CategoryRadar categories={categorySnapshot} />
+              {!isOneEvaluation && (
+                <details className="group mt-1">
+                  <summary
+                    className="text-sm font-semibold cursor-pointer list-none flex items-center gap-2 py-2 min-h-[44px]"
+                    style={{ color: "var(--color-link)" }}
+                  >
+                    <span aria-hidden="true" className="transition-transform duration-200 group-open:rotate-90">
+                      ›
+                    </span>
+                    <span>Open group trends</span>
+                  </summary>
+                  <div className="pt-2">
+                    <CategoryTrendsGrid categories={categoryTrends} />
+                  </div>
+                </details>
+              )}
+            </section>
+            {standingsVisible && (
+              <section
+                className="flex flex-col gap-3 min-w-0"
+                aria-labelledby="coach-standings-heading"
+                data-testid="coach-progress-group-standings"
+              >
+                <h2
+                  id="coach-standings-heading"
+                  className="text-lg font-heading text-text"
+                  style={{ fontVariationSettings: "\"SOFT\" 100, \"WONK\" 0" }}
+                >
+                  {`Where ${swimmer.firstName} stands`}
+                </h2>
+                <GroupStandings lanes={lanes} />
+              </section>
+            )}
+          </div>
+
           <div className="grid gap-6 tablet:gap-10 tablet:grid-cols-[7fr_5fr] items-start">
             <div className="flex flex-col gap-6 min-w-0">
-              <WhatToWorkOn priorities={progress.coachingPriorities} swimmerId={swimmer.id} />
-
-              <section className="flex flex-col gap-3">
-                <h2 className="text-lg font-heading text-text" style={{ fontVariationSettings: "\"SOFT\" 100, \"WONK\" 0" }}>
-                  Snapshot
-                </h2>
-                <div className="max-w-[360px] tablet:max-w-[480px] desktop:max-w-[560px] mx-auto w-full">
-                  <CategoryRadar categories={categorySnapshot} />
-                </div>
-                {!isOneEvaluation && (
-                  <details className="group mt-1">
-                    <summary
-                      className="text-sm font-semibold cursor-pointer list-none flex items-center gap-2 py-2 min-h-[44px]"
-                      style={{ color: "var(--color-link)" }}
-                    >
-                      <span aria-hidden="true" className="transition-transform duration-200 group-open:rotate-90">
-                        ›
-                      </span>
-                      <span>Open group trends</span>
-                    </summary>
-                    <div className="pt-2">
-                      <CategoryTrendsGrid categories={categoryTrends} />
-                    </div>
-                  </details>
-                )}
-              </section>
-
               <section className="flex flex-col gap-3">
                 <div className="flex flex-col gap-1">
                   <h2 className="text-lg font-heading text-text" style={{ fontVariationSettings: "\"SOFT\" 100, \"WONK\" 0" }}>
@@ -220,6 +264,7 @@ export default function SwimmerProgressContent({
             <StartsSection
               startProgress={progress.startProgress}
               swimmerSkills={progress.skills}
+              swimmerFirstName={swimmer.firstName}
             />
           </section>
         </div>

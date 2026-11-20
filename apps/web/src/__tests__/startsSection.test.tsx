@@ -378,21 +378,21 @@ describe("StartsSection helpers — distanceLineEndX", () => {
 // ── Measurement change text ───────────────────────────────────────────────
 
 describe("StartsSection helpers — measurementChangeText", () => {
-  it("faster: negative seconds delta reads as 'faster than her first'", () => {
-    expect(measurementChangeText("0.88", "seconds", "0.82", "seconds")).toBe(
-      "0.06 s faster than her first",
+  it("faster: negative seconds delta reads as 'faster than <Name>'s first'", () => {
+    expect(measurementChangeText("0.88", "seconds", "0.82", "seconds", "Maya")).toBe(
+      "0.06 s faster than Maya's first",
     );
   });
 
-  it("slower: positive seconds delta reads as 'slower than her first'", () => {
-    expect(measurementChangeText("0.80", "seconds", "0.90", "seconds")).toBe(
-      "0.1 s slower than her first",
+  it("slower: positive seconds delta reads as 'slower than <Name>'s first'", () => {
+    expect(measurementChangeText("0.80", "seconds", "0.90", "seconds", "Maya")).toBe(
+      "0.1 s slower than Maya's first",
     );
   });
 
-  it("farther: positive feet delta reads as 'farther than her first'", () => {
-    expect(measurementChangeText("6", "feet", "7", "feet")).toBe(
-      "1 ft farther than her first",
+  it("farther: positive feet delta reads as 'farther than <Name>'s first'", () => {
+    expect(measurementChangeText("6", "feet", "7", "feet", "Maya")).toBe(
+      "1 ft farther than Maya's first",
     );
   });
 
@@ -400,18 +400,24 @@ describe("StartsSection helpers — measurementChangeText", () => {
     // The caller passes isFirstOnly when first and latest resolve to the
     // same rating in history — one data point, no delta to report.
     expect(
-      measurementChangeText("0.82", "seconds", "0.82", "seconds", { isFirstOnly: true }),
+      measurementChangeText("0.82", "seconds", "0.82", "seconds", "Maya", { isFirstOnly: true }),
     ).toBe("First measurement");
   });
 
   it("no prior data point: falls back to 'First measurement'", () => {
-    expect(measurementChangeText(null, null, "0.82", "seconds")).toBe(
+    expect(measurementChangeText(null, null, "0.82", "seconds", "Maya")).toBe(
       "First measurement",
     );
   });
 
   it("returns null when the latest value is missing (nothing measured yet)", () => {
-    expect(measurementChangeText("0.82", "seconds", null, null)).toBeNull();
+    expect(measurementChangeText("0.82", "seconds", null, null, "Maya")).toBeNull();
+  });
+
+  it("delta=0 (same measurement across two sessions) says 'Same as <Name>'s first N'", () => {
+    expect(measurementChangeText("0.82", "seconds", "0.82", "seconds", "Maya")).toBe(
+      "Same as Maya's first 0.82 s",
+    );
   });
 });
 
@@ -504,7 +510,7 @@ describe("StartsSection helpers — startComponentHistoryMap", () => {
 describe("StartDiveCard — empty state", () => {
   it("renders the 'Not started yet' one-liner when no component is graded", () => {
     render(
-      <StartDiveCard start={relayNothing} swimmerSkills={[]} />,
+      <StartDiveCard start={relayNothing} swimmerSkills={[]} swimmerFirstName="Maya" />,
     );
     expect(screen.getByTestId("start-dive-card-empty-relay-start")).toBeInTheDocument();
     expect(screen.getByText(/Not started yet/i)).toBeInTheDocument();
@@ -538,29 +544,29 @@ describe("StartDiveCard — graded track start", () => {
   ];
 
   it("renders the dive SVG with 5 arc dots plus the distance drawing", () => {
-    render(<StartDiveCard start={start} swimmerSkills={swimmerSkills} />);
+    render(<StartDiveCard start={start} swimmerSkills={swimmerSkills} swimmerFirstName="Maya" />);
     expect(screen.getByTestId("dive-arc-svg")).toBeInTheDocument();
     expect(screen.getAllByTestId("dive-arc-dot")).toHaveLength(5);
     expect(screen.getByText(/Distance 7 ft/)).toBeInTheDocument();
   });
 
   it("shows the reaction + entry-distance tiles with the change-vs-first copy", () => {
-    render(<StartDiveCard start={start} swimmerSkills={swimmerSkills} />);
+    render(<StartDiveCard start={start} swimmerSkills={swimmerSkills} swimmerFirstName="Maya" />);
     expect(screen.getByTestId("start-stat-change-reaction")).toHaveTextContent(
-      "0.06 s faster than her first",
+      "0.06 s faster than Maya's first",
     );
     expect(screen.getByTestId("start-stat-change-distance")).toHaveTextContent(
-      "1 ft farther than her first",
+      "1 ft farther than Maya's first",
     );
   });
 
   it("shows a 'Still to grade' tile only while components remain ungraded", () => {
-    render(<StartDiveCard start={start} swimmerSkills={swimmerSkills} />);
+    render(<StartDiveCard start={start} swimmerSkills={swimmerSkills} swimmerFirstName="Maya" />);
     expect(screen.getByTestId("start-stat-tile-stillToGrade")).toHaveTextContent("2");
   });
 
   it("builds the session grid from the union of all components' dates and marks missing cells empty", () => {
-    render(<StartDiveCard start={start} swimmerSkills={swimmerSkills} />);
+    render(<StartDiveCard start={start} swimmerSkills={swimmerSkills} swimmerFirstName="Maya" />);
     const grid = screen.getByTestId("start-session-grid");
     // Reaction was rated on both dates — two value cells for reaction.
     const reactionCells = within(grid).getAllByTestId("start-session-grid-cell").filter(
@@ -577,7 +583,7 @@ describe("StartDiveCard — graded track start", () => {
 describe("StartDiveCard — backstroke start uses the wall arc", () => {
   it("places dots on the wall path (start x = wall anchor)", () => {
     const start = backStart({ grade: { status: "graded", grade: 2 }, components: backComponents });
-    render(<StartDiveCard start={start} swimmerSkills={[]} />);
+    render(<StartDiveCard start={start} swimmerSkills={[]} swimmerFirstName="Maya" />);
     const dots = screen.getAllByTestId("dive-arc-dot");
     // 5 components − 1 distance = 4 arc dots.
     expect(dots).toHaveLength(4);
@@ -610,7 +616,7 @@ describe("StartsSection — archived back-start-streamline never surfaces", () =
         history: [point({ id: "s1", sessionDate: "2026-10-01", grade: 3 })],
       },
     ];
-    render(<StartDiveCard start={start} swimmerSkills={leakedStreamline} />);
+    render(<StartDiveCard start={start} swimmerSkills={leakedStreamline} swimmerFirstName="Maya" />);
 
     // Arc: 4 dots, none for streamline.
     const arcDots = screen.getAllByTestId("dive-arc-dot");
@@ -640,7 +646,7 @@ describe("StartsSection — archived back-start-streamline never surfaces", () =
       grade: { status: "in_progress", missing: ["back-start-entry-alignment"] },
       components: backComponents,
     });
-    render(<StartsSection startProgress={[start]} swimmerSkills={[]} />);
+    render(<StartsSection startProgress={[start]} swimmerSkills={[]} swimmerFirstName="Maya" />);
     expect(screen.getByTestId("starts-tab-back-start")).toHaveTextContent("4 of 5");
   });
 });
@@ -654,7 +660,7 @@ describe("StartsSection — tabs + default selection", () => {
       components: [component({ slug: "track-start-reaction", name: "Reaction" })],
     });
     const back = backStart({ grade: { status: "graded", grade: 2 }, components: backComponents });
-    render(<StartsSection startProgress={[track, back]} swimmerSkills={[]} />);
+    render(<StartsSection startProgress={[track, back]} swimmerSkills={[]} swimmerFirstName="Maya" />);
 
     // Default selection goes to the first start with a graded component
     // — the back start — not the leftmost tab.
@@ -674,7 +680,7 @@ describe("StartsSection — tabs + default selection", () => {
       components: backComponents,
     });
     const relay = relayNothing;
-    render(<StartsSection startProgress={[track, back, relay]} swimmerSkills={[]} />);
+    render(<StartsSection startProgress={[track, back, relay]} swimmerSkills={[]} swimmerFirstName="Maya" />);
     expect(screen.getByTestId("starts-tab-track-start")).toHaveTextContent("Grade 3");
     // Back-start has 5 active components (streamline archived); 4 are
     // graded in the fixture, so the tab reads "4 of 5".
@@ -690,7 +696,7 @@ describe("StartsSection — tabs + default selection", () => {
     // fresh render with the same props should keep the selection.
     const track = trackStart({ grade: { status: "graded", grade: 3 }, components: trackComponents });
     const back = backStart({ grade: { status: "graded", grade: 2 }, components: backComponents });
-    const { rerender } = render(<StartsSection startProgress={[track, back]} swimmerSkills={[]} />);
+    const { rerender } = render(<StartsSection startProgress={[track, back]} swimmerSkills={[]} swimmerFirstName="Maya" />);
     // Default lands on track (first with graded component in this fixture).
     expect(screen.getByTestId("starts-tab-track-start").getAttribute("aria-selected")).toBe("true");
     fireEvent.click(screen.getByTestId("starts-tab-back-start"));
@@ -699,7 +705,7 @@ describe("StartsSection — tabs + default selection", () => {
     // Re-render the same component tree (what happens when a CSS
     // media-query boundary is crossed in a real browser — React
     // reconciles, state persists).
-    rerender(<StartsSection startProgress={[track, back]} swimmerSkills={[]} />);
+    rerender(<StartsSection startProgress={[track, back]} swimmerSkills={[]} swimmerFirstName="Maya" />);
     expect(screen.getByTestId("starts-tab-back-start").getAttribute("aria-selected")).toBe("true");
   });
 });
@@ -748,7 +754,7 @@ describe("StartDiveCard — arc labels", () => {
 
   it("uses short labels on the SVG and keeps full names in the session grid", () => {
     const start = trackStart({ grade: { status: "graded", grade: 3 }, components: trackComponents });
-    render(<StartDiveCard start={start} swimmerSkills={trackHistory} />);
+    render(<StartDiveCard start={start} swimmerSkills={trackHistory} swimmerFirstName="Maya" />);
     const labels = screen.getAllByTestId("dive-arc-label");
     const texts = labels.map((label) => label.textContent);
     // Short vocabulary only — no "Head, arms, hands" or "Legs and feet"
@@ -765,7 +771,7 @@ describe("StartDiveCard — arc labels", () => {
 
   it("alternates label side per neighbour so labels never collide", () => {
     const start = trackStart({ grade: { status: "graded", grade: 3 }, components: trackComponents });
-    render(<StartDiveCard start={start} swimmerSkills={[]} />);
+    render(<StartDiveCard start={start} swimmerSkills={[]} swimmerFirstName="Maya" />);
     const labels = screen.getAllByTestId("dive-arc-label");
     // Adjacent labels are on opposite sides. With CSS-px font size and
     // this alternation, labels at 375px wide can't vertically overlap
@@ -779,7 +785,7 @@ describe("StartDiveCard — arc labels", () => {
 
   it("uses CSS px font size (not SVG units) so labels stay readable at 375px", () => {
     const start = trackStart({ grade: { status: "graded", grade: 3 }, components: trackComponents });
-    render(<StartDiveCard start={start} swimmerSkills={[]} />);
+    render(<StartDiveCard start={start} swimmerSkills={[]} swimmerFirstName="Maya" />);
     for (const label of screen.getAllByTestId("dive-arc-label")) {
       expect(label.getAttribute("style") ?? "").toMatch(/font-size:\s*\d+px/);
     }
@@ -855,11 +861,11 @@ describe("StartsSection — never pairs dark surfaces with dark text", () => {
   it("tabs use a light surface and a light-safe text color", () => {
     const start = trackStart({ grade: { status: "graded", grade: 3 }, components: trackComponents });
     document.documentElement.setAttribute("data-theme", "light");
-    const { rerender } = render(<StartsSection startProgress={[start]} swimmerSkills={[]} />);
+    const { rerender } = render(<StartsSection startProgress={[start]} swimmerSkills={[]} swimmerFirstName="Maya" />);
     assertTabsSafe();
 
     document.documentElement.setAttribute("data-theme", "dark");
-    rerender(<StartsSection startProgress={[start]} swimmerSkills={[]} />);
+    rerender(<StartsSection startProgress={[start]} swimmerSkills={[]} swimmerFirstName="Maya" />);
     assertTabsSafe();
 
     document.documentElement.removeAttribute("data-theme");
@@ -885,7 +891,7 @@ describe("StartsSection — never pairs dark surfaces with dark text", () => {
 
   it("dive card + stat tiles use light surfaces, never --color-card", () => {
     const start = trackStart({ grade: { status: "graded", grade: 3 }, components: trackComponents });
-    render(<StartDiveCard start={start} swimmerSkills={[]} />);
+    render(<StartDiveCard start={start} swimmerSkills={[]} swimmerFirstName="Maya" />);
 
     const card = screen.getByTestId("start-dive-card-track-start");
     const cardBg = readStyleToken(card, "background-color");
@@ -907,7 +913,7 @@ describe("StartsSection — never pairs dark surfaces with dark text", () => {
         history: [point({ id: "r1", sessionDate: "2026-10-25", grade: 3 })],
       },
     ];
-    render(<StartDiveCard start={start} swimmerSkills={minimalHistory} />);
+    render(<StartDiveCard start={start} swimmerSkills={minimalHistory} swimmerFirstName="Maya" />);
     const grid = screen.getByTestId("start-session-grid");
     // Each component name span sits as a grid child — it's the element
     // whose style declares the color. We find it by text and read the
@@ -922,7 +928,7 @@ describe("StartsSection — never pairs dark surfaces with dark text", () => {
 
   it("arc labels declare a light-safe text token via their style attribute", () => {
     const start = trackStart({ grade: { status: "graded", grade: 3 }, components: trackComponents });
-    render(<StartDiveCard start={start} swimmerSkills={[]} />);
+    render(<StartDiveCard start={start} swimmerSkills={[]} swimmerFirstName="Maya" />);
     for (const label of screen.getAllByTestId("dive-arc-label")) {
       // Inline style uses `fill` (not `color`) for SVG text.
       const fill = readStyleToken(label, "fill");

@@ -246,19 +246,23 @@ export const DISTANCE_LINE_START_X = DISTANCE_LINE_X_START;
 
 // ── Measurement change text ──────────────────────────────────────────────
 
-// "0.06 s faster than her first" | "1 ft farther than her first" |
-// "First measurement" when there's only one data point.
-// Returns null when the component has no measurement history.
+// "0.06 s faster than <Name>'s first" | "1 ft farther than <Name>'s
+// first" | "First measurement" when there's only one data point. Returns
+// null when the component has no measurement history. The swimmer's
+// first name is required so the text never falls back to a pronoun; we
+// don't store pronouns on swimmers and would guess wrong for many kids.
 //
 // `isFirstOnly` lets the caller flag that the first-measurement and
 // latest-measurement point to the same rating in history — otherwise a
 // single-measurement row would hit the delta=0 branch and read "Same as
-// her first N", which falsely implies a comparison across two sessions.
+// <Name>'s first N", which falsely implies a comparison across two
+// sessions.
 export function measurementChangeText(
   firstValue: string | null,
   firstUnit: MeasurementUnit | null,
   latestValue: string | null,
   latestUnit: MeasurementUnit | null,
+  swimmerFirstName: string,
   options: { isFirstOnly?: boolean } = {},
 ): string | null {
   if (latestValue === null || latestUnit === null) return null;
@@ -280,11 +284,11 @@ export function measurementChangeText(
   }
   const delta = Math.round((latest - first) * 100) / 100;
   if (delta === 0) {
-    return `Same as her first ${firstValue} ${shortUnit(firstUnit)}`.trim();
+    return `Same as ${swimmerFirstName}'s first ${firstValue} ${shortUnit(firstUnit)}`.trim();
   }
   const abs = Math.abs(delta);
   const direction = changeDirection(delta, latestUnit);
-  return `${formatDeltaNumber(abs)} ${shortUnit(latestUnit)} ${direction} than her first`;
+  return `${formatDeltaNumber(abs)} ${shortUnit(latestUnit)} ${direction} than ${swimmerFirstName}'s first`;
 }
 
 function changeDirection(delta: number, unit: MeasurementUnit): string {

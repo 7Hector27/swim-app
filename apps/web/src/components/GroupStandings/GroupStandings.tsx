@@ -9,7 +9,7 @@ import {
   type StretchTone,
 } from "./helpers";
 
-interface WhereSheStandsProps {
+interface GroupStandingsProps {
   lanes: ReadonlyArray<Lane>;
 }
 
@@ -17,30 +17,30 @@ interface WhereSheStandsProps {
 //   Group name | 1–5 track | Average | Skills rated
 //
 // Layout is driven by the component's own width via a container query
-// (named `wss`), not the viewport, so the card adapts to its parent
+// (named `gs`), not the viewport, so the card adapts to its parent
 // column at every page width. Thresholds:
-//   - @min-[520px]/wss: full four-column layout.
-//   - below that:       compact three-column (Skills rated hidden, the
-//                       "N of M" count moves under the group name).
-//   - @min-[440px]/wss: full scale labels ("1 Emerging", "3 Competent",
-//                       "5 Mastery"). Below that: just the digits.
+//   - @min-[520px]/gs: full four-column layout.
+//   - below that:      compact three-column (Skills rated hidden, the
+//                      "N of M" count moves under the group name).
+//   - @min-[440px]/gs: full scale labels ("1 Emerging", "3 Competent",
+//                      "5 Mastery"). Below that: just the digits.
 // The table itself sits inside an `overflow-x-auto` wrapper with a
 // hard min-width, so the card never forces page-wide horizontal scroll —
 // if the compact layout still doesn't fit, scrolling happens inside the
 // card. The header/legend stay outside that wrapper so they're always
 // fully visible.
-export default function WhereSheStands({ lanes }: WhereSheStandsProps) {
+export default function GroupStandings({ lanes }: GroupStandingsProps) {
   if (lanes.length === 0) return null;
   const ariaLabel = buildAriaLabel(lanes);
 
   return (
     <section
-      className="@container/wss rounded-lg p-4 flex flex-col gap-3"
+      className="@container/gs rounded-lg p-4 flex flex-col gap-3"
       style={{ backgroundColor: "var(--color-surface-soft)" }}
       aria-label={ariaLabel}
-      data-testid="where-she-stands"
+      data-testid="group-standings"
     >
-      <div className="overflow-x-auto" data-testid="wss-scroll-wrapper">
+      <div className="overflow-x-auto" data-testid="group-standings-scroll-wrapper">
         <table
           className="w-full text-sm min-w-[280px]"
           style={{ borderCollapse: "collapse" }}
@@ -49,12 +49,12 @@ export default function WhereSheStands({ lanes }: WhereSheStandsProps) {
             <col style={{ width: "28%" }} />
             <col />
             <col style={{ width: "48px" }} />
-            <col className="hidden @min-[520px]/wss:table-column" style={{ width: "72px" }} />
+            <col className="hidden @min-[520px]/gs:table-column" style={{ width: "72px" }} />
           </colgroup>
           <thead>
             <tr
               style={{ borderBottom: "1px solid var(--color-border)" }}
-              data-testid="wss-header-row"
+              data-testid="group-standings-header-row"
             >
               <th
                 scope="col"
@@ -67,7 +67,7 @@ export default function WhereSheStands({ lanes }: WhereSheStandsProps) {
                 className="py-2 px-3 align-bottom"
                 aria-label="Average on a 1 to 5 scale"
               >
-                <div className="flex justify-between text-xs text-text-secondary" data-testid="wss-scale-labels">
+                <div className="flex justify-between text-xs text-text-secondary" data-testid="group-standings-scale-labels">
                   <ScaleLabel digit="1" full={SCALE_LABELS[0]} />
                   <ScaleLabel digit="3" full={SCALE_LABELS[1]} />
                   <ScaleLabel digit="5" full={SCALE_LABELS[2]} />
@@ -81,7 +81,7 @@ export default function WhereSheStands({ lanes }: WhereSheStandsProps) {
               </th>
               <th
                 scope="col"
-                className="hidden @min-[520px]/wss:table-cell text-right text-xs font-normal text-text-secondary py-2 pl-3 align-bottom"
+                className="hidden @min-[520px]/gs:table-cell text-right text-xs font-normal text-text-secondary py-2 pl-3 align-bottom"
               >
                 Skills rated
               </th>
@@ -106,8 +106,8 @@ export default function WhereSheStands({ lanes }: WhereSheStandsProps) {
 function ScaleLabel({ digit, full }: { digit: string; full: string }) {
   return (
     <span className="whitespace-nowrap">
-      <span className="@min-[440px]/wss:hidden">{digit}</span>
-      <span className="hidden @min-[440px]/wss:inline">{full}</span>
+      <span className="@min-[440px]/gs:hidden">{digit}</span>
+      <span className="hidden @min-[440px]/gs:inline">{full}</span>
     </span>
   );
 }
@@ -121,7 +121,7 @@ function LaneRow({ lane, isLast }: { lane: Lane; isLast: boolean }) {
     return (
       <tr
         style={rowBorderStyle}
-        data-testid="wss-lane-row"
+        data-testid="group-standings-lane-row"
         data-slug={lane.slug}
         data-rated="false"
       >
@@ -135,15 +135,15 @@ function LaneRow({ lane, isLast }: { lane: Lane; isLast: boolean }) {
             alone, since Skills rated is hidden there. Wide (>=520px):
             the same message spans Average + Skills rated. */}
         <td
-          className="@min-[520px]/wss:hidden text-right py-3 pl-3 align-middle text-text-secondary text-xs"
-          data-testid="wss-lane-not-rated-phone"
+          className="@min-[520px]/gs:hidden text-right py-3 pl-3 align-middle text-text-secondary text-xs"
+          data-testid="group-standings-lane-not-rated-phone"
         >
           Not rated yet
         </td>
         <td
           colSpan={2}
-          className="hidden @min-[520px]/wss:table-cell text-right py-3 pl-3 align-middle text-text-secondary text-xs"
-          data-testid="wss-lane-not-rated-desktop"
+          className="hidden @min-[520px]/gs:table-cell text-right py-3 pl-3 align-middle text-text-secondary text-xs"
+          data-testid="group-standings-lane-not-rated-desktop"
         >
           Not rated yet
         </td>
@@ -157,7 +157,7 @@ function LaneRow({ lane, isLast }: { lane: Lane; isLast: boolean }) {
   return (
     <tr
       style={rowBorderStyle}
-      data-testid="wss-lane-row"
+      data-testid="group-standings-lane-row"
       data-slug={lane.slug}
       data-rated="true"
     >
@@ -167,8 +167,8 @@ function LaneRow({ lane, isLast }: { lane: Lane; isLast: boolean }) {
           {/* Compact (<520px): "Skills rated" moves under the name.
               The count never wraps — "6 of 7" is treated as one token. */}
           <span
-            className="@min-[520px]/wss:hidden text-xs text-text-secondary whitespace-nowrap"
-            data-testid="wss-lane-rated-phone"
+            className="@min-[520px]/gs:hidden text-xs text-text-secondary whitespace-nowrap"
+            data-testid="group-standings-lane-rated-phone"
           >
             {ratedText}
           </span>
@@ -179,13 +179,13 @@ function LaneRow({ lane, isLast }: { lane: Lane; isLast: boolean }) {
       </td>
       <td
         className="text-right py-3 pl-3 align-middle font-medium tabular-nums"
-        data-testid="wss-lane-average"
+        data-testid="group-standings-lane-average"
       >
         {avgText}
       </td>
       <td
-        className="hidden @min-[520px]/wss:table-cell text-right py-3 pl-3 align-middle text-text-secondary tabular-nums text-sm whitespace-nowrap"
-        data-testid="wss-lane-rated-desktop"
+        className="hidden @min-[520px]/gs:table-cell text-right py-3 pl-3 align-middle text-text-secondary tabular-nums text-sm whitespace-nowrap"
+        data-testid="group-standings-lane-rated-desktop"
       >
         {ratedText}
       </td>
@@ -221,7 +221,7 @@ function Track({ lane }: { lane: Lane }) {
       className="relative"
       style={{ height: "20px" }}
       role="presentation"
-      data-testid="wss-track"
+      data-testid="group-standings-track"
       data-tone={tone}
     >
       {/* Baseline track: full width at 6px tall, rounded, neutral color. */}
@@ -233,7 +233,7 @@ function Track({ lane }: { lane: Lane }) {
         <div
           className="absolute top-1/2 -translate-y-1/2 rounded-full"
           style={{ height: "6px", ...stretchStyle }}
-          data-testid="wss-track-stretch"
+          data-testid="group-standings-track-stretch"
           data-tone={tone}
         />
       )}
@@ -249,7 +249,7 @@ function Track({ lane }: { lane: Lane }) {
             backgroundColor: "var(--color-surface-soft)",
             borderColor: "var(--color-text)",
           }}
-          data-testid="wss-marker-ring"
+          data-testid="group-standings-marker-ring"
           data-slug={lane.slug}
           data-pct={firstPct.toFixed(2)}
         />
@@ -264,7 +264,7 @@ function Track({ lane }: { lane: Lane }) {
             height: "14px",
             backgroundColor: "var(--color-accent)",
           }}
-          data-testid="wss-marker-dot"
+          data-testid="group-standings-marker-dot"
           data-slug={lane.slug}
           data-pct={currentPct.toFixed(2)}
         />
@@ -279,7 +279,7 @@ function NotRatedTrack() {
       className="relative"
       style={{ height: "20px" }}
       role="presentation"
-      data-testid="wss-track"
+      data-testid="group-standings-track"
       data-tone="not-rated"
     >
       <div
@@ -289,7 +289,7 @@ function NotRatedTrack() {
           backgroundImage:
             "repeating-linear-gradient(to right, var(--color-border) 0, var(--color-border) 4px, transparent 4px, transparent 8px)",
         }}
-        data-testid="wss-track-not-rated"
+        data-testid="group-standings-track-not-rated"
       />
     </div>
   );
@@ -299,7 +299,7 @@ function Legend() {
   return (
     <div
       className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-text-secondary"
-      data-testid="wss-legend"
+      data-testid="group-standings-legend"
     >
       <span className="flex items-center gap-1.5">
         <span
