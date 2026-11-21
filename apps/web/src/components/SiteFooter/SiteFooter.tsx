@@ -1,5 +1,4 @@
 import { siteLinks } from "@/lib/siteLinks";
-import { fetchLeaderboardSummary } from "@/lib/api/leaderboard";
 
 import ThemeLogo from "@/components/ThemeLogo";
 
@@ -8,12 +7,12 @@ interface FooterLink {
   href: string;
 }
 
-// Built on the server so the footer never advertises an empty leaderboard —
-// when no board qualifies, the "Leaderboards" link drops out entirely.
-async function buildFooterColumns(): Promise<Array<{ heading: string; items: FooterLink[] }>> {
-  const summary = await fetchLeaderboardSummary();
-  const hasAnyBoard = (summary?.qualifying ?? []).length > 0;
-
+// hasAnyBoard is passed down from the root layout, which already fetched
+// /leaderboard/summary once per render. Reading it here as a prop keeps
+// NavController + SiteFooter + HomepageContent on one source of truth
+// rather than each independently calling fetchLeaderboardSummary and
+// relying on Next's fetch dedupe to collapse them.
+function buildFooterColumns(hasAnyBoard: boolean): Array<{ heading: string; items: FooterLink[] }> {
   const exploreItems: FooterLink[] = [
     { label: "Home", href: "/" },
     { label: "Lessons", href: "/#lessons" },
@@ -87,8 +86,12 @@ function SocialIconRow() {
   );
 }
 
-export default async function SiteFooter() {
-  const footerColumns = await buildFooterColumns();
+interface SiteFooterProps {
+  hasAnyBoard: boolean;
+}
+
+export default function SiteFooter({ hasAnyBoard }: SiteFooterProps) {
+  const footerColumns = buildFooterColumns(hasAnyBoard);
 
   return (
     <footer className="bg-section text-text-on-section border-t border-divider-section">

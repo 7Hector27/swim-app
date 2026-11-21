@@ -119,7 +119,7 @@ export default async function RootLayout({
               <div className="flex-1 flex flex-col">
                 {children}
               </div>
-              <SiteFooter />
+              <SiteFooter hasAnyBoard={hasAnyBoard} />
               {showsTabBar && <div className="pb-tab-safe tablet:hidden" aria-hidden="true" />}
             </BookGateProvider>
           ) : (
@@ -128,7 +128,7 @@ export default async function RootLayout({
               <div className="flex-1 flex flex-col">
                 {children}
               </div>
-              <SiteFooter />
+              <SiteFooter hasAnyBoard={hasAnyBoard} />
               {showsTabBar && <div className="pb-tab-safe tablet:hidden" aria-hidden="true" />}
             </>
           )}
