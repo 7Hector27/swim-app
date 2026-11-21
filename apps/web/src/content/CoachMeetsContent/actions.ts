@@ -5,6 +5,16 @@ import { revalidatePath } from "next/cache";
 import { CreateMeetBodySchema, MeetResponseSchema, type CreateMeetBody, type MeetResponse } from "@swim-app/shared";
 import { createClient } from "@/lib/supabase/server";
 
+// Mirrors the per-file helper in CoachMeetDetailContent/actions.ts and
+// the other coach action files — pulls the raw Bearer token out of the
+// SSR cookie session so the API's requireUser middleware can do the
+// actual verification.
+async function getToken(): Promise<string | null> {
+  const supabase = await createClient();
+  const { data } = await supabase.auth.getSession();
+  return data.session?.access_token ?? null;
+}
+
 export type CreateMeetState =
   | { status: "idle" }
   | { status: "error"; message: string }
@@ -14,13 +24,8 @@ export async function createMeet(
   _prev: CreateMeetState,
   formData: FormData,
 ): Promise<CreateMeetState> {
-  const supabase = await createClient();
-  // getSession() here only to extract the raw access token.
-  // The API's requireUser middleware performs the actual token verification.
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  if (!session) redirect("/login");
+  const token = await getToken();
+  if (!token) redirect("/login");
 
   const raw = {
     name: formData.get("name"),
@@ -36,7 +41,7 @@ export async function createMeet(
   const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/coach/meets`, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${session.access_token}`,
+      Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify(parsed.data),
@@ -61,11 +66,8 @@ export type CreateMeetInlineResult =
 export async function createMeetInline(
   body: CreateMeetBody,
 ): Promise<CreateMeetInlineResult> {
-  const supabase = await createClient();
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  if (!session) redirect("/login");
+  const token = await getToken();
+  if (!token) redirect("/login");
 
   const parsed = CreateMeetBodySchema.safeParse(body);
   if (!parsed.success) {
@@ -75,7 +77,7 @@ export async function createMeetInline(
   const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/coach/meets`, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${session.access_token}`,
+      Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify(parsed.data),
@@ -103,17 +105,12 @@ export async function deleteMeet(
   meetId: string,
   _prev: DeleteMeetState,
 ): Promise<DeleteMeetState> {
-  const supabase = await createClient();
-  // getSession() here only to extract the raw access token.
-  // The API's requireUser middleware performs the actual token verification.
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  if (!session) redirect("/login");
+  const token = await getToken();
+  if (!token) redirect("/login");
 
   const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/coach/meets/${meetId}`, {
     method: "DELETE",
-    headers: { Authorization: `Bearer ${session.access_token}` },
+    headers: { Authorization: `Bearer ${token}` },
   });
 
   if (response.status === 401) redirect("/api/signout");
