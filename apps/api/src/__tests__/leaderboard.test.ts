@@ -25,6 +25,7 @@ vi.mock("../db/client", () => ({
 }));
 
 import { createApp } from "../app";
+import { clearLeaderboardSummaryCache } from "../routes/leaderboard";
 
 const logger = pino({ level: "silent" });
 const app = createApp(logger);
@@ -81,6 +82,10 @@ function standardsSelect(rows: Array<{ standardName: string; eventDistance: numb
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // The summary route memoizes its result for 60s per API instance; tests
+  // share a module-scoped cache, so clear it between cases or the second
+  // summary assertion would hit a stale entry from the first.
+  clearLeaderboardSummaryCache();
 });
 
 // Every public endpoint now enforces MIN_SWIMMERS_PER_EVENT_LIST (= 3).

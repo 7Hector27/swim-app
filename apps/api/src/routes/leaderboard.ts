@@ -34,15 +34,21 @@ import {
 
 export const leaderboardRouter = Router();
 
-const limiter = rateLimit({
+// Rate limit only the three heavy public board endpoints. `/leaderboard/
+// summary` is intentionally exempt: the web root layout uses it to decide
+// whether to render the Leaderboards nav links, and every server-side
+// render comes from the same web-host IP pool. If the summary shared this
+// limiter with the heavy endpoints, a scraper hammering any board could
+// starve the summary and hide the nav for every user on that Next.js
+// instance for a minute. The summary is already cheap (LRU-cached on the
+// API, see summaryCache below) and tiny.
+const boardLimiter = rateLimit({
   windowMs: 60 * 1000,
   limit: 60,
   standardHeaders: "draft-7",
   legacyHeaders: false,
   message: { error: "Too many requests, please try again later" },
 });
-
-leaderboardRouter.use(limiter);
 
 // ── Board loaders (shared by endpoints + summary) ──────────────────────────
 
@@ -182,6 +188,7 @@ async function loadMasterBoardRows(): Promise<MasterRow[]> {
 
 leaderboardRouter.get(
   "/leaderboard/club",
+  boardLimiter,
   validate({ query: LeaderboardQuerySchema }),
   asyncHandler(async (req, res) => {
     const query = req.query as LeaderboardQuery;
@@ -210,6 +217,7 @@ leaderboardRouter.get(
 
 leaderboardRouter.get(
   "/leaderboard/isl",
+  boardLimiter,
   validate({ query: LeaderboardQuerySchema }),
   asyncHandler(async (req, res) => {
     const query = req.query as LeaderboardQuery;
@@ -238,6 +246,7 @@ leaderboardRouter.get(
 
 leaderboardRouter.get(
   "/leaderboard/master",
+  boardLimiter,
   validate({ query: LeaderboardQuerySchema }),
   asyncHandler(async (req, res) => {
     const query = req.query as LeaderboardQuery;
@@ -267,20 +276,56 @@ leaderboardRouter.get(
 // Lightweight endpoint the homepage, landing page, and nav call to decide
 // whether to show leaderboard surfaces. A board "qualifies" when it has at
 // least one event list with ≥ MIN_SWIMMERS_PER_EVENT_LIST swimmers.
+//
+// This route is deliberately NOT behind boardLimiter — it's what the web
+// server hits on every SSR to decide nav visibility, and all of those
+// requests come from the same handful of outbound IPs. A per-IP limit
+// here would let a scraper hide the nav for every user.
+//
+// Instead we memoize the result for SUMMARY_TTL_MS on each API instance.
+// Each Next.js SSR instance already passes `revalidate: 60` on its fetch,
+// so the end-to-end cache is Next Data Cache (≤60s per Next instance) →
+// this in-memory cache (60s per API instance) → three cold loaders. On a
+// warm cache the handler runs zero queries.
+
+const SUMMARY_TTL_MS = 60 * 1000;
+
+interface SummaryCacheEntry {
+  expiresAt: number;
+  qualifying: LeaderboardBoardId[];
+}
+
+let summaryCache: SummaryCacheEntry | null = null;
+
+// Exported for tests so a fresh run isn't contaminated by a prior request.
+export function clearLeaderboardSummaryCache(): void {
+  summaryCache = null;
+}
+
+async function computeLeaderboardSummary(): Promise<LeaderboardBoardId[]> {
+  const [club, isl, master] = await Promise.all([
+    loadLeagueBoardRows("club").then((rows) => filterByEventListThreshold(rows, MIN_SWIMMERS_PER_EVENT_LIST)),
+    loadLeagueBoardRows("summer_league").then((rows) => filterByEventListThreshold(rows, MIN_SWIMMERS_PER_EVENT_LIST)),
+    loadMasterBoardRows().then((rows) => filterByEventListThreshold(rows, MIN_SWIMMERS_PER_EVENT_LIST)),
+  ]);
+  const qualifying: LeaderboardBoardId[] = [];
+  if (club.length > 0) qualifying.push("club");
+  if (isl.length > 0) qualifying.push("isl");
+  if (master.length > 0) qualifying.push("master");
+  return qualifying;
+}
 
 leaderboardRouter.get(
   "/leaderboard/summary",
   validate({}),
   asyncHandler(async (_req, res) => {
-    const [club, isl, master] = await Promise.all([
-      loadLeagueBoardRows("club").then((rows) => filterByEventListThreshold(rows, MIN_SWIMMERS_PER_EVENT_LIST)),
-      loadLeagueBoardRows("summer_league").then((rows) => filterByEventListThreshold(rows, MIN_SWIMMERS_PER_EVENT_LIST)),
-      loadMasterBoardRows().then((rows) => filterByEventListThreshold(rows, MIN_SWIMMERS_PER_EVENT_LIST)),
-    ]);
-    const qualifying: LeaderboardBoardId[] = [];
-    if (club.length > 0) qualifying.push("club");
-    if (isl.length > 0) qualifying.push("isl");
-    if (master.length > 0) qualifying.push("master");
+    const now = Date.now();
+    if (summaryCache && summaryCache.expiresAt > now) {
+      res.json(LeaderboardSummarySchema.parse({ qualifying: summaryCache.qualifying }));
+      return;
+    }
+    const qualifying = await computeLeaderboardSummary();
+    summaryCache = { qualifying, expiresAt: now + SUMMARY_TTL_MS };
     res.json(LeaderboardSummarySchema.parse({ qualifying }));
   }),
 );
