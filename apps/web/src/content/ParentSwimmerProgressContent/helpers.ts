@@ -146,8 +146,7 @@ function lowerOfTwoSides(
 
 // Change text a parent sees under the level name on each skill row:
 // "up N", "down N", "holding steady", or null when there's no comparable
-// history (single rating, DQ / NC path). Sided skills render left/right
-// as a combined string — see rowLevelAndChange() below.
+// history (single rating, DQ / NC path).
 export function rowChangeText(skill: ParentSkillProgress): string | null {
   if (skill.ratedPerSide) {
     const left = latestGradeFromCurrent(skill.currentLeft);
