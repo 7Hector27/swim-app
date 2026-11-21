@@ -170,11 +170,7 @@ export default function SwimmerProgressContent({
               aria-labelledby="coach-snapshot-heading"
               data-testid="coach-progress-snapshot"
             >
-              <h2
-                id="coach-snapshot-heading"
-                className="text-lg font-heading text-text"
-                style={{ fontVariationSettings: "\"SOFT\" 100, \"WONK\" 0" }}
-              >
+              <h2 id="coach-snapshot-heading" className="text-lg font-heading text-text">
                 Snapshot
               </h2>
               <CategoryRadar categories={categorySnapshot} />
@@ -201,11 +197,7 @@ export default function SwimmerProgressContent({
                 aria-labelledby="coach-standings-heading"
                 data-testid="coach-progress-group-standings"
               >
-                <h2
-                  id="coach-standings-heading"
-                  className="text-lg font-heading text-text"
-                  style={{ fontVariationSettings: "\"SOFT\" 100, \"WONK\" 0" }}
-                >
+                <h2 id="coach-standings-heading" className="text-lg font-heading text-text">
                   {`Where ${swimmer.firstName} stands`}
                 </h2>
                 <GroupStandings lanes={lanes} />
@@ -225,7 +217,7 @@ export default function SwimmerProgressContent({
           <div className="flex flex-col gap-6 tablet:gap-10" data-testid="coach-progress-main-sections">
             <section className="flex flex-col gap-3 min-w-0 tablet:order-2" data-testid="coach-progress-golf">
               <div className="flex flex-col gap-1">
-                <h2 className="text-lg font-heading text-text" style={{ fontVariationSettings: "\"SOFT\" 100, \"WONK\" 0" }}>
+                <h2 className="text-lg font-heading text-text">
                   Golf score
                 </h2>
                 <p className="text-xs text-text-secondary">Lower is better. Band shows age-group 25th to 75th percentile.</p>
@@ -241,7 +233,7 @@ export default function SwimmerProgressContent({
 
             {faultTags.length > 0 && (
               <section className="flex flex-col gap-3 min-w-0 tablet:order-3" data-testid="coach-progress-faults">
-                <h2 className="text-lg font-heading text-text" style={{ fontVariationSettings: "\"SOFT\" 100, \"WONK\" 0" }}>
+                <h2 className="text-lg font-heading text-text">
                   Fault tags{" "}
                   <span className="text-xs font-body text-text-secondary">coach only</span>
                 </h2>
@@ -250,14 +242,14 @@ export default function SwimmerProgressContent({
             )}
 
             <section className="flex flex-col gap-3 min-w-0 tablet:order-4" data-testid="coach-progress-cadence">
-              <h2 className="text-lg font-heading text-text" style={{ fontVariationSettings: "\"SOFT\" 100, \"WONK\" 0" }}>
+              <h2 className="text-lg font-heading text-text">
                 Session cadence
               </h2>
               <SessionCadence weeks={cadence} />
             </section>
 
             <section className="flex flex-col gap-4 min-w-0 tablet:order-1" data-testid="coach-progress-skills">
-              <h2 className="text-lg font-heading text-text" style={{ fontVariationSettings: "\"SOFT\" 100, \"WONK\" 0" }}>
+              <h2 className="text-lg font-heading text-text">
                 Skills
               </h2>
               <StrokeGroupsPanel
@@ -273,10 +265,7 @@ export default function SwimmerProgressContent({
           </div>
 
           <section className="flex flex-col gap-3" data-testid="starts-section">
-            <h2
-              className="text-lg font-heading text-text"
-              style={{ fontVariationSettings: "\"SOFT\" 100, \"WONK\" 0" }}
-            >
+            <h2 className="text-lg font-heading text-text">
               Starts
             </h2>
             <StartsSection
@@ -302,10 +291,7 @@ function PageHeader({ swimmer }: { swimmer: CoachSwimmerDetail }) {
         >
           ‹ {swimmer.firstName} {swimmer.lastName}
         </a>
-        <h1
-          className="text-3xl tablet:text-5xl font-heading"
-          style={{ color: "var(--color-heading)", fontVariationSettings: "\"SOFT\" 100, \"WONK\" 0" }}
-        >
+        <h1 className="text-3xl tablet:text-5xl font-heading text-heading">
           {swimmer.firstName}&apos;s Progress
         </h1>
       </div>

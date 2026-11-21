@@ -32,7 +32,6 @@ export default function SummaryCard({ data, firstName }: SummaryCardProps) {
         <h2
           id="parent-summary-heading"
           className="font-heading text-xl font-semibold text-text"
-          style={{ fontVariationSettings: "\"SOFT\" 100, \"WONK\" 0" }}
           data-testid="parent-summary-headline"
         >
           {data.headline}

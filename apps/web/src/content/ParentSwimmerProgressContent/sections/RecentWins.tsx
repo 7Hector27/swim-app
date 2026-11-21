@@ -15,11 +15,7 @@ export default function RecentWins({ wins, swimmerFirstName }: RecentWinsProps) 
       aria-labelledby="parent-recent-wins-heading"
       data-testid="parent-progress-recent-wins"
     >
-      <h2
-        id="parent-recent-wins-heading"
-        className="text-lg font-heading text-text"
-        style={{ fontVariationSettings: "\"SOFT\" 100, \"WONK\" 0" }}
-      >
+      <h2 id="parent-recent-wins-heading" className="text-lg font-heading text-text">
         Recent wins
       </h2>
       {wins.length === 0 ? (

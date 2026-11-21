@@ -133,10 +133,7 @@ export default function ParentSwimmerProgressContent({
             <a href="/dashboard" className="text-sm underline text-link">
               ← Dashboard
             </a>
-            <h1
-              className="text-heading text-text font-heading"
-              style={{ fontSize: "clamp(1.75rem, 1.2rem + 2.5vw, 2.5rem)", fontVariationSettings: "\"SOFT\" 100, \"WONK\" 0" }}
-            >
+            <h1 className="text-text font-heading text-[clamp(1.75rem,1.2rem+2.5vw,2.5rem)]">
               {swimmer.firstName}&apos;s Progress
             </h1>
           </div>
@@ -178,11 +175,7 @@ export default function ParentSwimmerProgressContent({
                 aria-labelledby="parent-focus-heading"
                 data-testid="parent-progress-focus"
               >
-                <h2
-                  id="parent-focus-heading"
-                  className="text-lg font-heading text-text"
-                  style={{ fontVariationSettings: "\"SOFT\" 100, \"WONK\" 0" }}
-                >
+                <h2 id="parent-focus-heading" className="text-lg font-heading text-text">
                   Working on next
                 </h2>
                 <CoachFocusList
@@ -209,11 +202,7 @@ export default function ParentSwimmerProgressContent({
                     aria-labelledby="parent-snapshot-heading"
                     data-testid="parent-progress-snapshot"
                   >
-                    <h2
-                      id="parent-snapshot-heading"
-                      className="text-lg font-heading text-text"
-                      style={{ fontVariationSettings: "\"SOFT\" 100, \"WONK\" 0" }}
-                    >
+                    <h2 id="parent-snapshot-heading" className="text-lg font-heading text-text">
                       Snapshot
                     </h2>
                     <CategoryRadar
@@ -226,11 +215,7 @@ export default function ParentSwimmerProgressContent({
                     aria-labelledby="parent-where-heading"
                     data-testid="parent-progress-group-standings"
                   >
-                    <h2
-                      id="parent-where-heading"
-                      className="text-lg font-heading text-text"
-                      style={{ fontVariationSettings: "\"SOFT\" 100, \"WONK\" 0" }}
-                    >
+                    <h2 id="parent-where-heading" className="text-lg font-heading text-text">
                       {`Where ${swimmer.firstName} stands`}
                     </h2>
                     <GroupStandings lanes={lanes} />
@@ -244,11 +229,7 @@ export default function ParentSwimmerProgressContent({
                 aria-labelledby="parent-skills-heading"
                 data-testid="parent-progress-skills"
               >
-                <h2
-                  id="parent-skills-heading"
-                  className="text-lg font-heading text-text"
-                  style={{ fontVariationSettings: "\"SOFT\" 100, \"WONK\" 0" }}
-                >
+                <h2 id="parent-skills-heading" className="text-lg font-heading text-text">
                   Skills
                 </h2>
                 <ParentStrokeGroupsPanel
@@ -267,11 +248,7 @@ export default function ParentSwimmerProgressContent({
                   aria-labelledby="parent-starts-heading"
                   data-testid="parent-progress-starts"
                 >
-                  <h2
-                    id="parent-starts-heading"
-                    className="text-lg font-heading text-text"
-                    style={{ fontVariationSettings: "\"SOFT\" 100, \"WONK\" 0" }}
-                  >
+                  <h2 id="parent-starts-heading" className="text-lg font-heading text-text">
                     Starts
                   </h2>
                   <StartsSection
@@ -291,11 +268,7 @@ export default function ParentSwimmerProgressContent({
                   aria-labelledby="parent-golf-heading"
                   data-testid="parent-progress-golf"
                 >
-                  <h2
-                    id="parent-golf-heading"
-                    className="text-lg font-heading text-text"
-                    style={{ fontVariationSettings: "\"SOFT\" 100, \"WONK\" 0" }}
-                  >
+                  <h2 id="parent-golf-heading" className="text-lg font-heading text-text">
                     Golf score
                   </h2>
                   <p className="text-xs text-text-secondary">

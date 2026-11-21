@@ -27,11 +27,7 @@ export default function CoachNoteCard({ latestPriority }: CoachNoteCardProps) {
       data-testid="parent-coach-focus-note"
     >
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2
-          id="parent-coach-note-heading"
-          className="text-base font-heading text-text"
-          style={{ fontVariationSettings: "\"SOFT\" 100, \"WONK\" 0" }}
-        >
+        <h2 id="parent-coach-note-heading" className="text-base font-heading text-text">
           Coach's focus
         </h2>
         <span className="text-xs text-text-secondary" data-testid="parent-coach-focus-byline">

@@ -12,10 +12,7 @@ export default function WhatToWorkOn({ priorities, swimmerId }: WhatToWorkOnProp
   if (priorities.length === 0) return null;
   return (
     <section className="flex flex-col gap-3">
-      <h2
-        className="text-lg font-heading text-text"
-        style={{ fontVariationSettings: "\"SOFT\" 100, \"WONK\" 0" }}
-      >
+      <h2 className="text-lg font-heading text-text">
         What to work on next
       </h2>
       <ul className="flex flex-col gap-2">
