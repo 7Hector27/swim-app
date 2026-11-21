@@ -7,6 +7,10 @@ import type {
 
 import InlineError from "@/components/InlineError";
 import CategoryRadar from "@/content/SwimmerProgressContent/charts/CategoryRadar";
+import {
+  firstScreenGroupSnapshot,
+  latestScreenGroupSnapshot,
+} from "@/lib/progressCharts";
 
 import type { SectionResult } from "./SwimmerProfileContent";
 
@@ -16,10 +20,17 @@ interface ProgressSnapshotSectionProps {
   swimmerId: string;
 }
 
-// The parent-side Progress card. Title, the category-rollup radar (tappable,
+// The parent-side Progress card. Title, the group-rollup radar (tappable,
 // deep-linking to the progress page), then the View progress button. When
-// the swimmer has no evaluations yet, the card collapses to a single empty
-// line — no radar, no button.
+// the swimmer has no evaluations yet, the card collapses to a single
+// empty line — no radar, no button.
+//
+// Data must match the progress page's Snapshot radar exactly: same
+// CategoryRadar component, same screen-group rollups
+// (`latestScreenGroupSnapshot`), and the same dashed first-evaluation
+// overlay once the swimmer has more than one session. Keeping the
+// profile card wired to the same helpers is the only way the two pages
+// can't disagree.
 export default function ProgressSnapshotSection({
   result,
   scoreHistory,
@@ -34,13 +45,20 @@ export default function ProgressSnapshotSection({
     );
   }
 
-  // "No evaluations yet" is the whole card body. The score-history endpoint
-  // emits one point per non-voided evaluation; an empty points[] means the
-  // swimmer has never been evaluated.
+  // "No evaluations yet" is the whole card body. The score-history
+  // endpoint emits one point per non-voided evaluation; an empty
+  // points[] means the swimmer has never been evaluated.
   const hasAnyEvaluation = scoreHistory.ok && scoreHistory.data.points.length > 0;
 
   const progressHref = `/dashboard/swimmers/${swimmerId}/progress`;
-  const categories = scoreHistory.ok ? latestCategorySnapshot(scoreHistory.data) : [];
+  const categories = scoreHistory.ok ? latestScreenGroupSnapshot(scoreHistory.data) : [];
+  // Mirror the progress page: the dashed first-evaluation outline only
+  // makes sense when the swimmer has more than one session — otherwise
+  // it overlays an identical shape.
+  const firstEvaluation =
+    scoreHistory.ok && scoreHistory.data.points.length >= 2
+      ? firstScreenGroupSnapshot(scoreHistory.data)
+      : [];
 
   return (
     <section className="rounded-card border border-border p-5 flex flex-col gap-4">
@@ -60,7 +78,10 @@ export default function ProgressSnapshotSection({
               className="block w-full rounded-[var(--radius-card)] transition-transform duration-150 active:scale-[0.98]"
               style={{ transitionTimingFunction: "cubic-bezier(0.23, 1, 0.32, 1)" }}
             >
-              <CategoryRadar categories={categories} />
+              <CategoryRadar
+                categories={categories}
+                {...(firstEvaluation.length > 0 && { firstEvaluation })}
+              />
             </Link>
           )}
 
@@ -76,19 +97,4 @@ export default function ProgressSnapshotSection({
       )}
     </section>
   );
-}
-
-// Pulls the latest score-history point's category rollups and shapes them for
-// the radar component. Returns an empty list when the swimmer has no evals
-// (points[] is empty), so the radar block gracefully doesn't render.
-function latestCategorySnapshot(
-  scoreHistory: ParentScoreHistoryResponse,
-): Array<{ name: string; average: number | null; assessedCount: number }> {
-  const latest = scoreHistory.points[scoreHistory.points.length - 1];
-  if (!latest) return [];
-  return latest.categoryRollups.map((rollup) => ({
-    name: rollup.categoryName,
-    average: rollup.average,
-    assessedCount: rollup.assessedCount,
-  }));
 }

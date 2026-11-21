@@ -82,6 +82,7 @@ All write actions produce an audit log entry.
 | Swimmer detail + member contact   | All swimmers | Only their own household's swimmers | No |
 | Swimmer ratings, times, progress  | All swimmers | Only their own household's swimmers | Opted-in swimmers, limited fields |
 | Coaching priority (per evaluation) | Yes         | Yes — visible by design (see note below) | No                          |
+| Skill level descriptors (level copy) | Yes       | Yes — surfaced via `/parent/categories` (see note below) | No                     |
 | Coach notes                       | Yes          | No                              | No                                |
 | Rating notes (per-skill free-text) | Yes         | No                              | No                                |
 | Fault tags                        | Yes          | No                              | No                                |
@@ -92,10 +93,15 @@ All write actions produce an audit log entry.
 
 **Coaching priority (per evaluation):** Visible to parents by design — this is the focus the coach sets for that session, intended for parent awareness. Pending confirmation from Jason.
 
+**Skill level descriptors:** The `/parent/categories` endpoint returns the per-skill `skillLevelDescriptors` map (1–5 copy per skill) so the parent progress page can surface "what Developing looks like for this skill" under the Next-level hint. The copy is coach-authored but written with parents in mind, so it is parent-visible by design. Rating notes, fault tags, and void reasons are the separate per-rating free-text fields — those remain coach-only (see list below).
+
+**Coach identity on the latest coaching priority:** The parent progress response (`GET /swimmers/:id/progress`) includes the authoring coach's **first name only** on `latestCoachingPriority.coachFirstName`, so the parent UI can render "From Coach Jason · Nov 17" above the priority text. The first name is derived server-side from `profiles.full_name` (first whitespace-separated token) in `apps/api/src/routes/parentProgress.ts`. The last name and any other coach profile fields (email, phone, role) are never shipped on this payload. The field is `null` when no `full_name` is on record, and the client falls back to "From your coach".
+
 The following fields remain coach-only:
 - **Rating notes** (per-skill free-text): never shown to parents.
 - **Fault tags**: never shown to parents.
 - **Void reasons**: never shown to parents.
+- **Coach's last name, email, phone, role, and any other `profiles` field beyond `coachFirstName` on the latest priority**: never shown to parents through the progress route.
 
 ## Coach permissions
 

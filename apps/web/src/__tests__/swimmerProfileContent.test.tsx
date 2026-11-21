@@ -248,30 +248,19 @@ describe("SwimmerProfileContent — error vs empty (audit bug #1)", () => {
 });
 
 describe("SwimmerProfileContent — Progress card", () => {
+  // The Progress card feeds the same CategoryRadar as the progress page,
+  // so its snapshot data comes from `screenGroupRollups` (the nine
+  // evaluate-screen groups) — never from `categoryRollups`.
   const scoreHistoryWithRollups: ParentScoreHistoryResponse = {
     points: [
       {
         sessionDate: "2026-10-14",
         headPositionOverall: 3,
-        categoryRollups: [
-          {
-            categoryId: "cat-free",
-            categorySlug: "freestyle",
-            categoryName: "Freestyle",
-            average: 3.2,
-            assessedCount: 4,
-            totalCount: 6,
-          },
-          {
-            categoryId: "cat-fly",
-            categorySlug: "butterfly",
-            categoryName: "Butterfly",
-            average: 2.1,
-            assessedCount: 2,
-            totalCount: 5,
-          },
+        categoryRollups: [],
+        screenGroupRollups: [
+          { screenSlug: "freestyle", name: "Freestyle", average: 3.2, assessedCount: 4, totalCount: 6 },
+          { screenSlug: "butterfly", name: "Butterfly", average: 2.1, assessedCount: 2, totalCount: 5 },
         ],
-        screenGroupRollups: [],
         starts: [],
         counts: { level1: 0, level2: 2, level3: 2, level4: 2, level5: 0, notLegal: 0, noConcept: 0 },
         totalLevelsGained: 4,

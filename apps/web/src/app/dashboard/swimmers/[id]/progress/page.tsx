@@ -4,11 +4,12 @@ import AccountInactiveScreen from "@/components/AccountInactiveScreen";
 import ParentSwimmerProgressContent from "@/content/ParentSwimmerProgressContent";
 import { requireAuth } from "@/lib/requireAuth";
 import {
+  fetchParentGolfScore,
   fetchParentScoreHistory,
+  fetchParentSkillCategories,
   fetchParentSwimmer,
   fetchParentSwimmerProgress,
 } from "@/lib/api/parentProgress";
-import { fetchSkillCategories } from "@/lib/api/evaluations";
 
 export const metadata: Metadata = {
   title: "Progress · Axiom Aquatics",
@@ -27,12 +28,13 @@ export default async function ParentSwimmerProgressPage({ params }: Props) {
     redirect(`/coach/swimmers/${id}/progress`);
   }
 
-  const [swimmerResult, progressResult, categoriesResult, scoreHistoryResult] =
+  const [swimmerResult, progressResult, categoriesResult, scoreHistoryResult, golfScoreResult] =
     await Promise.all([
       fetchParentSwimmer(id, auth.accessToken),
       fetchParentSwimmerProgress(id, auth.accessToken),
-      fetchSkillCategories(auth.accessToken),
+      fetchParentSkillCategories(auth.accessToken),
       fetchParentScoreHistory(id, auth.accessToken),
+      fetchParentGolfScore(id, auth.accessToken),
     ]);
 
   if (!swimmerResult.ok) {
@@ -61,9 +63,11 @@ export default async function ParentSwimmerProgressPage({ params }: Props) {
       progress={progressResult.data}
       categories={categories}
       {...(scoreHistoryResult.ok && { scoreHistory: scoreHistoryResult.data })}
+      {...(golfScoreResult.ok && { golfScore: golfScoreResult.data })}
       sectionFailures={{
         categories: !categoriesResult.ok,
         scoreHistory: !scoreHistoryResult.ok,
+        golfScore: !golfScoreResult.ok,
       }}
     />
   );

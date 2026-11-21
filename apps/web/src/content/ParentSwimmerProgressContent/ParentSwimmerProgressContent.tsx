@@ -1,24 +1,24 @@
 import type {
-  CategoriesResponse,
+  ParentCategoriesResponse,
+  ParentGolfScoreTrendsResponse,
+  ParentScoreHistoryResponse,
+  ParentSkillProgress,
   ParentSwimmer,
   ParentSwimmerProgressResponse,
-  ParentScoreHistoryResponse,
-  StartGradeResult,
 } from "@swim-app/shared";
-import CategoryTrendsGrid from "@/components/CategoryTrendsGrid";
 import InlineError from "@/components/InlineError";
-import StartProgression from "@/components/StartProgression";
-import {
-  screenGroupTrendSeries,
-  startSeries,
-} from "@/lib/progressCharts";
+import StartsSection from "@/components/StartsSection";
+import GroupStandings, { buildLanes } from "@/components/GroupStandings";
+import CategoryRadar from "@/content/SwimmerProgressContent/charts/CategoryRadar";
+import { firstScreenGroupSnapshot, latestScreenGroupSnapshot } from "@/lib/progressCharts";
+import { buildCatalogIndex } from "@/lib/screenGroups";
 import ParentStrokeGroupsPanel from "./ParentStrokeGroupsPanel";
-import {
-  formatProgressSessionDate,
-  formatStartGradeDisplay,
-  currentLevelDisplay,
-  currentLevelIsDanger,
-} from "./helpers";
+import CoachFocusList from "./sections/CoachFocusList";
+import CoachNoteCard from "./sections/CoachNoteCard";
+import GolfScoreList from "./sections/GolfScoreList";
+import RecentWins from "./sections/RecentWins";
+import SummaryCard from "./sections/SummaryCard";
+import { buildRecentWins, buildSummaryCard } from "./helpers";
 
 // Per-section failure flags. `progress` is primary (the page throws if it
 // fails), so it isn't listed. Defaults to all false, keeping existing tests
@@ -26,17 +26,15 @@ import {
 export interface ParentSwimmerProgressSectionFailures {
   categories?: boolean;
   scoreHistory?: boolean;
+  golfScore?: boolean;
 }
 
 interface ParentSwimmerProgressContentProps {
   swimmer: ParentSwimmer;
   progress: ParentSwimmerProgressResponse;
-  categories: CategoriesResponse;
-  // Charts need an oldest-to-newest set of session-level snapshots. The
-  // backend always sends one (empty when the swimmer has no evaluations); the
-  // prop is optional only so existing unit tests that pre-date the charts
-  // don't have to be rewritten for the empty case.
+  categories: ParentCategoriesResponse;
   scoreHistory?: ParentScoreHistoryResponse;
+  golfScore?: ParentGolfScoreTrendsResponse;
   sectionFailures?: ParentSwimmerProgressSectionFailures;
 }
 
@@ -47,60 +45,57 @@ const EMPTY_SCORE_HISTORY: ParentScoreHistoryResponse = {
   measurements: [],
 };
 
-function startGradeIsDanger(result: StartGradeResult): boolean {
-  return result.status === "not_legal";
-}
+const EMPTY_GOLF: ParentGolfScoreTrendsResponse = { trends: [] };
 
+// Parent progress page, laid out to match the coach mock minus coach-only
+// sections (faults, session grid, evaluations-by-week, coach notes).
+//
+// Order on every breakpoint:
+//   1. Header
+//   2. Top row — Summary (2/3) + Wins (1/3) on tablet+, stacked on phone
+//   3. Coach's note (when present) + Working on next (3 equal cards)
+//   4. Snapshot (half) + Group standings (half) on tablet+, stacked phone
+//   5. Skills (full width)
+//   6. Starts (full width, full names, no session grid)
+//   7. Golf score (full width) — the whole section is absent when the
+//      swimmer has no golf scores
+//
+// Each section mounts exactly once; there's no breakpoint-cloned subtree.
 export default function ParentSwimmerProgressContent({
   swimmer,
   progress,
   categories,
   scoreHistory = EMPTY_SCORE_HISTORY,
+  golfScore = EMPTY_GOLF,
   sectionFailures = {},
 }: ParentSwimmerProgressContentProps) {
-  // Pass 3: trend grid buckets by evaluate-screen groups now.
-  const categoryTrends = screenGroupTrendSeries(scoreHistory);
-  const startTrends = startSeries(scoreHistory);
-  const totalPoints = scoreHistory.points.length;
-  const hasEnoughForTrend = totalPoints >= 2;
-  const slugToName = new Map<string, string>();
-  for (const cat of categories) {
-    for (const skill of cat.skills) {
-      slugToName.set(skill.slug, skill.name);
-    }
-  }
-  for (const skill of progress.skills) {
-    slugToName.set(skill.slug, skill.name);
-  }
-  for (const start of progress.startProgress) {
-    slugToName.set(start.slug, start.name);
-    for (const comp of start.components) {
-      slugToName.set(comp.slug, comp.name);
-    }
-  }
+  const categorySnapshot = latestScreenGroupSnapshot(scoreHistory);
+  const firstSnapshot = firstScreenGroupSnapshot(scoreHistory);
+  const lanes = buildLanes(firstSnapshot, categorySnapshot);
+  // Radar's dashed first-evaluation outline only makes sense when the
+  // swimmer has more than one session — on a single-session swimmer it
+  // overlays an identical shape. WhereSheStands always ships both
+  // snapshots because its "first equals current" state is a visible dot
+  // anchor, not a duplicate.
+  const radarFirstEvaluation = scoreHistory.points.length >= 2 ? firstSnapshot : [];
 
-  const getSlugName = (slug: string): string => slugToName.get(slug) ?? slug;
-
-  // Start components don't appear in SCREEN_SECTIONS so they can't surface
-  // as rows in a group — drop them from the input list anyway to keep
-  // the panel's work tight. Start parents stay: the panel synthesizes a
-  // composite row for each one so the Starts section inside the Starts-
-  // and-turns group has entries even though progress.skills never
-  // contains a composite parent directly.
   const startComponentSlugs = new Set(
     progress.startProgress.flatMap((start) => start.components.map((component) => component.slug)),
   );
+  const displaySkills = progress.skills.filter((skill) => !startComponentSlugs.has(skill.slug));
 
-  const displaySkills = progress.skills.filter(
-    (skill) => !startComponentSlugs.has(skill.slug),
-  );
-
-  // Pass 3: switcher-driven groups instead of per-category collapsibles.
-  // Latest session's rollups drive the switcher badges + the header count.
   const latestScreenGroupRollups =
     scoreHistory.points[scoreHistory.points.length - 1]?.screenGroupRollups ?? [];
-  // Server-rendered now; pin to ISO so recency text matches during hydration.
+
   const nowIso = new Date().toISOString();
+
+  const catalogIndex = buildCatalogIndex(categories);
+  const skillsBySlug = new Map<string, ParentSkillProgress>();
+  for (const skill of progress.skills) skillsBySlug.set(skill.slug, skill);
+
+  const sessionDates = scoreHistory.points.map((point) => point.sessionDate);
+  const summaryCard = buildSummaryCard(displaySkills, sessionDates, swimmer.firstName);
+  const recentWins = buildRecentWins(displaySkills, catalogIndex);
 
   const hasAnyData =
     progress.skills.length > 0 ||
@@ -111,19 +106,34 @@ export default function ParentSwimmerProgressContent({
   const failedSections: string[] = [];
   if (sectionFailures.categories) failedSections.push("skill categories");
   if (sectionFailures.scoreHistory) failedSections.push("score history");
+  if (sectionFailures.golfScore) failedSections.push("golf score");
+
+  // Golf hides the whole section (heading included) when there's nothing
+  // meaningful to show. A trend counts as "has data" only when at least
+  // one point in it carries both time + strokes — a partial measurement
+  // that can't form a golf score shouldn't surface the section at all.
+  const golfVisible = golfScore.trends.some((trend) =>
+    trend.byCategory.some((cat) =>
+      cat.points.some((point) => point.timeSeconds !== null && point.strokeCountValue !== null),
+    ),
+  );
+  const startsVisible = progress.startProgress.length > 0;
+  // Both charts in row 3 share a single visibility toggle so the row
+  // never leaves a lonely chart hanging.
+  const groupRowVisible = categorySnapshot.length > 0;
 
   return (
     <div className="flex flex-col flex-1">
       <main className="flex-1 px-page pt-8 pb-20 tablet:pb-8">
-        <div className="mx-auto max-w-content flex flex-col gap-6">
-          <div className="flex flex-col gap-2">
-            <a
-              href="/dashboard"
-              className="text-sm underline text-link"
-            >
+        <div
+          className="@container/progress mx-auto max-w-content flex flex-col gap-6"
+          data-testid="parent-progress-layout"
+        >
+          <div className="flex flex-col gap-3">
+            <a href="/dashboard" className="text-sm underline text-link">
               ← Dashboard
             </a>
-            <h1 className="text-heading text-text">
+            <h1 className="text-text font-heading text-[clamp(1.75rem,1.2rem+2.5vw,2.5rem)]">
               {swimmer.firstName}&apos;s Progress
             </h1>
           </div>
@@ -141,142 +151,137 @@ export default function ParentSwimmerProgressContent({
             </p>
           )}
 
-          {/* Current focus (coach's own words from the most recent non-voided
-              evaluation with a priority). Hidden entirely when no priority has
-              ever been written. */}
-          {progress.latestCoachingPriority && (
-            <section
-              className="flex flex-col gap-2 rounded-card border border-border p-4"
-              data-testid="parent-progress-current-focus"
-            >
-              <h2 className="font-bold text-sm text-text">Current focus</h2>
-              <p className="text-sm text-text">{progress.latestCoachingPriority.text}</p>
-              <p className="text-xs text-text-secondary">
-                From {formatProgressSessionDate(progress.latestCoachingPriority.sessionDate)}
-              </p>
-            </section>
-          )}
+          {hasAnyData && (
+            <>
+              {/* Row 2 — Summary (2/3) + Wins (1/3) on tablet+ */}
+              <div
+                className="grid grid-cols-1 tablet:grid-cols-3 gap-6 items-start"
+                data-testid="parent-progress-top-row"
+              >
+                <div className="tablet:col-span-2 min-w-0">
+                  <SummaryCard data={summaryCard} firstName={swimmer.firstName} />
+                </div>
+                <div className="tablet:col-span-1 min-w-0">
+                  <RecentWins wins={recentWins} swimmerFirstName={swimmer.firstName} />
+                </div>
+              </div>
 
-          {/* What to work on next */}
-          {progress.coachingPriorities.length > 0 && (
-            <section className="flex flex-col gap-3">
-              <h2 className="font-bold text-sm text-text">
-                What to work on next
-              </h2>
-              <ul className="flex flex-col gap-2">
-                {progress.coachingPriorities.slice(0, 3).map((priority) => {
-                  const deepest = priority.chain[priority.chain.length - 1];
-                  return (
-                    <li key={priority.targetSlug} className="text-sm text-text">
-                      <span className="font-semibold">{priority.targetName}</span>
-                      {deepest && deepest.slug !== priority.targetSlug && (
-                        <>
-                          {" → "}
-                          <span>
-                            {priority.chain.map((entry, index) => (
-                              <span key={entry.slug}>
-                                {index > 0 && " → "}
-                                <span style={entry.notAssessed ? { color: "var(--color-text-secondary)" } : undefined}>
-                                  {entry.name}
-                                  {entry.notAssessed ? " (not assessed yet — check it)" : ""}
-                                </span>
-                              </span>
-                            ))}
-                          </span>
-                        </>
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
-            </section>
-          )}
+              {/* Row 3 — Coach's note (when present) + Working on next */}
+              {progress.latestCoachingPriority && (
+                <CoachNoteCard latestPriority={progress.latestCoachingPriority} />
+              )}
+              <section
+                className="flex flex-col gap-3"
+                aria-labelledby="parent-focus-heading"
+                data-testid="parent-progress-focus"
+              >
+                <h2 id="parent-focus-heading" className="text-lg font-heading text-text">
+                  Working on next
+                </h2>
+                <CoachFocusList
+                  workingOnNext={progress.coachingPriorities}
+                  swimmerFirstName={swimmer.firstName}
+                  skillsBySlug={skillsBySlug}
+                  catalogIndex={catalogIndex}
+                />
+              </section>
 
-          {/* Group trends over time. Only renders when there are two or
-              more non-voided evaluations (otherwise every mini-line would be
-              a dot and the section would read as empty). */}
-          {hasEnoughForTrend && categoryTrends.length > 0 && (
-            <section
-              className="flex flex-col gap-3"
-              data-testid="parent-progress-category-trends"
-            >
-              <h2 className="font-bold text-sm text-text">Group trends</h2>
-              <CategoryTrendsGrid categories={categoryTrends} />
-            </section>
-          )}
+              {/* Row 4 — Snapshot + Group standings.
+                  Two columns only when the content container is wide
+                  enough to give each column ~420px plus the 24px gap
+                  (2×420 + 24 = 864). Below that the row stacks and
+                  each card gets full content width, so GroupStandings
+                  can sit in its 4-col arrangement without crowding. */}
+              {groupRowVisible && (
+                <div
+                  className="grid grid-cols-1 @min-[864px]/progress:grid-cols-2 gap-6 items-start"
+                  data-testid="parent-progress-group-row"
+                >
+                  <section
+                    className="flex flex-col gap-3 min-w-0"
+                    aria-labelledby="parent-snapshot-heading"
+                    data-testid="parent-progress-snapshot"
+                  >
+                    <h2 id="parent-snapshot-heading" className="text-lg font-heading text-text">
+                      Snapshot
+                    </h2>
+                    <CategoryRadar
+                      categories={categorySnapshot}
+                      {...(radarFirstEvaluation.length > 0 && { firstEvaluation: radarFirstEvaluation })}
+                    />
+                  </section>
+                  <section
+                    className="flex flex-col gap-3 min-w-0"
+                    aria-labelledby="parent-where-heading"
+                    data-testid="parent-progress-group-standings"
+                  >
+                    <h2 id="parent-where-heading" className="text-lg font-heading text-text">
+                      {`Where ${swimmer.firstName} stands`}
+                    </h2>
+                    <GroupStandings lanes={lanes} />
+                  </section>
+                </div>
+              )}
 
-          {/* Starts */}
-          {progress.startProgress.length > 0 && (
-            <section className="flex flex-col gap-3" data-testid="parent-progress-starts">
-              <h2 className="font-bold text-sm text-text">
-                Starts
-              </h2>
-              <ul className="flex flex-col gap-3">
-                {progress.startProgress.map((start) => {
-                  const gradeText = formatStartGradeDisplay(start.grade, getSlugName);
-                  const isDanger = startGradeIsDanger(start.grade);
-                  const trend = startTrends.find((entry) => entry.slug === start.slug);
-                  return (
-                    <li key={start.slug} className="flex flex-col gap-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-semibold text-text">
-                          {start.name}
-                        </span>
-                        <span
-                          className="text-xs font-semibold px-1.5 py-0.5 rounded"
-                          style={{
-                            backgroundColor: isDanger ? "var(--color-danger)" : "var(--color-border)",
-                            color: isDanger ? "var(--color-on-danger)" : "var(--color-text)",
-                          }}
-                        >
-                          {gradeText}
-                        </span>
-                      </div>
-                      <ul className="flex flex-col gap-0.5 pl-3 border-l border-border">
-                        {start.components.map((comp) => (
-                          <li key={comp.slug} className="flex items-center gap-2 text-xs">
-                            <span className="text-text-secondary flex-1">{comp.name}</span>
-                            {comp.current !== null ? (
-                              <span
-                                className="font-semibold px-1 py-0.5 rounded"
-                                style={{
-                                  backgroundColor: currentLevelIsDanger(comp.current)
-                                    ? "var(--color-danger)"
-                                    : "var(--color-border)",
-                                  color: currentLevelIsDanger(comp.current)
-                                    ? "var(--color-on-danger)"
-                                    : "var(--color-text)",
-                                }}
-                              >
-                                {currentLevelDisplay(comp.current)}
-                              </span>
-                            ) : (
-                              <span className="text-text-secondary">Not assessed</span>
-                            )}
-                          </li>
-                        ))}
-                      </ul>
-                      {trend && hasEnoughForTrend && (
-                        <StartProgression name={start.name} points={trend.points} />
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
-            </section>
-          )}
+              {/* Row 5 — Skills */}
+              <section
+                className="flex flex-col gap-3"
+                aria-labelledby="parent-skills-heading"
+                data-testid="parent-progress-skills"
+              >
+                <h2 id="parent-skills-heading" className="text-lg font-heading text-text">
+                  Skills
+                </h2>
+                <ParentStrokeGroupsPanel
+                  skills={displaySkills}
+                  startProgress={progress.startProgress}
+                  categories={categories}
+                  nowIso={nowIso}
+                  rollups={latestScreenGroupRollups}
+                />
+              </section>
 
-          {/* Pass 3: screen-group switcher replaces per-category
-              collapsibles. One group visible at a time. Rows show
-              "Not rated yet" and the 6-week stale grey-out in
-              ParentSkillProgressRow. */}
-          <ParentStrokeGroupsPanel
-            skills={displaySkills}
-            startProgress={progress.startProgress}
-            categories={categories}
-            nowIso={nowIso}
-            rollups={latestScreenGroupRollups}
-          />
+              {/* Row 6 — Starts */}
+              {startsVisible && (
+                <section
+                  className="flex flex-col gap-3"
+                  aria-labelledby="parent-starts-heading"
+                  data-testid="parent-progress-starts"
+                >
+                  <h2 id="parent-starts-heading" className="text-lg font-heading text-text">
+                    Starts
+                  </h2>
+                  <StartsSection
+                    startProgress={progress.startProgress}
+                    swimmerSkills={progress.skills.map((skill) => ({ slug: skill.slug, history: skill.history }))}
+                    swimmerFirstName={swimmer.firstName}
+                    showSessionGrid={false}
+                    showStillToGrade={false}
+                  />
+                </section>
+              )}
+
+              {/* Row 7 — Golf score (section hidden entirely when empty) */}
+              {golfVisible && (
+                <section
+                  className="flex flex-col gap-3"
+                  aria-labelledby="parent-golf-heading"
+                  data-testid="parent-progress-golf"
+                >
+                  <h2 id="parent-golf-heading" className="text-lg font-heading text-text">
+                    Golf score
+                  </h2>
+                  <p className="text-xs text-text-secondary">
+                    Seconds plus strokes for one length. Lower is better.
+                  </p>
+                  <GolfScoreList trends={golfScore.trends} />
+                  <p className="text-xs text-text-secondary">
+                    {`The shaded band is the typical range for ${swimmer.firstName}'s age group.`}
+                  </p>
+                </section>
+              )}
+            </>
+          )}
         </div>
       </main>
     </div>

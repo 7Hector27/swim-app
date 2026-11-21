@@ -175,6 +175,11 @@ function setupProgressMocks() {
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockResolvedValue([]),
       }),
+    })
+    .mockReturnValueOnce({                               // levelDescriptors
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue([]),
+      }),
     });
 }
 
@@ -337,6 +342,11 @@ describe("GET /coach/swimmers/:id/progress", () => {
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockResolvedValue([]),
         }),
+      })
+      .mockReturnValueOnce({                               // levelDescriptors
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue([]),
+        }),
       });
 
     const res = await request(app)
@@ -494,6 +504,11 @@ describe("GET /coach/swimmers/:id/progress", () => {
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockResolvedValue([]),
         }),
+      })
+      .mockReturnValueOnce({                               // levelDescriptors
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue([]),
+        }),
       });
 
     const res = await request(app)
@@ -594,6 +609,11 @@ describe("GET /coach/swimmers/:id/progress", () => {
       .mockReturnValueOnce({                               // fault tags
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockResolvedValue(faultTagRows),
+        }),
+      })
+      .mockReturnValueOnce({                               // levelDescriptors
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue([]),
         }),
       });
 

@@ -55,47 +55,9 @@ export function headPositionSeries(
   }));
 }
 
-// Per-category trend series indexed from the first point's rollups so the
-// shape stays stable across time.
-export function categoryTrendSeries(history: ScoreHistoryPointsOnly): Array<{
-  categoryId: string;
-  name: string;
-  points: Array<{ sessionDate: string; value: number | null }>;
-}> {
-  const first = history.points[0];
-  if (!first) return [];
-  return first.categoryRollups.map((rollup, categoryIndex) => ({
-    categoryId: rollup.categoryId,
-    name: rollup.categoryName,
-    points: history.points.map((point) => ({
-      sessionDate: point.sessionDate,
-      value: point.categoryRollups[categoryIndex]?.average ?? null,
-    })),
-  }));
-}
-
-export function latestCategorySnapshot(history: ScoreHistoryPointsOnly): Array<{
-  categoryId: string;
-  name: string;
-  average: number | null;
-  assessedCount: number;
-  totalCount: number;
-}> {
-  const latest = history.points[history.points.length - 1];
-  if (!latest) return [];
-  return latest.categoryRollups.map((rollup) => ({
-    categoryId: rollup.categoryId,
-    name: rollup.categoryName,
-    average: rollup.average,
-    assessedCount: rollup.assessedCount,
-    totalCount: rollup.totalCount,
-  }));
-}
-
-// Pass 3: screen-group counterparts. `screenGroupRollups` carry the nine
-// progress-page groups' averages + counts. The radar and category-trend
-// grid both switch to this on the progress pages; the catalog-based
-// equivalents stay available for any other caller that needs them.
+// Screen-group rollups. `screenGroupRollups` carry the nine progress-
+// page groups' averages + counts, which is what the radar + trend grid
+// render on every progress / profile surface.
 export function screenGroupTrendSeries(history: ScoreHistoryPointsOnly): Array<{
   screenSlug: string;
   name: string;
@@ -131,10 +93,37 @@ export function latestScreenGroupSnapshot(history: ScoreHistoryPointsOnly): Arra
   }));
 }
 
+// Same shape as latestScreenGroupSnapshot but from the first (oldest)
+// session. Always returns the oldest session's rollups when any exist —
+// the "hide identical overlay on single-session swimmers" decision is a
+// view concern and lives at the component-prop boundary (e.g. the radar
+// passes `firstEvaluation` only when points.length >= 2). Shipping the
+// rollups here unconditionally lets WhereSheStands draw a ring for the
+// first evaluation whenever one exists, including single-session
+// swimmers (where first === current collapses to just the dot).
+export function firstScreenGroupSnapshot(history: ScoreHistoryPointsOnly): Array<{
+  screenSlug: string;
+  name: string;
+  average: number | null;
+  assessedCount: number;
+  totalCount: number;
+}> {
+  const first = history.points[0];
+  if (!first) return [];
+  return first.screenGroupRollups.map((rollup) => ({
+    screenSlug: rollup.screenSlug,
+    name: rollup.name,
+    average: rollup.average,
+    assessedCount: rollup.assessedCount,
+    totalCount: rollup.totalCount,
+  }));
+}
+
 // Per-start progression series from score history. Order and names are taken
-// from the first point so a newly-rated start doesn't rearrange earlier points.
-// sessionId is threaded through so StartProgression can deep-link to edit mode
-// on coach-shaped history; absent on parent-shaped history.
+// from the first point so a newly-rated start doesn't rearrange earlier
+// points. sessionId is threaded through so deep-links (e.g. edit affordances
+// on the coach view) can target the originating session; absent on
+// parent-shaped history.
 export function startSeries(history: ScoreHistoryPointsOnly): Array<{
   slug: string;
   name: string;

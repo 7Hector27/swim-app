@@ -260,6 +260,23 @@ export type SkillCategoryWithSkills = z.infer<typeof SkillCategoryWithSkillsSche
 export const CategoriesResponseSchema = z.array(SkillCategoryWithSkillsSchema);
 export type CategoriesResponse = z.infer<typeof CategoriesResponseSchema>;
 
+// Parent-facing variant of the catalog response. Strips fault tags from
+// every skill — parents never see fault tags, per the policy in
+// `docs/accounts.md`. The schema is `.strict()` so any future addition
+// of coach-only fields fails to parse rather than silently reaching a
+// parent client.
+export const ParentSkillForRatingSchema = SkillForRatingSchema.omit({ faultTags: true }).strict();
+export type ParentSkillForRating = z.infer<typeof ParentSkillForRatingSchema>;
+
+export const ParentSkillCategoryWithSkillsSchema = SkillCategoryWithSkillsSchema
+  .omit({ skills: true })
+  .extend({ skills: z.array(ParentSkillForRatingSchema) })
+  .strict();
+export type ParentSkillCategoryWithSkills = z.infer<typeof ParentSkillCategoryWithSkillsSchema>;
+
+export const ParentCategoriesResponseSchema = z.array(ParentSkillCategoryWithSkillsSchema);
+export type ParentCategoriesResponse = z.infer<typeof ParentCategoriesResponseSchema>;
+
 // ── Screen-based response (replaces /categories for the evaluation form) ───────
 
 export const ScreenWithSkillsSchema = z.object({
@@ -346,6 +363,11 @@ export const SkillProgressSchema = z.object({
   currentLeft: SkillCurrentLevelSchema.nullable(),
   currentRight: SkillCurrentLevelSchema.nullable(),
   history: z.array(ProgressRatingPointSchema),
+  // Per-skill level-descriptor text keyed by level ("1" … "5"). Omitted
+  // when the skill has no descriptor rows in skill_level_descriptors. Both
+  // coach and parent progress responses include this when available —
+  // the ladder uses it for the "Next: <level> — <descriptor>" chip.
+  levelDescriptors: z.record(z.string(), z.string()).optional(),
 });
 export type SkillProgress = z.infer<typeof SkillProgressSchema>;
 
@@ -481,6 +503,31 @@ export const GolfScoreTrendsResponseSchema = z.object({
   trends: z.array(GolfScoreTrendSchema),
 });
 export type GolfScoreTrendsResponse = z.infer<typeof GolfScoreTrendsResponseSchema>;
+
+// Parent-facing variants. Same shape as the coach versions minus
+// `sessionId` on each point — parents can't reach the per-session edit
+// affordance that field deep-links to. `.strict()` so any future
+// coach-only field added to GolfScoreTrendPoint fails to parse rather
+// than silently leaking.
+export const ParentGolfScoreTrendPointSchema = GolfScoreTrendPointSchema.omit({ sessionId: true }).strict();
+export type ParentGolfScoreTrendPoint = z.infer<typeof ParentGolfScoreTrendPointSchema>;
+
+export const ParentGolfScoreCategoryTrendSchema = GolfScoreCategoryTrendSchema
+  .omit({ points: true })
+  .extend({ points: z.array(ParentGolfScoreTrendPointSchema) })
+  .strict();
+export type ParentGolfScoreCategoryTrend = z.infer<typeof ParentGolfScoreCategoryTrendSchema>;
+
+export const ParentGolfScoreTrendSchema = GolfScoreTrendSchema
+  .omit({ byCategory: true })
+  .extend({ byCategory: z.array(ParentGolfScoreCategoryTrendSchema) })
+  .strict();
+export type ParentGolfScoreTrend = z.infer<typeof ParentGolfScoreTrendSchema>;
+
+export const ParentGolfScoreTrendsResponseSchema = z.object({
+  trends: z.array(ParentGolfScoreTrendSchema),
+}).strict();
+export type ParentGolfScoreTrendsResponse = z.infer<typeof ParentGolfScoreTrendsResponseSchema>;
 
 // ── Score history ─────────────────────────────────────────────────────────────
 // Server-side computeAsOf: one point per non-voided session date, each carrying
@@ -956,7 +1003,6 @@ export type ParentProgressRatingPoint = z.infer<typeof ParentProgressRatingPoint
 
 export const ParentSkillProgressSchema = SkillProgressSchema.extend({
   history: z.array(ParentProgressRatingPointSchema),
-  levelDescriptors: z.record(z.string(), z.string()).optional(),
 });
 export type ParentSkillProgress = z.infer<typeof ParentSkillProgressSchema>;
 
@@ -971,9 +1017,17 @@ export type ParentCoachingNote = z.infer<typeof ParentCoachingNoteSchema>;
 // Single-latest priority surfaced in the parent progress view and the swimmer
 // profile's current-focus card. Null when the swimmer has never had a priority
 // written on any session with at least one non-voided rating.
+//
+// coachFirstName is the coach's first name only, derived server-side from
+// the first token of profiles.full_name. Null when the profile has no
+// full_name on record — the client falls back to "From your coach" copy.
+// Parents only ever see this first name (per docs/accounts.md); the
+// server never sends a last name on this payload, so coach PII can't leak
+// through this route even if the UI layer changes later.
 export const LatestCoachingPrioritySchema = z.object({
   text: z.string().min(1),
   sessionDate: z.string(),
+  coachFirstName: z.string().nullable(),
 });
 export type LatestCoachingPriority = z.infer<typeof LatestCoachingPrioritySchema>;
 

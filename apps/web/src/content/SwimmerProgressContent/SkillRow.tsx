@@ -1,14 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import type { SkillCurrentLevel, SwimmerProgressResponse } from "@swim-app/shared";
+import type { SkillCurrentLevel, SkillGrade, SwimmerProgressResponse } from "@swim-app/shared";
 import TrendLine from "@/components/TrendLine";
-import SkillChart from "@/components/SkillChart";
-import type { EvaluationEditContext } from "@/lib/evaluationEditHref";
+import LevelLadder, { LadderDetails } from "@/components/LevelLadder";
+import { evaluationEditHref, type EvaluationEditContext } from "@/lib/evaluationEditHref";
 import {
   formatRecency,
   isStaleBySessionDate,
-  MIN_RATINGS_FOR_TREND,
 } from "@/lib/progressRow";
 import { evaluateHrefFor } from "./helpers";
 
@@ -38,9 +37,12 @@ export default function SkillRow({ skill, swimmerId, nowIso, editContext }: Skil
     ? skill.currentLeft === null && skill.currentRight === null
     : skill.current === null;
   const stale = isStaleBySessionDate(latestPoint?.sessionDate, now);
-  // Only draw a trend line when there are enough effective ratings for
-  // the line to tell a story. Group-level trends aren't gated by this.
-  const canShowTrend = skill.history.length >= MIN_RATINGS_FOR_TREND;
+  // Draw the inline trend line whenever there's any history. The 3-rating
+  // minimum this used to gate was dropped when the ladder became the
+  // detailed view — TrendLine still bails internally when it has fewer
+  // than two numeric points, so a single-rating row just omits the
+  // sparkline on its own.
+  const canShowTrend = skill.history.length >= 1;
 
   return (
     <li
@@ -105,27 +107,130 @@ export default function SkillRow({ skill, swimmerId, nowIso, editContext }: Skil
       {open && (
         <div className="pb-4 pl-9">
           {skill.current !== null && skill.current.capacityValue !== null && (
-            <p className="text-xs text-text-secondary mb-2">
+            <p className="text-xs text-text-secondary mb-3">
               Capacity: {skill.current.capacityValue} {skill.current.capacityUnit ?? ""}
             </p>
           )}
           {skill.current !== null && skill.current.measurementValue !== null && (
-            <p className="text-xs text-text-secondary mb-2">
+            <p className="text-xs text-text-secondary mb-3">
               {skill.unit ?? "Measurement"}: {skill.current.measurementValue} {skill.current.measurementUnit ?? ""}
             </p>
           )}
           {skill.history.length > 0 ? (
-            <SkillChart
-              history={skill.history}
-              skillName={skill.name}
-              {...(editContext && { editContext: { ...editContext, skillSlug: skill.slug } })}
-            />
+            <div
+              className="rounded-lg p-4 flex flex-col gap-4 tablet:grid tablet:gap-6 tablet:[grid-template-columns:minmax(0,400px)_minmax(0,1fr)] tablet:items-start"
+              style={{ backgroundColor: "var(--color-surface-soft)" }}
+              data-testid="skill-row-opened-panel"
+            >
+              <LevelLadder
+                skillName={skill.name}
+                history={skill.history}
+                ratedPerSide={skill.ratedPerSide}
+              />
+              <LadderDetails
+                history={skill.history}
+                ratedPerSide={skill.ratedPerSide}
+                levelDescriptors={skill.levelDescriptors ?? undefined}
+                extras={
+                  editContext ? (
+                    <CoachSkillEditList
+                      history={skill.history}
+                      editContext={{ ...editContext, skillSlug: skill.slug }}
+                    />
+                  ) : undefined
+                }
+              />
+            </div>
           ) : (
             <p className="text-xs text-text-secondary italic">No rated sessions yet.</p>
           )}
         </div>
       )}
     </li>
+  );
+}
+
+// Coach-only per-rating detail list, rendered under the ladder. Keeps the
+// capabilities that used to live inside SkillChart's edit list — per-point
+// Edit link, "Edited" treatment with the previous value, and the fault
+// tags the coach view is allowed to surface. Parent view omits this list
+// entirely by not passing editContext to SkillRow.
+type SkillHistoryPoint = SwimmerProgressResponse["skills"][number]["history"][number];
+
+function CoachSkillEditList({
+  history,
+  editContext,
+}: {
+  history: SkillHistoryPoint[];
+  editContext: EvaluationEditContext;
+}) {
+  function formatPointDate(dateStr: string): string {
+    const [year, month, day] = dateStr.split("-").map(Number);
+    if (year === undefined || month === undefined || day === undefined) return dateStr;
+    return new Intl.DateTimeFormat("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      timeZone: "America/Los_Angeles",
+    }).format(new Date(Date.UTC(year, month - 1, day, 12)));
+  }
+  function previousValueLabel(previous: SkillGrade | null | undefined): string | null {
+    if (previous === null || previous === undefined) return null;
+    if (previous === "not_legal") return "Not legal";
+    if (previous === "no_concept") return "No concept";
+    return String(previous);
+  }
+  return (
+    <ul
+      className="flex flex-col divide-y"
+      style={{ borderColor: "var(--color-border)", borderTopWidth: "1px", borderBottomWidth: "1px" }}
+      data-testid="skill-chart-edit-list"
+    >
+      {history.map((point) => {
+        const gradeLabel = point.notLegal
+          ? "Not legal"
+          : point.noConcept
+            ? "No concept"
+            : point.grade !== null
+              ? String(point.grade)
+              : "—";
+        const previousLabel = previousValueLabel(point.previousValue);
+        return (
+          <li key={point.id} className="flex flex-col gap-1 py-2 text-xs">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-text-secondary tabular-nums flex items-center gap-2 flex-wrap">
+                <span>{formatPointDate(point.sessionDate)}</span>
+                <span className="capitalize">· {point.context}</span>
+                <span>· grade {gradeLabel}</span>
+                {point.edited && (
+                  <span
+                    className="font-semibold px-1.5 py-0.5 rounded-md"
+                    style={{ backgroundColor: "var(--color-border)", color: "var(--color-text)" }}
+                    data-testid="skill-chart-edited-pill"
+                  >
+                    {previousLabel ? `Edited (was ${previousLabel})` : "Edited"}
+                  </span>
+                )}
+              </span>
+              {point.sessionId && (
+                <a
+                  href={evaluationEditHref(editContext, point.sessionId)}
+                  className="min-h-[44px] inline-flex items-center font-semibold text-link hover:text-link-hover"
+                  data-testid="skill-chart-edit-link"
+                >
+                  Edit →
+                </a>
+              )}
+            </div>
+            {point.faultTags && point.faultTags.length > 0 && (
+              <span className="text-text-secondary">
+                Faults: {point.faultTags.join(", ")}
+              </span>
+            )}
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 

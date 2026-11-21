@@ -41,11 +41,6 @@ export function isStaleBySessionDate(
   return days >= 42;
 }
 
-// Minimum effective-rating count a skill needs before we draw a trend
-// line on its row. Below this we show the current grade + last-rated
-// date but no micro-chart. Group-level trends aren't gated by this.
-export const MIN_RATINGS_FOR_TREND = 3;
-
 // Short date for "X of Y" and session byline text. Always LA time, so
 // server-rendered and client-rendered copies agree.
 export function formatSessionDateShort(sessionDate: string): string {
