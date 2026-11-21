@@ -2,7 +2,7 @@ import { afterAll, afterEach, describe, expect, it } from "vitest";
 import request from "supertest";
 import pino from "pino";
 import { randomUUID } from "node:crypto";
-import { eq, inArray } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { createApp } from "../../app";
 import { leagueRegistrations, meetSwims, meets, profiles, swimmers } from "../../db/schema";
 import { adminDb, closeAdminDb, createTestUser, hardDeleteSwimmer } from "./helpers";
