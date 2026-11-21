@@ -199,6 +199,9 @@ meetsRouter.patch(
         .from(meetSwims)
         .where(eq(meetSwims.meetId, meetId));
       const first = earliest[0]?.earliest ?? null;
+      // Both sides are ISO YYYY-MM-DD strings (Drizzle's date column + Zod
+      // z.string().date() on the body), so lexicographic > is also date >.
+      // Same assumption as the batch-insert guard below (`row.swumOn < meet.meetDate`).
       if (first !== null && body.meetDate > first) {
         res.status(422).json({ error: "meet_date_after_existing_swim" });
         return;
