@@ -33,6 +33,7 @@ import { locationsRouter } from "./routes/locations";
 import { lessonsRouter } from "./routes/lessons";
 import { internalRouter } from "./routes/internal";
 import { parentProgressRouter } from "./routes/parentProgress";
+import { parentCatalogRouter } from "./routes/parentCatalog";
 import { coachRouter } from "./routes/coach";
 import { integrationsGoogleRouter } from "./routes/integrationsGoogle";
 import { leaderboardRouter } from "./routes/leaderboard";
@@ -529,6 +530,9 @@ export function createApp(logger: Logger) {
   app.use("/clubs", clubsRouter);
   app.use("/swimmers", swimmersRouter);
   app.use("/swimmers", parentProgressRouter);
+  // Parent-facing skill catalog, mirror of /coach/categories minus fault tags.
+  // Mounted at /parent so it sits outside the coach-only tree.
+  app.use("/parent", parentCatalogRouter);
   app.use("/households", householdsRouter);
   app.use("/invites", invitesRouter);
   app.use("/locations", locationsRouter);

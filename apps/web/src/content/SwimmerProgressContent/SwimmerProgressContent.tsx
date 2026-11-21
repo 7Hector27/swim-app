@@ -6,12 +6,13 @@ import type {
   SwimmerProgressResponse,
 } from "@swim-app/shared";
 import CategoryTrendsGrid from "@/components/CategoryTrendsGrid";
+import GroupStandings, { buildLanes } from "@/components/GroupStandings";
 import InlineError from "@/components/InlineError";
-import StartProgression from "@/components/StartProgression";
+import StartsSection from "@/components/StartsSection";
 import {
+  firstScreenGroupSnapshot,
   latestScreenGroupSnapshot,
   screenGroupTrendSeries,
-  startSeries,
 } from "@/lib/progressCharts";
 import CategoryRadar from "./charts/CategoryRadar";
 import GolfScoreCard from "./charts/GolfScoreCard";
@@ -67,8 +68,9 @@ export default function SwimmerProgressContent({
   // Pass 3: radar + trend grid now bucket by evaluate-screen groups
   // instead of catalog categories.
   const categorySnapshot = latestScreenGroupSnapshot(scoreHistory);
+  const firstSnapshot = firstScreenGroupSnapshot(scoreHistory);
+  const lanes = buildLanes(firstSnapshot, categorySnapshot);
   const categoryTrends = screenGroupTrendSeries(scoreHistory);
-  const starts = startSeries(scoreHistory);
   const faultTags = faultTagFrequency(progress);
   const cadence = sessionCadence(progress, now);
 
@@ -120,10 +122,28 @@ export default function SwimmerProgressContent({
   if (sectionFailures.scoreHistory) failedSections.push("score history");
   if (sectionFailures.golfScore) failedSections.push("golf score");
 
+  // GroupStandings itself renders null when lanes are empty, but the
+  // whole second column should disappear too so the row doesn't leave a
+  // dangling heading. The Snapshot column stays mounted regardless —
+  // when there's no radar data, CategoryRadar renders null and the
+  // heading alone shows, matching the older coach layout.
+  const standingsVisible = lanes.length > 0;
+
+  // The coach page always shows the Golf score heading + caption, and
+  // falls through to "No golf scores yet." when there's nothing to
+  // plot. A trend counts as data only when at least one point carries
+  // both time + strokes — a trend that exists but only holds partial
+  // measurements shouldn't be mistaken for scored data.
+  const golfHasScoredPoints = golfScore.trends.some((trend) =>
+    trend.byCategory.some((cat) =>
+      cat.points.some((point) => point.timeSeconds !== null && point.strokeCountValue !== null),
+    ),
+  );
+
   return (
     <div className="flex flex-col flex-1">
       <main className="flex-1 px-page py-6 tablet:py-10">
-        <div className="mx-auto max-w-content flex flex-col gap-6 tablet:gap-10">
+        <div className="@container/progress mx-auto max-w-content flex flex-col gap-6 tablet:gap-10">
           <PageHeader swimmer={swimmer} />
 
           {failedSections.length > 0 && (
@@ -133,86 +153,103 @@ export default function SwimmerProgressContent({
             />
           )}
 
-          <div className="grid gap-6 tablet:gap-10 tablet:grid-cols-[7fr_5fr] items-start">
-            <div className="flex flex-col gap-6 min-w-0">
-              <WhatToWorkOn priorities={progress.coachingPriorities} swimmerId={swimmer.id} />
+          <WhatToWorkOn priorities={progress.coachingPriorities} swimmerId={swimmer.id} />
 
-              <section className="flex flex-col gap-3">
-                <h2 className="text-lg font-heading text-text" style={{ fontVariationSettings: "\"SOFT\" 100, \"WONK\" 0" }}>
-                  Snapshot
-                </h2>
-                <div className="max-w-[360px] tablet:max-w-[480px] desktop:max-w-[560px] mx-auto w-full">
-                  <CategoryRadar categories={categorySnapshot} />
-                </div>
-                {!isOneEvaluation && (
-                  <details className="group mt-1">
-                    <summary
-                      className="text-sm font-semibold cursor-pointer list-none flex items-center gap-2 py-2 min-h-[44px]"
-                      style={{ color: "var(--color-link)" }}
-                    >
-                      <span aria-hidden="true" className="transition-transform duration-200 group-open:rotate-90">
-                        ›
-                      </span>
-                      <span>Open group trends</span>
-                    </summary>
-                    <div className="pt-2">
-                      <CategoryTrendsGrid categories={categoryTrends} />
-                    </div>
-                  </details>
-                )}
-              </section>
-
-              <section className="flex flex-col gap-3">
-                <h2 className="text-lg font-heading text-text" style={{ fontVariationSettings: "\"SOFT\" 100, \"WONK\" 0" }}>
-                  Starts
-                </h2>
-                {starts.length === 0 ? (
-                  <p className="text-sm text-text-secondary">No start ratings yet.</p>
-                ) : (
-                  <div className="flex flex-col gap-5">
-                    {starts.map((start) => (
-                      <StartProgression key={start.slug} name={start.name} points={start.points} editContext={editContext} />
-                    ))}
+          {/* Snapshot (radar) + Group standings row. Mirrors the parent
+              page: two columns only when the content container is wide
+              enough for each column to hit ~420px plus the 24px gap
+              (2×420 + 24 = 864). Below that, the row stacks with
+              Snapshot above so GroupStandings sits in its own full-
+              width 4-col arrangement. */}
+          <div
+            className="grid grid-cols-1 @min-[864px]/progress:grid-cols-2 gap-6 items-start"
+            data-testid="coach-progress-group-row"
+          >
+            <section
+              className="flex flex-col gap-3 min-w-0"
+              aria-labelledby="coach-snapshot-heading"
+              data-testid="coach-progress-snapshot"
+            >
+              <h2 id="coach-snapshot-heading" className="text-lg font-heading text-text">
+                Snapshot
+              </h2>
+              <CategoryRadar categories={categorySnapshot} />
+              {!isOneEvaluation && (
+                <details className="group mt-1">
+                  <summary
+                    className="text-sm font-semibold cursor-pointer list-none flex items-center gap-2 py-2 min-h-[44px]"
+                    style={{ color: "var(--color-link)" }}
+                  >
+                    <span aria-hidden="true" className="transition-transform duration-200 group-open:rotate-90">
+                      ›
+                    </span>
+                    <span>Open group trends</span>
+                  </summary>
+                  <div className="pt-2">
+                    <CategoryTrendsGrid categories={categoryTrends} />
                   </div>
-                )}
-              </section>
-
-              <section className="flex flex-col gap-3">
-                <div className="flex flex-col gap-1">
-                  <h2 className="text-lg font-heading text-text" style={{ fontVariationSettings: "\"SOFT\" 100, \"WONK\" 0" }}>
-                    Golf score
-                  </h2>
-                  <p className="text-xs text-text-secondary">Lower is better. Band shows age-group 25th to 75th percentile.</p>
-                </div>
-                {golfScore.trends.length === 0 ? (
-                  <p className="text-sm text-text-secondary">No golf scores yet.</p>
-                ) : (
-                  golfScore.trends.map((trend) => (
-                    <GolfScoreCard key={trend.skillSlug} trend={trend} editContext={editContext} />
-                  ))
-                )}
-              </section>
-
-              {faultTags.length > 0 && (
-                <section className="flex flex-col gap-3">
-                  <h2 className="text-lg font-heading text-text" style={{ fontVariationSettings: "\"SOFT\" 100, \"WONK\" 0" }}>
-                    Fault tags{" "}
-                    <span className="text-xs font-body text-text-secondary">coach only</span>
-                  </h2>
-                  <FaultTagBars tags={faultTags} />
-                </section>
+                </details>
               )}
-
-              <section className="flex flex-col gap-3">
-                <h2 className="text-lg font-heading text-text" style={{ fontVariationSettings: "\"SOFT\" 100, \"WONK\" 0" }}>
-                  Session cadence
+            </section>
+            {standingsVisible && (
+              <section
+                className="flex flex-col gap-3 min-w-0"
+                aria-labelledby="coach-standings-heading"
+                data-testid="coach-progress-group-standings"
+              >
+                <h2 id="coach-standings-heading" className="text-lg font-heading text-text">
+                  {`Where ${swimmer.firstName} stands`}
                 </h2>
-                <SessionCadence weeks={cadence} />
+                <GroupStandings lanes={lanes} />
               </section>
-            </div>
+            )}
+          </div>
 
-            <div className="flex flex-col gap-4 min-w-0">
-              <h2 className="text-lg font-heading text-text" style={{ fontVariationSettings: "\"SOFT\" 100, \"WONK\" 0" }}>
+          {/* DOM order (= phone order): Golf, Fault tags, Session
+              cadence, Skills — unchanged from the prior layout. On
+              tablet+ we flip to a single flex column with explicit
+              `order` so Skills leads and Golf + Session cadence sit
+              directly beneath it at the same full width:
+                phone:   Golf → Fault tags → Session cadence → Skills
+                tablet+: Skills → Golf → Fault tags → Session cadence
+              Each section mounts exactly once; `tablet:order-N` moves
+              it without a second copy. */}
+          <div className="flex flex-col gap-6 tablet:gap-10" data-testid="coach-progress-main-sections">
+            <section className="flex flex-col gap-3 min-w-0 tablet:order-2" data-testid="coach-progress-golf">
+              <div className="flex flex-col gap-1">
+                <h2 className="text-lg font-heading text-text">
+                  Golf score
+                </h2>
+                <p className="text-xs text-text-secondary">Lower is better. Band shows age-group 25th to 75th percentile.</p>
+              </div>
+              {!golfHasScoredPoints ? (
+                <p className="text-sm text-text-secondary" data-testid="coach-progress-golf-empty">No golf scores yet.</p>
+              ) : (
+                golfScore.trends.map((trend) => (
+                  <GolfScoreCard key={trend.skillSlug} trend={trend} editContext={editContext} />
+                ))
+              )}
+            </section>
+
+            {faultTags.length > 0 && (
+              <section className="flex flex-col gap-3 min-w-0 tablet:order-3" data-testid="coach-progress-faults">
+                <h2 className="text-lg font-heading text-text">
+                  Fault tags{" "}
+                  <span className="text-xs font-body text-text-secondary">coach only</span>
+                </h2>
+                <FaultTagBars tags={faultTags} />
+              </section>
+            )}
+
+            <section className="flex flex-col gap-3 min-w-0 tablet:order-4" data-testid="coach-progress-cadence">
+              <h2 className="text-lg font-heading text-text">
+                Session cadence
+              </h2>
+              <SessionCadence weeks={cadence} />
+            </section>
+
+            <section className="flex flex-col gap-4 min-w-0 tablet:order-1" data-testid="coach-progress-skills">
+              <h2 className="text-lg font-heading text-text">
                 Skills
               </h2>
               <StrokeGroupsPanel
@@ -224,8 +261,19 @@ export default function SwimmerProgressContent({
                 editContext={editContext}
                 rollups={latestScreenGroupRollups}
               />
-            </div>
+            </section>
           </div>
+
+          <section className="flex flex-col gap-3" data-testid="starts-section">
+            <h2 className="text-lg font-heading text-text">
+              Starts
+            </h2>
+            <StartsSection
+              startProgress={progress.startProgress}
+              swimmerSkills={progress.skills}
+              swimmerFirstName={swimmer.firstName}
+            />
+          </section>
         </div>
       </main>
     </div>
@@ -243,10 +291,7 @@ function PageHeader({ swimmer }: { swimmer: CoachSwimmerDetail }) {
         >
           ‹ {swimmer.firstName} {swimmer.lastName}
         </a>
-        <h1
-          className="text-3xl tablet:text-5xl font-heading"
-          style={{ color: "var(--color-heading)", fontVariationSettings: "\"SOFT\" 100, \"WONK\" 0" }}
-        >
+        <h1 className="text-3xl tablet:text-5xl font-heading text-heading">
           {swimmer.firstName}&apos;s Progress
         </h1>
       </div>

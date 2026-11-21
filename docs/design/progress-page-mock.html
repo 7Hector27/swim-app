@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Coach progress page mock (reference only, sample data)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600&family=Fraunces:opsz,wght@9..144,600&display=swap">
+<style>
+body{margin:0}
+a{color:#1F45F0}a:hover{color:#14267A}
+.h2{margin:0;font-family:Fraunces,Georgia,serif;font-weight:600;font-size:22px}
+.sub{margin:0;font-size:13px;color:#4A5470}
+.card{background:#FFFFFF;border:1px solid #D9DFEC;border-radius:16px;padding:20px}
+.pill{font-family:inherit;font-size:13px;padding:7px 14px;border-radius:999px;border:1px solid #D9DFEC;background:#FFFFFF;color:#4A5470;min-height:36px}
+.pill.on{background:#1F45F0;border-color:#1F45F0;color:#FFFFFF;font-weight:600}
+.chip{font-size:13px;padding:6px 12px;border-radius:999px;background:#E3E9FD;color:#14267A}
+.grid{display:grid;grid-template-columns:200px repeat(8,1fr);gap:4px;align-items:center}
+.mini{display:grid;grid-template-columns:minmax(0,1fr) repeat(6,34px);gap:4px;align-items:center;font-size:13px}
+.h{font-size:11px;color:#4A5470;text-align:center;line-height:1.3}
+.n{font-size:13px;font-weight:500}
+.c{height:30px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600}
+.s{height:24px;font-size:12px}
+.g0{background:#EEF1F7;color:#4A5470}
+.g1{background:#DCE4FB;color:#141B2D}
+.g2{background:#B3C4F7;color:#141B2D}
+.g3{background:#7E99F0;color:#141B2D}
+.g4{background:#3457E0;color:#FFFFFF}
+.g5{background:#1A2F9E;color:#FFFFFF}
+.e{border:1px dashed #C3CBDD;box-sizing:border-box}
+.tile{background:#FFFFFF;border:1px solid #D9DFEC;border-radius:14px;padding:14px 16px;display:flex;flex-direction:column;gap:2px}
+.big{font-family:Fraunces,Georgia,serif;font-weight:600;font-size:28px}
+.lbl{font-size:12px;color:#4A5470}
+</style>
+<div style="box-sizing: border-box; padding: 48px 24px 64px; background: #F5F7FB; color: #141B2D; font-family: Figtree, system-ui, sans-serif">
+<div style="max-width: 1120px; margin: 0 auto; display: flex; flex-direction: column; gap: 40px">
+
+<div style="display: flex; flex-direction: column; gap: 20px">
+<div style="display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 16px">
+<div style="display: flex; flex-direction: column; gap: 4px">
+<a href="#" style="font-size: 13px">‹ Lily Carbajal</a>
+<h1 style="margin: 0; font-family: Fraunces, Georgia, serif; font-weight: 600; font-size: 44px">Lily's Progress</h1>
+</div>
+<button style="font-family: inherit; font-size: 15px; font-weight: 600; padding: 12px 26px; border-radius: 999px; border: none; background: #1F45F0; color: #FFFFFF; min-height: 44px">Evaluate</button>
+</div>
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px">
+<div class="tile" style="background: #1F45F0; border-color: #1F45F0; color: #FFFFFF"><span class="big">+7</span><span style="font-size: 12px">levels gained this season</span></div>
+<div class="tile"><span class="big">5</span><span class="lbl">skills moved up since October</span></div>
+<div class="tile"><span class="big">68 of 135</span><span class="lbl">skills rated so far</span></div>
+<div class="tile"><span class="big">Nov 17</span><span class="lbl">last evaluated, 2 days ago</span></div>
+</div>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 12px">
+<h2 class="h2">What to work on next</h2>
+<div class="card" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px">
+<div style="display: flex; gap: 12px; align-items: flex-start">
+<span class="c g1" style="width: 34px; flex: none">1</span>
+<div style="display: flex; flex-direction: column; gap: 2px"><span style="font-weight: 600; font-size: 15px">Core stability</span><span class="sub">Lowest skill under Buoyancy and balance, which three freestyle skills build on.</span></div>
+</div>
+<div style="display: flex; gap: 12px; align-items: flex-start">
+<span class="c g2" style="width: 34px; flex: none">2</span>
+<div style="display: flex; flex-direction: column; gap: 2px"><span style="font-weight: 600; font-size: 15px">Pull (freestyle)</span><span class="sub">Has not moved in 5 evaluations.</span></div>
+</div>
+<div style="display: flex; gap: 12px; align-items: flex-start">
+<span class="c g2" style="width: 34px; flex: none">2</span>
+<div style="display: flex; flex-direction: column; gap: 2px"><span style="font-weight: 600; font-size: 15px">Breath timing, right side</span><span class="sub">One level behind the left side.</span></div>
+</div>
+</div>
+</div>
+
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 24px">
+<div style="display: flex; flex-direction: column; gap: 12px">
+<h2 class="h2">Snapshot</h2>
+<div class="card" style="display: flex; flex-direction: column; gap: 8px">
+<svg width="100%" viewBox="-40 0 480 320" role="img" aria-label="Radar of average level across nine skill groups. The filled shape is now and the dashed outline is the first evaluation. Freestyle is highest at 2.6. IM turns and Racing are not rated yet.">
+<circle cx="200" cy="170" r="24" fill="none" stroke="#D9DFEC" stroke-width="1"></circle>
+<circle cx="200" cy="170" r="48" fill="none" stroke="#D9DFEC" stroke-width="1"></circle>
+<circle cx="200" cy="170" r="72" fill="none" stroke="#D9DFEC" stroke-width="1"></circle>
+<circle cx="200" cy="170" r="96" fill="none" stroke="#D9DFEC" stroke-width="1"></circle>
+<circle cx="200" cy="170" r="120" fill="none" stroke="#C3CBDD" stroke-width="1"></circle>
+<line x1="200" y1="170" x2="200" y2="50" stroke="#D9DFEC" stroke-width="1"></line>
+<line x1="200" y1="170" x2="277.1" y2="78.1" stroke="#D9DFEC" stroke-width="1"></line>
+<line x1="200" y1="170" x2="318.2" y2="149.2" stroke="#D9DFEC" stroke-width="1"></line>
+<line x1="200" y1="170" x2="303.9" y2="230" stroke="#D9DFEC" stroke-width="1"></line>
+<line x1="200" y1="170" x2="241" y2="282.8" stroke="#D9DFEC" stroke-width="1"></line>
+<line x1="200" y1="170" x2="159" y2="282.8" stroke="#D9DFEC" stroke-width="1"></line>
+<line x1="200" y1="170" x2="96.1" y2="230" stroke="#D9DFEC" stroke-width="1"></line>
+<line x1="200" y1="170" x2="81.8" y2="149.2" stroke="#D9DFEC" stroke-width="1"></line>
+<line x1="200" y1="170" x2="122.9" y2="78.1" stroke="#D9DFEC" stroke-width="1"></line>
+<text x="205" y="150" font-size="11" fill="#4A5470">1</text><text x="205" y="102" font-size="11" fill="#4A5470">3</text><text x="205" y="62" font-size="11" fill="#4A5470">5</text>
+<polygon points="200,131.6 227.8,136.9 261.5,159.2 243.6,195.2 212.3,203.8 189.3,199.3 164.7,190.4 200,170 200,170" fill="#1F45F0" fill-opacity="0.22" stroke="#1F45F0" stroke-width="2.5" stroke-linejoin="round"></polygon>
+<polygon points="200,141.2 215.4,151.6 235.5,163.8 227,185.6 208.2,192.6 191.8,192.6 175.1,184.4 200,170 200,170" fill="none" stroke="#141B2D" stroke-width="1.5" stroke-dasharray="4 4" stroke-linejoin="round"></polygon>
+<circle cx="200" cy="131.6" r="4" fill="#1F45F0"></circle><circle cx="227.8" cy="136.9" r="4" fill="#1F45F0"></circle><circle cx="261.5" cy="159.2" r="4" fill="#1F45F0"></circle><circle cx="243.6" cy="195.2" r="4" fill="#1F45F0"></circle><circle cx="212.3" cy="203.8" r="4" fill="#1F45F0"></circle><circle cx="189.3" cy="199.3" r="4" fill="#1F45F0"></circle><circle cx="164.7" cy="190.4" r="4" fill="#1F45F0"></circle>
+<text x="200" y="32" font-size="13" fill="#141B2D" text-anchor="middle">Fundamentals</text>
+<text x="290" y="64" font-size="13" fill="#141B2D">Water confidence</text>
+<text x="338" y="150" font-size="13" font-weight="600" fill="#141B2D">Freestyle</text>
+<text x="321" y="246" font-size="13" fill="#141B2D">Backstroke</text>
+<text x="250" y="306" font-size="13" fill="#141B2D" text-anchor="middle">Breaststroke</text>
+<text x="150" y="306" font-size="13" fill="#141B2D" text-anchor="middle">Butterfly</text>
+<text x="79" y="246" font-size="13" fill="#141B2D" text-anchor="end">Starts and turns</text>
+<text x="62" y="150" font-size="13" fill="#4A5470" text-anchor="end">IM turns</text>
+<text x="110" y="64" font-size="13" fill="#4A5470" text-anchor="end">Racing</text>
+</svg>
+<div style="display: flex; flex-wrap: wrap; gap: 16px; align-items: center" class="lbl">
+<span style="display: flex; align-items: center; gap: 6px"><svg width="22" height="12" viewBox="0 0 22 12" aria-hidden="true"><rect x="1" y="1" width="20" height="10" rx="2" fill="#1F45F0" fill-opacity="0.22" stroke="#1F45F0" stroke-width="2"></rect></svg>Now</span>
+<span style="display: flex; align-items: center; gap: 6px"><svg width="22" height="12" viewBox="0 0 22 12" aria-hidden="true"><rect x="1" y="1" width="20" height="10" rx="2" fill="none" stroke="#141B2D" stroke-width="1.5" stroke-dasharray="4 4"></rect></svg>First evaluation</span>
+<span>Grey labels are not rated yet</span>
+</div>
+</div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 12px">
+<h2 class="h2">Where she stands</h2>
+<div class="card">
+<svg width="100%" viewBox="0 0 520 300" role="img" aria-label="Average level for each of nine skill groups on a scale of 1 to 5, showing where each group started and where it is now">
+<text x="150" y="14" font-size="11" fill="#4A5470" text-anchor="middle">1</text><text x="220" y="14" font-size="11" fill="#4A5470" text-anchor="middle">2</text><text x="290" y="14" font-size="11" fill="#4A5470" text-anchor="middle">3</text><text x="360" y="14" font-size="11" fill="#4A5470" text-anchor="middle">4</text><text x="430" y="14" font-size="11" fill="#4A5470" text-anchor="middle">5</text>
+
+<text x="0" y="44" font-size="13" fill="#141B2D">Fundamentals</text>
+<line x1="150" y1="40" x2="430" y2="40" stroke="#D9DFEC" stroke-width="6" stroke-linecap="round"></line><line x1="164" y1="40" x2="192" y2="40" stroke="#1F45F0" stroke-width="6" stroke-linecap="round"></line>
+<circle cx="164" cy="40" r="5" fill="#FFFFFF" stroke="#141B2D" stroke-width="2"></circle><circle cx="192" cy="40" r="8" fill="#1F45F0"></circle>
+<text x="520" y="44" font-size="12" fill="#4A5470" text-anchor="end">1.6 · 6 of 7</text>
+
+<text x="0" y="74" font-size="13" fill="#141B2D">Water confidence</text>
+<line x1="150" y1="70" x2="430" y2="70" stroke="#D9DFEC" stroke-width="6" stroke-linecap="round"></line><line x1="150" y1="70" x2="206" y2="70" stroke="#1F45F0" stroke-width="6" stroke-linecap="round"></line>
+<circle cx="150" cy="70" r="5" fill="#FFFFFF" stroke="#141B2D" stroke-width="2"></circle><circle cx="206" cy="70" r="8" fill="#1F45F0"></circle>
+<text x="520" y="74" font-size="12" fill="#4A5470" text-anchor="end">1.8 · 5 of 5</text>
+
+<text x="0" y="104" font-size="13" font-weight="600" fill="#141B2D">Freestyle</text>
+<line x1="150" y1="100" x2="430" y2="100" stroke="#D9DFEC" stroke-width="6" stroke-linecap="round"></line><line x1="185" y1="100" x2="262" y2="100" stroke="#1F45F0" stroke-width="6" stroke-linecap="round"></line>
+<circle cx="185" cy="100" r="5" fill="#FFFFFF" stroke="#141B2D" stroke-width="2"></circle><circle cx="262" cy="100" r="8" fill="#1F45F0"></circle>
+<text x="520" y="104" font-size="12" fill="#4A5470" text-anchor="end">2.6 · 18 of 25</text>
+
+<text x="0" y="134" font-size="13" fill="#141B2D">Backstroke</text>
+<line x1="150" y1="130" x2="430" y2="130" stroke="#D9DFEC" stroke-width="6" stroke-linecap="round"></line><line x1="171" y1="130" x2="227" y2="130" stroke="#1F45F0" stroke-width="6" stroke-linecap="round"></line>
+<circle cx="171" cy="130" r="5" fill="#FFFFFF" stroke="#141B2D" stroke-width="2"></circle><circle cx="227" cy="130" r="8" fill="#1F45F0"></circle>
+<text x="520" y="134" font-size="12" fill="#4A5470" text-anchor="end">2.1 · 24 of 24</text>
+
+<text x="0" y="164" font-size="13" fill="#141B2D">Breaststroke</text>
+<line x1="150" y1="160" x2="430" y2="160" stroke="#D9DFEC" stroke-width="6" stroke-linecap="round"></line><line x1="150" y1="160" x2="185" y2="160" stroke="#1F45F0" stroke-width="6" stroke-linecap="round"></line>
+<circle cx="150" cy="160" r="5" fill="#FFFFFF" stroke="#141B2D" stroke-width="2"></circle><circle cx="185" cy="160" r="8" fill="#1F45F0"></circle>
+<text x="520" y="164" font-size="12" fill="#4A5470" text-anchor="end">1.5 · 4 of 21</text>
+
+<text x="0" y="194" font-size="13" fill="#141B2D">Butterfly</text>
+<line x1="150" y1="190" x2="430" y2="190" stroke="#D9DFEC" stroke-width="6" stroke-linecap="round"></line><line x1="150" y1="190" x2="171" y2="190" stroke="#1F45F0" stroke-width="6" stroke-linecap="round"></line>
+<circle cx="150" cy="190" r="5" fill="#FFFFFF" stroke="#141B2D" stroke-width="2"></circle><circle cx="171" cy="190" r="8" fill="#1F45F0"></circle>
+<text x="520" y="194" font-size="12" fill="#4A5470" text-anchor="end">1.3 · 4 of 25</text>
+
+<text x="0" y="224" font-size="13" fill="#141B2D">Starts and turns</text>
+<line x1="150" y1="220" x2="430" y2="220" stroke="#D9DFEC" stroke-width="6" stroke-linecap="round"></line><line x1="164" y1="220" x2="199" y2="220" stroke="#1F45F0" stroke-width="6" stroke-linecap="round"></line>
+<circle cx="164" cy="220" r="5" fill="#FFFFFF" stroke="#141B2D" stroke-width="2"></circle><circle cx="199" cy="220" r="8" fill="#1F45F0"></circle>
+<text x="520" y="224" font-size="12" fill="#4A5470" text-anchor="end">1.7 · 7 of 18</text>
+
+<text x="0" y="254" font-size="13" fill="#4A5470">IM turns</text>
+<line x1="150" y1="250" x2="430" y2="250" stroke="#D9DFEC" stroke-width="6" stroke-linecap="round" stroke-dasharray="1 12"></line>
+<text x="520" y="254" font-size="12" fill="#4A5470" text-anchor="end">Not rated yet</text>
+
+<text x="0" y="284" font-size="13" fill="#4A5470">Racing</text>
+<line x1="150" y1="280" x2="430" y2="280" stroke="#D9DFEC" stroke-width="6" stroke-linecap="round" stroke-dasharray="1 12"></line>
+<text x="520" y="284" font-size="12" fill="#4A5470" text-anchor="end">Not rated yet</text>
+</svg>
+<p class="sub" style="margin-top: 8px">Ring is the first evaluation, dot is now. The number is the average and how many skills are rated.</p>
+</div>
+</div>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 14px">
+<div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px">
+<h2 class="h2">Skills</h2>
+<div style="display: flex; gap: 4px; background: #FFFFFF; border: 1px solid #D9DFEC; border-radius: 999px; padding: 4px">
+<button class="pill" style="border-color: transparent">Ladder</button><button class="pill on">Grid</button>
+</div>
+</div>
+<div style="display: flex; flex-wrap: wrap; gap: 8px">
+<button class="pill">Fundamentals 6/7</button><button class="pill">Water confidence 5/5</button><button class="pill on">Freestyle 18/25</button><button class="pill">Backstroke 24/24</button><button class="pill">Breaststroke 4/21</button><button class="pill">Butterfly 4/25</button><button class="pill">Starts and turns 7/18</button><button class="pill">IM turns 0/5</button><button class="pill">Racing 0/5</button>
+</div>
+<div class="card" style="display: flex; flex-direction: column; gap: 14px; overflow-x: auto">
+<div style="display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 8px">
+<span style="font-weight: 600; font-size: 16px">Freestyle · The swim</span>
+<span class="sub">Last 8 evaluations. Darker is a higher level. Dashed means not graded that day.</span>
+</div>
+<div class="grid" style="min-width: 760px">
+<span></span>
+<span class="h">Sep 8<br>Practice</span><span class="h">Sep 22<br>Drill</span><span class="h">Oct 6<br>Practice</span><span class="h">Oct 13<br>Practice</span><span class="h">Oct 27<br>Drill</span><span class="h">Nov 3<br>Race</span><span class="h">Nov 10<br>Practice</span><span class="h">Nov 17<br>Practice</span>
+
+<span class="n">Head position</span>
+<span class="c g2">2</span><span class="c e"></span><span class="c g2">2</span><span class="c g3">3</span><span class="c e"></span><span class="c g3">3</span><span class="c g3">3</span><span class="c g3">3</span>
+<span class="n">Horizontal alignment</span>
+<span class="c g2">2</span><span class="c g2">2</span><span class="c e"></span><span class="c g3">3</span><span class="c g3">3</span><span class="c e"></span><span class="c g4">4</span><span class="c g4">4</span>
+<span class="n">Hip position</span>
+<span class="c g2">2</span><span class="c g2">2</span><span class="c e"></span><span class="c g3">3</span><span class="c g3">3</span><span class="c e"></span><span class="c g4">4</span><span class="c g4">4</span>
+<span class="n">Rotation</span>
+<span class="c g1">1</span><span class="c e"></span><span class="c g2">2</span><span class="c g2">2</span><span class="c e"></span><span class="c g3">3</span><span class="c e"></span><span class="c g3">3</span>
+
+<span class="n" style="color: #1F45F0; font-weight: 600">▾ Catch</span>
+<span class="c g1">1</span><span class="c g2">2</span><span class="c g1">1</span><span class="c g2">2</span><span class="c g3">3</span><span class="c g2">2</span><span class="c g3">3</span><span class="c g3">3</span>
+
+<div style="grid-column: 1 / -1; background: #F5F7FB; border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 12px; margin: 4px 0 8px">
+<svg width="100%" viewBox="0 0 1040 216" role="img" aria-label="Level ladder for freestyle catch, climbing from level 1 Emerging to level 3 Competent over eight evaluations">
+<rect x="0" y="10" width="1040" height="36" fill="#FFFFFF"></rect>
+<rect x="0" y="82" width="1040" height="36" fill="#E3E9FD"></rect>
+<rect x="0" y="154" width="1040" height="36" fill="#FFFFFF"></rect>
+<text x="12" y="32" font-size="12" fill="#4A5470">5 Mastery</text>
+<text x="12" y="68" font-size="12" fill="#4A5470">4 Advanced</text>
+<text x="12" y="104" font-size="12" font-weight="600" fill="#1F45F0">3 Competent</text>
+<text x="12" y="140" font-size="12" fill="#4A5470">2 Developing</text>
+<text x="12" y="176" font-size="12" fill="#4A5470">1 Emerging</text>
+<path d="M150 172 H211 V136 H334 V172 H457 V136 H580 V100 H703 V136 H826 V100 H1010" fill="none" stroke="#1F45F0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"></path>
+<circle cx="150" cy="172" r="6" fill="#FFFFFF" stroke="#1F45F0" stroke-width="2.5"></circle>
+<polygon points="273,128 281,141 265,141" fill="#FFFFFF" stroke="#1F45F0" stroke-width="2.5" stroke-linejoin="round"></polygon>
+<circle cx="396" cy="172" r="6" fill="#FFFFFF" stroke="#1F45F0" stroke-width="2.5"></circle>
+<circle cx="519" cy="136" r="6" fill="#FFFFFF" stroke="#1F45F0" stroke-width="2.5"></circle>
+<polygon points="641,92 649,105 633,105" fill="#FFFFFF" stroke="#1F45F0" stroke-width="2.5" stroke-linejoin="round"></polygon>
+<polygon points="764,128 772,136 764,144 756,136" fill="#FFFFFF" stroke="#1F45F0" stroke-width="2.5" stroke-linejoin="round"></polygon>
+<circle cx="887" cy="100" r="6" fill="#FFFFFF" stroke="#1F45F0" stroke-width="2.5"></circle>
+<circle cx="1010" cy="100" r="11" fill="#1F45F0"></circle>
+<text x="1010" y="104" font-size="12" font-weight="600" fill="#FFFFFF" text-anchor="middle">3</text>
+<text x="150" y="210" font-size="11" fill="#4A5470" text-anchor="middle">Sep 8</text><text x="273" y="210" font-size="11" fill="#4A5470" text-anchor="middle">Sep 22</text><text x="396" y="210" font-size="11" fill="#4A5470" text-anchor="middle">Oct 6</text><text x="519" y="210" font-size="11" fill="#4A5470" text-anchor="middle">Oct 13</text><text x="641" y="210" font-size="11" fill="#4A5470" text-anchor="middle">Oct 27</text><text x="764" y="210" font-size="11" fill="#4A5470" text-anchor="middle">Nov 3</text><text x="887" y="210" font-size="11" fill="#4A5470" text-anchor="middle">Nov 10</text><text x="1010" y="210" font-size="11" fill="#4A5470" text-anchor="middle">Nov 17</text>
+</svg>
+<div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center">
+<span class="chip" style="background: #1F45F0; color: #FFFFFF; font-weight: 600">Now: Competent</span>
+<span class="chip">Up 2 levels since Sep 8</span>
+<span class="chip">Held Competent 2 sessions in a row</span>
+<span class="chip" style="background: #FFFFFF; color: #4A5470; border: 1px solid #D9DFEC">Next: Advanced, correct at race pace</span>
+<span class="sub">Circle is practice, triangle is drill, diamond is race.</span>
+</div>
+</div>
+
+<span class="n">Pull</span>
+<span class="c g2">2</span><span class="c e"></span><span class="c g2">2</span><span class="c e"></span><span class="c g2">2</span><span class="c e"></span><span class="c g2">2</span><span class="c g2">2</span>
+<span class="n">Kick</span>
+<span class="c g3">3</span><span class="c g3">3</span><span class="c e"></span><span class="c g3">3</span><span class="c g4">4</span><span class="c e"></span><span class="c g4">4</span><span class="c g4">4</span>
+<span class="n">Breath timing, left</span>
+<span class="c g1">1</span><span class="c e"></span><span class="c g2">2</span><span class="c g2">2</span><span class="c e"></span><span class="c g3">3</span><span class="c e"></span><span class="c g3">3</span>
+<span class="n">Breath timing, right</span>
+<span class="c g1">1</span><span class="c e"></span><span class="c g1">1</span><span class="c g2">2</span><span class="c e"></span><span class="c g2">2</span><span class="c e"></span><span class="c g2">2</span>
+</div>
+</div>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 14px">
+<h2 class="h2">Starts</h2>
+<div style="display: flex; flex-wrap: wrap; gap: 8px">
+<button class="pill on">Track start · 4 of 6</button><button class="pill">Backstroke start · Grade 2</button><button class="pill">Relay start · Not started</button>
+</div>
+<div class="card" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 24px; align-items: start">
+<div style="display: flex; flex-direction: column; gap: 10px">
+<svg width="100%" viewBox="0 0 680 170" role="img" aria-label="Dive arc from the block to the water with six components in order: reaction level 3, acceleration level 2, height level 3, legs and feet not graded, head arms and hands not graded, distance 7 feet">
+<rect x="90" y="130" width="580" height="36" fill="#E3E9FD"></rect>
+<line x1="90" y1="130" x2="670" y2="130" stroke="#7E99F0" stroke-width="1.5"></line>
+<rect x="30" y="64" width="60" height="102" rx="4" fill="#D9DFEC"></rect>
+<path d="M60 50 Q 300 -20 560 128" fill="none" stroke="#8A96B5" stroke-width="2" stroke-dasharray="2 7" stroke-linecap="round"></path>
+<circle cx="60" cy="50" r="15" fill="#7E99F0"></circle><text x="60" y="55" font-size="13" font-weight="600" fill="#141B2D" text-anchor="middle">3</text>
+<text x="38" y="22" font-size="12" fill="#4A5470">Reaction</text>
+<circle cx="147" cy="32" r="15" fill="#B3C4F7"></circle><text x="147" y="37" font-size="13" font-weight="600" fill="#141B2D" text-anchor="middle">2</text>
+<text x="147" y="68" font-size="12" fill="#4A5470" text-anchor="middle">Acceleration</text>
+<circle cx="280" cy="31" r="15" fill="#7E99F0"></circle><text x="280" y="36" font-size="13" font-weight="600" fill="#141B2D" text-anchor="middle">3</text>
+<text x="280" y="68" font-size="12" fill="#4A5470" text-anchor="middle">Height</text>
+<circle cx="431" cy="68" r="14" fill="#FFFFFF" stroke="#8A96B5" stroke-width="1.5" stroke-dasharray="3 3"></circle>
+<text x="431" y="44" font-size="12" fill="#4A5470" text-anchor="middle">Legs and feet</text>
+<circle cx="519" cy="106" r="14" fill="#FFFFFF" stroke="#8A96B5" stroke-width="1.5" stroke-dasharray="3 3"></circle>
+<text x="542" y="100" font-size="12" fill="#4A5470">Head, arms, hands</text>
+<circle cx="560" cy="130" r="6" fill="#B3C4F7" stroke="#1F45F0" stroke-width="2"></circle>
+<line x1="92" y1="150" x2="560" y2="150" stroke="#1F45F0" stroke-width="1.5"></line><line x1="92" y1="144" x2="92" y2="156" stroke="#1F45F0" stroke-width="1.5"></line><line x1="560" y1="144" x2="560" y2="156" stroke="#1F45F0" stroke-width="1.5"></line>
+<text x="326" y="164" font-size="12" font-weight="600" fill="#14267A" text-anchor="middle">Distance 7 ft</text>
+</svg>
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px">
+<div class="tile" style="background: #F5F7FB"><span class="lbl">Reaction time</span><span class="big">0.82 s</span><span class="lbl">0.06 s faster than her first</span></div>
+<div class="tile" style="background: #F5F7FB"><span class="lbl">Entry distance</span><span class="big">7 ft</span><span class="lbl">1 ft farther than her first</span></div>
+<div class="tile" style="background: #F5F7FB"><span class="lbl">Still to grade</span><span class="big">2</span><span class="lbl">Both are on the entry</span></div>
+</div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 10px">
+<span style="font-weight: 600; font-size: 15px">Each part, session by session</span>
+<div class="mini">
+<span></span><span class="h">Sep 22</span><span class="h">Oct 6</span><span class="h">Oct 20</span><span class="h">Nov 3</span><span class="h">Nov 10</span><span class="h">Nov 17</span>
+<span>Reaction</span><span class="c s g2">2</span><span class="c s g2">2</span><span class="c s e"></span><span class="c s g3">3</span><span class="c s g3">3</span><span class="c s g3">3</span>
+<span>Acceleration</span><span class="c s g1">1</span><span class="c s e"></span><span class="c s g2">2</span><span class="c s g2">2</span><span class="c s e"></span><span class="c s g2">2</span>
+<span>Height</span><span class="c s g2">2</span><span class="c s g2">2</span><span class="c s g2">2</span><span class="c s e"></span><span class="c s g3">3</span><span class="c s g3">3</span>
+<span>Distance</span><span class="c s g1">1</span><span class="c s e"></span><span class="c s g1">1</span><span class="c s g2">2</span><span class="c s g2">2</span><span class="c s g2">2</span>
+<span style="color: #4A5470">Legs and feet</span><span class="c s e"></span><span class="c s e"></span><span class="c s e"></span><span class="c s e"></span><span class="c s e"></span><span class="c s e"></span>
+<span style="color: #4A5470">Head, arms, hands</span><span class="c s e"></span><span class="c s e"></span><span class="c s e"></span><span class="c s e"></span><span class="c s e"></span><span class="c s e"></span>
+</div>
+<p class="sub">The start gets its overall grade once all six parts are graded.</p>
+</div>
+</div>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 14px">
+<div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px">
+<div style="display: flex; flex-direction: column; gap: 2px"><h2 class="h2">Golf score</h2><p class="sub">Time plus strokes for one 25 at race pace. Lower is better. The shaded band is her age group.</p></div>
+<div style="display: flex; flex-wrap: wrap; gap: 8px"><button class="pill on">Push-off</button><button class="pill">Deck dive</button><button class="pill">Block dive</button></div>
+</div>
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px">
+<div class="card" style="padding: 16px; display: flex; flex-direction: column; gap: 6px">
+<span style="font-weight: 600; font-size: 14px">Freestyle</span>
+<div style="display: flex; align-items: baseline; gap: 8px"><span class="big">37.2</span><span class="lbl">down 3.8 since Sep</span></div>
+<svg width="100%" viewBox="0 0 240 80" role="img" aria-label="Freestyle golf score falling from 41 to 37.2, now inside the age group band">
+<rect x="0" y="34" width="240" height="26" fill="#E3E9FD"></rect>
+<polyline points="8,14 64,22 120,30 176,40 232,46" fill="none" stroke="#1F45F0" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"></polyline>
+<circle cx="8" cy="14" r="3.5" fill="#FFFFFF" stroke="#1F45F0" stroke-width="2"></circle><circle cx="64" cy="22" r="3.5" fill="#FFFFFF" stroke="#1F45F0" stroke-width="2"></circle><circle cx="120" cy="30" r="3.5" fill="#FFFFFF" stroke="#1F45F0" stroke-width="2"></circle><circle cx="176" cy="40" r="3.5" fill="#FFFFFF" stroke="#1F45F0" stroke-width="2"></circle><circle cx="232" cy="46" r="5" fill="#1F45F0"></circle>
+</svg>
+<span class="lbl">14.2 s + 23 strokes</span>
+</div>
+<div class="card" style="padding: 16px; display: flex; flex-direction: column; gap: 6px">
+<span style="font-weight: 600; font-size: 14px">Backstroke</span>
+<div style="display: flex; align-items: baseline; gap: 8px"><span class="big">44.0</span><span class="lbl">down 1.5 since Oct</span></div>
+<svg width="100%" viewBox="0 0 240 80" role="img" aria-label="Backstroke golf score falling from 45.5 to 44, still above the age group band">
+<rect x="0" y="40" width="240" height="26" fill="#E3E9FD"></rect>
+<polyline points="8,16 120,24 232,26" fill="none" stroke="#1F45F0" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"></polyline>
+<circle cx="8" cy="16" r="3.5" fill="#FFFFFF" stroke="#1F45F0" stroke-width="2"></circle><circle cx="120" cy="24" r="3.5" fill="#FFFFFF" stroke="#1F45F0" stroke-width="2"></circle><circle cx="232" cy="26" r="5" fill="#1F45F0"></circle>
+</svg>
+<span class="lbl">17.0 s + 27 strokes</span>
+</div>
+<div class="card" style="padding: 16px; display: flex; flex-direction: column; gap: 6px">
+<span style="font-weight: 600; font-size: 14px">Breaststroke</span>
+<div style="display: flex; align-items: baseline; gap: 8px"><span class="big">49.5</span><span class="lbl">first score</span></div>
+<svg width="100%" viewBox="0 0 240 80" role="img" aria-label="Breaststroke golf score, one point at 49.5">
+<rect x="0" y="40" width="240" height="26" fill="#E3E9FD"></rect>
+<circle cx="232" cy="22" r="5" fill="#1F45F0"></circle>
+</svg>
+<span class="lbl">19.5 s + 30 strokes</span>
+</div>
+<div class="card" style="padding: 16px; display: flex; flex-direction: column; gap: 6px; background: #F5F7FB">
+<span style="font-weight: 600; font-size: 14px">Butterfly</span>
+<span class="sub" style="padding: 22px 0">No golf scores yet. Record one from the Numbers section of a butterfly evaluation.</span>
+</div>
+</div>
+</div>
+
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 24px">
+<div style="display: flex; flex-direction: column; gap: 12px">
+<h2 class="h2">Evaluations by week</h2>
+<div class="card" style="display: flex; flex-direction: column; gap: 10px">
+<div style="display: grid; grid-template-columns: repeat(12, 1fr); gap: 4px">
+<span class="c g1">1</span><span class="c g0">0</span><span class="c g1">1</span><span class="c g1">1</span><span class="c g0">0</span><span class="c g3">2</span><span class="c g1">1</span><span class="c g0">0</span><span class="c g1">1</span><span class="c g3">2</span><span class="c g0">0</span><span class="c g1">1</span>
+</div>
+<div style="display: flex; justify-content: space-between" class="lbl"><span>Aug 31</span><span>Nov 16</span></div>
+<p class="sub">10 evaluations in 12 weeks, about one every 8 days. Longest gap: 2 weeks.</p>
+</div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 12px">
+<h2 class="h2">Most common faults</h2>
+<div class="card" style="display: flex; flex-direction: column; gap: 10px">
+<div style="display: grid; grid-template-columns: 170px 1fr 24px; gap: 10px; align-items: center; font-size: 13px">
+<span>Lead arm drops</span><span style="height: 12px; border-radius: 6px; background: #1F45F0; width: 100%"></span><span style="text-align: right; font-weight: 600">6</span>
+<span>Hips sink</span><span style="height: 12px; border-radius: 6px; background: #1F45F0; width: 83%"></span><span style="text-align: right; font-weight: 600">5</span>
+<span>Kick stops</span><span style="height: 12px; border-radius: 6px; background: #1F45F0; width: 50%"></span><span style="text-align: right; font-weight: 600">3</span>
+<span>Breaks down 2nd length</span><span style="height: 12px; border-radius: 6px; background: #1F45F0; width: 50%"></span><span style="text-align: right; font-weight: 600">3</span>
+<span>Over-rotates</span><span style="height: 12px; border-radius: 6px; background: #1F45F0; width: 33%"></span><span style="text-align: right; font-weight: 600">2</span>
+</div>
+<p class="sub">Coach only. Parents never see fault tags.</p>
+</div>
+</div>
+</div>
+
+<p class="sub">All numbers on this page are sample data.</p>
+</div>
+</div>
+</body>
+</html>

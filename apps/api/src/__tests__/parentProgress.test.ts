@@ -94,10 +94,15 @@ describe("GET /swimmers/:id/progress (parent)", () => {
   it("includes screen-based sessions (screenSlug set, categoryId null) in latestCoachingNotes", async () => {
     authAs(profileParent);
 
+    // Latest-priority query selects coachFullName (from profiles.full_name
+    // via the leftJoin); the session-dedupe query doesn't. The mock row
+    // carries both so it matches the real DB row shape for whichever
+    // query reads it. The route derives coachFirstName server-side.
     const sessionRow = {
       screenSlug: "freestyle",
       sessionDate: "2025-06-01",
       coachingPriority: "Work on breathing timing",
+      coachFullName: null,
     };
 
     mockComputeSwimmerProgress.mockResolvedValue(emptyProgressResult);
@@ -115,12 +120,14 @@ describe("GET /swimmers/:id/progress (parent)", () => {
           }),
         }),
       })
-      // latest-priority query: .select().from().where().orderBy().limit(1)
+      // latest-priority query: .select().from().leftJoin().where().orderBy().limit(1)
       .mockReturnValueOnce({
         from: vi.fn().mockReturnValue({
-          where: vi.fn().mockReturnValue({
-            orderBy: vi.fn().mockReturnValue({
-              limit: vi.fn().mockResolvedValue([sessionRow]),
+          leftJoin: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              orderBy: vi.fn().mockReturnValue({
+                limit: vi.fn().mockResolvedValue([sessionRow]),
+              }),
             }),
           }),
         }),
@@ -147,8 +154,8 @@ describe("GET /swimmers/:id/progress (parent)", () => {
     authAs(profileParent);
 
     const sessionRows = [
-      { screenSlug: "freestyle", sessionDate: "2025-06-02", coachingPriority: "Latest note" },
-      { screenSlug: "freestyle", sessionDate: "2025-06-01", coachingPriority: "Earlier note" },
+      { screenSlug: "freestyle", sessionDate: "2025-06-02", coachingPriority: "Latest note", coachFullName: null },
+      { screenSlug: "freestyle", sessionDate: "2025-06-01", coachingPriority: "Earlier note", coachFullName: null },
     ];
 
     mockComputeSwimmerProgress.mockResolvedValue(emptyProgressResult);
@@ -168,9 +175,11 @@ describe("GET /swimmers/:id/progress (parent)", () => {
       // latest-priority query (same latest row)
       .mockReturnValueOnce({
         from: vi.fn().mockReturnValue({
-          where: vi.fn().mockReturnValue({
-            orderBy: vi.fn().mockReturnValue({
-              limit: vi.fn().mockResolvedValue([sessionRows[0]]),
+          leftJoin: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              orderBy: vi.fn().mockReturnValue({
+                limit: vi.fn().mockResolvedValue([sessionRows[0]]),
+              }),
             }),
           }),
         }),
@@ -190,7 +199,7 @@ describe("GET /swimmers/:id/progress (parent)", () => {
     authAs(profileParent);
 
     const sessionRows = [
-      { screenSlug: null, sessionDate: "2025-06-01", coachingPriority: "Old note" },
+      { screenSlug: null, sessionDate: "2025-06-01", coachingPriority: "Old note", coachFullName: null },
     ];
 
     mockComputeSwimmerProgress.mockResolvedValue(emptyProgressResult);
@@ -210,9 +219,11 @@ describe("GET /swimmers/:id/progress (parent)", () => {
       // latest-priority query (no non-voided sessions)
       .mockReturnValueOnce({
         from: vi.fn().mockReturnValue({
-          where: vi.fn().mockReturnValue({
-            orderBy: vi.fn().mockReturnValue({
-              limit: vi.fn().mockResolvedValue([]),
+          leftJoin: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              orderBy: vi.fn().mockReturnValue({
+                limit: vi.fn().mockResolvedValue([]),
+              }),
             }),
           }),
         }),
@@ -234,7 +245,7 @@ describe("GET /swimmers/:id/progress (parent)", () => {
     authAs(profileParent);
 
     const sessionRows = [
-      { screenSlug: "freestyle", sessionDate: "2025-06-02", coachingPriority: null },
+      { screenSlug: "freestyle", sessionDate: "2025-06-02", coachingPriority: null, coachFullName: null },
     ];
 
     mockComputeSwimmerProgress.mockResolvedValue(emptyProgressResult);
@@ -252,9 +263,11 @@ describe("GET /swimmers/:id/progress (parent)", () => {
       })
       .mockReturnValueOnce({
         from: vi.fn().mockReturnValue({
-          where: vi.fn().mockReturnValue({
-            orderBy: vi.fn().mockReturnValue({
-              limit: vi.fn().mockResolvedValue([]),
+          leftJoin: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              orderBy: vi.fn().mockReturnValue({
+                limit: vi.fn().mockResolvedValue([]),
+              }),
             }),
           }),
         }),
@@ -275,10 +288,13 @@ describe("GET /swimmers/:id/progress (parent)", () => {
     const latestRow = {
       sessionDate: "2025-06-10",
       coachingPriority: "Rotate the hips more",
+      // coachFullName is what the DB leftJoin returns — the route trims it
+      // to the first token before serializing to coachFirstName.
+      coachFullName: "Jason Riley",
     };
     const perScreen = [
-      { screenSlug: "freestyle", sessionDate: "2025-06-10", coachingPriority: "Rotate the hips more" },
-      { screenSlug: "backstroke", sessionDate: "2025-05-01", coachingPriority: "Head stillness" },
+      { screenSlug: "freestyle", sessionDate: "2025-06-10", coachingPriority: "Rotate the hips more", coachFullName: "Jason Riley" },
+      { screenSlug: "backstroke", sessionDate: "2025-05-01", coachingPriority: "Head stillness", coachFullName: "Jason Riley" },
     ];
 
     mockComputeSwimmerProgress.mockResolvedValue(emptyProgressResult);
@@ -296,9 +312,11 @@ describe("GET /swimmers/:id/progress (parent)", () => {
       })
       .mockReturnValueOnce({
         from: vi.fn().mockReturnValue({
-          where: vi.fn().mockReturnValue({
-            orderBy: vi.fn().mockReturnValue({
-              limit: vi.fn().mockResolvedValue([latestRow]),
+          leftJoin: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              orderBy: vi.fn().mockReturnValue({
+                limit: vi.fn().mockResolvedValue([latestRow]),
+              }),
             }),
           }),
         }),
@@ -309,9 +327,11 @@ describe("GET /swimmers/:id/progress (parent)", () => {
       .set("Authorization", "Bearer token");
 
     expect(res.status).toBe(200);
+    // First-name derivation: "Jason Riley" → coachFirstName "Jason".
     expect(res.body.latestCoachingPriority).toEqual({
       text: "Rotate the hips more",
       sessionDate: "2025-06-10",
+      coachFirstName: "Jason",
     });
   });
 
@@ -323,11 +343,11 @@ describe("GET /swimmers/:id/progress (parent)", () => {
     authAs(profileParent);
 
     const sessionRows = [
-      { screenSlug: "freestyle", sessionDate: "2025-06-10", coachingPriority: "Latest (voided)" },
-      { screenSlug: "freestyle", sessionDate: "2025-06-01", coachingPriority: "Earlier (live)" },
+      { screenSlug: "freestyle", sessionDate: "2025-06-10", coachingPriority: "Latest (voided)", coachFullName: null },
+      { screenSlug: "freestyle", sessionDate: "2025-06-01", coachingPriority: "Earlier (live)", coachFullName: null },
     ];
     // The SQL EXISTS filter yields only the earlier row.
-    const latestRow = { sessionDate: "2025-06-01", coachingPriority: "Earlier (live)" };
+    const latestRow = { sessionDate: "2025-06-01", coachingPriority: "Earlier (live)", coachFullName: null };
 
     mockComputeSwimmerProgress.mockResolvedValue(emptyProgressResult);
 
@@ -344,9 +364,11 @@ describe("GET /swimmers/:id/progress (parent)", () => {
       })
       .mockReturnValueOnce({
         from: vi.fn().mockReturnValue({
-          where: vi.fn().mockReturnValue({
-            orderBy: vi.fn().mockReturnValue({
-              limit: vi.fn().mockResolvedValue([latestRow]),
+          leftJoin: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              orderBy: vi.fn().mockReturnValue({
+                limit: vi.fn().mockResolvedValue([latestRow]),
+              }),
             }),
           }),
         }),
@@ -360,6 +382,7 @@ describe("GET /swimmers/:id/progress (parent)", () => {
     expect(res.body.latestCoachingPriority).toEqual({
       text: "Earlier (live)",
       sessionDate: "2025-06-01",
+      coachFirstName: null,
     });
   });
 });

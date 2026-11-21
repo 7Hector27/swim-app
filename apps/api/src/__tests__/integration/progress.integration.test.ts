@@ -234,6 +234,88 @@ describe("GET /coach/swimmers/:id/progress — voided ratings excluded", () => {
   });
 });
 
+describe("GET /coach/swimmers/:id/progress — level descriptors", () => {
+  it("includes levelDescriptors for a skill that has them and omits the field for one that doesn't", async () => {
+    // Pick two catalog skills with contrasting descriptor state. The catalog
+    // sync inserts descriptors for free-head-position but not for free-kick;
+    // the test asserts the response mirrors that.
+    const skillWithDescriptors = await adminDb()
+      .select({ id: skills.id })
+      .from(skills)
+      .where(eq(skills.slug, "free-head-position"))
+      .limit(1);
+    if (!skillWithDescriptors[0]) throw new Error("Catalog skill free-head-position not found — run pnpm db:sync-catalog");
+    const descriptorSkillId = skillWithDescriptors[0].id;
+
+    // Rate both skills so they appear in the response's skills array.
+    const sessionRes = await request(app)
+      .post(`/coach/swimmers/${swimmerId}/sessions`)
+      .set("Authorization", `Bearer ${coach.accessToken}`)
+      .send({
+        screenSlug: "freestyle",
+        breathingPattern: "every_3",
+        sessionDate: "2026-10-20",
+        context: "practice",
+        coachingPriority: "Head position",
+        ratings: [
+          {
+            skillId: descriptorSkillId,
+            grade: 3,
+            notLegal: false,
+            noConcept: false,
+            side: null,
+            capacityValue: null,
+            capacityUnit: null,
+            measurementValue: null,
+            measurementUnit: null,
+            note: null,
+            faultTags: [],
+            ratedAt: "2026-10-20T09:00:00.000Z",
+          },
+          {
+            skillId,
+            grade: 3,
+            notLegal: false,
+            noConcept: false,
+            side: null,
+            capacityValue: null,
+            capacityUnit: null,
+            measurementValue: null,
+            measurementUnit: null,
+            note: null,
+            faultTags: [],
+            ratedAt: "2026-10-20T09:01:00.000Z",
+          },
+        ],
+      });
+    expect(sessionRes.status).toBe(201);
+
+    const progressRes = await request(app)
+      .get(`/coach/swimmers/${swimmerId}/progress`)
+      .set("Authorization", `Bearer ${coach.accessToken}`);
+    expect(progressRes.status).toBe(200);
+
+    const bySkillId = (id: string) =>
+      (progressRes.body.skills as Array<{ skillId: string; levelDescriptors?: Record<string, string> }>)
+        .find((entry) => entry.skillId === id);
+
+    const withDescriptors = bySkillId(descriptorSkillId);
+    expect(withDescriptors, "free-head-position should appear in skills").toBeDefined();
+    expect(withDescriptors?.levelDescriptors).toBeDefined();
+    // Catalog seeds all five levels for this skill.
+    expect(Object.keys(withDescriptors?.levelDescriptors ?? {}).sort()).toEqual(["1", "2", "3", "4", "5"]);
+    expect(withDescriptors?.levelDescriptors?.["3"]).toEqual(expect.any(String));
+    expect((withDescriptors?.levelDescriptors?.["3"] ?? "").length).toBeGreaterThan(0);
+
+    const withoutDescriptors = bySkillId(skillId);
+    expect(withoutDescriptors, "free-kick should appear in skills").toBeDefined();
+    // When a skill has no descriptor rows, the field is omitted entirely —
+    // not an empty object. The ladder relies on the key being absent so it
+    // suppresses the "Next:" chip rather than rendering with blank text.
+    expect(withoutDescriptors).not.toHaveProperty("levelDescriptors");
+  });
+});
+
 describe("GET /coach/swimmers/:id/progress — screen-based sessions", () => {
   it("ratings from a screen-based session appear in skills and coachingPriorities", async () => {
     const sessionRes = await request(app)

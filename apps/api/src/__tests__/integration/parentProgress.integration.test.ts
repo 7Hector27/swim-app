@@ -240,6 +240,59 @@ describe("GET /swimmers/:id/progress", () => {
     await adminDb().delete(evaluationSessions).where(eq(evaluationSessions.swimmerId, swimmerId));
     await coach.cleanup();
   });
+
+  it("latestCoachingPriority carries the authoring coach's name", async () => {
+    const coach = await createTestUser("parent-progress-priority-coach");
+    await adminDb().update(profiles).set({ role: "coach", fullName: "Jason Riley" }).where(eq(profiles.id, coach.userId));
+
+    const sessionRes = await request(app)
+      .post(`/coach/swimmers/${swimmerId}/sessions`)
+      .set("Authorization", `Bearer ${coach.accessToken}`)
+      .send({
+        screenSlug: "freestyle",
+        breathingPattern: "every_3",
+        sessionDate: "2026-10-15",
+        context: "practice",
+        coachingPriority: "Keep the lead arm out front when breathing to the right.",
+        ratings: [
+          {
+            skillId,
+            grade: 3,
+            notLegal: false,
+            noConcept: false,
+            side: null,
+            capacityValue: null,
+            capacityUnit: null,
+            measurementValue: null,
+            measurementUnit: null,
+            note: null,
+            faultTags: [],
+            ratedAt: "2026-10-15T09:00:00.000Z",
+          },
+        ],
+      });
+    expect(sessionRes.status).toBe(201);
+
+    const progressRes = await request(app)
+      .get(`/swimmers/${swimmerId}/progress`)
+      .set("Authorization", `Bearer ${owner.accessToken}`);
+    expect(progressRes.status).toBe(200);
+    const priority = progressRes.body.latestCoachingPriority as {
+      text: string;
+      sessionDate: string;
+      coachFirstName: string | null;
+    } | null;
+    expect(priority).not.toBeNull();
+    // Parents only see the coach's first name — server trims the rest.
+    expect(priority?.coachFirstName).toBe("Jason");
+    expect(priority?.text).toBe("Keep the lead arm out front when breathing to the right.");
+    expect(priority?.sessionDate).toBe("2026-10-15");
+
+    // Cleanup
+    await adminDb().delete(skillRatings).where(eq(skillRatings.swimmerId, swimmerId));
+    await adminDb().delete(evaluationSessions).where(eq(evaluationSessions.swimmerId, swimmerId));
+    await coach.cleanup();
+  });
 });
 
 // ── GET /swimmers/:id/score-history (parent route) ─────────────────────────
@@ -456,5 +509,133 @@ describe("GET /swimmers/:id/score-history (parent)", () => {
     expect(res.status).toBe(200);
     expect(res.body.points).toHaveLength(1);
     expect(res.body.points[0].sessionDate).toBe("2026-10-16");
+  });
+});
+
+// ── GET /swimmers/:id/golf-score (parent route) ───────────────────────────
+
+describe("GET /swimmers/:id/golf-score (parent)", () => {
+  let golfCoach: TestUser;
+  let golfSkillId: string;
+
+  beforeAll(async () => {
+    golfCoach = await createTestUser("parent-golf-coach");
+    await adminDb().update(profiles).set({ role: "coach" }).where(eq(profiles.id, golfCoach.userId));
+    const rows = await adminDb()
+      .select({ id: skills.id })
+      .from(skills)
+      .where(eq(skills.slug, "free-golf-score"))
+      .limit(1);
+    if (!rows[0]) throw new Error("free-golf-score skill not found");
+    golfSkillId = rows[0].id;
+  });
+
+  afterAll(async () => {
+    await adminDb().delete(skillRatings).where(eq(skillRatings.swimmerId, swimmerId));
+    await adminDb().delete(evaluationSessions).where(eq(evaluationSessions.swimmerId, swimmerId));
+    await golfCoach.cleanup();
+  });
+
+  async function seedGolfRating(options: { sessionDate: string; ratedAt: string; timeSeconds: number; strokes: number; category: "push_off_in_water" | "deck_dive" | "block_dive" }): Promise<void> {
+    const res = await request(app)
+      .post(`/coach/swimmers/${swimmerId}/sessions`)
+      .set("Authorization", `Bearer ${golfCoach.accessToken}`)
+      .send({
+        screenSlug: "freestyle",
+        breathingPattern: "every_3",
+        sessionDate: options.sessionDate,
+        context: "practice",
+        coachingPriority: "Lower the golf score",
+        ratings: [
+          {
+            skillId: golfSkillId,
+            grade: 3,
+            notLegal: false,
+            noConcept: false,
+            side: null,
+            capacityValue: null,
+            capacityUnit: null,
+            measurementValue: null,
+            measurementUnit: null,
+            timeSeconds: options.timeSeconds,
+            strokeCountValue: options.strokes,
+            golfScoreCategory: options.category,
+            note: null,
+            faultTags: [],
+            ratedAt: options.ratedAt,
+          },
+        ],
+      });
+    expect(res.status).toBe(201);
+  }
+
+  it("returns an empty trends array when the swimmer has no golf scores", async () => {
+    const res = await request(app)
+      .get(`/swimmers/${swimmerId}/golf-score`)
+      .set("Authorization", `Bearer ${owner.accessToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ trends: [] });
+  });
+
+  it("owner + viewer get 200; swimmer-less household gets 404", async () => {
+    await seedGolfRating({
+      sessionDate: "2026-10-01",
+      ratedAt: "2026-10-01T10:00:00.000Z",
+      timeSeconds: 14.5,
+      strokes: 22,
+      category: "push_off_in_water",
+    });
+
+    const ownerRes = await request(app)
+      .get(`/swimmers/${swimmerId}/golf-score`)
+      .set("Authorization", `Bearer ${owner.accessToken}`);
+    expect(ownerRes.status).toBe(200);
+    expect(ownerRes.body.trends.length).toBeGreaterThan(0);
+
+    const viewerRes = await request(app)
+      .get(`/swimmers/${swimmerId}/golf-score`)
+      .set("Authorization", `Bearer ${viewer.accessToken}`);
+    expect(viewerRes.status).toBe(200);
+
+    // Different household → 404 (same shape as other parent per-swimmer
+    // routes; the household-swimmer gate hides existence).
+    const otherRes = await request(app)
+      .get(`/swimmers/${swimmerId}/golf-score`)
+      .set("Authorization", `Bearer ${otherHousehold.accessToken}`);
+    expect(otherRes.status).toBe(404);
+  });
+
+  it("strips sessionId from every point (coach-only field)", async () => {
+    const res = await request(app)
+      .get(`/swimmers/${swimmerId}/golf-score`)
+      .set("Authorization", `Bearer ${owner.accessToken}`);
+    expect(res.status).toBe(200);
+    const trends = res.body.trends as Array<{
+      skillSlug: string;
+      skillName: string;
+      byCategory: Array<{ points: Array<Record<string, unknown>> }>;
+    }>;
+    expect(trends.length).toBeGreaterThan(0);
+    for (const trend of trends) {
+      for (const categoryTrend of trend.byCategory) {
+        for (const point of categoryTrend.points) {
+          expect(point).not.toHaveProperty("sessionId");
+          expect(point).toHaveProperty("timeSeconds");
+          expect(point).toHaveProperty("strokeCountValue");
+        }
+      }
+    }
+  });
+
+  it("rejects an unauthenticated caller with 401", async () => {
+    const res = await request(app).get(`/swimmers/${swimmerId}/golf-score`);
+    expect(res.status).toBe(401);
+  });
+
+  it("rejects a coach with 403 (parent role required)", async () => {
+    const coachRes = await request(app)
+      .get(`/swimmers/${swimmerId}/golf-score`)
+      .set("Authorization", `Bearer ${golfCoach.accessToken}`);
+    expect(coachRes.status).toBe(403);
   });
 });

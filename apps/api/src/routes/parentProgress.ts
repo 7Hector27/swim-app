@@ -8,6 +8,7 @@ import {
   lessons,
   meetSwims,
   meets,
+  profiles,
   skillLevelDescriptors,
   skillRatings,
   swimmers,
@@ -18,11 +19,13 @@ import { requireUser } from "../middleware/requireUser";
 import { requireParent } from "../middleware/requireParent";
 import { requireHouseholdMember } from "../middleware/requireHouseholdMember";
 import { requireHouseholdSwimmer } from "../middleware/requireHouseholdSwimmer";
+import { computeGolfScoreTrends } from "../lib/golfScoreTrends";
 import { computeSwimmerProgress } from "../lib/progressCalculation";
 import { computeScoreHistory } from "../lib/scoreHistory";
 import {
   formatSwimTime,
   IdParamsSchema,
+  ParentGolfScoreTrendsResponseSchema,
   ParentPersonalBestsResponseSchema,
   ParentScoreHistoryResponseSchema,
   ParentSwimmerProgressResponseSchema,
@@ -31,6 +34,7 @@ import {
   type IdParams,
   type LatestCoachingPriority,
   type ParentCoachingNote,
+  type ParentGolfScoreTrendsResponse,
   type ParentPersonalBest,
   type ParentPersonalBestsResponse,
   type ParentSwimmerSummariesResponse,
@@ -42,6 +46,18 @@ import {
 } from "@swim-app/shared";
 
 export const parentProgressRouter = Router();
+
+// Server-side first-name derivation so the parent progress response never
+// carries the coach's last name. Returns null for empty / null / undefined
+// input so the client falls back to "From your coach" copy.
+function firstNameOf(fullName: string | null | undefined): string | null {
+  if (fullName === null || fullName === undefined) return null;
+  const trimmed = fullName.trim();
+  if (trimmed.length === 0) return null;
+  const first = trimmed.split(/\s+/)[0];
+  if (first === undefined || first.length === 0) return null;
+  return first;
+}
 
 // GET /swimmers/:id/progress — parent-facing progress (no fault tags, no coach fields)
 parentProgressRouter.get(
@@ -83,8 +99,14 @@ parentProgressRouter.get(
         .select({
           sessionDate: evaluationSessions.sessionDate,
           coachingPriority: evaluationSessions.coachingPriority,
+          // Join the session's coach profile so the API can derive the
+          // coach's first name server-side. Parents only ever see the
+          // first name (per docs/accounts.md) — the full name is pulled
+          // here but trimmed below so the last name never leaves the API.
+          coachFullName: profiles.fullName,
         })
         .from(evaluationSessions)
+        .leftJoin(profiles, eq(profiles.id, evaluationSessions.coachId))
         .where(
           and(
             eq(evaluationSessions.swimmerId, swimmerId),
@@ -112,6 +134,7 @@ parentProgressRouter.get(
         ? {
             text: latestPriorityRow.coachingPriority,
             sessionDate: latestPriorityRow.sessionDate,
+            coachFirstName: firstNameOf(latestPriorityRow.coachFullName),
           }
         : null;
 
@@ -205,6 +228,38 @@ parentProgressRouter.get(
     };
     const body = ParentScoreHistoryResponseSchema.parse(parentFacing);
     req.log.info({ swimmerId, pointCount: body.points.length }, "parent score history fetched");
+    res.json(body);
+  }),
+);
+
+// GET /swimmers/:id/golf-score: parent-facing golf-score trends.
+// Mirrors /coach/swimmers/:id/golf-score-trends with one difference:
+// each trend point has `sessionId` stripped, since parents can't reach
+// the per-session edit affordance that id deep-links to. The computation
+// itself is shared — see lib/golfScoreTrends.ts — so the two routes
+// never drift on cohort / age-band / aggregation rules.
+parentProgressRouter.get(
+  "/:id/golf-score",
+  requireUser,
+  requireParent,
+  validate({ params: IdParamsSchema }),
+  requireHouseholdMember,
+  requireHouseholdSwimmer,
+  asyncHandler(async (req, res) => {
+    const { id: swimmerId } = req.params as unknown as IdParams;
+    // audience: "parent" tells the shared library to build points without
+    // sessionId at all — no post-hoc strip at this boundary, so a future
+    // caller can't forget to clean up.
+    const parentFacing: ParentGolfScoreTrendsResponse = await computeGolfScoreTrends(
+      swimmerId,
+      req.log,
+      { audience: "parent" },
+    );
+    // Parse through the strict parent schema so a future addition of a
+    // coach-only field to the point shape fails here rather than
+    // reaching the client.
+    const body = ParentGolfScoreTrendsResponseSchema.parse(parentFacing);
+    req.log.info({ swimmerId, trendCount: body.trends.length }, "parent golf score fetched");
     res.json(body);
   }),
 );
