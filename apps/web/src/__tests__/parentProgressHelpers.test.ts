@@ -288,6 +288,47 @@ describe("buildSummaryCard — headline", () => {
     const data = buildSummaryCard(skills, ["2026-09-30", "2026-11-01"], "Lily");
     expect(data.headline).toBe("Lily has moved up in 2 skills");
   });
+
+  it("counts a sided skill where the lower side improved", () => {
+    // Left went 2 → 3, right went 2 → 4. Lower side first = 2 (either),
+    // lower side latest = min(3, 4) = 3 → 1-grade improvement, counted.
+    const breathing = skill({
+      slug: "breathing",
+      name: "Breathing",
+      ratedPerSide: true,
+      currentLeft: level(3),
+      currentRight: level(4),
+      history: [
+        point({ id: "l-now", sessionDate: "2026-11-01", grade: 3, side: "left" }),
+        point({ id: "r-now", sessionDate: "2026-11-01", grade: 4, side: "right" }),
+        point({ id: "l-start", sessionDate: "2026-09-30", grade: 2, side: "left" }),
+        point({ id: "r-start", sessionDate: "2026-09-30", grade: 2, side: "right" }),
+      ],
+    });
+    const data = buildSummaryCard([breathing], ["2026-09-30", "2026-11-01"], "Maya");
+    expect(data.headline).toBe("Maya has moved up in 1 skill");
+  });
+
+  it("does not count a sided skill when only the upper side improved", () => {
+    // Left stayed at 2, right went 2 → 4. Lower side both ends = 2, no
+    // change — the growth-edge side didn't move so the headline does
+    // not credit it.
+    const stuck = skill({
+      slug: "stuck",
+      name: "Stuck",
+      ratedPerSide: true,
+      currentLeft: level(2),
+      currentRight: level(4),
+      history: [
+        point({ id: "l-now", sessionDate: "2026-11-01", grade: 2, side: "left" }),
+        point({ id: "r-now", sessionDate: "2026-11-01", grade: 4, side: "right" }),
+        point({ id: "l-start", sessionDate: "2026-09-30", grade: 2, side: "left" }),
+        point({ id: "r-start", sessionDate: "2026-09-30", grade: 2, side: "right" }),
+      ],
+    });
+    const data = buildSummaryCard([stuck], ["2026-09-30", "2026-11-01"], "Maya");
+    expect(data.headline).toBe("Maya is getting started");
+  });
 });
 
 describe("buildSummaryCard — stacked bar + screen-reader text", () => {

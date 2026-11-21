@@ -90,10 +90,30 @@ export function formatMonth(sessionDate: string): string {
 // First level this skill was rated at (chronologically earliest numeric
 // grade in its ratings history). Returns null when the skill has no
 // numeric history — DQ / NC-only ratings don't contribute a baseline.
-function firstGradeFromHistory(history: ParentProgressRatingPoint[]): 1 | 2 | 3 | 4 | 5 | null {
+function firstGradeFromHistory(history: ReadonlyArray<ParentProgressRatingPoint>): 1 | 2 | 3 | 4 | 5 | null {
   for (let index = history.length - 1; index >= 0; index -= 1) {
     const point = history[index];
     if (!point) continue;
+    if (point.grade === 1 || point.grade === 2 || point.grade === 3 || point.grade === 4 || point.grade === 5) {
+      return point.grade;
+    }
+  }
+  return null;
+}
+
+// Per-side variant of firstGradeFromHistory: walks the history oldest-
+// first (the array is newest-first, so we iterate backwards) and returns
+// the earliest numeric grade for the requested side only. Used to compute
+// a sided skill's "first level" independently for each side before the
+// two values are collapsed by lowerOfTwoSides.
+function firstGradeForSide(
+  history: ReadonlyArray<ParentProgressRatingPoint>,
+  side: "left" | "right",
+): 1 | 2 | 3 | 4 | 5 | null {
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    const point = history[index];
+    if (!point) continue;
+    if (point.side !== side) continue;
     if (point.grade === 1 || point.grade === 2 || point.grade === 3 || point.grade === 4 || point.grade === 5) {
       return point.grade;
     }
@@ -108,6 +128,20 @@ function latestGradeFromCurrent(level: SkillCurrentLevel | null): 1 | 2 | 3 | 4 
     return level.grade;
   }
   return null;
+}
+
+// Collapse rule for sided skills: the lower of the two sides is the
+// growth edge, so "the skill's level" is the smaller number. When only
+// one side is rated, that side stands alone. Mirrors rowPipCount so a
+// sided skill reports one consistent level everywhere.
+function lowerOfTwoSides(
+  left: 1 | 2 | 3 | 4 | 5 | null,
+  right: 1 | 2 | 3 | 4 | 5 | null,
+): 1 | 2 | 3 | 4 | 5 | null {
+  if (left === null && right === null) return null;
+  if (left === null) return right;
+  if (right === null) return left;
+  return left <= right ? left : right;
 }
 
 // Change text a parent sees under the level name on each skill row:
@@ -350,8 +384,26 @@ export function buildSummaryCard(
 ): SummaryCardData {
   let skillsLeveledUp = 0;
   for (const skill of skills) {
-    const latest = latestGradeFromCurrent(skill.current);
-    const first = firstGradeFromHistory(skill.history);
+    let latest: 1 | 2 | 3 | 4 | 5 | null;
+    let first: 1 | 2 | 3 | 4 | 5 | null;
+    if (skill.ratedPerSide) {
+      // Sided skills carry their data in currentLeft / currentRight (and
+      // per-side history points); skill.current is always null. Collapse
+      // both sides to a single value with the lower-side rule for both
+      // ends of the comparison so the headline only credits a move-up
+      // when the growth-edge side actually improved.
+      latest = lowerOfTwoSides(
+        latestGradeFromCurrent(skill.currentLeft),
+        latestGradeFromCurrent(skill.currentRight),
+      );
+      first = lowerOfTwoSides(
+        firstGradeForSide(skill.history, "left"),
+        firstGradeForSide(skill.history, "right"),
+      );
+    } else {
+      latest = latestGradeFromCurrent(skill.current);
+      first = firstGradeFromHistory(skill.history);
+    }
     if (latest !== null && first !== null && latest > first) {
       skillsLeveledUp += 1;
     }
