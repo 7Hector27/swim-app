@@ -41,6 +41,8 @@ const SWIMMER: CoachSwimmerDetail = {
   clubs: [],
   memberNames: [],
   lastLesson: null,
+  householdName: "Smith",
+  birthMonthYear: "2013-01",
   members: [],
   homePool: null,
 };

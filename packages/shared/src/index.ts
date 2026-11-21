@@ -496,9 +496,14 @@ export type {
   SwimType,
   MeetResponse,
   CreateMeetBody,
+  PatchMeetBody,
   MeetSwimResponse,
   MeetDetailSwimResponse,
   CreateMeetSwimBody,
+  CreateMeetSwimsBatchRow,
+  CreateMeetSwimsBatchBody,
+  BatchRowError,
+  CreateMeetSwimsBatchError,
   PatchMeetSwimBody,
   MeetWithSwimsResponse,
   PersonalBest,
@@ -509,15 +514,23 @@ export type {
   ParentSwimmerSummariesResponse,
   ParentSwimmerSummaryBestEvent,
   ParentSwimmerSummaryNextLesson,
+  SwimmerBestsRow,
+  SwimmerBestsResponse,
 } from "./schemas/meets";
 export {
   SwimStrokeSchema,
   CourseSchema,
   SwimTypeSchema,
+  MAX_SWIM_HUNDREDTHS,
   MeetResponseSchema,
   CreateMeetBodySchema,
+  PatchMeetBodySchema,
   MeetSwimResponseSchema,
   CreateMeetSwimBodySchema,
+  CreateMeetSwimsBatchRowSchema,
+  CreateMeetSwimsBatchBodySchema,
+  BatchRowErrorSchema,
+  CreateMeetSwimsBatchErrorSchema,
   PatchMeetSwimBodySchema,
   MeetWithSwimsResponseSchema,
   PersonalBestSchema,
@@ -528,6 +541,8 @@ export {
   ParentSwimmerSummariesResponseSchema,
   ParentSwimmerSummaryBestEventSchema,
   ParentSwimmerSummaryNextLessonSchema,
+  SwimmerBestsRowSchema,
+  SwimmerBestsResponseSchema,
 } from "./schemas/meets";
 
 export type { AgeGroup } from "./lib/ageGroup";
@@ -536,6 +551,8 @@ export { AgeGroupSchema, ageToGroup } from "./lib/ageGroup";
 export type {
   MotivationalStandardName,
   LeaderboardQuery,
+  LeaderboardBoardId,
+  LeaderboardSummary,
   PublicBoardRow,
   PublicMasterRow,
   PublicBoardResponse,
@@ -546,8 +563,11 @@ export type {
   CoachMasterResponse,
 } from "./schemas/leaderboard";
 export {
+  MIN_SWIMMERS_PER_EVENT_LIST,
   MotivationalStandardNameSchema,
   LeaderboardQuerySchema,
+  LeaderboardBoardIdSchema,
+  LeaderboardSummarySchema,
   PublicBoardRowSchema,
   PublicMasterRowSchema,
   PublicBoardResponseSchema,

@@ -21,11 +21,12 @@ import AddNoteForm from "@/components/AddNoteForm";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import EvaluationsList from "@/components/EvaluationsList";
 import InlineError from "@/components/InlineError";
+import TimeInput from "@/components/TimeInput";
+import { formatSwimTime, parseSwimTime } from "@swim-app/shared";
 import AddSwimForm from "./AddSwimForm";
 import GolfScoreTrends from "./GolfScoreTrends";
 import HidePublicButton from "./HidePublicButton";
 import SwimmerSkillsHistory from "./SwimmerSkillsHistory";
-import SwimTimeInput from "./SwimTimeInput";
 import SwimmerTimeline from "./SwimmerTimeline";
 import { editSwimForSwimmer, deleteSwimForSwimmer } from "./actions";
 import type { EditSwimState, DeleteSwimState } from "./actions";
@@ -153,6 +154,11 @@ function SwimRow({ swim, swimmerId, isPB }: SwimRowProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [editing, setEditing] = useState(false);
 
+  // Controlled edit-form state. Seeded from `swim` on mount; kept in state so
+  // an action-returned error never wipes typed values.
+  const [editTime, setEditTime] = useState<number | null>(() => parseSwimTime(swim.timeString));
+  const [editSwumOn, setEditSwumOn] = useState<string>(swim.swumOn);
+
   const [deleteState, deleteAction, isDeleting] = useActionState<DeleteSwimState, FormData>(
     deleteSwimForSwimmer.bind(null, swimmerId, swim.id),
     { status: "idle" },
@@ -197,8 +203,14 @@ function SwimRow({ swim, swimmerId, isPB }: SwimRowProps) {
 
           {editing && (
             <form action={editAction} className="flex flex-col gap-2 mt-2">
-              <div className="flex gap-2 flex-wrap">
-                <SwimTimeInput name="timeString" initialTime={swim.timeString} />
+              <input
+                type="hidden"
+                name="timeString"
+                value={editTime === null ? "" : formatSwimTime(editTime)}
+              />
+              <input type="hidden" name="swumOn" value={editSwumOn} />
+              <div className="flex gap-2 flex-wrap items-end">
+                <TimeInput value={editTime} onChange={setEditTime} />
                 <div className="flex flex-col gap-1">
                   <label
                     htmlFor={`edit-date-${swim.id}`}
@@ -208,9 +220,9 @@ function SwimRow({ swim, swimmerId, isPB }: SwimRowProps) {
                   </label>
                   <input
                     id={`edit-date-${swim.id}`}
-                    name="swumOn"
                     type="date"
-                    defaultValue={swim.swumOn}
+                    value={editSwumOn}
+                    onChange={(event) => setEditSwumOn(event.target.value)}
                     className="h-11 px-3 rounded-lg border border-border bg-background text-text text-base focus:outline focus:outline-2 focus:outline-focus-ring"
                   />
                 </div>
@@ -285,8 +297,8 @@ interface TimesPaneProps {
   swims: MeetSwimResponse[];
   personalBests: PersonalBest[];
   meets: MeetResponse[];
-  formMode: "closed" | "meet" | "practice";
-  onFormModeChange: (mode: "closed" | "meet" | "practice") => void;
+  formMode: "closed" | "meet";
+  onFormModeChange: (mode: "closed" | "meet") => void;
   swimsFailed: boolean;
   meetsFailed: boolean;
 }
@@ -310,25 +322,14 @@ function TimesPane({
     <section className="flex flex-col gap-5">
       <div className="flex items-center justify-between gap-3">
         <h2 className="font-bold text-text">Times</h2>
-        {formMode === "closed" && (
-          <div className="flex gap-1">
-            {canAddMeet && (
-              <button
-                type="button"
-                onClick={() => onFormModeChange("meet")}
-                className="text-xs font-semibold text-accent hover:opacity-80 min-h-[44px] px-2"
-              >
-                + Add meet time
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => onFormModeChange("practice")}
-              className="text-xs font-semibold text-text-secondary hover:text-text min-h-[44px] px-2"
-            >
-              + Add practice swim
-            </button>
-          </div>
+        {formMode === "closed" && canAddMeet && (
+          <button
+            type="button"
+            onClick={() => onFormModeChange("meet")}
+            className="text-xs font-semibold text-accent hover:opacity-80 min-h-[44px] px-2"
+          >
+            + Add meet time
+          </button>
         )}
       </div>
       {swimsFailed && (
@@ -349,15 +350,6 @@ function TimesPane({
           swimmerId={swimmerId}
           swimmerName={swimmerName}
           meets={meets}
-          personalBests={personalBests}
-          onSuccess={() => onFormModeChange("closed")}
-        />
-      )}
-
-      {formMode === "practice" && (
-        <AddSwimForm
-          swimmerId={swimmerId}
-          swimmerName={swimmerName}
           personalBests={personalBests}
           onSuccess={() => onFormModeChange("closed")}
         />
@@ -445,7 +437,7 @@ export default function CoachSwimmerDetailContent({
   familyBalanceCents = null,
 }: CoachSwimmerDetailContentProps) {
   const [activeTab, setActiveTab] = useState<TabId>("feed");
-  const [timesFormMode, setTimesFormMode] = useState<"closed" | "meet" | "practice">("closed");
+  const [timesFormMode, setTimesFormMode] = useState<"closed" | "meet">("closed");
 
   // ── Derived "at a glance" values ─────────────────────────────────────────
   //

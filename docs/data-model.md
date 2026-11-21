@@ -371,7 +371,10 @@ Known swim clubs. Used for the swimmer registration dropdown.
 
 RLS is enabled. Policies TBD.
 
-**Seed rows:** `[Club 1]`, `[Club 2]` — placeholder names until the real club list is provided.
+**Seed rows:** the real Orange County club list — see `0036_real_clubs.sql`. The
+early `[Club 1]` / `[Club 2]` placeholders were marked `is_active = false` in that
+same migration and never referenced by any swimmer; they do not exist in the
+manual or test stacks today.
 
 ---
 

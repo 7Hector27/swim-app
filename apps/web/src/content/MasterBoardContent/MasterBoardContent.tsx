@@ -5,16 +5,16 @@ import BoardTable from "@/components/BoardTable";
 import type { PublicMasterRow } from "@swim-app/shared";
 
 interface MasterBoardContentProps {
-  standardsAvailable: boolean;
   rows: PublicMasterRow[];
   loadFailed?: boolean;
 }
 
-export default function MasterBoardContent({
-  standardsAvailable,
-  rows,
-  loadFailed = false,
-}: MasterBoardContentProps) {
+export default function MasterBoardContent({ rows, loadFailed = false }: MasterBoardContentProps) {
+  // Only show the Standard column if at least one row carries one. Standards
+  // are optional now (ADR 023 decided) — the master board ranks by time when
+  // no standard is defined for the event list.
+  const showStandard = rows.some((row) => row.standard !== null);
+
   return (
     <div className="bg-background">
       <div className="mx-auto max-w-content px-page py-12 tablet:py-16">
@@ -34,12 +34,6 @@ export default function MasterBoardContent({
           </p>
         </div>
 
-        {!loadFailed && !standardsAvailable && (
-          <div className="rounded-card border border-border px-5 py-4 text-text-secondary text-sm mb-6">
-            Standards coming soon
-          </div>
-        )}
-
         <div className="mb-6">
           <Suspense fallback={null}>
             <BoardFilters />
@@ -50,8 +44,12 @@ export default function MasterBoardContent({
           <p className="text-text-secondary text-sm py-16 text-center">
             Couldn&apos;t load the leaderboard. Try again.
           </p>
+        ) : rows.length === 0 ? (
+          <p className="text-text-secondary text-sm py-16 text-center">
+            Not enough results yet. Check back after the next meet.
+          </p>
         ) : (
-          <BoardTable rows={rows} showStandard={standardsAvailable} />
+          <BoardTable rows={rows} showStandard={showStandard} />
         )}
       </div>
     </div>

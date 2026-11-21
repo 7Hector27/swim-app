@@ -43,7 +43,7 @@ function getBottomNav() {
 
 describe("CoachNav — bottom tab bar has exactly 4 items", () => {
   it("renders Home, Schedule, Swimmers, and More tabs in the bottom bar", () => {
-    render(<CoachNav />);
+    render(<CoachNav hasAnyBoard={true} />);
     const bottomNav = getBottomNav();
     expect(within(bottomNav).getByRole("link", { name: "Home" })).toBeInTheDocument();
     expect(within(bottomNav).getByRole("link", { name: "Schedule" })).toBeInTheDocument();
@@ -52,7 +52,7 @@ describe("CoachNav — bottom tab bar has exactly 4 items", () => {
   });
 
   it("bottom tab bar has exactly 4 interactive items", () => {
-    render(<CoachNav />);
+    render(<CoachNav hasAnyBoard={true} />);
     const bottomNav = getBottomNav();
     const links = within(bottomNav).getAllByRole("link");
     const buttons = within(bottomNav).getAllByRole("button");
@@ -60,7 +60,7 @@ describe("CoachNav — bottom tab bar has exactly 4 items", () => {
   });
 
   it("Availability and Meets are not tab links in the bottom bar", () => {
-    render(<CoachNav />);
+    render(<CoachNav hasAnyBoard={true} />);
     const bottomNav = getBottomNav();
     expect(within(bottomNav).queryByRole("link", { name: "Availability" })).not.toBeInTheDocument();
     expect(within(bottomNav).queryByRole("link", { name: "Meets" })).not.toBeInTheDocument();
@@ -69,33 +69,32 @@ describe("CoachNav — bottom tab bar has exactly 4 items", () => {
 
 describe("CoachNav — More sheet", () => {
   it("sheet is not visible before More is clicked", () => {
-    render(<CoachNav />);
+    render(<CoachNav hasAnyBoard={true} />);
     const dialog = document.querySelector("dialog[aria-label='More navigation options']") as HTMLDialogElement;
     expect(dialog).not.toHaveAttribute("open");
   });
 
   it("clicking More opens the sheet", () => {
-    render(<CoachNav />);
+    render(<CoachNav hasAnyBoard={true} />);
     fireEvent.click(screen.getByRole("button", { name: /more/i }));
     const dialog = document.querySelector("dialog[aria-label='More navigation options']") as HTMLDialogElement;
     expect(dialog).toHaveAttribute("open");
   });
 
-  it("sheet contains Families, Availability, Account settings, Log out (Meets moved to /coach/swimmers tab)", () => {
-    render(<CoachNav />);
+  it("sheet contains Meets, Families, Availability, Account settings, Log out", () => {
+    render(<CoachNav hasAnyBoard={true} />);
     fireEvent.click(screen.getByRole("button", { name: /more/i }));
     const dialog = document.querySelector("dialog[aria-label='More navigation options']") as HTMLElement;
+    // ADR 0045 cleanup: Meets is a top-level destination again.
+    expect(within(dialog).getByRole("link", { name: "Meets" })).toBeInTheDocument();
     expect(within(dialog).getByRole("link", { name: "Families" })).toBeInTheDocument();
     expect(within(dialog).getByRole("link", { name: "Availability" })).toBeInTheDocument();
     expect(within(dialog).getByRole("link", { name: "Account settings" })).toBeInTheDocument();
     expect(within(dialog).getByRole("button", { name: "Log out" })).toBeInTheDocument();
-    // ADR 036 Phase 8 Part B Stop 3 piece 6: Meets lives on the
-    // Swimmers page as a tab now, not in the More sheet.
-    expect(within(dialog).queryByRole("link", { name: "Meets" })).not.toBeInTheDocument();
   });
 
   it("Close button closes the sheet", () => {
-    render(<CoachNav />);
+    render(<CoachNav hasAnyBoard={true} />);
     fireEvent.click(screen.getByRole("button", { name: /more/i }));
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
     const dialog = document.querySelector("dialog[aria-label='More navigation options']") as HTMLDialogElement;
@@ -103,7 +102,7 @@ describe("CoachNav — More sheet", () => {
   });
 
   it("More button has aria-haspopup=dialog and aria-expanded updates", () => {
-    render(<CoachNav />);
+    render(<CoachNav hasAnyBoard={true} />);
     const btn = screen.getByRole("button", { name: /more/i });
     expect(btn).toHaveAttribute("aria-haspopup", "dialog");
     expect(btn).toHaveAttribute("aria-expanded", "false");

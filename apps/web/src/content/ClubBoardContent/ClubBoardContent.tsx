@@ -39,6 +39,10 @@ export default function ClubBoardContent({ rows, loadFailed = false }: ClubBoard
           <p className="text-text-secondary text-sm py-16 text-center">
             Couldn&apos;t load the leaderboard. Try again.
           </p>
+        ) : rows.length === 0 ? (
+          <p className="text-text-secondary text-sm py-16 text-center">
+            Not enough results yet. Check back after the next meet.
+          </p>
         ) : (
           <BoardTable rows={rows} />
         )}

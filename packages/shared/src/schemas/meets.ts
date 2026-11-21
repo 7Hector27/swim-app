@@ -6,8 +6,15 @@ export type SwimStroke = z.infer<typeof SwimStrokeSchema>;
 export const CourseSchema = z.enum(["scy", "scm", "lcm"]);
 export type Course = z.infer<typeof CourseSchema>;
 
+// Historical values persisted in the DB. New rows are always `"meet"`; the
+// `"practice"` value is retained in the enum only so existing rows parse. See
+// docs/decisions/0045-drop-practice-swim-type.md.
 export const SwimTypeSchema = z.enum(["meet", "practice"]);
 export type SwimType = z.infer<typeof SwimTypeSchema>;
+
+// Reasonable cap: 99:59.99 — longer than any swim event in existence. Keeps
+// typos and negative overflow out of the ledger.
+export const MAX_SWIM_HUNDREDTHS = 99 * 6000 + 59 * 100 + 99;
 
 // ── Meets ─────────────────────────────────────────────────────────────────────
 
@@ -48,26 +55,49 @@ export const MeetSwimResponseSchema = z.object({
 });
 export type MeetSwimResponse = z.infer<typeof MeetSwimResponseSchema>;
 
-export const CreateMeetSwimBodySchema = z
-  .object({
-    swimType: SwimTypeSchema.default("meet"),
-    meetId: z.string().uuid().optional(),
-    eventDistance: z.number().int().positive(),
-    eventStroke: SwimStrokeSchema,
-    course: CourseSchema,
-    timeString: z.string().min(1),
-    swumOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  })
-  .superRefine((data, ctx) => {
-    if (data.swimType === "meet" && data.meetId === undefined) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "meetId is required for meet swims",
-        path: ["meetId"],
-      });
-    }
-  });
+// All new swims belong to a meet. `swimType` is implicit (`"meet"`) and no
+// longer part of the request body — see ADR 0045.
+export const CreateMeetSwimBodySchema = z.object({
+  meetId: z.string().uuid(),
+  eventDistance: z.number().int().positive(),
+  eventStroke: SwimStrokeSchema,
+  course: CourseSchema,
+  timeString: z.string().min(1),
+  swumOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+});
 export type CreateMeetSwimBody = z.infer<typeof CreateMeetSwimBodySchema>;
+
+// Batch create — POST /coach/meets/:id/swims. Every row is validated and
+// inserted in one transaction; a single failing row rolls the whole batch
+// back.
+export const CreateMeetSwimsBatchRowSchema = z.object({
+  swimmerId: z.string().uuid(),
+  eventDistance: z.number().int().positive(),
+  eventStroke: SwimStrokeSchema,
+  course: CourseSchema,
+  timeString: z.string().min(1),
+  swumOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+});
+export type CreateMeetSwimsBatchRow = z.infer<typeof CreateMeetSwimsBatchRowSchema>;
+
+export const CreateMeetSwimsBatchBodySchema = z.object({
+  rows: z.array(CreateMeetSwimsBatchRowSchema).min(1),
+});
+export type CreateMeetSwimsBatchBody = z.infer<typeof CreateMeetSwimsBatchBodySchema>;
+
+// When the batch fails validation, the response lists one error per failing
+// row (keyed by its index in the submitted array). No rows are persisted.
+export const BatchRowErrorSchema = z.object({
+  index: z.number().int().nonnegative(),
+  error: z.string(),
+});
+export type BatchRowError = z.infer<typeof BatchRowErrorSchema>;
+
+export const CreateMeetSwimsBatchErrorSchema = z.object({
+  error: z.literal("batch_validation_failed"),
+  rowErrors: z.array(BatchRowErrorSchema),
+});
+export type CreateMeetSwimsBatchError = z.infer<typeof CreateMeetSwimsBatchErrorSchema>;
 
 export const PatchMeetSwimBodySchema = z
   .object({
@@ -83,10 +113,13 @@ export type PatchMeetSwimBody = z.infer<typeof PatchMeetSwimBodySchema>;
 
 // ── Meet with swims (GET /coach/meets/:id) ────────────────────────────────────
 
-// Swim shape for the meet-detail endpoint. Excludes swimmerId — it is an
-// internal UUID that has no benefit to API consumers viewing a meet's swims.
+// Swim shape for the meet-detail endpoint. Includes swimmer identity so the
+// coach UI can group results by event + show who swam what.
 export const MeetDetailSwimResponseSchema = z.object({
   id: z.string().uuid(),
+  swimmerId: z.string().uuid(),
+  swimmerFirstName: z.string(),
+  swimmerLastName: z.string(),
   swimType: SwimTypeSchema,
   meetId: z.string().uuid().nullable().optional(),
   meetName: z.string().nullable().optional(),
@@ -112,6 +145,18 @@ export const MeetWithSwimsResponseSchema = z.object({
 });
 export type MeetWithSwimsResponse = z.infer<typeof MeetWithSwimsResponseSchema>;
 
+// PATCH /coach/meets/:id — edit header fields.
+export const PatchMeetBodySchema = z
+  .object({
+    name: z.string().min(1).optional(),
+    meetDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    course: CourseSchema.optional(),
+  })
+  .refine((obj) => Object.keys(obj).length > 0, {
+    message: "at least one field required",
+  });
+export type PatchMeetBody = z.infer<typeof PatchMeetBodySchema>;
+
 // ── Personal best ─────────────────────────────────────────────────────────────
 
 export const PersonalBestSchema = z.object({
@@ -129,6 +174,21 @@ export const MeetSwimsResponseSchema = z.object({
   personalBests: z.array(PersonalBestSchema),
 });
 export type MeetSwimsResponse = z.infer<typeof MeetSwimsResponseSchema>;
+
+// Per-swimmer PBs, returned in one shot by GET /coach/swimmer-bests. Powers
+// the meet-detail entry form: for each pending row, the UI needs the
+// swimmer's current best in that (event, stroke, course) to decide whether
+// to show "new best — X.XX faster", "first time", or the 20% warning.
+export const SwimmerBestsRowSchema = z.object({
+  swimmerId: z.string().uuid(),
+  personalBests: z.array(PersonalBestSchema),
+});
+export type SwimmerBestsRow = z.infer<typeof SwimmerBestsRowSchema>;
+
+export const SwimmerBestsResponseSchema = z.object({
+  rows: z.array(SwimmerBestsRowSchema),
+});
+export type SwimmerBestsResponse = z.infer<typeof SwimmerBestsResponseSchema>;
 
 // ── Parent personal best ──────────────────────────────────────────────────────
 

@@ -19,6 +19,7 @@ import { isActiveSwimmer } from "../db/queries";
 import {
   clubs,
   householdMembers,
+  households,
   leagueRegistrations,
   lessonSwimmers,
   lessons,
@@ -30,9 +31,10 @@ import { nowUtc } from "./clock";
 
 // Detail-column set — includes `birthDate`, which the per-swimmer detail
 // endpoint (/coach/swimmers/:id) returns in its CoachSwimmerDetail shape.
-// The list endpoints never surface birthDate (they return `age`), so they
-// use `swimmerListColumns` below instead and never select it in the first
-// place.
+// The list endpoints never surface birthDate (they return `age` plus a
+// `YYYY-MM` `birthMonthYear` used by the coach-only swimmer picker on the
+// meet-detail page). Use `swimmerListColumns` below for lists and never
+// select birthDate from it.
 export const swimmerColumns = {
   id: swimmers.id,
   firstName: swimmers.firstName,
@@ -55,6 +57,9 @@ const swimmerListColumns = {
   firstName: swimmers.firstName,
   lastName: swimmers.lastName,
   age: sql<number>`EXTRACT(YEAR FROM AGE((now() AT TIME ZONE 'America/Los_Angeles')::date, ${swimmers.birthDate}))::int`.as("age"),
+  // Coarse month-year derived from birthDate — enough to disambiguate two
+  // same-name swimmers in a picker without exposing the full date.
+  birthMonthYear: sql<string>`to_char(${swimmers.birthDate}, 'YYYY-MM')`.as("birth_month_year"),
   sex: swimmers.sex,
   isPublic: swimmers.isPublic,
   householdId: swimmers.householdId,
@@ -170,7 +175,7 @@ export async function loadCoachSwimmerList(
   const swimmerIds = swimmerRows.map((row) => row.id);
   const householdIds = [...new Set(swimmerRows.map((row) => row.householdId))];
 
-  const [clubRows, regRows, memberRows, lastLessonBySwimmer] = await Promise.all([
+  const [clubRows, regRows, memberRows, householdRows, lastLessonBySwimmer] = await Promise.all([
     db
       .select({
         id: swimmerClubs.id,
@@ -193,8 +198,14 @@ export async function loadCoachSwimmerList(
       .from(householdMembers)
       .innerJoin(profiles, eq(profiles.id, householdMembers.profileId))
       .where(inArray(householdMembers.householdId, householdIds)),
+    db
+      .select({ id: households.id, name: households.name })
+      .from(households)
+      .where(inArray(households.id, householdIds)),
     fetchLastLessonsForSwimmers(swimmerIds, nowUtc()),
   ]);
+
+  const householdNameById = new Map(householdRows.map((row) => [row.id, row.name]));
 
   const clubsBySwimmer = new Map<string, SwimmerClubRow[]>();
   for (const club of clubRows) {
@@ -231,6 +242,8 @@ export async function loadCoachSwimmerList(
       clubs: (clubsBySwimmer.get(swimmer.id) ?? []).map(mapClub),
       currentLeagues: leaguesBySwimmer.get(swimmer.id) ?? [],
       memberNames: memberNamesByHousehold.get(swimmer.householdId) ?? [],
+      householdName: householdNameById.get(swimmer.householdId) ?? "",
+      birthMonthYear: swimmer.birthMonthYear,
       lastLesson: last ? { id: last.id, startsAt: toISO(last.startsAt) } : null,
     };
   });

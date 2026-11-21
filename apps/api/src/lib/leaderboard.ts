@@ -101,8 +101,11 @@ export function assignRanks<
   return result;
 }
 
-// Rank within each partition: highest standard first, then fastest time.
-// Ties (same standard + same time) share a rank.
+// Rank within each partition. If any row in the partition carries a
+// standard, sort by standard (highest first) then fastest time; otherwise
+// plain time ranking. Nullable standards participate as the "no standard"
+// floor — a row with null is ranked below every row with a standard, then
+// among null rows by time. Ties share a rank.
 export function assignMasterRanks<
   T extends {
     sex: string;
@@ -111,7 +114,7 @@ export function assignMasterRanks<
     eventStroke: string;
     course: string;
     timeHundredths: number;
-    standard: MotivationalStandardName;
+    standard: MotivationalStandardName | null;
   },
 >(rows: T[]): (T & { rank: number })[] {
   const groups = new Map<string, T[]>();
@@ -124,9 +127,14 @@ export function assignMasterRanks<
 
   const result: (T & { rank: number })[] = [];
   for (const group of groups.values()) {
+    const hasAnyStandard = group.some((row) => row.standard !== null);
     const sorted = [...group].sort((a, b) => {
-      const standardDiff = STANDARD_ORDER[b.standard] - STANDARD_ORDER[a.standard];
-      if (standardDiff !== 0) return standardDiff;
+      if (hasAnyStandard) {
+        const rankA = a.standard === null ? 0 : STANDARD_ORDER[a.standard];
+        const rankB = b.standard === null ? 0 : STANDARD_ORDER[b.standard];
+        const diff = rankB - rankA;
+        if (diff !== 0) return diff;
+      }
       return a.timeHundredths - b.timeHundredths;
     });
     let rank = 1;
@@ -134,14 +142,38 @@ export function assignMasterRanks<
       const row = sorted[index]!;
       if (index > 0) {
         const prev = sorted[index - 1]!;
-        if (row.standard !== prev.standard || row.timeHundredths !== prev.timeHundredths) {
-          rank = index + 1;
-        }
+        const keyA = `${row.standard ?? ""}|${row.timeHundredths}`;
+        const keyB = `${prev.standard ?? ""}|${prev.timeHundredths}`;
+        if (keyA !== keyB) rank = index + 1;
       }
       result.push({ ...row, rank });
     }
   }
   return result;
+}
+
+// Drop event lists (same sex, age group, event, stroke, course) that have
+// fewer than `minCount` swimmers. Operates before `applyFilters` on public
+// endpoints so query-filtered views can't accidentally reveal a small group.
+export function filterByEventListThreshold<
+  T extends {
+    sex: string;
+    ageGroup: string;
+    eventDistance: number;
+    eventStroke: string;
+    course: string;
+  },
+>(rows: T[], minCount: number): T[] {
+  if (minCount <= 1) return rows;
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    const key = `${row.sex}|${row.ageGroup}|${row.eventDistance}|${row.eventStroke}|${row.course}`;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return rows.filter((row) => {
+    const key = `${row.sex}|${row.ageGroup}|${row.eventDistance}|${row.eventStroke}|${row.course}`;
+    return (counts.get(key) ?? 0) >= minCount;
+  });
 }
 
 // Returns the highest motivational standard whose cut time the PB meets,

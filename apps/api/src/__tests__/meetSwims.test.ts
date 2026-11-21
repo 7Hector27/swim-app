@@ -329,31 +329,156 @@ describe("GET /coach/meets/:id", () => {
   });
 });
 
+// ── POST /coach/meets/:id/swims (batch) ───────────────────────────────────────
+
+describe("POST /coach/meets/:id/swims (batch)", () => {
+  const baseRow = {
+    swimmerId: SWIMMER_ID,
+    eventDistance: 100,
+    eventStroke: "free" as const,
+    course: "scy" as const,
+    timeString: "58.30",
+    swumOn: "2025-06-01",
+  };
+
+  function activeSwimmersSelect(ids: string[]) {
+    const where = vi.fn().mockResolvedValue(ids.map((id) => ({ id })));
+    return { from: vi.fn().mockReturnValue({ where }) };
+  }
+
+  function existingSwimsSelect(
+    rows: Array<{
+      swimmerId: string;
+      eventDistance: number;
+      eventStroke: string;
+      course: string;
+      timeHundredths: number;
+    }>,
+  ) {
+    const where = vi.fn().mockResolvedValue(rows);
+    return { from: vi.fn().mockReturnValue({ where }) };
+  }
+
+  it("inserts every row in one transaction when all validate", async () => {
+    authAs(profileCoach);
+    const insertValues = vi.fn().mockResolvedValue([]);
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(profileCoach))
+      .mockReturnValueOnce(meetSelect(baseMeetRow))
+      .mockReturnValueOnce(activeSwimmersSelect([SWIMMER_ID]))
+      .mockReturnValueOnce(existingSwimsSelect([]));
+    mockDbTransaction.mockImplementation(async (cb) => {
+      await cb({ insert: () => ({ values: insertValues }) });
+    });
+
+    const res = await request(app)
+      .post(`/coach/meets/${MEET_ID}/swims`)
+      .set("Authorization", "Bearer token")
+      .send({ rows: [baseRow, { ...baseRow, timeString: "59.00" }] });
+
+    expect(res.status).toBe(201);
+    expect(res.body.inserted).toBe(2);
+    expect(mockDbTransaction).toHaveBeenCalledTimes(1);
+    expect(insertValues).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects the whole batch and returns per-row errors when any row fails", async () => {
+    authAs(profileCoach);
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(profileCoach))
+      .mockReturnValueOnce(meetSelect(baseMeetRow))
+      .mockReturnValueOnce(activeSwimmersSelect([SWIMMER_ID]))
+      .mockReturnValueOnce(existingSwimsSelect([]));
+
+    const res = await request(app)
+      .post(`/coach/meets/${MEET_ID}/swims`)
+      .set("Authorization", "Bearer token")
+      .send({
+        rows: [
+          baseRow, // ok
+          { ...baseRow, timeString: "not-a-time" }, // invalid_time at index 1
+        ],
+      });
+
+    expect(res.status).toBe(422);
+    expect(res.body.error).toBe("batch_validation_failed");
+    expect(res.body.rowErrors).toEqual([{ index: 1, error: "invalid_time" }]);
+    // Transaction never started.
+    expect(mockDbTransaction).not.toHaveBeenCalled();
+  });
+
+  it("flags intra-batch duplicates (same quad twice in the same batch)", async () => {
+    authAs(profileCoach);
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(profileCoach))
+      .mockReturnValueOnce(meetSelect(baseMeetRow))
+      .mockReturnValueOnce(activeSwimmersSelect([SWIMMER_ID]))
+      .mockReturnValueOnce(existingSwimsSelect([]));
+
+    const res = await request(app)
+      .post(`/coach/meets/${MEET_ID}/swims`)
+      .set("Authorization", "Bearer token")
+      .send({ rows: [baseRow, baseRow] });
+
+    expect(res.status).toBe(422);
+    expect(res.body.rowErrors).toEqual([{ index: 1, error: "duplicate_swim" }]);
+  });
+
+  it("flags rows whose swumOn is before the meet date", async () => {
+    authAs(profileCoach);
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(profileCoach))
+      .mockReturnValueOnce(meetSelect({ ...baseMeetRow, meetDate: "2025-06-10" }))
+      .mockReturnValueOnce(activeSwimmersSelect([SWIMMER_ID]))
+      .mockReturnValueOnce(existingSwimsSelect([]));
+
+    const res = await request(app)
+      .post(`/coach/meets/${MEET_ID}/swims`)
+      .set("Authorization", "Bearer token")
+      .send({ rows: [{ ...baseRow, swumOn: "2025-06-01" }] });
+
+    expect(res.status).toBe(422);
+    expect(res.body.rowErrors).toEqual([{ index: 0, error: "swum_on_before_meet" }]);
+  });
+});
+
 // ── POST /coach/swimmers/:id/meet-swims ───────────────────────────────────────
 
+// After ADR 0045: `swimType="practice"` is no longer accepted. Every POST
+// goes through the meet-required path and runs a duplicate-swim check before
+// insert.
+
+function duplicateSelect(found: boolean) {
+  const limit = vi.fn().mockResolvedValue(found ? [{ id: "existing" }] : []);
+  const where = vi.fn().mockReturnValue({ limit });
+  return { from: vi.fn().mockReturnValue({ where }) };
+}
+
 describe("POST /coach/swimmers/:id/meet-swims", () => {
+  const validBody = {
+    meetId: MEET_ID,
+    eventDistance: 100,
+    eventStroke: "free" as const,
+    course: "scy" as const,
+    timeString: "58.30",
+    swumOn: "2025-06-01",
+  };
+
   it("creates a meet swim and returns 201", async () => {
     authAs(profileCoach);
     const returning = vi.fn().mockResolvedValue([baseSwimRow]);
     const values = vi.fn().mockReturnValue({ returning });
     mockDbSelect
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachRouter requireUser (once)
+      .mockReturnValueOnce(requireUserSelect(profileCoach))
       .mockReturnValueOnce(swimmerExistsSelect(true))
-      .mockReturnValueOnce(meetSelect(baseMeetRow));
+      .mockReturnValueOnce(meetSelect(baseMeetRow))
+      .mockReturnValueOnce(duplicateSelect(false));
     mockDbInsert.mockReturnValue({ values });
 
     const res = await request(app)
       .post(`/coach/swimmers/${SWIMMER_ID}/meet-swims`)
       .set("Authorization", "Bearer token")
-      .send({
-        swimType: "meet",
-        meetId: MEET_ID,
-        eventDistance: 100,
-        eventStroke: "free",
-        course: "scy",
-        timeString: "58.30",
-        swumOn: "2025-06-01",
-      });
+      .send(validBody);
 
     expect(res.status).toBe(201);
     expect(res.body).toMatchObject({
@@ -363,33 +488,7 @@ describe("POST /coach/swimmers/:id/meet-swims", () => {
     });
   });
 
-  it("creates a practice swim with no meetId and returns 201", async () => {
-    authAs(profileCoach);
-    const practiceSwimRow = { ...baseSwimRow, swimType: "practice" as const, meetId: null };
-    const returning = vi.fn().mockResolvedValue([practiceSwimRow]);
-    const values = vi.fn().mockReturnValue({ returning });
-    mockDbSelect
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachRouter requireUser (once)
-      .mockReturnValueOnce(swimmerExistsSelect(true));
-    mockDbInsert.mockReturnValue({ values });
-
-    const res = await request(app)
-      .post(`/coach/swimmers/${SWIMMER_ID}/meet-swims`)
-      .set("Authorization", "Bearer token")
-      .send({
-        swimType: "practice",
-        eventDistance: 100,
-        eventStroke: "free",
-        course: "scy",
-        timeString: "58.30",
-        swumOn: "2025-06-15",
-      });
-
-    expect(res.status).toBe(201);
-    expect(res.body.swimType).toBe("practice");
-  });
-
-  it("returns 422 when swimType is meet but meetId is missing", async () => {
+  it("returns 422 when meetId is missing (meets are required)", async () => {
     authAs(profileCoach);
     mockDbSelect.mockReturnValueOnce(requireUserSelect(profileCoach));
 
@@ -397,7 +496,6 @@ describe("POST /coach/swimmers/:id/meet-swims", () => {
       .post(`/coach/swimmers/${SWIMMER_ID}/meet-swims`)
       .set("Authorization", "Bearer token")
       .send({
-        swimType: "meet",
         eventDistance: 100,
         eventStroke: "free",
         course: "scy",
@@ -408,23 +506,36 @@ describe("POST /coach/swimmers/:id/meet-swims", () => {
     expect(res.status).toBe(422);
   });
 
-  it("returns 422 for invalid event (IM at 50 yards)", async () => {
+  it("returns 422 when swimType='practice' is sent (rejected)", async () => {
     authAs(profileCoach);
-    mockDbSelect
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachRouter requireUser (once)
-      .mockReturnValueOnce(swimmerExistsSelect(true));
+    mockDbSelect.mockReturnValueOnce(requireUserSelect(profileCoach));
 
     const res = await request(app)
       .post(`/coach/swimmers/${SWIMMER_ID}/meet-swims`)
       .set("Authorization", "Bearer token")
       .send({
         swimType: "practice",
-        eventDistance: 50,
-        eventStroke: "im",
+        eventDistance: 100,
+        eventStroke: "free",
         course: "scy",
         timeString: "58.30",
         swumOn: "2025-06-15",
       });
+
+    // No meetId → schema fails. Practice path is gone.
+    expect(res.status).toBe(422);
+  });
+
+  it("returns 422 for invalid event (IM at 50 yards)", async () => {
+    authAs(profileCoach);
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(profileCoach))
+      .mockReturnValueOnce(swimmerExistsSelect(true));
+
+    const res = await request(app)
+      .post(`/coach/swimmers/${SWIMMER_ID}/meet-swims`)
+      .set("Authorization", "Bearer token")
+      .send({ ...validBody, eventDistance: 50, eventStroke: "im" });
 
     expect(res.status).toBe(422);
     expect(res.body.error).toBe("invalid_event");
@@ -433,20 +544,13 @@ describe("POST /coach/swimmers/:id/meet-swims", () => {
   it("returns 422 for invalid time string", async () => {
     authAs(profileCoach);
     mockDbSelect
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachRouter requireUser (once)
+      .mockReturnValueOnce(requireUserSelect(profileCoach))
       .mockReturnValueOnce(swimmerExistsSelect(true));
 
     const res = await request(app)
       .post(`/coach/swimmers/${SWIMMER_ID}/meet-swims`)
       .set("Authorization", "Bearer token")
-      .send({
-        swimType: "practice",
-        eventDistance: 100,
-        eventStroke: "free",
-        course: "scy",
-        timeString: "not-a-time",
-        swumOn: "2025-06-15",
-      });
+      .send({ ...validBody, timeString: "not-a-time" });
 
     expect(res.status).toBe(422);
     expect(res.body.error).toBe("invalid_time");
@@ -455,20 +559,13 @@ describe("POST /coach/swimmers/:id/meet-swims", () => {
   it("returns 404 when swimmer not found", async () => {
     authAs(profileCoach);
     mockDbSelect
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachRouter requireUser (once)
+      .mockReturnValueOnce(requireUserSelect(profileCoach))
       .mockReturnValueOnce(swimmerExistsSelect(false));
 
     const res = await request(app)
       .post(`/coach/swimmers/${SWIMMER_ID}/meet-swims`)
       .set("Authorization", "Bearer token")
-      .send({
-        swimType: "practice",
-        eventDistance: 100,
-        eventStroke: "free",
-        course: "scy",
-        timeString: "58.30",
-        swumOn: "2025-06-15",
-      });
+      .send(validBody);
 
     expect(res.status).toBe(404);
   });
@@ -476,25 +573,34 @@ describe("POST /coach/swimmers/:id/meet-swims", () => {
   it("returns 422 when swumOn is before meetDate", async () => {
     authAs(profileCoach);
     mockDbSelect
-      .mockReturnValueOnce(requireUserSelect(profileCoach)) // coachRouter requireUser (once)
+      .mockReturnValueOnce(requireUserSelect(profileCoach))
       .mockReturnValueOnce(swimmerExistsSelect(true))
       .mockReturnValueOnce(meetSelect({ ...baseMeetRow, meetDate: "2025-06-10" }));
 
     const res = await request(app)
       .post(`/coach/swimmers/${SWIMMER_ID}/meet-swims`)
       .set("Authorization", "Bearer token")
-      .send({
-        swimType: "meet",
-        meetId: MEET_ID,
-        eventDistance: 100,
-        eventStroke: "free",
-        course: "scy",
-        timeString: "58.30",
-        swumOn: "2025-06-01",
-      });
+      .send({ ...validBody, swumOn: "2025-06-01" });
 
     expect(res.status).toBe(422);
     expect(res.body.error).toBe("swum_on_before_meet");
+  });
+
+  it("returns 422 duplicate_swim when the same (swimmer+event+course+time) exists", async () => {
+    authAs(profileCoach);
+    mockDbSelect
+      .mockReturnValueOnce(requireUserSelect(profileCoach))
+      .mockReturnValueOnce(swimmerExistsSelect(true))
+      .mockReturnValueOnce(meetSelect(baseMeetRow))
+      .mockReturnValueOnce(duplicateSelect(true));
+
+    const res = await request(app)
+      .post(`/coach/swimmers/${SWIMMER_ID}/meet-swims`)
+      .set("Authorization", "Bearer token")
+      .send(validBody);
+
+    expect(res.status).toBe(422);
+    expect(res.body.error).toBe("duplicate_swim");
   });
 });
 

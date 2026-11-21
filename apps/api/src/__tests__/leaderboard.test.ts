@@ -25,6 +25,7 @@ vi.mock("../db/client", () => ({
 }));
 
 import { createApp } from "../app";
+import { clearLeaderboardSummaryCache } from "../routes/leaderboard";
 
 const logger = pino({ level: "silent" });
 const app = createApp(logger);
@@ -81,7 +82,73 @@ function standardsSelect(rows: Array<{ standardName: string; eventDistance: numb
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // The summary route memoizes its result for 60s per API instance; tests
+  // share a module-scoped cache, so clear it between cases or the second
+  // summary assertion would hit a stale entry from the first.
+  clearLeaderboardSummaryCache();
 });
+
+// Every public endpoint now enforces MIN_SWIMMERS_PER_EVENT_LIST (= 3).
+// Most of the existing fixtures pre-date that rule and only populate one
+// swimmer in a partition. `padToThree` returns two filler swimmers with
+// times slower than the slowest test row, so the partition clears the
+// threshold without changing the ordering under test.
+const FILLER_SWIMMER_ID_1 = "dddddddd-0000-0000-0000-000000000001";
+const FILLER_SWIMMER_ID_2 = "dddddddd-0000-0000-0000-000000000002";
+
+function padToThree(
+  partition: {
+    birthDate: string;
+    sex: "female" | "male";
+    eventDistance: number;
+    eventStroke: string;
+    course: string;
+  },
+  maxExistingTimeHundredths: number,
+): {
+  fillerRegistrations: Array<{ swimmerId: string; registeredOn?: string }>;
+  fillerSwimmers: Array<{
+    id: string;
+    firstName: string;
+    lastName: string;
+    birthDate: string;
+    sex: "female" | "male";
+  }>;
+  fillerPbs: Array<{
+    swimmerId: string;
+    eventDistance: number;
+    eventStroke: string;
+    course: string;
+    timeHundredths: number;
+  }>;
+} {
+  return {
+    fillerRegistrations: [
+      { swimmerId: FILLER_SWIMMER_ID_1 },
+      { swimmerId: FILLER_SWIMMER_ID_2 },
+    ],
+    fillerSwimmers: [
+      { id: FILLER_SWIMMER_ID_1, firstName: "Fill", lastName: "One", birthDate: partition.birthDate, sex: partition.sex },
+      { id: FILLER_SWIMMER_ID_2, firstName: "Fill", lastName: "Two", birthDate: partition.birthDate, sex: partition.sex },
+    ],
+    fillerPbs: [
+      {
+        swimmerId: FILLER_SWIMMER_ID_1,
+        eventDistance: partition.eventDistance,
+        eventStroke: partition.eventStroke,
+        course: partition.course,
+        timeHundredths: maxExistingTimeHundredths + 1000,
+      },
+      {
+        swimmerId: FILLER_SWIMMER_ID_2,
+        eventDistance: partition.eventDistance,
+        eventStroke: partition.eventStroke,
+        course: partition.course,
+        timeHundredths: maxExistingTimeHundredths + 2000,
+      },
+    ],
+  };
+}
 
 // ── ageToGroup unit tests ─────────────────────────────────────────────────────
 
@@ -108,21 +175,34 @@ describe("ageToGroup", () => {
 
 describe("GET /leaderboard/club — practice swims never count", () => {
   it("personal bests only use meet swims, not practice", async () => {
+    const filler = padToThree(
+      { birthDate: "2015-01-01", sex: "female", eventDistance: 100, eventStroke: "free", course: "scy" },
+      6000,
+    );
     mockDbSelect
-      .mockReturnValueOnce(registrationsSelect([{ swimmerId: SWIMMER_PUBLIC_ID }]))
-      .mockReturnValueOnce(swimmersSelect([
-        { id: SWIMMER_PUBLIC_ID, firstName: "Alice", lastName: "Smith", birthDate: "2015-01-01", sex: "female" },
-      ]))
+      .mockReturnValueOnce(
+        registrationsSelect([{ swimmerId: SWIMMER_PUBLIC_ID }, ...filler.fillerRegistrations]),
+      )
+      .mockReturnValueOnce(
+        swimmersSelect([
+          { id: SWIMMER_PUBLIC_ID, firstName: "Alice", lastName: "Smith", birthDate: "2015-01-01", sex: "female" },
+          ...filler.fillerSwimmers,
+        ]),
+      )
       // PB query with swim_type = 'meet' filter — practice rows excluded upstream
-      .mockReturnValueOnce(pbsSelect([
-        { swimmerId: SWIMMER_PUBLIC_ID, eventDistance: 100, eventStroke: "free", course: "scy", timeHundredths: 6000 },
-      ]));
+      .mockReturnValueOnce(
+        pbsSelect([
+          { swimmerId: SWIMMER_PUBLIC_ID, eventDistance: 100, eventStroke: "free", course: "scy", timeHundredths: 6000 },
+          ...filler.fillerPbs,
+        ]),
+      );
 
     const res = await request(app).get("/leaderboard/club");
 
     expect(res.status).toBe(200);
-    expect(res.body.rows).toHaveLength(1);
-    expect(res.body.rows[0].time).toBe("1:00.00");
+    expect(res.body.rows.length).toBeGreaterThanOrEqual(3);
+    const alice = res.body.rows.find((row: { firstName: string }) => row.firstName === "Alice");
+    expect(alice.time).toBe("1:00.00");
   });
 });
 
@@ -130,20 +210,33 @@ describe("GET /leaderboard/club — practice swims never count", () => {
 
 describe("GET /leaderboard/club — ties from heat and final keep only fastest", () => {
   it("when two meet swims exist for same event, returns only the faster one", async () => {
+    const filler = padToThree(
+      { birthDate: "2015-01-01", sex: "female", eventDistance: 100, eventStroke: "free", course: "scy" },
+      5500,
+    );
     mockDbSelect
-      .mockReturnValueOnce(registrationsSelect([{ swimmerId: SWIMMER_PUBLIC_ID }]))
-      .mockReturnValueOnce(swimmersSelect([
-        { id: SWIMMER_PUBLIC_ID, firstName: "Alice", lastName: "Smith", birthDate: "2015-01-01", sex: "female" },
-      ]))
+      .mockReturnValueOnce(
+        registrationsSelect([{ swimmerId: SWIMMER_PUBLIC_ID }, ...filler.fillerRegistrations]),
+      )
+      .mockReturnValueOnce(
+        swimmersSelect([
+          { id: SWIMMER_PUBLIC_ID, firstName: "Alice", lastName: "Smith", birthDate: "2015-01-01", sex: "female" },
+          ...filler.fillerSwimmers,
+        ]),
+      )
       // The PB query uses MIN(time_hundredths) — only one row per event/course
-      .mockReturnValueOnce(pbsSelect([
-        { swimmerId: SWIMMER_PUBLIC_ID, eventDistance: 100, eventStroke: "free", course: "scy", timeHundredths: 5500 },
-      ]));
+      .mockReturnValueOnce(
+        pbsSelect([
+          { swimmerId: SWIMMER_PUBLIC_ID, eventDistance: 100, eventStroke: "free", course: "scy", timeHundredths: 5500 },
+          ...filler.fillerPbs,
+        ]),
+      );
 
     const res = await request(app).get("/leaderboard/club");
 
     expect(res.status).toBe(200);
-    expect(res.body.rows[0].time).toBe("55.00");
+    const alice = res.body.rows.find((row: { firstName: string }) => row.firstName === "Alice");
+    expect(alice.time).toBe("55.00");
   });
 });
 
@@ -151,24 +244,38 @@ describe("GET /leaderboard/club — ties from heat and final keep only fastest",
 
 describe("GET /leaderboard/club — visibility", () => {
   it("non-public swimmer absent from public board", async () => {
+    const filler = padToThree(
+      { birthDate: "2015-01-01", sex: "female", eventDistance: 100, eventStroke: "free", course: "scy" },
+      5500,
+    );
     mockDbSelect
-      .mockReturnValueOnce(registrationsSelect([
-        { swimmerId: SWIMMER_PUBLIC_ID },
-        { swimmerId: SWIMMER_PRIVATE_ID },
-      ]))
+      .mockReturnValueOnce(
+        registrationsSelect([
+          { swimmerId: SWIMMER_PUBLIC_ID },
+          { swimmerId: SWIMMER_PRIVATE_ID },
+          ...filler.fillerRegistrations,
+        ]),
+      )
       // Only the public swimmer is returned (is_public = true filter applied in query)
-      .mockReturnValueOnce(swimmersSelect([
-        { id: SWIMMER_PUBLIC_ID, firstName: "Alice", lastName: "Smith", birthDate: "2015-01-01", sex: "female" },
-      ]))
-      .mockReturnValueOnce(pbsSelect([
-        { swimmerId: SWIMMER_PUBLIC_ID, eventDistance: 100, eventStroke: "free", course: "scy", timeHundredths: 5500 },
-      ]));
+      .mockReturnValueOnce(
+        swimmersSelect([
+          { id: SWIMMER_PUBLIC_ID, firstName: "Alice", lastName: "Smith", birthDate: "2015-01-01", sex: "female" },
+          ...filler.fillerSwimmers,
+        ]),
+      )
+      .mockReturnValueOnce(
+        pbsSelect([
+          { swimmerId: SWIMMER_PUBLIC_ID, eventDistance: 100, eventStroke: "free", course: "scy", timeHundredths: 5500 },
+          ...filler.fillerPbs,
+        ]),
+      );
 
     const res = await request(app).get("/leaderboard/club");
 
     expect(res.status).toBe(200);
-    expect(res.body.rows).toHaveLength(1);
-    expect(res.body.rows[0].firstName).toBe("Alice");
+    const firstNames = res.body.rows.map((row: { firstName: string }) => row.firstName);
+    expect(firstNames).toContain("Alice");
+    expect(firstNames).not.toContain("Bob");
   });
 
   it("non-public swimmer present on coach board", async () => {
@@ -202,24 +309,37 @@ describe("GET /leaderboard/club — visibility", () => {
 
 describe("GET /leaderboard/club — archived swimmers excluded", () => {
   it("archived swimmer is not returned even if registered", async () => {
+    const filler = padToThree(
+      { birthDate: "2015-01-01", sex: "female", eventDistance: 100, eventStroke: "free", course: "scy" },
+      5500,
+    );
     mockDbSelect
-      .mockReturnValueOnce(registrationsSelect([
-        { swimmerId: SWIMMER_PUBLIC_ID },
-        { swimmerId: SWIMMER_ARCHIVED_ID },
-      ]))
+      .mockReturnValueOnce(
+        registrationsSelect([
+          { swimmerId: SWIMMER_PUBLIC_ID },
+          { swimmerId: SWIMMER_ARCHIVED_ID },
+          ...filler.fillerRegistrations,
+        ]),
+      )
       // Archived swimmer not returned (archived_at IS NULL filter in query)
-      .mockReturnValueOnce(swimmersSelect([
-        { id: SWIMMER_PUBLIC_ID, firstName: "Alice", lastName: "Smith", birthDate: "2015-01-01", sex: "female" },
-      ]))
-      .mockReturnValueOnce(pbsSelect([
-        { swimmerId: SWIMMER_PUBLIC_ID, eventDistance: 100, eventStroke: "free", course: "scy", timeHundredths: 5500 },
-      ]));
+      .mockReturnValueOnce(
+        swimmersSelect([
+          { id: SWIMMER_PUBLIC_ID, firstName: "Alice", lastName: "Smith", birthDate: "2015-01-01", sex: "female" },
+          ...filler.fillerSwimmers,
+        ]),
+      )
+      .mockReturnValueOnce(
+        pbsSelect([
+          { swimmerId: SWIMMER_PUBLIC_ID, eventDistance: 100, eventStroke: "free", course: "scy", timeHundredths: 5500 },
+          ...filler.fillerPbs,
+        ]),
+      );
 
     const res = await request(app).get("/leaderboard/club");
 
     expect(res.status).toBe(200);
-    expect(res.body.rows).toHaveLength(1);
-    expect(res.body.rows[0].firstName).toBe("Alice");
+    const firstNames = res.body.rows.map((row: { firstName: string }) => row.firstName);
+    expect(firstNames).toContain("Alice");
   });
 });
 
@@ -228,28 +348,45 @@ describe("GET /leaderboard/club — archived swimmers excluded", () => {
 describe("GET /leaderboard/club — ties share a rank", () => {
   it("two swimmers with identical times both get rank 1", async () => {
     const SWIMMER_B_ID = "cccccccc-0000-0000-0000-000000000020";
+    const filler = padToThree(
+      { birthDate: "2015-01-01", sex: "female", eventDistance: 100, eventStroke: "free", course: "scy" },
+      5500,
+    );
     mockDbSelect
-      .mockReturnValueOnce(registrationsSelect([
-        { swimmerId: SWIMMER_PUBLIC_ID },
-        { swimmerId: SWIMMER_B_ID },
-      ]))
-      .mockReturnValueOnce(swimmersSelect([
-        { id: SWIMMER_PUBLIC_ID, firstName: "Alice", lastName: "Smith", birthDate: "2015-01-01", sex: "female" },
-        { id: SWIMMER_B_ID, firstName: "Carol", lastName: "Lee", birthDate: "2015-06-15", sex: "female" },
-      ]))
-      .mockReturnValueOnce(pbsSelect([
-        { swimmerId: SWIMMER_PUBLIC_ID, eventDistance: 100, eventStroke: "free", course: "scy", timeHundredths: 5500 },
-        { swimmerId: SWIMMER_B_ID, eventDistance: 100, eventStroke: "free", course: "scy", timeHundredths: 5500 },
-      ]));
+      .mockReturnValueOnce(
+        registrationsSelect([
+          { swimmerId: SWIMMER_PUBLIC_ID },
+          { swimmerId: SWIMMER_B_ID },
+          ...filler.fillerRegistrations,
+        ]),
+      )
+      .mockReturnValueOnce(
+        swimmersSelect([
+          { id: SWIMMER_PUBLIC_ID, firstName: "Alice", lastName: "Smith", birthDate: "2015-01-01", sex: "female" },
+          { id: SWIMMER_B_ID, firstName: "Carol", lastName: "Lee", birthDate: "2015-06-15", sex: "female" },
+          ...filler.fillerSwimmers,
+        ]),
+      )
+      .mockReturnValueOnce(
+        pbsSelect([
+          { swimmerId: SWIMMER_PUBLIC_ID, eventDistance: 100, eventStroke: "free", course: "scy", timeHundredths: 5500 },
+          { swimmerId: SWIMMER_B_ID, eventDistance: 100, eventStroke: "free", course: "scy", timeHundredths: 5500 },
+          ...filler.fillerPbs,
+        ]),
+      );
 
     const res = await request(app).get("/leaderboard/club");
 
     expect(res.status).toBe(200);
-    const ranks = res.body.rows.map((row: { rank: number }) => row.rank);
-    expect(ranks).toEqual([1, 1]);
+    const topRanks = res.body.rows
+      .filter((row: { firstName: string }) => row.firstName === "Alice" || row.firstName === "Carol")
+      .map((row: { rank: number }) => row.rank);
+    expect(topRanks).toEqual([1, 1]);
   });
 
   it("a third swimmer after two ties gets rank 3", async () => {
+    // Three real swimmers in the partition already meets the threshold, no
+    // filler needed. Alice + Carol tie at 55.00, Dana at 57.00.
     const SWIMMER_B_ID = "cccccccc-0000-0000-0000-000000000020";
     const SWIMMER_C_ID = "cccccccc-0000-0000-0000-000000000021";
     mockDbSelect
@@ -281,67 +418,220 @@ describe("GET /leaderboard/club — ties share a rank", () => {
   });
 });
 
+// ── Min-swimmers-per-event-list threshold ─────────────────────────────────────
+
+describe("GET /leaderboard/club — min-3 threshold", () => {
+  it("drops the event list when only 2 swimmers are in the partition", async () => {
+    const SWIMMER_B_ID = "cccccccc-0000-0000-0000-000000000030";
+    mockDbSelect
+      .mockReturnValueOnce(registrationsSelect([
+        { swimmerId: SWIMMER_PUBLIC_ID },
+        { swimmerId: SWIMMER_B_ID },
+      ]))
+      .mockReturnValueOnce(swimmersSelect([
+        { id: SWIMMER_PUBLIC_ID, firstName: "Alice", lastName: "Smith", birthDate: "2015-01-01", sex: "female" },
+        { id: SWIMMER_B_ID, firstName: "Carol", lastName: "Lee", birthDate: "2015-06-15", sex: "female" },
+      ]))
+      .mockReturnValueOnce(pbsSelect([
+        { swimmerId: SWIMMER_PUBLIC_ID, eventDistance: 100, eventStroke: "free", course: "scy", timeHundredths: 5500 },
+        { swimmerId: SWIMMER_B_ID, eventDistance: 100, eventStroke: "free", course: "scy", timeHundredths: 5600 },
+      ]));
+
+    const res = await request(app).get("/leaderboard/club");
+
+    expect(res.status).toBe(200);
+    expect(res.body.rows).toEqual([]);
+  });
+
+  it("keeps the event list when 3 swimmers are in the partition", async () => {
+    const SWIMMER_B_ID = "cccccccc-0000-0000-0000-000000000030";
+    const SWIMMER_C_ID = "cccccccc-0000-0000-0000-000000000031";
+    mockDbSelect
+      .mockReturnValueOnce(registrationsSelect([
+        { swimmerId: SWIMMER_PUBLIC_ID },
+        { swimmerId: SWIMMER_B_ID },
+        { swimmerId: SWIMMER_C_ID },
+      ]))
+      .mockReturnValueOnce(swimmersSelect([
+        { id: SWIMMER_PUBLIC_ID, firstName: "Alice", lastName: "Smith", birthDate: "2015-01-01", sex: "female" },
+        { id: SWIMMER_B_ID, firstName: "Carol", lastName: "Lee", birthDate: "2015-06-15", sex: "female" },
+        { id: SWIMMER_C_ID, firstName: "Dana", lastName: "Park", birthDate: "2015-03-20", sex: "female" },
+      ]))
+      .mockReturnValueOnce(pbsSelect([
+        { swimmerId: SWIMMER_PUBLIC_ID, eventDistance: 100, eventStroke: "free", course: "scy", timeHundredths: 5500 },
+        { swimmerId: SWIMMER_B_ID, eventDistance: 100, eventStroke: "free", course: "scy", timeHundredths: 5600 },
+        { swimmerId: SWIMMER_C_ID, eventDistance: 100, eventStroke: "free", course: "scy", timeHundredths: 5700 },
+      ]));
+
+    const res = await request(app).get("/leaderboard/club");
+
+    expect(res.status).toBe(200);
+    expect(res.body.rows).toHaveLength(3);
+  });
+
+  it("drops a small partition even when another partition qualifies", async () => {
+    // Partition A (Free SCY, age 11-12 female): 3 swimmers — kept.
+    // Partition B (Back SCY, same age/sex): 2 swimmers — dropped.
+    const SWIMMER_B_ID = "cccccccc-0000-0000-0000-000000000030";
+    const SWIMMER_C_ID = "cccccccc-0000-0000-0000-000000000031";
+    const SWIMMER_D_ID = "cccccccc-0000-0000-0000-000000000032";
+    const SWIMMER_E_ID = "cccccccc-0000-0000-0000-000000000033";
+    mockDbSelect
+      .mockReturnValueOnce(registrationsSelect([
+        { swimmerId: SWIMMER_PUBLIC_ID },
+        { swimmerId: SWIMMER_B_ID },
+        { swimmerId: SWIMMER_C_ID },
+        { swimmerId: SWIMMER_D_ID },
+        { swimmerId: SWIMMER_E_ID },
+      ]))
+      .mockReturnValueOnce(swimmersSelect([
+        { id: SWIMMER_PUBLIC_ID, firstName: "Alice", lastName: "Smith", birthDate: "2015-01-01", sex: "female" },
+        { id: SWIMMER_B_ID, firstName: "Carol", lastName: "Lee", birthDate: "2015-02-01", sex: "female" },
+        { id: SWIMMER_C_ID, firstName: "Dana", lastName: "Park", birthDate: "2015-03-01", sex: "female" },
+        { id: SWIMMER_D_ID, firstName: "Erin", lastName: "Chen", birthDate: "2015-04-01", sex: "female" },
+        { id: SWIMMER_E_ID, firstName: "Fran", lastName: "Hill", birthDate: "2015-05-01", sex: "female" },
+      ]))
+      .mockReturnValueOnce(pbsSelect([
+        { swimmerId: SWIMMER_PUBLIC_ID, eventDistance: 100, eventStroke: "free", course: "scy", timeHundredths: 5500 },
+        { swimmerId: SWIMMER_B_ID, eventDistance: 100, eventStroke: "free", course: "scy", timeHundredths: 5600 },
+        { swimmerId: SWIMMER_C_ID, eventDistance: 100, eventStroke: "free", course: "scy", timeHundredths: 5700 },
+        { swimmerId: SWIMMER_D_ID, eventDistance: 100, eventStroke: "back", course: "scy", timeHundredths: 6500 },
+        { swimmerId: SWIMMER_E_ID, eventDistance: 100, eventStroke: "back", course: "scy", timeHundredths: 6600 },
+      ]));
+
+    const res = await request(app).get("/leaderboard/club");
+
+    expect(res.status).toBe(200);
+    const strokes = res.body.rows.map((row: { eventStroke: string }) => row.eventStroke);
+    expect(strokes).toEqual(["free", "free", "free"]);
+    expect(res.body.rows).toHaveLength(3);
+  });
+});
+
+// ── Summary endpoint ──────────────────────────────────────────────────────────
+
+describe("GET /leaderboard/summary", () => {
+  it("reports club as qualifying when it has a full event list and the others are empty", async () => {
+    // Summary fires three loaders in Promise.all. Each loader calls
+    // `db.select()` synchronously before awaiting, so mocks are consumed in
+    // this order: club.regs, isl.regs, master.std, master.swim, then the
+    // follow-on queries once the awaited promises resolve.
+    mockDbSelect
+      // Initial sync fan-out
+      .mockReturnValueOnce(registrationsSelect([
+        { swimmerId: "c1111111-0000-0000-0000-000000000001" },
+        { swimmerId: "c1111111-0000-0000-0000-000000000002" },
+        { swimmerId: "c1111111-0000-0000-0000-000000000003" },
+      ]))
+      .mockReturnValueOnce(registrationsSelect([]))
+      .mockReturnValueOnce(standardsSelect([]))
+      .mockReturnValueOnce(swimmersSelect([]))
+      // Follow-on: club loader resolves, then queries swimmers + pbs.
+      .mockReturnValueOnce(swimmersSelect([
+        { id: "c1111111-0000-0000-0000-000000000001", firstName: "A", lastName: "A", birthDate: "2015-01-01", sex: "female" },
+        { id: "c1111111-0000-0000-0000-000000000002", firstName: "B", lastName: "B", birthDate: "2015-01-01", sex: "female" },
+        { id: "c1111111-0000-0000-0000-000000000003", firstName: "C", lastName: "C", birthDate: "2015-01-01", sex: "female" },
+      ]))
+      .mockReturnValueOnce(pbsSelect([
+        { swimmerId: "c1111111-0000-0000-0000-000000000001", eventDistance: 100, eventStroke: "free", course: "scy", timeHundredths: 5500 },
+        { swimmerId: "c1111111-0000-0000-0000-000000000002", eventDistance: 100, eventStroke: "free", course: "scy", timeHundredths: 5600 },
+        { swimmerId: "c1111111-0000-0000-0000-000000000003", eventDistance: 100, eventStroke: "free", course: "scy", timeHundredths: 5700 },
+      ]));
+
+    const res = await request(app).get("/leaderboard/summary");
+
+    expect(res.status).toBe(200);
+    expect(res.body.qualifying).toEqual(["club"]);
+  });
+
+  it("reports an empty list when no board qualifies", async () => {
+    mockDbSelect
+      .mockReturnValueOnce(registrationsSelect([]))
+      .mockReturnValueOnce(registrationsSelect([]))
+      .mockReturnValueOnce(standardsSelect([]))
+      .mockReturnValueOnce(swimmersSelect([]));
+
+    const res = await request(app).get("/leaderboard/summary");
+
+    expect(res.status).toBe(200);
+    expect(res.body.qualifying).toEqual([]);
+  });
+});
+
 // ── ISL age uses registered_on ────────────────────────────────────────────────
 
 describe("GET /leaderboard/isl — age uses registered_on date", () => {
   it("groups swimmer by age on registration date, not today", async () => {
     // Swimmer born 2013-07-01. On registered_on 2025-06-01 they are 11 → group 11-12.
     // But on today 2026-10-15 they are 13 → group 13-14. ISL uses registered_on.
+    // Padded to 3 swimmers so the partition clears the threshold.
     mockDbSelect
       .mockReturnValueOnce(registrationsSelect([
         { swimmerId: SWIMMER_PUBLIC_ID, registeredOn: "2025-06-01" },
+        { swimmerId: FILLER_SWIMMER_ID_1, registeredOn: "2025-06-01" },
+        { swimmerId: FILLER_SWIMMER_ID_2, registeredOn: "2025-06-01" },
       ]))
       .mockReturnValueOnce(swimmersSelect([
         { id: SWIMMER_PUBLIC_ID, firstName: "Alice", lastName: "Smith", birthDate: "2013-07-01", sex: "female" },
+        { id: FILLER_SWIMMER_ID_1, firstName: "Fill", lastName: "One", birthDate: "2013-07-01", sex: "female" },
+        { id: FILLER_SWIMMER_ID_2, firstName: "Fill", lastName: "Two", birthDate: "2013-07-01", sex: "female" },
       ]))
       .mockReturnValueOnce(pbsSelect([
         { swimmerId: SWIMMER_PUBLIC_ID, eventDistance: 100, eventStroke: "free", course: "scy", timeHundredths: 6000 },
+        { swimmerId: FILLER_SWIMMER_ID_1, eventDistance: 100, eventStroke: "free", course: "scy", timeHundredths: 7000 },
+        { swimmerId: FILLER_SWIMMER_ID_2, eventDistance: 100, eventStroke: "free", course: "scy", timeHundredths: 8000 },
       ]));
 
     const res = await request(app).get("/leaderboard/isl");
 
     expect(res.status).toBe(200);
-    expect(res.body.rows).toHaveLength(1);
-    expect(res.body.rows[0].ageGroup).toBe("11-12");
+    expect(res.body.rows).toHaveLength(3);
+    const alice = res.body.rows.find((row: { firstName: string }) => row.firstName === "Alice");
+    expect(alice.ageGroup).toBe("11-12");
   });
 });
 
 // ── Master empty state ────────────────────────────────────────────────────────
 
-describe("GET /leaderboard/master — empty standards table", () => {
-  it("returns standardsAvailable: false and no rows", async () => {
-    mockDbSelect.mockReturnValueOnce(standardsSelect([]));
+describe("GET /leaderboard/master — standards are optional (ADR 023 decided)", () => {
+  it("returns empty rows when no eligible swimmers (no swimmers, no standards)", async () => {
+    mockDbSelect
+      .mockReturnValueOnce(standardsSelect([]))
+      .mockReturnValueOnce(swimmersSelect([]));
 
     const res = await request(app).get("/leaderboard/master");
 
     expect(res.status).toBe(200);
-    expect(res.body.standardsAvailable).toBe(false);
     expect(res.body.rows).toEqual([]);
+    // standardsAvailable no longer exists on the public response.
+    expect(res.body.standardsAvailable).toBeUndefined();
   });
 
-  it("returns standardsAvailable: true when standards exist", async () => {
-    // Swimmer born 2016-06-01 is 10 years old on 2026-10-15 → age group "9-10"
+  it("ranks by time with no standard when standards table is empty", async () => {
+    // 3 swimmers in one partition, no standards defined.
     mockDbSelect
-      .mockReturnValueOnce(standardsSelect([
-        { standardName: "B", eventDistance: 100, eventStroke: "free", course: "scy", sex: "female", ageGroup: "9-10", cutTimeHundredths: 7000 },
-      ]))
+      .mockReturnValueOnce(standardsSelect([]))
       .mockReturnValueOnce(swimmersSelect([
         { id: SWIMMER_PUBLIC_ID, firstName: "Alice", lastName: "Smith", birthDate: "2016-06-01", sex: "female" },
+        { id: FILLER_SWIMMER_ID_1, firstName: "Fill", lastName: "One", birthDate: "2016-06-01", sex: "female" },
+        { id: FILLER_SWIMMER_ID_2, firstName: "Fill", lastName: "Two", birthDate: "2016-06-01", sex: "female" },
       ]))
       .mockReturnValueOnce(pbsSelect([
-        { swimmerId: SWIMMER_PUBLIC_ID, eventDistance: 100, eventStroke: "free", course: "scy", timeHundredths: 6500 },
+        { swimmerId: SWIMMER_PUBLIC_ID, eventDistance: 100, eventStroke: "free", course: "scy", timeHundredths: 6000 },
+        { swimmerId: FILLER_SWIMMER_ID_1, eventDistance: 100, eventStroke: "free", course: "scy", timeHundredths: 6500 },
+        { swimmerId: FILLER_SWIMMER_ID_2, eventDistance: 100, eventStroke: "free", course: "scy", timeHundredths: 7000 },
       ]));
 
     const res = await request(app).get("/leaderboard/master");
 
     expect(res.status).toBe(200);
-    expect(res.body.standardsAvailable).toBe(true);
-    expect(res.body.rows).toHaveLength(1);
-    expect(res.body.rows[0].standard).toBe("B");
+    expect(res.body.rows).toHaveLength(3);
+    const alice = res.body.rows.find((row: { firstName: string }) => row.firstName === "Alice");
+    expect(alice.rank).toBe(1);
+    expect(alice.standard).toBeNull();
   });
 
-  it("shows highest standard achieved when swimmer meets multiple", async () => {
-    // Swimmer's PB is 60.00, which beats both B (70.00) and BB (65.00) cuts but not A (55.00)
+  it("attaches the highest matching standard when standards exist for the partition", async () => {
     mockDbSelect
       .mockReturnValueOnce(standardsSelect([
         { standardName: "B", eventDistance: 100, eventStroke: "free", course: "scy", sex: "female", ageGroup: "9-10", cutTimeHundredths: 7000 },
@@ -350,34 +640,25 @@ describe("GET /leaderboard/master — empty standards table", () => {
       ]))
       .mockReturnValueOnce(swimmersSelect([
         { id: SWIMMER_PUBLIC_ID, firstName: "Alice", lastName: "Smith", birthDate: "2016-06-01", sex: "female" },
+        { id: FILLER_SWIMMER_ID_1, firstName: "Fill", lastName: "One", birthDate: "2016-06-01", sex: "female" },
+        { id: FILLER_SWIMMER_ID_2, firstName: "Fill", lastName: "Two", birthDate: "2016-06-01", sex: "female" },
       ]))
       .mockReturnValueOnce(pbsSelect([
+        // Alice PB 60.00 beats B (70.00) and BB (65.00) but not A (55.00).
         { swimmerId: SWIMMER_PUBLIC_ID, eventDistance: 100, eventStroke: "free", course: "scy", timeHundredths: 6000 },
+        { swimmerId: FILLER_SWIMMER_ID_1, eventDistance: 100, eventStroke: "free", course: "scy", timeHundredths: 7500 },
+        { swimmerId: FILLER_SWIMMER_ID_2, eventDistance: 100, eventStroke: "free", course: "scy", timeHundredths: 8000 },
       ]));
 
     const res = await request(app).get("/leaderboard/master");
 
     expect(res.status).toBe(200);
-    expect(res.body.rows[0].standard).toBe("BB");
-  });
-
-  it("excludes swimmer whose PB doesn't meet any standard", async () => {
-    // Swimmer PB is 75.00 — slower than B cut of 70.00
-    mockDbSelect
-      .mockReturnValueOnce(standardsSelect([
-        { standardName: "B", eventDistance: 100, eventStroke: "free", course: "scy", sex: "female", ageGroup: "9-10", cutTimeHundredths: 7000 },
-      ]))
-      .mockReturnValueOnce(swimmersSelect([
-        { id: SWIMMER_PUBLIC_ID, firstName: "Alice", lastName: "Smith", birthDate: "2016-06-01", sex: "female" },
-      ]))
-      .mockReturnValueOnce(pbsSelect([
-        { swimmerId: SWIMMER_PUBLIC_ID, eventDistance: 100, eventStroke: "free", course: "scy", timeHundredths: 7500 },
-      ]));
-
-    const res = await request(app).get("/leaderboard/master");
-
-    expect(res.status).toBe(200);
-    expect(res.body.rows).toHaveLength(0);
+    const alice = res.body.rows.find((row: { firstName: string }) => row.firstName === "Alice");
+    expect(alice.standard).toBe("BB");
+    // Fillers don't meet any standard → null; they still appear, ranked
+    // below everyone who holds a standard.
+    const fillers = res.body.rows.filter((row: { firstName: string }) => row.firstName === "Fill");
+    expect(fillers.every((row: { standard: string | null }) => row.standard === null)).toBe(true);
   });
 });
 
@@ -404,14 +685,26 @@ describe("Public response PII serialization", () => {
   }
 
   it("club board response contains no ids, last names, or birth dates", async () => {
+    const filler = padToThree(
+      { birthDate: "2015-01-01", sex: "female", eventDistance: 100, eventStroke: "free", course: "scy" },
+      5500,
+    );
     mockDbSelect
-      .mockReturnValueOnce(registrationsSelect([{ swimmerId: SWIMMER_PUBLIC_ID }]))
-      .mockReturnValueOnce(swimmersSelect([
-        { id: SWIMMER_PUBLIC_ID, firstName: "Alice", lastName: "Smith", birthDate: "2015-01-01", sex: "female" },
-      ]))
-      .mockReturnValueOnce(pbsSelect([
-        { swimmerId: SWIMMER_PUBLIC_ID, eventDistance: 100, eventStroke: "free", course: "scy", timeHundredths: 5500 },
-      ]));
+      .mockReturnValueOnce(
+        registrationsSelect([{ swimmerId: SWIMMER_PUBLIC_ID }, ...filler.fillerRegistrations]),
+      )
+      .mockReturnValueOnce(
+        swimmersSelect([
+          { id: SWIMMER_PUBLIC_ID, firstName: "Alice", lastName: "Smith", birthDate: "2015-01-01", sex: "female" },
+          ...filler.fillerSwimmers,
+        ]),
+      )
+      .mockReturnValueOnce(
+        pbsSelect([
+          { swimmerId: SWIMMER_PUBLIC_ID, eventDistance: 100, eventStroke: "free", course: "scy", timeHundredths: 5500 },
+          ...filler.fillerPbs,
+        ]),
+      );
 
     const res = await request(app).get("/leaderboard/club");
 
@@ -423,12 +716,20 @@ describe("Public response PII serialization", () => {
 
   it("ISL board response contains no ids, last names, or birth dates", async () => {
     mockDbSelect
-      .mockReturnValueOnce(registrationsSelect([{ swimmerId: SWIMMER_PUBLIC_ID, registeredOn: "2025-06-01" }]))
+      .mockReturnValueOnce(registrationsSelect([
+        { swimmerId: SWIMMER_PUBLIC_ID, registeredOn: "2025-06-01" },
+        { swimmerId: FILLER_SWIMMER_ID_1, registeredOn: "2025-06-01" },
+        { swimmerId: FILLER_SWIMMER_ID_2, registeredOn: "2025-06-01" },
+      ]))
       .mockReturnValueOnce(swimmersSelect([
         { id: SWIMMER_PUBLIC_ID, firstName: "Alice", lastName: "Jones", birthDate: "2015-01-01", sex: "female" },
+        { id: FILLER_SWIMMER_ID_1, firstName: "Fill", lastName: "One", birthDate: "2015-01-01", sex: "female" },
+        { id: FILLER_SWIMMER_ID_2, firstName: "Fill", lastName: "Two", birthDate: "2015-01-01", sex: "female" },
       ]))
       .mockReturnValueOnce(pbsSelect([
         { swimmerId: SWIMMER_PUBLIC_ID, eventDistance: 100, eventStroke: "free", course: "scy", timeHundredths: 5500 },
+        { swimmerId: FILLER_SWIMMER_ID_1, eventDistance: 100, eventStroke: "free", course: "scy", timeHundredths: 6500 },
+        { swimmerId: FILLER_SWIMMER_ID_2, eventDistance: 100, eventStroke: "free", course: "scy", timeHundredths: 7500 },
       ]));
 
     const res = await request(app).get("/leaderboard/isl");
@@ -445,9 +746,13 @@ describe("Public response PII serialization", () => {
       ]))
       .mockReturnValueOnce(swimmersSelect([
         { id: SWIMMER_PUBLIC_ID, firstName: "Alice", lastName: "Smith", birthDate: "2016-06-01", sex: "female" },
+        { id: FILLER_SWIMMER_ID_1, firstName: "Fill", lastName: "One", birthDate: "2016-06-01", sex: "female" },
+        { id: FILLER_SWIMMER_ID_2, firstName: "Fill", lastName: "Two", birthDate: "2016-06-01", sex: "female" },
       ]))
       .mockReturnValueOnce(pbsSelect([
         { swimmerId: SWIMMER_PUBLIC_ID, eventDistance: 100, eventStroke: "free", course: "scy", timeHundredths: 6500 },
+        { swimmerId: FILLER_SWIMMER_ID_1, eventDistance: 100, eventStroke: "free", course: "scy", timeHundredths: 7500 },
+        { swimmerId: FILLER_SWIMMER_ID_2, eventDistance: 100, eventStroke: "free", course: "scy", timeHundredths: 8500 },
       ]));
 
     const res = await request(app).get("/leaderboard/master");

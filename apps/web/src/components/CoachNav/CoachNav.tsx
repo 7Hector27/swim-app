@@ -19,25 +19,35 @@ const BOTTOM_NAV_TABS = [
   { label: "Swimmers", href: "/coach/swimmers" },
 ] as const;
 
-// Meets moved onto the /coach/swimmers page as a tab — a season of
-// meets is a roster-shaped concern, so it lives next to the swimmers
-// list rather than as a top-level destination. The /coach/meets URL
-// still resolves (redirects to /coach/swimmers?tab=meets) so existing
-// links and bookmarks keep working.
-const MORE_SHEET_ITEMS = [
+// Meets is now its own top-level destination (ADR 0045 cleanup) —
+// `/coach/meets` is a real page with inline create + per-meet results.
+// Leaderboards sits next to Meets; `buildCoachLinks` filters it out when no
+// board qualifies so coaches don't jump to an empty page.
+const MORE_SHEET_BASE = [
+  { label: "Meets", href: "/coach/meets" },
+  { label: "Leaderboards", href: "/leaderboard" },
   { label: "Families", href: "/coach/families" },
   { label: "Availability", href: "/coach/availability" },
   { label: "Account settings", href: "/account" },
 ] as const;
 
-// Desktop header shows all destinations
-const DESKTOP_NAV_LINKS = [
+const DESKTOP_NAV_BASE = [
   { label: "Home", href: "/dashboard" },
   { label: "Schedule", href: "/coach/schedule" },
   { label: "Availability", href: "/coach/availability" },
   { label: "Swimmers", href: "/coach/swimmers" },
+  { label: "Meets", href: "/coach/meets" },
+  { label: "Leaderboards", href: "/leaderboard" },
   { label: "Families", href: "/coach/families" },
 ] as const;
+
+type NavLink = { label: string; href: string };
+
+function buildCoachLinks(hasAnyBoard: boolean): { more: NavLink[]; desktop: NavLink[] } {
+  const strip = (links: readonly NavLink[]): NavLink[] =>
+    links.filter((link) => hasAnyBoard || link.href !== "/leaderboard");
+  return { more: strip(MORE_SHEET_BASE), desktop: strip(DESKTOP_NAV_BASE) };
+}
 
 // ── Active-state helper ───────────────────────────────────────────────────────
 
@@ -47,8 +57,8 @@ export function isCoachLinkActive(href: string, pathname: string | null): boolea
   return pathname === href || pathname.startsWith(href + "/");
 }
 
-function isMoreActive(pathname: string | null): boolean {
-  return MORE_SHEET_ITEMS.some((item) => isCoachLinkActive(item.href, pathname));
+function isMoreActive(pathname: string | null, moreItems: NavLink[]): boolean {
+  return moreItems.some((item) => isCoachLinkActive(item.href, pathname));
 }
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
@@ -186,7 +196,18 @@ const TAB_ICONS: Record<TabLabel, () => React.ReactElement> = {
 // bottom-tab icons above so the sheet reads as a continuation of the
 // nav, not a separate styling language. Account and Log out used to
 // render without one.
+function MeetsIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <rect x="3" y="4" width="14" height="13" rx="2" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M3 8h14" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M7 11h6M7 14h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 const SHEET_ICONS: Record<string, () => React.ReactElement> = {
+  Meets: MeetsIcon,
   Families: FamiliesIcon,
   Availability: AvailabilityIcon,
   "Account settings": AccountIcon,
@@ -195,9 +216,10 @@ const SHEET_ICONS: Record<string, () => React.ReactElement> = {
 interface MoreSheetProps {
   open: boolean;
   onClose: () => void;
+  items: NavLink[];
 }
 
-function MoreSheet({ open, onClose }: MoreSheetProps) {
+function MoreSheet({ open, onClose, items }: MoreSheetProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
@@ -252,7 +274,7 @@ function MoreSheet({ open, onClose }: MoreSheetProps) {
 
           <nav aria-label="More options">
             <ul>
-              {MORE_SHEET_ITEMS.map((item) => {
+              {items.map((item) => {
                 const Icon = SHEET_ICONS[item.label];
                 return (
                   <li key={item.href}>
@@ -302,12 +324,20 @@ function MoreSheet({ open, onClose }: MoreSheetProps) {
 
 // ── Main nav ──────────────────────────────────────────────────────────────────
 
-export default function CoachNav() {
+interface CoachNavProps {
+  // See ParentNav — same prop, shared `buildCoachLinks` filters the
+  // Leaderboards entry out of both the desktop header and the More sheet
+  // when no board qualifies.
+  hasAnyBoard: boolean;
+}
+
+export default function CoachNav({ hasAnyBoard }: CoachNavProps) {
   const pathname = usePathname();
   const [scrolled, setScrolled] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const moreBtnRef = useRef<HTMLButtonElement>(null);
+  const { more, desktop } = buildCoachLinks(hasAnyBoard);
 
   useEffect(() => {
     const sentinel = sentinelRef.current;
@@ -344,7 +374,7 @@ export default function CoachNav() {
 
           {/* Desktop center links — hidden on mobile */}
           <nav className="hidden tablet:flex items-center gap-1" aria-label="Coach navigation">
-            {DESKTOP_NAV_LINKS.map((link) => {
+            {desktop.map((link) => {
               const active = isCoachLinkActive(link.href, pathname);
               return (
                 <Link
@@ -366,7 +396,7 @@ export default function CoachNav() {
           <div className="flex items-center gap-2 tablet:gap-3">
             <CoachNotificationBell />
             <ThemeToggle />
-            <ProfileMenu />
+            <ProfileMenu hasAnyBoard={hasAnyBoard} />
           </div>
         </div>
       </header>
@@ -403,7 +433,7 @@ export default function CoachNav() {
           aria-expanded={sheetOpen}
           onClick={() => setSheetOpen(true)}
           className={`${styles.tabItem} flex flex-col items-center justify-center gap-1.5 flex-1 text-xs font-semibold transition-colors duration-150 ${
-            isMoreActive(pathname) || sheetOpen
+            isMoreActive(pathname, more) || sheetOpen
               ? "text-accent-on-section"
               : "text-text-secondary-on-section"
           }`}
@@ -419,6 +449,7 @@ export default function CoachNav() {
           setSheetOpen(false);
           moreBtnRef.current?.focus();
         }}
+        items={more}
       />
     </>
   );

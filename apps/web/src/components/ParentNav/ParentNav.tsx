@@ -87,7 +87,15 @@ const ICONS: Record<NavLinkLabel, () => React.ReactElement> = {
   Progress: ProgressIcon,
 };
 
-export default function ParentNav() {
+interface ParentNavProps {
+  // Whether at least one public leaderboard qualifies today. When false,
+  // the Leaderboards desktop link is hidden. The mobile bottom tabs are
+  // reserved for the four primary parent destinations; the Leaderboards
+  // link on phone lives in the ProfileMenu (also hidden there when false).
+  hasAnyBoard: boolean;
+}
+
+export default function ParentNav({ hasAnyBoard }: ParentNavProps) {
   const { isViewer } = useSession();
   const pathname = usePathname();
   const [scrolled, setScrolled] = useState(false);
@@ -150,11 +158,24 @@ export default function ParentNav() {
                 </Link>
               );
             })}
+            {hasAnyBoard && (
+              <Link
+                href="/leaderboard"
+                aria-current={pathname?.startsWith("/leaderboard") ? "page" : undefined}
+                className={`inline-flex items-center justify-center h-11 px-4 text-sm font-semibold rounded-button transition-colors duration-150 ${
+                  pathname?.startsWith("/leaderboard")
+                    ? "text-accent-on-section"
+                    : "text-text-secondary-on-section hover:text-text-on-section"
+                }`}
+              >
+                Leaderboards
+              </Link>
+            )}
           </nav>
 
           <div className="flex items-center gap-3">
             <ThemeToggle />
-            <ProfileMenu />
+            <ProfileMenu hasAnyBoard={hasAnyBoard} />
           </div>
         </div>
       </header>

@@ -11,6 +11,7 @@ import { fetchMe } from "@/lib/api/me";
 import { fetchHousehold } from "@/lib/api/households";
 import { fetchSwimmers } from "@/lib/api/swimmers";
 import { fetchBalance } from "@/lib/api/balance";
+import { fetchLeaderboardSummary } from "@/lib/api/leaderboard";
 
 const fraunces = Fraunces({
   subsets: ["latin"],
@@ -97,6 +98,13 @@ export default async function RootLayout({
   const showsTabBar = isSignedIn && (role === "parent" || role === "coach");
   const needsBookGate = isSignedIn && role === "parent";
 
+  // Leaderboards nav links hide themselves when no board qualifies — the
+  // same summary endpoint the homepage and landing page use. Fetched once at
+  // the root so NavController + SiteFooter + HomepageContent share one cached
+  // round-trip (revalidate 60s via the fetch helper).
+  const leaderboardSummary = await fetchLeaderboardSummary();
+  const hasAnyBoard = (leaderboardSummary?.qualifying ?? []).length > 0;
+
   return (
     <html lang="en" className={`${fraunces.variable} ${figtree.variable}`} suppressHydrationWarning data-scroll-behavior="smooth">
       <body className="min-h-screen flex flex-col bg-background text-text antialiased">
@@ -107,20 +115,20 @@ export default async function RootLayout({
               balanceCents={gateBalanceCents}
               isViewer={isViewer}
             >
-              <NavController />
+              <NavController hasAnyBoard={hasAnyBoard} />
               <div className="flex-1 flex flex-col">
                 {children}
               </div>
-              <SiteFooter />
+              <SiteFooter hasAnyBoard={hasAnyBoard} />
               {showsTabBar && <div className="pb-tab-safe tablet:hidden" aria-hidden="true" />}
             </BookGateProvider>
           ) : (
             <>
-              <NavController />
+              <NavController hasAnyBoard={hasAnyBoard} />
               <div className="flex-1 flex flex-col">
                 {children}
               </div>
-              <SiteFooter />
+              <SiteFooter hasAnyBoard={hasAnyBoard} />
               {showsTabBar && <div className="pb-tab-safe tablet:hidden" aria-hidden="true" />}
             </>
           )}

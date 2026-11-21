@@ -18,6 +18,15 @@ vi.mock("next/link", () => ({
     <a href={href}>{children}</a>
   ),
 }));
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ refresh: vi.fn() }),
+}));
+vi.mock("@/content/CoachMeetsContent/actions", async () => {
+  const actual = await vi.importActual<typeof import("@/content/CoachMeetsContent/actions")>(
+    "@/content/CoachMeetsContent/actions",
+  );
+  return { ...actual, createMeetInline: vi.fn() };
+});
 
 import CoachMeetsContent from "../content/CoachMeetsContent/CoachMeetsContent";
 import CoachMeetDetailContent from "../content/CoachMeetDetailContent/CoachMeetDetailContent";
@@ -55,6 +64,8 @@ const testMeet = {
 const testSwim = {
   id: SWIM_ID,
   swimmerId: SWIMMER_ID,
+  swimmerFirstName: "Alex",
+  swimmerLastName: "Smith",
   swimType: "meet" as const,
   meetId: MEET_ID,
   meetName: "Spring Invitational",
@@ -91,6 +102,8 @@ const testSwimmer = {
   members: [],
   memberNames: [],
   lastLesson: null,
+  householdName: "Smith",
+  birthMonthYear: "2013-01",
   homePool: null,
   createdAt: now,
   updatedAt: now,
@@ -129,24 +142,24 @@ describe("CoachMeetDetailContent", () => {
   const emptyMeet = { ...testMeet, swims: [] };
 
   it("renders meet name and date", () => {
-    render(<CoachMeetDetailContent meet={emptyMeet} swimmers={[]} />);
+    render(<CoachMeetDetailContent meet={emptyMeet} swimmers={[]} swimmerBests={[]} />);
     expect(screen.getByRole("heading", { name: "Spring Invitational" })).toBeInTheDocument();
     expect(screen.getByText(/2025-03-15/)).toBeInTheDocument();
   });
 
-  it("renders 'No swims recorded' when meet has no swims", () => {
-    render(<CoachMeetDetailContent meet={emptyMeet} swimmers={[]} />);
-    expect(screen.getByText(/no swims recorded/i)).toBeInTheDocument();
+  it("renders empty-state copy when meet has no swims", () => {
+    render(<CoachMeetDetailContent meet={emptyMeet} swimmers={[]} swimmerBests={[]} />);
+    expect(screen.getByText(/no results saved yet/i)).toBeInTheDocument();
   });
 
-  it("renders swim row with event and formatted time", () => {
-    render(<CoachMeetDetailContent meet={meetWithSwims} swimmers={[]} />);
-    expect(screen.getByText(/100 Freestyle/i)).toBeInTheDocument();
+  it("renders saved result with event and formatted time", () => {
+    render(<CoachMeetDetailContent meet={meetWithSwims} swimmers={[]} swimmerBests={[]} />);
+    expect(screen.getByText(/100 Free · SCY/i)).toBeInTheDocument();
     expect(screen.getByText("58.30")).toBeInTheDocument();
   });
 
   it("renders back link to /coach/meets", () => {
-    render(<CoachMeetDetailContent meet={emptyMeet} swimmers={[]} />);
+    render(<CoachMeetDetailContent meet={emptyMeet} swimmers={[]} swimmerBests={[]} />);
     const link = screen.getByRole("link", { name: /all meets/i });
     expect(link).toHaveAttribute("href", "/coach/meets");
   });
@@ -222,68 +235,27 @@ describe("CoachSwimmerDetailContent — times", () => {
     expect(screen.getByText(/personal bests/i)).toBeInTheDocument();
   });
 
-  it("renders the Add meet time and Add practice swim buttons inside the Times tab", () => {
+  it("renders the Add meet time button inside the Times tab", () => {
     render(
       <CoachSwimmerDetailContent {...baseProps} swims={[]} personalBests={[]} />,
     );
     openTimesTab();
     expect(screen.getByRole("button", { name: /add meet time/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /add practice swim/i })).toBeInTheDocument();
-  });
-
-  it("shows Practice label on a practice swim", () => {
-    const practiceSwim = {
-      ...testSwim,
-      id: "44444444-0000-0000-0000-000000000001",
-      swimType: "practice" as const,
-      meetId: null,
-      meetName: null,
-      meetDate: null,
-    };
-    render(
-      <CoachSwimmerDetailContent {...baseProps} swims={[practiceSwim]} personalBests={[]} />,
-    );
-    openTimesTab();
-    expect(screen.getByText("Practice")).toBeInTheDocument();
-  });
-
-  it("does not show PB badge on a practice swim even when it matches a PB", () => {
-    const practiceSwim = {
-      ...testSwim,
-      id: "44444444-0000-0000-0000-000000000002",
-      swimType: "practice" as const,
-      meetId: null,
-      meetName: null,
-      meetDate: null,
-    };
-    const pbForPractice = { ...testPersonalBest, swimId: practiceSwim.id };
-    render(
-      <CoachSwimmerDetailContent
-        {...baseProps}
-        swims={[practiceSwim]}
-        personalBests={[pbForPractice]}
-      />,
-    );
-    openTimesTab();
-    expect(screen.queryByText("PB")).not.toBeInTheDocument();
   });
 
   it("header 'Add time' button jumps to the Times tab and opens the meet form", () => {
     render(
       <CoachSwimmerDetailContent {...baseProps} swims={[]} personalBests={[]} />,
     );
-    // Starts on the Feed tab — the Times "+ Add meet time" button isn't visible.
     expect(screen.queryByRole("button", { name: /^\+ add meet time$/i })).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: /^add time$/i }));
 
-    // After tapping the header button, the Times tab is active and the
-    // AddSwimForm has opened in meet mode (its Review button is the
-    // identifying landmark).
     expect(
       screen.getByRole("tab", { name: /^times$/i }),
     ).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByRole("button", { name: /^review$/i })).toBeInTheDocument();
+    // New AddSwimForm uses "Save time" as its submit action (no review step).
+    expect(screen.getByRole("button", { name: /save time/i })).toBeInTheDocument();
   });
 });
 
@@ -295,12 +267,12 @@ beforeEach(() => {
 describe("CoachMeetsContent — swim count and delete dialog", () => {
   it("shows swim count in the meet subtitle", () => {
     render(<CoachMeetsContent meets={[testMeet]} />);
-    expect(screen.getByText(/1 swim/)).toBeInTheDocument();
+    expect(screen.getByText(/1 result/)).toBeInTheDocument();
   });
 
   it("shows plural swims when count > 1", () => {
     render(<CoachMeetsContent meets={[{ ...testMeet, swimCount: 3 }]} />);
-    expect(screen.getByText(/3 swims/)).toBeInTheDocument();
+    expect(screen.getByText(/3 results/)).toBeInTheDocument();
   });
 
   it("does not show swim count when 0", () => {
@@ -349,40 +321,5 @@ describe("CreateMeetForm — closes and shows list after successful save", () =>
   });
 });
 
-describe("CoachMeetDetailContent AddSwimForm — opens and closes", () => {
-  it("shows the form when Add swim is clicked", async () => {
-    const user = userEvent.setup();
-
-    const emptyMeet = { ...testMeet, swims: [] };
-    render(<CoachMeetDetailContent meet={emptyMeet} swimmers={[]} />);
-
-    await user.click(screen.getByRole("button", { name: /add swim/i }));
-
-    expect(screen.getByRole("heading", { name: /add swim/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /save swim/i })).toBeInTheDocument();
-  });
-
-  it("collapses the form when Cancel is clicked", async () => {
-    const user = userEvent.setup();
-
-    const emptyMeet = { ...testMeet, swims: [] };
-    render(<CoachMeetDetailContent meet={emptyMeet} swimmers={[]} />);
-
-    await user.click(screen.getByRole("button", { name: /add swim/i }));
-    await user.click(screen.getByRole("button", { name: /cancel/i }));
-
-    expect(screen.getByRole("button", { name: /add swim/i })).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: /add swim/i })).not.toBeInTheDocument();
-  });
-
-  it("still renders existing swims while form is open", async () => {
-    const user = userEvent.setup();
-
-    const meetWithSwims = { ...testMeet, swims: [testSwim] };
-    render(<CoachMeetDetailContent meet={meetWithSwims} swimmers={[]} />);
-
-    await user.click(screen.getByRole("button", { name: /add swim/i }));
-
-    expect(screen.getByText("58.30")).toBeInTheDocument();
-  });
-});
+// The old inline Add-swim form has been replaced by the pending-list entry
+// row; those behavior tests now live in meetDetailPending.test.tsx.

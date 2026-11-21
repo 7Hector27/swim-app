@@ -2,7 +2,7 @@ import { afterAll, afterEach, describe, expect, it } from "vitest";
 import request from "supertest";
 import pino from "pino";
 import { randomUUID } from "node:crypto";
-import { eq, inArray } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { createApp } from "../../app";
 import { leagueRegistrations, meetSwims, meets, profiles, swimmers } from "../../db/schema";
 import { adminDb, closeAdminDb, createTestUser, hardDeleteSwimmer } from "./helpers";
@@ -29,12 +29,12 @@ afterEach(async () => {
 
 // Delete meet swims → meets in the correct FK order before calling user.cleanup().
 // meets.created_by → profiles is RESTRICT, so meets must be gone before the
-// Supabase user (and its profile row) can be deleted.
-async function cleanupMeet(meetId: string, swimmerIds: string[]): Promise<void> {
-  await adminDb()
-    .delete(meetSwims)
-    .where(inArray(meetSwims.swimmerId, swimmerIds))
-    .catch(() => {});
+// Supabase user (and its profile row) can be deleted. Deletes every swim
+// row for the meet (not just the subject swimmers') so filler swimmers
+// added by `padPartitionToThree` don't block the meet delete.
+async function cleanupMeet(meetId: string, _swimmerIds: string[]): Promise<void> {
+  void _swimmerIds;
+  await adminDb().delete(meetSwims).where(eq(meetSwims.meetId, meetId)).catch(() => {});
   await adminDb().delete(meets).where(eq(meets.id, meetId)).catch(() => {});
   trackedMeetIds.delete(meetId);
 }
@@ -122,6 +122,60 @@ async function insertMeet(opts: {
   await adminDb().insert(meets).values(opts);
 }
 
+// Public endpoints enforce MIN_SWIMMERS_PER_EVENT_LIST (= 3). Every test that
+// expects a row back for a partition must fill at least 3 swimmers in that
+// partition. This helper inserts two slower filler swimmers next to the
+// test subject so the assertions on the subject's row keep working under
+// the threshold. It inserts club registrations by default; pass
+// `registration: "isl"` to register them for summer league with a specific
+// `registeredOn` date.
+async function padPartitionToThree(opts: {
+  partition: {
+    birthDate: string;
+    sex: "female" | "male";
+    eventDistance: number;
+    eventStroke: "free" | "back" | "breast" | "fly" | "im";
+    course: "scy" | "scm" | "lcm";
+    maxExistingTimeHundredths: number;
+  };
+  meetId: string;
+  swumOn: string;
+  createdBy: string;
+  consentBy: string;
+  householdId: string;
+  registration: "club" | { league: "summer_league"; registeredOn: string };
+}): Promise<void> {
+  for (let fillerIndex = 0; fillerIndex < 2; fillerIndex++) {
+    const fillerId = randomUUID();
+    await insertSwimmer({
+      id: fillerId,
+      firstName: `Filler${fillerIndex}`,
+      lastName: `Pad`,
+      birthDate: opts.partition.birthDate,
+      sex: opts.partition.sex,
+      isPublic: true,
+      householdId: opts.householdId,
+      consentBy: opts.consentBy,
+    });
+    if (opts.registration === "club") {
+      await insertClubRegistration(fillerId);
+    } else {
+      await insertIslRegistration(fillerId, opts.registration.registeredOn);
+    }
+    await insertSwim({
+      swimmerId: fillerId,
+      meetId: opts.meetId,
+      swimType: "meet",
+      eventDistance: opts.partition.eventDistance,
+      eventStroke: opts.partition.eventStroke,
+      course: opts.partition.course,
+      swumOn: opts.swumOn,
+      timeHundredths: opts.partition.maxExistingTimeHundredths + 1000 + fillerIndex * 1000,
+      createdBy: opts.createdBy,
+    });
+  }
+}
+
 // ── Practice swims never count toward PBs ─────────────────────────────────────
 
 describe("GET /leaderboard/club — practice swims excluded", () => {
@@ -155,6 +209,15 @@ describe("GET /leaderboard/club — practice swims excluded", () => {
         swimmerId, meetId, swimType: "meet",
         eventDistance: 1000, eventStroke: "free", course: "scy",
         swumOn: "2026-09-15", timeHundredths: 6000, createdBy: user.userId,
+      });
+      await padPartitionToThree({
+        partition: { birthDate: "2016-06-01", sex: "female", eventDistance: 1000, eventStroke: "free", course: "scy", maxExistingTimeHundredths: 6000 },
+        meetId,
+        swumOn: "2026-09-15",
+        createdBy: user.userId,
+        consentBy: user.userId,
+        householdId: user.householdId,
+        registration: "club",
       });
 
       const res = await request(app).get(
@@ -243,6 +306,15 @@ describe("GET /leaderboard/club — heat and final keep only the fastest", () =>
         swimmerId, meetId, swimType: "meet",
         eventDistance: 800, eventStroke: "free", course: "lcm",
         swumOn: "2026-09-10", timeHundredths: 9000, createdBy: user.userId,
+      });
+      await padPartitionToThree({
+        partition: { birthDate: "2016-03-01", sex: "male", eventDistance: 800, eventStroke: "free", course: "lcm", maxExistingTimeHundredths: 9500 },
+        meetId,
+        swumOn: "2026-09-10",
+        createdBy: user.userId,
+        consentBy: user.userId,
+        householdId: user.householdId,
+        registration: "club",
       });
 
       const res = await request(app).get(
@@ -342,6 +414,15 @@ describe("GET /leaderboard/isl — age computed from registered_on", () => {
         eventDistance: 200, eventStroke: "im", course: "lcm",
         swumOn: "2026-06-15", timeHundredths: 15000, createdBy: user.userId,
       });
+      await padPartitionToThree({
+        partition: { birthDate: "2013-07-01", sex: "female", eventDistance: 200, eventStroke: "im", course: "lcm", maxExistingTimeHundredths: 15000 },
+        meetId,
+        swumOn: "2026-06-15",
+        createdBy: user.userId,
+        consentBy: user.userId,
+        householdId: user.householdId,
+        registration: { league: "summer_league", registeredOn: "2026-06-01" },
+      });
 
       const res = await request(app).get(
         "/leaderboard/isl?eventDistance=200&eventStroke=im&course=lcm&sex=female",
@@ -389,6 +470,16 @@ describe("GET /leaderboard/club vs GET /coach/leaderboard/club — visibility", 
           swumOn: "2026-09-14", timeHundredths: 110000, createdBy: coachUser.userId,
         });
       }
+      // Pad the public partition so the public endpoint's threshold passes.
+      await padPartitionToThree({
+        partition: { birthDate, sex: "female", eventDistance: 1650, eventStroke: "free", course: "scy", maxExistingTimeHundredths: 110000 },
+        meetId,
+        swumOn: "2026-09-14",
+        createdBy: coachUser.userId,
+        consentBy: parent.userId,
+        householdId: parent.householdId,
+        registration: "club",
+      });
 
       // Public board: only the is_public swimmer appears
       const pubRes = await request(app).get(

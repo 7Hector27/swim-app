@@ -1,9 +1,26 @@
 import {
+  LeaderboardSummarySchema,
   PublicBoardResponseSchema,
   PublicMasterResponseSchema,
+  type LeaderboardSummary,
   type PublicBoardResponse,
   type PublicMasterResponse,
 } from "@swim-app/shared";
+
+export async function fetchLeaderboardSummary(): Promise<LeaderboardSummary | null> {
+  try {
+    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/leaderboard/summary`, {
+      next: { revalidate: 60 },
+    });
+    if (!response.ok) return null;
+    const body: unknown = await response.json();
+    const parsed = LeaderboardSummarySchema.safeParse(body);
+    if (!parsed.success) return null;
+    return parsed.data;
+  } catch {
+    return null;
+  }
+}
 
 function buildQueryString(rawParams: Record<string, string | undefined>): string {
   const params = new URLSearchParams();

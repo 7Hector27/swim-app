@@ -54,8 +54,11 @@ export default function BoardTable({ rows, showStandard = false }: BoardTablePro
     );
   }
 
+  // Wrap in an overflow-x container so the table scrolls inside its own card
+  // on narrow widths — the surrounding page never scrolls sideways at 375px.
   return (
-    <table className="w-full">
+    <div className="w-full max-w-full overflow-x-auto">
+    <table className="w-full min-w-[320px]">
       <thead>
         <tr>
           <th className="text-left pb-3 pt-1 text-text-secondary font-semibold text-xs w-10">
@@ -95,7 +98,7 @@ export default function BoardTable({ rows, showStandard = false }: BoardTablePro
             </td>
             {showStandard && (
               <td className="py-3 align-top">
-                {isMasterRow(row) && (
+                {isMasterRow(row) && row.standard !== null && (
                   <span className={standardBadgeClass(row.standard)}>{row.standard}</span>
                 )}
               </td>
@@ -104,5 +107,6 @@ export default function BoardTable({ rows, showStandard = false }: BoardTablePro
         ))}
       </tbody>
     </table>
+    </div>
   );
 }

@@ -169,6 +169,8 @@ const COACH_SWIMMER: CoachSwimmerDetail = {
   updatedAt: "2024-01-01T00:00:00.000Z",
   birthDate: "2013-01-01",
   householdId: "00000000-0000-0000-0000-000000000ff0",
+  householdName: "Rodriguez household",
+  birthMonthYear: "2013-01",
   currentLeagues: [],
   clubs: [],
   memberNames: [],
