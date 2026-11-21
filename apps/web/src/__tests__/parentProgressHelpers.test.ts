@@ -14,6 +14,7 @@ import {
   rowChangeText,
   rowLevelLabel,
   rowPipCount,
+  rowSideBreakdown,
 } from "../content/ParentSwimmerProgressContent/helpers";
 
 const CAT_ID = "cccccccc-0000-0000-0000-000000000001";
@@ -432,15 +433,57 @@ describe("rowChangeText", () => {
     expect(rowChangeText(regressed)).toBe("down 2");
   });
 
-  it("sided skills show left/right levels", () => {
+  it("sided skills report a change based on the lower side ('up N')", () => {
+    // Left 2 → 3, right 2 → 4. Lower side latest = 3, lower first = 2.
+    const breathing = skill({
+      slug: "br",
+      name: "Breathing",
+      ratedPerSide: true,
+      currentLeft: level(3),
+      currentRight: level(4),
+      history: [
+        point({ id: "l-now", sessionDate: "2026-11-01", grade: 3, side: "left" }),
+        point({ id: "r-now", sessionDate: "2026-11-01", grade: 4, side: "right" }),
+        point({ id: "l-start", sessionDate: "2026-09-30", grade: 2, side: "left" }),
+        point({ id: "r-start", sessionDate: "2026-09-30", grade: 2, side: "right" }),
+      ],
+    });
+    expect(rowChangeText(breathing)).toBe("up 1");
+  });
+
+  it("sided skills read 'holding steady' when the lower side hasn't moved", () => {
+    const breathing = skill({
+      slug: "br",
+      name: "Breathing",
+      ratedPerSide: true,
+      currentLeft: level(2),
+      currentRight: level(4),
+      history: [
+        point({ id: "l-now", sessionDate: "2026-11-01", grade: 2, side: "left" }),
+        point({ id: "r-now", sessionDate: "2026-11-01", grade: 4, side: "right" }),
+        point({ id: "l-start", sessionDate: "2026-09-30", grade: 2, side: "left" }),
+        point({ id: "r-start", sessionDate: "2026-09-30", grade: 2, side: "right" }),
+      ],
+    });
+    expect(rowChangeText(breathing)).toBe("holding steady");
+  });
+
+  it("sided skills with a single session return null (no comparison to make)", () => {
+    // Both sides rated exactly once at the same session — there's no
+    // prior data point on the lower side to compare against, so the
+    // row should not read as "holding steady".
     const sided = skill({
       slug: "s",
       name: "S",
       ratedPerSide: true,
       currentLeft: level(3),
       currentRight: level(2),
+      history: [
+        point({ id: "l1", sessionDate: "2026-11-01", grade: 3, side: "left" }),
+        point({ id: "r1", sessionDate: "2026-11-01", grade: 2, side: "right" }),
+      ],
     });
-    expect(rowChangeText(sided)).toBe("left 3, right 2");
+    expect(rowChangeText(sided)).toBeNull();
   });
 
   it("single rating returns null (no history to compare)", () => {
@@ -485,5 +528,65 @@ describe("rowLevelLabel + rowPipCount", () => {
       currentRight: level(2),
     });
     expect(rowPipCount(sided)).toBe(2);
+  });
+
+  it("sided skill: level label names the lower side's level, matching the pip bar", () => {
+    const sided = skill({
+      slug: "s",
+      name: "S",
+      ratedPerSide: true,
+      currentLeft: level(4),
+      currentRight: level(2),
+    });
+    expect(rowLevelLabel(sided)).toBe("Developing");
+    expect(rowPipCount(sided)).toBe(2);
+  });
+});
+
+describe("rowSideBreakdown", () => {
+  it("returns null for non-sided skills", () => {
+    const s = skill({ slug: "s", name: "S", current: level(3) });
+    expect(rowSideBreakdown(s)).toBeNull();
+  });
+
+  it("returns 'left X, right Y' when both sides are rated", () => {
+    const sided = skill({
+      slug: "s",
+      name: "S",
+      ratedPerSide: true,
+      currentLeft: level(3),
+      currentRight: level(2),
+    });
+    expect(rowSideBreakdown(sided)).toBe("left 3, right 2");
+  });
+
+  it("drops an unrated or DQ/NC side from the list", () => {
+    const leftOnly = skill({
+      slug: "lo",
+      name: "LO",
+      ratedPerSide: true,
+      currentLeft: level(3),
+      currentRight: null,
+    });
+    expect(rowSideBreakdown(leftOnly)).toBe("left 3");
+    const rightDQ = skill({
+      slug: "rdq",
+      name: "RDQ",
+      ratedPerSide: true,
+      currentLeft: level(3),
+      currentRight: level(null, { notLegal: true }),
+    });
+    expect(rowSideBreakdown(rightDQ)).toBe("left 3");
+  });
+
+  it("returns null when neither side has a numeric grade", () => {
+    const bothDQ = skill({
+      slug: "x",
+      name: "X",
+      ratedPerSide: true,
+      currentLeft: level(null, { notLegal: true }),
+      currentRight: level(null, { notLegal: true }),
+    });
+    expect(rowSideBreakdown(bothDQ)).toBeNull();
   });
 });

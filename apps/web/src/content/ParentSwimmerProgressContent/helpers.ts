@@ -146,42 +146,95 @@ function lowerOfTwoSides(
 
 // Change text a parent sees under the level name on each skill row:
 // "up N", "down N", "holding steady", or null when there's no comparable
-// history (single rating, DQ / NC path).
+// history (single rating, DQ / NC path). Sided skills compare the lower
+// side's first and current grade so the growth-edge is the one that
+// drives the delta — matching rowPipCount / rowLevelLabel / the summary
+// headline. The side-by-side breakdown ("left 3, right 2") renders
+// separately via rowSideBreakdown so the UI can style it as a quieter
+// line rather than glue it into the main change text.
 export function rowChangeText(skill: ParentSkillProgress): string | null {
+  let latest: 1 | 2 | 3 | 4 | 5 | null;
+  let first: 1 | 2 | 3 | 4 | 5 | null;
+  let numericCount: number;
   if (skill.ratedPerSide) {
-    const left = latestGradeFromCurrent(skill.currentLeft);
-    const right = latestGradeFromCurrent(skill.currentRight);
-    if (left === null && right === null) return null;
-    const parts: string[] = [];
-    if (left !== null) parts.push(`left ${left}`);
-    if (right !== null) parts.push(`right ${right}`);
-    return parts.join(", ");
+    const leftLatest = latestGradeFromCurrent(skill.currentLeft);
+    const rightLatest = latestGradeFromCurrent(skill.currentRight);
+    const lowerSide: "left" | "right" | null =
+      leftLatest !== null && rightLatest !== null
+        ? leftLatest <= rightLatest
+          ? "left"
+          : "right"
+        : leftLatest !== null
+          ? "left"
+          : rightLatest !== null
+            ? "right"
+            : null;
+    if (lowerSide === null) return null;
+    latest = lowerSide === "left" ? leftLatest : rightLatest;
+    first = firstGradeForSide(skill.history, lowerSide);
+    // Match the non-sided "needs 2 numeric points" rule, but scoped to
+    // the lower side only — a single assessment that happens to touch
+    // both sides should not read as "holding steady".
+    numericCount = skill.history.reduce(
+      (count, point) =>
+        point.side === lowerSide &&
+        (point.grade === 1 || point.grade === 2 || point.grade === 3 || point.grade === 4 || point.grade === 5)
+          ? count + 1
+          : count,
+      0,
+    );
+  } else {
+    latest = latestGradeFromCurrent(skill.current);
+    first = firstGradeFromHistory(skill.history);
+    numericCount = skill.history.reduce(
+      (count, point) =>
+        point.grade === 1 || point.grade === 2 || point.grade === 3 || point.grade === 4 || point.grade === 5
+          ? count + 1
+          : count,
+      0,
+    );
   }
-  const latest = latestGradeFromCurrent(skill.current);
-  const first = firstGradeFromHistory(skill.history);
-  if (latest === null) return null;
-  if (first === null) return null;
-  // A single numeric-graded rating counts as both first and latest — no
-  // meaningful delta. Return null so the row doesn't show "holding steady"
-  // on a one-time sampling.
-  const numericHistoryCount = skill.history.reduce(
-    (count, point) => (point.grade === 1 || point.grade === 2 || point.grade === 3 || point.grade === 4 || point.grade === 5 ? count + 1 : count),
-    0,
-  );
-  if (numericHistoryCount < 2) return null;
+  if (latest === null || first === null) return null;
+  if (numericCount < 2) return null;
   const delta = latest - first;
   if (delta > 0) return `up ${delta}`;
   if (delta < 0) return `down ${Math.abs(delta)}`;
   return "holding steady";
 }
 
+// Quiet side-by-side breakdown under the change text for sided skills:
+// "left 3, right 2". DQ / NC / unrated sides are dropped. Returns null
+// for non-sided skills and when neither side is rated — the row then
+// skips the line entirely rather than collapsing to "left —, right —".
+export function rowSideBreakdown(skill: ParentSkillProgress): string | null {
+  if (!skill.ratedPerSide) return null;
+  const left = latestGradeFromCurrent(skill.currentLeft);
+  const right = latestGradeFromCurrent(skill.currentRight);
+  if (left === null && right === null) return null;
+  const parts: string[] = [];
+  if (left !== null) parts.push(`left ${left}`);
+  if (right !== null) parts.push(`right ${right}`);
+  return parts.join(", ");
+}
+
 // Display name of the current level for a skill row ("Advanced", "DQ",
-// "No concept", "Not rated"). Falls back for edge cases so callers never
-// render "null".
+// "No concept", "Not rated"). Sided skills report the lower numeric side
+// so this stays in lock-step with rowPipCount / the summary headline;
+// if neither side has a numeric grade, the first non-null side carries
+// the DQ / NC / unrated label.
 export function rowLevelLabel(skill: ParentSkillProgress): string {
-  const current = skill.ratedPerSide
-    ? skill.currentLeft ?? skill.currentRight
-    : skill.current;
+  if (skill.ratedPerSide) {
+    const leftGrade = latestGradeFromCurrent(skill.currentLeft);
+    const rightGrade = latestGradeFromCurrent(skill.currentRight);
+    const lower = lowerOfTwoSides(leftGrade, rightGrade);
+    if (lower !== null) return LEVEL_NAMES[lower];
+    const fallback = skill.currentLeft ?? skill.currentRight;
+    if (fallback === null) return "Not rated";
+    if (fallback.notLegal) return "DQ";
+    if (fallback.noConcept) return "No concept";
+    return "—";
+  }
+  const current = skill.current;
   if (current === null) return "Not rated";
   if (current.notLegal) return "DQ";
   if (current.noConcept) return "No concept";
@@ -198,14 +251,10 @@ export function rowLevelLabel(skill: ParentSkillProgress): string {
 // draws the bar empty.
 export function rowPipCount(skill: ParentSkillProgress): 1 | 2 | 3 | 4 | 5 | null {
   if (skill.ratedPerSide) {
-    const left = latestGradeFromCurrent(skill.currentLeft);
-    const right = latestGradeFromCurrent(skill.currentRight);
-    // When both sides are rated, show the lower side as the bar — it's
-    // the growth edge. When only one side is rated, show it.
-    if (left === null && right === null) return null;
-    if (left === null) return right;
-    if (right === null) return left;
-    return left <= right ? left : right;
+    return lowerOfTwoSides(
+      latestGradeFromCurrent(skill.currentLeft),
+      latestGradeFromCurrent(skill.currentRight),
+    );
   }
   return latestGradeFromCurrent(skill.current);
 }

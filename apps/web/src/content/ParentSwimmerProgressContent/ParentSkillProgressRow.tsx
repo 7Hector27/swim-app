@@ -4,7 +4,7 @@ import { useState } from "react";
 import type { ParentSkillProgress } from "@swim-app/shared";
 import LevelLadder, { LadderDetails } from "@/components/LevelLadder";
 import { isStaleBySessionDate } from "@/lib/progressRow";
-import { rowChangeText, rowLevelLabel, rowPipCount } from "./helpers";
+import { rowChangeText, rowLevelLabel, rowPipCount, rowSideBreakdown } from "./helpers";
 
 interface ParentSkillProgressRowProps {
   skill: ParentSkillProgress;
@@ -34,6 +34,7 @@ export default function ParentSkillProgressRow({ skill, nowIso }: ParentSkillPro
   const levelLabel = rowLevelLabel(skill);
   const changeText = rowChangeText(skill);
   const pipCount = rowPipCount(skill);
+  const sideBreakdown = rowSideBreakdown(skill);
 
   return (
     <li
@@ -65,15 +66,25 @@ export default function ParentSkillProgressRow({ skill, nowIso }: ParentSkillPro
           {notAssessed ? (
             <span className="text-xs text-text-secondary">Not rated yet</span>
           ) : (
-            <span className="text-xs text-text-secondary">
-              {levelLabel}
-              {changeText !== null && (
-                <>
-                  {" · "}
-                  <span data-testid={`parent-skill-change-${skill.slug}`}>{changeText}</span>
-                </>
+            <>
+              <span className="text-xs text-text-secondary">
+                {levelLabel}
+                {changeText !== null && (
+                  <>
+                    {" · "}
+                    <span data-testid={`parent-skill-change-${skill.slug}`}>{changeText}</span>
+                  </>
+                )}
+              </span>
+              {sideBreakdown !== null && (
+                <span
+                  className="text-[0.6875rem] text-text-secondary opacity-80"
+                  data-testid={`parent-skill-sides-${skill.slug}`}
+                >
+                  {sideBreakdown}
+                </span>
               )}
-            </span>
+            </>
           )}
         </span>
         <LevelPips count={pipCount} />
