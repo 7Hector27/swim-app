@@ -31,11 +31,13 @@ export default function GolfScoreList({ trends }: GolfScoreListProps) {
     categoriesPresent[0] ?? null,
   );
 
-  if (trends.length === 0 || categoriesPresent.length === 0) return null;
+  const firstCategory = categoriesPresent[0];
+  if (trends.length === 0 || firstCategory === undefined) return null;
 
-  const safeActive = categoriesPresent.includes(activeCategory as GolfScoreCategory)
-    ? (activeCategory as GolfScoreCategory)
-    : (categoriesPresent[0] as GolfScoreCategory);
+  const safeActive: GolfScoreCategory =
+    activeCategory !== null && categoriesPresent.includes(activeCategory)
+      ? activeCategory
+      : firstCategory;
 
   const visibleTrends = trends
     .map((trend) => {
