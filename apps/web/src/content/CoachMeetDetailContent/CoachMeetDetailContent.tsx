@@ -113,11 +113,6 @@ export default function CoachMeetDetailContent({
     return map;
   }, [swimmerBests]);
 
-  const activeSwimmers = useMemo(
-    () => swimmers.filter((swimmer) => !swimmer.isPublic || swimmer.isPublic), // archived already filtered server-side
-    [swimmers],
-  );
-
   function addPending(row: Omit<PendingRow, "id">): void {
     setPending((prev) => [...prev, { id: newRowId(), ...row }]);
   }
@@ -151,7 +146,7 @@ export default function CoachMeetDetailContent({
 
           <EntryRow
             meet={meet}
-            swimmers={activeSwimmers}
+            swimmers={swimmers}
             pending={pending}
             savedSwims={meet.swims}
             bestsBySwimmer={bestsBySwimmer}
@@ -160,7 +155,7 @@ export default function CoachMeetDetailContent({
 
           <PendingList
             rows={pending}
-            swimmers={activeSwimmers}
+            swimmers={swimmers}
             meet={meet}
             savedSwims={meet.swims}
             bestsBySwimmer={bestsBySwimmer}
